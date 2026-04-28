@@ -21,13 +21,8 @@
 //! Uses [`RetryManager`] from `nautilus-network` with exponential backoff for
 //! transient HTTP failures (timeouts, 5xx, rate limits).
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::sync::Arc;
 
-use ahash::AHashSet;
-use dashmap::DashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
@@ -38,7 +33,7 @@ use rust_decimal::Decimal;
 
 use super::{
     order_builder::PolymarketOrderBuilder,
-    parse::calculate_market_price,
+    parse::{adjust_market_buy_amount, calculate_market_price},
     types::{LimitOrderSubmitRequest, SignedLimitOrderSubmission},
 };
 use crate::{
@@ -51,22 +46,34 @@ use crate::{
     },
 };
 
+/// Fee-adjustment context for market BUYs sized to the user's pUSD balance.
+///
+/// When supplied to [`OrderSubmitter::submit_market_order`] alongside
+/// `OrderSide::Buy`, the submitter shrinks `amount` so `amount + fees`
+/// fits within `user_pusd_balance`, mirroring the SDK behaviour. SELL
+/// orders ignore this context.
+#[derive(Debug, Clone)]
+pub(crate) struct MarketBuyFeeContext {
+    pub user_pusd_balance: Decimal,
+    pub fee_rate: Decimal,
+    pub fee_exponent: f64,
+    pub builder_taker_fee_rate: Decimal,
+}
+
 /// HTTP order submission and cancellation facade.
 ///
 /// Provides a clean API accepting Nautilus-native types, internally handling:
 /// - Side/TIF conversion to Polymarket types
-/// - Expiration calculation
 /// - Order building and EIP-712 signing (via [`PolymarketOrderBuilder`])
 /// - HTTP posting to the CLOB API with automatic retry on transient failures
 ///
-/// Fee rates are cached per token with a 5-minute TTL to avoid stale values
-/// if the account's volume tier changes during a session.
+/// Fees are set by the protocol at match time in CLOB V2 (no longer embedded
+/// in the signed order), so the submitter does not pre-fetch fee rates.
 #[derive(Debug, Clone)]
 pub(crate) struct OrderSubmitter {
     http_client: PolymarketClobHttpClient,
     order_builder: Arc<PolymarketOrderBuilder>,
     retry_manager: Arc<RetryManager<Error>>,
-    fee_rate_cache: Arc<DashMap<String, (Decimal, Instant)>>,
 }
 
 impl OrderSubmitter {
@@ -79,49 +86,10 @@ impl OrderSubmitter {
             http_client,
             order_builder,
             retry_manager: Arc::new(RetryManager::new(retry_config)),
-            fee_rate_cache: Arc::new(DashMap::new()),
-        }
-    }
-
-    /// Returns the fee rate in basis points for a token, fetching from the API on cache miss
-    /// or when the cached value is older than 5 minutes.
-    ///
-    /// Falls back to the stale cached value if the refresh fails, so transient API
-    /// outages do not block order submission.
-    async fn get_fee_rate_bps(&self, token_id: &str) -> anyhow::Result<Decimal> {
-        const TTL: Duration = Duration::from_secs(300);
-
-        if let Some(entry) = self.fee_rate_cache.get(token_id) {
-            let (rate, fetched_at) = entry.value();
-            if fetched_at.elapsed() < TTL {
-                return Ok(*rate);
-            }
-        }
-
-        match self.http_client.get_fee_rate(token_id).await {
-            Ok(response) => {
-                self.fee_rate_cache
-                    .insert(token_id.to_string(), (response.base_fee, Instant::now()));
-                Ok(response.base_fee)
-            }
-            Err(e) => {
-                if let Some(mut entry) = self.fee_rate_cache.get_mut(token_id) {
-                    let (rate, fetched_at) = entry.value_mut();
-                    log::warn!("Fee rate refresh failed, using stale cached value: {e}");
-                    let rate = *rate;
-                    *fetched_at = Instant::now();
-                    Ok(rate)
-                } else {
-                    Err(anyhow::anyhow!("Failed to fetch fee rate: {e}"))
-                }
-            }
         }
     }
 
     /// Builds a signed limit order and posts it with retry on transient failures.
-    ///
-    /// Converts Nautilus types to Polymarket types, calculates expiration,
-    /// builds and signs the order, then submits via HTTP.
     #[expect(clippy::too_many_arguments)]
     pub async fn submit_limit_order(
         &self,
@@ -155,7 +123,15 @@ impl OrderSubmitter {
     /// Converts Nautilus side to Polymarket side, walks the appropriate book side
     /// to find the crossing price, then builds and submits a FOK order.
     /// The book fetch is not retried (stale on retry); only the final POST is retried.
-    /// Returns `(OrderResponse, expected_base_qty)` on success.
+    ///
+    /// The second return value is the order's signed base quantity (shares for
+    /// BUY, the original `amount` for SELL). For BUY this is derived from the
+    /// signed `taker_amount` so quote-to-base conversion matches what the venue
+    /// can fill (single crossing price), not the multi-level book walk total.
+    ///
+    /// `fee_context`, when supplied with `OrderSide::Buy`, is used to shrink
+    /// `amount` for taker fees before signing so balance-sized BUYs are not
+    /// rejected by the venue. SELL ignores the context.
     pub async fn submit_market_order(
         &self,
         token_id: &str,
@@ -163,6 +139,7 @@ impl OrderSubmitter {
         amount: Quantity,
         neg_risk: bool,
         tick_decimals: u32,
+        fee_context: Option<MarketBuyFeeContext>,
     ) -> anyhow::Result<(OrderResponse, Decimal)> {
         let poly_side = PolymarketOrderSide::try_from(side)
             .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
@@ -182,7 +159,20 @@ impl OrderSubmitter {
         let result = calculate_market_price(levels, amount_dec, poly_side)
             .map_err(|e| anyhow::anyhow!("Market price calculation failed: {e}"))?;
 
-        let fee_rate_bps = self.get_fee_rate_bps(token_id).await?;
+        // Fee-aware sizing applies to BUY only and only when a context is
+        // provided. Run before signing so the on-chain `taker_amount` and
+        // the emitted base quantity both reflect the venue-fillable amount.
+        let signed_amount = match (poly_side, fee_context) {
+            (PolymarketOrderSide::Buy, Some(ctx)) => adjust_market_buy_amount(
+                amount_dec,
+                ctx.user_pusd_balance,
+                result.crossing_price,
+                ctx.fee_rate,
+                ctx.fee_exponent,
+                ctx.builder_taker_fee_rate,
+            )?,
+            _ => amount_dec,
+        };
 
         let poly_order = self
             .order_builder
@@ -190,12 +180,21 @@ impl OrderSubmitter {
                 token_id,
                 poly_side,
                 result.crossing_price,
-                amount_dec,
+                signed_amount,
                 neg_risk,
                 tick_decimals,
-                fee_rate_bps,
             )
             .map_err(|e| anyhow::anyhow!("Failed to build market order: {e}"))?;
+
+        // Wire amounts are mantissas at USDC_DECIMALS (10^6) scale. For BUY,
+        // the signed taker_amount is the exact share quantity the venue will
+        // fill against; for SELL, the original `amount` is already in base
+        // shares (book walk total is irrelevant since SELL is never quote-qty).
+        let usdc_scale = Decimal::from(1_000_000u32);
+        let signed_base_qty = match poly_side {
+            PolymarketOrderSide::Buy => poly_order.taker_amount / usdc_scale,
+            PolymarketOrderSide::Sell => amount_dec,
+        };
 
         let http_client = self.http_client.clone();
 
@@ -218,7 +217,7 @@ impl OrderSubmitter {
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        Ok((response, result.expected_base_qty))
+        Ok((response, signed_base_qty))
     }
 
     /// Cancels a single order with retry on transient failures.
@@ -285,36 +284,14 @@ impl OrderSubmitter {
             .map_err(|e| anyhow::anyhow!("Failed to fetch order status: {e}"))
     }
 
-    /// Prepares multiple limit order submissions. Fetches the fee rate once per unique
-    /// token and shares the outcome across every request for that token, so even on a
-    /// cold cache or a failing fee-rate endpoint the batch issues exactly one
-    /// `/fee-rate` call per token.
+    /// Prepares multiple limit order submissions in parallel.
     pub(crate) async fn prepare_limit_order_submissions(
         &self,
         requests: &[LimitOrderSubmitRequest],
     ) -> Vec<anyhow::Result<SignedLimitOrderSubmission>> {
-        let mut unique_tokens: AHashSet<&str> = AHashSet::with_capacity(requests.len());
-        for request in requests {
-            unique_tokens.insert(request.token_id.as_str());
-        }
-
-        let mut fee_rates: ahash::AHashMap<String, Result<Decimal, String>> =
-            ahash::AHashMap::with_capacity(unique_tokens.len());
-        for token in unique_tokens {
-            let result = self
-                .get_fee_rate_bps(token)
-                .await
-                .map_err(|e| format!("{e}"));
-            fee_rates.insert(token.to_string(), result);
-        }
-
-        let futures = requests.iter().map(|request| {
-            let fee_rate = fee_rates
-                .get(&request.token_id)
-                .cloned()
-                .expect("fee rate resolved for every unique token");
-            self.prepare_limit_order_submission_with_fee(request, fee_rate)
-        });
+        let futures = requests
+            .iter()
+            .map(|request| self.prepare_limit_order_submission(request));
         futures_util::future::join_all(futures).await
     }
 
@@ -322,25 +299,11 @@ impl OrderSubmitter {
         &self,
         request: &LimitOrderSubmitRequest,
     ) -> anyhow::Result<SignedLimitOrderSubmission> {
-        let fee_rate = self
-            .get_fee_rate_bps(&request.token_id)
-            .await
-            .map_err(|e| format!("{e}"));
-        self.prepare_limit_order_submission_with_fee(request, fee_rate)
-            .await
-    }
-
-    async fn prepare_limit_order_submission_with_fee(
-        &self,
-        request: &LimitOrderSubmitRequest,
-        fee_rate: Result<Decimal, String>,
-    ) -> anyhow::Result<SignedLimitOrderSubmission> {
         let order_type = PolymarketOrderType::try_from(request.time_in_force)
             .map_err(|e| anyhow::anyhow!("Unsupported time in force: {e}"))?;
         let side = PolymarketOrderSide::try_from(request.side)
             .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
         let expiration = limit_order_expiration(request.expire_time);
-        let fee_rate_bps = fee_rate.map_err(|e| anyhow::anyhow!("{e}"))?;
 
         let order = self
             .order_builder
@@ -352,7 +315,6 @@ impl OrderSubmitter {
                 &expiration,
                 request.neg_risk,
                 request.tick_decimals,
-                fee_rate_bps,
             )
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -417,12 +379,28 @@ impl OrderSubmitter {
     }
 }
 
+// Converts a nanos expire time to the unix-seconds string expected by the
+// Polymarket API. Returns `"0"` when there is no expiration.
 fn limit_order_expiration(expire_time: Option<UnixNanos>) -> String {
     match expire_time {
-        Some(ns) if ns.as_u64() > 0 => {
-            let secs = ns.as_u64() / 1_000_000_000;
-            secs.to_string()
-        }
+        Some(ns) if ns.as_u64() > 0 => (ns.as_u64() / 1_000_000_000).to_string(),
         _ => "0".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::none(None, "0")]
+    #[case::zero(Some(UnixNanos::from(0u64)), "0")]
+    #[case::one_second(Some(UnixNanos::from(1_000_000_000u64)), "1")]
+    #[case::sub_second_truncates(Some(UnixNanos::from(1_500_000_000u64)), "1")]
+    #[case::typical(Some(UnixNanos::from(1_735_689_600_000_000_000u64)), "1735689600")]
+    fn test_limit_order_expiration(#[case] expire_time: Option<UnixNanos>, #[case] expected: &str) {
+        assert_eq!(limit_order_expiration(expire_time), expected);
     }
 }

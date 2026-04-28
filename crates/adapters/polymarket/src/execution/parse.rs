@@ -30,6 +30,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::{
+        consts::USDC_DECIMALS,
         enums::{
             PolymarketEventType, PolymarketLiquiditySide, PolymarketOrderSide,
             PolymarketOrderStatus,
@@ -160,7 +161,23 @@ pub fn parse_order_status_report(
         None, // report_id
     );
     report.price = Some(price);
+    // CLOB V2 emits `expiration` as Unix seconds; "0" means no expiration.
+    if let Some(nanos) = order.expiration.as_deref().and_then(parse_expiration_nanos) {
+        report.expire_time = Some(UnixNanos::from(nanos));
+    }
     report
+}
+
+/// Parses a CLOB V2 `expiration` string into a Unix-nanos value. Returns
+/// `None` for `"0"`, missing values, unparsable input, or values that
+/// overflow `u64` when scaled to nanoseconds (e.g. accidentally-passed
+/// millisecond timestamps that exceed Unix-seconds bounds).
+fn parse_expiration_nanos(value: &str) -> Option<u64> {
+    let secs: u64 = value.parse().ok()?;
+    if secs == 0 {
+        return None;
+    }
+    secs.checked_mul(NANOSECONDS_IN_SECOND)
 }
 
 /// Parses a [`PolymarketTradeReport`] into a [`FillReport`].
@@ -292,16 +309,97 @@ pub fn instrument_taker_fee(instrument: &InstrumentAny) -> Decimal {
     }
 }
 
-/// Computes a USDC commission using Polymarket's fee formula.
+/// Returns the fee-schedule exponent for a Polymarket instrument. Polymarket
+/// stores `feeSchedule.exponent` in the instrument's `info` map at parse
+/// time. Defaults to `1.0` when missing so the fee curve degenerates to the
+/// simple `fee = C * rate * p * (1 - p)` form used by [`compute_commission`].
+#[must_use]
+pub fn instrument_fee_exponent(instrument: &InstrumentAny) -> f64 {
+    match instrument {
+        InstrumentAny::BinaryOption(bo) => bo
+            .info
+            .as_ref()
+            .and_then(|info| info.get("fee_schedule"))
+            .and_then(|fs| fs.get("exponent"))
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(1.0),
+        _ => 1.0,
+    }
+}
+
+/// Adjusts a market-BUY pUSD amount to fit within the user's pUSD balance once
+/// platform and builder taker fees are deducted. Mirrors `adjust_market_buy_amount`
+/// in `polymarket-rs-clob-client-v2`'s `clob/utilities.rs`.
+///
+/// Returns `amount` unchanged when the balance already covers `amount + fees`.
+/// Otherwise solves for the principal that, with fees, exactly consumes the
+/// balance, then truncates to `USDC_DECIMALS` (the on-chain pUSD scale).
+///
+/// The fee-curve step `(p * (1 - p))^exponent` is the only computation that
+/// crosses into `f64`, matching the reference SDK so we agree with the
+/// venue's authoritative match-time fee calculation regardless of whether
+/// Polymarket ships a fractional exponent in the future.
+///
+/// `price` must be strictly inside `(0, 1)`. The SDK relies on its
+/// order-builder pipeline to enforce this; this helper is public so we
+/// repeat the precondition here.
+///
+/// # Errors
+///
+/// Returns an error if `price` is outside the open `(0, 1)` interval, or if
+/// the balance is too small to cover even one pUSD-unit of fees and the
+/// adjusted amount truncates to zero.
+pub fn adjust_market_buy_amount(
+    amount: Decimal,
+    user_pusd_balance: Decimal,
+    price: Decimal,
+    fee_rate: Decimal,
+    fee_exponent: f64,
+    builder_taker_fee_rate: Decimal,
+) -> anyhow::Result<Decimal> {
+    if price <= Decimal::ZERO || price >= Decimal::ONE {
+        anyhow::bail!(
+            "invalid market-buy price {price}: must satisfy 0 < price < 1 for fee adjustment",
+        );
+    }
+
+    let base = price * (Decimal::ONE - price);
+    let base_f64: f64 = base.try_into().unwrap_or(0.0);
+    let curve = Decimal::try_from(base_f64.powf(fee_exponent)).unwrap_or(Decimal::ZERO);
+    let platform_fee_rate = fee_rate * curve;
+
+    let platform_fee = amount / price * platform_fee_rate;
+    let total_cost = amount + platform_fee + amount * builder_taker_fee_rate;
+
+    let raw = if user_pusd_balance <= total_cost {
+        let divisor = Decimal::ONE + platform_fee_rate / price + builder_taker_fee_rate;
+        user_pusd_balance / divisor
+    } else {
+        amount
+    };
+
+    let adjusted = raw.trunc_with_scale(USDC_DECIMALS);
+    if adjusted.is_zero() {
+        anyhow::bail!(
+            "user_pusd_balance {user_pusd_balance} too small to cover fees at price {price}; \
+             fee-adjusted amount truncated to zero"
+        );
+    }
+    Ok(adjusted)
+}
+
+/// Computes a pUSD commission using Polymarket's fee formula.
 ///
 /// `fee = C * feeRate * p * (1 - p)` where C is shares, feeRate is the effective
 /// taker rate from the market's `feeSchedule`, and p is the share price. Fees peak
 /// at p = 0.50 and decrease symmetrically toward the extremes. Only taker fills pay;
-/// maker fills always return zero. Rounded to 5 decimal places (0.00001 USDC minimum).
+/// maker fills always return zero. Rounded to 5 decimal places (0.00001 pUSD minimum).
 ///
 /// The `fee_rate` here is the effective rate from `feeSchedule.rate` (e.g. 0.03 for
-/// 3%), not the `fee_rate_bps` field on a trade or order. The latter is the maximum
-/// fee cap used for order signing and is never the value actually charged.
+/// 3%), not the `fee_rate_bps` field on a V2 trade response. The response field is
+/// the post-trade rate that actually applied; under V2 the fee is no longer carried
+/// in the signed order, so we compute commissions from the instrument's fee schedule
+/// rather than reading any cap off the order body.
 ///
 /// # References
 /// <https://docs.polymarket.com/trading/fees>
@@ -320,20 +418,20 @@ pub fn compute_commission(
     rounded.to_string().parse().unwrap_or(0.0)
 }
 
-/// USDC scale factor: the Polymarket API returns balances in micro-USDC (10^6 units).
+/// pUSD scale factor: the Polymarket API returns balances in micro-pUSD (10^6 units).
 const USDC_SCALE: Decimal = Decimal::from_parts(1_000_000, 0, 0, false, 0);
 
-/// Converts a raw micro-USDC balance from the Polymarket API into an [`AccountBalance`].
+/// Converts a raw micro-pUSD balance from the Polymarket API into an [`AccountBalance`].
 ///
-/// The API returns balances as integer micro-USDC (e.g. `20000000` = 20 USDC).
+/// The API returns balances as integer micro-pUSD (e.g. `20000000` = 20 pUSD).
 /// This divides by 10^6 and constructs Money via `Money::from_decimal`, matching
 /// the pattern used by dYdX, Deribit, OKX, and other adapters.
 pub fn parse_balance_allowance(
     balance_raw: Decimal,
     currency: Currency,
 ) -> anyhow::Result<AccountBalance> {
-    let balance_usdc = balance_raw / USDC_SCALE;
-    AccountBalance::from_total_and_locked(balance_usdc, Decimal::ZERO, currency)
+    let balance_pusd = balance_raw / USDC_SCALE;
+    AccountBalance::from_total_and_locked(balance_pusd, Decimal::ZERO, currency)
         .map_err(|e| anyhow::anyhow!("Failed to convert balance: {e}"))
 }
 
@@ -354,7 +452,7 @@ pub struct MarketPriceResult {
 ///
 /// This ensures correct results regardless of the CLOB API's response ordering.
 ///
-/// For BUY: walks asks best-first, accumulates `size * price` (USDC) until >= amount.
+/// For BUY: walks asks best-first, accumulates `size * price` (pUSD) until >= amount.
 ///          Also accumulates the exact shares at each level for precise base qty.
 /// For SELL: walks bids best-first, accumulates `size` (shares) until >= amount.
 ///
@@ -445,21 +543,23 @@ pub fn parse_timestamp(ts_str: &str) -> Option<UnixNanos> {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::enums::CurrencyType;
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use ustr::Ustr;
 
     use super::*;
-    use crate::common::enums::PolymarketOrderSide;
+    use crate::common::enums::{
+        PolymarketOrderSide, PolymarketOrderStatus, PolymarketOrderType, PolymarketOutcome,
+    };
 
     #[rstest]
-    #[case(dec!(20_000_000), 20.0)] // 20 USDC
-    #[case(dec!(1_000_000), 1.0)] // 1 USDC
-    #[case(dec!(500_000), 0.5)] // 0.5 USDC
+    #[case(dec!(20_000_000), 20.0)] // 20 pUSD
+    #[case(dec!(1_000_000), 1.0)] // 1 pUSD
+    #[case(dec!(500_000), 0.5)] // 0.5 pUSD
     #[case(dec!(0), 0.0)] // zero
     #[case(dec!(123_456_789), 123.456789)] // fractional
     fn test_parse_balance_allowance(#[case] raw: Decimal, #[case] expected: f64) {
-        let currency = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+        let currency = Currency::pUSD();
         let balance = parse_balance_allowance(raw, currency).unwrap();
         let total_f64: f64 = balance.total.as_decimal().to_string().parse().unwrap();
         assert!(
@@ -552,6 +652,359 @@ mod tests {
         assert_eq!(commission, 0.0);
     }
 
+    /// Reference computations for `adjust_market_buy_amount` follow the SDK
+    /// formula:
+    ///   platform_fee_rate = fee_rate * (p * (1 - p))^exp
+    ///   platform_fee     = (amount / p) * platform_fee_rate
+    ///   total_cost       = amount + platform_fee + amount * builder_taker_fee_rate
+    ///   if balance <= total_cost:
+    ///     adjusted = balance / (1 + platform_fee_rate / p + builder_taker_fee_rate)
+    ///   else:
+    ///     adjusted = amount
+    ///   adjusted = trunc_with_scale(adjusted, USDC_DECIMALS)
+    #[rstest]
+    fn test_adjust_market_buy_amount_balance_covers_returns_unchanged() {
+        // amount=10, balance=20, price=0.5, fee_rate=0.04, exp=1, builder=0
+        // platform_fee = 10/0.5 * 0.04 * 0.25 = 0.2; total_cost = 10.2
+        // balance(20) > 10.2 -> unchanged
+        let adjusted =
+            adjust_market_buy_amount(dec!(10), dec!(20), dec!(0.5), dec!(0.04), 1.0, dec!(0))
+                .unwrap();
+        assert_eq!(adjusted, dec!(10.000000));
+    }
+
+    #[rstest]
+    fn test_adjust_market_buy_amount_balance_equals_total_cost_at_boundary() {
+        // SDK uses `<=` on the balance vs total_cost test, so an exact
+        // balance == total_cost should still go through the divisor branch.
+        // amount=10, total_cost=10.2 with the params below.
+        let adjusted =
+            adjust_market_buy_amount(dec!(10), dec!(10.2), dec!(0.5), dec!(0.04), 1.0, dec!(0))
+                .unwrap();
+        // raw = 10.2 / 1.02 = 10.0; truncated to 6dp = 10.000000.
+        assert_eq!(adjusted, dec!(10.000000));
+    }
+
+    #[rstest]
+    fn test_adjust_market_buy_amount_balance_below_total_cost_shrinks() {
+        // amount=10, balance=5.1, price=0.5, fee_rate=0.04, exp=1, builder=0
+        // total_cost = 10.2; balance < total_cost
+        // divisor = 1 + 0.04*0.25/0.5 = 1.02; raw = 5.1/1.02 = 5.0
+        let adjusted =
+            adjust_market_buy_amount(dec!(10), dec!(5.1), dec!(0.5), dec!(0.04), 1.0, dec!(0))
+                .unwrap();
+        assert_eq!(adjusted, dec!(5.000000));
+    }
+
+    #[rstest]
+    fn test_adjust_market_buy_amount_with_builder_fee() {
+        // amount=10, balance=10, price=0.5, fee_rate=0.04, exp=1, builder=0.001
+        // platform_fee_rate = 0.01; platform_fee = 0.2
+        // total_cost = 10 + 0.2 + 10*0.001 = 10.21; balance < total_cost
+        // divisor = 1 + 0.01/0.5 + 0.001 = 1.021
+        // raw = 10/1.021 = 9.79431928..., trunc(6) = 9.794319
+        let adjusted =
+            adjust_market_buy_amount(dec!(10), dec!(10), dec!(0.5), dec!(0.04), 1.0, dec!(0.001))
+                .unwrap();
+        assert_eq!(adjusted, dec!(9.794319));
+    }
+
+    #[rstest]
+    fn test_adjust_market_buy_amount_crypto_fee_rate() {
+        // Polymarket "Crypto" tier uses fee_rate = 0.072.
+        // amount=100, balance=100, price=0.5, fee_rate=0.072, exp=1, builder=0
+        // platform_fee_rate = 0.072 * 0.25 = 0.018
+        // platform_fee = 100/0.5 * 0.018 = 3.6; total_cost = 103.6
+        // divisor = 1 + 0.018/0.5 = 1.036; raw = 100/1.036
+        let adjusted =
+            adjust_market_buy_amount(dec!(100), dec!(100), dec!(0.5), dec!(0.072), 1.0, dec!(0))
+                .unwrap();
+        // 100 / 1.036 == 96.5250965...; truncate to 6dp.
+        assert_eq!(adjusted, dec!(96.525096));
+    }
+
+    #[rstest]
+    fn test_adjust_market_buy_amount_extreme_low_price() {
+        // Boundary of the price domain. Fees become tiny relative to spend.
+        // amount=10, balance=10, price=0.001, fee_rate=0.04, exp=1
+        // base = 0.001 * 0.999 = 0.000999
+        // platform_fee_rate = 0.04 * 0.000999 = 0.00003996
+        // divisor = 1 + 0.00003996/0.001 = 1.03996
+        // raw = 10 / 1.03996 = 9.61575...
+        let adjusted =
+            adjust_market_buy_amount(dec!(10), dec!(10), dec!(0.001), dec!(0.04), 1.0, dec!(0))
+                .unwrap();
+        // The exact divisor in 28-dp Decimal differs slightly from the
+        // human-rounded 9.615755 above, so allow a 1e-5 tolerance.
+        let expected = dec!(9.615755);
+        assert!(
+            (adjusted - expected).abs() < dec!(0.00001),
+            "expected ~{expected}, was {adjusted}",
+        );
+    }
+
+    #[rstest]
+    fn test_adjust_market_buy_amount_integer_exponent_two() {
+        // Hypothetical exp=2 -- the curve gets steeper.
+        // amount=10, balance=10, price=0.5, fee_rate=0.04, exp=2, builder=0
+        // base^2 = 0.25^2 = 0.0625
+        // platform_fee_rate = 0.04 * 0.0625 = 0.0025
+        // divisor = 1 + 0.0025/0.5 = 1.005
+        // raw = 10 / 1.005 = 9.95024876...
+        let adjusted =
+            adjust_market_buy_amount(dec!(10), dec!(10), dec!(0.5), dec!(0.04), 2.0, dec!(0))
+                .unwrap();
+        assert!(
+            (adjusted - dec!(9.950248)).abs() < dec!(0.00001),
+            "expected ~9.950248, was {adjusted}",
+        );
+    }
+
+    #[rstest]
+    fn test_adjust_market_buy_amount_fractional_exponent() {
+        // Confirms the f64 boundary on the curve copes with fractional
+        // exponents the way the SDK does. exp=0.5 -> sqrt(p*(1-p)).
+        // For price=0.5: sqrt(0.25) = 0.5
+        // platform_fee_rate = 0.04 * 0.5 = 0.02
+        // divisor = 1 + 0.02/0.5 = 1.04
+        // raw = 10 / 1.04 = 9.61538...
+        let adjusted =
+            adjust_market_buy_amount(dec!(10), dec!(10), dec!(0.5), dec!(0.04), 0.5, dec!(0))
+                .unwrap();
+        assert!(
+            (adjusted - dec!(9.615384)).abs() < dec!(0.00001),
+            "expected ~9.615384, was {adjusted}",
+        );
+    }
+
+    #[rstest]
+    fn test_adjust_market_buy_amount_zero_fee_rate_returns_unchanged() {
+        // No platform fee + no builder fee + balance >= amount -> unchanged.
+        let adjusted =
+            adjust_market_buy_amount(dec!(10), dec!(20), dec!(0.5), dec!(0), 1.0, dec!(0)).unwrap();
+        assert_eq!(adjusted, dec!(10.000000));
+    }
+
+    #[rstest]
+    fn test_adjust_market_buy_amount_zero_fee_rate_balance_below_principal() {
+        // Even with no fees, if balance < amount we shrink to the balance.
+        let adjusted =
+            adjust_market_buy_amount(dec!(10), dec!(7.5), dec!(0.5), dec!(0), 1.0, dec!(0))
+                .unwrap();
+        assert_eq!(adjusted, dec!(7.500000));
+    }
+
+    #[rstest]
+    fn test_adjust_market_buy_amount_balance_too_small_errors() {
+        // Balance below the 6dp truncation threshold for the fee-adjusted
+        // amount surfaces as a domain error instead of silently submitting a
+        // zero-value order.
+        let err = adjust_market_buy_amount(
+            dec!(10),
+            dec!(0.0000001),
+            dec!(0.5),
+            dec!(0.04),
+            1.0,
+            dec!(0),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("too small"));
+    }
+
+    #[rstest]
+    #[case::zero_price(dec!(0))]
+    #[case::one_price(dec!(1))]
+    #[case::negative_price(dec!(-0.1))]
+    #[case::above_one_price(dec!(1.5))]
+    fn test_adjust_market_buy_amount_rejects_invalid_price(#[case] price: Decimal) {
+        let err = adjust_market_buy_amount(dec!(10), dec!(20), price, dec!(0.04), 1.0, dec!(0))
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("invalid market-buy price"),
+            "expected price-domain error, was {err}",
+        );
+    }
+
+    #[rstest]
+    fn test_adjust_market_buy_amount_truncates_to_six_decimals() {
+        // amount=10, balance=9.123456789, price=0.5, fee_rate=0.04
+        // raw = 9.123456789 / 1.02 = 8.944565479...; trunc(6) = 8.944565
+        let adjusted = adjust_market_buy_amount(
+            dec!(10),
+            dec!(9.123456789),
+            dec!(0.5),
+            dec!(0.04),
+            1.0,
+            dec!(0),
+        )
+        .unwrap();
+        // Verify the result has at most 6 decimal places.
+        assert!(adjusted.scale() <= 6);
+        // And the value is in the expected neighbourhood.
+        let expected = dec!(8.944565);
+        assert!(
+            (adjusted - expected).abs() < dec!(0.000001),
+            "expected ~{expected}, was {adjusted}",
+        );
+    }
+
+    // SDK-ported parity tests for `adjust_market_buy_amount`. These mirror the
+    // tests in `polymarket-rs-clob-client-v2`'s `clob/utilities.rs` so that any
+    // drift from the reference SDK is caught locally.
+
+    /// `platform_fee = (amount / price) * rate * (price * (1 - price))^exponent`
+    /// Pure-Decimal port of the SDK's test-only fee helper, matching their
+    /// integer-exponent path so the conservation tests below stay exact.
+    fn calc_platform_fee_sdk(
+        amount: Decimal,
+        price: Decimal,
+        rate: Decimal,
+        exponent: u32,
+    ) -> Decimal {
+        let base = price * (Decimal::ONE - price);
+        let base_f64 = f64::try_from(base).unwrap_or(0.0);
+        let rate_factor = rate
+            * Decimal::try_from(base_f64.powi(i32::try_from(exponent).unwrap_or(0)))
+                .unwrap_or(Decimal::ZERO);
+        (amount / price) * rate_factor
+    }
+
+    /// `builder_fee = amount * rate` (flat percentage on notional).
+    fn calc_builder_fee_sdk(amount: Decimal, rate: Decimal) -> Decimal {
+        amount * rate
+    }
+
+    fn close_to(actual: Decimal, expected: Decimal, tol: Decimal) {
+        let diff = (actual - expected).abs();
+        assert!(
+            diff <= tol,
+            "|{actual} - {expected}| = {diff} exceeds tolerance {tol}"
+        );
+    }
+
+    #[rstest]
+    fn test_sdk_adjust_market_buy_no_adjustment_when_balance_sufficient() {
+        // Verbatim from SDK utilities.rs::adjust_market_buy_no_adjustment_when_balance_sufficient.
+        let result =
+            adjust_market_buy_amount(dec!(100), dec!(1000), dec!(0.5), dec!(0.02), 1.0, dec!(0))
+                .unwrap();
+        assert_eq!(result, dec!(100));
+    }
+
+    #[rstest]
+    fn test_sdk_adjust_market_buy_adjusts_when_balance_insufficient() {
+        // Verbatim from SDK::adjust_market_buy_adjusts_when_balance_insufficient.
+        let result =
+            adjust_market_buy_amount(dec!(100), dec!(100), dec!(0.5), dec!(0.02), 1.0, dec!(0))
+                .unwrap();
+        assert!(result < dec!(100));
+        assert!(result > dec!(0));
+    }
+
+    #[rstest]
+    fn test_sdk_adjust_market_buy_with_builder_fee() {
+        // Verbatim from SDK::adjust_market_buy_with_builder_fee.
+        let result =
+            adjust_market_buy_amount(dec!(100), dec!(100), dec!(0.5), dec!(0), 1.0, dec!(0.005))
+                .unwrap();
+        // effective * 1.005 = 100, truncated to 6 USDC decimals.
+        let expected = (dec!(100) / dec!(1.005)).trunc_with_scale(USDC_DECIMALS);
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_sdk_adjust_market_buy_errors_when_balance_truncates_to_zero() {
+        // Verbatim from SDK::adjust_market_buy_errors_when_balance_truncates_to_zero.
+        let err = adjust_market_buy_amount(
+            dec!(100),
+            dec!(0.0000001),
+            dec!(0.5),
+            dec!(0.02),
+            1.0,
+            dec!(0.005),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("truncated to zero"));
+    }
+
+    #[rstest]
+    fn test_sdk_adjust_buy_balance_strictly_greater_returns_amount_unchanged() {
+        // Ported from SDK::adjust_buy_balance_strictly_greater_returns_amount_unchanged.
+        // Uses calc_platform_fee_sdk to build a balance comfortably above total cost.
+        let amount = dec!(50);
+        let price = dec!(0.5);
+        let fee = calc_platform_fee_sdk(amount, price, dec!(0.25), 2);
+        let balance = amount + fee + dec!(1);
+        let result =
+            adjust_market_buy_amount(amount, balance, price, dec!(0.25), 2.0, dec!(0)).unwrap();
+        assert_eq!(result, amount);
+    }
+
+    #[rstest]
+    fn test_sdk_adjust_buy_balance_equal_to_total_cost_matches_divide_path() {
+        // Ported from SDK::adjust_buy_balance_equal_to_total_cost_matches_divide_path.
+        // At `balance == total_cost` the `<=` check fires and the divisor branch
+        // reconstitutes the original amount.
+        let amount = dec!(50);
+        let price = dec!(0.5);
+        let fee = calc_platform_fee_sdk(amount, price, dec!(0.25), 2);
+        let total_cost = amount + fee;
+        let result =
+            adjust_market_buy_amount(amount, total_cost, price, dec!(0.25), 2.0, dec!(0)).unwrap();
+        close_to(result, amount, dec!(0.000001));
+    }
+
+    #[rstest]
+    fn test_sdk_adjust_buy_conserves_notional_platform_only() {
+        // Ported from SDK::adjust_buy_conserves_notional_platform_only.
+        // balance = amount: adjusted + fee must reconstitute `amount`.
+        let amount = dec!(50);
+        let price = dec!(0.5);
+        let adjusted =
+            adjust_market_buy_amount(amount, amount, price, dec!(0.25), 2.0, dec!(0)).unwrap();
+        let fee = calc_platform_fee_sdk(adjusted, price, dec!(0.25), 2);
+        close_to(adjusted + fee, amount, dec!(0.000001));
+        assert!(adjusted < amount);
+    }
+
+    #[rstest]
+    fn test_sdk_adjust_buy_conserves_notional_builder_only() {
+        // Ported from SDK::adjust_buy_conserves_notional_builder_only.
+        let amount = dec!(50);
+        let price = dec!(0.5);
+        let builder_rate = dec!(0.01);
+        let adjusted =
+            adjust_market_buy_amount(amount, amount, price, dec!(0), 0.0, builder_rate).unwrap();
+        let fee = calc_builder_fee_sdk(adjusted, builder_rate);
+        close_to(adjusted + fee, amount, dec!(0.000001));
+    }
+
+    #[rstest]
+    fn test_sdk_adjust_buy_conserves_notional_platform_and_builder() {
+        // Ported from SDK::adjust_buy_conserves_notional_platform_and_builder.
+        let amount = dec!(50);
+        let price = dec!(0.5);
+        let builder_rate = dec!(0.01);
+        let adjusted =
+            adjust_market_buy_amount(amount, amount, price, dec!(0.25), 2.0, builder_rate).unwrap();
+        let platform = calc_platform_fee_sdk(adjusted, price, dec!(0.25), 2);
+        let builder = calc_builder_fee_sdk(adjusted, builder_rate);
+        close_to(adjusted + platform + builder, amount, dec!(0.000001));
+    }
+
+    #[rstest]
+    fn test_sdk_adjust_buy_conserves_notional_at_price_0_3() {
+        // Ported from SDK::adjust_buy_conserves_notional_at_price_0_3.
+        let amount = dec!(30);
+        let price = dec!(0.3);
+        let builder_rate = dec!(0.02);
+        let adjusted =
+            adjust_market_buy_amount(amount, amount, price, dec!(0.25), 2.0, builder_rate).unwrap();
+        let platform = calc_platform_fee_sdk(adjusted, price, dec!(0.25), 2);
+        let builder = calc_builder_fee_sdk(adjusted, builder_rate);
+        close_to(adjusted + platform + builder, amount, dec!(0.000001));
+    }
+
     #[rstest]
     fn test_parse_timestamp_ms() {
         let ts = parse_timestamp("1703875200000").unwrap();
@@ -622,6 +1075,52 @@ mod tests {
             UnixNanos::from(1_703_875_200_000_000_000u64)
         );
         assert_eq!(report.ts_init, UnixNanos::from(1_000_000_000u64));
+        // Fixture has expiration=null which must surface as no expire_time.
+        assert_eq!(report.expire_time, None);
+    }
+
+    #[rstest]
+    #[case::null(None, None)]
+    #[case::zero_string(Some("0"), None)]
+    #[case::empty_string(Some(""), None)]
+    #[case::garbage(Some("not-a-number"), None)]
+    #[case::positive_seconds(
+        Some("1735689600"),
+        Some(UnixNanos::from(1_735_689_600_000_000_000u64))
+    )]
+    fn test_parse_order_status_report_expiration(
+        #[case] raw: Option<&str>,
+        #[case] expected: Option<UnixNanos>,
+    ) {
+        let order = PolymarketOpenOrder {
+            associate_trades: None,
+            id: "0xid".to_string(),
+            status: PolymarketOrderStatus::Live,
+            market: Ustr::from("0xm"),
+            original_size: dec!(100),
+            outcome: PolymarketOutcome::yes(),
+            maker_address: "0xmaker".to_string(),
+            owner: "owner".to_string(),
+            price: dec!(0.5),
+            side: PolymarketOrderSide::Buy,
+            size_matched: dec!(0),
+            asset_id: Ustr::from("token"),
+            expiration: raw.map(|s| s.to_string()),
+            order_type: PolymarketOrderType::GTD,
+            created_at: 1_703_875_200,
+        };
+
+        let report = parse_order_status_report(
+            &order,
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            AccountId::from("POLYMARKET-001"),
+            None,
+            4,
+            6,
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        assert_eq!(report.expire_time, expected);
     }
 
     #[rstest]
@@ -633,7 +1132,7 @@ mod tests {
 
         let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
         let account_id = AccountId::from("POLYMARKET-001");
-        let currency = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+        let currency = Currency::pUSD();
 
         let report = parse_fill_report(
             &trade,
@@ -663,9 +1162,9 @@ mod tests {
 
         let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
         let account_id = AccountId::from("POLYMARKET-001");
-        let currency = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+        let currency = Currency::pUSD();
 
-        // Sports rate: 25 shares * 0.03 * 0.5 * 0.5 = 0.1875 USDC
+        // Sports rate: 25 shares * 0.03 * 0.5 * 0.5 = 0.1875 pUSD
         let report = parse_fill_report(
             &trade,
             instrument_id,
@@ -784,7 +1283,7 @@ mod tests {
         }];
         let result = calculate_market_price(&levels, dec!(50), PolymarketOrderSide::Buy).unwrap();
         assert_eq!(result.crossing_price, dec!(0.55));
-        // 50 USDC / 0.55 per share = ~90.909 shares
+        // 50 pUSD / 0.55 per share = ~90.909 shares
         assert!(result.expected_base_qty > dec!(90));
     }
 
@@ -806,7 +1305,7 @@ mod tests {
             },
         ];
         // Sorted ascending: 0.50/10, 0.55/100, 0.60/200
-        // Walk: 0.50/10 → 5 USDC (10 shares), 0.55/100 → 15 USDC (27.27 shares)
+        // Walk: 0.50/10 → 5 pUSD (10 shares), 0.55/100 → 15 pUSD (27.27 shares)
         let result = calculate_market_price(&levels, dec!(20), PolymarketOrderSide::Buy).unwrap();
         assert_eq!(result.crossing_price, dec!(0.55));
         let expected = dec!(10) + dec!(15) / dec!(0.55);
@@ -831,7 +1330,7 @@ mod tests {
             },
         ];
         // Sorted ascending: 0.20/72, 0.50/50, 0.999/100
-        // 5 USDC at best ask 0.20: 72 * 0.20 = 14.4 USDC available, fills entirely
+        // 5 pUSD at best ask 0.20: 72 * 0.20 = 14.4 pUSD available, fills entirely
         let result = calculate_market_price(&levels, dec!(5), PolymarketOrderSide::Buy).unwrap();
         assert_eq!(result.crossing_price, dec!(0.20));
         assert_eq!(result.expected_base_qty, dec!(25)); // 5 / 0.20 = 25 shares
@@ -886,7 +1385,7 @@ mod tests {
             price: "0.55".to_string(),
             size: "10.0".to_string(),
         }];
-        // 10 * 0.55 = 5.5 USDC < 50 USDC needed, returns what's available
+        // 10 * 0.55 = 5.5 pUSD < 50 pUSD needed, returns what's available
         let result = calculate_market_price(&levels, dec!(50), PolymarketOrderSide::Buy).unwrap();
         assert_eq!(result.crossing_price, dec!(0.55));
         assert_eq!(result.expected_base_qty, dec!(10)); // only 10 shares available

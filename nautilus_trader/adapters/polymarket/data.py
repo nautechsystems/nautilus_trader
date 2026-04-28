@@ -16,7 +16,7 @@ import asyncio
 from typing import Any
 
 import msgspec
-from py_clob_client.client import ClobClient
+from py_clob_client_v2.client import ClobClient
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
@@ -78,7 +78,7 @@ class PolymarketDataClient(LiveMarketDataClient):
     ----------
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
-    http_client : py_clob_client.client.ClobClient
+    http_client : py_clob_client_v2.client.ClobClient
         The Polymarket HTTP client.
     msgbus : MessageBus
         The message bus for the client.

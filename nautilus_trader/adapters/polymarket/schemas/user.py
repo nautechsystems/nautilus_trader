@@ -37,7 +37,7 @@ from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
-from nautilus_trader.model.currencies import USDC_POS
+from nautilus_trader.model.currencies import pUSD
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -89,9 +89,9 @@ class PolymarketUserOrder(msgspec.Struct, tag="order", tag_field="event_type", f
         client_order_id: ClientOrderId | None,
         ts_init: int,
     ) -> OrderStatusReport:
-        expire_time = (
-            pd.Timestamp(int(self.expiration), unit="ms", tz="UTC") if self.expiration else None
-        )
+        # CLOB V2 emits expiration as Unix seconds, with "0" meaning no expiration.
+        expiration_secs = int(self.expiration) if self.expiration else 0
+        expire_time = pd.Timestamp(expiration_secs, unit="s", tz="UTC") if expiration_secs else None
         timestamp_ns = millis_to_nanos(int(self.timestamp))
         return OrderStatusReport(
             account_id=account_id,
@@ -263,7 +263,7 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
             order_side=self.order_side(filled_user_order_id),
             last_qty=last_qty,
             last_px=last_px,
-            commission=Money(commission, USDC_POS),
+            commission=Money(commission, pUSD),
             liquidity_side=liquidity_side,
             report_id=UUID4(),
             ts_event=secs_to_nanos(int(self.match_time)),
@@ -307,9 +307,9 @@ class PolymarketOpenOrder(msgspec.Struct, frozen=True):
         client_order_id: ClientOrderId | None,
         ts_init: int,
     ) -> OrderStatusReport:
-        expire_time = (
-            pd.Timestamp(int(self.expiration), unit="ms", tz="UTC") if self.expiration else None
-        )
+        # CLOB V2 emits expiration as Unix seconds, with "0" meaning no expiration.
+        expiration_secs = int(self.expiration) if self.expiration else 0
+        expire_time = pd.Timestamp(expiration_secs, unit="s", tz="UTC") if expiration_secs else None
         timestamp_ns = secs_to_nanos(int(self.created_at))
         return OrderStatusReport(
             account_id=account_id,

@@ -53,8 +53,8 @@ use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, cash::CashAccount},
     enums::{
-        AccountType, AssetClass, CurrencyType, OmsType, OrderSide, OrderStatus, OrderType,
-        TimeInForce, TriggerType,
+        AccountType, AssetClass, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce,
+        TriggerType,
     },
     events::{AccountState, OrderEventAny, OrderPendingCancel},
     identifiers::{
@@ -670,11 +670,11 @@ async fn test_generate_account_state_emits_event() {
 
     client.start().unwrap();
 
-    let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+    let pusd = Currency::pUSD();
     let balances = vec![AccountBalance::new(
-        Money::new(1000.0, usdc),
-        Money::new(0.0, usdc),
-        Money::new(1000.0, usdc),
+        Money::new(1000.0, pusd),
+        Money::new(0.0, pusd),
+        Money::new(1000.0, pusd),
     )];
     client
         .generate_account_state(balances, vec![], true, UnixNanos::default())
@@ -1010,6 +1010,125 @@ async fn test_submit_market_order_buy_quote_to_base_conversion() {
 
 #[rstest]
 #[tokio::test]
+async fn test_submit_market_buy_quote_to_base_uses_signed_taker_amount() {
+    // Regression: a multi-level book walk produces a larger total than the
+    // signed taker_amount (which divides at a single crossing price). The
+    // OrderUpdated must reflect what the venue can actually fill, i.e. the
+    // signed amount, otherwise the order is over-stated for callers and the
+    // fill tracker.
+    //
+    // 10 pUSD BUY into asks [(0.50, 10 shares), (0.99, 100 shares)]:
+    //   Book walk: 10 @ 0.50 (5 pUSD) + 5/0.99 = 5.05 @ 0.99 -> 15.05 shares
+    //   Signed:    10 / 0.99 = 10.10 shares
+    // size_precision=0 truncates: book walk = 15, signed = 10.
+    let state = TestServerState::default();
+    *state.book_response.lock().await = Some(json!({
+        "bids": [{"price": "0.48", "size": "100.00"}],
+        "asks": [
+            {"price": "0.50", "size": "10.00"},
+            {"price": "0.99", "size": "100.00"},
+        ]
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+
+    let order = make_market_order("O-MKT-MULTI", instrument_id, OrderSide::Buy, true);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let cmd = make_submit_cmd(&order, instrument_id);
+
+    client.submit_order(cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_order_event(event, "Submitted");
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let updated = assert_order_event(event, "Updated");
+
+    if let OrderEventAny::Updated(ref u) = updated {
+        // 10 pUSD / 0.99 crossing = 10.10 shares -> 10 at size_precision=0.
+        // Book walk would have produced 15 shares; we must emit 10 since
+        // that is what the signed order will fill against at the venue.
+        assert_eq!(u.quantity, Quantity::from(10));
+        assert!(!u.is_quote_quantity);
+    } else {
+        panic!("Expected Updated event");
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_market_buy_quote_to_base_at_size_precision_two() {
+    // Multi-precision regression for the signed-base-qty derivation.
+    // size_precision=0 truncates everything to integers, so an off-by-one
+    // rounding bug or a wrong precision argument to `from_decimal_dp` would
+    // not be observable. Re-running the multi-level walk at size_precision=2
+    // exercises decimal places that the integer-precision test cannot reach.
+    //
+    // 10 pUSD BUY into asks [(0.50, 10 shares), (0.55, 100 shares)]:
+    //   Book walk: 10 @ 0.50 (5 pUSD) + 5/0.55 = 9.0909 @ 0.55 -> 19.0909 shares
+    //   Signed:    10 / 0.55 = 18.181818 shares (truncated to 18.1818 by builder)
+    // At size_precision=2: book walk = 19.09, signed = 18.18.
+    let state = TestServerState::default();
+    *state.book_response.lock().await = Some(json!({
+        "bids": [{"price": "0.48", "size": "100.00"}],
+        "asks": [
+            {"price": "0.50", "size": "10.00"},
+            {"price": "0.55", "size": "100.00"},
+        ]
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN-PREC2.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 2);
+
+    let order = make_market_order("O-MKT-PREC2", instrument_id, OrderSide::Buy, true);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let cmd = make_submit_cmd(&order, instrument_id);
+
+    client.submit_order(cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_order_event(event, "Submitted");
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let updated = assert_order_event(event, "Updated");
+
+    if let OrderEventAny::Updated(ref u) = updated {
+        // Signed taker_amount = 10/0.55 truncated to (price_prec + lot_scale)=4
+        // decimals = 18.1818, then expressed at size_precision=2 -> 18.18.
+        assert_eq!(u.quantity, Quantity::from("18.18"));
+        assert!(!u.is_quote_quantity);
+    } else {
+        panic!("Expected Updated event");
+    }
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_submit_market_order_sell_no_updated_event() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
@@ -1320,31 +1439,36 @@ fn make_cancel_cmd(client_order_id: &str, instrument_id: InstrumentId) -> Cancel
 }
 
 fn add_instrument_to_cache(cache: &Rc<RefCell<Cache>>, instrument_id: InstrumentId) {
-    add_instrument_to_cache_with_symbol(
-        cache,
-        instrument_id,
-        "71321045679252212594626385532706912750332728571942532289631379312455583992563",
-    );
+    add_instrument_to_cache_with_size_precision(cache, instrument_id, 0);
 }
 
-fn add_instrument_to_cache_with_symbol(
+fn add_instrument_to_cache_with_size_precision(
     cache: &Rc<RefCell<Cache>>,
     instrument_id: InstrumentId,
-    raw_symbol: &str,
+    size_precision: u8,
 ) {
-    let raw_symbol = Symbol::from(raw_symbol);
+    let symbol = "71321045679252212594626385532706912750332728571942532289631379312455583992563";
+    let size_increment = if size_precision == 0 {
+        Quantity::from("1")
+    } else {
+        Quantity::from(format!(
+            "0.{}1",
+            "0".repeat((size_precision as usize).saturating_sub(1))
+        ))
+    };
+    let raw_symbol = Symbol::from(symbol);
 
     let instrument = BinaryOption::new(
         instrument_id,
         raw_symbol,
         AssetClass::Alternative,
-        Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto),
+        Currency::pUSD(),
         UnixNanos::default(), // activation_ns
         UnixNanos::default(), // expiration_ns
         4,                    // price_precision
-        0,                    // size_precision
+        size_precision,
         Price::from("0.0001"),
-        Quantity::from("1"),
+        size_increment,
         None, // outcome
         None, // description
         None, // max_quantity
@@ -2011,175 +2135,6 @@ async fn test_submit_order_list_does_not_retry_batch_post_on_http_error() {
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_order_list_prepare_failure_emits_submitted_then_rejected() {
-    let state = TestServerState::default();
-    *state.fee_rate_response_status.lock().await = StatusCode::INTERNAL_SERVER_ERROR;
-    *state.fee_rate_response.lock().await = Some(json!({"error": "fee rate failed"}));
-    let addr = start_mock_server(state.clone()).await;
-    let (mut client, mut rx, cache) = create_test_execution_client(addr);
-    client.start().unwrap();
-
-    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
-    add_instrument_to_cache(&cache, instrument_id);
-
-    let order1 = make_limit_order(
-        "O-LIST-PREP-1",
-        instrument_id,
-        OrderSide::Buy,
-        false,
-        false,
-        false,
-        TimeInForce::Gtc,
-    );
-    let order2 = make_limit_order(
-        "O-LIST-PREP-2",
-        instrument_id,
-        OrderSide::Sell,
-        false,
-        false,
-        false,
-        TimeInForce::Gtc,
-    );
-    cache
-        .borrow_mut()
-        .add_order(order1.clone(), None, None, false)
-        .unwrap();
-    cache
-        .borrow_mut()
-        .add_order(order2.clone(), None, None, false)
-        .unwrap();
-
-    let cmd = make_submit_order_list_cmd(instrument_id, &[order1, order2]);
-    client.submit_order_list(cmd).unwrap();
-
-    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
-    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
-    assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
-    assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
-
-    assert_eq!(*state.batch_order_post_count.lock().await, 0);
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_submit_order_list_fetches_fee_rate_once_per_token() {
-    let state = TestServerState::default();
-    *state.batch_order_response.lock().await = Some(json!([
-        {"success": true, "orderID": "0xone-token-1", "errorMsg": ""},
-        {"success": true, "orderID": "0xone-token-2", "errorMsg": ""},
-        {"success": true, "orderID": "0xone-token-3", "errorMsg": ""}
-    ]));
-    let addr = start_mock_server(state.clone()).await;
-    let (mut client, mut rx, cache) = create_test_execution_client(addr);
-    client.start().unwrap();
-
-    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
-    add_instrument_to_cache(&cache, instrument_id);
-
-    let orders: Vec<OrderAny> = (0..3)
-        .map(|i| {
-            let order = make_limit_order(
-                &format!("O-FEE-SAME-{i}"),
-                instrument_id,
-                if i % 2 == 0 {
-                    OrderSide::Buy
-                } else {
-                    OrderSide::Sell
-                },
-                false,
-                false,
-                false,
-                TimeInForce::Gtc,
-            );
-            cache
-                .borrow_mut()
-                .add_order(order.clone(), None, None, false)
-                .unwrap();
-            order
-        })
-        .collect();
-
-    let cmd = make_submit_order_list_cmd(instrument_id, &orders);
-    client.submit_order_list(cmd).unwrap();
-
-    for _ in 0..3 {
-        assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
-    }
-
-    for _ in 0..3 {
-        assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
-    }
-
-    assert_eq!(
-        *state.fee_rate_fetch_count.lock().await,
-        1,
-        "same-token batch must issue exactly one /fee-rate call"
-    );
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_submit_order_list_fetches_fee_rate_once_per_unique_token() {
-    let state = TestServerState::default();
-    *state.batch_order_response.lock().await = Some(json!([
-        {"success": true, "orderID": "0xmulti-a-1", "errorMsg": ""},
-        {"success": true, "orderID": "0xmulti-a-2", "errorMsg": ""},
-        {"success": true, "orderID": "0xmulti-b-1", "errorMsg": ""},
-        {"success": true, "orderID": "0xmulti-b-2", "errorMsg": ""}
-    ]));
-    let addr = start_mock_server(state.clone()).await;
-    let (mut client, mut rx, cache) = create_test_execution_client(addr);
-    client.start().unwrap();
-
-    let instrument_a = InstrumentId::from("TEST-TOKEN-A.POLYMARKET");
-    let instrument_b = InstrumentId::from("TEST-TOKEN-B.POLYMARKET");
-    add_instrument_to_cache_with_symbol(&cache, instrument_a, "11111111111111111111");
-    add_instrument_to_cache_with_symbol(&cache, instrument_b, "22222222222222222222");
-
-    let mut orders = Vec::new();
-
-    for (i, inst) in [instrument_a, instrument_a, instrument_b, instrument_b]
-        .iter()
-        .enumerate()
-    {
-        let order = make_limit_order(
-            &format!("O-FEE-MULTI-{i}"),
-            *inst,
-            OrderSide::Buy,
-            false,
-            false,
-            false,
-            TimeInForce::Gtc,
-        );
-        cache
-            .borrow_mut()
-            .add_order(order.clone(), None, None, false)
-            .unwrap();
-        orders.push(order);
-    }
-
-    // The aggregate OrderList is bound to a single instrument id but each entry
-    // carries its own; the execution client dispatches per-entry.
-    let cmd = make_submit_order_list_cmd(instrument_a, &orders);
-    client.submit_order_list(cmd).unwrap();
-
-    for _ in 0..4 {
-        assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
-    }
-
-    for _ in 0..4 {
-        assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
-    }
-
-    assert_eq!(
-        *state.fee_rate_fetch_count.lock().await,
-        2,
-        "two-token batch must issue exactly one /fee-rate call per unique token"
-    );
-}
-
-#[rstest]
-#[tokio::test]
 async fn test_submit_order_list_routes_market_order_through_single_path() {
     let state = TestServerState::default();
     *state.batch_order_response.lock().await = Some(json!([
@@ -2463,109 +2418,6 @@ async fn test_submit_order_list_filters_out_ineligible_entries(#[case] kind: &st
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_order_list_isolates_fee_rate_failure_per_token() {
-    let state = TestServerState::default();
-    let instrument_a = InstrumentId::from("TEST-TOKEN-A.POLYMARKET");
-    let instrument_b = InstrumentId::from("TEST-TOKEN-B.POLYMARKET");
-    let symbol_a = "11111111111111111111";
-    let symbol_b = "22222222222222222222";
-
-    state.fee_rate_overrides.lock().await.insert(
-        symbol_b.to_string(),
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            json!({"error": "fee rate failed"}),
-        ),
-    );
-    *state.batch_order_response.lock().await = Some(json!([
-        {"success": true, "orderID": "0xisolate-a-1", "errorMsg": ""},
-        {"success": true, "orderID": "0xisolate-a-2", "errorMsg": ""}
-    ]));
-
-    let addr = start_mock_server(state.clone()).await;
-    let (mut client, mut rx, cache) = create_test_execution_client(addr);
-    client.start().unwrap();
-
-    add_instrument_to_cache_with_symbol(&cache, instrument_a, symbol_a);
-    add_instrument_to_cache_with_symbol(&cache, instrument_b, symbol_b);
-
-    let mut orders = Vec::new();
-
-    for (i, inst) in [instrument_a, instrument_b, instrument_a, instrument_b]
-        .iter()
-        .enumerate()
-    {
-        let order = make_limit_order(
-            &format!("O-ISO-{i}"),
-            *inst,
-            OrderSide::Buy,
-            false,
-            false,
-            false,
-            TimeInForce::Gtc,
-        );
-        cache
-            .borrow_mut()
-            .add_order(order.clone(), None, None, false)
-            .unwrap();
-        orders.push(order);
-    }
-
-    let cmd = make_submit_order_list_cmd(instrument_a, &orders);
-    client.submit_order_list(cmd).unwrap();
-
-    let mut submitted_ids = HashSet::new();
-
-    for _ in 0..4 {
-        let event = recv_execution_event(&mut rx).await;
-        match event {
-            ExecutionEvent::Order(OrderEventAny::Submitted(e)) => {
-                submitted_ids.insert(e.client_order_id.to_string());
-            }
-            other => panic!("Expected Submitted, was {other:?}"),
-        }
-    }
-    assert_eq!(submitted_ids.len(), 4);
-
-    let mut accepted = HashSet::new();
-    let mut rejected = HashSet::new();
-
-    for _ in 0..4 {
-        let event = recv_execution_event(&mut rx).await;
-        match event {
-            ExecutionEvent::Order(OrderEventAny::Accepted(e)) => {
-                accepted.insert(e.client_order_id.to_string());
-            }
-            ExecutionEvent::Order(OrderEventAny::Rejected(e)) => {
-                rejected.insert(e.client_order_id.to_string());
-            }
-            other => panic!("Expected Accepted/Rejected, was {other:?}"),
-        }
-    }
-
-    assert_eq!(accepted.len(), 2, "token A orders must accept");
-    assert!(accepted.contains("O-ISO-0"));
-    assert!(accepted.contains("O-ISO-2"));
-    assert_eq!(rejected.len(), 2, "token B orders must reject");
-    assert!(rejected.contains("O-ISO-1"));
-    assert!(rejected.contains("O-ISO-3"));
-
-    assert_eq!(
-        *state.fee_rate_fetch_count.lock().await,
-        2,
-        "each unique token must fetch fee rate exactly once"
-    );
-    assert_eq!(*state.batch_order_post_count.lock().await, 1);
-    let body = state.last_body.lock().await.clone().unwrap();
-    assert_eq!(
-        body.as_array().unwrap().len(),
-        2,
-        "only token A orders reach the batch body"
-    );
-}
-
-#[rstest]
-#[tokio::test]
 async fn test_submit_order_list_routes_remainder_singleton_through_single_order_path() {
     const TOTAL: usize = 16;
 
@@ -2670,11 +2522,6 @@ async fn test_submit_order_list_chunks_beyond_batch_order_limit() {
         *state.batch_order_post_count.lock().await,
         2,
         "17 orders must split into two POST /orders calls (15 + 2)"
-    );
-    assert_eq!(
-        *state.fee_rate_fetch_count.lock().await,
-        1,
-        "fee rate is shared across chunks for the same token"
     );
     // last_body reflects the most recent chunk; confirm it's the remainder.
     let body = state.last_body.lock().await.clone().unwrap();

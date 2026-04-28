@@ -36,6 +36,7 @@ Released on TBD (UTC).
 - Added Polymarket batch `SubmitOrderList` via `POST /orders` for limit-order batches (Rust)
 - Added Polymarket WebSocket `idle_timeout_ms` for zombie detection (#3908), thanks for reporting @camarigor
 - Added Polymarket WebSocket `proxy_url` plumbing
+- Added Polymarket `pUSD` collateral currency (`Currency::pUSD()` in Rust, `pUSD` in Python) for the CLOB V2 cutover
 - Added `ExecutionReport::OrderWithFills` and `send_order_with_fills` emitter for bundled status + fill reconciliation
 - Added ADL / liquidation detection and logging across Binance, Bybit, OKX, BitMEX, Hyperliquid, Deribit, and dYdX
 - Added Binance Futures COIN-M `delivery_autoclose-` prefix recognition for expiring contract auto-close events
@@ -47,6 +48,7 @@ Released on TBD (UTC).
 - Added `Option<&AccountId>` to Rust `Portfolio::unrealized_pnls`, `realized_pnls`, `total_pnls`; pass `None` to keep prior behavior
 - Added `backend: TransportBackend` to `WebSocketConfig`; struct-literal callers must add the field (Rust)
 - Added `proxy_url: Option<String>` to `WebSocketConfig`; struct-literal callers must add the field (Rust)
+- Migrated Polymarket adapter to CLOB V2: new EIP-712 domain version `2`, new exchange contract addresses, `timestamp`/`metadata`/`builder` order fields replace `taker`/`nonce`/`feeRateBps`, and pUSD replaces USDC.e as collateral; the Python adapter now uses `py-clob-client-v2`
 - Consolidated adapter HTTP and WebSocket proxy plumbing onto a single `proxy_url` field, replacing the prior `http_proxy_url` / `ws_proxy_url` split across adapter Rust and Python configs
 - Removed `DockerizedIBGatewayConfig::from_env_or_defaults` (Rust); use the bon builder or `Default::default`, which still falls back to `TWS_USERNAME`/`TWS_PASSWORD`
 - Removed `OrderMatchingEngineConfig::new` and `with_price_protection_points` (Rust); use `OrderMatchingEngineConfig::builder()` instead

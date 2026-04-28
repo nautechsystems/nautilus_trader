@@ -26,20 +26,25 @@ use crate::common::{
     },
     models::PolymarketMakerOrder,
     parse::{
-        deserialize_decimal_from_str, deserialize_optional_string_to_u64, serialize_decimal_as_str,
+        deserialize_decimal_from_str, deserialize_optional_polymarket_game_id,
+        serialize_decimal_as_str,
     },
 };
 
-/// A signed limit order for submission to the CLOB exchange.
+/// A signed limit order for submission to the CLOB V2 exchange.
 ///
-/// References: <https://docs.polymarket.com/#create-and-place-an-order>
+/// References: <https://docs.polymarket.com/v2-migration>,
+/// <https://docs.polymarket.com/api-reference/trade/post-a-new-order>
+///
+/// `expiration` is part of the wire body but NOT part of the EIP-712 signed
+/// struct in V2 (the protocol enforces it server-side). `"0"` means no
+/// expiration. All other fields appear inside the signed struct.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PolymarketOrder {
     pub salt: u64,
     pub maker: String,
     pub signer: String,
-    pub taker: String,
     pub token_id: Ustr,
     #[serde(
         serialize_with = "serialize_decimal_as_str",
@@ -51,15 +56,18 @@ pub struct PolymarketOrder {
         deserialize_with = "deserialize_decimal_from_str"
     )]
     pub taker_amount: Decimal,
-    pub expiration: String,
-    pub nonce: String,
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub fee_rate_bps: Decimal,
     pub side: PolymarketOrderSide,
     pub signature_type: SignatureType,
+    /// Unix seconds timestamp when a GTD order auto-expires. `"0"` for non-GTD.
+    /// Not included in the EIP-712 signed hash; protocol enforces this value.
+    pub expiration: String,
+    /// Order creation time in milliseconds. Replaces `nonce` from V1 for
+    /// per-address uniqueness (not an expiration).
+    pub timestamp: String,
+    /// Generic bytes32 metadata field. Zero bytes when unused.
+    pub metadata: String,
+    /// Builder code (`bytes32`). Zero bytes when unset.
+    pub builder: String,
     pub signature: String,
 }
 
@@ -226,9 +234,10 @@ pub struct GammaMarket {
     pub neg_risk_market_id: Option<String>,
     /// Fee schedule for this market.
     pub fee_schedule: Option<FeeSchedule>,
-    /// Game ID for sport markets.
-    /// Comes as a string from the API: <https://github.com/Polymarket/rs-clob-client/blob/main/src/gamma/types/response.rs>
-    #[serde(default, deserialize_with = "deserialize_optional_string_to_u64")]
+    /// Game ID for sport markets. `null` and `-1` both mean "no game" and
+    /// surface as `None`. Reference shape:
+    /// <https://github.com/Polymarket/rs-clob-client/blob/main/src/gamma/types/response.rs>.
+    #[serde(default, deserialize_with = "deserialize_optional_polymarket_game_id")]
     pub game_id: Option<u64>,
     /// Events linked to this gamma market.
     pub events: Option<Vec<GammaEvent>>,
@@ -280,8 +289,10 @@ pub struct GammaEvent {
     pub neg_risk_market_id: Option<String>,
     /// Whether event is featured.
     pub featured: Option<bool>,
-    /// Game ID for sport markets.
-    /// Comes as an int from the API: <https://github.com/Polymarket/rs-clob-client/blob/main/src/gamma/types/response.rs>
+    /// Game ID for sport markets. `null` and `-1` both mean "no game" and
+    /// surface as `None`. Reference shape:
+    /// <https://github.com/Polymarket/rs-clob-client/blob/main/src/gamma/types/response.rs>.
+    #[serde(default, deserialize_with = "deserialize_optional_polymarket_game_id")]
     pub game_id: Option<u64>,
 }
 
@@ -469,12 +480,18 @@ mod tests {
 
         assert_eq!(order.salt, 123456789);
         assert_eq!(order.maker, "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266");
-        assert_eq!(order.taker, "0x0000000000000000000000000000000000000000");
         assert_eq!(order.maker_amount, dec!(100000000));
         assert_eq!(order.taker_amount, dec!(50000000));
-        assert_eq!(order.fee_rate_bps, dec!(0));
         assert_eq!(order.expiration, "0");
-        assert_eq!(order.nonce, "0");
+        assert_eq!(order.timestamp, "1713398400000");
+        assert_eq!(
+            order.metadata,
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            order.builder,
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
         assert_eq!(order.side, PolymarketOrderSide::Buy);
         assert_eq!(order.signature_type, SignatureType::Eoa);
     }
@@ -496,8 +513,69 @@ mod tests {
         assert!(json.contains("\"tokenId\""));
         assert!(json.contains("\"makerAmount\""));
         assert!(json.contains("\"takerAmount\""));
-        assert!(json.contains("\"feeRateBps\""));
         assert!(json.contains("\"signatureType\""));
+        assert!(json.contains("\"expiration\""));
+        assert!(json.contains("\"timestamp\""));
+        assert!(json.contains("\"metadata\""));
+        assert!(json.contains("\"builder\""));
+    }
+
+    #[rstest]
+    fn test_signed_order_omits_v1_fields() {
+        // V2 dropped `taker`, `nonce`, and `feeRateBps` from the order body.
+        // A regression that re-introduces any of them would silently land V1
+        // shape on a V2 endpoint, so we explicitly assert their absence.
+        let order: PolymarketOrder = load("http_signed_order.json");
+        let json = serde_json::to_string(&order).unwrap();
+
+        assert!(
+            !json.contains("\"taker\""),
+            "wire body must not include `taker`: {json}"
+        );
+        assert!(
+            !json.contains("\"nonce\""),
+            "wire body must not include `nonce`: {json}"
+        );
+        assert!(
+            !json.contains("\"feeRateBps\""),
+            "wire body must not include `feeRateBps`: {json}"
+        );
+    }
+
+    #[rstest]
+    fn test_signed_order_v2_docs_example_roundtrips() {
+        // POST /order body shape from <https://docs.polymarket.com/v2-migration>.
+        // Round-tripping it ensures we accept the exact shape the docs publish.
+        let docs_example = r#"{
+            "salt": 12345,
+            "maker": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "signer": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "tokenId": "102936",
+            "makerAmount": "1000000",
+            "takerAmount": "2000000",
+            "side": "BUY",
+            "signatureType": 1,
+            "expiration": "0",
+            "timestamp": "1713398400000",
+            "metadata": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "builder": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "signature": "0xdeadbeef"
+        }"#;
+
+        let order: PolymarketOrder = serde_json::from_str(docs_example).unwrap();
+        assert_eq!(order.salt, 12345);
+        assert_eq!(order.token_id.as_str(), "102936");
+        assert_eq!(order.maker_amount, dec!(1000000));
+        assert_eq!(order.taker_amount, dec!(2000000));
+        assert_eq!(order.side, PolymarketOrderSide::Buy);
+        assert_eq!(order.signature_type, SignatureType::PolyProxy);
+        assert_eq!(order.expiration, "0");
+        assert_eq!(order.timestamp, "1713398400000");
+
+        // Round-trip preserves field semantics.
+        let json = serde_json::to_string(&order).unwrap();
+        let order2: PolymarketOrder = serde_json::from_str(&json).unwrap();
+        assert_eq!(order, order2);
     }
 
     #[rstest]
@@ -665,8 +743,23 @@ mod tests {
 
     #[rstest]
     fn test_clob_book_response_ignores_extra_fields() {
-        // Verify serde silently ignores extra fields from the API
-        let json = r#"{"market": "0xabc", "asset_id": "123", "hash": "0x1", "timestamp": "123", "bids": [], "asks": []}"#;
+        // Verify serde silently ignores fields from both V1 and V2 `/book`
+        // responses. The live V2 endpoint adds `tick_size`, `min_order_size`,
+        // `neg_risk`, and `last_trade_price` on top of the V1 fields; pinning
+        // them here catches a future `#[serde(deny_unknown_fields)]` regression
+        // before it breaks production parsing.
+        let json = r#"{
+            "market": "0xabc",
+            "asset_id": "123",
+            "hash": "0x1",
+            "timestamp": "123",
+            "bids": [],
+            "asks": [],
+            "tick_size": "0.01",
+            "min_order_size": "5",
+            "neg_risk": false,
+            "last_trade_price": "0.55"
+        }"#;
         let response: ClobBookResponse = serde_json::from_str(json).unwrap();
         assert!(response.bids.is_empty());
         assert!(response.asks.is_empty());

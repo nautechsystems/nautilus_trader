@@ -15,7 +15,9 @@
 
 //! URL resolution for the Polymarket API endpoints.
 
-const CLOB_HTTP_URL: &str = "https://clob.polymarket.com";
+// V2-aware preview host. After the 2026-04-28 ~11:00 UTC cutover,
+// `https://clob.polymarket.com` also serves V2; flip in a follow-up.
+const CLOB_HTTP_URL: &str = "https://clob-v2.polymarket.com";
 const CLOB_WS_URL: &str = "wss://ws-subscriptions-clob.polymarket.com/ws";
 const CLOB_WS_MARKET_URL: &str = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
 const CLOB_WS_USER_URL: &str = "wss://ws-subscriptions-clob.polymarket.com/ws/user";

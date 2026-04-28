@@ -28,7 +28,7 @@ use ustr::Ustr;
 
 use super::models::{FeeSchedule, GammaMarket};
 use crate::common::{
-    consts::{MAX_PRICE, MIN_PRICE, POLYMARKET_VENUE, USDC},
+    consts::{MAX_PRICE, MIN_PRICE, POLYMARKET_VENUE, PUSD},
     enums::PolymarketOutcome,
 };
 
@@ -184,7 +184,7 @@ pub fn create_instrument_from_def(
     let venue = *POLYMARKET_VENUE;
     let instrument_id = InstrumentId::new(symbol, venue);
     let raw_symbol = Symbol::new(def.token_id);
-    let currency = get_currency(USDC);
+    let currency = get_currency(PUSD);
 
     let price_increment = Price::from(def.tick_size.to_string());
     let size_increment = Quantity::from("0.000001");
@@ -217,7 +217,7 @@ pub fn create_instrument_from_def(
         activation_ns,
         expiration_ns,
         def.price_precision,
-        6, // size_precision: USDC.e increments
+        6, // size_precision: 6-decimal collateral increments
         price_increment,
         size_increment,
         Some(def.outcome.inner()),
@@ -540,7 +540,7 @@ mod tests {
         );
         assert_eq!(binary.outcome, Some(Ustr::from("Up")));
         assert_eq!(binary.asset_class, AssetClass::Alternative);
-        assert_eq!(binary.currency.code.as_str(), "USDC");
+        assert_eq!(binary.currency.code.as_str(), "pUSD");
         assert_eq!(binary.price_precision, 2);
         assert_eq!(binary.size_precision, 6);
         assert_eq!(binary.price_increment(), Price::from("0.01"));

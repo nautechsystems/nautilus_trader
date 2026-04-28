@@ -114,13 +114,13 @@ config_node = TradingNodeConfig(
     # ),
     data_clients={
         POLYMARKET: PolymarketDataClientConfig(
-            # signature_type=2,  # Use if trading via Polymarket Proxy (enables UI verification, requires funder address)
+            signature_type=2,  # Browser wallet proxy (Polymarket UI); requires funder address
             instrument_config=instrument_provider_config,
         ),
     },
     exec_clients={
         POLYMARKET: PolymarketExecClientConfig(
-            # signature_type=2,  # Use if trading via Polymarket Proxy (enables UI verification, requires funder address)
+            signature_type=2,  # Browser wallet proxy (Polymarket UI); requires funder address
             instrument_config=instrument_provider_config,
             generate_order_history_from_trades=False,
         ),

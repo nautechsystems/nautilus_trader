@@ -18,7 +18,7 @@ import traceback
 from typing import Any
 
 import msgspec
-from py_clob_client.client import ClobClient
+from py_clob_client_v2.client import ClobClient
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.gamma_markets import fetch_fee_schedules

@@ -24,7 +24,11 @@ pub const POLYMARKET: &str = "POLYMARKET";
 
 pub static POLYMARKET_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(POLYMARKET)));
 
-pub const USDC: &str = "USDC";
+/// Polymarket builder code attached to orders submitted by Nautilus (pending).
+pub const POLYMARKET_NAUTILUS_BUILDER_CODE: &str =
+    "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+pub const PUSD: &str = "pUSD";
 
 pub const MAX_PRICE: &str = "0.999";
 pub const MIN_PRICE: &str = "0.001";

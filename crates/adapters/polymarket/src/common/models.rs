@@ -27,14 +27,16 @@ use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use crate::common::{
-    enums::PolymarketOutcome,
+    enums::{PolymarketOrderSide, PolymarketOutcome},
     parse::{deserialize_decimal_from_str, serialize_decimal_as_str},
 };
 
 /// A maker order included in trade messages.
 ///
 /// Used by both REST trade reports and WebSocket user trade updates
-/// to describe each maker-side fill in a match.
+/// to describe each maker-side fill in a match. The `side` field is
+/// optional because some trade-event payloads (notably user-channel WS
+/// fills) may omit it; CLOB V2 REST trade responses always include it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolymarketMakerOrder {
     pub asset_id: Ustr,
@@ -57,6 +59,8 @@ pub struct PolymarketMakerOrder {
         deserialize_with = "deserialize_decimal_from_str"
     )]
     pub price: Decimal,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<PolymarketOrderSide>,
 }
 
 /// Human-readable label for a Polymarket instrument.
@@ -190,9 +194,36 @@ mod tests {
         assert_eq!(m0.matched_amount, dec!(25.0000));
         assert_eq!(m0.fee_rate_bps, dec!(0));
         assert_eq!(m0.outcome, PolymarketOutcome::yes());
+        assert_eq!(m0.side, Some(PolymarketOrderSide::Sell));
 
         let m1 = &trade.maker_orders[1];
         assert_eq!(m1.matched_amount, dec!(5.0000));
         assert_eq!(m1.fee_rate_bps, dec!(10));
+        assert_eq!(m1.side, Some(PolymarketOrderSide::Sell));
+    }
+
+    #[rstest]
+    fn test_maker_order_without_side_is_accepted() {
+        // The legacy/WS payload shape that omits `side` must still parse,
+        // since the field is optional on `PolymarketMakerOrder`.
+        let order: PolymarketMakerOrder = serde_json::from_str(sample_maker_order_json()).unwrap();
+        assert!(order.side.is_none());
+    }
+
+    #[rstest]
+    fn test_maker_order_with_side_is_parsed() {
+        let json = r#"{
+            "asset_id": "12345",
+            "fee_rate_bps": "0",
+            "maker_address": "0xaddr",
+            "matched_amount": "10.0",
+            "order_id": "order-1",
+            "outcome": "Yes",
+            "owner": "owner-1",
+            "price": "0.4",
+            "side": "BUY"
+        }"#;
+        let order: PolymarketMakerOrder = serde_json::from_str(json).unwrap();
+        assert_eq!(order.side, Some(PolymarketOrderSide::Buy));
     }
 }

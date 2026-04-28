@@ -29,7 +29,7 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderStat
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderType
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
-from nautilus_trader.model.currencies import USDC_POS
+from nautilus_trader.model.currencies import pUSD
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -220,7 +220,7 @@ def parse_polymarket_instrument(
     # `min_quantity`, so leave it unset and let the venue reject out-of-bounds orders.
     # The raw `orderMinSize` remains accessible via `instrument.info`.
     # size_increment can be 0.01 or 0.001 (precision 2 or 3). Need to determine a reliable solution
-    # trades are reported with USDC.e increments though - so we use that here
+    # trades are reported with 6-decimal collateral increments though - so we use that here
     size_increment = Quantity.from_str("0.000001")
     end_date_iso = market_info["end_date_iso"]
 
@@ -240,7 +240,7 @@ def parse_polymarket_instrument(
         outcome=outcome,
         description=description,
         asset_class=AssetClass.ALTERNATIVE,
-        currency=USDC_POS,
+        currency=pUSD,
         price_increment=price_increment,
         price_precision=price_increment.precision,
         size_increment=size_increment,
@@ -270,7 +270,7 @@ def update_instrument(
         outcome=instrument.outcome,
         description=instrument.description,
         asset_class=AssetClass.ALTERNATIVE,
-        currency=USDC_POS,
+        currency=pUSD,
         price_increment=price_increment,
         price_precision=price_increment.precision,
         size_increment=instrument.size_increment,

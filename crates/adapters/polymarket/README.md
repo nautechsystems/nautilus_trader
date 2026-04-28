@@ -34,7 +34,7 @@ The adapter communicates with three Polymarket API surfaces:
 
 | API            | Base URL                                        | Auth                   | Purpose                                     |
 |----------------|-------------------------------------------------|------------------------|---------------------------------------------|
-| CLOB REST      | `https://clob.polymarket.com`                   | L2 HMAC                | Orders, trades, balances.                   |
+| CLOB REST      | `https://clob-v2.polymarket.com`                | L2 HMAC                | Orders, trades, balances.                   |
 | CLOB WebSocket | `wss://ws-subscriptions-clob.polymarket.com/ws` | L2 HMAC (user channel) | Streaming orderbook, trades, order updates. |
 | Gamma (Data)   | `https://data-api.polymarket.com`               | None                   | Market discovery, positions.                |
 

@@ -81,7 +81,7 @@ ib = [
   "protobuf==5.29.5; python_version < '3.14'", # Pinned to 5.29.5 (fixes GHSA-8qvm-5x2c-j2w7)
 ]
 docker = ["docker>=7.1.0,<8.0.0"]
-polymarket = ["py-clob-client>=0.34.6,<1.0.0"]
+polymarket = ["py-clob-client-v2>=1.0.0,<2.0.0"]
 visualization = [
   "plotly>=6.7.0,<7.0.0",
   "kaleido>=1.2.0,<2.0.0",

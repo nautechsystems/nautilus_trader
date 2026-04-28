@@ -121,7 +121,7 @@ class PolymarketDataLoader:
         PyCondition.valid_string(condition_id, "condition_id")
 
         response = await http_client.get(
-            url=f"https://clob.polymarket.com/markets/{condition_id}",
+            url=f"https://clob-v2.polymarket.com/markets/{condition_id}",
         )
 
         if response.status != 200:

@@ -16,17 +16,18 @@
 
 import os
 
-from py_clob_client.client import ClobClient
-from py_clob_client.constants import POLYGON
+from py_clob_client_v2.client import ClobClient
+from py_clob_client_v2.constants import POLYGON
 
 
 client = ClobClient(
-    "https://clob.polymarket.com",
+    # V2-aware preview host; flip to clob.polymarket.com after the 2026-04-28 ~11:00 UTC cutover
+    host="https://clob-v2.polymarket.com",
     chain_id=POLYGON,
     signature_type=0,
     key=os.environ["POLYMARKET_PK"],
     funder=os.environ["POLYMARKET_FUNDER"],
 )
 
-response = client.create_or_derive_api_creds()
+response = client.create_or_derive_api_key()
 print(response)

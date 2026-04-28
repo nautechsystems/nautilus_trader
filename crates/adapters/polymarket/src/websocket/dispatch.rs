@@ -158,7 +158,7 @@ fn dispatch_order_update(
             ctx.account_id,
             &order.id,
             price.as_f64(),
-            crate::execution::get_usdc_currency(),
+            crate::execution::get_pusd_currency(),
             ts_event,
             ts_init,
         ) {
@@ -263,7 +263,7 @@ fn dispatch_maker_fills(
             instrument.id(),
             instrument.price_precision(),
             instrument.size_precision(),
-            crate::execution::get_usdc_currency(),
+            crate::execution::get_pusd_currency(),
             liquidity_side,
             ts_event,
             ts_init,
@@ -453,7 +453,7 @@ fn build_ws_taker_fill_report(
     let size: Decimal = trade.size.parse().unwrap_or_default();
     let price_dec: Decimal = trade.price.parse().unwrap_or_default();
     let commission_value = compute_commission(fee_rate, size, price_dec, liquidity_side);
-    let usdc = crate::execution::get_usdc_currency();
+    let pusd = crate::execution::get_pusd_currency();
 
     FillReport {
         account_id,
@@ -463,7 +463,7 @@ fn build_ws_taker_fill_report(
         order_side,
         last_qty,
         last_px,
-        commission: Money::new(commission_value, usdc),
+        commission: Money::new(commission_value, pusd),
         liquidity_side,
         avg_px: None,
         report_id: UUID4::new(),
@@ -517,7 +517,7 @@ mod tests {
     use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
     use nautilus_core::time::AtomicTime;
     use nautilus_model::{
-        enums::{AccountType, CurrencyType, OrderStatus},
+        enums::{AccountType, OrderStatus},
         identifiers::TraderId,
         types::Currency,
     };
@@ -547,7 +547,7 @@ mod tests {
             TraderId::from("TESTER-001"),
             AccountId::from("POLY-001"),
             AccountType::Cash,
-            Some(Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto)),
+            Some(Currency::pUSD()),
         )
     }
 
@@ -1140,6 +1140,7 @@ mod tests {
                 outcome: PolymarketOutcome::yes(),
                 owner: "xxx".to_string(),
                 price: Decimal::from_f64_retain(0.18).unwrap_or(Decimal::ZERO),
+                side: None,
             }],
             market: Ustr::from("0x4134"),
             match_time: "1775074735".to_string(),

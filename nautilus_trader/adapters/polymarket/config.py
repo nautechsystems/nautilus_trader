@@ -41,7 +41,8 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
         - 1: Email/Magic Wallet Proxy
         - 2: Browser Wallet Proxy
     funder : str, optional
-        The wallet address (public key) on the **Polygon** network used for funding USDC.
+        The wallet address (public key) on the **Polygon** network used for funding
+        Polymarket collateral.
         If ``None`` then will source the `POLYMARKET_FUNDER` environment variable.
     api_key : str, optional
         The Polymarket API key.
@@ -122,7 +123,8 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
         - 1: Email/Magic Wallet Proxy
         - 2: Browser Wallet Proxy
     funder : str, optional
-        The wallet address (public key) on the **Polygon** network used for funding USDC.
+        The wallet address (public key) on the **Polygon** network used for funding
+        Polymarket collateral.
         If ``None`` then will source the `POLYMARKET_FUNDER` environment variable.
     api_key : str, optional
         The Polymarket API key.

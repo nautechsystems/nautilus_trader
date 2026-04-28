@@ -59,33 +59,38 @@ web3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
 
 # Convert addresses to checksum format
 pub_key = Web3.to_checksum_address(pub_key_raw)
-# Polymarket USDC token contract
-usdc_address = Web3.to_checksum_address("0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174")
+# Polymarket pUSD collateral token contract
+collateral_address = Web3.to_checksum_address("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB")
 # Polymarket CTF contract
 ctf_address = Web3.to_checksum_address("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045")
 
 nonce = web3.eth.get_transaction_count(pub_key, "pending")
 
-usdc = web3.eth.contract(address=usdc_address, abi=erc20_approve_abi)
+collateral = web3.eth.contract(address=collateral_address, abi=erc20_approve_abi)
 ctf = web3.eth.contract(address=ctf_address, abi=erc1155_set_approval_abi)
 
 # CTF Exchange
-raw_usdc_approve_txn = usdc.functions.approve(
-    Web3.to_checksum_address("0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"),
+raw_collateral_approve_txn = collateral.functions.approve(
+    Web3.to_checksum_address("0xE111180000d2663C0091e4f400237545B87B996B"),
     int(MAX_INT, 16),
 ).build_transaction({"chainId": chain_id, "from": pub_key, "nonce": nonce})
-signed_usdc_approve_tx = web3.eth.account.sign_transaction(
-    raw_usdc_approve_txn,
+signed_collateral_approve_tx = web3.eth.account.sign_transaction(
+    raw_collateral_approve_txn,
     private_key=priv_key,
 )
-send_usdc_approve_tx = web3.eth.send_raw_transaction(signed_usdc_approve_tx.raw_transaction)
-usdc_approve_tx_receipt = web3.eth.wait_for_transaction_receipt(send_usdc_approve_tx, 600)
-print(usdc_approve_tx_receipt)
+send_collateral_approve_tx = web3.eth.send_raw_transaction(
+    signed_collateral_approve_tx.raw_transaction,
+)
+collateral_approve_tx_receipt = web3.eth.wait_for_transaction_receipt(
+    send_collateral_approve_tx,
+    600,
+)
+print(collateral_approve_tx_receipt)
 
 nonce = web3.eth.get_transaction_count(pub_key, "pending")
 
 raw_ctf_approval_txn = ctf.functions.setApprovalForAll(
-    Web3.to_checksum_address("0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"),
+    Web3.to_checksum_address("0xE111180000d2663C0091e4f400237545B87B996B"),
     True,
 ).build_transaction({"chainId": chain_id, "from": pub_key, "nonce": nonce})
 signed_ctf_approval_tx = web3.eth.account.sign_transaction(
@@ -99,22 +104,27 @@ print(ctf_approval_tx_receipt)
 nonce = web3.eth.get_transaction_count(pub_key, "pending")
 
 # Neg Risk CTF Exchange
-raw_usdc_approve_txn = usdc.functions.approve(
-    Web3.to_checksum_address("0xC5d563A36AE78145C45a50134d48A1215220f80a"),
+raw_collateral_approve_txn = collateral.functions.approve(
+    Web3.to_checksum_address("0xe2222d279d744050d28e00520010520000310F59"),
     int(MAX_INT, 16),
 ).build_transaction({"chainId": chain_id, "from": pub_key, "nonce": nonce})
-signed_usdc_approve_tx = web3.eth.account.sign_transaction(
-    raw_usdc_approve_txn,
+signed_collateral_approve_tx = web3.eth.account.sign_transaction(
+    raw_collateral_approve_txn,
     private_key=priv_key,
 )
-send_usdc_approve_tx = web3.eth.send_raw_transaction(signed_usdc_approve_tx.raw_transaction)
-usdc_approve_tx_receipt = web3.eth.wait_for_transaction_receipt(send_usdc_approve_tx, 600)
-print(usdc_approve_tx_receipt)
+send_collateral_approve_tx = web3.eth.send_raw_transaction(
+    signed_collateral_approve_tx.raw_transaction,
+)
+collateral_approve_tx_receipt = web3.eth.wait_for_transaction_receipt(
+    send_collateral_approve_tx,
+    600,
+)
+print(collateral_approve_tx_receipt)
 
 nonce = web3.eth.get_transaction_count(pub_key, "pending")
 
 raw_ctf_approval_txn = ctf.functions.setApprovalForAll(
-    Web3.to_checksum_address("0xC5d563A36AE78145C45a50134d48A1215220f80a"),
+    Web3.to_checksum_address("0xe2222d279d744050d28e00520010520000310F59"),
     True,
 ).build_transaction({"chainId": chain_id, "from": pub_key, "nonce": nonce})
 signed_ctf_approval_tx = web3.eth.account.sign_transaction(
@@ -128,17 +138,22 @@ print(ctf_approval_tx_receipt)
 nonce = web3.eth.get_transaction_count(pub_key, "pending")
 
 # Neg Risk Adapter
-raw_usdc_approve_txn = usdc.functions.approve(
+raw_collateral_approve_txn = collateral.functions.approve(
     Web3.to_checksum_address("0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"),
     int(MAX_INT, 16),
 ).build_transaction({"chainId": chain_id, "from": pub_key, "nonce": nonce})
-signed_usdc_approve_tx = web3.eth.account.sign_transaction(
-    raw_usdc_approve_txn,
+signed_collateral_approve_tx = web3.eth.account.sign_transaction(
+    raw_collateral_approve_txn,
     private_key=priv_key,
 )
-send_usdc_approve_tx = web3.eth.send_raw_transaction(signed_usdc_approve_tx.raw_transaction)
-usdc_approve_tx_receipt = web3.eth.wait_for_transaction_receipt(send_usdc_approve_tx, 600)
-print(usdc_approve_tx_receipt)
+send_collateral_approve_tx = web3.eth.send_raw_transaction(
+    signed_collateral_approve_tx.raw_transaction,
+)
+collateral_approve_tx_receipt = web3.eth.wait_for_transaction_receipt(
+    send_collateral_approve_tx,
+    600,
+)
+print(collateral_approve_tx_receipt)
 
 nonce = web3.eth.get_transaction_count(pub_key, "pending")
 

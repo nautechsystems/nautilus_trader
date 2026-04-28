@@ -234,13 +234,12 @@ impl OrderFillTrackerMap {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::enums::CurrencyType;
     use rstest::rstest;
 
     use super::*;
 
-    fn usdc() -> Currency {
-        Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto)
+    fn pusd() -> Currency {
+        Currency::pUSD()
     }
 
     #[rstest]
@@ -329,7 +328,7 @@ mod tests {
             AccountId::from("POLY-001"),
             "order-1",
             0.55,
-            usdc(),
+            pusd(),
             UnixNanos::from(3_000u64),
             UnixNanos::from(4_000u64),
         );
@@ -363,7 +362,7 @@ mod tests {
             AccountId::from("POLY-001"),
             "order-1",
             0.55,
-            usdc(),
+            pusd(),
             UnixNanos::from(2_000u64),
             UnixNanos::from(2_000u64),
         );
@@ -391,7 +390,7 @@ mod tests {
             AccountId::from("POLY-001"),
             "order-1",
             0.55,
-            usdc(),
+            pusd(),
             UnixNanos::from(2_000u64),
             UnixNanos::from(2_000u64),
         );
@@ -408,7 +407,7 @@ mod tests {
             AccountId::from("POLY-001"),
             "unknown",
             0.55,
-            usdc(),
+            pusd(),
             UnixNanos::from(1_000u64),
             UnixNanos::from(1_000u64),
         );
@@ -436,7 +435,7 @@ mod tests {
                 AccountId::from("POLY-001"),
                 "order-1",
                 0.50, // fallback, should NOT be used
-                usdc(),
+                pusd(),
                 UnixNanos::from(2_000u64),
                 UnixNanos::from(2_000u64),
             )
@@ -467,7 +466,7 @@ mod tests {
             AccountId::from("POLY-001"),
             "order-1",
             0.55,
-            usdc(),
+            pusd(),
             UnixNanos::from(2_000u64),
             UnixNanos::from(2_000u64),
         );
@@ -480,7 +479,7 @@ mod tests {
             AccountId::from("POLY-001"),
             "order-1",
             0.55,
-            usdc(),
+            pusd(),
             UnixNanos::from(3_000u64),
             UnixNanos::from(3_000u64),
         );

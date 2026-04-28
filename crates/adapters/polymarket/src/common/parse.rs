@@ -16,13 +16,44 @@
 //! Parsing utilities for the Polymarket adapter.
 
 pub use nautilus_core::serialization::{
-    deserialize_decimal_from_str, deserialize_optional_decimal_from_str,
-    deserialize_optional_string_to_u64, serialize_decimal_as_str,
+    deserialize_decimal_from_str, deserialize_optional_decimal_from_str, serialize_decimal_as_str,
     serialize_optional_decimal_as_str,
 };
 use nautilus_model::identifiers::TradeId;
+use serde::{Deserialize, Deserializer, de::Error};
 
 use crate::common::enums::PolymarketOrderSide;
+
+/// Deserializes a Polymarket game ID. The Gamma API returns the field in two
+/// shapes (string on `GammaMarket`, integer on `GammaEvent`) and uses both
+/// `null` and `-1` (or `"-1"`) as the "no game" sentinel for non-sport
+/// markets. Either sentinel is mapped to `None`; valid values must be
+/// non-negative.
+pub fn deserialize_optional_polymarket_game_id<'de, D>(
+    deserializer: D,
+) -> Result<Option<u64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Str(String),
+        Int(i64),
+    }
+
+    let raw: Option<Raw> = Option::deserialize(deserializer)?;
+    match raw {
+        None => Ok(None),
+        Some(Raw::Str(s)) if s.is_empty() || s == "-1" => Ok(None),
+        Some(Raw::Str(s)) => s.parse::<u64>().map(Some).map_err(D::Error::custom),
+        Some(Raw::Int(-1)) => Ok(None),
+        Some(Raw::Int(i)) if i < 0 => Err(D::Error::custom(format!(
+            "negative game_id {i}: only -1 is recognized as the no-game sentinel"
+        ))),
+        Some(Raw::Int(i)) => Ok(Some(i as u64)),
+    }
+}
 
 // FNV-1a 64-bit constants (see http://www.isthe.com/chongo/tech/comp/fnv/).
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
@@ -71,8 +102,56 @@ pub fn determine_trade_id(
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use serde::Deserialize;
 
     use super::*;
+
+    #[derive(Debug, Deserialize)]
+    struct GameIdHolder {
+        #[serde(default, deserialize_with = "deserialize_optional_polymarket_game_id")]
+        game_id: Option<u64>,
+    }
+
+    #[rstest]
+    #[case::null(r#"{"game_id": null}"#, None)]
+    #[case::missing("{}", None)]
+    #[case::empty_string(r#"{"game_id": ""}"#, None)]
+    #[case::int_neg_one(r#"{"game_id": -1}"#, None)]
+    #[case::str_neg_one(r#"{"game_id": "-1"}"#, None)]
+    #[case::int_zero(r#"{"game_id": 0}"#, Some(0))]
+    #[case::str_zero(r#"{"game_id": "0"}"#, Some(0))]
+    #[case::int_value(r#"{"game_id": 1427074}"#, Some(1_427_074))]
+    #[case::str_value(r#"{"game_id": "1427074"}"#, Some(1_427_074))]
+    fn test_deserialize_optional_polymarket_game_id(
+        #[case] payload: &str,
+        #[case] expected: Option<u64>,
+    ) {
+        let holder: GameIdHolder = serde_json::from_str(payload).unwrap();
+        assert_eq!(holder.game_id, expected);
+    }
+
+    #[rstest]
+    fn test_deserialize_optional_polymarket_game_id_rejects_garbage_string() {
+        let err = serde_json::from_str::<GameIdHolder>(r#"{"game_id": "not-a-number"}"#);
+        assert!(err.is_err());
+    }
+
+    #[rstest]
+    fn test_deserialize_optional_polymarket_game_id_rejects_negative_other_than_minus_one() {
+        // Only -1 is the documented no-game sentinel; other negatives must
+        // surface as errors so unexpected wire shapes do not collapse to
+        // "no game" silently.
+        let err = serde_json::from_str::<GameIdHolder>(r#"{"game_id": -2}"#).unwrap_err();
+        assert!(err.to_string().contains("only -1"));
+    }
+
+    #[rstest]
+    fn test_deserialize_optional_polymarket_game_id_rejects_negative_string_other_than_minus_one() {
+        // Mirrors the integer behaviour: only "-1" is a sentinel; "-2" must
+        // bubble up as a parse error rather than silent None.
+        let err = serde_json::from_str::<GameIdHolder>(r#"{"game_id": "-2"}"#);
+        assert!(err.is_err());
+    }
 
     #[rstest]
     fn test_determine_trade_id_is_deterministic() {

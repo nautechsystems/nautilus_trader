@@ -205,7 +205,7 @@ async def test_from_market_slug_uses_slug_endpoint(
         "https://gamma-api.polymarket.com/markets/slug/kamala-harris-divorce-in-2025"
     )
     assert mock_http_client.get.call_args_list[1].kwargs["url"] == (
-        "https://clob.polymarket.com/markets/"
+        "https://clob-v2.polymarket.com/markets/"
         "0x270d5aa3b23be0d4e713361d603b187dd1919c71c74226ad867699f33972c5f2"
     )
 
@@ -646,7 +646,7 @@ async def test_from_event_slug(event_data, market_details_data):
     # Subsequent calls should be to CLOB market details API
     for i in range(1, 4):
         assert (
-            "https://clob.polymarket.com/markets/"
+            "https://clob-v2.polymarket.com/markets/"
             in (mock_http_client.get.call_args_list[i].kwargs["url"])
         )
 

@@ -1647,7 +1647,7 @@ mod tests {
             InstrumentId::from(format!("{raw_symbol}.POLYMARKET").as_str()),
             Symbol::new(raw_symbol),
             AssetClass::Alternative,
-            Currency::USDC(),
+            Currency::pUSD(),
             UnixNanos::default(),
             UnixNanos::from(u64::MAX),
             price_precision,

@@ -49,7 +49,7 @@ pub(crate) struct FillContext<'a> {
     pub account_id: AccountId,
     pub user_address: &'a str,
     pub api_key: &'a str,
-    pub usdc: Currency,
+    pub pusd: Currency,
     pub clock: &'static AtomicTime,
 }
 
@@ -101,7 +101,7 @@ pub(crate) fn build_fill_reports_from_trades(
                     instrument_id,
                     price_prec,
                     size_prec,
-                    ctx.usdc,
+                    ctx.pusd,
                     LiquiditySide::Maker,
                     ts_event,
                     ts_init,
@@ -137,7 +137,7 @@ pub(crate) fn build_fill_reports_from_trades(
                 None,
                 price_prec,
                 size_prec,
-                ctx.usdc,
+                ctx.pusd,
                 taker_fee_rate,
                 ts_init,
             );

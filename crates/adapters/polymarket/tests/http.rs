@@ -500,10 +500,11 @@ async fn test_get_balance_allowance_returns_data() {
         .await
         .unwrap();
 
-    assert_eq!(balance.balance, rust_decimal_macros::dec!(1000.000000));
+    // Fixture is now in integer-micro-pUSD form, matching the live API.
+    assert_eq!(balance.balance, rust_decimal_macros::dec!(1_000_000_000));
     assert_eq!(
         balance.allowance,
-        Some(rust_decimal_macros::dec!(999999999.000000))
+        Some(rust_decimal_macros::dec!(999_999_999_000_000)),
     );
 }
 

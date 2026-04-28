@@ -1606,7 +1606,7 @@ ib = [
     { name = "protobuf", marker = "python_full_version < '3.14'" },
 ]
 polymarket = [
-    { name = "py-clob-client" },
+    { name = "py-clob-client-v2" },
 ]
 visualization = [
     { name = "kaleido" },
@@ -1661,7 +1661,7 @@ requires-dist = [
     { name = "plotly", marker = "extra == 'visualization'", specifier = ">=6.7.0,<7.0.0" },
     { name = "portion", specifier = ">=2.6.1" },
     { name = "protobuf", marker = "python_full_version < '3.14' and extra == 'ib'", specifier = "==5.29.5" },
-    { name = "py-clob-client", marker = "extra == 'polymarket'", specifier = ">=0.34.6,<1.0.0" },
+    { name = "py-clob-client-v2", marker = "extra == 'polymarket'", specifier = ">=1.0.0,<2.0.0" },
     { name = "pyarrow", specifier = ">=23.0.1" },
     { name = "pytz", specifier = ">=2026.1.0" },
     { name = "simplejson", marker = "extra == 'visualization'", specifier = "==3.20.2" },
@@ -2117,34 +2117,19 @@ wheels = [
 ]
 
 [[package]]
-name = "py-builder-signing-sdk"
-version = "0.0.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "python-dotenv" },
-    { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/18/e3/fab3253021a4d766345f491f00e40d89c7c5640bf6d20d9f5a3182b482de/py_builder_signing_sdk-0.0.2.tar.gz", hash = "sha256:27fa4401944220c51809f549a263c6e53b5cd981fca98eda7ef6f21944e6bf94", size = 6411, upload-time = "2025-10-20T22:17:56.658Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/57/fb/23c68c8f6356a50f959e2df2ae80e8344c3ff8ccca92943848a57a495928/py_builder_signing_sdk-0.0.2-py3-none-any.whl", hash = "sha256:114b9d57bec228177d759ce15c475589f47db2252ed1fd67cac3c9b0640abe76", size = 9082, upload-time = "2025-10-20T22:17:55.629Z" },
-]
-
-[[package]]
-name = "py-clob-client"
-version = "0.34.6"
+name = "py-clob-client-v2"
+version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "eth-account" },
     { name = "eth-utils" },
     { name = "httpx", extra = ["http2"] },
     { name = "poly-eip712-structs" },
-    { name = "py-builder-signing-sdk" },
     { name = "py-order-utils" },
-    { name = "python-dotenv" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e4/4d/00896d81210ffae5b2e9b33b9d1e6b247d1b017c1ac98038d2a638a3ecc2/py_clob_client-0.34.6.tar.gz", hash = "sha256:09c6b96e7296f6cc22466018af9ab74bcaab661a697432025e7257252c660af4", size = 38567, upload-time = "2026-02-19T13:30:43.733Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/46/3a/62b7a1d8476023b09d48dc3edd0557fe2d5e450c2242219b7da1b2419bd2/py_clob_client_v2-1.0.0.tar.gz", hash = "sha256:ccbba4fbd0b4beba03dac1265421fe52aeb0141809fce7aabc03df9879313a66", size = 40426, upload-time = "2026-04-17T15:02:55.768Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8f/93/cd8aa728b3ff66162be5f91002dfd7eab9defd5d8200cddf14f119e32c04/py_clob_client-0.34.6-py3-none-any.whl", hash = "sha256:29c39002b76f3918f2312c963db0b31941cd455bd6c6acdc1519d8ffcd70842d", size = 44131, upload-time = "2026-02-19T13:30:42.006Z" },
+    { url = "https://files.pythonhosted.org/packages/13/42/1822c6a6a540bd12e4b41cdb27e17f6850f97a06c08460e43789b887661d/py_clob_client_v2-1.0.0-py3-none-any.whl", hash = "sha256:f9fa3315f154ceeb9e3084284a1bfc792df74f12b9441612e545a2480f603453", size = 46700, upload-time = "2026-04-17T15:02:53.641Z" },
 ]
 
 [[package]]
@@ -2507,15 +2492,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/66/c0/0c8b6ad9f17a802ee498c46e004a0eb49bc148f2fd230864601a86dcf6db/python-dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3", size = 342432, upload-time = "2024-03-01T18:36:20.211Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl", hash = "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427", size = 229892, upload-time = "2024-03-01T18:36:18.57Z" },
-]
-
-[[package]]
-name = "python-dotenv"
-version = "1.2.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/82/ed/0301aeeac3e5353ef3d94b6ec08bbcabd04a72018415dcb29e588514bba8/python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3", size = 50135, upload-time = "2026-03-01T16:00:26.196Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a", size = 22101, upload-time = "2026-03-01T16:00:25.09Z" },
 ]
 
 [[package]]
