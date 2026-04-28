@@ -338,6 +338,44 @@ impl PolymarketDataClient {
         pending.remove(&instrument_id);
     }
 
+    fn has_active_subscriptions(&self, instrument_id: InstrumentId) -> bool {
+        self.active_quote_subs.contains(&instrument_id)
+            || self.active_delta_subs.contains(&instrument_id)
+            || self.active_trade_subs.contains(&instrument_id)
+    }
+
+    fn token_id_for_instrument(&self, instrument_id: InstrumentId) -> Option<Ustr> {
+        if let Some(instrument) = self.instruments.load().get(&instrument_id) {
+            return Some(Ustr::from(instrument.raw_symbol().as_str()));
+        }
+
+        self.token_meta
+            .iter()
+            .find(|entry| entry.value().instrument_id == instrument_id)
+            .map(|entry| *entry.key())
+    }
+
+    fn cleanup_inactive_instrument(&self, instrument_id: InstrumentId) {
+        if !self.config.prune_inactive_instruments {
+            return;
+        }
+
+        if self.has_active_subscriptions(instrument_id) {
+            return;
+        }
+
+        self.order_books.remove(&instrument_id);
+        self.last_quotes.remove(&instrument_id);
+
+        let token_id = self.token_id_for_instrument(instrument_id);
+        self.instruments.remove(&instrument_id);
+        if let Some(token_id) = token_id {
+            self.token_meta.remove(&token_id);
+        }
+
+        log::info!("Pruned inactive Polymarket instrument state for {instrument_id}");
+    }
+
     fn ensure_auto_load_task(&self) {
         if self
             .auto_load_scheduled
@@ -1400,6 +1438,7 @@ impl DataClient for PolymarketDataClient {
         self.active_delta_subs.remove(&instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
+        self.cleanup_inactive_instrument(instrument_id);
         log::debug!("Unsubscribed from book deltas for {instrument_id}");
         Ok(())
     }
@@ -1409,6 +1448,7 @@ impl DataClient for PolymarketDataClient {
         self.active_quote_subs.remove(&instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
+        self.cleanup_inactive_instrument(instrument_id);
         log::debug!("Unsubscribed from quotes for {instrument_id}");
         Ok(())
     }
@@ -1418,6 +1458,7 @@ impl DataClient for PolymarketDataClient {
         self.active_trade_subs.remove(&instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
+        self.cleanup_inactive_instrument(instrument_id);
         log::debug!("Unsubscribed from trades for {instrument_id}");
         Ok(())
     }
@@ -1425,6 +1466,7 @@ impl DataClient for PolymarketDataClient {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::live::runner::replace_data_event_sender;
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         enums::AssetClass,
@@ -1432,6 +1474,7 @@ mod tests {
         instruments::BinaryOption,
         types::{Currency, Price, Quantity},
     };
+    use nautilus_network::retry::RetryConfig;
     use rstest::rstest;
 
     use super::*;
@@ -1465,6 +1508,71 @@ mod tests {
 
     fn token_ustr() -> Ustr {
         Ustr::from("0xCOND-0xTOKEN")
+    }
+
+    fn make_cleanup_client(prune_inactive_instruments: bool) -> PolymarketDataClient {
+        let (data_sender, _data_events) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(data_sender);
+
+        let config = PolymarketDataClientConfig {
+            prune_inactive_instruments,
+            ..Default::default()
+        };
+
+        PolymarketDataClient::new(
+            ClientId::new("POLYMARKET"),
+            config,
+            PolymarketGammaHttpClient::new(None, 60, RetryConfig::default()).unwrap(),
+            PolymarketClobPublicClient::new(None, 60).unwrap(),
+            PolymarketDataApiHttpClient::new(None, 60).unwrap(),
+            PolymarketWebSocketClient::new_market(None, false, Default::default()),
+        )
+    }
+
+    fn stub_quote(instrument_id: InstrumentId) -> QuoteTick {
+        QuoteTick::new(
+            instrument_id,
+            Price::from("0.10"),
+            Price::from("0.90"),
+            Quantity::from("1"),
+            Quantity::from("1"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+    }
+
+    fn populate_cleanup_state(client: &PolymarketDataClient, instrument: &InstrumentAny) {
+        let instrument_id = instrument.id();
+        cache_instrument(&client.instruments, &client.token_meta, instrument);
+        client.order_books.insert(
+            instrument_id,
+            OrderBook::new(instrument_id, BookType::L2_MBP),
+        );
+        client
+            .last_quotes
+            .insert(instrument_id, stub_quote(instrument_id));
+    }
+
+    fn assert_cleanup_state_present(
+        client: &PolymarketDataClient,
+        instrument_id: InstrumentId,
+        token_id: Ustr,
+    ) {
+        assert!(client.order_books.contains_key(&instrument_id));
+        assert!(client.last_quotes.contains_key(&instrument_id));
+        assert!(client.instruments.load().contains_key(&instrument_id));
+        assert!(client.token_meta.contains_key(&token_id));
+    }
+
+    fn assert_cleanup_state_absent(
+        client: &PolymarketDataClient,
+        instrument_id: InstrumentId,
+        token_id: Ustr,
+    ) {
+        assert!(!client.order_books.contains_key(&instrument_id));
+        assert!(!client.last_quotes.contains_key(&instrument_id));
+        assert!(!client.instruments.load().contains_key(&instrument_id));
+        assert!(!client.token_meta.contains_key(&token_id));
     }
 
     #[rstest]
@@ -1756,5 +1864,95 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing token_meta for {token_id}"));
             assert_eq!(meta.instrument_id, inst.id());
         }
+    }
+
+    #[rstest]
+    fn cleanup_inactive_instrument_is_noop_when_prune_disabled() {
+        let client = make_cleanup_client(false);
+        let instrument = stub_instrument(
+            "token-prune-disabled",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = instrument.id();
+        let token_id = Ustr::from(instrument.raw_symbol().as_str());
+        populate_cleanup_state(&client, &instrument);
+
+        client.cleanup_inactive_instrument(instrument_id);
+
+        assert_cleanup_state_present(&client, instrument_id, token_id);
+    }
+
+    #[rstest]
+    fn cleanup_inactive_instrument_prunes_when_enabled_and_inactive() {
+        let client = make_cleanup_client(true);
+        let instrument = stub_instrument(
+            "token-prune-enabled",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = instrument.id();
+        let token_id = Ustr::from(instrument.raw_symbol().as_str());
+        populate_cleanup_state(&client, &instrument);
+
+        client.cleanup_inactive_instrument(instrument_id);
+
+        assert_cleanup_state_absent(&client, instrument_id, token_id);
+    }
+
+    #[rstest]
+    #[case::quotes(true, false, false)]
+    #[case::deltas(false, true, false)]
+    #[case::trades(false, false, true)]
+    fn cleanup_inactive_instrument_keeps_state_with_active_subscription(
+        #[case] quote_active: bool,
+        #[case] delta_active: bool,
+        #[case] trade_active: bool,
+    ) {
+        let client = make_cleanup_client(true);
+        let instrument = stub_instrument(
+            "token-prune-active",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = instrument.id();
+        let token_id = Ustr::from(instrument.raw_symbol().as_str());
+        populate_cleanup_state(&client, &instrument);
+
+        if quote_active {
+            client.active_quote_subs.insert(instrument_id);
+        }
+
+        if delta_active {
+            client.active_delta_subs.insert(instrument_id);
+        }
+
+        if trade_active {
+            client.active_trade_subs.insert(instrument_id);
+        }
+
+        client.cleanup_inactive_instrument(instrument_id);
+
+        assert_cleanup_state_present(&client, instrument_id, token_id);
+    }
+
+    #[rstest]
+    fn token_id_for_instrument_falls_back_to_token_meta() {
+        let client = make_cleanup_client(true);
+        let instrument_id = instrument_id();
+        let token_id = token_ustr();
+        client.token_meta.insert(
+            token_id,
+            TokenMeta {
+                instrument_id,
+                price_precision: 3,
+                size_precision: 2,
+            },
+        );
+
+        assert_eq!(
+            client.token_id_for_instrument(instrument_id),
+            Some(token_id)
+        );
     }
 }

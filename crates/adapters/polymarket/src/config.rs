@@ -65,6 +65,10 @@ pub struct PolymarketDataClientConfig {
     /// The window (milliseconds) over which concurrent auto-load requests are batched.
     #[builder(default = 100)]
     pub auto_load_debounce_ms: u64,
+    /// Whether to prune per-instrument market data caches after all market data
+    /// subscriptions are removed.
+    #[builder(default)]
+    pub prune_inactive_instruments: bool,
     /// Instrument filters applied to all instruments during loading and discovery.
     #[builder(default)]
     pub filters: Vec<Arc<dyn InstrumentFilter>>,

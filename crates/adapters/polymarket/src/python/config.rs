@@ -26,7 +26,7 @@ use crate::{
 impl PolymarketDataClientConfig {
     /// Configuration for the Polymarket data client.
     #[new]
-    #[pyo3(signature = (base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=None, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None))]
+    #[pyo3(signature = (base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=None, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, prune_inactive_instruments=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         base_url_http: Option<String>,
@@ -40,6 +40,7 @@ impl PolymarketDataClientConfig {
         subscribe_new_markets: Option<bool>,
         auto_load_missing_instruments: Option<bool>,
         auto_load_debounce_ms: Option<u64>,
+        prune_inactive_instruments: Option<bool>,
     ) -> Self {
         let default = Self::default();
         Self {
@@ -56,6 +57,8 @@ impl PolymarketDataClientConfig {
             auto_load_missing_instruments: auto_load_missing_instruments
                 .unwrap_or(default.auto_load_missing_instruments),
             auto_load_debounce_ms: auto_load_debounce_ms.unwrap_or(default.auto_load_debounce_ms),
+            prune_inactive_instruments: prune_inactive_instruments
+                .unwrap_or(default.prune_inactive_instruments),
             filters: Vec::new(),
             new_market_filter: None,
             transport_backend: default.transport_backend,
