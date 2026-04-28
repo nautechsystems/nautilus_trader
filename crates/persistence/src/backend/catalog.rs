@@ -530,7 +530,7 @@ impl ParquetDataCatalog {
         let directory = self.make_path(T::path_prefix(), identifier.as_deref())?;
         let filename = timestamps_to_filename(start_ts, end_ts);
         let path = PathBuf::from(format!("{directory}/{filename}"));
-        let object_path = self.to_object_path(&path.to_string_lossy());
+        let object_path = self.to_object_path(&path.to_string_lossy())?;
 
         let file_exists = self.execute_async(async {
             let exists: bool = self.object_store.head(&object_path).await.is_ok();
@@ -619,7 +619,7 @@ impl ParquetDataCatalog {
         let directory = self.make_path_custom_data(&type_name, identifier.as_deref())?;
         let filename = timestamps_to_filename(start_ts, end_ts);
         let path = PathBuf::from(format!("{directory}/{filename}"));
-        let object_path = self.to_object_path(&path.to_string_lossy());
+        let object_path = self.to_object_path(&path.to_string_lossy())?;
 
         let file_exists = self.execute_async(async {
             let exists: bool = self.object_store.head(&object_path).await.is_ok();
@@ -732,7 +732,7 @@ impl ParquetDataCatalog {
             let directory = self.make_path("instruments", Some(instrument_id.as_str()))?;
             let filename = timestamps_to_filename(start_ts, end_ts);
             let path = PathBuf::from(format!("{directory}/{filename}"));
-            let object_path = self.to_object_path(&path.to_string_lossy());
+            let object_path = self.to_object_path(&path.to_string_lossy())?;
 
             let file_exists = self
                 .execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
@@ -1885,8 +1885,8 @@ impl ParquetDataCatalog {
 
         let files = if let Some(f) = files {
             f.into_iter()
-                .map(|p| self.to_object_path(&p).to_string())
-                .collect::<Vec<_>>()
+                .map(|p| self.to_object_path(&p).map(|op| op.to_string()))
+                .collect::<anyhow::Result<Vec<_>>>()?
         } else {
             self.list_parquet_files_with_criteria(&path_prefix, identifiers, start, end)?
         };
@@ -2632,7 +2632,7 @@ impl ParquetDataCatalog {
         // Convert directory to object path format (consistent with how files are written)
         // For local stores with empty base_path, to_object_path returns path as-is.
         // For remote stores, to_object_path preserves or prepends the catalog base path.
-        let object_dir = self.to_object_path(directory);
+        let object_dir = self.to_object_path(directory)?;
         let list_result = self.execute_async(async {
             // Ensure trailing slash for directory listing
             let dir_str = format!("{}/", object_dir.as_ref());
@@ -2744,12 +2744,12 @@ impl ParquetDataCatalog {
         let old_filename =
             timestamps_to_filename(UnixNanos::from(old_start), UnixNanos::from(old_end));
         let old_path = format!("{directory}/{old_filename}");
-        let old_object_path = self.to_object_path(&old_path);
+        let old_object_path = self.to_object_path(&old_path)?;
 
         let new_filename =
             timestamps_to_filename(UnixNanos::from(new_start), UnixNanos::from(new_end));
         let new_path = format!("{directory}/{new_filename}");
-        let new_object_path = self.to_object_path(&new_path);
+        let new_object_path = self.to_object_path(&new_path)?;
 
         self.move_file(&old_object_path, &new_object_path)
     }
@@ -2777,26 +2777,35 @@ impl ParquetDataCatalog {
     /// - The resulting path is relative to the object store root.
     /// - All paths are normalized to use forward slashes (object store convention).
     ///
+    /// # Errors
+    ///
+    /// Returns an error for remote catalogs when `path` is a full URI whose scheme/host
+    /// does not match the catalog's own root (cross-bucket misuse). Without this guard
+    /// the caller could silently write to or read from the wrong bucket.
+    ///
     /// # Examples
+    ///
+    /// Local catalog paths (absolute or relative) strip the catalog's base directory:
     ///
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
-    ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
-    ///
-    /// // Convert a full catalog path
-    /// let object_path = catalog.to_object_path("/base/data/quotes/file.parquet");
-    /// // Returns: ObjectPath("data/quotes/file.parquet") for local catalog paths
-    /// // or ObjectPath("base/data/quotes/file.parquet") for remote catalog paths.
-    ///
-    /// // Convert a relative path
-    /// let object_path = catalog.to_object_path("data/trades/file.parquet");
-    /// // Returns: ObjectPath("data/trades/file.parquet") for local catalog paths
-    /// // or ObjectPath("base/data/trades/file.parquet") for remote catalog paths.
+    /// # let catalog: ParquetDataCatalog = unimplemented!();
+    /// let object_path = catalog.to_object_path("/base/data/quotes/file.parquet")?;
+    /// // ObjectPath("data/quotes/file.parquet")
+    /// # Ok::<(), anyhow::Error>(())
     /// ```
-    #[must_use]
-    pub fn to_object_path(&self, path: &str) -> ObjectPath {
-        ObjectPath::from(self.object_store_path(path))
+    ///
+    /// Remote catalog paths (relative or full URI) preserve or prepend the base prefix:
+    ///
+    /// ```rust,no_run
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+    /// # let catalog: ParquetDataCatalog = unimplemented!();
+    /// let object_path = catalog.to_object_path("data/trades/file.parquet")?;
+    /// // ObjectPath("base/data/trades/file.parquet")
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn to_object_path(&self, path: &str) -> anyhow::Result<ObjectPath> {
+        Ok(ObjectPath::from(self.object_store_path(path)?))
     }
 
     /// Converts a path string to [`ObjectPath`] using parse (no percent-encoding).
@@ -2804,41 +2813,57 @@ impl ParquetDataCatalog {
     /// Use this for paths that were returned by the object store (e.g. from `list()`),
     /// which may already be percent-encoded. Using [`Self::to_object_path`] (which uses
     /// `Path::from`) on such paths would double-encode (e.g. `%5E` -> `%255E`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for the same cross-bucket case as [`Self::to_object_path`], or
+    /// when the resulting string fails [`ObjectPath::parse`].
     pub fn to_object_path_parsed(&self, path: &str) -> anyhow::Result<ObjectPath> {
-        let to_parse = self.object_store_path(path);
+        let to_parse = self.object_store_path(path)?;
         ObjectPath::parse(&to_parse).map_err(anyhow::Error::from)
     }
 
-    fn object_store_path(&self, path: &str) -> String {
+    fn object_store_path(&self, path: &str) -> anyhow::Result<String> {
         let normalized_path = path.replace('\\', "/");
 
         if self.is_remote_uri() {
             if normalized_path.contains("://") {
-                return self
-                    .remote_uri_object_path(&normalized_path)
-                    .map(|path| self.path_under_base(&path))
-                    .unwrap_or(normalized_path);
+                let path_under_root = self.remote_uri_object_path(&normalized_path)?;
+                return Ok(self.path_under_base(&path_under_root));
             }
 
-            return self.path_under_base(&normalized_path);
+            return Ok(self.path_under_base(&normalized_path));
         }
 
-        self.path_without_local_base(&normalized_path)
+        Ok(self.path_without_local_base(&normalized_path))
     }
 
-    fn remote_uri_object_path(&self, path: &str) -> Option<String> {
-        let path_url = url::Url::parse(path).ok()?;
+    fn remote_uri_object_path(&self, path: &str) -> anyhow::Result<String> {
+        let path_url = url::Url::parse(path)
+            .map_err(|e| anyhow::anyhow!("Failed to parse object store URI {path}: {e}"))?;
         if !is_remote_uri_scheme(path_url.scheme()) {
-            return None;
+            anyhow::bail!(
+                "URI {path} uses non-remote scheme {} for remote catalog at {}",
+                path_url.scheme(),
+                self.original_uri,
+            );
         }
 
-        let catalog_root = remote_store_root_url(&self.original_uri).ok()?;
-        let path_root = remote_store_root_url(path).ok()?;
+        let catalog_root = remote_store_root_url(&self.original_uri)?;
+        let path_root = remote_store_root_url(path)?;
         if catalog_root.as_str().trim_end_matches('/') != path_root.as_str().trim_end_matches('/') {
-            return None;
+            anyhow::bail!(
+                "Cross-store URI {path} (root {}) does not belong to catalog rooted at {} ({})",
+                path_root.as_str().trim_end_matches('/'),
+                self.original_uri,
+                catalog_root.as_str().trim_end_matches('/'),
+            );
         }
 
-        Some(path_url.path().trim_start_matches('/').to_string())
+        // The URL crate keeps the path component percent-encoded (e.g. `%5E`),
+        // so preserve that encoding for `ObjectPath::parse` round-trips through
+        // `object_store::list`/`get`.
+        Ok(path_url.path().trim_start_matches('/').to_string())
     }
 
     fn path_without_local_base(&self, path: &str) -> String {

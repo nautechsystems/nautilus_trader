@@ -1681,7 +1681,7 @@ fn test_to_object_path_trailing_slash() {
         base_dir.to_string_lossy()
     );
 
-    let object_path = catalog.to_object_path(&sample_path);
+    let object_path = catalog.to_object_path(&sample_path).unwrap();
 
     assert!(
         !object_path
@@ -1697,7 +1697,7 @@ fn test_to_object_path_trailing_slash() {
         "{}/data/quotes/file.parquet",
         base_dir.with_file_name("catalog2").display()
     );
-    let sibling_object_path = catalog.to_object_path(&sibling_path);
+    let sibling_object_path = catalog.to_object_path(&sibling_path).unwrap();
     assert_eq!(
         sibling_object_path.as_ref(),
         sibling_path.replace('\\', "/").trim_start_matches('/')
@@ -1711,13 +1711,17 @@ fn test_remote_to_object_path_preserves_base_path() {
     let catalog =
         ParquetDataCatalog::from_uri("s3://bucket/base/path", None, None, None, None).unwrap();
 
-    let relative = catalog.to_object_path("data/quotes/file.parquet");
+    let relative = catalog.to_object_path("data/quotes/file.parquet").unwrap();
     assert_eq!(relative.as_ref(), "base/path/data/quotes/file.parquet");
 
-    let with_base = catalog.to_object_path("base/path/data/quotes/file.parquet");
+    let with_base = catalog
+        .to_object_path("base/path/data/quotes/file.parquet")
+        .unwrap();
     assert_eq!(with_base.as_ref(), "base/path/data/quotes/file.parquet");
 
-    let full_uri = catalog.to_object_path("s3://bucket/base/path/data/quotes/file.parquet");
+    let full_uri = catalog
+        .to_object_path("s3://bucket/base/path/data/quotes/file.parquet")
+        .unwrap();
     assert_eq!(full_uri.as_ref(), "base/path/data/quotes/file.parquet");
 
     let parsed = catalog
@@ -1745,6 +1749,33 @@ fn test_remote_to_object_path_preserves_base_path() {
         .to_object_path_parsed("base/path/data/%5E/file.parquet")
         .unwrap();
     assert_eq!(parsed_encoded.as_ref(), "base/path/data/%5E/file.parquet");
+}
+
+#[cfg(feature = "cloud")]
+#[rstest]
+fn test_remote_to_object_path_rejects_cross_store_uri() {
+    let catalog =
+        ParquetDataCatalog::from_uri("s3://bucket/base/path", None, None, None, None).unwrap();
+
+    // Different bucket on the same scheme
+    let cross_bucket = catalog.to_object_path("s3://other-bucket/data/quotes/file.parquet");
+    let err = cross_bucket.unwrap_err().to_string();
+    assert!(err.contains("Cross-store"), "unexpected error: {err}");
+    assert!(err.contains("other-bucket"), "unexpected error: {err}");
+
+    // Different scheme entirely
+    let cross_scheme = catalog.to_object_path("gs://bucket/base/path/data/quotes/file.parquet");
+    assert!(cross_scheme.is_err());
+
+    // Cross-store error also surfaces through the parsed (no percent-encoding) variant
+    let parsed_cross = catalog
+        .to_object_path_parsed("https://elsewhere.example.com/file.parquet")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        parsed_cross.contains("Cross-store"),
+        "unexpected error: {parsed_cross}"
+    );
 }
 
 #[cfg(feature = "cloud")]

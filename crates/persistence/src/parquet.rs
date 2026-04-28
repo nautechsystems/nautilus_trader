@@ -488,7 +488,6 @@ pub async fn min_max_from_parquet_metadata_object_store(
 ///   - For Azure: `account_name`, `account_key`, `sas_token`, etc.
 ///
 /// Returns a tuple of (`ObjectStore`, `base_path`, `normalized_uri`)
-#[allow(unused_variables, clippy::needless_pass_by_value)]
 pub fn create_object_store_from_path(
     path: &str,
     storage_options: Option<AHashMap<String, String>>,
@@ -501,7 +500,12 @@ pub fn create_object_store_from_path(
     ))
 }
 
-#[allow(unused_variables, clippy::needless_pass_by_value)]
+// `storage_options` is only consumed by the cloud-feature arms,
+// so keep the allow scoped to the no-cloud build.
+#[cfg_attr(
+    not(feature = "cloud"),
+    allow(unused_variables, clippy::needless_pass_by_value)
+)]
 pub(crate) fn create_object_store_location_from_path(
     path: &str,
     storage_options: Option<AHashMap<String, String>>,

@@ -1446,7 +1446,7 @@ impl ParquetDataCatalog {
     /// Returns an error if the object store operation fails due to network issues,
     /// authentication problems, or other I/O errors.
     fn file_exists(&self, path: &str) -> anyhow::Result<bool> {
-        let object_path = self.to_object_path(path);
+        let object_path = self.to_object_path(path)?;
         let exists = self.execute_async(async {
             let result: bool = self.object_store.head(&object_path).await.is_ok();
             Ok(result)
@@ -1479,7 +1479,7 @@ impl ParquetDataCatalog {
     ///
     /// This operation is irreversible. Ensure the file is no longer needed before deletion.
     fn delete_file(&self, path: &str) -> anyhow::Result<()> {
-        let object_path = self.to_object_path(path);
+        let object_path = self.to_object_path(path)?;
         self.execute_async(async {
             self.object_store
                 .delete(&object_path)
