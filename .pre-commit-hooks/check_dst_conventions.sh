@@ -11,6 +11,9 @@
 #      tokio::task::spawn_blocking) without cfg gating
 #   5. No AHashMap / AHashSet in crates/live/src/manager.rs or
 #      crates/execution/src/matching_engine/engine.rs
+#   6. No direct tokio::net::TcpStream::connect / tokio::net::TcpListener::bind
+#      reaches that bypass the nautilus_network::net seam (the seam swaps to
+#      turmoil::net under the `turmoil` feature)
 #
 # Use '// dst-ok' inline comment to allow specific exceptions.
 # Test modules (files under tests/, matching *_tests.rs, or lines inside an
@@ -329,6 +332,85 @@ for rule5_file in "${RULE5_FILES[@]}"; do
       "Use IndexMap / IndexSet for deterministic iteration order"
   done < <(rg -n --no-heading '\bAHash(Map|Set)\b' "$rule5_file" 2> /dev/null || true)
 done
+
+################################################################################
+# Rule 6: direct tokio::net::TcpStream / TcpListener reaches that bypass the
+#         nautilus_network::net seam
+################################################################################
+
+echo "Checking direct tokio::net TCP reaches..."
+
+# The seam itself re-exports tokio::net under cfg(not(turmoil)); allow it.
+RULE6_ALLOWLIST=(
+  "crates/network/src/net.rs"
+)
+
+is_in_rule6_allowlist() {
+  local file
+  file=$(normalize_path "$1")
+  local entry
+  for entry in "${RULE6_ALLOWLIST[@]}"; do
+    [[ "$file" == "$entry" ]] && return 0
+  done
+  return 1
+}
+
+# Detect whether a file imports the `tokio::net` module (or a member from it)
+# above `line_num`, so bare `TcpStream::connect` / `TcpListener::bind` calls
+# can be flagged at sites that the import is actually in scope for. Imports
+# living below the call site (e.g. inside an inline `#[cfg(test)]` module)
+# do not bring the type into scope above them. Covers single, brace-list,
+# nested-brace, and aliased forms:
+#   - `use tokio::net;`
+#   - `use tokio::net as net;`
+#   - `use tokio::net::TcpStream;`
+#   - `use tokio::net::{TcpStream, TcpListener};`
+#   - `use tokio::{net, io};`
+#   - `use tokio::{io, net::TcpStream};`
+#   - `use tokio::{io::{AsyncRead, AsyncWrite}, net::TcpStream};`
+# `[^;]*` (rather than the narrower `\{[^}]*\}` brace match) handles nested
+# trees because Rust use statements always terminate at the next `;`.
+imports_tokio_net_before_line() {
+  local file="$1"
+  local line_num="$2"
+  sed -n "1,${line_num}p" "$file" 2> /dev/null |
+    rg -qU 'use\s+tokio::[^;]*\bnet\b' 2> /dev/null
+}
+
+check_rule6_hit() {
+  local file="$1"
+  local line_num="$2"
+  local content="$3"
+
+  [[ -z "$file" ]] && return
+  is_test_path "$file" && return
+  is_in_test_module "$file" "$line_num" && return
+  is_doc_comment "$content" && return
+  [[ "$content" =~ $ALLOW_MARKER ]] && return
+  is_in_rule6_allowlist "$file" && return
+
+  report "rule6" "$file" "$line_num" "$content" \
+    "Route through nautilus_network::net::{TcpStream, TcpListener} so the turmoil cfg-swap covers it"
+}
+
+# Fully-qualified reaches are caught everywhere.
+while IFS=: read -r file line_num content; do
+  check_rule6_hit "$file" "$line_num" "$content"
+done < <(rg -n --no-heading \
+  'tokio::net::TcpStream::connect\b|tokio::net::TcpListener::bind\b' \
+  "${GLOBS[@]}" --type rust 2> /dev/null || true)
+
+# Bare `TcpStream::connect` / `TcpListener::bind` count only when the file
+# pulls in the `tokio::net` module above the call site. The `use` line itself
+# is excluded so import statements never self-flag.
+while IFS=: read -r file line_num content; do
+  [[ -z "$file" ]] && continue
+  [[ "$content" =~ ^[[:space:]]*use[[:space:]]+ ]] && continue
+  imports_tokio_net_before_line "$file" "$line_num" || continue
+  check_rule6_hit "$file" "$line_num" "$content"
+done < <(rg -n --no-heading \
+  '\bTcpStream::connect\b|\bTcpListener::bind\b' \
+  "${GLOBS[@]}" --type rust 2> /dev/null || true)
 
 ################################################################################
 # Summary

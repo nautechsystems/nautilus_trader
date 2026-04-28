@@ -43,14 +43,11 @@ use std::fmt::Write as _;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use rustls::{ClientConfig, RootCertStore, pki_types::ServerName};
-use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    net::TcpStream,
-};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_rustls::{TlsConnector, client::TlsStream};
 use url::Url;
 
-use crate::transport::TransportError;
+use crate::{net::TcpStream, transport::TransportError};
 
 /// Maximum size of a `CONNECT` proxy response we are willing to read.
 ///
@@ -436,6 +433,7 @@ where
 }
 
 #[cfg(test)]
+#[cfg(not(feature = "turmoil"))] // proxy hop is not modelled under the turmoil simulator
 mod tests {
     use std::net::SocketAddr;
 

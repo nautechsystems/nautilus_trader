@@ -37,24 +37,16 @@ use futures_util::{SinkExt, StreamExt};
 use http::HeaderName;
 use nautilus_core::CleanDrop;
 use nautilus_cryptography::providers::install_cryptographic_provider;
-#[cfg(any(
-    feature = "turmoil",
-    all(feature = "transport-sockudo", not(feature = "turmoil"))
-))]
+#[cfg(any(feature = "turmoil", feature = "transport-sockudo"))]
 use rustls::ClientConfig;
-#[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
+#[cfg(feature = "transport-sockudo")]
 use sockudo_ws::{
     Config as SockudoConfig, Http1, Role, Stream as SockudoStream,
     WebSocketStream as SockudoWebSocketStream,
 };
-#[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
+#[cfg(feature = "transport-sockudo")]
 use tokio::io::{AsyncRead, AsyncWrite};
-#[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
-use tokio::net::TcpStream;
-#[cfg(any(
-    feature = "turmoil",
-    all(feature = "transport-sockudo", not(feature = "turmoil"))
-))]
+#[cfg(any(feature = "turmoil", feature = "transport-sockudo"))]
 use tokio_rustls::TlsConnector;
 #[cfg(feature = "turmoil")]
 use tokio_tungstenite::MaybeTlsStream;
@@ -78,7 +70,9 @@ use super::{
 };
 #[cfg(feature = "turmoil")]
 use crate::net::TcpConnector;
-#[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
+#[cfg(feature = "transport-sockudo")]
+use crate::net::TcpStream;
+#[cfg(feature = "transport-sockudo")]
 use crate::transport::sockudo::{
     PrefixedIo, SockudoTransport, client_handshake_with_headers, validate_extra_headers,
 };
@@ -575,14 +569,25 @@ impl WebSocketClientInner {
     ///
     /// Uses a local HTTP/1.1 handshake helper so error logging and stream
     /// construction stay in our hands regardless of header count.
+    ///
+    /// Under the turmoil simulator, only plaintext `ws://` is supported (the
+    /// simulator does not model TLS), so a `wss://` URL returns
+    /// [`TransportError::Tls`] up front.
     #[inline]
-    #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
+    #[cfg(feature = "transport-sockudo")]
     async fn connect_sockudo(
         url: &str,
         headers: Vec<(String, String)>,
     ) -> Result<(MessageWriter, MessageReader), TransportError> {
         let target = SockudoTarget::parse(url)?;
         validate_extra_headers(&headers).map_err(TransportError::from)?;
+
+        #[cfg(feature = "turmoil")]
+        if target.is_tls {
+            return Err(TransportError::Tls(
+                "wss:// is not supported under the turmoil simulator; use ws://".to_string(),
+            ));
+        }
 
         let tcp_stream = TcpStream::connect((target.host.as_str(), target.port))
             .await
@@ -592,6 +597,7 @@ impl WebSocketClientInner {
             log::warn!("Failed to enable TCP_NODELAY for sockudo client: {e:?}");
         }
 
+        #[cfg(not(feature = "turmoil"))]
         if target.is_tls {
             let mut root_store = rustls::RootCertStore::empty();
             root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
@@ -605,13 +611,13 @@ impl WebSocketClientInner {
                 .connect(domain, tcp_stream)
                 .await
                 .map_err(TransportError::Io)?;
-            Self::finish_sockudo_handshake(tls_stream, &target, &headers).await
-        } else {
-            Self::finish_sockudo_handshake(tcp_stream, &target, &headers).await
+            return Self::finish_sockudo_handshake(tls_stream, &target, &headers).await;
         }
+
+        Self::finish_sockudo_handshake(tcp_stream, &target, &headers).await
     }
 
-    #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
+    #[cfg(feature = "transport-sockudo")]
     async fn finish_sockudo_handshake<S>(
         mut stream: S,
         target: &SockudoTarget,
@@ -643,23 +649,6 @@ impl WebSocketClientInner {
         let transport: BoxedWsTransport = Box::pin(SockudoTransport::new(ws));
         Ok(transport.split())
     }
-
-    /// Sockudo backend is unavailable under the turmoil feature (the simulator
-    /// only supports the tungstenite `client_async` path today).
-    #[inline]
-    #[cfg(all(feature = "transport-sockudo", feature = "turmoil"))]
-    #[expect(
-        clippy::unused_async,
-        reason = "signature mirrors the non-turmoil variant; both are awaited in the dispatcher"
-    )]
-    async fn connect_sockudo(
-        _url: &str,
-        _headers: Vec<(String, String)>,
-    ) -> Result<(MessageWriter, MessageReader), TransportError> {
-        Err(TransportError::Other(
-            "sockudo backend is not available under the turmoil simulator".to_string(),
-        ))
-    }
 }
 
 /// Complete the WebSocket handshake over a stream that has already been
@@ -686,7 +675,7 @@ where
 /// HTTP `Host:` header, so it must include the explicit port when one is
 /// present in the URL (RFC 7230 section 5.4). The DNS / SNI lookup uses the bare
 /// host without the port.
-#[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
+#[cfg(feature = "transport-sockudo")]
 #[derive(Debug, PartialEq, Eq)]
 struct SockudoTarget {
     host: String,
@@ -698,7 +687,7 @@ struct SockudoTarget {
     is_tls: bool,
 }
 
-#[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
+#[cfg(feature = "transport-sockudo")]
 impl SockudoTarget {
     fn parse(url: &str) -> Result<Self, TransportError> {
         let parsed =

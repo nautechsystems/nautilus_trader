@@ -31,19 +31,16 @@ use std::{
     task::{Context, Poll},
 };
 
-#[cfg(not(feature = "turmoil"))]
 use bytes::{BufMut, Bytes, BytesMut};
 use futures::{Sink, Stream};
-#[cfg(not(feature = "turmoil"))]
-use sockudo_ws::{HandshakeResult, handshake};
 use sockudo_ws::{
+    HandshakeResult,
     error::{CloseReason as SockudoCloseReason, Error as SockudoError},
+    handshake,
     protocol::Message as SockudoMessage,
     stream::WebSocketStream,
 };
-#[cfg(not(feature = "turmoil"))]
-use tokio::io::ReadBuf;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use super::{
     error::TransportError,
@@ -51,12 +48,10 @@ use super::{
     stream::WsTransport,
 };
 
-#[cfg(not(feature = "turmoil"))]
 const MAX_HTTP_HEADER_SIZE: usize = 8192;
 
 // WebSocket upgrade headers we always set, plus body-framing headers that have
 // no place on a GET upgrade.
-#[cfg(not(feature = "turmoil"))]
 const RESERVED_UPGRADE_HEADERS: &[&str] = &[
     "host",
     "upgrade",
@@ -74,7 +69,6 @@ const RESERVED_UPGRADE_HEADERS: &[&str] = &[
 /// Mirror of `sockudo_ws::handshake::client_handshake` (1.7.4) with custom headers.
 ///
 /// Caller pre-validates `extra_headers` via [`validate_extra_headers`].
-#[cfg(not(feature = "turmoil"))]
 pub(crate) async fn client_handshake_with_headers<S>(
     stream: &mut S,
     host: &str,
@@ -145,7 +139,6 @@ where
 }
 
 // Surface the upstream HTTP response on parse failure so non-101 statuses are visible.
-#[cfg(not(feature = "turmoil"))]
 fn log_handshake_response(host: &str, path: &str, err: &SockudoError, buf: &BytesMut) {
     const PREVIEW_BYTES: usize = 512;
     let take = buf.len().min(PREVIEW_BYTES);
@@ -158,7 +151,6 @@ fn log_handshake_response(host: &str, path: &str, err: &SockudoError, buf: &Byte
 
 // Mirror of `sockudo_ws::handshake::build_request` (1.7.4) with `extra_headers`
 // appended; caller pre-validates.
-#[cfg(not(feature = "turmoil"))]
 fn build_request_with_headers(
     host: &str,
     path: &str,
@@ -205,7 +197,6 @@ fn build_request_with_headers(
     buf.freeze()
 }
 
-#[cfg(not(feature = "turmoil"))]
 pub(crate) fn validate_extra_headers(headers: &[(String, String)]) -> Result<(), SockudoError> {
     for (name, value) in headers {
         validate_extra_header(name, value)?;
@@ -213,7 +204,6 @@ pub(crate) fn validate_extra_headers(headers: &[(String, String)]) -> Result<(),
     Ok(())
 }
 
-#[cfg(not(feature = "turmoil"))]
 fn validate_extra_header(name: &str, value: &str) -> Result<(), SockudoError> {
     let parsed_name = name
         .parse::<http::HeaderName>()
@@ -231,20 +221,17 @@ fn validate_extra_header(name: &str, value: &str) -> Result<(), SockudoError> {
 }
 
 /// Replay bytes read during the handshake before forwarding to the inner IO.
-#[cfg(not(feature = "turmoil"))]
 pub(crate) struct PrefixedIo<S> {
     inner: S,
     prefix: Bytes,
 }
 
-#[cfg(not(feature = "turmoil"))]
 impl<S> PrefixedIo<S> {
     pub(crate) const fn new(inner: S, prefix: Bytes) -> Self {
         Self { inner, prefix }
     }
 }
 
-#[cfg(not(feature = "turmoil"))]
 impl<S> AsyncRead for PrefixedIo<S>
 where
     S: AsyncRead + Unpin,
@@ -265,7 +252,6 @@ where
     }
 }
 
-#[cfg(not(feature = "turmoil"))]
 impl<S> AsyncWrite for PrefixedIo<S>
 where
     S: AsyncWrite + Unpin,
