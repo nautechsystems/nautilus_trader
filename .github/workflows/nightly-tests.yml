@@ -45,10 +45,19 @@ jobs:
           # Persistent CARGO_TARGET_DIR replaces Swatinem/rust-cache here.
           rust-cache-enabled: "false"
 
-      - name: Run turmoil network tests
+      - name: Run turmoil network tests (tungstenite)
         env:
           RUST_BACKTRACE: 1
         run: cargo nextest run -p nautilus-network --features turmoil --cargo-profile nextest --status-level fail
+
+      - name: Run turmoil network tests (sockudo)
+        env:
+          RUST_BACKTRACE: 1
+        run: |
+          cargo nextest run -p nautilus-network \
+            --features "turmoil,transport-sockudo" \
+            --test turmoil_sockudo \
+            --cargo-profile nextest --status-level fail
 
   build-macos:
     name: build-macos (nightly)
