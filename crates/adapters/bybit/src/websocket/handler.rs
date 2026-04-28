@@ -332,6 +332,16 @@ impl BybitWsFeedHandler {
 
         match resp.op {
             Some(BybitWsOperation::Subscribe) => {
+                // Duplicate subscribe is harmless: the topic is active on the
+                // venue, so confirm it instead of looping retries every reconnect.
+                if is_already_subscribed_error(error_msg)
+                    && let Some(ref req_id) = resp.req_id
+                {
+                    self.subscriptions.confirm_subscribe(req_id);
+                    log::debug!("Subscription duplicate ignored: topic={topic}, error={error_msg}");
+                    return;
+                }
+
                 if let Some(ref req_id) = resp.req_id {
                     self.subscriptions.mark_failure(req_id);
                 } else {
@@ -393,9 +403,16 @@ impl BybitWsFeedHandler {
     }
 }
 
+fn is_already_subscribed_error(error_msg: &str) -> bool {
+    error_msg
+        .to_ascii_lowercase()
+        .contains("already subscribed")
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
     use crate::common::{consts::BYBIT_WS_TOPIC_DELIMITER, testing::load_test_json};
@@ -724,6 +741,32 @@ mod tests {
         // Topic should still be in pending (mark_failure moves confirmed -> pending)
         let pending = handler.subscriptions.pending_subscribe_topics();
         assert!(pending.contains(&"invalid.topic.BTCUSDT".to_string()));
+    }
+
+    #[rstest]
+    fn test_already_subscribed_error_confirms_topic() {
+        let handler = create_test_handler();
+        handler.subscriptions.mark_subscribe("tickers.ETHUSDT");
+
+        let resp = BybitWsResponse {
+            op: Some(BybitWsOperation::Subscribe),
+            topic: None,
+            success: Some(false),
+            conn_id: None,
+            req_id: Some("tickers.ETHUSDT".to_string()),
+            ret_code: Some(10001),
+            ret_msg: Some("error:already subscribed,topic:tickers.ETHUSDT".to_string()),
+        };
+
+        handler.handle_subscription_error(&resp);
+
+        let pending = handler.subscriptions.pending_subscribe_topics();
+        assert!(!pending.contains(&"tickers.ETHUSDT".to_string()));
+        let symbols = handler.subscriptions.confirmed();
+        let entry = symbols
+            .get(&Ustr::from("tickers"))
+            .expect("channel present");
+        assert!(entry.contains(&Ustr::from("ETHUSDT")));
     }
 
     #[rstest]
