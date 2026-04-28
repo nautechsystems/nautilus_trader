@@ -40,7 +40,19 @@ use nautilus_trading::examples::strategies::{GridMarketMaker, GridMarketMakerCon
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    let network = DydxNetwork::Mainnet;
+    let network = match std::env::var("DYDX_NETWORK") {
+        Err(_) => DydxNetwork::Mainnet,
+        Ok(value) => match value.to_ascii_lowercase().as_str() {
+            "testnet" => DydxNetwork::Testnet,
+            "mainnet" | "" => DydxNetwork::Mainnet,
+            other => {
+                return Err(format!(
+                    "DYDX_NETWORK must be 'mainnet' or 'testnet' (case-insensitive), received '{other}'",
+                )
+                .into());
+            }
+        },
+    };
 
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");

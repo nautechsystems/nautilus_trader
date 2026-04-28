@@ -1,37 +1,60 @@
 # Options Data and Greeks (Bybit)
 
 :::note
-This is a **Rust-only** v2 system tutorial. It uses the Rust `LiveNode` with
-the Bybit adapter to stream live option Greeks and option chain snapshots.
+This is a **Rust-only** v2 system tutorial. It uses the Rust `LiveNode`
+with the Bybit adapter to stream live option Greeks and aggregated chain
+snapshots.
 :::
 
-This tutorial connects to Bybit's live options market and streams Greeks and
-aggregated option chain snapshots using a Rust `DataActor`. It covers
+This tutorial connects to Bybit's live options market and consumes Greeks
+and option chain data through two `DataActor` examples. It covers
 instrument discovery, venue-provided Greeks subscriptions, and periodic
-option chain snapshots with ATM-relative strike filtering.
+chain snapshots with ATM-relative strike filtering.
 
 ## Introduction
 
 Bybit publishes Greeks (delta, gamma, vega, theta) and implied volatility
-alongside every option ticker update. NautilusTrader exposes this data at two
-levels:
+alongside every option ticker update. NautilusTrader exposes this data at
+two levels:
 
-- **Per-instrument Greeks**: subscribe to a single option contract and receive
-  an `OptionGreeks` event on every ticker update.
-- **Option chain snapshots**: subscribe to an entire expiry series and receive
-  periodic `OptionChainSlice` events that aggregate quotes and Greeks across
-  all active strikes.
+- **Per-instrument Greeks**: subscribe to a single option contract and
+  receive an `OptionGreeks` event on every ticker update.
+- **Option chain snapshots**: subscribe to an entire expiry series and
+  receive periodic `OptionChainSlice` events that aggregate quotes and
+  Greeks across all active strikes.
 
-Two example binaries in the Bybit adapter crate back these patterns: the first
-subscribes to individual Greeks streams; the second subscribes to an aggregated
-option chain with ATM-relative strike filtering.
+Two example binaries back these patterns: the first subscribes to
+individual Greeks streams, the second subscribes to an aggregated chain
+with ATM-relative strike filtering.
+
+```mermaid
+flowchart LR
+    subgraph BybitAPI ["Bybit V5 public WebSocket"]
+        TKR["Per-contract option ticker"]
+    end
+
+    subgraph Adapter ["nautilus-bybit data client"]
+        Q["QuoteTick + OptionGreeks per contract"]
+        AGG["Per-series aggregator<br/>(ATM and strike filtering)"]
+    end
+
+    subgraph Actors ["DataActor implementations"]
+        G["GreeksTester<br/>on_option_greeks()"]
+        C["OptionChainTester<br/>on_option_chain()"]
+    end
+
+    TKR --> Q
+    Q --> G
+    Q --> AGG
+    AGG -->|interval timer| C
+```
 
 ## Prerequisites
 
 - A working Rust toolchain ([rustup.rs](https://rustup.rs)).
 - The NautilusTrader repository cloned and building.
-- A Bybit API key with read permissions. No trading permissions are required
-  for data-only use. Create keys at
+- A Bybit API key with read permissions. No trading permissions are
+  needed for data-only use. Create keys at
   [bybit.com](https://www.bybit.com/app/user/api-management).
 - Environment variables set for authentication:
 
@@ -57,14 +80,14 @@ A Rust `DataActor` needs three pieces:
 2. The `nautilus_actor!(YourType)` macro plus a `Debug` implementation.
 3. A `DataActor` trait implementation with your callbacks.
 
-The macro generates blanket `Actor` and `Component` implementations, so you
-only implement the callbacks you need. Every callback has a default no-op
-implementation.
+The macro generates blanket `Actor` and `Component` implementations, so
+you only implement the callbacks you need. Every callback has a default
+no-op implementation.
 
 ## Part 1: per-instrument Greeks
 
-The `bybit-greeks-tester` example subscribes to `OptionGreeks` for all BTC
-CALL options at the nearest expiry and logs each update.
+The `bybit-greeks-tester` example subscribes to `OptionGreeks` for all
+BTC CALL options at the nearest expiry and logs each update.
 
 ### Actor structure
 
@@ -92,14 +115,15 @@ impl GreeksTester {
 }
 ```
 
-The `core` field is required by the macro. The `client_id` identifies which
-data client to route subscriptions to. The `subscribed_instruments` vector
-tracks what we subscribed to so we clean up on stop.
+The `core` field is required by the macro. The `client_id` identifies
+which data client to route subscriptions to. The `subscribed_instruments`
+vector tracks what we subscribed to so we clean up on stop.
 
 ### Discovering instruments
 
-On start, the actor queries the cache for all option instruments, filters for
-BTC CALLs that have not expired, and finds the nearest expiry:
+On start, the actor queries the cache for all option instruments,
+filters for BTC CALLs that have not expired, and finds the nearest
+expiry:
 
 ```rust
 fn on_start(&mut self) -> anyhow::Result<()> {
@@ -136,10 +160,10 @@ fn on_start(&mut self) -> anyhow::Result<()> {
 ```
 
 :::warning
-Release the cache borrow before calling any subscription methods. The cache
-uses `Rc<RefCell<...>>` internally, and subscription methods may need to
-borrow it. Collect owned data into a local `Vec`, drop the cache reference,
-then subscribe.
+Release the cache borrow before calling any subscription methods. The
+cache uses `Rc<RefCell<...>>` internally, and subscription methods may
+need to borrow it. Collect owned data into a local `Vec`, drop the cache
+reference, then subscribe.
 :::
 
 ### Subscribing to Greeks
@@ -197,8 +221,9 @@ The `OptionGreeks` fields:
 | `open_interest`    | `Option<f64>`  | Open interest for this contract.                   |
 
 The `delta`, `gamma`, `vega`, `theta`, and `rho` values live on a nested
-`greeks: OptionGreekValues` struct. `OptionGreeks` implements `Deref<Target = OptionGreekValues>`,
-so `greeks.delta` and friends work as shown above.
+`greeks: OptionGreekValues` struct. `OptionGreeks` implements
+`Deref<Target = OptionGreekValues>`, so `greeks.delta` and friends work
+as shown above.
 
 Bybit does not provide rho; the adapter sets it to `0.0`.
 
@@ -220,21 +245,21 @@ fn on_stop(&mut self) -> anyhow::Result<()> {
 
 ## Part 2: option chain snapshots
 
-The `bybit-option-chain` example subscribes to an aggregated option chain and
-logs periodic snapshots showing calls and puts at each strike with their
-quotes and Greeks.
+The `bybit-option-chain` example subscribes to an aggregated option chain
+and logs periodic snapshots showing calls and puts at each strike with
+their quotes and Greeks.
 
-### Why use option chains?
+### Why use option chains
 
-Per-instrument subscriptions give granular control, but monitoring an entire
-surface means managing individual streams and correlating updates across
-strikes. An option chain subscription handles this: the `DataEngine`
-aggregates quotes and Greeks across all strikes in a series and publishes a
-single `OptionChainSlice` on a timer.
+Per-instrument subscriptions give granular control, but monitoring an
+entire surface means managing individual streams and correlating updates
+across strikes. An option chain subscription handles this: the
+`DataEngine` aggregates quotes and Greeks across all strikes in a series
+and publishes a single `OptionChainSlice` on a timer.
 
-This aggregation happens inside NautilusTrader. Bybit publishes per-contract
-option market data and does not expose a native option chain stream in the V5
-public WebSocket docs.
+This aggregation happens inside NautilusTrader. Bybit publishes
+per-contract option market data and does not expose a native option
+chain stream in the V5 public WebSocket docs.
 
 ### Key types
 
@@ -257,8 +282,8 @@ let series_id = OptionSeriesId::new(
 | `AtmRelative` | `strikes_above` above and `strikes_below` below ATM.   |
 | `AtmPercent`  | All strikes within `pct` of the ATM price.             |
 
-For ATM-based variants, subscriptions are deferred until the ATM price is
-determined from the venue-provided forward price.
+For ATM-based variants, subscriptions are deferred until the ATM price
+is determined from the venue-provided forward price.
 
 ### Subscribing
 
@@ -279,13 +304,13 @@ self.subscribe_option_chain(
 );
 ```
 
-Pass `None` for `snapshot_interval_ms` to use raw mode, where every quote or
-Greeks update publishes a slice immediately.
+Pass `None` for `snapshot_interval_ms` to use raw mode, where every
+quote or Greeks update publishes a slice immediately.
 
 ### Handling snapshots
 
-The `on_option_chain` callback receives an `OptionChainSlice` containing all
-active strikes with their call and put data:
+The `on_option_chain` callback receives an `OptionChainSlice` containing
+all active strikes with their call and put data:
 
 ```rust
 fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
@@ -351,8 +376,8 @@ optional `greeks: Option<OptionGreeks>`.
 
 ## Node setup
 
-Both examples use the same `LiveNode` pattern. No execution client is needed
-for data-only use:
+Both examples use the same `LiveNode` pattern. No execution client is
+needed for data-only use:
 
 ```rust
 #[tokio::main]
@@ -387,39 +412,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 Setting `product_types` to `[BybitProductType::Option]` loads only option
-instruments. Startup blocks while the instrument provider fetches and parses
-every listed option.
-
-## Results
-
-### Greeks output
-
-The Greeks tester logs one line per ticker update:
-
-```
-Found 22 BTC CALL options at nearest expiry (ts=1775289600000000000)
-Subscribed to option greeks for 22 instruments
-GREEKS | BTC-4APR26-66500-C-USDT-OPTION.BYBIT | delta=0.7619 gamma=0.000160 vega=5.8873 theta=-88.2596 rho=0.000000 | mark_iv=0.30 bid_iv=0.00 ask_iv=0.30 | underlying=66902.63 oi=13.4
-GREEKS | BTC-4APR26-67000-C-USDT-OPTION.BYBIT | delta=0.4282 gamma=0.000220 vega=7.4646 theta=-103.2034 rho=0.000000 | mark_iv=0.28 bid_iv=0.13 ask_iv=0.15 | underlying=66902.63 oi=90.0
-GREEKS | BTC-4APR26-67500-C-USDT-OPTION.BYBIT | delta=0.1290 gamma=0.000118 vega=4.0030 theta=-55.1456 rho=0.000000 | mark_iv=0.28 bid_iv=0.18 ask_iv=0.22 | underlying=66902.63 oi=222.8
-```
-
-### Option chain output
-
-The chain tester logs a summary line and one row per strike on each snapshot
-interval:
-
-```
-Found 44 BTC options at nearest expiry (ts=1775289600000000000, settlement=USDT)
-Subscribing to option chain: BYBIT-BTC-USDT-1775289600000000000
-OPTION_CHAIN | BYBIT-BTC-USDT-1775289600000000000 | atm=67000.0 | calls=6 puts=6 | strikes=7
-  K=64000.0 | CALL: bid=2780.0 ask=2830.0 [d=0.920 g=0.00006 v=2.66 iv=33.0%] | PUT: bid=5.0 ask=12.0 [d=-0.080 g=0.00006 v=2.66 iv=34.2%]
-  K=65000.0 | CALL: bid=1870.0 ask=1920.0 [d=0.849 g=0.00012 v=4.82 iv=31.5%] | PUT: bid=15.0 ask=30.0 [d=-0.151 g=0.00012 v=4.82 iv=32.8%]
-  K=66000.0 | CALL: bid=1050.0 ask=1090.0 [d=0.689 g=0.00018 v=6.89 iv=30.1%] | PUT: bid=70.0 ask=95.0 [d=-0.311 g=0.00018 v=6.89 iv=31.0%]
-  K=67000.0 | CALL: bid=410.0 ask=440.0 [d=0.428 g=0.00022 v=7.46 iv=28.4%] | PUT: bid=350.0 ask=380.0 [d=-0.572 g=0.00022 v=7.46 iv=29.2%]
-  K=68000.0 | CALL: bid=90.0 ask=115.0 [d=0.160 g=0.00015 v=5.20 iv=29.0%] | PUT: bid=1020.0 ask=1060.0 [d=-0.840 g=0.00015 v=5.20 iv=29.8%]
-  K=69000.0 | CALL: bid=10.0 ask=25.0 [d=0.038 g=0.00005 v=1.83 iv=31.2%] | PUT: bid=1940.0 ask=1980.0 [d=-0.962 g=0.00005 v=1.83 iv=32.0%]
-```
+instruments. Startup blocks while the instrument provider fetches and
+parses every listed option.
 
 ## Running the examples
 
@@ -431,8 +425,74 @@ cargo run --example bybit-greeks-tester --package nautilus-bybit --features exam
 cargo run --example bybit-option-chain --package nautilus-bybit --features examples
 ```
 
-Stop either example with Ctrl+C. The actor's `on_stop` callback unsubscribes
-from all streams before shutdown.
+Stop either example with Ctrl+C. The actor's `on_stop` callback
+unsubscribes from all streams before shutdown.
+
+## What the examples produce
+
+A 30-second mainnet run on April 28 (BTC near 76,800 USDT, expiry
+2026-04-28 08:00 UTC) captures **938 Greeks updates** across 22 BTC CALL
+contracts in the per-instrument tester, plus **5 chain snapshots**
+covering 7 strikes each in the chain tester.
+
+### Per-instrument Greeks output
+
+```
+Found 22 BTC CALL options at nearest expiry (ts=1777359600000000000)
+Subscribed to option greeks for 22 instruments
+GREEKS | BTC-28APR26-72000-C-USDT-OPTION.BYBIT | delta=0.4733 gamma=0.000000 vega=0.0000 theta=-0.0000 rho=0.000000 | mark_iv=0.66 bid_iv=0.00 ask_iv=5.00 | underlying=76782.43 oi=0.0
+GREEKS | BTC-28APR26-71000-C-USDT-OPTION.BYBIT | delta=0.4733 gamma=0.000000 vega=0.0000 theta=-0.0000 rho=0.000000 | mark_iv=0.74 bid_iv=0.00 ask_iv=5.00 | underlying=76782.43 oi=0.1
+GREEKS | BTC-28APR26-73000-C-USDT-OPTION.BYBIT | delta=0.4733 gamma=0.000000 vega=0.0000 theta=-0.0000 rho=0.000000 | mark_iv=0.57 bid_iv=0.00 ask_iv=5.00 | underlying=76782.43 oi=0.0
+```
+
+### Option chain output
+
+```
+OPTION_CHAIN | BYBIT:BTC:USDT:2026-04-28T08:00:00Z | atm=77000 | calls=7 puts=7 | strikes=7
+  K=75500 | CALL: bid=1210 ask=1430 [d=0.445 g=0.00000 v=0.00 iv=36.2%] | PUT: bid=0 ask=5 [d=0.000 g=0.00000 v=0.00 iv=36.2%]
+  K=76000 | CALL: bid=700 ask=850 [d=0.445 g=0.00000 v=0.00 iv=32.5%] | PUT: bid=0 ask=5 [d=0.000 g=0.00000 v=0.00 iv=32.5%]
+  K=76500 | CALL: bid=265 ask=370 [d=0.442 g=0.00000 v=0.07 iv=29.9%] | PUT: bid=0 ask=5 [d=-0.003 g=0.00000 v=0.07 iv=29.9%]
+```
+
+### Panels
+
+![BTC CALL delta vs strike](./assets/options_data_bybit/panel_a_delta_vs_strike.png)
+
+**Figure 1.** *Last delta per BTC CALL strike at the nearest expiry,
+underlying ~77,000 USDT marked. Delta drops from ~0.45 below the
+underlying to near zero past the underlying. Bybit's delta on near-zero
+gamma contracts close to expiry compresses to a step-like profile around
+the forward.*
+
+![IV smile per strike](./assets/options_data_bybit/panel_b_iv_smile.png)
+
+**Figure 2.** *Mark IV per strike for the latest chain snapshot (CALL and
+PUT overlaid). The smile is symmetric around ATM at 77,000 USDT, with IV
+dipping from 36% at 75,500 to 30% at 77,000 and rising back to 38% at
+78,500.*
+
+![Underlying trajectory and open interest](./assets/options_data_bybit/panel_c_underlying_oi.png)
+
+**Figure 3.** *Underlying forward price reported in each Greeks update
+(top) and open interest by strike at the last update (bottom). OI
+concentrates in the 70,000-76,000 USDT band: at-the-money to slightly
+out-of-the-money strikes.*
+
+![CALL spread per chain snapshot](./assets/options_data_bybit/panel_d_call_spread.png)
+
+**Figure 4.** *Average CALL bid-ask spread per chain snapshot in USDT.
+Snapshots arrive every five seconds (`snapshot_interval_ms=5000`).*
+
+### Regenerate the panels
+
+```bash
+timeout 30 ./target/release/examples/bybit-greeks-tester > /tmp/bybit_greeks.log 2>&1
+timeout 30 ./target/release/examples/bybit-option-chain > /tmp/bybit_chain.log 2>&1
+
+uv sync --extra visualization
+GREEKS_LOG=/tmp/bybit_greeks.log CHAIN_LOG=/tmp/bybit_chain.log \
+    python3 docs/tutorials/assets/options_data_bybit/render_panels.py
+```
 
 ## Complete source
 
@@ -441,22 +501,22 @@ from all streams before shutdown.
 
 ## Next steps
 
-- **Combine both patterns**: Use per-instrument Greeks for near-ATM contracts
-  alongside the aggregated chain view in a single actor. Subscribe to Greeks
-  for contracts you want to track individually, and the chain for a
-  surface-level view.
-- **Add quote and depth subscriptions**: Call `subscribe_quotes` for
+- **Combine both patterns**. Use per-instrument Greeks for near-ATM
+  contracts alongside the aggregated chain view in a single actor.
+  Subscribe to Greeks for contracts you want to track individually, and
+  the chain for a surface-level view.
+- **Add quote and depth subscriptions**. Call `subscribe_quotes` for
   top-of-book `QuoteTick` updates on individual option contracts. Call
-  `subscribe_order_book_deltas` when you need the dedicated option orderbook
-  stream. Bybit supports option depths 25 and 100.
-- **Options execution**: The
+  `subscribe_order_book_deltas` when you need the dedicated option
+  orderbook stream. Bybit supports option depths 25 and 100.
+- **Options execution**. The
   [delta-neutral strategy tutorial](delta_neutral_options_bybit.md) walks
-  through a short strangle with perpetual hedging, including IV-based order
-  placement via Bybit's `order_iv` parameter.
+  through a short strangle with perpetual hedging, including IV-based
+  order placement via Bybit's `order_iv` parameter.
 
 ## See also
 
-- [Options](../concepts/options.md) - Option instrument types, Greeks data
-  types, and chain architecture.
-- [Bybit integration](../integrations/bybit.md) - Full Bybit adapter
+- [Options](../concepts/options.md): option instrument types, Greeks
+  data types, and chain architecture.
+- [Bybit integration](../integrations/bybit.md): full Bybit adapter
   reference including options order parameters and limitations.
