@@ -5882,6 +5882,18 @@ cdef class OrderMatchingEngine:
         cdef str short_id = str(UUID4())[:8]
         cdef str trade_id = f"{venue}-LEG-OTM-{short_id}"
         cdef Price close_px = custom_option_price if custom_option_price is not None else Price(0.0, self.instrument.price_precision)
+        cdef OrderSide close_side = OrderSide.SELL if position.side == PositionSide.LONG else OrderSide.BUY
+        self._option_register_settlement_order(
+            position,
+            self.instrument.id,
+            close_side,
+            position.quantity,
+            ClientOrderId(trade_id),
+            VenueOrderId(trade_id),
+            position.id,
+            True,
+            f"EXPIRATION_{venue}_OTM",
+        )
         cdef OrderFilled fill = self._option_create_close_fill(position, close_px, trade_id, ts_now)
         self._option_send_events([fill])
 
@@ -5900,6 +5912,18 @@ cdef class OrderMatchingEngine:
         cdef str short_id = str(UUID4())[:8]
         cdef str trade_id = f"{venue}-LEG-CASH-{short_id}"
         cdef Price close_px = custom_option_price if custom_option_price is not None else self._option_settlement_price(underlying_price, True)
+        cdef OrderSide close_side = OrderSide.SELL if position.side == PositionSide.LONG else OrderSide.BUY
+        self._option_register_settlement_order(
+            position,
+            self.instrument.id,
+            close_side,
+            position.quantity,
+            ClientOrderId(trade_id),
+            VenueOrderId(trade_id),
+            position.id,
+            True,
+            f"EXPIRATION_{venue}_CASH",
+        )
         cdef OrderFilled fill = self._option_create_close_fill(position, close_px, trade_id, ts_now)
         self._option_send_events([fill])
 
@@ -5919,11 +5943,71 @@ cdef class OrderMatchingEngine:
         cdef str venue = self.instrument.id.venue.value
         cdef str short_id = str(UUID4())[:8]
         cdef str trade_base = f"{venue}-LEG-EX-{short_id}"
+        cdef str close_trade_id = f"{trade_base}-CLOSE"
+        cdef str open_trade_id = f"{trade_base}-OPEN"
         cdef Price settlement_px = self._option_settlement_price(underlying_price, False)
         cdef Price option_close_px = custom_option_price if custom_option_price is not None else Price(position.avg_px_open, self.instrument.price_precision)
-        cdef OrderFilled option_fill = self._option_create_close_fill(position, option_close_px, f"{trade_base}-CLOSE", ts_now)
-        cdef OrderFilled underlying_fill = self._option_create_underlying_fill(position, underlying_instrument, underlying_qty, underlying_side, settlement_px, f"{trade_base}-OPEN", ts_now)
+        cdef OrderSide close_side = OrderSide.SELL if position.side == PositionSide.LONG else OrderSide.BUY
+        cdef OrderSide underlying_order_side = OrderSide.BUY if underlying_side == PositionSide.LONG else OrderSide.SELL
+        self._option_register_settlement_order(
+            position,
+            self.instrument.id,
+            close_side,
+            position.quantity,
+            ClientOrderId(close_trade_id),
+            VenueOrderId(close_trade_id),
+            position.id,
+            True,
+            f"EXPIRATION_{venue}_PHYSICAL_CLOSE",
+        )
+        self._option_register_settlement_order(
+            position,
+            underlying_instrument.id,
+            underlying_order_side,
+            underlying_qty,
+            ClientOrderId(open_trade_id),
+            VenueOrderId(open_trade_id),
+            None,
+            False,
+            f"EXPIRATION_{venue}_PHYSICAL_OPEN",
+        )
+        cdef OrderFilled option_fill = self._option_create_close_fill(position, option_close_px, close_trade_id, ts_now)
+        cdef OrderFilled underlying_fill = self._option_create_underlying_fill(position, underlying_instrument, underlying_qty, underlying_side, settlement_px, open_trade_id, ts_now)
         self._option_send_events([option_fill, underlying_fill])
+
+    cdef void _option_register_settlement_order(
+        self,
+        Position position,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        PositionId position_id,
+        bint reduce_only,
+        str tag,
+    ):
+        cdef MarketOrder order = MarketOrder(
+            trader_id=position.trader_id,
+            strategy_id=position.strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            order_side=order_side,
+            quantity=quantity,
+            init_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            reduce_only=reduce_only,
+            tags=[tag],
+        )
+
+        # Settle on the position's account so spread-leg-fill positions, which
+        # never went through process_order on this engine, still resolve, and so
+        # the cache indexes the order under the correct account.
+        order.account_id = position.account_id
+
+        self.cache.add_order(order, position_id=position_id)
+        self.cache.add_venue_order_id(order.client_order_id, venue_order_id)
+        self._generate_order_accepted(order, venue_order_id=venue_order_id)
 
     cdef Price _option_settlement_price(self, Price underlying_price, bint cash_settled):
         if cash_settled:

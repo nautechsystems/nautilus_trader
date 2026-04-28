@@ -467,6 +467,7 @@ cdef class OrderMatchingEngine:
     cdef OrderFilled _option_create_close_fill(self, Position position, Price price, str trade_id, uint64_t ts_now)
     cdef OrderFilled _option_create_underlying_fill(self, Position position, Instrument underlying_instrument, Quantity quantity, PositionSide side, Price price, str trade_id_suffix, uint64_t ts_now)
     cdef void _option_send_events(self, list events)
+    cdef void _option_register_settlement_order(self, Position position, InstrumentId instrument_id, OrderSide order_side, Quantity quantity, ClientOrderId client_order_id, VenueOrderId venue_order_id, PositionId position_id, bint reduce_only, str tag)
     cdef void _process_trade_ticks_from_bar(self, Bar bar)
     cdef TradeTick _create_base_trade_tick(self, Bar bar, Quantity size)
     cdef void _process_trade_bar_open(self, Bar bar, TradeTick tick)

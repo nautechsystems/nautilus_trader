@@ -90,6 +90,7 @@ Released on TBD (UTC).
 - Fixed `RiskEngine` applying base `min_quantity`/`max_quantity` bounds to quote-denominated orders
 - Fixed backtest `OrderMatchingEngine` treating `quote_quantity=True` orders as base quantity; the quote notional is now converted to a base quantity before fill simulation (#3873), thanks for reporting @fedoraiver
 - Fixed `subscribe_option_chain` hanging on bootstrap in backtest (#3938), thanks for reporting @aaurix
+- Fixed backtest option expiry fills missing from cache and fills report (#3939), thanks for reporting @hotelmike
 - Fixed `DataBackendSession` GIL deadlock when streaming custom data types (#3847), thanks for reporting @GianC0
 - Fixed `BacktestNode` streaming with mixed built-in and custom data types (#3853), thanks for reporting @GianC0
 - Fixed `DataBackendSession` chunked streaming memory leak causing RSS growth (#3889), thanks for reporting @GianC0
