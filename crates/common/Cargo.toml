@@ -42,6 +42,7 @@ python = [
 live = ["tokio"]
 simulation = ["live", "madsim", "nautilus-core/simulation"]
 defi = ["nautilus-model/defi", "alloy-primitives"]
+high-precision = ["nautilus-model/high-precision"]
 capnp = ["nautilus-serialization/capnp"]
 tracing-bridge = ["tracing", "tracing-subscriber"]
 

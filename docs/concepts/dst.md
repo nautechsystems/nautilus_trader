@@ -153,6 +153,10 @@ and fails the commit when it detects any of:
 - `AHashMap` or `AHashSet` in iteration-order-sensitive files on the DST path. The full set
   of files is under audit; enforcement currently covers `crates/live/src/manager.rs` and
   `crates/execution/src/matching_engine/engine.rs`, and expands as further files are reviewed.
+- Direct `tokio::net::TcpStream::connect` / `tokio::net::TcpListener::bind` reaches that
+  bypass `nautilus_network::net`. The seam re-exports `tokio::net` types under normal builds
+  and swaps to `turmoil::net` under the `turmoil` feature, so all TCP entry points share a
+  single cfg-gated swap point.
 
 The hook supports two exception forms:
 
@@ -319,7 +323,7 @@ to the contract.
 The primary objective of DST is reliability of the Rust engine itself: the order lifecycle,
 reconciliation, matching, risk, and execution state machines. Deterministic replay of user
 strategies is a later, secondary goal that becomes available once strategies are authored in
-Rust or driven by the harness directly. In the meantime, a Python strategy that calls
+Rust or run through a Rust-native test harness. In the meantime, a Python strategy that calls
 `time.time()`, issues arbitrary network requests, or relies on thread scheduling can vary its
 command stream between runs; the Rust core will process the varying stream deterministically,
 but end-to-end replay from a Python entry point is not guaranteed.
@@ -350,10 +354,10 @@ Test modules that drive real localhost sockets (`crates/network/src/socket/clien
 `all(feature = "simulation", madsim)` because their production code paths reach
 `dst::time::*` (madsim time primitives), which panic when called from a
 `#[tokio::test]` runtime. The retry test modules (`crates/network/src/retry.rs::tests`,
-`::proptest_tests`) are gated for the same reason but represent a deferred audit:
-the underlying retry logic is a legitimate DST candidate; re-enabling the suite
-under simulation requires rewriting the tests as `#[madsim::test]` with virtual
-sleep, replacing `tokio::time::advance` and `tokio::test(start_paused = true)`.
+`::proptest_tests`) run under simulation: each test attribute is `cfg_attr`-swapped
+between `#[tokio::test(start_paused = true)]` and `#[madsim::test]`, time reads and
+sleeps route through `crate::dst::time`, and explicit virtual-time advances go
+through a `cfg`-gated `advance_clock` helper so the same body covers both runtimes.
 
 ### Signal handling
 
@@ -409,8 +413,11 @@ As of the current state of this repository:
   exceptions when justified.
 - Build-and-test smoke gate under `cfg(madsim)` runs via the `dst` workflow
   (`.github/workflows/dst.yml`, invokes `make cargo-test-sim`). It compiles the in-scope
-  crates with `--features simulation` and runs the test subset known to work under
-  simulation today:
+  crates with `--features simulation` and runs every test that is sim-compatible today.
+  Crates that consume `nautilus-model` types (`nautilus-common`, `nautilus-execution`)
+  also run a second leg with `--features "simulation,high-precision"` so the seam-routed
+  code paths are exercised under both fixed-point widths (`QuantityRaw` / `PriceRaw` as
+  `u64` vs `u128`).
   - All of `nautilus-common`. This leg compiles with `nautilus-core/simulation`
     propagated, so the explicit `wall_clock_now` cfg branch is selected for every
     test in the suite. Plain `#[rstest]` tests run outside a madsim runtime and route
@@ -419,15 +426,21 @@ As of the current state of this repository:
     test in this leg uses `#[madsim::test]` and asserts that `nanos_since_unix_epoch`
     advances with `madsim::time::sleep`, so virtual wall-clock behavior is validated
     end-to-end on the common leg.
-  - The cross-crate seam pinning tests in `nautilus-network` (sleep / timeout virtual
-    time, ratelimiter sleep) and `nautilus-core` (`wall_clock_now` virtual time). Each
-    runs with its own crate's `--features simulation` and uses `#[madsim::test]`, so
-    the explicit cfg branches and virtual time are both validated.
+  - All of `nautilus-network` (transport-bound test modules are gated out at the
+    source). Includes the seam pinning tests for sleep / timeout virtual time and the
+    rate-limiter, plus the retry suites that exercise backoff timing under virtual time.
+  - All of `nautilus-execution`. The matching engine, fill model, and execution-engine
+    state machines run under the deterministic scheduler with the seeded RNG.
+  - The cross-crate seam pinning tests in `nautilus-core` (`wall_clock_now` virtual
+    time). Each leg runs with its own crate's `--features simulation` and uses
+    `#[madsim::test]` where applicable, so the explicit cfg branches and virtual time
+    are both validated.
 
-  Together this catches drift in the cfg-gated DST seams; it does not yet exercise
+  Together this catches drift in the cfg-gated DST seams and exercises the in-scope
+  state machines under the deterministic scheduler; it does not yet exercise
   determinism end-to-end.
 - End-to-end runtime verification (same-seed diff over an in-scope code path) is out of
-  scope for this repository. The structural conditions (Rule 1 to Rule 5) are enforced;
+  scope for this repository. The structural conditions (Rule 1 to Rule 6) are enforced;
   the claim that a seed reproduces identical observable behavior across runs is plausible
   from the seam design but is not yet verified by a regression gate.
 

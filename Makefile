@@ -606,10 +606,14 @@ else
 endif
 
 # DST simulation smoke test. Compiles the in-scope crates under cfg(madsim)
-# and runs the test subset known to work under simulation today: all of
-# nautilus-common (where every test has been audited for sim compatibility)
-# and the cross-crate seam pinning tests in nautilus-network and nautilus-core.
-# See docs/concepts/dst.md for the full DST scope.
+# and runs every test that is sim-compatible today: all of nautilus-common,
+# nautilus-network, and nautilus-execution (transport-bound tests are gated
+# out at the source), plus the cross-crate seam pinning tests in nautilus-core.
+# Each leg runs with the standard fixed-precision build first, then again
+# under `high-precision` for the crates that consume `nautilus-model` types,
+# so the seam-routed code paths are exercised under both `QuantityRaw` /
+# `PriceRaw` widths (u64 vs u128). See docs/concepts/dst.md for the full
+# DST scope.
 .PHONY: cargo-test-sim
 cargo-test-sim: export RUST_BACKTRACE=1
 cargo-test-sim: export RUSTFLAGS=--cfg madsim
@@ -619,8 +623,14 @@ cargo-test-sim:  #-- Run DST simulation smoke tests (cfg madsim + simulation fea
 	cargo build -p nautilus-common -p nautilus-core -p nautilus-network -p nautilus-execution --tests --lib --features simulation
 	$(info $(M) Running nautilus-common tests under simulation...)
 	cargo nextest run -p nautilus-common --features simulation $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
-	$(info $(M) Running nautilus-network DST seam pinning tests under simulation...)
-	cargo nextest run -p nautilus-network --features simulation -E 'test(~dst) + test(~virtual_time)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
+	$(info $(M) Running nautilus-common tests under simulation + high-precision...)
+	cargo nextest run -p nautilus-common --features "simulation,high-precision" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
+	$(info $(M) Running nautilus-network tests under simulation...)
+	cargo nextest run -p nautilus-network --features simulation $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
+	$(info $(M) Running nautilus-execution tests under simulation...)
+	cargo nextest run -p nautilus-execution --features simulation $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
+	$(info $(M) Running nautilus-execution tests under simulation + high-precision...)
+	cargo nextest run -p nautilus-execution --features "simulation,high-precision" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
 	$(info $(M) Running nautilus-core DST seam pinning tests under simulation...)
 	cargo nextest run -p nautilus-core --features simulation -E 'test(~virtual_time)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
 

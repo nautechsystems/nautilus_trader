@@ -25,9 +25,20 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     orders::{Order, OrderAny},
-    types::{Price, Quantity},
+    types::{Price, Quantity, fixed::FIXED_SCALAR, quantity::QuantityRaw},
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
+
+// Sentinel size used as "unlimited" liquidity in the synthetic fill book.
+// 10 billion units is well beyond any realistic order size, and pre-scaling
+// to `FIXED_SCALAR` once lets each book construction call `Quantity::from_raw`
+// instead of paying the `f64 * FIXED_SCALAR` round-trip in `Quantity::new`.
+const UNLIMITED_LIQUIDITY: f64 = 10_000_000_000.0;
+const UNLIMITED_LIQUIDITY_RAW: QuantityRaw = (UNLIMITED_LIQUIDITY * FIXED_SCALAR) as QuantityRaw;
+
+fn unlimited_liquidity(precision: u8) -> Quantity {
+    Quantity::from_raw(UNLIMITED_LIQUIDITY_RAW, precision)
+}
 
 pub trait FillModel {
     /// Returns `true` if a limit order should be filled based on the model.
@@ -129,17 +140,19 @@ impl Clone for ProbabilisticFillState {
 fn default_std_rng() -> StdRng {
     #[cfg(all(feature = "simulation", madsim))]
     {
-        let mut seed = [0u8; 32];
-        madsim::rand::thread_rng().fill_bytes(&mut seed);
-        StdRng::from_seed(seed)
+        // Deterministic RNG when running inside a madsim runtime; otherwise
+        // (e.g. plain `#[rstest]` tests under `cfg(madsim)`) fall back to the
+        // host RNG. Production paths under simulation always run inside a
+        // runtime, so they continue to consume seeded bytes.
+        if madsim::runtime::Handle::try_current().is_ok() {
+            let mut seed = [0u8; 32];
+            madsim::rand::thread_rng().fill_bytes(&mut seed);
+            return StdRng::from_seed(seed);
+        }
     }
-    #[cfg(not(all(feature = "simulation", madsim)))]
-    {
-        StdRng::from_rng(&mut rand::rng())
-    }
-}
 
-const UNLIMITED: u64 = 10_000_000_000;
+    StdRng::from_rng(&mut rand::rng()) // dst-ok: outside madsim runtime
+}
 
 fn build_l2_book(instrument_id: InstrumentId) -> OrderBook {
     OrderBook::new(instrument_id, BookType::L2_MBP)
@@ -303,14 +316,14 @@ impl FillModel for BestPriceFillModel {
             &mut book,
             OrderSide::Buy,
             best_bid,
-            Quantity::new(UNLIMITED as f64, size_prec),
+            unlimited_liquidity(size_prec),
             1,
         );
         add_order(
             &mut book,
             OrderSide::Sell,
             best_ask,
-            Quantity::new(UNLIMITED as f64, size_prec),
+            unlimited_liquidity(size_prec),
             2,
         );
         Some(book)
@@ -390,14 +403,14 @@ impl FillModel for OneTickSlippageFillModel {
             &mut book,
             OrderSide::Buy,
             best_bid - tick,
-            Quantity::new(UNLIMITED as f64, size_prec),
+            unlimited_liquidity(size_prec),
             1,
         );
         add_order(
             &mut book,
             OrderSide::Sell,
             best_ask + tick,
-            Quantity::new(UNLIMITED as f64, size_prec),
+            unlimited_liquidity(size_prec),
             2,
         );
         Some(book)
@@ -478,14 +491,14 @@ impl FillModel for ProbabilisticFillModel {
                 &mut book,
                 OrderSide::Buy,
                 best_bid,
-                Quantity::new(UNLIMITED as f64, size_prec),
+                unlimited_liquidity(size_prec),
                 1,
             );
             add_order(
                 &mut book,
                 OrderSide::Sell,
                 best_ask,
-                Quantity::new(UNLIMITED as f64, size_prec),
+                unlimited_liquidity(size_prec),
                 2,
             );
         } else {
@@ -493,14 +506,14 @@ impl FillModel for ProbabilisticFillModel {
                 &mut book,
                 OrderSide::Buy,
                 best_bid - tick,
-                Quantity::new(UNLIMITED as f64, size_prec),
+                unlimited_liquidity(size_prec),
                 1,
             );
             add_order(
                 &mut book,
                 OrderSide::Sell,
                 best_ask + tick,
-                Quantity::new(UNLIMITED as f64, size_prec),
+                unlimited_liquidity(size_prec),
                 2,
             );
         }
@@ -595,14 +608,14 @@ impl FillModel for TwoTierFillModel {
             &mut book,
             OrderSide::Buy,
             best_bid - tick,
-            Quantity::new(UNLIMITED as f64, size_prec),
+            unlimited_liquidity(size_prec),
             3,
         );
         add_order(
             &mut book,
             OrderSide::Sell,
             best_ask + tick,
-            Quantity::new(UNLIMITED as f64, size_prec),
+            unlimited_liquidity(size_prec),
             4,
         );
         Some(book)
@@ -812,14 +825,14 @@ impl FillModel for LimitOrderPartialFillModel {
             &mut book,
             OrderSide::Buy,
             best_bid - tick,
-            Quantity::new(UNLIMITED as f64, size_prec),
+            unlimited_liquidity(size_prec),
             3,
         );
         add_order(
             &mut book,
             OrderSide::Sell,
             best_ask + tick,
-            Quantity::new(UNLIMITED as f64, size_prec),
+            unlimited_liquidity(size_prec),
             4,
         );
         Some(book)
@@ -1119,14 +1132,14 @@ impl FillModel for VolumeSensitiveFillModel {
             &mut book,
             OrderSide::Buy,
             best_bid - tick,
-            Quantity::new(UNLIMITED as f64, size_prec),
+            unlimited_liquidity(size_prec),
             3,
         );
         add_order(
             &mut book,
             OrderSide::Sell,
             best_ask + tick,
-            Quantity::new(UNLIMITED as f64, size_prec),
+            unlimited_liquidity(size_prec),
             4,
         );
         Some(book)

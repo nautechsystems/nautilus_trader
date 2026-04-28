@@ -34,6 +34,13 @@ jobs:
       # Persistent target dir outside the workspace so it survives
       # actions/checkout's git clean -ffdx between runs.
       CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/dst
+      # Cross-seed exploration: each `#[madsim::test]` runs MADSIM_TEST_NUM
+      # times with consecutive seeds (MADSIM_TEST_SEED, +1, +2, ...). The
+      # base seed is computed in the run step as `run_number * MADSIM_TEST_NUM`
+      # so each nightly run covers a fresh, non-overlapping seed window.
+      # A failure here is replayable locally with:
+      #   MADSIM_TEST_SEED=<n> MADSIM_TEST_NUM=5 make cargo-test-sim
+      MADSIM_TEST_NUM: "5"
     steps:
       - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
@@ -54,4 +61,7 @@ jobs:
           rust-cache-enabled: "false"
 
       - name: Run DST simulation smoke tests
-        run: make cargo-test-sim NEXTEST_PROFILE=ci
+        run: |
+          export MADSIM_TEST_SEED=$((GITHUB_RUN_NUMBER * MADSIM_TEST_NUM))
+          echo "MADSIM_TEST_SEED=$MADSIM_TEST_SEED MADSIM_TEST_NUM=$MADSIM_TEST_NUM"
+          make cargo-test-sim NEXTEST_PROFILE=ci
