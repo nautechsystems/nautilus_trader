@@ -1787,7 +1787,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # this, downstream FillReports during continuous reconciliation cannot map
         # venue_order_id back to client_order_id and are silently dropped.
         if nautilus_order.venue_order_id is None:
-            self._log.info(
+            self._log.warning(
                 f"execDetails arrived before openOrder for {nautilus_order.client_order_id}; "
                 f"synthesizing OrderAccepted with venue_order_id={venue_order_id}",
             )
