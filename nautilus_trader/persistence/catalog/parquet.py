@@ -2776,11 +2776,11 @@ class ParquetDataCatalog(BaseDataCatalog):
         if data_cls is not None:
             yield from self._list_feather_data_files(kind, instance_id, data_cls, identifiers)
         else:
-            base_dir = Path(self.path) / kind / urisafe_identifier(instance_id)
+            base_dir = f"{self.path.rstrip('/')}/{kind}/{urisafe_identifier(instance_id)}"
             discovered_classes: set[str] = set()
 
             # Discover data classes from flat files
-            for path_str in self.fs.glob(str(base_dir / "*.feather")):
+            for path_str in self.fs.glob(f"{base_dir}/*.feather"):
                 if not self.fs.isfile(path_str):
                     continue
 
@@ -2823,28 +2823,28 @@ class ParquetDataCatalog(BaseDataCatalog):
         """
         List feather files for a specific data class.
         """
-        base_dir = Path(self.path) / kind / instance_id
+        base_dir = f"{self.path.rstrip('/')}/{kind}/{instance_id}"
         data_name = class_to_filename(data_cls)
-        data_dir = base_dir / data_name
+        data_dir = f"{base_dir}/{data_name}"
 
-        if self.fs.isdir(str(data_dir)):
+        if self.fs.isdir(data_dir):
             # Per-instrument feather files organized in subdirectories
-            sub_dirs = [d for d in self.fs.glob(str(data_dir / "*")) if self.fs.isdir(d)]
+            sub_dirs = [d for d in self.fs.glob(f"{data_dir}/*") if self.fs.isdir(d)]
 
             for sub_dir in sub_dirs:
                 # Apply identifier filter if provided
                 if identifiers:
-                    sub_dir_name = Path(sub_dir).name
+                    sub_dir_name = sub_dir.rstrip("/").split("/")[-1]
 
                     if not any(identifier in sub_dir_name for identifier in identifiers):
                         continue
 
                 # Yield all feather files in this subdirectory
-                for path_str in sorted(self.fs.glob(str(Path(sub_dir) / "*.feather"))):
+                for path_str in sorted(self.fs.glob(f"{sub_dir.rstrip('/')}/*.feather")):
                     yield FeatherFile(path=path_str, class_name=data_name)
         else:
             # Data is in flat files (old format or non-per-instrument data)
-            for path_str in sorted(self.fs.glob(str(base_dir / f"{data_name}_*.feather"))):
+            for path_str in sorted(self.fs.glob(f"{base_dir}/{data_name}_*.feather")):
                 yield FeatherFile(path=path_str, class_name=data_name)
 
 

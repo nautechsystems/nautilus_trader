@@ -51,6 +51,7 @@ from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.funcs import class_to_filename
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWranglerV2
 from nautilus_trader.test_kit.mocks.data import NewsEventData
@@ -706,6 +707,89 @@ def test_list_live_runs(
 
     # Assert
     assert result == ["abc"]
+
+
+class RecordingFileSystem:
+    def __init__(
+        self,
+        directories: set[str] | None = None,
+        files: set[str] | None = None,
+        glob_results: dict[str, list[str]] | None = None,
+    ) -> None:
+        self.directories = directories or set()
+        self.files = files or set()
+        self.glob_results = glob_results or {}
+        self.glob_calls: list[str] = []
+        self.isdir_calls: list[str] = []
+
+    def glob(self, path: str) -> list[str]:
+        self.glob_calls.append(path)
+        return self.glob_results.get(path, [])
+
+    def isdir(self, path: str) -> bool:
+        self.isdir_calls.append(path)
+        return path in self.directories
+
+    def isfile(self, path: str) -> bool:
+        return path in self.files
+
+
+def test_list_feather_files_preserves_remote_uri_scheme() -> None:
+    # Arrange
+    catalog = ParquetDataCatalog("s3://bucket/catalog", fs_protocol="memory")
+    data_name = class_to_filename(QuoteTick)
+    base_dir = "s3://bucket/catalog/live/run-1"
+    flat_file = f"{base_dir}/{data_name}_20200101.feather"
+    fs = RecordingFileSystem(
+        files={flat_file},
+        glob_results={
+            f"{base_dir}/*.feather": [flat_file],
+            f"{base_dir}/{data_name}_*.feather": [flat_file],
+        },
+    )
+    catalog.fs = fs
+
+    # Act
+    result = list(catalog._list_feather_files("live", "run-1"))
+
+    # Assert
+    assert [file.path for file in result] == [flat_file]
+    assert f"{base_dir}/*.feather" in fs.glob_calls
+    assert all(path.startswith("s3://") for path in fs.glob_calls)
+
+
+def test_list_feather_data_files_preserves_remote_uri_scheme() -> None:
+    # Arrange
+    catalog = ParquetDataCatalog("s3://bucket/catalog", fs_protocol="memory")
+    data_name = class_to_filename(QuoteTick)
+    base_dir = "s3://bucket/catalog/live/run-1"
+    data_dir = f"{base_dir}/{data_name}"
+    sub_dir = f"{data_dir}/AUDUSD.SIM"
+    feather_file = f"{sub_dir}/part.feather"
+    fs = RecordingFileSystem(
+        directories={data_dir, sub_dir},
+        glob_results={
+            f"{data_dir}/*": [sub_dir],
+            f"{sub_dir}/*.feather": [feather_file],
+        },
+    )
+    catalog.fs = fs
+
+    # Act
+    result = list(
+        catalog._list_feather_data_files(
+            "live",
+            "run-1",
+            QuoteTick,
+            identifiers=["AUDUSD"],
+        ),
+    )
+
+    # Assert
+    assert [file.path for file in result] == [feather_file]
+    assert fs.isdir_calls[0] == data_dir
+    assert fs.glob_calls == [f"{data_dir}/*", f"{sub_dir}/*.feather"]
+    assert all(path.startswith("s3://") for path in [*fs.isdir_calls, *fs.glob_calls])
 
 
 # Custom data class for testing metadata functionality

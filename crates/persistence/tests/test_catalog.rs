@@ -13,13 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, fs, io::Write, str::FromStr};
+use std::{collections::HashMap, fs, io::Write, str::FromStr, sync::Arc};
 
 use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     data::{
-        Bar, BarSpecification, BarType, BookOrder, Data, HasTsInit, IndexPriceUpdate,
-        MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BarSpecification, BarType, BookOrder, CustomData, Data, DataType, HasTsInit,
+        IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
         depth::DEPTH10_LEN, is_monotonically_increasing_by_init, to_variant,
     },
     enums::{
@@ -42,6 +42,7 @@ use nautilus_persistence::{
 };
 use nautilus_serialization::{arrow::ArrowSchemaProvider, ensure_custom_data_registered};
 use nautilus_testkit::common::get_nautilus_test_data_file_path;
+use object_store::local::LocalFileSystem;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::json;
@@ -3166,6 +3167,102 @@ fn test_rust_custom_data_roundtrip() {
             assert_eq!(expected, rust);
         } else {
             panic!("Expected Data::Custom variant");
+        }
+    }
+}
+
+#[rstest]
+fn test_rust_custom_data_remote_query_registers_object_store() {
+    ensure_test_custom_data_registered();
+
+    let temp_dir = TempDir::new().unwrap();
+    let local_store = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    catalog.base_path = "catalog".to_string();
+    catalog.original_uri = "s3://test-bucket/catalog".to_string();
+    catalog.object_store = Arc::new(local_store);
+
+    let instrument_id = InstrumentId::from("RUST.REMOTE");
+    let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+    let original_data = [
+        RustTestCustomData {
+            instrument_id,
+            value: 10.0,
+            flag: true,
+            ts_event: UnixNanos::from(10),
+            ts_init: UnixNanos::from(10),
+        },
+        RustTestCustomData {
+            instrument_id,
+            value: 20.0,
+            flag: false,
+            ts_event: UnixNanos::from(20),
+            ts_init: UnixNanos::from(20),
+        },
+    ];
+    let custom_data: Vec<CustomData> = original_data
+        .iter()
+        .cloned()
+        .map(|item| CustomData::new(Arc::new(item), data_type.clone()))
+        .collect();
+
+    catalog
+        .write_custom_data_batch(custom_data, None, None, Some(false))
+        .unwrap();
+
+    let ids = vec![instrument_id.to_string()];
+    let discovered_files = catalog
+        .list_parquet_files_with_criteria("custom/RustTestCustomData", Some(&ids), None, None)
+        .unwrap();
+    let explicit_files: Vec<String> = discovered_files
+        .iter()
+        .map(|path| catalog.reconstruct_full_uri(path))
+        .collect();
+
+    let loaded_discovered = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(&ids),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+    let loaded_explicit = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(&ids),
+            None,
+            None,
+            None,
+            Some(explicit_files),
+            false,
+        )
+        .unwrap();
+
+    assert_eq!(discovered_files.len(), 1);
+    assert!(discovered_files[0].starts_with("catalog/data/custom/RustTestCustomData/"));
+
+    for loaded in [&loaded_discovered, &loaded_explicit] {
+        assert_eq!(loaded.len(), original_data.len());
+        for (expected, actual) in original_data.iter().zip(loaded.iter()) {
+            if let Data::Custom(custom) = actual {
+                assert_eq!(custom.data_type.type_name(), "RustTestCustomData");
+                assert_eq!(
+                    custom.data_type.identifier(),
+                    Some(instrument_id.to_string()).as_deref(),
+                );
+                let rust_data: &RustTestCustomData = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<RustTestCustomData>()
+                    .expect("Expected RustTestCustomData");
+                assert_eq!(expected, rust_data);
+            } else {
+                panic!("Expected custom data, was {actual:?}");
+            }
         }
     }
 }
