@@ -1459,6 +1459,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         order: Order,
         ib_order: IBOrder | None = None,
         reason: str = "",
+        venue_order_id: VenueOrderId | None = None,
     ) -> None:
         if status == OrderStatus.SUBMITTED:
             self.generate_order_submitted(
@@ -1494,11 +1495,16 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             self._log.warning(f"Order {order.client_order_id} is {status.name}")
         elif status == OrderStatus.CANCELED:
             if order.status != OrderStatus.CANCELED:
+                # Fall back to the venue_order_id from the orderStatus callback when the
+                # cached order has none yet (openOrder may not have fired before the cancel,
+                # in which case order.venue_order_id is still None and propagating that None
+                # through OrderCanceled would lose the mapping for subsequent FillReports).
+                resolved_venue_order_id = order.venue_order_id or venue_order_id
                 self.generate_order_canceled(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
-                    venue_order_id=order.venue_order_id,
+                    venue_order_id=resolved_venue_order_id,
                     ts_event=self._clock.timestamp_ns(),
                 )
         elif status == OrderStatus.REJECTED:
@@ -1720,6 +1726,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     status=status,
                     order=nautilus_order,
                     reason=reason,
+                    venue_order_id=venue_order_id,
                 )
 
             if status in (

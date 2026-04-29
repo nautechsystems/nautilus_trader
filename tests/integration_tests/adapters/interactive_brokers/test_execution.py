@@ -1223,6 +1223,48 @@ async def test_spread_execution_handles_exec_details_before_open_order(mocker, e
 
 
 @pytest.mark.asyncio
+async def test_on_order_status_cancel_propagates_venue_order_id_when_order_unaccepted(
+    mocker,
+    exec_client,
+    cache,
+    instrument,
+    contract_details,
+):
+    # Regression test: when an orderStatus(Cancelled) callback arrives before
+    # openOrder has set venue_order_id on the cached Order, the OrderCanceled
+    # event must still carry the venue_order_id from the orderStatus payload.
+    # Otherwise the cache loses the venue_order_id->client_order_id mapping
+    # and subsequent FillReports during reconciliation can't be attributed.
+    instrument_setup(
+        exec_client=exec_client,
+        cache=cache,
+        instrument=instrument,
+        contract_details=contract_details,
+    )
+
+    client_order_id = ClientOrderId("O-CANCEL-RACE-001")
+    order = TestExecStubs.limit_order(
+        instrument=instrument,
+        client_order_id=client_order_id,
+    )
+    order = TestExecStubs.make_submitted_order(order)
+    cache.add_order(order, None)
+    assert order.venue_order_id is None
+
+    venue_order_id = VenueOrderId("8201")
+    generate_order_canceled = mocker.spy(exec_client, "generate_order_canceled")
+
+    exec_client._on_order_status(
+        order_ref=str(client_order_id),
+        order_status="Cancelled",
+        venue_order_id=venue_order_id,
+    )
+
+    assert generate_order_canceled.call_count == 1
+    assert generate_order_canceled.call_args.kwargs["venue_order_id"] == venue_order_id
+
+
+@pytest.mark.asyncio
 async def test_on_account_update(mocker, exec_client):
     # TODO:
     pass
