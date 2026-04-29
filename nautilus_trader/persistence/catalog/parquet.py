@@ -167,6 +167,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             isinstance(self.fs, MemoryFileSystem)
             and platform.system() == "Windows"
             and not final_path.startswith("/")
+            and "://" not in final_path
         ):
             final_path = "/" + final_path
 
