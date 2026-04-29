@@ -1180,6 +1180,12 @@ impl DataClient for PolymarketDataClient {
             if let Some(inst) = instrument {
                 cache_instrument(&instruments_cache, &token_meta, &inst);
 
+                // Publish onto the data bus so other clients (e.g. the exec
+                // client's token map) can update from the same fetch.
+                if let Err(e) = sender.send(DataEvent::Instrument(inst.clone())) {
+                    log::warn!("Failed to publish instrument {instrument_id}: {e}");
+                }
+
                 let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
                     request_id,
                     client_id,

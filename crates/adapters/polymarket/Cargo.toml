@@ -94,6 +94,7 @@ nautilus-testkit = { workspace = true }
 nautilus-trading = { workspace = true }
 
 axum = { workspace = true }
+proptest = { workspace = true }
 rstest = { workspace = true }
 
 [[bin]]

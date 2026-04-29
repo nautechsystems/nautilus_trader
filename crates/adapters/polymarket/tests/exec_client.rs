@@ -86,6 +86,9 @@ struct TestServerState {
     order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     order_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     order_post_count: Arc<tokio::sync::Mutex<usize>>,
+    /// When > 0, `handle_post_order` returns 500 on this many calls before
+    /// reverting to the configured `order_response_status`. Used by retry tests.
+    order_post_500_remaining: Arc<tokio::sync::Mutex<usize>>,
     batch_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     batch_order_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     batch_order_post_count: Arc<tokio::sync::Mutex<usize>>,
@@ -109,6 +112,7 @@ impl Default for TestServerState {
             order_response: Arc::new(tokio::sync::Mutex::new(None)),
             order_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             order_post_count: Arc::new(tokio::sync::Mutex::new(0)),
+            order_post_500_remaining: Arc::new(tokio::sync::Mutex::new(0)),
             batch_order_response: Arc::new(tokio::sync::Mutex::new(None)),
             batch_order_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             batch_order_post_count: Arc::new(tokio::sync::Mutex::new(0)),
@@ -164,6 +168,10 @@ fn create_test_exec_config_with_retries(
         base_url_data_api: Some(format!("http://{addr}")),
         http_timeout_secs: 5,
         max_retries,
+        // Tiny retry delays so tests cover retry counts without paying
+        // production backoff (defaults are 1000ms / 10000ms).
+        retry_delay_initial_ms: 1,
+        retry_delay_max_ms: 10,
         ..PolymarketExecClientConfig::default()
     }
 }
@@ -297,6 +305,17 @@ async fn handle_post_order(
     if let Ok(v) = serde_json::from_slice::<Value>(&body) {
         *state.last_body.lock().await = Some(v);
     }
+
+    let mut remaining_500 = state.order_post_500_remaining.lock().await;
+    if *remaining_500 > 0 {
+        *remaining_500 -= 1;
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "transient server error"})),
+        )
+            .into_response();
+    }
+    drop(remaining_500);
 
     let status = *state.order_response_status.lock().await;
     let resp = state.order_response.lock().await;
@@ -1779,6 +1798,97 @@ async fn test_submit_order_rejected_on_http_error() {
         .unwrap()
         .unwrap();
     assert_order_event(event, "Rejected");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_retries_5xx_and_accepts_when_recovered() {
+    // Server returns 500 twice, then 200 on the third attempt. With
+    // max_retries=2 the submitter should consume both retries and accept
+    // on the third call.
+    let state = TestServerState::default();
+    *state.order_post_500_remaining.lock().await = 2;
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client_with_retries(addr, 2);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+
+    let order = make_limit_order(
+        "O-RETRY-RECOVER",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let cmd = make_submit_cmd(&order, instrument_id);
+
+    client.submit_order(cmd).unwrap();
+
+    // Submitted (synchronous before the HTTP roundtrip).
+    let event = rx.try_recv().unwrap();
+    assert_order_event(event, "Submitted");
+
+    // Accepted after the retries succeed.
+    let event = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+        .await
+        .expect("expected accept within timeout")
+        .unwrap();
+    assert_order_event(event, "Accepted");
+
+    // Three POSTs total: two failed retries plus the recovered call.
+    assert_eq!(*state.order_post_count.lock().await, 3);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_rejects_when_5xx_exhausts_retries() {
+    // Server returns 500 three times. With max_retries=2 the submitter
+    // exhausts retries on the third attempt and emits Rejected.
+    let state = TestServerState::default();
+    *state.order_post_500_remaining.lock().await = 3;
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client_with_retries(addr, 2);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+
+    let order = make_limit_order(
+        "O-RETRY-EXHAUST",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let cmd = make_submit_cmd(&order, instrument_id);
+
+    client.submit_order(cmd).unwrap();
+
+    let event = rx.try_recv().unwrap();
+    assert_order_event(event, "Submitted");
+
+    let event = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+        .await
+        .expect("expected reject within timeout")
+        .unwrap();
+    assert_order_event(event, "Rejected");
+
+    // Initial attempt + 2 retries = 3 POSTs, then give up.
+    assert_eq!(*state.order_post_count.lock().await, 3);
 }
 
 #[rstest]

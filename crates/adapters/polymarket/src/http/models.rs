@@ -457,12 +457,10 @@ mod tests {
 
         let first = &trade.maker_orders[0];
         assert_eq!(first.matched_amount, dec!(25.0000));
-        assert_eq!(first.fee_rate_bps, dec!(0));
         assert_eq!(first.price, dec!(0.5000));
         assert_eq!(first.outcome, PolymarketOutcome::yes());
 
         let second = &trade.maker_orders[1];
-        assert_eq!(second.fee_rate_bps, dec!(10));
         assert_eq!(second.matched_amount, dec!(5.0000));
     }
 
@@ -805,7 +803,7 @@ mod tests {
         assert_eq!(positions[2].size, 42.0);
         assert_eq!(positions[2].avg_price, Some(0.3));
 
-        // Dust position (below DUST_SNAP_THRESHOLD)
+        // Dust position (below DUST_POSITION_THRESHOLD)
         assert_eq!(positions[3].size, 0.005);
         assert_eq!(positions[3].avg_price, Some(0.7));
     }

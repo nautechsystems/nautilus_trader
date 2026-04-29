@@ -1478,4 +1478,193 @@ mod tests {
         assert_eq!(r1.crossing_price, r2.crossing_price);
         assert_eq!(r1.expected_base_qty, r2.expected_base_qty);
     }
+
+    mod adjust_market_buy_amount_property_tests {
+        use proptest::prelude::*;
+        use rstest::rstest;
+
+        use super::*;
+
+        // Generate a Decimal in [1e-6, 1_000_000] at USDC scale by sampling
+        // micro-units. Avoids zero so we never hit the truncate-to-zero error
+        // path on the input itself.
+        fn decimal_at_usdc_scale(micros: u64) -> Decimal {
+            Decimal::new(micros as i64, USDC_DECIMALS)
+        }
+
+        // Generate a Decimal rate from basis points: bps / 10_000.
+        fn decimal_from_bps(bps: u32) -> Decimal {
+            Decimal::new(i64::from(bps), 4)
+        }
+
+        // Recomputes total_cost the same way `adjust_market_buy_amount` does so
+        // tests use the same formula they're verifying (no weak re-derivation).
+        fn compute_total_cost(
+            amount: Decimal,
+            price: Decimal,
+            fee_rate: Decimal,
+            fee_exponent: f64,
+            builder: Decimal,
+        ) -> Decimal {
+            let base = price * (Decimal::ONE - price);
+            let base_f64: f64 = base.try_into().unwrap_or(0.0);
+            let curve = Decimal::try_from(base_f64.powf(fee_exponent)).unwrap_or(Decimal::ZERO);
+            let platform_fee_rate = fee_rate * curve;
+            let platform_fee = amount / price * platform_fee_rate;
+            amount + platform_fee + amount * builder
+        }
+
+        proptest! {
+            // Deterministic over arbitrary valid inputs: same args produce
+            // the same Result (Ok or Err) and equal Ok values.
+            #[rstest]
+            fn prop_adjust_market_buy_amount_is_deterministic(
+                amount_micros in 1u64..=1_000_000_000_000u64,
+                balance_micros in 1u64..=1_000_000_000_000u64,
+                price_milli in 1u32..=999u32,
+                fee_rate_bps in 0u32..=1_000u32,
+                fee_exponent in 1.0f64..=3.0f64,
+                builder_bps in 0u32..=500u32,
+            ) {
+                let amount = decimal_at_usdc_scale(amount_micros);
+                let balance = decimal_at_usdc_scale(balance_micros);
+                let price = Decimal::new(i64::from(price_milli), 3);
+                let fee_rate = decimal_from_bps(fee_rate_bps);
+                let builder = decimal_from_bps(builder_bps);
+
+                let r1 = adjust_market_buy_amount(amount, balance, price, fee_rate, fee_exponent, builder);
+                let r2 = adjust_market_buy_amount(amount, balance, price, fee_rate, fee_exponent, builder);
+                prop_assert_eq!(r1.is_ok(), r2.is_ok());
+                if let (Ok(a), Ok(b)) = (r1, r2) {
+                    prop_assert_eq!(a, b);
+                }
+            }
+
+            // Non-binding branch: balance is always large enough to cover
+            // total_cost. Function MUST return Ok and the result MUST equal
+            // the input amount (already at USDC scale). A regression that
+            // bails on valid inputs would fail this property.
+            #[rstest]
+            fn prop_adjust_market_buy_amount_non_binding_returns_amount(
+                amount_micros in 1u64..=1_000_000_000u64,
+                price_milli in 1u32..=999u32,
+                fee_rate_bps in 0u32..=1_000u32,
+                fee_exponent in 1.0f64..=3.0f64,
+                builder_bps in 0u32..=500u32,
+            ) {
+                let amount = decimal_at_usdc_scale(amount_micros);
+                let price = Decimal::new(i64::from(price_milli), 3);
+                let fee_rate = decimal_from_bps(fee_rate_bps);
+                let builder = decimal_from_bps(builder_bps);
+
+                // Balance covers total_cost with margin. Use 10x as a generous
+                // upper bound on cost-vs-amount even at extreme p, fee, and
+                // builder values within the generator bounds.
+                let total_cost =
+                    compute_total_cost(amount, price, fee_rate, fee_exponent, builder);
+                let balance = total_cost * Decimal::from(10);
+
+                let adjusted = adjust_market_buy_amount(
+                    amount, balance, price, fee_rate, fee_exponent, builder,
+                )
+                .expect("non-binding balance must yield Ok");
+                prop_assert_eq!(
+                    adjusted, amount,
+                    "non-binding branch must return the input amount unchanged",
+                );
+            }
+
+            // Binding branch: balance < total_cost(amount). Function MUST
+            // return Ok (assuming the divisor produces something >= 1 micro)
+            // and the result MUST be strictly less than amount, at USDC scale,
+            // and total_cost(adjusted) MUST fit inside balance.
+            #[rstest]
+            fn prop_adjust_market_buy_amount_binding_shrinks_into_balance(
+                amount_micros in 1_000u64..=1_000_000_000u64,
+                price_milli in 10u32..=990u32,
+                fee_rate_bps in 0u32..=1_000u32,
+                fee_exponent in 1.0f64..=3.0f64,
+                builder_bps in 0u32..=500u32,
+                fraction_thousandths in 100u32..=900u32,
+            ) {
+                let amount = decimal_at_usdc_scale(amount_micros);
+                let price = Decimal::new(i64::from(price_milli), 3);
+                let fee_rate = decimal_from_bps(fee_rate_bps);
+                let builder = decimal_from_bps(builder_bps);
+
+                // Balance set to a fraction (0.1 .. 0.9) of total_cost so the
+                // shrink branch is always exercised with non-trivial values.
+                let total_cost =
+                    compute_total_cost(amount, price, fee_rate, fee_exponent, builder);
+                let fraction = Decimal::new(i64::from(fraction_thousandths), 3);
+                let balance = (total_cost * fraction).trunc_with_scale(USDC_DECIMALS);
+                if balance.is_zero() {
+                    return Ok(()); // sub-micro balance hits the bail path; skip.
+                }
+
+                let adjusted = adjust_market_buy_amount(
+                    amount, balance, price, fee_rate, fee_exponent, builder,
+                )
+                .expect("non-zero balance fraction must yield Ok in binding branch");
+
+                prop_assert!(
+                    adjusted < amount,
+                    "binding branch must strictly shrink (adjusted={adjusted}, amount={amount})",
+                );
+                prop_assert!(
+                    adjusted > Decimal::ZERO,
+                    "adjusted must be strictly positive",
+                );
+                prop_assert_eq!(
+                    adjusted,
+                    adjusted.trunc_with_scale(USDC_DECIMALS),
+                    "adjusted must be at USDC_DECIMALS scale",
+                );
+                let recomputed_cost =
+                    compute_total_cost(adjusted, price, fee_rate, fee_exponent, builder);
+                prop_assert!(
+                    recomputed_cost <= balance,
+                    "total_cost {recomputed_cost} must fit balance {balance}",
+                );
+            }
+
+            // Truncation property: when the input amount has sub-USDC
+            // precision (e.g. amount derived from f64 math elsewhere in the
+            // pipeline), the result is rounded down to USDC scale, never up.
+            #[rstest]
+            fn prop_adjust_market_buy_amount_truncates_subusdc_precision(
+                amount_pico in 1_000_000u64..=1_000_000_000_000u64,
+                price_milli in 1u32..=999u32,
+                fee_rate_bps in 0u32..=1_000u32,
+                fee_exponent in 1.0f64..=3.0f64,
+                builder_bps in 0u32..=500u32,
+            ) {
+                // Sample at 9 dp (pico-USDC) so amounts have 3 dp beyond the
+                // USDC on-chain scale.
+                let amount = Decimal::new(amount_pico as i64, 9);
+                let price = Decimal::new(i64::from(price_milli), 3);
+                let fee_rate = decimal_from_bps(fee_rate_bps);
+                let builder = decimal_from_bps(builder_bps);
+
+                // Non-binding so we exercise the trunc-on-amount path.
+                let total_cost =
+                    compute_total_cost(amount, price, fee_rate, fee_exponent, builder);
+                let balance = total_cost * Decimal::from(10);
+
+                if let Ok(adjusted) = adjust_market_buy_amount(
+                    amount, balance, price, fee_rate, fee_exponent, builder,
+                ) {
+                    prop_assert_eq!(
+                        adjusted,
+                        adjusted.trunc_with_scale(USDC_DECIMALS),
+                        "result must be at USDC_DECIMALS scale",
+                    );
+                    prop_assert!(
+                        adjusted <= amount,
+                        "truncation must round DOWN, never up (adjusted={adjusted}, amount={amount})",
+                    );
+                }
+            }
+        }
+    }
 }

@@ -1133,7 +1133,6 @@ mod tests {
             maker_address: Ustr::from("0xother"),
             maker_orders: vec![PolymarketMakerOrder {
                 asset_id,
-                fee_rate_bps: Decimal::new(1000, 0),
                 maker_address: "0xabc".to_string(),
                 matched_amount: Decimal::from_f64_retain(matched_amount).unwrap_or(Decimal::ZERO),
                 order_id: order_id.clone(),
@@ -1243,5 +1242,107 @@ mod tests {
             receiver.try_recv().is_err(),
             "No further events expected after the sequence"
         );
+    }
+
+    #[rstest]
+    fn test_dispatch_taker_fill_snaps_overfill_to_submitted_qty() {
+        // Reproduces the V2 market-BUY scenario that motivated the dust-snap
+        // fix: SDK truncates the registered qty to USDC scale, but the
+        // on-chain fill comes back at full precision and exceeds submitted
+        // by microshares. Without the snap the engine rejects as overfill.
+        use crate::common::enums::{
+            PolymarketEventType, PolymarketOrderSide, PolymarketOutcome, PolymarketTradeStatus,
+        };
+
+        let instrument = test_instrument();
+        let asset_id = instrument.id().symbol.inner();
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(asset_id, instrument.clone());
+
+        let fill_tracker = OrderFillTrackerMap::new();
+        let venue_order_id = VenueOrderId::from("0xtaker-overfill");
+        // Submitted qty truncated to USDC scale.
+        let submitted = Quantity::new(714.285710, instrument.size_precision());
+        fill_tracker.register(
+            venue_order_id,
+            submitted,
+            OrderSide::Buy,
+            instrument.id(),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+
+        let pending_fills = Mutex::new(FifoCacheMap::default());
+        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_fills: &pending_fills,
+            pending_order_reports: &pending_order_reports,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+        let mut state = WsDispatchState::default();
+
+        let trade = PolymarketUserTrade {
+            asset_id,
+            bucket_index: 0,
+            fee_rate_bps: "0".to_string(),
+            id: "trade-overfill".to_string(),
+            last_update: "1700000001".to_string(),
+            maker_address: Ustr::from("0xmaker"),
+            maker_orders: vec![],
+            market: Ustr::from("0xmarket"),
+            match_time: "1700000000".to_string(),
+            outcome: PolymarketOutcome::yes(),
+            owner: Ustr::from("00000000-0000-0000-0000-000000000001"),
+            price: "0.014".to_string(),
+            side: PolymarketOrderSide::Buy,
+            // Fill exceeds submitted_qty by 4 ulps at size_precision=6,
+            // matching the production drift observed during smoke tests.
+            size: "714.285714".to_string(),
+            status: PolymarketTradeStatus::Matched,
+            taker_order_id: venue_order_id.as_str().to_string(),
+            timestamp: "1700000000000".to_string(),
+            trade_owner: Ustr::from("00000000-0000-0000-0000-000000000001"),
+            trader_side: PolymarketLiquiditySide::Taker,
+            event_type: PolymarketEventType::Trade,
+        };
+
+        dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
+
+        // The dispatcher must record the snapped quantity in the tracker so
+        // any subsequent ORDER MATCHED with size_matched > submitted_qty is
+        // capped to it. record_fill happens before the FillReport is sent.
+        let cumulative = fill_tracker
+            .get_cumulative_filled(&venue_order_id)
+            .expect("order must be registered");
+        let expected_snapped = submitted.as_f64();
+        let drift = (cumulative - expected_snapped).abs();
+        assert!(
+            drift < 1e-9,
+            "cumulative_filled {cumulative} must be snapped to submitted {expected_snapped}",
+        );
+
+        // The emitted FillReport must carry the snapped qty so the engine
+        // does not reject it as an overfill.
+        let event = receiver.try_recv().expect("expected a fill report");
+        match event {
+            ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
+                assert_eq!(
+                    report.last_qty, submitted,
+                    "fill report qty must be snapped to submitted",
+                );
+                assert_eq!(report.venue_order_id, venue_order_id);
+            }
+            other => panic!("expected fill report, was {other:?}"),
+        }
     }
 }

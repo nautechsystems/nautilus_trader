@@ -6281,6 +6281,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "proptest",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",

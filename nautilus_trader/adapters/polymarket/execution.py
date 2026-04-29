@@ -35,7 +35,7 @@ from py_clob_client_v2.clob_types import PostOrdersV2Args
 from py_clob_client_v2.exceptions import PolyApiException
 
 from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trades_key
-from nautilus_trader.adapters.polymarket.common.constants import DUST_SNAP_THRESHOLD
+from nautilus_trader.adapters.polymarket.common.constants import DUST_POSITION_THRESHOLD
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_CANCEL_ALREADY_DONE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_FINALIZED_TRADE_STATUSES
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_INVALID_API_KEY
@@ -678,9 +678,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
         # Generate reports from quantities (filter dust positions)
         for instrument_id, quantity in quantities_by_instrument.items():
             size = float(quantity)
-            if 0.0 < size < DUST_SNAP_THRESHOLD:
+            if 0.0 < size < DUST_POSITION_THRESHOLD:
                 self._log.debug(f"Filtering dust position: {instrument_id}, size={size}")
-            if size < DUST_SNAP_THRESHOLD:
+            if size < DUST_POSITION_THRESHOLD:
                 continue
             position_side = PositionSide.LONG
             self._log.info(f"Long position for {instrument_id} of {quantity} shares")

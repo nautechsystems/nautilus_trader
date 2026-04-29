@@ -443,6 +443,70 @@ An optional execution client configuration, `generate_order_history_from_trades`
 It is not recommended for production use at this time.
 :::
 
+## Fill quantity normalization
+
+The adapter snaps fill quantities reported by the venue to the locally registered
+order quantity when the difference is dust. Two distinct rounding mechanisms make
+this necessary, so two asymmetric tolerances are applied. Both scale with the
+instrument's `size_precision` (one ulp = `10^-size_precision`).
+
+| Direction | Constant              | Default ulps | At precision 6 | Source of drift                                                            |
+|-----------|-----------------------|--------------|----------------|----------------------------------------------------------------------------|
+| Underfill | `SNAP_UNDERFILL_ULPS` | 10_000       | 0.01           | CLOB rounds fills to integer cent ticks (e.g., `23.69` from `23.696681`).  |
+| Overfill  | `SNAP_OVERFILL_ULPS`  | 100          | 0.0001         | `adjust_market_buy_amount` truncates `submitted_qty` to USDC scale (6 dp). |
+
+### Why asymmetric
+
+- **Underfill** comes from CLOB tick rounding and can be up to one cent in
+  share terms. Snapping up lets the order reach `Filled` cleanly when the
+  CLOB truncates the last tick of fill quantity.
+- **Overfill** is a much smaller drift: only V2 market BUYs ever produce
+  it in practice. `adjust_market_buy_amount` truncates the registered base
+  quantity to USDC scale, but the on-chain fill comes back at full
+  precision and may exceed `submitted_qty` by a small number of ulps
+  (4 ulps observed in production). Without the snap, the engine rejects
+  the fill as an overfill (`potential_overfill > 0`) and the local
+  `filled_qty` stays at zero even though the position is on-chain.
+
+The snap function does not gate on order type: overfill drift in any
+tracked order under `SNAP_OVERFILL_ULPS` is absorbed. In practice no other
+order class produces overfill drift (limit and resting-maker orders fill
+at exact submitted base qty), so the broader behavior is a safety net.
+The overfill tolerance is intentionally tighter than the underfill side
+(~25× headroom over the observed drift, 100× below CLOB tick magnitude),
+so a real venue overfill above `SNAP_OVERFILL_ULPS` still surfaces as an
+engine-side error rather than being silently absorbed.
+
+### Where the snap runs
+
+- `OrderFillTracker.snap_fill_qty(...)` is invoked on every WS user-channel
+  fill (both taker fills in `dispatch_taker_fill` and maker fills in
+  `dispatch_maker_fills`) before the fill is emitted to the engine. It also
+  runs when fills are drained from the HTTP-roundtrip buffer in
+  `submit_order`.
+- `OrderFillTracker.check_dust_and_build_fill(...)` (Rust) and
+  `OrderFillTracker.check_dust_residual(...)` (Python) emit a synthetic
+  underfill fill at `Matched` status when `submitted - cumulative_filled`
+  is dust, so the order reaches `Filled` even when the CLOB truncated the
+  last tick. Underfill side only.
+
+### Limitations
+
+- The tracker is keyed by `venue_order_id` and registered after the HTTP
+  accept response. Fills that arrive before the order is registered are
+  buffered and snapped on drain.
+- `size_precision` is captured at registration and not re-read for the
+  lifetime of the entry. On Polymarket this is safe: shares are denominated
+  against pUSD (6-decimal USDC collateral), and `size_precision` is pinned
+  to `6` for every BinaryOption. The `tick_size_change` WS event mutates
+  only `price_precision` / `price_increment`; `rebuild_instrument_with_tick_size`
+  explicitly preserves `size_precision` and `size_increment` from the
+  original instrument. If this invariant ever changes upstream, the
+  tolerances will not re-scale until the order is re-registered.
+- The constants are not configurable per-strategy. They live in
+  `nautilus_polymarket::common::consts` (Rust) and
+  `nautilus_trader.adapters.polymarket.common.constants` (Python).
+
 ## WebSockets
 
 The `PolymarketWebSocketClient` is built on top of the high-performance Nautilus `WebSocketClient` base class, written in Rust.
@@ -509,19 +573,19 @@ When limits are exceeded, the API returns HTTP 429 responses.
 
 Polymarket changes these quotas over time. As of 2026-04-17, the official limits are:
 
-| Endpoint                  | Burst (10s) | Sustained (10 min) | Notes |
-|---------------------------|-------------|--------------------|-------|
-| CLOB general              | 9,000       | -                  | Aggregate across CLOB endpoints. |
-| CLOB `POST /order`        | 3,500       | 36,000             | Single‑order submit. |
-| CLOB `POST /orders`       | 1,000       | 15,000             | Batch submit (up to 15 orders per request). |
-| CLOB `DELETE /order`      | 3,000       | 30,000             | Single‑order cancel. |
-| CLOB `DELETE /orders`     | 1,000       | 15,000             | Batch cancel. |
-| CLOB `GET /balance-allowance` | 200     | -                  | Balance and allowance queries. |
-| CLOB API key endpoints    | 100         | -                  | Key management. |
-| Gamma `/markets`          | 300         | -                  | Market metadata. |
-| Gamma `/events`           | 500         | -                  | Event metadata. |
-| Data `/trades`            | 200         | -                  | Trade history. |
-| Data `/positions`         | 150         | -                  | Current positions. |
+| Endpoint                      | Burst (10s) | Sustained (10 min) | Notes |
+|-------------------------------|-------------|--------------------|-------|
+| CLOB general                  | 9,000       | -                  | Aggregate across CLOB endpoints. |
+| CLOB `POST /order`            | 3,500       | 36,000             | Single‑order submit. |
+| CLOB `POST /orders`           | 1,000       | 15,000             | Batch submit (up to 15 orders per request). |
+| CLOB `DELETE /order`          | 3,000       | 30,000             | Single‑order cancel. |
+| CLOB `DELETE /orders`         | 1,000       | 15,000             | Batch cancel. |
+| CLOB `GET /balance-allowance` | 200         | -                  | Balance and allowance queries. |
+| CLOB API key endpoints        | 100         | -                  | Key management. |
+| Gamma `/markets`              | 300         | -                  | Market metadata. |
+| Gamma `/events`               | 500         | -                  | Event metadata. |
+| Data `/trades`                | 200         | -                  | Trade history. |
+| Data `/positions`             | 150         | -                  | Current positions. |
 
 ### WebSocket limits
 
@@ -746,7 +810,7 @@ The loader provides two ways to access the Polymarket APIs:
 before committing to a specific instrument:
 
 ```python
-# No loader needed - just query the API directly
+# No loader needed: query the API directly
 market = await PolymarketDataLoader.query_market_by_slug("some-market")
 event = await PolymarketDataLoader.query_event_by_slug("some-event")
 ```
@@ -864,7 +928,7 @@ which provides real execution data including price, size, side, and on-chain tra
 
 ### Complete backtest example
 
-A complete working example is available at `examples/backtest/polymarket_simple_quoter.py`:
+See `examples/backtest/polymarket_simple_quoter.py` for a full example:
 
 ```python
 import asyncio

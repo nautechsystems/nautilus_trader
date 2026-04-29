@@ -37,14 +37,14 @@ use crate::common::{
 /// to describe each maker-side fill in a match. The `side` field is
 /// optional because some trade-event payloads (notably user-channel WS
 /// fills) may omit it; CLOB V2 REST trade responses always include it.
+///
+/// `fee_rate_bps` is intentionally not modeled. The wire payload is unstable
+/// (the user-channel WS sometimes sends `""`) and the field is unused: maker
+/// fills always pay zero commission per Polymarket's fee policy. The official
+/// `rs-clob-client-v2` `MakerOrder` shape also omits it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolymarketMakerOrder {
     pub asset_id: Ustr,
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub fee_rate_bps: Decimal,
     pub maker_address: String,
     #[serde(
         serialize_with = "serialize_decimal_as_str",
@@ -138,7 +138,6 @@ mod tests {
             order.asset_id.as_str(),
             "71321045679252212594626385532706912750332728571942532289631379312455583992563"
         );
-        assert_eq!(order.fee_rate_bps, dec!(10));
         assert_eq!(
             order.maker_address.as_str(),
             "0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
@@ -180,7 +179,8 @@ mod tests {
         let json = serde_json::to_string(&order).unwrap();
         // Decimals must appear as quoted strings, not bare numbers
         assert!(
-            json.contains("\"fee_rate_bps\":\"10\"") || json.contains("\"fee_rate_bps\": \"10\"")
+            json.contains("\"matched_amount\":\"50.0000\"")
+                || json.contains("\"matched_amount\": \"50.0000\"")
         );
     }
 
@@ -192,13 +192,11 @@ mod tests {
         assert_eq!(trade.maker_orders.len(), 2);
         let m0 = &trade.maker_orders[0];
         assert_eq!(m0.matched_amount, dec!(25.0000));
-        assert_eq!(m0.fee_rate_bps, dec!(0));
         assert_eq!(m0.outcome, PolymarketOutcome::yes());
         assert_eq!(m0.side, Some(PolymarketOrderSide::Sell));
 
         let m1 = &trade.maker_orders[1];
         assert_eq!(m1.matched_amount, dec!(5.0000));
-        assert_eq!(m1.fee_rate_bps, dec!(10));
         assert_eq!(m1.side, Some(PolymarketOrderSide::Sell));
     }
 
@@ -225,5 +223,24 @@ mod tests {
         }"#;
         let order: PolymarketMakerOrder = serde_json::from_str(json).unwrap();
         assert_eq!(order.side, Some(PolymarketOrderSide::Buy));
+    }
+
+    #[rstest]
+    fn test_maker_order_with_empty_fee_rate_bps_is_accepted() {
+        // Production user-channel WS sometimes emits `"fee_rate_bps": ""` on
+        // maker orders. The field is unmodeled, so the empty string must not
+        // break parsing. Mirrors the official `rs-clob-client-v2` shape.
+        let json = r#"{
+            "asset_id": "12345",
+            "fee_rate_bps": "",
+            "maker_address": "0xaddr",
+            "matched_amount": "10.0",
+            "order_id": "order-1",
+            "outcome": "Yes",
+            "owner": "owner-1",
+            "price": "0.4"
+        }"#;
+        let order: PolymarketMakerOrder = serde_json::from_str(json).unwrap();
+        assert_eq!(order.matched_amount, dec!(10.0));
     }
 }

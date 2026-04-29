@@ -544,8 +544,6 @@ impl PolymarketExecutionClient {
                         user_pusd_balance: balance,
                         fee_rate,
                         fee_exponent,
-                        // Nautilus orders always carry the empty builder code,
-                        // so no builder taker fee applies.
                         builder_taker_fee_rate: Decimal::ZERO,
                     }),
                     Err(e) => {

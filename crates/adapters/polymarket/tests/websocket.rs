@@ -1004,3 +1004,63 @@ async fn test_market_client_is_never_authenticated() {
 
     client.disconnect().await.expect("disconnect failed");
 }
+
+// Regression baseline for the Rust subscription-cap behavior. The constants
+// `WS_MAX_SUBSCRIPTIONS` and `ws_max_subscriptions` exist in
+// `common::consts` and `PolymarketDataClientConfig`, and the Python adapter
+// (`websocket/client.py`) splits subscriptions across connections at the
+// 200 boundary. The Rust client does NOT currently enforce the cap: it
+// sends every asset in a single `subscribe` message on one connection.
+// This test pins the current behavior so any future enforcement work has to
+// update the test deliberately. If you implement splitting or rejection in
+// Rust, change this test to assert the new behavior.
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_market_past_cap_currently_unenforced() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/market");
+
+    let mut client =
+        PolymarketWebSocketClient::new_market(Some(ws_url), true, TransportBackend::default());
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0).await;
+
+    // 250 synthetic asset IDs, well past the 200 cap.
+    let asset_count = 250usize;
+    let asset_ids: Vec<String> = (0..asset_count)
+        .map(|i| format!("test-asset-{i}"))
+        .collect();
+
+    let result = client.subscribe_market(asset_ids).await;
+    assert!(
+        result.is_ok(),
+        "Rust client currently accepts subscribes past the cap"
+    );
+
+    wait_for_market_payload_count(&state, 1, Duration::from_secs(2)).await;
+
+    let payloads = state.received_market_payloads.lock().await;
+    assert_eq!(
+        payloads.len(),
+        1,
+        "all assets should currently land in a single subscribe payload (no splitting)"
+    );
+    let ids_field = payloads[0]
+        .get("assets_ids")
+        .and_then(Value::as_array)
+        .expect("subscribe payload must contain assets_ids");
+    assert_eq!(
+        ids_field.len(),
+        asset_count,
+        "all 250 assets currently sent in a single message",
+    );
+
+    let connection_count = *state.connection_count.lock().await;
+    assert_eq!(
+        connection_count, 1,
+        "Rust client uses a single connection for the full subscribe set today"
+    );
+
+    client.disconnect().await.expect("disconnect failed");
+}

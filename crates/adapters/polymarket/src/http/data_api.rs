@@ -291,7 +291,7 @@ mod tests {
         let reports = build_position_reports(&positions, account_id, ts_now);
 
         // 4 positions: 150.5, 0.0, 42.0, 0.005 (dust)
-        // Only 150.5 and 42.0 pass the DUST_SNAP_THRESHOLD (0.01)
+        // Only 150.5 and 42.0 pass the DUST_POSITION_THRESHOLD (0.01)
         assert_eq!(reports.len(), 2);
         assert!(reports[0].is_long());
         assert!(reports[1].is_long());

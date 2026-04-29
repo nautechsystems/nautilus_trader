@@ -21,8 +21,7 @@ from py_clob_client_v2.constants import POLYGON
 
 
 client = ClobClient(
-    # V2-aware preview host; flip to clob.polymarket.com after the 2026-04-28 ~11:00 UTC cutover
-    host="https://clob-v2.polymarket.com",
+    host="https://clob.polymarket.com",
     chain_id=POLYGON,
     signature_type=0,
     key=os.environ["POLYMARKET_PK"],

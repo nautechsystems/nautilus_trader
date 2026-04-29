@@ -33,7 +33,7 @@ use super::parse::{
 };
 use crate::{
     common::{
-        consts::{DUST_SNAP_THRESHOLD, USDC_DECIMALS},
+        consts::{DUST_POSITION_THRESHOLD, USDC_DECIMALS},
         enums::PolymarketLiquiditySide,
     },
     http::{
@@ -221,7 +221,7 @@ pub(crate) fn build_position_reports(
     positions
         .iter()
         .filter(|p| {
-            if p.size > 0.0 && p.size < DUST_SNAP_THRESHOLD {
+            if p.size > 0.0 && p.size < DUST_POSITION_THRESHOLD {
                 log::debug!(
                     "Filtering dust position: {}-{}, size={}",
                     p.condition_id,
@@ -229,7 +229,7 @@ pub(crate) fn build_position_reports(
                     p.size
                 );
             }
-            p.size >= DUST_SNAP_THRESHOLD
+            p.size >= DUST_POSITION_THRESHOLD
         })
         .map(|p| {
             let instrument_id =

@@ -87,9 +87,8 @@ def get_polymarket_http_client(
     )
     key = private_key or get_polymarket_private_key()
     funder = funder or get_polymarket_funder()
-    # V2-aware preview host; flip to clob.polymarket.com after the 2026-04-28 ~11:00 UTC cutover.
     return ClobClient(
-        base_url or "https://clob-v2.polymarket.com",
+        base_url or "https://clob.polymarket.com",
         chain_id=chain_id,
         signature_type=signature_type,
         creds=creds,
