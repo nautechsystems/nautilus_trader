@@ -30,6 +30,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
+from nautilus_trader.core.nautilus_pyo3 import DydxNetwork
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
@@ -130,7 +131,12 @@ class DydxDataClient(LiveMarketDataClient):
         # Configuration
         self._config = config
         self._bars_timestamp_on_close = config.bars_timestamp_on_close
-        self._log.info(f"{config.is_testnet=}", LogColor.BLUE)
+        self._network = (
+            config.environment
+            if config.environment is not None
+            else (DydxNetwork.TESTNET if config.is_testnet else DydxNetwork.MAINNET)
+        )
+        self._log.info(f"network={self._network}", LogColor.BLUE)
         self._log.info(f"{config.bars_timestamp_on_close=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
@@ -140,10 +146,11 @@ class DydxDataClient(LiveMarketDataClient):
         self._http_client = client
 
         # WebSocket API (using public client for market data)
-        ws_url = config.base_url_ws or nautilus_pyo3.get_dydx_ws_url(config.is_testnet)  # type: ignore[attr-defined]
+        ws_url = config.base_url_ws or nautilus_pyo3.get_dydx_ws_url(self._network)  # type: ignore[attr-defined]
         self._ws_client = nautilus_pyo3.DydxWebSocketClient.new_public(  # type: ignore[attr-defined]
             url=ws_url,
             heartbeat=20,
+            proxy_url=config.proxy_url,
         )
         self._ws_client.set_bars_timestamp_on_close(self._bars_timestamp_on_close)
         self._ws_client_futures: set[asyncio.Future] = set()

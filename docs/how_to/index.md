@@ -10,8 +10,8 @@ path and [tutorials](../tutorials/) first.
 
 | Guide                                                 | Description                                    |
 |:------------------------------------------------------|:-----------------------------------------------|
-| [Loading external data](loading_external_data)        | Load CSV data into the Parquet data catalog.   |
-| [Data catalog with Databento](data_catalog_databento) | Set up a catalog with Databento market data.   |
+| [Loading external data][loading_external_data]        | Load CSV data into the Parquet data catalog.   |
+| [Data catalog with Databento][data_catalog_databento] | Set up a catalog with Databento market data.   |
 
 ## Live trading
 
@@ -27,3 +27,6 @@ path and [tutorials](../tutorials/) first.
 | [Write a Strategy (Rust)](write_rust_strategy)            | Build a strategy with order management.                |
 | [Run a Backtest (Rust)](run_rust_backtest)                | Use BacktestEngine or BacktestNode with a catalog.     |
 | [Run Live Trading (Rust)](run_rust_live_trading)          | Connect to a venue with LiveNode.                      |
+
+[loading_external_data]: https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/how_to/loading_external_data.py
+[data_catalog_databento]: https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/how_to/data_catalog_databento.py

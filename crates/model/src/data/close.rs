@@ -55,6 +55,7 @@ pub struct InstrumentClose {
 
 impl InstrumentClose {
     /// Creates a new [`InstrumentClose`] instance.
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         close_price: Price,

@@ -90,7 +90,7 @@ pub struct OKXWebSocketError {
 }
 
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 pub enum ExecutionReport {
     Order(OrderStatusReport),
     Fill(FillReport),

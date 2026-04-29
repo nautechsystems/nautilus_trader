@@ -1366,11 +1366,22 @@ cdef class ExecutionEngine(Component):
         # Handle position update
         self._handle_position_update(instrument, fill, oms_type)
 
+        # Pop position events which are pending publishing to prevent recursion issues
+        cdef list[PositionEvent] to_publish = self._pending_position_events
+        self._pending_position_events = []
+
         # Publish to message bus topic
         self._msgbus.publish_c(
             topic=self._get_order_events_topic(fill.strategy_id),
             msg=fill,
         )
+
+        cdef PositionEvent pos_event
+        for pos_event in to_publish:
+            self._msgbus.publish_c(
+                topic=self._get_position_events_topic(pos_event.strategy_id),
+                msg=pos_event,
+            )
 
     cpdef OmsType _determine_oms_type(self, OrderFilled fill):
         # Check for strategy OMS override

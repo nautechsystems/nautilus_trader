@@ -49,8 +49,6 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         AX: AxDataClientConfig(
-            api_key=None,  # 'AX_API_KEY' env var
-            api_secret=None,  # 'AX_API_SECRET' env var
             environment=AxEnvironment.SANDBOX,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             update_instruments_interval_mins=60,

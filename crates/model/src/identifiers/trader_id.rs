@@ -17,7 +17,10 @@
 
 use std::fmt::{Debug, Display};
 
-use nautilus_core::correctness::{FAILED, check_string_contains, check_valid_string_ascii};
+use nautilus_core::correctness::{
+    CorrectnessResult, CorrectnessResultExt, FAILED, check_predicate_false, check_string_contains,
+    check_valid_string_ascii,
+};
 use ustr::Ustr;
 
 /// Represents a valid trader ID.
@@ -55,20 +58,20 @@ impl TraderId {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+    pub fn new_checked<T: AsRef<str>>(value: T) -> CorrectnessResult<Self> {
         let value = value.as_ref();
         check_valid_string_ascii(value, stringify!(value))?;
         check_string_contains(value, "-", stringify!(value))?;
 
         if let Some((name, tag)) = value.rsplit_once('-') {
-            anyhow::ensure!(
-                !name.is_empty(),
-                "`value` name part (before '-') cannot be empty"
-            );
-            anyhow::ensure!(
-                !tag.is_empty(),
-                "`value` tag part (after '-') cannot be empty"
-            );
+            check_predicate_false(
+                name.is_empty(),
+                "`value` name part (before '-') cannot be empty",
+            )?;
+            check_predicate_false(
+                tag.is_empty(),
+                "`value` tag part (after '-') cannot be empty",
+            )?;
         }
 
         Ok(Self(Ustr::from(value)))
@@ -80,7 +83,7 @@ impl TraderId {
     ///
     /// Panics if `value` is not a valid string, or does not contain a hyphen '-' separator.
     pub fn new<T: AsRef<str>>(value: T) -> Self {
-        Self::new_checked(value).expect(FAILED)
+        Self::new_checked(value).expect_display(FAILED)
     }
 
     /// Sets the inner identifier value.
@@ -145,6 +148,7 @@ impl Display for TraderId {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::correctness::CorrectnessError;
     use rstest::rstest;
 
     use crate::identifiers::{stubs::*, trader_id::TraderId};
@@ -180,5 +184,39 @@ mod tests {
     #[rstest]
     fn test_new_checked_with_empty_tag_returns_error() {
         assert!(TraderId::new_checked("TRADER-").is_err());
+    }
+
+    #[rstest]
+    fn test_new_checked_with_empty_name_returns_typed_error_with_stable_display() {
+        let error = TraderId::new_checked("-001").unwrap_err();
+
+        match error {
+            CorrectnessError::PredicateViolation { ref message } => {
+                assert_eq!(message, "`value` name part (before '-') cannot be empty");
+            }
+            other => panic!("Expected typed predicate violation, was: {other:?}"),
+        }
+
+        assert_eq!(
+            error.to_string(),
+            "`value` name part (before '-') cannot be empty"
+        );
+    }
+
+    #[rstest]
+    fn test_new_checked_with_empty_tag_returns_typed_error_with_stable_display() {
+        let error = TraderId::new_checked("TRADER-").unwrap_err();
+
+        match error {
+            CorrectnessError::PredicateViolation { ref message } => {
+                assert_eq!(message, "`value` tag part (after '-') cannot be empty");
+            }
+            other => panic!("Expected typed predicate violation, was: {other:?}"),
+        }
+
+        assert_eq!(
+            error.to_string(),
+            "`value` tag part (after '-') cannot be empty"
+        );
     }
 }

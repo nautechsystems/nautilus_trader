@@ -22,7 +22,7 @@ use chrono::{DateTime, Utc};
 use nautilus_core::{
     AtomicTime, UnixNanos,
     correctness::{check_positive_u64, check_predicate_true, check_valid_string_utf8},
-    formatting::Separable,
+    string::formatting::Separable,
 };
 use ustr::Ustr;
 
@@ -84,7 +84,6 @@ pub trait Clock: Debug + Any {
     ///
     /// Returns an error if `name` is invalid, `alert_time` is in the past when not allowed,
     /// or any predicate check fails.
-    #[allow(clippy::too_many_arguments)]
     fn set_time_alert(
         &mut self,
         name: &str,
@@ -115,7 +114,6 @@ pub trait Clock: Debug + Any {
     ///
     /// Returns an error if `name` is invalid, `alert_time_ns` is earlier than now when not allowed,
     /// or any predicate check fails.
-    #[allow(clippy::too_many_arguments)]
     fn set_time_alert_ns(
         &mut self,
         name: &str,
@@ -139,7 +137,7 @@ pub trait Clock: Debug + Any {
     ///
     /// Returns an error if `name` is invalid, `interval` is not positive,
     /// or if any predicate check fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn set_timer(
         &mut self,
         name: &str,
@@ -188,7 +186,7 @@ pub trait Clock: Debug + Any {
     ///
     /// Returns an error if `name` is invalid, `interval_ns` is not positive,
     /// or if any predicate check fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn set_timer_ns(
         &mut self,
         name: &str,
@@ -452,7 +450,7 @@ impl TestClock {
 
         assert!(
             to_time_ns >= from_time_ns,
-            "Invariant violated: time must be non-decreasing, `to_time_ns` {to_time_ns} < `from_time_ns` {from_time_ns}"
+            "Invariant: time must be non-decreasing, `to_time_ns` {to_time_ns} < `from_time_ns` {from_time_ns}"
         );
 
         if set_time {

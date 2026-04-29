@@ -43,7 +43,7 @@ impl UUID4 {
     }
 
     /// Sets the state of the `UUID4` instance during unpickling.
-    #[allow(
+    #[expect(
         clippy::needless_pass_by_value,
         reason = "Python FFI requires owned types"
     )]
@@ -95,7 +95,7 @@ impl UUID4 {
 
     /// A safe constructor used during unpickling to ensure the correct initialization of `UUID4`.
     #[staticmethod]
-    #[allow(
+    #[expect(
         clippy::unnecessary_wraps,
         reason = "Python FFI requires Result return type"
     )]
@@ -113,7 +113,7 @@ impl UUID4 {
     }
 
     /// Returns a hash value for the `UUID4` instance.
-    #[allow(
+    #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_possible_wrap,
         reason = "Intentional cast for Python interop"

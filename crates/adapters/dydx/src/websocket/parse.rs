@@ -38,7 +38,7 @@ use rust_decimal::Decimal;
 use super::{DydxWsError, DydxWsResult};
 use crate::{
     common::{
-        enums::{DydxOrderStatus, DydxPositionSide, DydxTickerType},
+        enums::{DydxOrderStatus, DydxTickerType},
         instrument_cache::InstrumentCache,
     },
     execution::{encoder::ClientOrderIdEncoder, types::OrderContext},
@@ -480,11 +480,9 @@ fn convert_ws_position_to_http(
         .context("Failed to parse closed_at")?
         .map(|dt| dt.with_timezone(&Utc));
 
-    let side = if size.is_sign_positive() {
-        DydxPositionSide::Long
-    } else {
-        DydxPositionSide::Short
-    };
+    // Preserve the venue-supplied side; only derive from size sign when side is absent
+    // (the WS schema always provides it, but this keeps the behavior explicit).
+    let side = ws_position.side;
 
     Ok(PerpetualPosition {
         market: ws_position.market,
@@ -521,18 +519,36 @@ pub fn parse_orderbook_snapshot(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> DydxWsResult<OrderBookDeltas> {
-    let mut deltas = Vec::new();
-    deltas.push(OrderBookDelta::clear(*instrument_id, 0, ts_init, ts_init));
-
     let bids = contents.bids.as_deref().unwrap_or(&[]);
     let asks = contents.asks.as_deref().unwrap_or(&[]);
+
+    let mut deltas = Vec::with_capacity(1 + bids.len() + asks.len());
+    let snapshot_flag = RecordFlag::F_SNAPSHOT as u8;
+
+    // Empty book snapshot: Clear alone must carry F_SNAPSHOT | F_LAST
+    if bids.is_empty() && asks.is_empty() {
+        let clear_flags = snapshot_flag | RecordFlag::F_LAST as u8;
+        let mut clear_delta = OrderBookDelta::clear(*instrument_id, 0, ts_init, ts_init);
+        clear_delta.flags = clear_flags;
+        deltas.push(clear_delta);
+        return Ok(OrderBookDeltas::new(*instrument_id, deltas));
+    }
+
+    // Non-empty: Clear carries F_SNAPSHOT (not last)
+    let mut clear_delta = OrderBookDelta::clear(*instrument_id, 0, ts_init, ts_init);
+    clear_delta.flags = snapshot_flag;
+    deltas.push(clear_delta);
 
     let bids_len = bids.len();
     let asks_len = asks.len();
 
     for (idx, bid) in bids.iter().enumerate() {
         let is_last = idx == bids_len - 1 && asks_len == 0;
-        let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
+        let flags = if is_last {
+            snapshot_flag | RecordFlag::F_LAST as u8
+        } else {
+            snapshot_flag
+        };
 
         let price = Decimal::from_str(&bid.price)
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse bid price: {e}")))?;
@@ -564,7 +580,11 @@ pub fn parse_orderbook_snapshot(
 
     for (idx, ask) in asks.iter().enumerate() {
         let is_last = idx == asks_len - 1;
-        let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
+        let flags = if is_last {
+            snapshot_flag | RecordFlag::F_LAST as u8
+        } else {
+            snapshot_flag
+        };
 
         let price = Decimal::from_str(&ask.price)
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse ask price: {e}")))?;
@@ -625,7 +645,6 @@ pub fn parse_orderbook_deltas(
 /// # Errors
 ///
 /// Returns an error if price/size parsing fails.
-#[allow(clippy::too_many_arguments)]
 pub fn parse_orderbook_deltas_with_flag(
     instrument_id: &InstrumentId,
     contents: &DydxOrderbookContents,
@@ -1261,6 +1280,81 @@ mod tests {
         assert_eq!(http_position.net_funding, rust_decimal_macros::dec!(-10.25));
     }
 
+    /// The converter must preserve the venue-supplied `side`, not re-derive it from
+    /// the sign of `size`. A zero-size position reported as `Long` must stay `Long`,
+    /// and a mismatched (Long, negative-size) payload must retain the venue side.
+    #[rstest]
+    #[case::long_positive(DydxPositionSide::Long, "1.0", DydxPositionSide::Long)]
+    #[case::short_negative(DydxPositionSide::Short, "-1.0", DydxPositionSide::Short)]
+    #[case::long_zero(DydxPositionSide::Long, "0.0", DydxPositionSide::Long)]
+    #[case::short_zero(DydxPositionSide::Short, "0.0", DydxPositionSide::Short)]
+    #[case::long_with_negative_size(DydxPositionSide::Long, "-1.0", DydxPositionSide::Long)]
+    #[case::short_with_positive_size(DydxPositionSide::Short, "1.0", DydxPositionSide::Short)]
+    fn test_convert_ws_position_preserves_venue_side(
+        #[case] venue_side: DydxPositionSide,
+        #[case] size: &str,
+        #[case] expected_side: DydxPositionSide,
+    ) {
+        let ws_position = DydxPerpetualPosition {
+            market: "BTC-USD".into(),
+            status: DydxPositionStatus::Open,
+            side: venue_side,
+            size: size.to_string(),
+            max_size: "1.0".to_string(),
+            entry_price: "50000.0".to_string(),
+            exit_price: None,
+            realized_pnl: "0.0".to_string(),
+            unrealized_pnl: "0.0".to_string(),
+            created_at: "2024-01-15T10:00:00Z".to_string(),
+            closed_at: None,
+            sum_open: "0.0".to_string(),
+            sum_close: "0.0".to_string(),
+            net_funding: "0.0".to_string(),
+        };
+
+        let http_position =
+            convert_ws_position_to_http(&ws_position).expect("conversion should succeed");
+        assert_eq!(http_position.side, expected_side);
+    }
+
+    /// End-to-end verification that the venue-supplied side flows through to the
+    /// emitted `PositionStatusReport`. The previous implementation re-derived side
+    /// from `size.is_sign_positive()` inside `parse_position_status_report`, which
+    /// silently overrode the venue side for the mismatched case below.
+    #[rstest]
+    fn test_ws_position_report_emits_venue_side_for_mismatched_size() {
+        use nautilus_model::enums::PositionSideSpecified;
+
+        let instrument_cache = create_test_instrument_cache();
+        // Venue reports a Short position but the `size` field would round to
+        // positive via the legacy sign check. The report must show Short.
+        let ws_position = DydxPerpetualPosition {
+            market: "BTC-USD".into(),
+            status: DydxPositionStatus::Open,
+            side: DydxPositionSide::Short,
+            size: "1.0".to_string(),
+            max_size: "1.0".to_string(),
+            entry_price: "50000.0".to_string(),
+            exit_price: None,
+            realized_pnl: "0.0".to_string(),
+            unrealized_pnl: "0.0".to_string(),
+            created_at: "2024-01-15T10:00:00Z".to_string(),
+            closed_at: None,
+            sum_open: "0.0".to_string(),
+            sum_close: "0.0".to_string(),
+            net_funding: "0.0".to_string(),
+        };
+
+        let report = parse_ws_position_report(
+            &ws_position,
+            &instrument_cache,
+            AccountId::new("DYDX-001"),
+            UnixNanos::default(),
+        )
+        .expect("parse should succeed");
+        assert_eq!(report.position_side, PositionSideSpecified::Short);
+    }
+
     #[rstest]
     fn test_parse_ws_position_report_success() {
         let instrument_cache = create_test_instrument_cache();
@@ -1730,8 +1824,85 @@ mod tests {
         assert_eq!(deltas.deltas[4].order.price.to_string(), "43250.00");
         assert_eq!(deltas.deltas[4].order.size.to_string(), "1.20000000");
 
-        let last = deltas.deltas.last().unwrap();
-        assert_ne!(last.flags, 0);
+        // Every snapshot delta must carry F_SNAPSHOT. The Clear carries F_SNAPSHOT only
+        // (not last); every intermediate delta carries F_SNAPSHOT only; the terminator
+        // carries F_SNAPSHOT | F_LAST.
+        let snapshot = RecordFlag::F_SNAPSHOT as u8;
+        let last_flag = RecordFlag::F_LAST as u8;
+
+        assert_eq!(deltas.deltas[0].flags, snapshot, "Clear missing F_SNAPSHOT");
+        for (idx, delta) in deltas.deltas.iter().enumerate().skip(1) {
+            let expected = if idx == deltas.deltas.len() - 1 {
+                snapshot | last_flag
+            } else {
+                snapshot
+            };
+            assert_eq!(
+                delta.flags, expected,
+                "delta at index {idx} has wrong flags: got {:#010b}, expected {expected:#010b}",
+                delta.flags,
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::empty_book(vec![], vec![], 1)]
+    #[case::bids_only(vec![("100.0", "1.0")], vec![], 2)]
+    #[case::asks_only(vec![], vec![("101.0", "2.0")], 2)]
+    fn test_parse_orderbook_snapshot_flag_shapes(
+        #[case] bids: Vec<(&str, &str)>,
+        #[case] asks: Vec<(&str, &str)>,
+        #[case] expected_len: usize,
+    ) {
+        use crate::websocket::messages::DydxPriceLevel;
+        let contents = DydxOrderbookSnapshotContents {
+            bids: if bids.is_empty() {
+                None
+            } else {
+                Some(
+                    bids.into_iter()
+                        .map(|(p, s)| DydxPriceLevel {
+                            price: p.to_string(),
+                            size: s.to_string(),
+                        })
+                        .collect(),
+                )
+            },
+            asks: if asks.is_empty() {
+                None
+            } else {
+                Some(
+                    asks.into_iter()
+                        .map(|(p, s)| DydxPriceLevel {
+                            price: p.to_string(),
+                            size: s.to_string(),
+                        })
+                        .collect(),
+                )
+            },
+        };
+        let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let deltas = parse_orderbook_snapshot(&instrument_id, &contents, 2, 8, ts_init)
+            .expect("Failed to parse orderbook snapshot");
+
+        let snapshot = RecordFlag::F_SNAPSHOT as u8;
+        let last_flag = RecordFlag::F_LAST as u8;
+
+        assert_eq!(deltas.deltas.len(), expected_len);
+
+        if expected_len == 1 {
+            // Empty book: Clear alone must carry F_SNAPSHOT | F_LAST so buffered
+            // subscribers flush when the book is empty.
+            assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+            assert_eq!(deltas.deltas[0].flags, snapshot | last_flag);
+        } else {
+            // Non-empty: Clear carries F_SNAPSHOT only; terminator carries both.
+            assert_eq!(deltas.deltas[0].flags, snapshot);
+            let terminator = deltas.deltas.last().unwrap();
+            assert_eq!(terminator.flags, snapshot | last_flag);
+        }
     }
 
     #[rstest]

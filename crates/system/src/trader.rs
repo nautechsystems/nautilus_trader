@@ -839,6 +839,27 @@ impl Trader {
         Ok(())
     }
 
+    /// Clears all registered actors, disposing each and removing their clocks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any actor fails to dispose.
+    pub fn clear_actors(&mut self) -> anyhow::Result<()> {
+        for actor_id in &self.actor_ids {
+            log::debug!("Disposing actor {actor_id}");
+            // Stop if running before disposal; ignore stop failures so a single
+            // misbehaving actor does not leave the rest in a half-cleared state.
+            let _ = stop_component(&actor_id.inner());
+            dispose_component(&actor_id.inner())?;
+            let component_id = ComponentId::new(actor_id.inner().as_str());
+            self.clocks.remove(&component_id);
+        }
+
+        self.actor_ids.clear();
+
+        Ok(())
+    }
+
     /// Clears all registered execution algorithms, disposing each and removing their clocks.
     ///
     /// # Errors
@@ -1229,7 +1250,7 @@ mod tests {
 
     nautilus_strategy!(TestStrategy);
 
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     fn create_trader_components() -> (
         Rc<RefCell<MessageBus>>,
         Rc<RefCell<Cache>>,
@@ -1827,5 +1848,49 @@ mod tests {
         let event = OrderEventAny::Accepted(OrderAccepted::test_default());
         msgbus::publish_order_event(order_topic, &event);
         assert_eq!(*ext_received.borrow(), 1);
+    }
+
+    #[rstest]
+    fn test_clear_actors_disposes_and_clears_state() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+            create_trader_components();
+        let trader_id = TraderId::test_default();
+        let instance_id = UUID4::new();
+
+        let mut trader = Trader::new(
+            trader_id,
+            instance_id,
+            Environment::Backtest,
+            clock,
+            cache,
+            portfolio,
+        );
+
+        let actor_a = TestDataActor::new(DataActorConfig {
+            actor_id: Some(ActorId::from("Actor-A")),
+            ..Default::default()
+        });
+        let actor_b = TestDataActor::new(DataActorConfig {
+            actor_id: Some(ActorId::from("Actor-B")),
+            ..Default::default()
+        });
+        trader.add_actor(actor_a).unwrap();
+        trader.add_actor(actor_b).unwrap();
+        assert_eq!(trader.actor_count(), 2);
+        assert_eq!(
+            trader.get_component_clocks().len(),
+            2,
+            "each registered actor must have a component clock",
+        );
+
+        trader.clear_actors().unwrap();
+
+        assert_eq!(trader.actor_count(), 0);
+        assert!(trader.actor_ids().is_empty());
+        assert_eq!(
+            trader.get_component_clocks().len(),
+            0,
+            "actor clocks must be dropped after clear_actors",
+        );
     }
 }

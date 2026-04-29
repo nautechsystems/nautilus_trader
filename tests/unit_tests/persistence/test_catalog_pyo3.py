@@ -1341,6 +1341,7 @@ def test_pyo3_query_multiple_instruments_table_naming(catalog: LegacyParquetData
 
     # Verify we have data from all three instruments
     instrument_counts: dict[str, int] = {}
+
     for quote in quotes:
         instrument_id = quote.instrument_id.value
         instrument_counts[instrument_id] = instrument_counts.get(instrument_id, 0) + 1
@@ -1436,6 +1437,7 @@ def test_pyo3_backend_session_special_characters_table_naming(catalog: LegacyPar
 
     # Verify we have data from all instruments
     instrument_counts: dict[str, int] = {}
+
     for trade in trades:
         instrument_id = trade.instrument_id.value
         instrument_counts[instrument_id] = instrument_counts.get(instrument_id, 0) + 1

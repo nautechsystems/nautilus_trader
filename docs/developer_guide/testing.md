@@ -14,6 +14,93 @@ The suite covers these categories:
 - Fuzzing
 - Memory leak tests
 
+## Testing policy
+
+Tests and runtime contracts form one design system. The
+[Design by contract](rust.md#design-by-contract) ladder pushes invariants into the type
+system where possible; the testing ladder below escalates the remaining unknowns through
+larger input spaces and richer execution models. Each layer extends coverage to inputs
+or execution states the layer below cannot reach.
+
+Not every module requires every technique. Use this section to decide which layers apply
+before adding tests or `debug_assert!` statements.
+
+### Mechanism ladder
+
+Runtime contracts are covered in the [Rust guide](rust.md#design-by-contract): prefer the
+type system first, then `check_*` from `nautilus_core::correctness` at API boundaries,
+then `debug_assert!` for internal invariants, then `assert!` for soundness-critical or
+always-on checks.
+
+Test layers follow a parallel escalation. Start at the lowest layer that proves what
+matters; climb only when the layer below stops detecting regressions or when the input
+space grows beyond hand-picked cases.
+
+| Layer                    | Trigger condition                                                               |
+|--------------------------|---------------------------------------------------------------------------------|
+| Unit test                | A single function or transition has a small, enumerable set of cases.           |
+| Parametrized test        | The same shape repeats across discrete inputs (order side, status, instrument). |
+| Property‑based test      | An invariant must hold for a whole class of inputs the mind cannot enumerate.   |
+| Integration test         | Multiple modules interact through a real (non‑mocked) engine or runtime.        |
+| Fuzz test                | Untrusted or adversarial bytes cross a parser, decoder, or wire‑format handler. |
+| Spec acceptance test     | Behaviour depends on a live venue contract (see `spec_exec_testing.md`).        |
+| Deterministic simulation | Correctness depends on task scheduling, timeouts, or wall‑clock ordering.       |
+| Formal verification      | A pure function has crisp invariants and a bounded input space worth a proof.   |
+
+The formal verification rung is aspirational: no Kani or Prusti harness has landed in
+the workspace. The row records the escalation condition for when a verifier is adopted,
+not a current obligation.
+
+### Projection rule
+
+Module shape determines which layers pay off. Not every module warrants the full ladder.
+Apply the rule at module granularity, not crate granularity: an adapter crate contains
+pure parsers and I/O-bound client loops, and each row applies to a different part.
+
+| Module shape                        | Layers that apply                             | Example                                |
+|-------------------------------------|-----------------------------------------------|----------------------------------------|
+| Pure function, crisp invariants     | Unit, parametrized, property, fuzz            | Reconciliation kernels, portfolio math |
+| Pure function, no stated invariants | Unit, parametrized, property, fuzz            | Codecs, adapter parsers, formatters    |
+| Stateful, synchronous               | Unit, parametrized, property over transitions | Cache, order book                      |
+| Stateful, async                     | Unit, integration, deterministic simulation   | Live engine, execution manager         |
+| I/O bound, venue contract           | Integration, spec acceptance, boundary fuzz   | Adapter client loops                   |
+
+### When not to add coverage
+
+- Add `debug_assert!` only where a test can reach it. Release builds strip the check, so
+  an unexercised assertion has no signal. A targeted unit test counts as a harness; a
+  proptest or fuzz harness amplifies the signal.
+- Prefer a proptest over a hand-written edge-case test when the invariant spans a whole
+  class of inputs. Targeted unit tests remain valid for known venue pathologies and as
+  regression reproducers for shrunk counterexamples.
+- Do not duplicate a live spec acceptance card as an integration test. Link to it instead.
+- Do not pad coverage with tests that assert language or framework guarantees
+  (`Option::is_some` after `Some(..)`, `Vec::len` after `push`).
+
+### DST readiness
+
+Deterministic simulation testing (DST) requires the runtime to be free of ambient
+non-determinism. Before promoting a module to run under DST, verify the following:
+
+- Time, task, runtime, and signal primitives route through `nautilus_common::live::dst`
+  rather than `tokio` directly. Wall-clock reads go through the seam in
+  `nautilus_core::time` rather than `SystemTime::now()` at call sites.
+- State maps with ordering-dependent iteration use `IndexMap` or `IndexSet`, not the
+  default hash collections.
+- Every `tokio::select!` on a control-plane path sets `biased` so poll order is fixed.
+- No calls to `Instant::now()`, `SystemTime::now()`, `tokio::signal::ctrl_c`,
+  `std::thread::spawn`, or `tokio::task::spawn_blocking` escape the seam. Blocking-thread
+  and OS-thread primitives break madsim determinism the same way an ambient clock read
+  does.
+- Replay-sensitive IDs (`trade_id`, `venue_order_id`) are pure functions of their inputs;
+  see `crates/execution/src/reconciliation/ids.rs`. Ephemeral event UUIDs on other
+  reconciliation paths do not need to be deterministic.
+
+The `surface` probe in `crates/common/src/live/dst.rs` only pins the re-export shape;
+it does not check that callers actually use the seam. Enforcement is by review. Run the
+audit whenever a new async module enters the workspace or an existing module gains new
+control-plane scheduling.
+
 ## Property-based testing
 
 Property testing verifies that logic holds for *all* valid inputs, not just hand-picked examples.
@@ -57,6 +144,10 @@ uv run --active --no-sync pytest --new-first --failed-first
 The Python test suite lives under `python/tests/` and tests the Rust-backed PyO3
 package. It requires a built extension module (`make build-debug-v2`) and uses its
 own virtualenv under `python/.venv/`.
+
+For new live adapter examples and docs in the v2 path, prefer
+`nautilus_trader.live.LiveNode`. `nautilus_trader.live.node.TradingNode` remains the
+legacy v1/Cython runtime used by the root-level `tests/` suite and older examples.
 
 ```bash
 make pytest-v2

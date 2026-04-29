@@ -36,7 +36,10 @@ use nautilus_common::{
 };
 use nautilus_core::{AtomicMap, Params};
 use nautilus_model::{
-    data::{CustomData, CustomDataTrait, Data, DataType, OrderBookDeltas_API, TradeTick},
+    data::{
+        CustomData, CustomDataTrait, Data, DataType, OrderBookDeltas, OrderBookDeltas_API,
+        TradeTick,
+    },
     identifiers::{ClientId, InstrumentId, TradeId, Venue},
     instruments::{Instrument, InstrumentAny},
     types::{Currency, Money, Price, Quantity},
@@ -67,7 +70,7 @@ use crate::{
         messages::{MarketDataFilter, StreamMarketFilter, StreamMessage, stream_decode},
         parse::{
             make_trade_tick, parse_betfair_starting_prices, parse_betfair_ticker,
-            parse_bsp_book_deltas, parse_instrument_closes, parse_instrument_status,
+            parse_bsp_book_deltas, parse_instrument_closes, parse_instrument_statuses,
             parse_race_progress, parse_race_runner_data, parse_runner_book_deltas,
         },
     },
@@ -112,13 +115,14 @@ pub struct BetfairDataClient {
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     subscribed_market_ids: AHashSet<String>,
     keep_alive_handle: Option<JoinHandle<()>>,
+    reconnect_handle: Option<JoinHandle<()>>,
     race_fatal_handle: Option<JoinHandle<()>>,
 }
 
 impl BetfairDataClient {
     /// Creates a new [`BetfairDataClient`] instance.
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         client_id: ClientId,
         http_client: BetfairHttpClient,
@@ -153,6 +157,7 @@ impl BetfairDataClient {
             instruments: Arc::new(AtomicMap::new()),
             subscribed_market_ids: AHashSet::new(),
             keep_alive_handle: None,
+            reconnect_handle: None,
             race_fatal_handle: None,
         }
     }
@@ -162,11 +167,13 @@ impl BetfairDataClient {
         instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         currency: Currency,
         min_notional: Option<Money>,
+        reconnect_tx: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> TcpMessageHandler {
         // Track cumulative traded volumes per (instrument_id, price) to compute
         // incremental trade sizes. Betfair `trd` fields report totals, not deltas.
         let traded_volumes: Arc<Mutex<AHashMap<(InstrumentId, Decimal), Decimal>>> =
             Arc::new(Mutex::new(AHashMap::new()));
+        let has_initial_connection = Arc::new(AtomicBool::new(false));
 
         Arc::new(move |data: &[u8]| {
             let msg = match stream_decode(data) {
@@ -195,26 +202,49 @@ impl BetfairDataClient {
                         let mut market_closed = false;
 
                         if let Some(def) = &mc.market_definition {
+                            // Emit instruments first so downstream consumers (DataEngine,
+                            // BacktestExchange) have the instrument cached before any status
+                            // or close event references it.
+                            match parse_market_definition(
+                                &mc.id,
+                                def,
+                                currency,
+                                ts_init,
+                                min_notional,
+                            ) {
+                                Ok(new_instruments) => {
+                                    instruments.rcu(|m| {
+                                        for inst in &new_instruments {
+                                            m.insert(inst.id(), inst.clone());
+                                        }
+                                    });
+
+                                    for inst in new_instruments {
+                                        if let Err(e) =
+                                            data_sender.send(DataEvent::Instrument(inst))
+                                        {
+                                            log::warn!("Failed to send instrument: {e}");
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "Failed to parse market definition for {}: {e}",
+                                        mc.id
+                                    );
+                                }
+                            }
+
                             if let Some(status) = &def.status {
                                 market_closed = *status == MarketStatus::Closed;
-                                let in_play = def.in_play.unwrap_or(false);
-                                let guard = instruments.load();
-                                for inst in guard.values() {
-                                    let prefix = format!("{}-", mc.id);
-                                    if inst.id().symbol.as_str().starts_with(&prefix) {
-                                        let event = parse_instrument_status(
-                                            inst.id(),
-                                            *status,
-                                            in_play,
-                                            ts_event,
-                                            ts_init,
-                                        );
 
-                                        if let Err(e) =
-                                            data_sender.send(DataEvent::InstrumentStatus(event))
-                                        {
-                                            log::warn!("Failed to send instrument status: {e}");
-                                        }
+                                for event in
+                                    parse_instrument_statuses(&mc.id, def, ts_event, ts_init)
+                                {
+                                    if let Err(e) =
+                                        data_sender.send(DataEvent::InstrumentStatus(event))
+                                    {
+                                        log::warn!("Failed to send instrument status: {e}");
                                     }
                                 }
                             }
@@ -232,46 +262,20 @@ impl BetfairDataClient {
                                 }
                             }
 
-                            if market_closed {
-                                for close in parse_instrument_closes(&mc.id, def, ts_event, ts_init)
+                            for close in parse_instrument_closes(&mc.id, def, ts_event, ts_init) {
+                                if let Err(e) =
+                                    data_sender.send(DataEvent::Data(Data::InstrumentClose(close)))
                                 {
-                                    if let Err(e) = data_sender
-                                        .send(DataEvent::Data(Data::InstrumentClose(close)))
-                                    {
-                                        log::warn!("Failed to send instrument close: {e}");
-                                    }
-                                }
-                            }
-
-                            match parse_market_definition(
-                                &mc.id,
-                                def,
-                                currency,
-                                ts_init,
-                                min_notional,
-                            ) {
-                                Ok(new_instruments) => {
-                                    instruments.rcu(|m| {
-                                        for inst in &new_instruments {
-                                            m.insert(inst.id(), inst.clone());
-                                        }
-                                    });
-                                    for inst in new_instruments {
-                                        if let Err(e) =
-                                            data_sender.send(DataEvent::Instrument(inst))
-                                        {
-                                            log::warn!("Failed to send instrument: {e}");
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    log::warn!(
-                                        "Failed to parse market definition for {}: {e}",
-                                        mc.id
-                                    );
+                                    log::warn!("Failed to send instrument close: {e}");
                                 }
                             }
                         }
+
+                        // Non-snapshot deltas and BSP deltas are buffered and flushed after
+                        // trades/tickers to mirror the Python `market_change_to_updates`
+                        // ordering (book deltas first, then BSP). Snapshots go inline.
+                        let mut buffered_deltas: Vec<OrderBookDeltas> = Vec::new();
+                        let mut buffered_bsp_customs: Vec<CustomData> = Vec::new();
 
                         if let Some(runner_changes) = &mc.rc {
                             for rc in runner_changes {
@@ -287,10 +291,14 @@ impl BetfairDataClient {
                                     ts_init,
                                 ) {
                                     Ok(Some(deltas)) => {
-                                        if let Err(e) = data_sender.send(DataEvent::Data(
-                                            Data::Deltas(OrderBookDeltas_API::new(deltas)),
-                                        )) {
-                                            log::warn!("Failed to send book deltas: {e}");
+                                        if is_snapshot {
+                                            if let Err(e) = data_sender.send(DataEvent::Data(
+                                                Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                                            )) {
+                                                log::warn!("Failed to send book deltas: {e}");
+                                            }
+                                        } else {
+                                            buffered_deltas.push(deltas);
                                         }
                                     }
                                     Ok(None) => {}
@@ -303,6 +311,7 @@ impl BetfairDataClient {
 
                                 if let Some(trades) = &rc.trd {
                                     let mut volumes = traded_volumes.lock().unwrap();
+
                                     for pv in trades {
                                         if pv.volume == Decimal::ZERO {
                                             continue;
@@ -378,17 +387,26 @@ impl BetfairDataClient {
                                 for bsp_delta in
                                     parse_bsp_book_deltas(instrument_id, rc, ts_event, ts_init)
                                 {
-                                    let custom = custom_data_with_instrument(
+                                    buffered_bsp_customs.push(custom_data_with_instrument(
                                         Arc::new(bsp_delta),
                                         instrument_id,
-                                    );
-
-                                    if let Err(e) =
-                                        data_sender.send(DataEvent::Data(Data::Custom(custom)))
-                                    {
-                                        log::warn!("Failed to send BSP book delta: {e}");
-                                    }
+                                    ));
                                 }
+                            }
+                        }
+
+                        for deltas in buffered_deltas {
+                            if let Err(e) = data_sender.send(DataEvent::Data(Data::Deltas(
+                                OrderBookDeltas_API::new(deltas),
+                            ))) {
+                                log::warn!("Failed to send book deltas: {e}");
+                            }
+                        }
+
+                        for custom in buffered_bsp_customs {
+                            if let Err(e) = data_sender.send(DataEvent::Data(Data::Custom(custom)))
+                            {
+                                log::warn!("Failed to send BSP book delta: {e}");
                             }
                         }
 
@@ -408,7 +426,12 @@ impl BetfairDataClient {
                     }
                 }
                 StreamMessage::Connection(_) => {
-                    log::info!("Betfair stream connected");
+                    if has_initial_connection.swap(true, Ordering::SeqCst) {
+                        log::info!("Betfair data stream reconnected");
+                        let _ = reconnect_tx.send(());
+                    } else {
+                        log::info!("Betfair data stream connected");
+                    }
                 }
                 StreamMessage::Status(status) => {
                     if status.connection_closed {
@@ -507,6 +530,10 @@ impl DataClient for BetfairDataClient {
             handle.abort();
         }
 
+        if let Some(handle) = self.reconnect_handle.take() {
+            handle.abort();
+        }
+
         if let Some(handle) = self.race_fatal_handle.take() {
             handle.abort();
         }
@@ -518,6 +545,10 @@ impl DataClient for BetfairDataClient {
         log::info!("Resetting Betfair data client: {}", self.client_id);
 
         if let Some(handle) = self.keep_alive_handle.take() {
+            handle.abort();
+        }
+
+        if let Some(handle) = self.reconnect_handle.take() {
             handle.abort();
         }
 
@@ -589,11 +620,14 @@ impl DataClient for BetfairDataClient {
             .await
             .ok_or_else(|| anyhow::anyhow!("No session token after login"))?;
 
+        let (reconnect_tx, mut reconnect_rx) = tokio::sync::mpsc::unbounded_channel();
+
         let handler = Self::create_stream_handler(
             self.data_sender.clone(),
             Arc::clone(&self.instruments),
             self.currency,
             self.provider.min_notional(),
+            reconnect_tx.clone(),
         );
 
         let stream_client = BetfairStreamClient::connect(
@@ -624,6 +658,7 @@ impl DataClient for BetfairDataClient {
                 Arc::clone(&self.instruments),
                 self.currency,
                 self.provider.min_notional(),
+                reconnect_tx.clone(),
             );
 
             let (race_fatal_tx, mut race_fatal_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -671,19 +706,71 @@ impl DataClient for BetfairDataClient {
         // Spawn periodic keep-alive to prevent session expiry
         let keep_alive_client = Arc::clone(&self.http_client);
         let keep_alive_stream = Arc::clone(self.stream_client.as_ref().unwrap());
+        let keep_alive_race_stream = self.race_stream_client.as_ref().map(Arc::clone);
         let keep_alive_app_key = self.credential.app_key().to_string();
+
         self.keep_alive_handle = Some(get_runtime().spawn(async move {
             let interval = tokio::time::Duration::from_secs(KEEP_ALIVE_INTERVAL_SECS);
             loop {
                 tokio::time::sleep(interval).await;
 
-                if let Err(e) = keep_alive_client.keep_alive().await {
-                    log::warn!("Betfair keep-alive failed: {e}");
-                } else {
-                    if let Some(token) = keep_alive_client.session_token().await {
-                        keep_alive_stream.update_auth(&keep_alive_app_key, token);
+                match keep_alive_client.keep_alive().await {
+                    Ok(()) => {}
+                    Err(ref e) if e.is_login_failed() => {
+                        log::warn!("Betfair session expired, attempting re-login: {e}");
+                        if let Err(e) = keep_alive_client.reconnect().await {
+                            log::error!("Betfair re-login failed: {e}");
+                            continue;
+                        }
                     }
-                    log::debug!("Betfair session keep-alive sent");
+                    Err(e) => {
+                        log::warn!("Betfair keep-alive failed (transient): {e}");
+                        continue;
+                    }
+                }
+
+                if let Some(token) = keep_alive_client.session_token().await {
+                    keep_alive_stream.update_auth(&keep_alive_app_key, token.clone());
+
+                    if let Some(ref race_stream) = keep_alive_race_stream {
+                        race_stream.update_auth(&keep_alive_app_key, token);
+                    }
+                }
+                log::debug!("Betfair session keep-alive sent");
+            }
+        }));
+
+        // Spawn reconnect handler to refresh session on stream reconnection
+        let reconnect_http = Arc::clone(&self.http_client);
+        let reconnect_stream = Arc::clone(self.stream_client.as_ref().unwrap());
+        let reconnect_race_stream = self.race_stream_client.as_ref().map(Arc::clone);
+        let reconnect_app_key = self.credential.app_key().to_string();
+
+        self.reconnect_handle = Some(get_runtime().spawn(async move {
+            while reconnect_rx.recv().await.is_some() {
+                log::info!("Handling data stream reconnection");
+
+                match reconnect_http.keep_alive().await {
+                    Ok(()) => {}
+                    Err(ref e) if e.is_login_failed() => {
+                        log::warn!("Session expired on reconnect, attempting re-login: {e}");
+                        if let Err(e) = reconnect_http.reconnect().await {
+                            log::error!("Re-login failed on reconnect: {e}");
+                            continue;
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Keep-alive failed on reconnect (transient): {e}");
+                        continue;
+                    }
+                }
+
+                if let Some(token) = reconnect_http.session_token().await {
+                    reconnect_stream.update_auth(&reconnect_app_key, token.clone());
+
+                    if let Some(ref race_stream) = reconnect_race_stream {
+                        race_stream.update_auth(&reconnect_app_key, token);
+                    }
                 }
             }
         }));
@@ -700,6 +787,10 @@ impl DataClient for BetfairDataClient {
         }
 
         if let Some(handle) = self.keep_alive_handle.take() {
+            handle.abort();
+        }
+
+        if let Some(handle) = self.reconnect_handle.take() {
             handle.abort();
         }
 
@@ -724,7 +815,7 @@ impl DataClient for BetfairDataClient {
         Ok(())
     }
 
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let market_id = extract_market_id(&instrument_id)?;
 
@@ -782,7 +873,7 @@ impl DataClient for BetfairDataClient {
         Ok(())
     }
 
-    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         // Trades are included in market subscription via EX_TRADED
         log::debug!(
             "Trade data included in book subscription for {}",
@@ -801,7 +892,7 @@ impl DataClient for BetfairDataClient {
 
     fn subscribe_instrument_status(
         &mut self,
-        cmd: &SubscribeInstrumentStatus,
+        cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         // Instrument status is included in market subscription via EX_MARKET_DEF
         log::debug!(

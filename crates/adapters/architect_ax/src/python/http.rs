@@ -52,7 +52,6 @@ impl AxHttpClient {
         retry_delay_max_ms=10_000,
         proxy_url=None,
     ))]
-    #[allow(clippy::too_many_arguments)]
     fn py_new(
         base_url: Option<String>,
         orders_base_url: Option<String>,
@@ -88,7 +87,7 @@ impl AxHttpClient {
         retry_delay_max_ms=10_000,
         proxy_url=None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_with_credentials(
         api_key: String,
         api_secret: String,
@@ -134,6 +133,22 @@ impl AxHttpClient {
     #[pyo3(name = "cancel_all_requests")]
     pub fn py_cancel_all_requests(&self) {
         self.cancel_all_requests();
+    }
+
+    /// Cancels all open orders for an instrument.
+    #[pyo3(name = "cancel_all_orders")]
+    pub fn py_cancel_all_orders<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .cancel_all_orders(instrument_id)
+                .await
+                .map_err(to_pyvalue_err)
+        })
     }
 
     /// Caches a single instrument.
@@ -353,7 +368,7 @@ impl AxHttpClient {
         client_order_id=None,
         venue_order_id=None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_request_order_status<'py>(
         &self,
         py: Python<'py>,

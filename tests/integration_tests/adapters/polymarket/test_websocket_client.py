@@ -23,6 +23,7 @@ import pytest
 from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWebSocketAuth
 from nautilus_trader.adapters.polymarket.websocket.client import PolymarketWebSocketChannel
 from nautilus_trader.adapters.polymarket.websocket.client import PolymarketWebSocketClient
+from nautilus_trader.adapters.polymarket.websocket.client import _idle_timeout_ms_for
 from nautilus_trader.common.component import LiveClock
 
 
@@ -66,6 +67,12 @@ class TestPolymarketWebSocketClient:
         client = self.create_client(channel=PolymarketWebSocketChannel.USER)
 
         assert client.url == "wss://test.polymarket.com/ws/user"
+
+    def test_idle_timeout_ms_for_market_channel(self):
+        assert _idle_timeout_ms_for(PolymarketWebSocketChannel.MARKET) == 60_000
+
+    def test_idle_timeout_ms_for_user_channel(self):
+        assert _idle_timeout_ms_for(PolymarketWebSocketChannel.USER) == 300_000
 
     def test_add_subscription_adds_to_subscriptions_list(self):
         client = self.create_client()

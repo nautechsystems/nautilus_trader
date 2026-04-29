@@ -41,6 +41,11 @@ pub mod sorted_hashset {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     /// Serializes an `AHashSet<T>` as a sorted array for deterministic output.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error produced by the underlying [`Serializer`] when writing
+    /// the sorted vector.
     pub fn serialize<T, S>(set: &AHashSet<T>, s: S) -> Result<S::Ok, S::Error>
     where
         T: Serialize + Ord,
@@ -52,6 +57,11 @@ pub mod sorted_hashset {
     }
 
     /// Deserializes an array into an `AHashSet<T>`.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error produced by the underlying [`Deserializer`] when reading
+    /// the source array.
     pub fn deserialize<'de, T, D>(d: D) -> Result<AHashSet<T>, D::Error>
     where
         T: Deserialize<'de> + Eq + std::hash::Hash,
@@ -213,9 +223,9 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
 
 pub use self::msgpack::{FromMsgPack, MsgPackSerializable, ToMsgPack};
 
-/// Provides MsgPack serialization support for types implementing [`Serializable`].
+/// Provides `MsgPack` serialization support for types implementing [`Serializable`].
 ///
-/// This module contains traits for MsgPack serialization and deserialization,
+/// This module contains traits for `MsgPack` serialization and deserialization,
 /// separated from the core [`Serializable`] trait to allow independent opt-in.
 pub mod msgpack {
     use bytes::Bytes;
@@ -223,9 +233,9 @@ pub mod msgpack {
 
     use super::Serializable;
 
-    /// Provides deserialization from MsgPack encoded bytes.
+    /// Provides deserialization from `MsgPack` encoded bytes.
     pub trait FromMsgPack: for<'de> Deserialize<'de> + Sized {
-        /// Deserialize an object from MsgPack encoded bytes.
+        /// Deserialize an object from `MsgPack` encoded bytes.
         ///
         /// # Errors
         ///
@@ -235,9 +245,9 @@ pub mod msgpack {
         }
     }
 
-    /// Provides serialization to MsgPack encoded bytes.
+    /// Provides serialization to `MsgPack` encoded bytes.
     pub trait ToMsgPack: Serialize {
-        /// Serialize an object to MsgPack encoded bytes.
+        /// Serialize an object to `MsgPack` encoded bytes.
         ///
         /// # Errors
         ///
@@ -273,7 +283,7 @@ impl Visitor<'_> for BoolVisitor {
         Ok(u8::from(value))
     }
 
-    #[allow(
+    #[expect(
         clippy::cast_possible_truncation,
         reason = "Intentional for parsing, value range validated"
     )]
@@ -997,7 +1007,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(r#"{"value":"12345678901234"}"#, 12345678901234)]
+    #[case(r#"{"value":"12345678901234"}"#, 12_345_678_901_234)]
     #[case(r#"{"value":"0"}"#, 0)]
     #[case(r#"{"value":"18446744073709551615"}"#, u64::MAX)]
     #[case(r#"{"value":""}"#, 0)]
@@ -1022,7 +1032,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(r#"{"value":"12345678901234"}"#, Some(12345678901234))]
+    #[case(r#"{"value":"12345678901234"}"#, Some(12_345_678_901_234))]
     #[case(r#"{"value":"0"}"#, Some(0))]
     #[case(r#"{"value":""}"#, None)]
     #[case(r#"{"value":null}"#, None)]

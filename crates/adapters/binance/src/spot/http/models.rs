@@ -299,16 +299,10 @@ impl BinanceAccountInfo {
             let locked = Decimal::new(asset.locked_mantissa, 0) * multiplier;
             let total = free + locked;
 
-            let total_money = Money::from_decimal(total, currency)
-                .unwrap_or_else(|_| Money::new(total.to_string().parse().unwrap_or(0.0), currency));
-            let locked_money = Money::from_decimal(locked, currency).unwrap_or_else(|_| {
-                Money::new(locked.to_string().parse().unwrap_or(0.0), currency)
-            });
-            let free_money = Money::from_decimal(free, currency)
-                .unwrap_or_else(|_| Money::new(free.to_string().parse().unwrap_or(0.0), currency));
-
-            let balance = AccountBalance::new(total_money, locked_money, free_money);
-            balances.push(balance);
+            match AccountBalance::from_total_and_locked(total, locked, currency) {
+                Ok(balance) => balances.push(balance),
+                Err(e) => log::warn!("Skipping spot balance for {}: {e}", currency.code.as_str()),
+            }
         }
 
         // Ensure at least one balance exists

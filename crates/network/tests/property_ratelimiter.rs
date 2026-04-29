@@ -13,6 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(
+    clippy::cast_possible_truncation,
+    reason = "test arithmetic with known-safe values"
+)]
+
 //! Property-based tests for rate limiting components.
 //!
 //! These tests verify fundamental properties that should hold regardless of specific input values:
@@ -220,6 +225,7 @@ proptest! {
 
         // Make rapid sequential requests
         let start = std::time::Instant::now();
+
         for _ in 0..request_count {
             if rate_limiter.check_key(&key).is_ok() {
                 allowed_count += 1;
@@ -268,6 +274,7 @@ proptest! {
         let mut specific_allowed = 0usize;
         let specific_attempts = key_rate as usize + 1; // inclusive in original test
         let start_specific = std::time::Instant::now();
+
         for _ in 0..specific_attempts {
             if rate_limiter.check_key(&key).is_ok() {
                 specific_allowed += 1;
@@ -289,6 +296,7 @@ proptest! {
         let mut default_allowed = 0usize;
         let default_attempts = default_rate as usize + 1; // inclusive in original test
         let start_default = std::time::Instant::now();
+
         for _ in 0..default_attempts {
             if rate_limiter.check_key(&unknown_key).is_ok() {
                 default_allowed += 1;
@@ -330,6 +338,7 @@ proptest! {
             let mut allowed = 0usize;
             let attempts = (burst_size * 2) as usize;
             let start = std::time::Instant::now();
+
             for _ in 0..attempts {
                 if rate_limiter.check_key(&key).is_ok() {
                     allowed += 1;

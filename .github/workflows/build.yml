@@ -8,11 +8,12 @@ on:
   push:
     branches: [master, nightly, develop, test-ci, test-pre-commit]
   pull_request:
-    branches: ['*']
+    branches-ignore: [master, nightly]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  # yamllint disable-line rule:line-length
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('{0}-{1}', github.ref_name, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Fork PRs cannot access repo/org variables so allow lists are empty;
@@ -30,7 +31,7 @@ jobs:
       run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -48,15 +49,27 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
           BEFORE_SHA: ${{ github.event.before }}
         run: bash scripts/ci/plan.sh
 
   pre-commit:
-    runs-on: depot-ubuntu-22.04-8
+    # Self-hosted for internal work; Depot for fork PRs.
+    runs-on: >-
+      ${{ github.event.pull_request.head.repo.fork
+      && fromJson('["depot-ubuntu-22.04-8"]')
+      || fromJson('["self-hosted", "Linux", "X64", "build"]') }}
+    env:
+      # Self-hosted persists target dir outside the workspace so it survives
+      # actions/checkout's git clean -ffdx. Fork PRs run on Depot and fall
+      # through to Swatinem/rust-cache on the workspace target dir.
+      CARGO_TARGET_DIR: >-
+        ${{ github.event.pull_request.head.repo.fork
+        && format('{0}/target', github.workspace)
+        || '/home/runner/.cache/cargo-target/pre-commit' }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -81,9 +94,10 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
           build-type: "pre-commit"
+          rust-cache-enabled: ${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}
 
       - name: Run pre-commit
-        run: pre-commit run --all-files
+        run: prek run --all-files
 
       - name: Verify capnp schemas are up-to-date
         run: make check-capnp-schemas
@@ -95,7 +109,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -123,7 +137,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -148,24 +162,34 @@ jobs:
     if: github.ref != 'refs/heads/test-pre-commit' && needs.plan.outputs.run-tests == 'true'
     strategy:
       fail-fast: false
+      # PRs build on 3.13 only: ruff target-version=py312 guards syntax in pre-commit,
+      # and 3.13 exercises the `python_version < '3.14'` dependency cohort
+      # (defusedxml, nautilus-ibapi, protobuf). Pushes (develop/nightly/master) run
+      # the full matrix before any wheel publishes.
       matrix:
-        python-version:
-          - "3.12"
-          - "3.13"
-          - "3.14"
+        python-version: ${{ fromJSON(github.event_name == 'pull_request' && '["3.13"]' || '["3.12", "3.13", "3.14"]') }}
     defaults:
       run:
         shell: bash
     # Ubuntu 22.04 (glibc 2.35) wider runtime range than 24.04/glibc 2.39
-    # Push events (develop/nightly/master) use 8-core runners for faster builds
+    # Pushes to develop route to the self-hosted build pool; PRs and other
+    # branches route to Depot.
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04)
-    runs-on: depot-ubuntu-22.04-8
+    runs-on: >-
+      ${{ github.event_name == 'push' && github.ref_name == 'develop'
+      && fromJson('["self-hosted", "Linux", "X64", "build"]')
+      || fromJson('["depot-ubuntu-22.04-8"]') }}
     needs:
       - plan
       - pre-commit
     env:
       BUILD_MODE: release
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-linux-x86
+      # Self-hosted develop pushes keep Rust artifacts outside the workspace so
+      # they survive actions/checkout's git clean -ffdx between runs.
+      CARGO_TARGET_DIR: >-
+        ${{ github.event_name == 'push' && github.ref_name == 'develop'
+        && format('/home/runner/.cache/cargo-target/build-linux-x86/py{0}', matrix.python-version)
+        || format('{0}/target/build-linux-x86', github.workspace) }}
       RUST_BACKTRACE: 1
     # yamllint disable rule:line-length
     services:
@@ -190,7 +214,7 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -212,6 +236,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
+          # Persistent CARGO_TARGET_DIR on the self-hosted build pool replaces
+          # Swatinem/rust-cache for develop push builds.
+          rust-cache-enabled: ${{ github.event_name == 'push' && github.ref_name == 'develop' && 'false' || 'true' }}
           rust-cache-key: build-linux-x86
           rust-cache-workspaces: . -> target/build-linux-x86
           rust-cache-save-if: ${{ github.event_name == 'push' }}
@@ -276,7 +303,6 @@ jobs:
     defaults:
       run:
         shell: bash
-    # Push events use 8-core runners for faster builds
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04-arm)
     runs-on: depot-ubuntu-22.04-arm-8
     # Pause job on develop branch (takes ~1-1.5 hrs)
@@ -320,7 +346,7 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -412,7 +438,6 @@ jobs:
     defaults:
       run:
         shell: bash
-    # Push events use Depot macOS runners for faster builds
     name: build - python ${{ matrix.python-version }} (macos)
     runs-on: macos-latest
     needs:
@@ -424,7 +449,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -554,7 +579,17 @@ jobs:
         uses: ./.github/actions/upload-artifact-wheel
 
   build-windows:
-    if: github.ref != 'refs/heads/test-pre-commit' && needs.plan.outputs.run-tests == 'true'
+    # Windows builds run on nightly/master pushes only (too slow for develop/PR).
+    # Develop-branch Windows coverage runs via nightly-tests.yml on a daily schedule.
+    # yamllint disable-line rule:line-length
+    if: >
+      needs.plan.outputs.run-tests == 'true' &&
+      !(
+        (github.event_name == 'push' &&
+          (github.ref_name == 'develop' || github.ref_name == 'test-pre-commit'))
+        || (github.event_name == 'pull_request' &&
+          github.base_ref == 'develop')
+      )
     strategy:
       fail-fast: false
       matrix:
@@ -565,7 +600,6 @@ jobs:
     defaults:
       run:
         shell: bash
-    # Push events use Depot Windows runners for faster builds
     name: build - python ${{ matrix.python-version }} (windows)
     runs-on: depot-windows-2022-8
     needs:
@@ -579,7 +613,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -636,7 +670,7 @@ jobs:
       attestations: write # Required for attestations
     needs:
       - build-linux-x86
-      - build-windows
+      # - build-windows # Windows builds moved to nightly only
       # - build-linux-arm # Keep for nightly only (slow build)
       # - build-macos # macOS builds moved to nightly only
     if: >
@@ -649,7 +683,7 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -664,7 +698,7 @@ jobs:
           persist-credentials: false
 
       - name: Download built wheels
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
           pattern: "nautilus_trader-*.whl"
@@ -672,7 +706,7 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: 'dist/nautilus_trader-*.whl'
 
@@ -697,7 +731,7 @@ jobs:
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/nightly'
     steps:
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -736,7 +770,7 @@ jobs:
         id: osv-scan
         if: steps.gate.outputs.override_active != 'true'
         continue-on-error: true
-        uses: google/osv-scanner-action/osv-scanner-action@c5996e0193a3df57d695c1b8a1dec2a4c62e8730 # v2.3.3
+        uses: google/osv-scanner-action/osv-scanner-action@c51854704019a247608d928f370c98740469d4b5 # v2.3.5
         with:
           scan-args: |
             --config=osv-scanner.toml
@@ -771,7 +805,7 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -786,7 +820,7 @@ jobs:
           persist-credentials: false
 
       - name: Download built wheels
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
           pattern: "nautilus_trader-*.whl"
@@ -794,7 +828,7 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: 'dist/nautilus_trader-*.whl'
 
@@ -832,7 +866,7 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -855,12 +889,12 @@ jobs:
           echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> "$GITHUB_ENV"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b # v7.3.0
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: ${{ env.UV_VERSION }}
 
       - name: Download built wheels for PyPI and GitHub release
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
           pattern: "nautilus_trader-*.whl"
@@ -868,7 +902,7 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: 'dist/nautilus_trader-*.whl'
 
@@ -948,7 +982,7 @@ jobs:
       tag_name: ${{ env.TAG_NAME }}
     steps:
       # Security hardening
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -985,7 +1019,7 @@ jobs:
       - name: Create GitHub release
         id: create-release
         # https://github.com/softprops/action-gh-release v2.5.0
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -1008,7 +1042,7 @@ jobs:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -1036,7 +1070,7 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest sdist provenance
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: 'dist/*.tar.gz'
 

@@ -9,7 +9,7 @@ set -euo pipefail
 #
 # Required env vars:
 #   EVENT_NAME   - github.event_name (push or pull_request)
-#   BASE_SHA     - github.event.pull_request.base.sha (PRs only)
+#   BASE_REF     - github.event.pull_request.base.ref (PRs only, e.g. "develop")
 #   BEFORE_SHA   - github.event.before (push only, previous HEAD)
 
 run_all() {
@@ -27,7 +27,20 @@ if [[ "$EVENT_NAME" == "push" ]]; then
   fi
   changed_files="$(git diff --name-only "$BEFORE_SHA" HEAD)"
 else
-  changed_files="$(git diff --name-only "${BASE_SHA}...HEAD")"
+  # The PR event payload freezes base.sha at PR creation time, so intervening
+  # commits on the base branch would otherwise appear as PR changes. Re-resolve
+  # the merge-base against the current base branch head so the diff reflects
+  # only what this PR actually changes relative to where it will land.
+  if [[ -z "${BASE_REF:-}" ]]; then
+    run_all "BASE_REF not set: running all jobs"
+  fi
+  if ! merge_base="$(git merge-base "origin/${BASE_REF}" HEAD 2> /dev/null)"; then
+    run_all "Failed to compute merge-base against origin/${BASE_REF}: running all jobs"
+  fi
+  if [[ -z "$merge_base" ]]; then
+    run_all "Empty merge-base against origin/${BASE_REF}: running all jobs"
+  fi
+  changed_files="$(git diff --name-only "$merge_base" HEAD)"
 fi
 
 code_changed=0

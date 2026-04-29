@@ -190,7 +190,7 @@ impl DeltaNeutralVolConfig {
         entry_time_in_force=TimeInForce::Gtc,
         iv_param_key="px_vol",
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         option_family: String,
         hedge_instrument_id: InstrumentId,

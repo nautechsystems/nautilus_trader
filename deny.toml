@@ -27,7 +27,7 @@ ignore = [
   # TODO: Monitor upstream TLS dependencies for migration
   { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a security vulnerability)" },
 
-  # unic-* crates are unmaintained, pulled in via pyo3-stub-gen→rustpython-parser
+  # unic-* crates are unmaintained, pulled in via pyo3-stub-gen->rustpython-parser
   # This is dev-time only for generating .pyi stub files, not a runtime security risk
   # TODO: Monitor https://github.com/Jij-Inc/pyo3-stub-gen for migration away from rustpython-parser
   { id = "RUSTSEC-2025-0075", reason = "unic-char-range unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
@@ -151,6 +151,10 @@ skip = [
   { crate = "derive_more" },
   { crate = "derive_more-impl" },
 
+  # syn 1 and strsim 0.10 - transitive via madsim -> darling 0.14 (dev-only simulator)
+  { crate = "syn" },
+  { crate = "strsim" },
+
   # Enum derive macros - strum 0.27 (alloy, hypersync) vs 0.28 (nautilus)
   { crate = "strum" },
   { crate = "strum_macros" },
@@ -176,8 +180,10 @@ skip = [
   { crate = "arrow-string" },
   { crate = "parquet" },
 
+  # Redox OS syscall - parking_lot (0.5.x) vs sqlx-postgres/whoami (0.7.x)
+  { crate = "redox_syscall" },
+
   # Common utility crates with version fragmentation across ecosystem
-  { crate = "base64" },
   { crate = "hashbrown" },
   { crate = "itertools" },
   { crate = "foldhash" },
@@ -199,6 +205,9 @@ skip = [
   # HTTP client - reqwest 0.12 vs 0.13 transition (databento, hypersync, object_store on 0.12)
   { crate = "reqwest" },
   { crate = "wasm-streams" },
+
+  # WASI bindings - getrandom pulls distinct wit-bindgen generations via wasip2/wasip3
+  { crate = "wit-bindgen" },
 
   # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.25.0
   { crate = "capnp" },

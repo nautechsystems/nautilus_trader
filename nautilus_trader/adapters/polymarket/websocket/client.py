@@ -39,6 +39,15 @@ class PolymarketWebSocketChannel(Enum):
     USER = "user"
 
 
+# MARKET channel streams continuously; USER channel can legitimately be quiet
+# when no orders or fills exist, so give it a longer window before treating
+# silence as a zombie connection.
+def _idle_timeout_ms_for(channel: PolymarketWebSocketChannel) -> int:
+    if channel == PolymarketWebSocketChannel.USER:
+        return 300_000
+    return 60_000
+
+
 class PolymarketWebSocketClient:
     """
     Provides a Polymarket streaming WebSocket client.
@@ -81,6 +90,7 @@ class PolymarketWebSocketClient:
         loop: asyncio.AbstractEventLoop,
         auth: PolymarketWebSocketAuth | None = None,
         max_subscriptions_per_connection: int = 200,
+        proxy_url: str | None = None,
     ) -> None:
         self._clock = clock
         self._log: Logger = Logger(type(self).__name__)
@@ -93,6 +103,7 @@ class PolymarketWebSocketClient:
         self._handler: Callable[[bytes], None] = handler
         self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
+        self._proxy_url: str | None = proxy_url
         self._tasks: WeakSet[asyncio.Task] = WeakSet()
 
         # Multi-client tracking
@@ -359,6 +370,8 @@ class PolymarketWebSocketClient:
                 url=self._ws_url,
                 headers=[],
                 heartbeat=10,
+                idle_timeout_ms=_idle_timeout_ms_for(self._channel),
+                proxy_url=self._proxy_url,
             )
 
             self._clients[client_id] = await WebSocketClient.connect(

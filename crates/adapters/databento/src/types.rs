@@ -126,7 +126,7 @@ impl DatabentoImbalance {
     }
 
     /// Creates a new [`DatabentoImbalance`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub const fn new(
         instrument_id: InstrumentId,
@@ -268,7 +268,7 @@ impl DatabentoStatistics {
     }
 
     /// Creates a new [`DatabentoStatistics`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub const fn new(
         instrument_id: InstrumentId,

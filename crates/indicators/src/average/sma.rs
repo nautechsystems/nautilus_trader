@@ -394,6 +394,7 @@ mod tests {
     #[rstest]
     fn sma_multiple_resets() {
         let mut sma = SimpleMovingAverage::new(4, None);
+
         for cycle in 0..5 {
             for x in 0..4 {
                 sma.update_raw(f64::from(x));

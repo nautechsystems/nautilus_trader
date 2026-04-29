@@ -230,6 +230,7 @@ mod tests {
         let mut atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         let mut high = 1.00010;
         let mut low = 1.0;
+
         for _ in 0..1000 {
             high += 0.00010;
             low += 0.00010;
@@ -244,6 +245,7 @@ mod tests {
         let mut atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         let mut high = 1.00010;
         let mut low = 1.0;
+
         for _ in 0..1000 {
             high -= 0.00010;
             low -= 0.00010;
@@ -258,6 +260,7 @@ mod tests {
         let floor = 0.00005;
         let mut floored_atr =
             AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, Some(floor));
+
         for _ in 0..20 {
             floored_atr.update_raw(1.0, 1.0, 1.0);
         }
@@ -272,6 +275,7 @@ mod tests {
         let mut high = 1.00020;
         let low = 1.0;
         let close = 1.0;
+
         for _ in 0..20 {
             high -= (high - low) / 2.0;
             floored_atr.update_raw(high, low, close);

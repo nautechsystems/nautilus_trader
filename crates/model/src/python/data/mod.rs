@@ -47,8 +47,8 @@ use pyo3::{prelude::*, types::PyCapsule};
 #[cfg(feature = "cython-compat")]
 use crate::data::DataFFI;
 use crate::data::{
-    Bar, CustomData, Data, DataType, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
-    OrderBookDelta, QuoteTick, TradeTick, close::InstrumentClose,
+    Bar, CustomData, Data, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
+    MarkPriceUpdate, OrderBookDelta, QuoteTick, TradeTick, close::InstrumentClose,
     is_monotonically_increasing_by_init, register_python_data_class,
 };
 
@@ -75,6 +75,7 @@ impl DataType {
 
     fn __richcmp__(&self, other: &Self, op: pyo3::pyclass::CompareOp, py: Python<'_>) -> Py<PyAny> {
         use nautilus_core::python::IntoPyObjectNautilusExt;
+
         match op {
             pyo3::pyclass::CompareOp::Eq => (self.topic() == other.topic()).into_py_any_unwrap(py),
             pyo3::pyclass::CompareOp::Ne => (self.topic() != other.topic()).into_py_any_unwrap(py),
@@ -319,6 +320,26 @@ pub fn pyobjects_to_index_prices(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<In
     Ok(index_prices)
 }
 
+/// Transforms the given Python objects into a vector of [`InstrumentStatus`] objects.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
+pub fn pyobjects_to_instrument_statuses(
+    data: Vec<Bound<'_, PyAny>>,
+) -> PyResult<Vec<InstrumentStatus>> {
+    let statuses: Vec<InstrumentStatus> = data
+        .into_iter()
+        .map(|obj| InstrumentStatus::from_pyobject(&obj))
+        .collect::<PyResult<Vec<InstrumentStatus>>>()?;
+
+    if !is_monotonically_increasing_by_init(&statuses) {
+        return Err(to_pyvalue_err(ERROR_MONOTONICITY));
+    }
+
+    Ok(statuses)
+}
+
 /// Transforms the given Python objects into a vector of [`InstrumentClose`] objects.
 ///
 /// # Errors
@@ -340,7 +361,7 @@ pub fn pyobjects_to_instrument_closes(
     Ok(closes)
 }
 
-/// Deserializes custom data from JSON bytes into a PyO3 CustomData wrapper.
+/// Deserializes custom data from JSON bytes into a PyO3 `CustomData` wrapper.
 ///
 /// # Errors
 ///
@@ -361,7 +382,7 @@ pub fn deserialize_custom_from_json(type_name: &str, payload: &[u8]) -> PyResult
     Ok(custom)
 }
 
-/// Deserializes JSON value to CustomData via the data class's from_json.
+/// Deserializes JSON value to `CustomData` via the data class's `from_json`.
 #[cfg(feature = "python")]
 fn py_json_deserialize_custom_data(
     data_class: &pyo3::Py<pyo3::PyAny>,
@@ -392,7 +413,7 @@ fn py_json_deserialize_custom_data(
     })
 }
 
-/// Encodes CustomData items to RecordBatch via Python encode_record_batch_py.
+/// Encodes `CustomData` items to `RecordBatch` via Python `encode_record_batch_py`.
 #[allow(unsafe_code)]
 #[cfg(feature = "python")]
 fn py_encode_custom_data_to_record_batch(
@@ -445,7 +466,7 @@ fn py_encode_custom_data_to_record_batch(
     })
 }
 
-/// Decodes RecordBatch to CustomData via Python decode_record_batch_py.
+/// Decodes `RecordBatch` to `CustomData` via Python `decode_record_batch_py`.
 #[allow(unsafe_code)]
 #[cfg(feature = "python")]
 fn py_decode_record_batch_to_custom_data(
@@ -524,7 +545,7 @@ fn py_decode_record_batch_to_custom_data(
 ///
 /// ```python
 /// from nautilus_trader.model.custom import customdataclass_pyo3
-/// from nautilus_trader.core.nautilus_pyo3.model import register_custom_data_class
+/// from nautilus_trader.model import register_custom_data_class
 ///
 /// @customdataclass_pyo3()
 /// class MarketTickPython:

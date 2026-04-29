@@ -24,6 +24,7 @@ use std::{
     },
 };
 
+use nautilus_core::string::urlencoding;
 use nautilus_network::{
     http::{HttpClient, Method},
     ratelimiter::quota::Quota,
@@ -40,7 +41,7 @@ use crate::common::{
     consts::{
         BETFAIR_ACCOUNTS_URL, BETFAIR_BETTING_URL, BETFAIR_IDENTITY_LOGIN_URL,
         BETFAIR_KEEP_ALIVE_URL, BETFAIR_NAVIGATION_URL, BETFAIR_RATE_LIMIT_DEFAULT,
-        BETFAIR_RATE_LIMIT_ORDERS,
+        BETFAIR_RATE_LIMIT_ORDERS, HEADER_X_APPLICATION, HEADER_X_AUTHENTICATION,
     },
     credential::BetfairCredential,
 };
@@ -386,9 +387,9 @@ impl BetfairHttpClient {
             .ok_or(BetfairHttpError::MissingCredentials)?;
 
         let mut headers = HashMap::new();
-        headers.insert("X-Authentication".to_string(), token);
+        headers.insert(HEADER_X_AUTHENTICATION.to_string(), token);
         headers.insert(
-            "X-Application".to_string(),
+            HEADER_X_APPLICATION.to_string(),
             self.credential.app_key().to_string(),
         );
         headers.insert("Accept".to_string(), "application/json".to_string());
@@ -404,13 +405,13 @@ impl BetfairHttpClient {
             "application/x-www-form-urlencoded".to_string(),
         );
         headers.insert(
-            "X-Application".to_string(),
+            HEADER_X_APPLICATION.to_string(),
             self.credential.app_key().to_string(),
         );
 
         // Add session token if we have one (for keep-alive)
         if let Some(token) = self.session_token.read().await.as_ref() {
-            headers.insert("X-Authentication".to_string(), token.clone());
+            headers.insert(HEADER_X_AUTHENTICATION.to_string(), token.clone());
         }
 
         let resp = self
@@ -555,7 +556,9 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::consts::{BETFAIR_RATE_LIMIT_DEFAULT, BETFAIR_RATE_LIMIT_ORDERS};
+    use crate::common::consts::{
+        BETFAIR_RATE_LIMIT_DEFAULT, BETFAIR_RATE_LIMIT_ORDERS, METHOD_LIST_MARKET_CATALOGUE,
+    };
 
     #[rstest]
     fn test_rate_limiter_quotas_has_expected_keys() {
@@ -588,7 +591,7 @@ mod tests {
     fn test_json_rpc_request_serialization() {
         let request = JsonRpcRequest {
             jsonrpc: "2.0",
-            method: "SportsAPING/v1.0/listMarketCatalogue".to_string(),
+            method: METHOD_LIST_MARKET_CATALOGUE.to_string(),
             params: serde_json::json!({"filter": {}, "maxResults": 100}),
             id: 1,
         };

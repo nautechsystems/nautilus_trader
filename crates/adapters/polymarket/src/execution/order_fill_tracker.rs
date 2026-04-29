@@ -26,7 +26,7 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 
-use crate::common::consts::DUST_SNAP_THRESHOLD;
+use crate::common::consts::{SNAP_OVERFILL_ULPS, SNAP_UNDERFILL_ULPS};
 
 /// Cumulative fill state for a single order.
 #[derive(Debug, Clone, Copy)]
@@ -58,7 +58,6 @@ impl OrderFillTrackerMap {
     }
 
     /// Register an order after HTTP accept.
-    #[allow(clippy::too_many_arguments)]
     pub fn register(
         &self,
         venue_order_id: VenueOrderId,
@@ -138,14 +137,23 @@ impl OrderFillTrackerMap {
         }
     }
 
-    /// Snap a single fill qty to submitted_qty when diff is dust.
-    /// Returns the (possibly snapped) quantity.
+    /// Snap a single fill qty to `submitted_qty` when the diff is dust.
+    /// See `docs/integrations/polymarket.md` (Fill quantity normalization).
     pub fn snap_fill_qty(&self, venue_order_id: &VenueOrderId, fill_qty: Quantity) -> Quantity {
         let guard = self.inner.lock().expect(MUTEX_POISONED);
         match guard.get(venue_order_id) {
             Some(s) => {
                 let diff = s.submitted_qty.as_f64() - fill_qty.as_f64();
-                if diff > 0.0 && diff < DUST_SNAP_THRESHOLD {
+                let ulp = 10f64.powi(-(s.size_precision as i32));
+                let tolerance = if diff > 0.0 {
+                    SNAP_UNDERFILL_ULPS * ulp
+                } else if diff < 0.0 {
+                    SNAP_OVERFILL_ULPS * ulp
+                } else {
+                    return fill_qty;
+                };
+
+                if diff.abs() < tolerance {
                     log::info!(
                         "Snapping fill qty {fill_qty} -> {} (dust={diff:.6})",
                         s.submitted_qty,
@@ -163,7 +171,7 @@ impl OrderFillTrackerMap {
     /// Returns `Some(FillReport)` if a synthetic fill should be emitted.
     /// Removes the entry on dust settlement to prevent duplicate synthetic
     /// fills from repeated MATCHED events.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn check_dust_and_build_fill(
         &self,
         venue_order_id: &VenueOrderId,
@@ -177,8 +185,10 @@ impl OrderFillTrackerMap {
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
         let s = guard.get(venue_order_id)?;
         let leaves = s.submitted_qty.as_f64() - s.cumulative_filled;
+        let ulp = 10f64.powi(-(s.size_precision as i32));
+        let underfill_tolerance = SNAP_UNDERFILL_ULPS * ulp;
 
-        if leaves > 0.0 && leaves < DUST_SNAP_THRESHOLD {
+        if leaves > 0.0 && leaves < underfill_tolerance {
             // Copy fields before removing the entry
             let size_precision = s.size_precision;
             let price_precision = s.price_precision;
@@ -212,6 +222,7 @@ impl OrderFillTrackerMap {
                 last_px: fill_px,
                 commission: Money::new(0.0, currency),
                 liquidity_side: LiquiditySide::NoLiquiditySide,
+                avg_px: None,
                 report_id: UUID4::new(),
                 ts_event,
                 ts_init,
@@ -219,7 +230,7 @@ impl OrderFillTrackerMap {
                 venue_position_id: None,
             })
         } else {
-            if leaves >= DUST_SNAP_THRESHOLD {
+            if leaves >= underfill_tolerance {
                 log::info!(
                     "Order {venue_order_id} MATCHED with significant residual \
                      {leaves:.6} (filled {}/{})",
@@ -234,13 +245,12 @@ impl OrderFillTrackerMap {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::enums::CurrencyType;
     use rstest::rstest;
 
     use super::*;
 
-    fn usdc() -> Currency {
-        Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto)
+    fn pusd() -> Currency {
+        Currency::pUSD()
     }
 
     #[rstest]
@@ -260,50 +270,94 @@ mod tests {
         assert!(tracker.contains(&vid));
     }
 
+    // Tolerances at size_precision=6:
+    //   SNAP_UNDERFILL_ULPS = 10_000 -> 0.01
+    //   SNAP_OVERFILL_ULPS  = 100    -> 0.0001
     #[rstest]
-    fn test_snap_fill_qty_dust() {
+    // Underfill well within tolerance: CLOB truncated the fill to a cent
+    // tick, snap UP to submitted_qty so the order can reach FILLED cleanly.
+    #[case::underfill_dust(23.696681, 23.690000, 23.696681)]
+    // Underfill near tolerance (0.0099 < 0.01): still snaps.
+    #[case::underfill_near_tolerance(100.000000, 99.990100, 100.000000)]
+    // Underfill at exactly the tolerance must NOT snap.
+    #[case::underfill_at_tolerance(100.000000, 99.990000, 99.990000)]
+    // Underfill above the tolerance: no snap.
+    #[case::underfill_above_tolerance(100.000000, 99.980000, 99.980000)]
+    // Underfill far past tolerance: leave fill alone.
+    #[case::large_underfill(100.000000, 50.000000, 50.000000)]
+    // Overfill within the tighter tolerance: V2 market BUY where the SDK
+    // truncates registered qty to USDC scale but the on-chain fill comes
+    // back at full precision. Observed drift is 4 ulps (4e-6 at
+    // size_precision=6). Snap DOWN so the engine does not reject as
+    // overfill.
+    #[case::overfill_dust(714.285710, 714.285714, 714.285710)]
+    // Overfill near the overfill tolerance (0.000099 < 0.0001): still snaps.
+    #[case::overfill_near_tolerance(100.000000, 100.000099, 100.000000)]
+    // Overfill at exactly the overfill tolerance must NOT snap.
+    #[case::overfill_at_tolerance(100.000000, 100.000100, 100.000100)]
+    // Overfill above the overfill tolerance but below the underfill
+    // tolerance must NOT snap. This is the asymmetry: a 0.005 overfill is
+    // suspicious and surfaces as an engine-side error rather than being
+    // silently absorbed.
+    #[case::overfill_above_tolerance(100.000000, 100.005000, 100.005000)]
+    // Overfill far past tolerance: leave fill alone.
+    #[case::large_overfill(100.000000, 150.000000, 150.000000)]
+    // Exact match: no-op (returns the fill qty, which equals submitted).
+    #[case::exact(100.000000, 100.000000, 100.000000)]
+    fn test_snap_fill_qty(#[case] submitted: f64, #[case] fill: f64, #[case] expected: f64) {
         let tracker = OrderFillTrackerMap::new();
-        let vid = VenueOrderId::from("order-1");
+        let venue_order_id = VenueOrderId::from("order-1");
         tracker.register(
-            vid,
-            Quantity::new(23.696681, 6),
-            OrderSide::Sell,
-            InstrumentId::from("TEST.POLYMARKET"),
-            6,
-            2,
-        );
-
-        // Fill is 23.69 (truncated by CLOB), diff = 0.006681 < 0.01 -> snap
-        let fill_qty = Quantity::new(23.69, 6);
-        let snapped = tracker.snap_fill_qty(&vid, fill_qty);
-        assert_eq!(snapped, Quantity::new(23.696681, 6));
-    }
-
-    #[rstest]
-    fn test_snap_fill_qty_no_snap_large_diff() {
-        let tracker = OrderFillTrackerMap::new();
-        let vid = VenueOrderId::from("order-1");
-        tracker.register(
-            vid,
-            Quantity::new(100.0, 6),
+            venue_order_id,
+            Quantity::new(submitted, 6),
             OrderSide::Buy,
             InstrumentId::from("TEST.POLYMARKET"),
             6,
             2,
         );
 
-        // Fill is 50.0, diff = 50 >> 0.01 -> no snap
-        let fill_qty = Quantity::new(50.0, 6);
-        let result = tracker.snap_fill_qty(&vid, fill_qty);
-        assert_eq!(result, fill_qty);
+        let snapped = tracker.snap_fill_qty(&venue_order_id, Quantity::new(fill, 6));
+        assert_eq!(snapped, Quantity::new(expected, 6));
+    }
+
+    // Tolerances scale with size_precision: at size_precision=3 the
+    // underfill tolerance becomes 10 (10_000 * 1e-3) and the overfill
+    // tolerance becomes 0.1 (100 * 1e-3). This case verifies the scaling.
+    #[rstest]
+    // Underfill within scaled tolerance (5 < 10): snap.
+    #[case::underfill_scaled_within(100.000, 95.000, 100.000)]
+    // Underfill above scaled tolerance (15 > 10): no snap.
+    #[case::underfill_scaled_above(100.000, 85.000, 85.000)]
+    // Overfill within scaled tolerance (0.05 < 0.1): snap.
+    #[case::overfill_scaled_within(100.000, 100.050, 100.000)]
+    // Overfill above scaled tolerance (0.2 > 0.1): no snap.
+    #[case::overfill_scaled_above(100.000, 100.200, 100.200)]
+    fn test_snap_fill_qty_scales_with_precision(
+        #[case] submitted: f64,
+        #[case] fill: f64,
+        #[case] expected: f64,
+    ) {
+        let tracker = OrderFillTrackerMap::new();
+        let venue_order_id = VenueOrderId::from("order-1");
+        tracker.register(
+            venue_order_id,
+            Quantity::new(submitted, 3),
+            OrderSide::Buy,
+            InstrumentId::from("TEST.POLYMARKET"),
+            3,
+            2,
+        );
+
+        let snapped = tracker.snap_fill_qty(&venue_order_id, Quantity::new(fill, 3));
+        assert_eq!(snapped, Quantity::new(expected, 3));
     }
 
     #[rstest]
     fn test_snap_fill_qty_unregistered_order() {
         let tracker = OrderFillTrackerMap::new();
-        let vid = VenueOrderId::from("unknown");
+        let venue_order_id = VenueOrderId::from("unknown");
         let fill_qty = Quantity::new(50.0, 6);
-        let result = tracker.snap_fill_qty(&vid, fill_qty);
+        let result = tracker.snap_fill_qty(&venue_order_id, fill_qty);
         assert_eq!(result, fill_qty);
     }
 
@@ -329,7 +383,7 @@ mod tests {
             AccountId::from("POLY-001"),
             "order-1",
             0.55,
-            usdc(),
+            pusd(),
             UnixNanos::from(3_000u64),
             UnixNanos::from(4_000u64),
         );
@@ -363,7 +417,7 @@ mod tests {
             AccountId::from("POLY-001"),
             "order-1",
             0.55,
-            usdc(),
+            pusd(),
             UnixNanos::from(2_000u64),
             UnixNanos::from(2_000u64),
         );
@@ -391,7 +445,7 @@ mod tests {
             AccountId::from("POLY-001"),
             "order-1",
             0.55,
-            usdc(),
+            pusd(),
             UnixNanos::from(2_000u64),
             UnixNanos::from(2_000u64),
         );
@@ -408,7 +462,7 @@ mod tests {
             AccountId::from("POLY-001"),
             "unknown",
             0.55,
-            usdc(),
+            pusd(),
             UnixNanos::from(1_000u64),
             UnixNanos::from(1_000u64),
         );
@@ -436,7 +490,7 @@ mod tests {
                 AccountId::from("POLY-001"),
                 "order-1",
                 0.50, // fallback, should NOT be used
-                usdc(),
+                pusd(),
                 UnixNanos::from(2_000u64),
                 UnixNanos::from(2_000u64),
             )
@@ -467,7 +521,7 @@ mod tests {
             AccountId::from("POLY-001"),
             "order-1",
             0.55,
-            usdc(),
+            pusd(),
             UnixNanos::from(2_000u64),
             UnixNanos::from(2_000u64),
         );
@@ -480,7 +534,7 @@ mod tests {
             AccountId::from("POLY-001"),
             "order-1",
             0.55,
-            usdc(),
+            pusd(),
             UnixNanos::from(3_000u64),
             UnixNanos::from(3_000u64),
         );

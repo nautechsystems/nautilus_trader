@@ -691,15 +691,15 @@ mod tests {
 
     #[rstest]
     fn test_name() {
-        assert_eq!(OrderSide::NoOrderSide.name(), "NO_ORDER_SIDE");
-        assert_eq!(OrderSide::Buy.name(), "BUY");
-        assert_eq!(OrderSide::Sell.name(), "SELL");
+        assert_eq!(OrderSide::NoOrderSide.as_ref(), "NO_ORDER_SIDE");
+        assert_eq!(OrderSide::Buy.as_ref(), "BUY");
+        assert_eq!(OrderSide::Sell.as_ref(), "SELL");
     }
 
     #[rstest]
     fn test_value() {
-        assert_eq!(OrderSide::NoOrderSide.value(), 0);
-        assert_eq!(OrderSide::Buy.value(), 1);
-        assert_eq!(OrderSide::Sell.value(), 2);
+        assert_eq!(OrderSide::NoOrderSide as u8, 0);
+        assert_eq!(OrderSide::Buy as u8, 1);
+        assert_eq!(OrderSide::Sell as u8, 2);
     }
 }

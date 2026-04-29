@@ -17,7 +17,7 @@ use std::{cmp::max, collections::HashSet};
 
 use alloy::primitives::Address;
 use futures_util::StreamExt;
-use nautilus_core::formatting::Separable;
+use nautilus_core::string::formatting::Separable;
 use nautilus_model::defi::{
     SharedDex,
     amm::Pool,

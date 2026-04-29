@@ -17,7 +17,7 @@ use std::{cmp::max, sync::Arc};
 
 use futures_util::StreamExt;
 use nautilus_common::messages::DataEvent;
-use nautilus_core::{formatting::Separable, hex};
+use nautilus_core::{hex, string::formatting::Separable};
 use nautilus_model::defi::{
     Block, Blockchain, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolProfiler, PoolSwap,
     SharedChain, SharedDex, SharedPool,
@@ -25,6 +25,7 @@ use nautilus_model::defi::{
     pool_analysis::{compare::compare_pool_profiler, snapshot::PoolSnapshot},
     reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
 };
+use nautilus_network::websocket::TransportBackend;
 
 use crate::{
     cache::BlockchainCache,
@@ -107,7 +108,12 @@ impl BlockchainDataClientCore {
         let rpc_client = if !config.use_hypersync_for_live_data && config.wss_rpc_url.is_some() {
             let wss_rpc_url = config.wss_rpc_url.clone().expect("wss_rpc_url is required");
             log::info!("WebSocket RPC URL: {wss_rpc_url}");
-            Some(Self::initialize_rpc_client(chain.name, wss_rpc_url))
+            Some(Self::initialize_rpc_client(
+                chain.name,
+                wss_rpc_url,
+                config.transport_backend,
+                config.proxy_url.clone(),
+            ))
         } else {
             log::info!("Using HyperSync for live data (no WebSocket RPC)");
             None
@@ -115,6 +121,7 @@ impl BlockchainDataClientCore {
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
             config.http_rpc_url.clone(),
             config.rpc_requests_per_second,
+            config.proxy_url.clone(),
         ));
         let erc20_contract = Erc20Contract::new(
             http_rpc_client.clone(),
@@ -154,20 +161,26 @@ impl BlockchainDataClientCore {
     fn initialize_rpc_client(
         blockchain: Blockchain,
         wss_rpc_url: String,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> BlockchainRpcClientAny {
-        match blockchain {
+        let mut client = match blockchain {
             Blockchain::Ethereum => {
-                BlockchainRpcClientAny::Ethereum(EthereumRpcClient::new(wss_rpc_url))
+                BlockchainRpcClientAny::Ethereum(EthereumRpcClient::new(wss_rpc_url, proxy_url))
             }
             Blockchain::Polygon => {
-                BlockchainRpcClientAny::Polygon(PolygonRpcClient::new(wss_rpc_url))
+                BlockchainRpcClientAny::Polygon(PolygonRpcClient::new(wss_rpc_url, proxy_url))
             }
-            Blockchain::Base => BlockchainRpcClientAny::Base(BaseRpcClient::new(wss_rpc_url)),
+            Blockchain::Base => {
+                BlockchainRpcClientAny::Base(BaseRpcClient::new(wss_rpc_url, proxy_url))
+            }
             Blockchain::Arbitrum => {
-                BlockchainRpcClientAny::Arbitrum(ArbitrumRpcClient::new(wss_rpc_url))
+                BlockchainRpcClientAny::Arbitrum(ArbitrumRpcClient::new(wss_rpc_url, proxy_url))
             }
             _ => panic!("Unsupported blockchain {blockchain} for RPC connection"),
-        }
+        };
+        client.set_transport_backend(transport_backend);
+        client
     }
 
     /// Establishes connections to all configured data sources and initializes the cache.
@@ -657,7 +670,7 @@ impl BlockchainDataClientCore {
         sync_result
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     async fn flush_event_batches(
         &self,
         event_batch_size: usize,

@@ -1915,10 +1915,12 @@ binance,BTCUSDT,1640995202000000,1640995202100000,50001.12,1.12,49999.12,1.62,50
         // Add bid and ask levels (we'll only populate first few for testing)
         let mut bid_headers = Vec::new();
         let mut ask_headers = Vec::new();
+
         for i in 0..25 {
             bid_headers.push(format!("bids[{i}].price"));
             bid_headers.push(format!("bids[{i}].amount"));
         }
+
         for i in 0..25 {
             ask_headers.push(format!("asks[{i}].price"));
             ask_headers.push(format!("asks[{i}].amount"));
@@ -1927,6 +1929,7 @@ binance,BTCUSDT,1640995202000000,1640995202100000,50001.12,1.12,49999.12,1.62,50
         for header in &bid_headers {
             header_parts.push(header);
         }
+
         for header in &ask_headers {
             header_parts.push(header);
         }

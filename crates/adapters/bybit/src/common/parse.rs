@@ -22,6 +22,105 @@ pub use nautilus_core::serialization::{
     deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
     deserialize_optional_decimal_str, deserialize_string_to_u8,
 };
+
+/// Serde helper for Bybit `ON`/`OFF` string fields that represent booleans.
+///
+/// Use as `#[serde(with = "on_off_bool")]`. Unknown values deserialize as an
+/// error rather than silently coercing, so field renames surface rather than
+/// decoding to the wrong value.
+pub mod on_off_bool {
+    use serde::{Deserialize, Deserializer, Serializer, de::Error};
+
+    pub fn serialize<S: Serializer>(value: &bool, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(if *value { "ON" } else { "OFF" })
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
+        let raw = String::deserialize(d)?;
+        match raw.as_str() {
+            "ON" => Ok(true),
+            "OFF" => Ok(false),
+            other => Err(D::Error::custom(format!(
+                "expected 'ON' or 'OFF', received {other:?}"
+            ))),
+        }
+    }
+}
+
+/// Serde helper that accepts `readOnly` as either a bool or `0`/`1` integer.
+///
+/// Bybit returns `readOnly` as a bool on `/v5/user/list-sub-apikeys` and as an
+/// integer on `/v5/user/query-api` and the two update endpoints. Deserializing
+/// through this module keeps the Rust field a plain `bool` across all DTOs.
+pub mod bool_or_int {
+    use serde::{Deserialize, Deserializer, Serializer, de::Error};
+
+    pub fn serialize<S: Serializer>(value: &bool, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_bool(*value)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum BoolOrInt {
+            Bool(bool),
+            Int(i64),
+        }
+
+        match BoolOrInt::deserialize(d)? {
+            BoolOrInt::Bool(b) => Ok(b),
+            BoolOrInt::Int(0) => Ok(false),
+            BoolOrInt::Int(1) => Ok(true),
+            BoolOrInt::Int(n) => Err(D::Error::custom(format!(
+                "expected bool or 0/1, received {n}"
+            ))),
+        }
+    }
+}
+
+/// Round-trips `Option<bool>` as `0`/`1` integers for Bybit request bodies
+/// that advertise `readOnly` as an integer on the wire.
+pub mod opt_bool_as_int {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+
+    pub fn serialize<S: Serializer>(value: &Option<bool>, s: S) -> Result<S::Ok, S::Error> {
+        value.map(i32::from).serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<bool>, D::Error> {
+        match Option::<i32>::deserialize(d)? {
+            None => Ok(None),
+            Some(0) => Ok(Some(false)),
+            Some(1) => Ok(Some(true)),
+            Some(n) => Err(D::Error::custom(format!("expected 0 or 1, received {n}"))),
+        }
+    }
+}
+
+/// Serde helper that treats the masked secret literal (`"******"`) and empty
+/// strings as `None`, preserving real values as `Some`.
+///
+/// Bybit responses never expose a usable secret: `list-sub-apikeys` returns
+/// `"******"`, while the update endpoints return `""`. Surfacing `Option<String>`
+/// keeps callers from accidentally treating the sentinel as a real credential.
+pub mod masked_secret {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &Option<String>, s: S) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(v) => v.serialize(s),
+            None => "".serialize(s),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+        let raw = Option::<String>::deserialize(d)?;
+        Ok(match raw.as_deref() {
+            None | Some("" | "******") => None,
+            Some(_) => raw,
+        })
+    }
+}
 use nautilus_core::{
     Params, UUID4,
     datetime::{NANOSECONDS_IN_MILLISECOND, nanos_to_millis as nanos_to_millis_u64},
@@ -37,7 +136,9 @@ use nautilus_model::{
         TriggerType,
     },
     events::account::state::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, TradeId, VenueOrderId,
+    },
     instruments::{
         Instrument, any::InstrumentAny, crypto_future::CryptoFuture, crypto_option::CryptoOption,
         crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
@@ -52,8 +153,9 @@ use crate::{
     common::{
         enums::{
             BybitContractType, BybitKlineInterval, BybitMarketUnit, BybitOptionType,
-            BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionSide, BybitProductType,
-            BybitStopOrderType, BybitTimeInForce, BybitTriggerDirection, BybitTriggerType,
+            BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionSide,
+            BybitProductType, BybitStopOrderType, BybitTimeInForce, BybitTriggerDirection,
+            BybitTriggerType,
         },
         symbol::BybitSymbol,
     },
@@ -695,6 +797,7 @@ pub fn parse_orderbook(
     for level in &result.b {
         push_level(level, OrderSide::Buy)?;
     }
+
     for level in &result.a {
         push_level(level, OrderSide::Sell)?;
     }
@@ -757,6 +860,24 @@ pub fn parse_kline_bar(
 
     Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
         .context("failed to construct Bar from Bybit kline entry")
+}
+
+/// Constructs a venue position ID from an instrument and Bybit position index.
+///
+/// Position index values: 0 = one-way mode, 1 = buy-side hedge, 2 = sell-side hedge.
+///
+/// Not currently wired into reports because Bybit defaults to netting mode where
+/// non-None `venue_position_id` overrides the computed netting position ID.
+/// Ready to activate when hedge-mode support is added.
+#[must_use]
+pub fn make_venue_position_id(instrument_id: InstrumentId, position_idx: i32) -> PositionId {
+    let side = match position_idx {
+        0 => "ONEWAY",
+        1 => "LONG",
+        2 => "SHORT",
+        _ => "UNKNOWN",
+    };
+    PositionId::new(format!("{instrument_id}-{side}"))
 }
 
 /// Parses a Bybit execution into a Nautilus FillReport.
@@ -831,7 +952,7 @@ pub fn parse_fill_report(
         commission,
         liquidity_side,
         client_order_id,
-        None, // venue_position_id not provided by Bybit executions
+        None, // venue_position_id: execution data lacks position_idx
         ts_event,
         ts_init,
         None, // Will generate a new UUID4
@@ -890,6 +1011,17 @@ pub fn parse_position_status_report(
         parse_millis_timestamp(&position.updated_time, "position.updatedTime")?
     };
 
+    // Bybit ranks open positions 1-5 by ADL priority (5 = next to be deleveraged);
+    // 0 means the account has no open position or is flat.
+    if position.adl_rank_indicator >= 4 {
+        log::warn!(
+            "Elevated ADL risk: {} position size={} adl_rank={}",
+            instrument_id,
+            position.size,
+            position.adl_rank_indicator,
+        );
+    }
+
     Ok(PositionStatusReport::new(
         account_id,
         instrument_id,
@@ -898,7 +1030,7 @@ pub fn parse_position_status_report(
         ts_last,
         ts_init,
         None, // Will generate a new UUID4
-        None, // venue_position_id not used for now
+        None, // venue_position_id omitted: non-None triggers hedge-mode reconciliation
         avg_px_open,
     ))
 }
@@ -922,45 +1054,41 @@ pub fn parse_account_state(
         let locked_dec = coin.locked;
 
         let currency = get_currency(&coin.coin);
-        let total = Money::from_decimal(total_dec, currency)?;
-        let locked = Money::from_decimal(locked_dec, currency)?;
-        let free = Money::from_raw(total.raw - locked.raw, currency);
-
-        balances.push(AccountBalance::new(total, locked, free));
+        balances.push(AccountBalance::from_total_and_locked(
+            total_dec, locked_dec, currency,
+        )?);
     }
 
     let mut margins = Vec::new();
 
     for coin in &wallet_balance.coin {
-        let initial_margin_f64 = match &coin.total_position_im {
+        // Position IM is reserved against open positions; order IM is reserved against
+        // pending orders. Sum both so an account that only has open orders still
+        // reports a non-zero initial margin.
+        let position_im_f64 = match &coin.total_position_im {
             Some(im) if !im.is_empty() => im.parse::<f64>()?,
             _ => 0.0,
         };
+        let order_im_f64 = match &coin.total_order_im {
+            Some(im) if !im.is_empty() => im.parse::<f64>()?,
+            _ => 0.0,
+        };
+        let initial_margin_f64 = position_im_f64 + order_im_f64;
 
         let maintenance_margin_f64 = match &coin.total_position_mm {
             Some(mm) if !mm.is_empty() => mm.parse::<f64>()?,
             _ => 0.0,
         };
 
-        let currency = get_currency(&coin.coin);
-
-        // Only create margin balance if there are actual margin requirements
-        if initial_margin_f64 > 0.0 || maintenance_margin_f64 > 0.0 {
-            let initial_margin = Money::new(initial_margin_f64, currency);
-            let maintenance_margin = Money::new(maintenance_margin_f64, currency);
-
-            // Create a synthetic instrument_id for account-level margins
-            let margin_instrument_id = InstrumentId::new(
-                Symbol::from_str_unchecked(format!("ACCOUNT-{}", coin.coin)),
-                Venue::new("BYBIT"),
-            );
-
-            margins.push(MarginBalance::new(
-                initial_margin,
-                maintenance_margin,
-                margin_instrument_id,
-            ));
+        if initial_margin_f64 == 0.0 && maintenance_margin_f64 == 0.0 {
+            continue;
         }
+
+        let currency = get_currency(&coin.coin);
+        let initial_margin = Money::new(initial_margin_f64, currency);
+        let maintenance_margin = Money::new(maintenance_margin_f64, currency);
+
+        margins.push(MarginBalance::new(initial_margin, maintenance_margin, None));
     }
 
     let account_type = AccountType::Margin;
@@ -1246,6 +1374,9 @@ pub fn parse_order_status_report(
         report = report.with_trigger_type(trigger_type);
     }
 
+    // venue_position_id omitted: in netting mode, non-None values override the
+    // computed netting position ID and break position tracking.
+
     if order.reduce_only {
         report = report.with_reduce_only(true);
     }
@@ -1295,6 +1426,7 @@ pub fn trigger_direction(
     if !is_stop_order {
         return None;
     }
+
     match (order_type, order_side) {
         (OrderType::StopMarket | OrderType::StopLimit, OrderSide::Buy) => {
             Some(BybitTriggerDirection::RisesTo)
@@ -1327,6 +1459,7 @@ pub fn map_time_in_force(
     if post_only == Some(true) {
         return Ok(Some(BybitTimeInForce::PostOnly));
     }
+
     match time_in_force {
         Some(TimeInForce::Gtc) => Ok(Some(BybitTimeInForce::Gtc)),
         Some(TimeInForce::Ioc) => Ok(Some(BybitTimeInForce::Ioc)),
@@ -1358,6 +1491,7 @@ pub struct BybitTpSlParams {
     pub is_leverage: bool,
     pub order_iv: Option<String>,
     pub mmp: Option<bool>,
+    pub position_idx: Option<BybitPositionIdx>,
 }
 
 impl BybitTpSlParams {
@@ -1502,6 +1636,18 @@ pub fn parse_bybit_tp_sl_params(params: Option<&Params>) -> anyhow::Result<Bybit
         }
     }
 
+    if let Some(value) = params.get("position_idx") {
+        let idx = value.as_i64().ok_or_else(|| {
+            anyhow::anyhow!("invalid type for 'position_idx': {value}, expected integer")
+        })?;
+        result.position_idx = Some(match idx {
+            0 => BybitPositionIdx::OneWay,
+            1 => BybitPositionIdx::BuyHedge,
+            2 => BybitPositionIdx::SellHedge,
+            _ => anyhow::bail!("invalid 'position_idx': {idx}, expected 0, 1, or 2"),
+        });
+    }
+
     Ok(result)
 }
 
@@ -1542,7 +1688,7 @@ mod tests {
         http::models::{
             BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
             BybitInstrumentOptionResponse, BybitInstrumentSpotResponse, BybitKlinesResponse,
-            BybitOpenOrdersResponse, BybitTradesResponse,
+            BybitOpenOrdersResponse, BybitTradeHistoryResponse, BybitTradesResponse,
         },
     };
 
@@ -2105,6 +2251,30 @@ mod tests {
     }
 
     #[rstest]
+    #[case(0, BybitPositionIdx::OneWay)]
+    #[case(1, BybitPositionIdx::BuyHedge)]
+    #[case(2, BybitPositionIdx::SellHedge)]
+    fn test_parse_tp_sl_params_position_idx_valid(
+        #[case] idx: i64,
+        #[case] expected: BybitPositionIdx,
+    ) {
+        let p = params_from(&[("position_idx", json!(idx))]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+        assert_eq!(result.position_idx, Some(expected));
+    }
+
+    #[rstest]
+    #[case(json!(3))]
+    #[case(json!(-1))]
+    #[case(json!("1"))]
+    #[case(json!(true))]
+    fn test_parse_tp_sl_params_position_idx_invalid(#[case] value: serde_json::Value) {
+        let p = params_from(&[("position_idx", value)]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+        assert!(err.to_string().contains("position_idx"));
+    }
+
+    #[rstest]
     #[case(
         BybitOrderType::Market,
         BybitStopOrderType::TakeProfit,
@@ -2291,5 +2461,42 @@ mod tests {
         assert_eq!(report.price.unwrap(), Price::from_str("47500.0").unwrap());
         assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
         assert!(report.reduce_only);
+    }
+
+    #[rstest]
+    #[case::oneway(0, "BTCUSDT-LINEAR.BYBIT-ONEWAY")]
+    #[case::long(1, "BTCUSDT-LINEAR.BYBIT-LONG")]
+    #[case::short(2, "BTCUSDT-LINEAR.BYBIT-SHORT")]
+    #[case::unknown(99, "BTCUSDT-LINEAR.BYBIT-UNKNOWN")]
+    fn test_make_venue_position_id(#[case] position_idx: i32, #[case] expected: &str) {
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let result = make_venue_position_id(instrument_id, position_idx);
+        assert_eq!(result, PositionId::from(expected));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_venue_position_id_is_none() {
+        let instrument = linear_instrument();
+        let json = load_test_json("http_get_executions.json");
+        let response: BybitTradeHistoryResponse = serde_json::from_str(&json).unwrap();
+        let execution = &response.result.list[0];
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_fill_report(execution, account_id, &instrument, TS).unwrap();
+
+        assert_eq!(report.venue_position_id, None);
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_venue_position_id_is_none() {
+        let instrument = linear_instrument();
+        let json = load_test_json("http_get_orders_realtime_tp_sl.json");
+        let response: BybitOpenOrdersResponse = serde_json::from_str(&json).unwrap();
+        let order = &response.result.list[0]; // TP order, positionIdx=0
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_order_status_report(order, &instrument, account_id, TS).unwrap();
+
+        assert_eq!(report.venue_position_id, None);
     }
 }

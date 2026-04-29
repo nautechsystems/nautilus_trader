@@ -29,6 +29,10 @@ use crate::{
 };
 
 /// Converts seconds to nanoseconds (ns).
+///
+/// # Errors
+///
+/// Returns an error if `secs` is non-finite or exceeds `MAX_SECS_FOR_NANOS`.
 #[pyfunction(name = "secs_to_nanos")]
 #[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_secs_to_nanos(secs: f64) -> PyResult<u64> {
@@ -36,6 +40,10 @@ pub fn py_secs_to_nanos(secs: f64) -> PyResult<u64> {
 }
 
 /// Converts seconds to milliseconds (ms).
+///
+/// # Errors
+///
+/// Returns an error if `secs` is non-finite or exceeds `MAX_SECS_FOR_MILLIS`.
 #[pyfunction(name = "secs_to_millis")]
 #[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_secs_to_millis(secs: f64) -> PyResult<u64> {
@@ -46,6 +54,10 @@ pub fn py_secs_to_millis(secs: f64) -> PyResult<u64> {
 ///
 /// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
 /// which may lose precision and drop negative values after clamping.
+///
+/// # Errors
+///
+/// Returns an error if `millis` is non-finite or exceeds `MAX_MILLIS_FOR_NANOS`.
 #[pyfunction(name = "millis_to_nanos")]
 #[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_millis_to_nanos(millis: f64) -> PyResult<u64> {
@@ -56,6 +68,10 @@ pub fn py_millis_to_nanos(millis: f64) -> PyResult<u64> {
 ///
 /// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
 /// which may lose precision and drop negative values after clamping.
+///
+/// # Errors
+///
+/// Returns an error if `micros` is non-finite or exceeds `MAX_MICROS_FOR_NANOS`.
 #[pyfunction(name = "micros_to_nanos")]
 #[gen_stub_pyfunction(module = "nautilus_trader.core")]
 pub fn py_micros_to_nanos(micros: f64) -> PyResult<u64> {

@@ -15,7 +15,7 @@
 
 use chrono::{TimeZone, Utc};
 use nautilus_core::UnixNanos;
-use rstest::*;
+use rstest::fixture;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
@@ -393,7 +393,10 @@ pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
     let base_currency = symbol.as_str().split('/').next().unwrap();
     let quote_currency = symbol.as_str().split('/').next_back().unwrap();
     let price_precision = if quote_currency == "JPY" { 3 } else { 5 };
-    let price_increment = Price::new(1.0 / 10.0f64.powi(price_precision as i32), price_precision);
+    let price_increment = Price::new(
+        1.0 / 10.0f64.powi(i32::from(price_precision)),
+        price_precision,
+    );
     CurrencyPair::new(
         instrument_id,
         symbol,
@@ -464,7 +467,8 @@ pub fn equity_aapl() -> Equity {
     )
 }
 
-/// AAPL equity with ITCH-compatible precision (price_precision=4).
+/// AAPL equity with ITCH-compatible precision (`price_precision=4`).
+#[must_use]
 pub fn equity_aapl_itch() -> Equity {
     Equity::new(
         InstrumentId::from("AAPL.XNAS"),
@@ -496,6 +500,7 @@ pub fn equity_aapl_itch() -> Equity {
 ///
 /// Panics if constructing the activation or expiration timestamp fails,
 /// e.g., if the provided dates are invalid or timestamp conversion returns `None`.
+#[must_use]
 pub fn futures_contract_es(
     activation: Option<UnixNanos>,
     expiration: Option<UnixNanos>,
@@ -658,9 +663,9 @@ pub fn betting() -> BettingInstrument {
     let id = InstrumentId::from(format!("{raw_symbol}.BETFAIR"));
     let event_type_id = 6423;
     let event_type_name = Ustr::from("American Football");
-    let competition_id = 12282733;
+    let competition_id = 12_282_733;
     let competition_name = Ustr::from("NFL");
-    let event_id = 29678534;
+    let event_id = 29_678_534;
     let event_name = Ustr::from("NFL");
     let event_country_code = Ustr::from("GB");
     let event_open_date = UnixNanos::from(

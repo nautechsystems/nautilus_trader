@@ -23,32 +23,28 @@
 //! cargo run --bin ax-http-public -p nautilus-architect-ax
 //! ```
 
-use nautilus_architect_ax::{
-    common::consts::{AX_HTTP_SANDBOX_URL, AX_HTTP_URL, AX_ORDERS_SANDBOX_URL, AX_ORDERS_URL},
-    http::client::AxRawHttpClient,
-};
+use nautilus_architect_ax::{common::enums::AxEnvironment, http::client::AxRawHttpClient};
 use ustr::Ustr;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
-    let is_sandbox = std::env::var("AX_IS_SANDBOX")
+    let environment = if std::env::var("AX_IS_SANDBOX")
         .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(true);
-
-    let (base_url, orders_base_url) = if is_sandbox {
-        (AX_HTTP_SANDBOX_URL, AX_ORDERS_SANDBOX_URL)
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(true)
+    {
+        AxEnvironment::Sandbox
     } else {
-        (AX_HTTP_URL, AX_ORDERS_URL)
+        AxEnvironment::Production
     };
 
+    let base_url = environment.http_url();
+    let orders_base_url = environment.orders_url();
+
     log::info!("Connecting to Ax HTTP API: {base_url}");
-    log::info!(
-        "Environment: {}",
-        if is_sandbox { "SANDBOX" } else { "PRODUCTION" }
-    );
+    log::info!("Environment: {environment}");
 
     let client = AxRawHttpClient::new(
         Some(base_url.to_string()),

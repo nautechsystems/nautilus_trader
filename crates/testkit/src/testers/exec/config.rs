@@ -23,9 +23,11 @@ use nautilus_model::{
 };
 use nautilus_trading::strategy::StrategyConfig;
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 
 /// Configuration for the execution tester strategy.
-#[derive(Debug, Clone, bon::Builder)]
+#[derive(Debug, Clone, Deserialize, Serialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 pub struct ExecTesterConfig {
     /// Base strategy configuration.
     #[builder(default)]

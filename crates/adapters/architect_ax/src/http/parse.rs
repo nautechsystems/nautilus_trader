@@ -319,16 +319,14 @@ pub fn parse_account_state(
 
         let currency = get_currency(symbol_str);
 
-        let total = Money::from_decimal(balance.amount, currency)
-            .with_context(|| format!("Failed to convert balance for {symbol_str}"))?;
         // The /balances endpoint does not include margin data, so locked
         // is always zero here. The /risk-snapshot endpoint provides
         // initial_margin_required_total which could be used, but that
         // requires an additional HTTP call on every account state refresh.
-        let locked = Money::new(0.0, currency);
-        let free = total;
-
-        balances.push(AccountBalance::new(total, locked, free));
+        let balance =
+            AccountBalance::from_total_and_locked(balance.amount, Decimal::ZERO, currency)
+                .with_context(|| format!("Failed to convert balance for {symbol_str}"))?;
+        balances.push(balance);
     }
 
     if balances.is_empty() {

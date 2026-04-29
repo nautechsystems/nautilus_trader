@@ -24,7 +24,8 @@
       "order_id": "0xmaker01maker01maker01maker01maker01maker01maker01maker01maker01maker01",
       "outcome": "Yes",
       "owner": "00000000-0000-0000-0000-000000000002",
-      "price": "0.5000"
+      "price": "0.5000",
+      "side": "SELL"
     },
     {
       "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
@@ -34,7 +35,8 @@
       "order_id": "0xmaker02maker02maker02maker02maker02maker02maker02maker02maker02maker02",
       "outcome": "Yes",
       "owner": "00000000-0000-0000-0000-000000000003",
-      "price": "0.5000"
+      "price": "0.5000",
+      "side": "SELL"
     }
   ],
   "trader_side": "TAKER"

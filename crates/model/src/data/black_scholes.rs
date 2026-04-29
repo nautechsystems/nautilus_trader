@@ -106,12 +106,12 @@ impl BlackScholesReal for f32 {
         //      A. J. Salgado & S. M. Wise, "Classical Numerical Analysis", 2023, Chapter 10
         let bits = self.to_bits();
         let exponent = ((bits >> 23) as i32 - 127) as Self;
-        let mantissa = Self::from_bits((bits & 0x007FFFFF) | 0x3f800000);
+        let mantissa = Self::from_bits((bits & 0x007F_FFFF) | 0x3f80_0000);
         let x = (mantissa - 1.0) / (mantissa + 1.0);
         let x2 = x * x;
-        let mut res = 0.23928285_f32;
-        res = x2.mul_add(res, 0.28518211);
-        res = x2.mul_add(res, 0.40000583);
+        let mut res = 0.239_282_85_f32;
+        res = x2.mul_add(res, 0.285_182_11);
+        res = x2.mul_add(res, 0.400_005_83);
         res = x2.mul_add(res, 0.666_666_7);
         res = x2.mul_add(res, 2.0);
         x.mul_add(res, exponent * std::f32::consts::LN_2)
@@ -128,11 +128,11 @@ impl BlackScholesReal for f32 {
             std::f32::consts::LOG2_E,
             if self > 0.0 { 0.5 } else { -0.5 },
         )) as i32;
-        let r = self - (k as Self * 0.69314575) - (k as Self * 1.4286068e-6);
-        let mut res = 0.00138889_f32;
-        res = r.mul_add(res, 0.00833333);
-        res = r.mul_add(res, 0.04166667);
-        res = r.mul_add(res, 0.16666667);
+        let r = self - (k as Self * 0.693_145_75) - (k as Self * 1.428_606_8e-6);
+        let mut res = 0.001_388_89_f32;
+        res = r.mul_add(res, 0.008_333_33);
+        res = r.mul_add(res, 0.041_666_67);
+        res = r.mul_add(res, 0.166_666_67);
         res = r.mul_add(res, 0.5);
         res = r.mul_add(res, 1.0);
         r.mul_add(res, 1.0) * Self::from_bits(((k + 127) as u32) << 23)
@@ -151,7 +151,7 @@ impl BlackScholesReal for f32 {
         // See: M. Abramowitz & I. A. Stegun (eds.), "Handbook of Mathematical Functions
         //      with Formulas, Graphs, and Mathematical Tables", 1972, Section 26.2.17
         let abs_x = self.abs();
-        let t = 1.0 / (1.0 + 0.2316419 * abs_x);
+        let t = 1.0 / (1.0 + 0.231_641_9 * abs_x);
         let mut poly = 1.330_274_5_f32.mul_add(t, -1.821_255_9);
         poly = t.mul_add(poly, 1.781_477_9);
         poly = t.mul_add(poly, -0.356_563_78);
@@ -196,7 +196,7 @@ fn pricing_kernel_price_vega<T: BlackScholesReal>(
     (price, vega)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 #[inline(always)]
 fn pricing_kernel<T: BlackScholesReal>(
     s_forward: T,
@@ -297,7 +297,7 @@ pub fn compute_greeks<T: BlackScholesReal>(
 /// With a good initial guess (within ~25% of true vol), one Halley step typically achieves
 /// ~1% relative error. For deep ITM/OTM options or poor initial guesses, multiple iterations
 /// or a better initial estimate may be required.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 #[inline(always)]
 pub fn compute_iv_and_greeks<T: BlackScholesReal>(
     mkt_price: T,
@@ -410,19 +410,19 @@ mod tests {
         let greeks_tol = 1e-3;
 
         assert!(
-            (g_fast.price as f64 - g_exact.price).abs() < price_tol,
+            (f64::from(g_fast.price) - g_exact.price).abs() < price_tol,
             "Price mismatch: fast={}, exact={}",
             g_fast.price,
             g_exact.price
         );
         assert!(
-            (g_fast.delta as f64 - g_exact.delta).abs() < greeks_tol,
+            (f64::from(g_fast.delta) - g_exact.delta).abs() < greeks_tol,
             "Delta mismatch: fast={}, exact={}",
             g_fast.delta,
             g_exact.delta
         );
         assert!(
-            (g_fast.gamma as f64 - g_exact.gamma).abs() < greeks_tol,
+            (f64::from(g_fast.gamma) - g_exact.gamma).abs() < greeks_tol,
             "Gamma mismatch: fast={}, exact={}",
             g_fast.gamma,
             g_exact.gamma
@@ -430,17 +430,17 @@ mod tests {
         // Vega units differ: exact uses multiplier * 0.01, fast uses raw units
         let vega_exact_raw = g_exact.vega / (multiplier * 0.01);
         assert!(
-            (g_fast.vega as f64 - vega_exact_raw).abs() < greeks_tol,
+            (f64::from(g_fast.vega) - vega_exact_raw).abs() < greeks_tol,
             "Vega mismatch: fast={}, exact_raw={}, exact_scaled={}",
             g_fast.vega,
             vega_exact_raw,
             g_exact.vega
         );
         // Theta units differ: exact uses multiplier * daily_factor (0.0027378507871321013), fast uses raw units
-        let theta_daily_factor = 0.0027378507871321013;
+        let theta_daily_factor = 0.002_737_850_787_132_101_3;
         let theta_exact_raw = g_exact.theta / (multiplier * theta_daily_factor);
         assert!(
-            (g_fast.theta as f64 - theta_exact_raw).abs() < greeks_tol,
+            (f64::from(g_fast.theta) - theta_exact_raw).abs() < greeks_tol,
             "Theta mismatch: fast={}, exact_raw={}, exact_scaled={}",
             g_fast.theta,
             theta_exact_raw,
@@ -464,10 +464,10 @@ mod tests {
 
         let g_exact = black_scholes_greeks_exact(s, r, b, vol, false, k, t);
 
-        let theta_daily_factor = 0.0027378507871321013;
+        let theta_daily_factor = 0.002_737_850_787_132_101_3;
         let theta_exact_raw = g_exact.theta / (multiplier * theta_daily_factor);
         assert!(
-            (g_fast.theta as f64 - theta_exact_raw).abs() < 1e-3,
+            (f64::from(g_fast.theta) - theta_exact_raw).abs() < 1e-3,
             "Put theta mismatch with b!=r: fast={}, exact_raw={}",
             g_fast.theta,
             theta_exact_raw
@@ -502,7 +502,7 @@ mod tests {
         );
 
         // Check that one Halley step gets close to the true volatility
-        let vol_error = (g_halley.vol as f64 - vol_true).abs();
+        let vol_error = (f64::from(g_halley.vol) - vol_true).abs();
 
         // One Halley step should get within ~1% of true vol for a 25% initial error
         assert!(
@@ -519,20 +519,20 @@ mod tests {
         let greeks_tol = 5e-3; // Relaxed for one-step approximation
 
         assert!(
-            (g_halley.price as f64 - g_exact.price).abs() < price_tol,
+            (f64::from(g_halley.price) - g_exact.price).abs() < price_tol,
             "Price mismatch after Halley: halley={}, exact={}, diff={}",
             g_halley.price,
             g_exact.price,
-            (g_halley.price as f64 - g_exact.price).abs()
+            (f64::from(g_halley.price) - g_exact.price).abs()
         );
         assert!(
-            (g_halley.delta as f64 - g_exact.delta).abs() < greeks_tol,
+            (f64::from(g_halley.delta) - g_exact.delta).abs() < greeks_tol,
             "Delta mismatch after Halley: halley={}, exact={}",
             g_halley.delta,
             g_exact.delta
         );
         assert!(
-            (g_halley.gamma as f64 - g_exact.gamma).abs() < greeks_tol,
+            (f64::from(g_halley.gamma) - g_exact.gamma).abs() < greeks_tol,
             "Gamma mismatch after Halley: halley={}, exact={}",
             g_halley.gamma,
             g_exact.gamma
@@ -540,16 +540,16 @@ mod tests {
         // Vega units differ: exact uses multiplier * 0.01, fast uses raw units
         let vega_exact_raw = g_exact.vega / (multiplier * 0.01);
         assert!(
-            (g_halley.vega as f64 - vega_exact_raw).abs() < greeks_tol,
+            (f64::from(g_halley.vega) - vega_exact_raw).abs() < greeks_tol,
             "Vega mismatch after Halley: halley={}, exact_raw={}",
             g_halley.vega,
             vega_exact_raw
         );
         // Theta units differ: exact uses multiplier * daily_factor (0.0027378507871321013), fast uses raw units
-        let theta_daily_factor = 0.0027378507871321013;
+        let theta_daily_factor = 0.002_737_850_787_132_101_3;
         let theta_exact_raw = g_exact.theta / (multiplier * theta_daily_factor);
         assert!(
-            (g_halley.theta as f64 - theta_exact_raw).abs() < greeks_tol,
+            (f64::from(g_halley.theta) - theta_exact_raw).abs() < greeks_tol,
             "Theta mismatch after Halley: halley={}, exact_raw={}",
             g_halley.theta,
             theta_exact_raw
@@ -589,11 +589,11 @@ mod tests {
         println!("True volatility: {vol_true:.8}");
         println!(
             "Absolute error: {:.8}",
-            (g_halley.vol as f64 - vol_true).abs()
+            (f64::from(g_halley.vol) - vol_true).abs()
         );
         println!(
             "Relative error: {:.4}%",
-            (g_halley.vol as f64 - vol_true).abs() / vol_true * 100.0
+            (f64::from(g_halley.vol) - vol_true).abs() / vol_true * 100.0
         );
     }
 
@@ -625,7 +625,7 @@ mod tests {
             vol_true as f32, // Using true vol as initial guess
         );
 
-        let vol_error_itm = (g_recovered_itm.vol as f64 - vol_true).abs();
+        let vol_error_itm = (f64::from(g_recovered_itm.vol) - vol_true).abs();
         let rel_error_itm = vol_error_itm / vol_true * 100.0;
 
         println!("Recovered volatility: {:.8}", g_recovered_itm.vol);
@@ -653,7 +653,7 @@ mod tests {
             vol_true as f32, // Using true vol as initial guess
         );
 
-        let vol_error_otm = (g_recovered_otm.vol as f64 - vol_true).abs();
+        let vol_error_otm = (f64::from(g_recovered_otm.vol) - vol_true).abs();
         let rel_error_otm = vol_error_otm / vol_true * 100.0;
 
         println!("Recovered volatility: {:.8}", g_recovered_otm.vol);

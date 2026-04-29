@@ -413,7 +413,7 @@ mod tests {
             InstrumentId::from("test-token-id.POLYMARKET"),
             raw_symbol,
             AssetClass::Alternative,
-            Currency::USDC(),
+            Currency::pUSD(),
             UnixNanos::default(),
             expiration,
             3,

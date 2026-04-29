@@ -375,8 +375,8 @@ class TradingNode:
                 self._task_streaming.add_done_callback(self._handle_streaming_exception)
 
             await asyncio.gather(*tasks)
-        except asyncio.CancelledError as e:
-            self.kernel.logger.error(str(e))
+        except asyncio.CancelledError:
+            self.kernel.logger.debug("Engine queue tasks cancelled during shutdown")
 
     def stop(self) -> None:
         """

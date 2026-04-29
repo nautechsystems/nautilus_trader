@@ -30,11 +30,21 @@ Each config struct uses `bon::Builder` to define defaults in one place via
 (`Self::builder().build()`), so there is no second copy of default values that could
 drift out of sync.
 
+### Config decoding fails on unknown fields
+
+Config decoding fails fast on unknown fields. Nautilus treats extra keys as bugs, not
+as harmless input. This catches misspellings, stale names after config renames, and
+copy-paste mistakes before a node or client starts with the wrong settings.
+
 ## Python configs
 
 Python config classes (msgspec structs) accept `None` for optional parameters.
 For plain `T` fields, `None` means "use the default." For `Option<T>` fields,
 `None` preserves the field's optional meaning (disabled, unbounded, etc.).
+
+All Python config classes inherit from `NautilusConfig`, which sets
+`forbid_unknown_fields=True` on the underlying `msgspec.Struct`. Unknown keys now raise
+`msgspec.ValidationError` during decoding.
 
 ```python
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
@@ -55,6 +65,10 @@ All config structs derive [`bon::Builder`](https://bon-rs.com), which generates
 a type-safe builder with compile-time checks for required fields. Fields with
 `#[builder(default = value)]` can be omitted from the builder call and will
 use their declared default. Three equivalent ways to construct a config:
+
+Rust config structs that deserialize with Serde also set
+`#[serde(deny_unknown_fields)]`. Unknown keys now fail deserialization instead of being
+ignored.
 
 ```rust
 // Builder: only set what differs from defaults

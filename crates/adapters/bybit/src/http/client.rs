@@ -56,16 +56,19 @@ use ustr::Ustr;
 use super::{
     error::BybitHttpError,
     models::{
-        BybitAccountDetailsResponse, BybitBorrowResponse, BybitFeeRate, BybitFeeRateResponse,
-        BybitFundingResponse, BybitInstrumentInverse, BybitInstrumentInverseResponse,
-        BybitInstrumentLinear, BybitInstrumentLinearResponse, BybitInstrumentOption,
-        BybitInstrumentOptionResponse, BybitInstrumentSpot, BybitInstrumentSpotResponse,
-        BybitKlinesResponse, BybitNoConvertRepayResponse, BybitOpenOrdersResponse, BybitOrder,
+        BybitAccountDetailsResponse, BybitAccountInfoResponse, BybitBorrowResponse,
+        BybitEscrowSubMembersResponse, BybitFeeRate, BybitFeeRateResponse, BybitFundingResponse,
+        BybitInstrumentInverse, BybitInstrumentInverseResponse, BybitInstrumentLinear,
+        BybitInstrumentLinearResponse, BybitInstrumentOption, BybitInstrumentOptionResponse,
+        BybitInstrumentSpot, BybitInstrumentSpotResponse, BybitKlinesResponse,
+        BybitNoConvertRepayResponse, BybitOpenOrdersResponse, BybitOrder,
         BybitOrderHistoryResponse, BybitOrderbookResponse, BybitPlaceOrderResponse,
         BybitPositionListResponse, BybitServerTimeResponse, BybitSetLeverageResponse,
-        BybitSetMarginModeResponse, BybitSetTradingStopResponse, BybitSwitchModeResponse,
-        BybitTickerData, BybitTickerOption, BybitTickersOptionResponse, BybitTradeHistoryResponse,
-        BybitTradesResponse, BybitWalletBalanceResponse,
+        BybitSetMarginModeResponse, BybitSetTradingStopResponse, BybitSubApiKeyInfo,
+        BybitSubApiKeysResponse, BybitSubMember, BybitSubMembersPagedResponse,
+        BybitSubMembersResponse, BybitSwitchModeResponse, BybitTickerData, BybitTickerOption,
+        BybitTickersOptionResponse, BybitTradeHistoryResponse, BybitTradesResponse,
+        BybitUpdateMasterApiResponse, BybitUpdateSubApiResponse, BybitWalletBalanceResponse,
     },
     query::{
         BybitAmendOrderParamsBuilder, BybitBatchAmendOrderEntryBuilder,
@@ -77,17 +80,19 @@ use super::{
         BybitNoConvertRepayParamsBuilder, BybitOpenOrdersParamsBuilder,
         BybitOrderHistoryParamsBuilder, BybitOrderbookParams, BybitOrderbookParamsBuilder,
         BybitPlaceOrderParamsBuilder, BybitPositionListParams, BybitSetLeverageParamsBuilder,
-        BybitSetMarginModeParamsBuilder, BybitSetTradingStopParams, BybitSwitchModeParamsBuilder,
-        BybitTickersParams, BybitTradeHistoryParams, BybitTradesParams, BybitTradesParamsBuilder,
-        BybitWalletBalanceParams,
+        BybitSetMarginModeParamsBuilder, BybitSetTradingStopParams, BybitSubApiKeysParams,
+        BybitSubMembersPageParams, BybitSwitchModeParamsBuilder, BybitTickersParams,
+        BybitTradeHistoryParams, BybitTradesParams, BybitTradesParamsBuilder,
+        BybitUpdateMasterApiParams, BybitUpdateSubApiParams, BybitWalletBalanceParams,
     },
 };
 use crate::common::{
     consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_VENUE},
     credential::{Credential, credential_env_vars},
     enums::{
-        BybitAccountType, BybitEnvironment, BybitMarginMode, BybitOpenOnly, BybitOrderFilter,
-        BybitOrderSide, BybitOrderType, BybitPositionMode, BybitProductType,
+        BybitAccountType, BybitContractType, BybitEnvironment, BybitMarginMode, BybitOpenOnly,
+        BybitOrderFilter, BybitOrderSide, BybitOrderType, BybitPositionIdx, BybitPositionMode,
+        BybitProductType,
     },
     models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
     parse::{
@@ -175,7 +180,7 @@ impl Debug for BybitRawHttpClient {
 
 impl BybitRawHttpClient {
     /// Cancels all pending HTTP requests.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn cancel_all_requests(&self) {
         self.cancellation_token
             .lock()
@@ -185,7 +190,7 @@ impl BybitRawHttpClient {
 
     /// Replaces the cancelled token with a fresh one so subsequent
     /// requests are not immediately short-circuited.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn reset_cancellation_token(&self) {
         let mut guard = self
             .cancellation_token
@@ -195,7 +200,7 @@ impl BybitRawHttpClient {
     }
 
     /// Returns a clone of the current cancellation token.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn cancellation_token(&self) -> CancellationToken {
         self.cancellation_token
             .lock()
@@ -208,7 +213,6 @@ impl BybitRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the retry manager cannot be created.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         base_url: Option<String>,
         timeout_secs: u64,
@@ -257,7 +261,7 @@ impl BybitRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be created.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
@@ -314,7 +318,7 @@ impl BybitRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be created.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new_with_env(
         api_key: Option<String>,
         api_secret: Option<String>,
@@ -772,7 +776,7 @@ impl BybitRawHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/order/open-order>
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn get_open_orders(
         &self,
         category: BybitProductType,
@@ -874,6 +878,20 @@ impl BybitRawHttpClient {
         .await
     }
 
+    /// Fetches account information (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/account/account-info>
+    pub async fn get_account_info(&self) -> Result<BybitAccountInfoResponse, BybitHttpError> {
+        self.send_request::<_, ()>(Method::GET, "/v5/account/info", None, None, true)
+            .await
+    }
+
     /// Fetches account details (requires authentication).
     ///
     /// # Errors
@@ -886,6 +904,223 @@ impl BybitRawHttpClient {
     pub async fn get_account_details(&self) -> Result<BybitAccountDetailsResponse, BybitHttpError> {
         self.send_request::<_, ()>(Method::GET, "/v5/user/query-api", None, None, true)
             .await
+    }
+
+    /// Modifies a sub-account API key (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/modify-sub-apikey>
+    pub async fn update_sub_api_key(
+        &self,
+        params: &BybitUpdateSubApiParams,
+    ) -> Result<BybitUpdateSubApiResponse, BybitHttpError> {
+        let body = serde_json::to_vec(params)?;
+        self.send_request::<_, ()>(
+            Method::POST,
+            "/v5/user/update-sub-api",
+            None,
+            Some(body),
+            true,
+        )
+        .await
+    }
+
+    /// Modifies the master API key that issued the request (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/modify-master-apikey>
+    pub async fn update_master_api_key(
+        &self,
+        params: &BybitUpdateMasterApiParams,
+    ) -> Result<BybitUpdateMasterApiResponse, BybitHttpError> {
+        let body = serde_json::to_vec(params)?;
+        self.send_request::<_, ()>(Method::POST, "/v5/user/update-api", None, Some(body), true)
+            .await
+    }
+
+    /// Fetches the sub-account list (up to 1000 rows, non-paginated).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/subuid-list>
+    pub async fn get_sub_members(&self) -> Result<BybitSubMembersResponse, BybitHttpError> {
+        self.send_request::<_, ()>(Method::GET, "/v5/user/query-sub-members", None, None, true)
+            .await
+    }
+
+    /// Fetches a cursor-paginated sub-account list (`/v5/user/submembers`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/page-subuid>
+    pub async fn get_sub_members_paged(
+        &self,
+        params: &BybitSubMembersPageParams,
+    ) -> Result<BybitSubMembersPagedResponse, BybitHttpError> {
+        self.send_request(Method::GET, "/v5/user/submembers", Some(params), None, true)
+            .await
+    }
+
+    /// Fetches fund-custodial sub-accounts (`/v5/user/escrow_sub_members`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/fund-subuid-list>
+    pub async fn get_escrow_sub_members(
+        &self,
+        params: &BybitSubMembersPageParams,
+    ) -> Result<BybitEscrowSubMembersResponse, BybitHttpError> {
+        self.send_request(
+            Method::GET,
+            "/v5/user/escrow_sub_members",
+            Some(params),
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Fetches all API keys belonging to a given sub-account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/list-sub-apikeys>
+    pub async fn get_sub_api_keys(
+        &self,
+        params: &BybitSubApiKeysParams,
+    ) -> Result<BybitSubApiKeysResponse, BybitHttpError> {
+        self.send_request(
+            Method::GET,
+            "/v5/user/sub-apikeys",
+            Some(params),
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Fetches every sub-account page via `/v5/user/submembers` and returns the
+    /// flattened list. Walks the cursor until Bybit signals end-of-pages.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any page request fails or the response cannot be parsed.
+    pub async fn fetch_all_sub_members_paged(
+        &self,
+        page_size: Option<u32>,
+    ) -> Result<Vec<BybitSubMember>, BybitHttpError> {
+        let mut members = Vec::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let params = BybitSubMembersPageParams {
+                page_size,
+                next_cursor: cursor.take(),
+            };
+            let mut page = self.get_sub_members_paged(&params).await?;
+            let next = page.result.continuation_cursor().map(str::to_owned);
+            members.append(&mut page.result.sub_members);
+
+            match next {
+                Some(c) => cursor = Some(c),
+                None => break,
+            }
+        }
+
+        Ok(members)
+    }
+
+    /// Fetches every fund-custodial page via `/v5/user/escrow_sub_members` and
+    /// returns the flattened list. Walks the cursor until Bybit signals
+    /// end-of-pages.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any page request fails or the response cannot be parsed.
+    pub async fn fetch_all_escrow_sub_members(
+        &self,
+        page_size: Option<u32>,
+    ) -> Result<Vec<BybitSubMember>, BybitHttpError> {
+        let mut members = Vec::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let params = BybitSubMembersPageParams {
+                page_size,
+                next_cursor: cursor.take(),
+            };
+            let mut page = self.get_escrow_sub_members(&params).await?;
+            let next = page.result.continuation_cursor().map(str::to_owned);
+            members.append(&mut page.result.sub_members);
+
+            match next {
+                Some(c) => cursor = Some(c),
+                None => break,
+            }
+        }
+
+        Ok(members)
+    }
+
+    /// Fetches every page of sub-account API keys for `sub_member_id` and
+    /// returns the flattened list. Walks the cursor until Bybit signals
+    /// end-of-pages.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any page request fails or the response cannot be parsed.
+    pub async fn fetch_all_sub_api_keys(
+        &self,
+        sub_member_id: impl Into<String>,
+        limit: Option<u32>,
+    ) -> Result<Vec<BybitSubApiKeyInfo>, BybitHttpError> {
+        let sub_member_id = sub_member_id.into();
+        let mut keys = Vec::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let params = BybitSubApiKeysParams {
+                sub_member_id: sub_member_id.clone(),
+                limit,
+                cursor: cursor.take(),
+            };
+            let mut page = self.get_sub_api_keys(&params).await?;
+            let next = page.result.continuation_cursor().map(str::to_owned);
+            keys.append(&mut page.result.keys);
+
+            match next {
+                Some(c) => cursor = Some(c),
+                None => break,
+            }
+        }
+
+        Ok(keys)
     }
 
     /// Fetches trading fee rates for symbols.
@@ -1282,7 +1517,6 @@ impl BybitHttpClient {
     /// # Errors
     ///
     /// Returns an error if the retry manager cannot be created.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         base_url: Option<String>,
         timeout_secs: u64,
@@ -1314,7 +1548,7 @@ impl BybitHttpClient {
     /// # Errors
     ///
     /// Returns an error if the retry manager cannot be created.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
@@ -1357,7 +1591,7 @@ impl BybitHttpClient {
     /// # Errors
     ///
     /// Returns an error if the retry manager cannot be created.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new_with_env(
         api_key: Option<String>,
         api_secret: Option<String>,
@@ -1624,7 +1858,7 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/order/open-order>
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn get_open_orders(
         &self,
         category: BybitProductType,
@@ -1690,6 +1924,21 @@ impl BybitHttpClient {
         self.inner.get_wallet_balance(params).await
     }
 
+    /// Fetches account information (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/account/account-info>
+    pub async fn get_account_info(&self) -> Result<BybitAccountInfoResponse, BybitHttpError> {
+        self.inner.get_account_info().await
+    }
+
     /// Fetches API key information including account details (requires authentication).
     ///
     /// # Errors
@@ -1703,6 +1952,111 @@ impl BybitHttpClient {
     /// - <https://bybit-exchange.github.io/docs/v5/user/apikey-info>
     pub async fn get_account_details(&self) -> Result<BybitAccountDetailsResponse, BybitHttpError> {
         self.inner.get_account_details().await
+    }
+
+    /// Modifies a sub-account API key (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/modify-sub-apikey>
+    pub async fn update_sub_api_key(
+        &self,
+        params: &BybitUpdateSubApiParams,
+    ) -> Result<BybitUpdateSubApiResponse, BybitHttpError> {
+        self.inner.update_sub_api_key(params).await
+    }
+
+    /// Modifies the master API key that issued the request (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/modify-master-apikey>
+    pub async fn update_master_api_key(
+        &self,
+        params: &BybitUpdateMasterApiParams,
+    ) -> Result<BybitUpdateMasterApiResponse, BybitHttpError> {
+        self.inner.update_master_api_key(params).await
+    }
+
+    /// Fetches the sub-account list (up to 1000 rows, non-paginated).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/subuid-list>
+    pub async fn get_sub_members(&self) -> Result<BybitSubMembersResponse, BybitHttpError> {
+        self.inner.get_sub_members().await
+    }
+
+    /// Fetches a cursor-paginated sub-account list.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/page-subuid>
+    pub async fn get_sub_members_paged(
+        &self,
+        params: &BybitSubMembersPageParams,
+    ) -> Result<BybitSubMembersPagedResponse, BybitHttpError> {
+        self.inner.get_sub_members_paged(params).await
+    }
+
+    /// Fetches fund-custodial sub-accounts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/fund-subuid-list>
+    pub async fn get_escrow_sub_members(
+        &self,
+        params: &BybitSubMembersPageParams,
+    ) -> Result<BybitEscrowSubMembersResponse, BybitHttpError> {
+        self.inner.get_escrow_sub_members(params).await
+    }
+
+    /// Fetches all API keys belonging to a given sub-account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/list-sub-apikeys>
+    pub async fn get_sub_api_keys(
+        &self,
+        params: &BybitSubApiKeysParams,
+    ) -> Result<BybitSubApiKeysResponse, BybitHttpError> {
+        self.inner.get_sub_api_keys(params).await
     }
 
     /// Fetches position information (requires authentication).
@@ -2050,7 +2404,7 @@ impl BybitHttpClient {
     /// - Order validation fails.
     /// - The order is rejected.
     /// - The API returns an error.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_order(
         &self,
         account_id: AccountId,
@@ -2067,6 +2421,7 @@ impl BybitHttpClient {
         reduce_only: bool,
         is_quote_quantity: bool,
         is_leverage: bool,
+        position_idx: Option<BybitPositionIdx>,
     ) -> anyhow::Result<OrderStatusReport> {
         let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
@@ -2114,6 +2469,10 @@ impl BybitHttpClient {
         }
 
         order_entry.is_leverage(spot_leverage(product_type, is_leverage));
+
+        if let Some(idx) = position_idx {
+            order_entry.position_idx(Some(idx));
+        }
 
         let order_entry = order_entry.build().build_anyhow()?;
 
@@ -2294,6 +2653,7 @@ impl BybitHttpClient {
 
         // Query each order to get full details after cancellation
         let mut reports = Vec::new();
+
         for (instrument_id, (client_order_id, venue_order_id)) in instrument_ids
             .iter()
             .zip(client_order_ids.iter().zip(venue_order_ids.iter()))
@@ -2390,6 +2750,7 @@ impl BybitHttpClient {
         let ts_init = self.generate_ts_init();
 
         let mut reports = Vec::new();
+
         for order in order_response.result.list {
             if let Ok(report) = parse_order_status_report(&order, &instrument, account_id, ts_init)
             {
@@ -2410,7 +2771,7 @@ impl BybitHttpClient {
     /// - The order doesn't exist.
     /// - The order is already closed.
     /// - The API returns an error.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn modify_order(
         &self,
         account_id: AccountId,
@@ -2669,12 +3030,17 @@ impl BybitHttpClient {
     async fn fetch_fee_map(
         &self,
         product_type: BybitProductType,
+        base_coin: Option<Ustr>,
     ) -> anyhow::Result<AHashMap<Ustr, BybitFeeRate>> {
         let mut fee_params = BybitFeeRateParamsBuilder::default();
         fee_params.category(product_type);
+        if let Some(bc) = base_coin {
+            fee_params.base_coin(bc.to_string());
+        }
         let Ok(params) = fee_params.build() else {
             return Ok(AHashMap::new());
         };
+
         match self.inner.get_fee_rate(&params).await {
             Ok(response) => Ok(response
                 .result
@@ -2691,7 +3057,8 @@ impl BybitHttpClient {
                 ref message,
             }) => {
                 log::warn!(
-                    "Fee rate request rejected (error {error_code}: {message}), using defaults"
+                    "{}",
+                    self.fee_rate_rejection_warning(product_type, error_code, message)
                 );
                 Ok(AHashMap::new())
             }
@@ -2699,12 +3066,19 @@ impl BybitHttpClient {
         }
     }
 
-    async fn fetch_option_fee_map(&self) -> anyhow::Result<AHashMap<Ustr, BybitFeeRate>> {
+    async fn fetch_option_fee_map(
+        &self,
+        base_coin: Option<Ustr>,
+    ) -> anyhow::Result<AHashMap<Ustr, BybitFeeRate>> {
         let mut fee_params = BybitFeeRateParamsBuilder::default();
         fee_params.category(BybitProductType::Option);
+        if let Some(bc) = base_coin {
+            fee_params.base_coin(bc.to_string());
+        }
         let Ok(params) = fee_params.build() else {
             return Ok(AHashMap::new());
         };
+
         match self.inner.get_fee_rate(&params).await {
             Ok(response) => Ok(response
                 .result
@@ -2720,8 +3094,9 @@ impl BybitHttpClient {
                 error_code,
                 ref message,
             }) => {
+                let error_detail = Self::format_bybit_error_detail(error_code, message);
                 log::warn!(
-                    "Option fee rate request rejected (error {error_code}: {message}), using defaults"
+                    "Option fee rate request rejected via /v5/account/fee-rate ({error_detail}), using defaults"
                 );
                 Ok(AHashMap::new())
             }
@@ -2732,10 +3107,48 @@ impl BybitHttpClient {
         }
     }
 
+    fn fee_rate_rejection_warning(
+        &self,
+        product_type: BybitProductType,
+        error_code: i32,
+        message: &str,
+    ) -> String {
+        let product_type = product_type.as_ref().to_ascii_lowercase();
+        let error_detail = Self::format_bybit_error_detail(error_code, message);
+
+        if self
+            .base_url()
+            .starts_with(bybit_http_base_url(BybitEnvironment::Demo))
+            && matches!(product_type.as_str(), "linear" | "inverse")
+            && error_code == 10001
+        {
+            format!(
+                "Bybit demo rejected the {product_type} fee rate request via \
+                 /v5/account/fee-rate ({error_detail}); demo derivatives fee rates appear \
+                 unsupported, using defaults"
+            )
+        } else {
+            format!(
+                "Fee rate request rejected for {product_type} instruments via \
+                 /v5/account/fee-rate ({error_detail}), using defaults"
+            )
+        }
+    }
+
+    fn format_bybit_error_detail(error_code: i32, message: &str) -> String {
+        let message = message.trim();
+        if message.is_empty() {
+            format!("error {error_code}, no message")
+        } else {
+            format!("error {error_code}: {message}")
+        }
+    }
+
     async fn paginate_instruments<D, F>(
         &self,
         product_type: BybitProductType,
         symbol: &Option<String>,
+        base_coin: Option<Ustr>,
         mut parse: F,
     ) -> anyhow::Result<Vec<InstrumentAny>>
     where
@@ -2752,7 +3165,7 @@ impl BybitHttpClient {
                 category: product_type,
                 symbol: symbol.clone(),
                 status: None,
-                base_coin: None,
+                base_coin: base_coin.map(|u| u.to_string()),
                 limit: Some(1000),
                 cursor: cursor.clone(),
             };
@@ -2805,6 +3218,7 @@ impl BybitHttpClient {
                 BybitProductType::Spot => {
                     let response: BybitCursorListResponse<BybitInstrumentSpot> =
                         self.inner.get_instruments(&params).await?;
+
                     for def in &response.result.list {
                         let symbol = make_bybit_symbol(def.symbol, product_type);
                         let id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
@@ -2815,26 +3229,45 @@ impl BybitHttpClient {
                 BybitProductType::Linear => {
                     let response: BybitCursorListResponse<BybitInstrumentLinear> =
                         self.inner.get_instruments(&params).await?;
+
                     for def in &response.result.list {
                         let symbol = make_bybit_symbol(def.symbol, product_type);
                         let id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
-                        statuses.insert(id, MarketStatusAction::from(def.status));
+                        let status = MarketStatusAction::from(def.status);
+                        if status == MarketStatusAction::Trading
+                            && def.contract_type == BybitContractType::LinearPerpetual
+                            && def.delivery_time != "0"
+                        {
+                            statuses.insert(id, MarketStatusAction::PreClose);
+                        } else {
+                            statuses.insert(id, status);
+                        }
                     }
                     cursor = response.result.next_page_cursor;
                 }
                 BybitProductType::Inverse => {
                     let response: BybitCursorListResponse<BybitInstrumentInverse> =
                         self.inner.get_instruments(&params).await?;
+
                     for def in &response.result.list {
                         let symbol = make_bybit_symbol(def.symbol, product_type);
                         let id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
-                        statuses.insert(id, MarketStatusAction::from(def.status));
+                        let status = MarketStatusAction::from(def.status);
+                        if status == MarketStatusAction::Trading
+                            && def.contract_type == BybitContractType::InversePerpetual
+                            && def.delivery_time != "0"
+                        {
+                            statuses.insert(id, MarketStatusAction::PreClose);
+                        } else {
+                            statuses.insert(id, status);
+                        }
                     }
                     cursor = response.result.next_page_cursor;
                 }
                 BybitProductType::Option => {
                     let response: BybitCursorListResponse<BybitInstrumentOption> =
                         self.inner.get_instruments(&params).await?;
+
                     for def in &response.result.list {
                         let symbol = make_bybit_symbol(def.symbol, product_type);
                         let id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
@@ -2854,6 +3287,10 @@ impl BybitHttpClient {
 
     /// Request instruments for a given product type.
     ///
+    /// When `base_coin` is provided, the request is narrowed to that base coin.
+    /// This is required for `Option`: Bybit's API returns only `BTC` options when
+    /// `baseCoin` is omitted.
+    ///
     /// # Errors
     ///
     /// Returns an error if the request fails or parsing fails.
@@ -2861,6 +3298,7 @@ impl BybitHttpClient {
         &self,
         product_type: BybitProductType,
         symbol: Option<String>,
+        base_coin: Option<Ustr>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         let ts_init = self.generate_ts_init();
 
@@ -2873,21 +3311,27 @@ impl BybitHttpClient {
 
         let instruments = match product_type {
             BybitProductType::Spot => {
-                let fee_map = self.fetch_fee_map(product_type).await?;
-                self.paginate_instruments::<BybitInstrumentSpot, _>(product_type, &symbol, |def| {
-                    let fee = fee_map
-                        .get(&def.symbol)
-                        .cloned()
-                        .unwrap_or_else(|| default_fee_rate(def.symbol));
-                    parse_spot_instrument(def, &fee, ts_init, ts_init).ok()
-                })
+                let fee_map = self.fetch_fee_map(product_type, base_coin).await?;
+                self.paginate_instruments::<BybitInstrumentSpot, _>(
+                    product_type,
+                    &symbol,
+                    base_coin,
+                    |def| {
+                        let fee = fee_map
+                            .get(&def.symbol)
+                            .cloned()
+                            .unwrap_or_else(|| default_fee_rate(def.symbol));
+                        parse_spot_instrument(def, &fee, ts_init, ts_init).ok()
+                    },
+                )
                 .await?
             }
             BybitProductType::Linear => {
-                let fee_map = self.fetch_fee_map(product_type).await?;
+                let fee_map = self.fetch_fee_map(product_type, base_coin).await?;
                 self.paginate_instruments::<BybitInstrumentLinear, _>(
                     product_type,
                     &symbol,
+                    base_coin,
                     |def| {
                         let fee = fee_map
                             .get(&def.symbol)
@@ -2899,10 +3343,11 @@ impl BybitHttpClient {
                 .await?
             }
             BybitProductType::Inverse => {
-                let fee_map = self.fetch_fee_map(product_type).await?;
+                let fee_map = self.fetch_fee_map(product_type, base_coin).await?;
                 self.paginate_instruments::<BybitInstrumentInverse, _>(
                     product_type,
                     &symbol,
+                    base_coin,
                     |def| {
                         let fee = fee_map
                             .get(&def.symbol)
@@ -2914,10 +3359,11 @@ impl BybitHttpClient {
                 .await?
             }
             BybitProductType::Option => {
-                let fee_map = self.fetch_option_fee_map().await?;
+                let fee_map = self.fetch_option_fee_map(base_coin).await?;
                 self.paginate_instruments::<BybitInstrumentOption, _>(
                     product_type,
                     &symbol,
+                    base_coin,
                     |def| {
                         let fee = fee_map.get(&def.base_coin);
                         parse_option_instrument(def, fee, ts_init, ts_init).ok()
@@ -3467,7 +3913,7 @@ impl BybitHttpClient {
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn request_order_status_reports(
         &self,
         account_id: AccountId,
@@ -3758,6 +4204,7 @@ impl BybitHttpClient {
         let ts_init = self.generate_ts_init();
 
         let mut reports = Vec::new();
+
         for order in all_collected_orders {
             if let Some(ref instrument_id) = instrument_id {
                 let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
@@ -4196,5 +4643,101 @@ mod tests {
         assert!(query1.contains("category=spot"));
         assert!(query1.contains("symbol=BTCUSDT"));
         assert!(query1.contains("limit=50"));
+    }
+
+    #[rstest]
+    #[case(
+        "https://api-demo.bybit.com",
+        BybitProductType::Linear,
+        10001,
+        "",
+        "Bybit demo rejected the linear fee rate request via /v5/account/fee-rate \
+         (error 10001, no message); demo derivatives fee rates appear unsupported, using defaults"
+    )]
+    #[case(
+        "https://api-demo.bybit.com",
+        BybitProductType::Inverse,
+        10001,
+        "",
+        "Bybit demo rejected the inverse fee rate request via /v5/account/fee-rate \
+         (error 10001, no message); demo derivatives fee rates appear unsupported, using defaults"
+    )]
+    #[case(
+        "https://api.bybit.com",
+        BybitProductType::Spot,
+        10001,
+        "Parameter error",
+        "Fee rate request rejected for spot instruments via /v5/account/fee-rate \
+         (error 10001: Parameter error), using defaults"
+    )]
+    #[case(
+        "https://api-demo.bybit.com",
+        BybitProductType::Spot,
+        10001,
+        "Parameter error",
+        "Fee rate request rejected for spot instruments via /v5/account/fee-rate \
+         (error 10001: Parameter error), using defaults"
+    )]
+    #[case(
+        "https://api.bybit.com",
+        BybitProductType::Linear,
+        10001,
+        "Parameter error",
+        "Fee rate request rejected for linear instruments via /v5/account/fee-rate \
+         (error 10001: Parameter error), using defaults"
+    )]
+    fn test_fee_rate_rejection_warning(
+        #[case] base_url: &str,
+        #[case] product_type: BybitProductType,
+        #[case] error_code: i32,
+        #[case] message: &str,
+        #[case] expected: &str,
+    ) {
+        let client =
+            BybitHttpClient::new(Some(base_url.to_string()), 60, 3, 1000, 10_000, 5_000, None)
+                .unwrap();
+
+        let warning = client.fee_rate_rejection_warning(product_type, error_code, message);
+
+        assert_eq!(warning, expected);
+    }
+
+    #[rstest]
+    #[case(10001, "", "error 10001, no message")]
+    #[case(10001, "Parameter error", "error 10001: Parameter error")]
+    fn test_format_bybit_error_detail(
+        #[case] error_code: i32,
+        #[case] message: &str,
+        #[case] expected: &str,
+    ) {
+        let detail = BybitHttpClient::format_bybit_error_detail(error_code, message);
+
+        assert_eq!(detail, expected);
+    }
+
+    #[rstest]
+    #[case(
+        10001,
+        "",
+        "Option fee rate request rejected via /v5/account/fee-rate \
+         (error 10001, no message), using defaults"
+    )]
+    #[case(
+        10001,
+        "Parameter error",
+        "Option fee rate request rejected via /v5/account/fee-rate \
+         (error 10001: Parameter error), using defaults"
+    )]
+    fn test_option_fee_rate_warning_message(
+        #[case] error_code: i32,
+        #[case] message: &str,
+        #[case] expected: &str,
+    ) {
+        let error_detail = BybitHttpClient::format_bybit_error_detail(error_code, message);
+        let warning = format!(
+            "Option fee rate request rejected via /v5/account/fee-rate ({error_detail}), using defaults"
+        );
+
+        assert_eq!(warning, expected);
     }
 }

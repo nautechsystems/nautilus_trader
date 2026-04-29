@@ -15,10 +15,10 @@
 
 //! Example demonstrating live execution testing with the Bybit adapter.
 //!
-//! Run with: `cargo run --example bybit-exec-tester --package nautilus-bybit`
+//! Run with: `cargo run --example bybit-exec-tester --package nautilus-bybit --features examples`
 
 use nautilus_bybit::{
-    common::enums::BybitProductType,
+    common::enums::{BybitEnvironment, BybitProductType},
     config::{BybitDataClientConfig, BybitExecClientConfig},
     factories::{BybitDataClientFactory, BybitExecutionClientFactory},
 };
@@ -28,12 +28,16 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
+
+    // Mainnet/Demo/Testnet
+    let bybit_environment = BybitEnvironment::Mainnet;
 
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");
@@ -43,17 +47,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
 
     let data_config = BybitDataClientConfig {
+        environment: bybit_environment,
         api_key: None,    // Will use 'BYBIT_API_KEY' env var
         api_secret: None, // Will use 'BYBIT_API_SECRET' env var
         product_types: vec![BybitProductType::Spot, BybitProductType::Linear],
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
     let exec_config = BybitExecClientConfig {
+        environment: bybit_environment,
         api_key: None,    // Will use 'BYBIT_API_KEY' env var
         api_secret: None, // Will use 'BYBIT_API_SECRET' env var
         product_types: vec![BybitProductType::Spot, BybitProductType::Linear],
         account_id: Some(account_id),
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

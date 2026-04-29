@@ -17,10 +17,9 @@
 
 use std::{collections::HashMap, sync::Mutex};
 
+use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::{MUTEX_POISONED, python::to_pynotimplemented_err};
 use pyo3::prelude::*;
-
-use crate::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
 /// Function type for extracting a `Py<PyAny>` factory to a boxed `DataClientFactory` trait object.
 pub type FactoryExtractor =

@@ -21,6 +21,7 @@ use nautilus_common::{
     cache::Cache,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
@@ -28,7 +29,6 @@ use nautilus_model::{
     identifiers::ClientId,
 };
 use nautilus_network::retry::RetryConfig;
-use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
 use crate::{
     common::consts::POLYMARKET_VENUE,
@@ -107,6 +107,7 @@ impl DataClientFactory for PolymarketDataClientFactory {
         let ws_client = PolymarketWebSocketClient::new_market(
             polymarket_config.base_url_ws.clone(),
             polymarket_config.subscribe_new_markets,
+            polymarket_config.transport_backend,
         );
 
         let mut client = PolymarketDataClient::new(
@@ -201,8 +202,11 @@ impl ExecutionClientFactory for PolymarketExecutionClientFactory {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{cache::Cache, clock::TestClock};
-    use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
+    use nautilus_common::{
+        cache::Cache,
+        clock::TestClock,
+        factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+    };
     use rstest::rstest;
 
     use super::*;

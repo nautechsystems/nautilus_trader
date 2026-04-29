@@ -15,7 +15,7 @@
 
 from typing import Any
 
-from py_clob_client.exceptions import PolyApiException
+from py_clob_client_v2.exceptions import PolyApiException
 
 
 class PolymarketError(Exception):
@@ -64,7 +64,7 @@ def should_retry(error: BaseException) -> bool:
 
     """
     if isinstance(error, PolyApiException):
-        # https://github.com/Polymarket/py-clob-client/blob/main/py_clob_client/exceptions.py
+        # https://github.com/Polymarket/py-clob-client-v2/blob/main/py_clob_client_v2/exceptions.py
         status_code = getattr(error, "status_code", None)
 
         # Retry on rate limits and server errors

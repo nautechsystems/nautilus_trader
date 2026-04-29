@@ -15,16 +15,30 @@
 
 //! Data models for Kraken Futures WebSocket v1 API messages.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use strum::{AsRefStr, EnumString};
 use ustr::Ustr;
 
 use crate::common::enums::{KrakenFillType, KrakenFuturesOrderType, KrakenOrderSide};
 
+// Normalizes a float price field so `0.0` is treated as "no price set".
+// Kraken Futures wire messages send a literal `0.0` for absent prices
+// (e.g. `stop_price: 0.0` on pure limit orders) rather than omitting the
+// field or sending `null`. Without this, downstream code would see
+// `Some(0.0)` and emit bogus trigger prices on `OrderUpdated` events,
+// which the order model rejects for non-stop order types.
+fn deserialize_optional_price_zero_as_none<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<f64>::deserialize(deserializer)?;
+    Ok(value.filter(|v| *v != 0.0))
+}
+
 /// Output message types from the Futures WebSocket handler.
 #[derive(Clone, Debug)]
-#[allow(
+#[expect(
     clippy::large_enum_variant,
     reason = "Messages are ephemeral and immediately consumed"
 )]
@@ -345,9 +359,9 @@ pub struct KrakenFuturesOpenOrder {
     pub qty: f64,
     pub filled: f64,
     /// Limit price. Optional for stop/trigger orders which only have stop_price.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_price_zero_as_none")]
     pub limit_price: Option<f64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_price_zero_as_none")]
     pub stop_price: Option<f64>,
     #[serde(rename = "type")]
     pub order_type: KrakenFuturesOrderType,
@@ -380,6 +394,20 @@ pub struct KrakenFuturesOpenOrdersDelta {
     pub is_cancel: bool,
     #[serde(default)]
     pub reason: Option<String>,
+}
+
+impl KrakenFuturesOpenOrdersDelta {
+    /// Returns whether this delta represents a fill-driven removal from the book.
+    ///
+    /// Kraken Futures sends an open_orders delta with `is_cancel=true` and a
+    /// `full_fill`/`partial_fill` reason when an order leaves the book because
+    /// it filled. The actual fill data arrives via the fills feed, so callers
+    /// must skip these deltas to avoid emitting a spurious `OrderCanceled`
+    /// event before the real `OrderFilled`.
+    #[must_use]
+    pub fn is_fill_driven_cancel(&self) -> bool {
+        self.is_cancel && matches!(self.reason.as_deref(), Some("full_fill" | "partial_fill"))
+    }
 }
 
 /// Open orders cancel notification from Kraken Futures WebSocket.
@@ -574,6 +602,62 @@ mod tests {
         assert_eq!(delta.order.instrument, Ustr::from("PI_XBTUSD"));
         assert_eq!(delta.order.qty, 304.0);
         assert_eq!(delta.order.limit_price, Some(10640.0));
+        // Kraken sends stop_price: 0.0 on pure limit orders. The zero-as-none
+        // deserializer maps that back to None so downstream code does not emit
+        // a bogus trigger_price, which the order model rejects for limit types.
+        assert_eq!(delta.order.stop_price, None);
+    }
+
+    #[rstest]
+    fn test_deserialize_open_orders_delta_full_fill_is_fill_driven_cancel() {
+        // Regression for the spurious OrderCanceled bug: Kraken sends a delta with
+        // is_cancel=true, qty=0, filled=full, reason="full_fill" when an order leaves
+        // the book because it filled. The delta must be classified as fill-driven so
+        // the execution path skips it and lets the FillsDelta carry the actual fill.
+        let json = include_str!("../../../test_data/ws_futures_open_orders_delta_full_fill.json");
+        let delta: KrakenFuturesOpenOrdersDelta = serde_json::from_str(json).unwrap();
+
+        assert!(delta.is_cancel);
+        assert_eq!(delta.reason.as_deref(), Some("full_fill"));
+        assert_eq!(delta.order.qty, 0.0);
+        assert_eq!(delta.order.filled, 0.0001);
+        assert!(delta.is_fill_driven_cancel());
+    }
+
+    #[rstest]
+    #[case::placement(false, None, false)]
+    #[case::user_cancel(true, Some("cancelled_by_user"), false)]
+    #[case::post_only_reject(true, Some("post_order_failed_because_it_would_filled"), false)]
+    #[case::full_fill(true, Some("full_fill"), true)]
+    #[case::partial_fill(true, Some("partial_fill"), true)]
+    #[case::cancel_no_reason(true, None, false)]
+    fn test_open_orders_delta_is_fill_driven_cancel(
+        #[case] is_cancel: bool,
+        #[case] reason: Option<&'static str>,
+        #[case] expected: bool,
+    ) {
+        let delta = KrakenFuturesOpenOrdersDelta {
+            feed: KrakenFuturesFeed::OpenOrders,
+            order: KrakenFuturesOpenOrder {
+                instrument: Ustr::from("PF_XBTUSD"),
+                time: 0,
+                last_update_time: 0,
+                qty: 0.0001,
+                filled: 0.0,
+                limit_price: Some(70_000.0),
+                stop_price: None,
+                order_type: KrakenFuturesOrderType::Limit,
+                order_id: "test".to_string(),
+                cli_ord_id: None,
+                direction: 0,
+                reduce_only: false,
+                trigger_signal: None,
+            },
+            is_cancel,
+            reason: reason.map(str::to_string),
+        };
+
+        assert_eq!(delta.is_fill_driven_cancel(), expected);
     }
 
     #[rstest]

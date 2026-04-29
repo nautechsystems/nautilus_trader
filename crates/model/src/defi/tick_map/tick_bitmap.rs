@@ -40,6 +40,7 @@ impl TickBitmap {
     /// # Panics
     ///
     /// Panics if `tick_spacing` is zero.
+    #[must_use]
     pub fn new(tick_spacing: u32) -> Self {
         assert!(tick_spacing > 0, "Tick spacing must be greater than zero");
         Self {
@@ -82,6 +83,7 @@ impl TickBitmap {
     }
 
     /// Check if a tick is initialized (bit is set) in the bitmap
+    #[must_use]
     pub fn is_initialized(&self, tick: i32) -> bool {
         let compressed_tick = self.compress_tick(tick);
         let (word_position, bit_position) = tick_position(compressed_tick);
@@ -95,6 +97,7 @@ impl TickBitmap {
 
     /// Returns the next initialized tick contained in the same word (or adjacent word) as the tick that is either
     /// to the left (less than or equal to) or right (greater than) of the given tick
+    #[must_use]
     pub fn next_initialized_tick_within_one_word(
         &self,
         tick: i32,
@@ -118,10 +121,10 @@ impl TickBitmap {
             let initialized = !masked.is_zero();
             // overflow/underflow is possible, but prevented externally by limiting both tickSpacing and tick
             let next = if initialized {
-                (compressed_tick - (bit_pos as i32) + most_significant_bit(masked))
+                (compressed_tick - i32::from(bit_pos) + most_significant_bit(masked))
                     * self.tick_spacing
             } else {
-                (compressed_tick - (bit_pos as i32)) * self.tick_spacing
+                (compressed_tick - i32::from(bit_pos)) * self.tick_spacing
             };
             (next, initialized)
         } else {
@@ -136,10 +139,10 @@ impl TickBitmap {
             let initialized = !masked.is_zero();
             // overflow/underflow is possible, but prevented externally by limiting both tickSpacing and tick
             let next = if initialized {
-                (compressed_tick + 1 + least_significant_bit(masked) - (bit_pos as i32))
+                (compressed_tick + 1 + least_significant_bit(masked) - i32::from(bit_pos))
                     * self.tick_spacing
             } else {
-                (compressed_tick + 1 + (255i32) - (bit_pos as i32)) * self.tick_spacing // type(uint8).max = 255
+                (compressed_tick + 1 + (255i32) - i32::from(bit_pos)) * self.tick_spacing // type(uint8).max = 255
             };
             (next, initialized)
         }

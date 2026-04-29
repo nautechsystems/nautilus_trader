@@ -41,6 +41,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.core.nautilus_pyo3 import DydxNetwork
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.live.node import TradingNode
@@ -70,21 +71,14 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         DYDX: DydxDataClientConfig(
-            wallet_address=None,  # 'DYDX_WALLET_ADDRESS' or 'DYDX_TESTNET_WALLET_ADDRESS' env var
+            environment=DydxNetwork.MAINNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=False,  # Mainnet
         ),
     },
     exec_clients={
         DYDX: DydxExecClientConfig(
-            wallet_address=None,  # 'DYDX_WALLET_ADDRESS' or 'DYDX_TESTNET_WALLET_ADDRESS' env var
-            private_key=None,  # 'DYDX_PRIVATE_KEY' or 'DYDX_TESTNET_PRIVATE_KEY' env var
-            subaccount=0,
-            base_url_http=None,  # Override with custom endpoint
-            base_url_ws=None,  # Override with custom endpoint
-            base_url_grpc=None,  # Override with custom gRPC endpoint
+            environment=DydxNetwork.MAINNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=False,  # Mainnet
         ),
     },
     timeout_connection=20.0,

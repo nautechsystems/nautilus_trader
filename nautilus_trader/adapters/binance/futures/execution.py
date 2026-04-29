@@ -390,6 +390,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             self._log.debug(f"Total {len(algo_orders)} algo orders after historical merge")
 
         reports: list[OrderStatusReport] = []
+
         for algo_order in algo_orders:
             report = self._parse_algo_order_report(algo_order, start_ms, end_ms)
             if report is not None:
@@ -550,6 +551,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
     def _filter_valid_cancels(self, cancels: list[CancelOrder]) -> list[CancelOrder]:
         # Filter out orders that are already closed or not found
         valid_cancels = []
+
         for cancel in cancels:
             order = self._cache.order(cancel.client_order_id)
             if order is None:

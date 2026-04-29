@@ -37,6 +37,7 @@
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `extension-module`: Builds the crate as a Python extension module.
 //! - `turmoil`: Enables deterministic network simulation testing with [turmoil](https://github.com/tokio-rs/turmoil).
+//! - `transport-sockudo`: Adds the [sockudo-ws](https://crates.io/crates/sockudo-ws) WebSocket backend, selectable via `WebSocketConfig.backend`.
 //!
 //! # Testing
 //!
@@ -56,6 +57,7 @@
 //! allowing reliable testing of network failure scenarios without flakiness.
 
 #![warn(rustc::all)]
+#![warn(clippy::pedantic)]
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
@@ -63,13 +65,37 @@
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![allow(
+    clippy::inline_always,
+    reason = "hot-path functions use #[inline(always)] intentionally for constant-folding"
+)]
+#![allow(
+    clippy::manual_let_else,
+    reason = "match can be clearer than let-else for some patterns"
+)]
+#![allow(
+    clippy::redundant_closure_for_method_calls,
+    reason = "causes clippy ICE on Rust 1.94; matches the workaround in workspace Cargo.toml"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "rate limiter and backoff arithmetic requires intentional narrowing casts"
+)]
+#![allow(
+    clippy::too_many_lines,
+    reason = "network client functions with connection management are complex by nature"
+)]
 
 pub mod backoff;
+pub mod dst;
 pub mod http;
 pub mod mode;
 pub mod net;
 pub mod retry;
 pub mod socket;
+pub mod transport;
 pub mod websocket;
 
 mod logging;
@@ -80,6 +106,8 @@ pub mod python;
 
 pub mod error;
 pub mod ratelimiter;
+
+pub use transport::{Message, TransportError};
 
 /// Sentinel message to signal reconnection completion to Rust consumers.
 pub const RECONNECTED: &str = "__RECONNECTED__";

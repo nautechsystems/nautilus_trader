@@ -103,6 +103,7 @@ pub enum Data {
     Bar(Bar),
     MarkPriceUpdate(MarkPriceUpdate), // TODO: Rename to MarkPrice once Cython gone
     IndexPriceUpdate(IndexPriceUpdate), // TODO: Rename to IndexPrice once Cython gone
+    InstrumentStatus(InstrumentStatus),
     InstrumentClose(InstrumentClose),
     Custom(CustomData),
 }
@@ -141,6 +142,9 @@ impl TryFrom<Data> for DataFFI {
             Data::Bar(x) => Ok(Self::Bar(x)),
             Data::MarkPriceUpdate(x) => Ok(Self::MarkPriceUpdate(x)),
             Data::IndexPriceUpdate(x) => Ok(Self::IndexPriceUpdate(x)),
+            Data::InstrumentStatus(_) => {
+                anyhow::bail!("Cannot convert Data::InstrumentStatus to DataFFI")
+            }
             Data::InstrumentClose(x) => Ok(Self::InstrumentClose(x)),
             Data::Custom(_) => anyhow::bail!("Cannot convert Data::Custom to DataFFI"),
         }
@@ -202,6 +206,9 @@ impl<'de> Deserialize<'de> for Data {
             "IndexPriceUpdate" => Ok(Self::IndexPriceUpdate(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
+            "InstrumentStatus" => Ok(Self::InstrumentStatus(
+                serde_json::from_value(value).map_err(D::Error::custom)?,
+            )),
             "InstrumentClose" => Ok(Self::InstrumentClose(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
@@ -229,6 +236,7 @@ impl Clone for Data {
             Self::Bar(x) => Self::Bar(*x),
             Self::MarkPriceUpdate(x) => Self::MarkPriceUpdate(*x),
             Self::IndexPriceUpdate(x) => Self::IndexPriceUpdate(*x),
+            Self::InstrumentStatus(x) => Self::InstrumentStatus(*x),
             Self::InstrumentClose(x) => Self::InstrumentClose(*x),
             Self::Custom(x) => Self::Custom(x.clone()),
         }
@@ -246,6 +254,7 @@ impl PartialEq for Data {
             (Self::Bar(a), Self::Bar(b)) => a == b,
             (Self::MarkPriceUpdate(a), Self::MarkPriceUpdate(b)) => a == b,
             (Self::IndexPriceUpdate(a), Self::IndexPriceUpdate(b)) => a == b,
+            (Self::InstrumentStatus(a), Self::InstrumentStatus(b)) => a == b,
             (Self::InstrumentClose(a), Self::InstrumentClose(b)) => a == b,
             (Self::Custom(a), Self::Custom(b)) => a == b,
             _ => false,
@@ -267,6 +276,7 @@ impl Serialize for Data {
             Self::Bar(x) => x.serialize(serializer),
             Self::MarkPriceUpdate(x) => x.serialize(serializer),
             Self::IndexPriceUpdate(x) => x.serialize(serializer),
+            Self::InstrumentStatus(x) => x.serialize(serializer),
             Self::InstrumentClose(x) => x.serialize(serializer),
             Self::Custom(x) => x.serialize(serializer),
         }
@@ -306,12 +316,14 @@ impl_try_from_data!(Trade, TradeTick);
 impl_try_from_data!(Bar, Bar);
 impl_try_from_data!(MarkPriceUpdate, MarkPriceUpdate);
 impl_try_from_data!(IndexPriceUpdate, IndexPriceUpdate);
+impl_try_from_data!(InstrumentStatus, InstrumentStatus);
 impl_try_from_data!(InstrumentClose, InstrumentClose);
 
 /// Converts a vector of `Data` items to a specific variant type.
 ///
 /// Filters and converts the data vector, keeping only items that can be
 /// successfully converted to the target type `T`.
+#[must_use]
 pub fn to_variant<T: TryFrom<Data>>(data: Vec<Data>) -> Vec<T> {
     data.into_iter()
         .filter_map(|d| T::try_from(d).ok())
@@ -320,6 +332,7 @@ pub fn to_variant<T: TryFrom<Data>>(data: Vec<Data>) -> Vec<T> {
 
 impl Data {
     /// Returns the instrument ID for the data.
+    #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
         match self {
             Self::Delta(delta) => delta.instrument_id,
@@ -330,6 +343,7 @@ impl Data {
             Self::Bar(bar) => bar.bar_type.instrument_id(),
             Self::MarkPriceUpdate(mark_price) => mark_price.instrument_id,
             Self::IndexPriceUpdate(index_price) => index_price.instrument_id,
+            Self::InstrumentStatus(status) => status.instrument_id,
             Self::InstrumentClose(close) => close.instrument_id,
             Self::Custom(custom) => custom
                 .data_type
@@ -347,6 +361,7 @@ impl Data {
     }
 
     /// Returns whether the data is a type of order book data.
+    #[must_use]
     pub fn is_order_book_data(&self) -> bool {
         matches!(self, Self::Delta(_) | Self::Deltas(_) | Self::Depth10(_))
     }
@@ -396,6 +411,8 @@ impl_catalog_path_prefix!(OrderBookDepth10, "order_book_depths");
 impl_catalog_path_prefix!(Bar, "bars");
 impl_catalog_path_prefix!(IndexPriceUpdate, "index_prices");
 impl_catalog_path_prefix!(MarkPriceUpdate, "mark_prices");
+impl_catalog_path_prefix!(FundingRateUpdate, "funding_rate_update");
+impl_catalog_path_prefix!(InstrumentStatus, "instrument_status");
 impl_catalog_path_prefix!(InstrumentClose, "instrument_closes");
 
 use crate::instruments::InstrumentAny;
@@ -412,6 +429,7 @@ impl HasTsInit for Data {
             Self::Bar(b) => b.ts_init,
             Self::MarkPriceUpdate(p) => p.ts_init,
             Self::IndexPriceUpdate(p) => p.ts_init,
+            Self::InstrumentStatus(s) => s.ts_init,
             Self::InstrumentClose(c) => c.ts_init,
             Self::Custom(c) => c.data.ts_init(),
         }
@@ -471,6 +489,12 @@ impl From<MarkPriceUpdate> for Data {
 impl From<IndexPriceUpdate> for Data {
     fn from(value: IndexPriceUpdate) -> Self {
         Self::IndexPriceUpdate(value)
+    }
+}
+
+impl From<InstrumentStatus> for Data {
+    fn from(value: InstrumentStatus) -> Self {
+        Self::InstrumentStatus(value)
     }
 }
 
@@ -537,6 +561,7 @@ pub struct DataType {
 
 impl DataType {
     /// Creates a new [`DataType`] instance.
+    #[must_use]
     pub fn new(type_name: &str, metadata: Option<Params>, identifier: Option<String>) -> Self {
         // Precompute topic from type_name + metadata (string-only view for backward compatibility)
         let topic = if let Some(ref meta) = metadata {
@@ -562,9 +587,10 @@ impl DataType {
         }
     }
 
-    /// Creates a [`DataType`] from persisted parts (type_name, topic, metadata).
-    /// Hash is recomputed from topic. Use when restoring from legacy data_type column.
+    /// Creates a [`DataType`] from persisted parts (`type_name`, topic, metadata).
+    /// Hash is recomputed from topic. Use when restoring from legacy `data_type` column.
     /// Identifier is set to None.
+    #[must_use]
     pub fn from_parts(type_name: &str, topic: &str, metadata: Option<Params>) -> Self {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         topic.hash(&mut hasher);
@@ -577,7 +603,7 @@ impl DataType {
         }
     }
 
-    /// Serializes to JSON for persistence (type_name, metadata, identifier; no topic, no hash).
+    /// Serializes to JSON for persistence (`type_name`, metadata, identifier; no topic, no hash).
     ///
     /// # Errors
     ///
@@ -605,7 +631,7 @@ impl DataType {
     }
 
     /// Deserializes from JSON produced by `to_persistence_json`.
-    /// Accepts legacy JSON with `topic` (ignored); topic is rebuilt from type_name + metadata.
+    /// Accepts legacy JSON with `topic` (ignored); topic is rebuilt from `type_name` + metadata.
     ///
     /// # Errors
     ///
@@ -637,16 +663,19 @@ impl DataType {
     }
 
     /// Returns the type name for the data type.
+    #[must_use]
     pub fn type_name(&self) -> &str {
         self.type_name.as_str()
     }
 
     /// Returns the metadata for the data type.
+    #[must_use]
     pub fn metadata(&self) -> Option<&Params> {
         self.metadata.as_ref()
     }
 
     /// Returns a string representation of the metadata.
+    #[must_use]
     pub fn metadata_str(&self) -> String {
         self.metadata.as_ref().map_or_else(
             || "null".to_string(),
@@ -655,6 +684,7 @@ impl DataType {
     }
 
     /// Returns metadata as a string-only map (e.g. for Arrow schema metadata).
+    #[must_use]
     pub fn metadata_string_map(&self) -> Option<std::collections::HashMap<String, String>> {
         self.metadata.as_ref().map(|p| {
             p.iter()
@@ -664,16 +694,19 @@ impl DataType {
     }
 
     /// Returns the precomputed hash for this data type.
+    #[must_use]
     pub fn precomputed_hash(&self) -> u64 {
         self.hash
     }
 
     /// Returns the messaging topic for the data type.
+    #[must_use]
     pub fn topic(&self) -> &str {
         self.topic.as_str()
     }
 
     /// Returns the optional catalog path identifier (can contain subdirs, e.g. `"venue//symbol"`).
+    #[must_use]
     pub fn identifier(&self) -> Option<&str> {
         self.identifier.as_deref()
     }
@@ -685,6 +718,7 @@ impl DataType {
     /// This function panics if:
     /// - There is no metadata.
     /// - The `instrument_id` value contained in the metadata is invalid.
+    #[must_use]
     pub fn instrument_id(&self) -> Option<InstrumentId> {
         let metadata = self.metadata.as_ref().expect("metadata was `None`");
         let instrument_id = metadata.get_str("instrument_id")?;
@@ -701,6 +735,7 @@ impl DataType {
     /// This function panics if:
     /// - There is no metadata.
     /// - The `venue` value contained in the metadata is invalid.
+    #[must_use]
     pub fn venue(&self) -> Option<Venue> {
         let metadata = self.metadata.as_ref().expect("metadata was `None`");
         let venue_str = metadata.get_str("venue")?;
@@ -714,6 +749,7 @@ impl DataType {
     /// This function panics if:
     /// - There is no metadata.
     /// - The `start` value contained in the metadata is invalid.
+    #[must_use]
     pub fn start(&self) -> Option<UnixNanos> {
         let metadata = self.metadata.as_ref()?;
         let start_str = metadata.get_str("start")?;
@@ -727,6 +763,7 @@ impl DataType {
     /// This function panics if:
     /// - There is no metadata.
     /// - The `end` value contained in the metadata is invalid.
+    #[must_use]
     pub fn end(&self) -> Option<UnixNanos> {
         let metadata = self.metadata.as_ref()?;
         let end_str = metadata.get_str("end")?;
@@ -740,6 +777,7 @@ impl DataType {
     /// This function panics if:
     /// - There is no metadata.
     /// - The `limit` value contained in the metadata is invalid.
+    #[must_use]
     pub fn limit(&self) -> Option<usize> {
         let metadata = self.metadata.as_ref()?;
         metadata.get_usize("limit").or_else(|| {
@@ -921,7 +959,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_start_from_metadata() {
-        let start_ns = 1600054595844758000;
+        let start_ns = 1_600_054_595_844_758_000;
         let metadata = Some(params_from_json(json!({"start": start_ns.to_string()})));
         let data_type = DataType::new(stringify!(TradeTick), metadata, None);
 
@@ -930,7 +968,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_end_from_metadata() {
-        let end_ns = 1720954595844758000;
+        let end_ns = 1_720_954_595_844_758_000;
         let metadata = Some(params_from_json(json!({"end": end_ns.to_string()})));
         let data_type = DataType::new(stringify!(TradeTick), metadata, None);
 

@@ -407,6 +407,7 @@ impl Position {
         dict.set_item("position_id", self.id.to_string())?;
         dict.set_item("account_id", self.account_id.to_string())?;
         dict.set_item("opening_order_id", self.opening_order_id.to_string())?;
+
         match self.closing_order_id {
             Some(closing_order_id) => {
                 dict.set_item("closing_order_id", closing_order_id.to_string())?;
@@ -422,6 +423,7 @@ impl Position {
         dict.set_item("size_precision", self.size_precision.to_u8())?;
         dict.set_item("multiplier", self.multiplier.to_string())?;
         dict.set_item("is_inverse", self.is_inverse)?;
+
         match self.base_currency {
             Some(base_currency) => {
                 dict.set_item("base_currency", base_currency.code.to_string())?;

@@ -113,7 +113,7 @@ impl OrderFactory {
     }
 
     /// Creates a new market order.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn market(
         &mut self,
         instrument_id: InstrumentId,
@@ -158,7 +158,7 @@ impl OrderFactory {
     }
 
     /// Creates a new limit order.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn limit(
         &mut self,
         instrument_id: InstrumentId,
@@ -215,7 +215,7 @@ impl OrderFactory {
     }
 
     /// Creates a new stop-market order.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn stop_market(
         &mut self,
         instrument_id: InstrumentId,
@@ -272,7 +272,7 @@ impl OrderFactory {
     }
 
     /// Creates a new stop-limit order.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn stop_limit(
         &mut self,
         instrument_id: InstrumentId,
@@ -333,7 +333,7 @@ impl OrderFactory {
     }
 
     /// Creates a new market-if-touched order.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn market_if_touched(
         &mut self,
         instrument_id: InstrumentId,
@@ -388,7 +388,7 @@ impl OrderFactory {
     }
 
     /// Creates a new limit-if-touched order.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn limit_if_touched(
         &mut self,
         instrument_id: InstrumentId,
@@ -453,7 +453,7 @@ impl OrderFactory {
     /// # Panics
     ///
     /// If neither `trigger_price` nor `activation_price` is provided.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn trailing_stop_market(
         &mut self,
         instrument_id: InstrumentId,
@@ -576,7 +576,7 @@ impl OrderFactory {
     }
 
     /// Creates a bracket order with entry order and attached stop-loss and take-profit orders.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn bracket(
         &mut self,
         instrument_id: InstrumentId,

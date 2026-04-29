@@ -274,6 +274,7 @@ class GridMarketMaker(Strategy):
     ) -> tuple[float, Decimal, Decimal]:
         net_qty = 0.0
         net_dec = Decimal(0)
+
         for pos in self.cache.positions_open(instrument_id=instrument_id, strategy_id=self.id):
             net_qty += pos.signed_qty
             qty_dec = Decimal(str(pos.quantity))
@@ -282,6 +283,7 @@ class GridMarketMaker(Strategy):
         pending_buy = Decimal(0)
         pending_sell = Decimal(0)
         seen: set[ClientOrderId] = set()
+
         for order in (
             *self.cache.orders_open(instrument_id=instrument_id, strategy_id=self.id),
             *self.cache.orders_inflight(instrument_id=instrument_id, strategy_id=self.id),

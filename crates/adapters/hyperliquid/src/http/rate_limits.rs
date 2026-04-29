@@ -55,6 +55,7 @@ impl WeightedLimiter {
     /// Acquire `weight` tokens, sleeping until available.
     pub async fn acquire(&self, weight: u32) {
         let need = weight as f64;
+
         loop {
             let mut st = self.state.lock().await;
             Self::refill_locked(&mut st, self.refill_per_sec, self.capacity);
@@ -153,8 +154,7 @@ pub fn info_extra_weight(req: &InfoRequest, json: &Value) -> u32 {
 
     let unit = match req.request_type {
         HyperliquidInfoRequestType::CandleSnapshot => 60usize,
-        HyperliquidInfoRequestType::RecentTrades
-        | HyperliquidInfoRequestType::HistoricalOrders
+        HyperliquidInfoRequestType::HistoricalOrders
         | HyperliquidInfoRequestType::UserFills
         | HyperliquidInfoRequestType::UserFillsByTime
         | HyperliquidInfoRequestType::FundingHistory

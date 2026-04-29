@@ -66,6 +66,7 @@ async fn mock_klines_paginated(Query(params): Query<HashMap<String, String>>) ->
     // Generate bars going backwards from end_ms
     // Each bar is 1 minute apart
     let mut klines = Vec::new();
+
     for i in 0..1000 {
         let bar_time = end_ms - (i * 60_000);
         klines.push(generate_kline(
@@ -155,6 +156,7 @@ async fn init_instrument_cache(client: &BybitHttpClient) {
 
     let response = client.get_instruments_linear(&params).await.unwrap();
     let ts_init = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
     for definition in response.result.list {
         let fee_rate = BybitFeeRate {
             symbol: definition.symbol,

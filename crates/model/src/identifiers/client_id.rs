@@ -20,7 +20,9 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{FAILED, check_valid_string_ascii};
+use nautilus_core::correctness::{
+    CorrectnessResult, CorrectnessResultExt, FAILED, check_valid_string_ascii,
+};
 use ustr::Ustr;
 
 /// Represents a system client ID.
@@ -46,7 +48,7 @@ impl ClientId {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+    pub fn new_checked<T: AsRef<str>>(value: T) -> CorrectnessResult<Self> {
         let value = value.as_ref();
         check_valid_string_ascii(value, stringify!(value))?;
         Ok(Self(Ustr::from(value)))
@@ -58,7 +60,7 @@ impl ClientId {
     ///
     /// Panics if `value` is not a valid string.
     pub fn new<T: AsRef<str>>(value: T) -> Self {
-        Self::new_checked(value).expect(FAILED)
+        Self::new_checked(value).expect_display(FAILED)
     }
 
     /// Sets the inner identifier value.
@@ -103,5 +105,11 @@ mod tests {
     fn test_string_reprs(client_id_binance: ClientId) {
         assert_eq!(client_id_binance.as_str(), "BINANCE");
         assert_eq!(format!("{client_id_binance}"), "BINANCE");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Condition failed: invalid string for 'value', was empty")]
+    fn test_new_with_empty_string_panics_with_display_format() {
+        let _ = ClientId::new("");
     }
 }

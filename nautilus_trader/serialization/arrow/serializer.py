@@ -504,3 +504,53 @@ register_arrow(
     encoder=funding_rate_update.serialize,
     decoder=funding_rate_update.deserialize,
 )
+
+
+# Rust-native Arrow registration for pyo3 InstrumentStatus.
+# The Cython InstrumentStatus is already registered via NAUTILUS_ARROW_SCHEMA above; this
+# additional registration lets callers pass a pyo3 InstrumentStatus directly to
+# ArrowSerializer.serialize_batch (which ParquetDataCatalog.write uses).
+_INSTRUMENT_STATUS_PYO3_SCHEMA = pa.schema(
+    [
+        pa.field("instrument_id", pa.utf8(), False),
+        pa.field("action", pa.utf8(), False),
+        pa.field("ts_event", pa.uint64(), False),
+        pa.field("ts_init", pa.uint64(), False),
+        pa.field("reason", pa.utf8(), True),
+        pa.field("trading_event", pa.utf8(), True),
+        pa.field("is_trading", pa.bool_(), True),
+        pa.field("is_quoting", pa.bool_(), True),
+        pa.field("is_short_sell_restricted", pa.bool_(), True),
+    ],
+    metadata={"type": "InstrumentStatus"},
+)
+
+
+def _instrument_status_encoder(data: list) -> pa.RecordBatch:
+    if not isinstance(data, list):
+        data = [data]
+    batch_bytes = nautilus_pyo3.instrument_status_to_arrow_record_batch_bytes(data)
+    reader = pa.ipc.open_stream(BytesIO(batch_bytes))
+    table = reader.read_all()
+    return table.to_batches()[0]
+
+
+def _instrument_status_decoder(table) -> list:
+    if isinstance(table, pa.RecordBatch):
+        table = pa.Table.from_batches([table])
+    sink = pa.BufferOutputStream()
+    writer = pa.ipc.new_stream(sink, table.schema)
+    for batch in table.to_batches():
+        writer.write_batch(batch)
+    writer.close()
+    ipc_bytes = sink.getvalue().to_pybytes()
+    return nautilus_pyo3.instrument_status_from_arrow_record_batch_bytes(ipc_bytes)
+
+
+register_arrow(
+    nautilus_pyo3.InstrumentStatus,
+    schema=_INSTRUMENT_STATUS_PYO3_SCHEMA,
+    encoder=_instrument_status_encoder,
+    decoder=_instrument_status_decoder,
+    batch_encoder=_instrument_status_encoder,
+)

@@ -15,7 +15,7 @@
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 
-#![allow(
+#![expect(
     clippy::missing_errors_doc,
     reason = "errors documented on underlying Rust methods"
 )]
@@ -44,8 +44,14 @@ pub fn trading(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::strategy::ImportableStrategyConfig>()?;
     m.add_class::<crate::algorithm::ImportableExecAlgorithmConfig>()?;
     #[cfg(feature = "examples")]
+    m.add_class::<crate::examples::strategies::EmaCrossConfig>()?;
+    #[cfg(feature = "examples")]
     m.add_class::<crate::examples::strategies::GridMarketMakerConfig>()?;
     #[cfg(feature = "examples")]
     m.add_class::<crate::examples::strategies::DeltaNeutralVolConfig>()?;
+    #[cfg(feature = "examples")]
+    m.add_class::<crate::examples::strategies::HurstVpinDirectionalConfig>()?;
+    #[cfg(feature = "examples")]
+    m.add_class::<crate::examples::actors::BookImbalanceActorConfig>()?;
     Ok(())
 }

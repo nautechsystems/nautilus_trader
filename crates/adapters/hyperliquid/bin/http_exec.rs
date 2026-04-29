@@ -16,7 +16,7 @@
 use std::{env, str::FromStr};
 
 use nautilus_hyperliquid::{
-    common::credential::Secrets,
+    common::{credential::Secrets, enums::HyperliquidEnvironment},
     http::{
         client::HyperliquidHttpClient,
         models::{
@@ -34,21 +34,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
     // Check for testnet flag from environment (default to mainnet)
-    let is_testnet =
-        env::var("HYPERLIQUID_TESTNET").is_ok_and(|v| v.to_lowercase() == "true" || v == "1");
+    let environment =
+        if env::var("HYPERLIQUID_TESTNET").is_ok_and(|v| v.to_lowercase() == "true" || v == "1") {
+            HyperliquidEnvironment::Testnet
+        } else {
+            HyperliquidEnvironment::Mainnet
+        };
 
-    let network_name = if is_testnet { "TESTNET" } else { "MAINNET" };
-    log::info!("Starting Hyperliquid {network_name} Order Placer");
+    log::info!("Starting Hyperliquid {environment:?} Order Placer");
 
-    let client = match HyperliquidHttpClient::from_env(is_testnet) {
+    let client = match HyperliquidHttpClient::from_env(environment) {
         Ok(client) => {
-            let is_testnet = client.is_testnet();
-            log::info!("Client created (testnet: {is_testnet})");
+            log::info!("Client created (environment: {environment:?})");
             client
         }
         Err(e) => {
             log::error!("Failed to create client: {e}");
-            let (pk_var, _) = Secrets::env_vars(is_testnet);
+            let (pk_var, _) = Secrets::env_vars(environment);
             log::error!("Make sure {pk_var} environment variable is set");
             return Err(e.into());
         }

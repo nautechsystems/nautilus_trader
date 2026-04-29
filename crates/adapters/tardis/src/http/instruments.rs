@@ -49,7 +49,7 @@ fn build_info_params(info: &TardisInstrumentInfo) -> Option<Params> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 #[must_use]
 pub fn create_currency_pair(
     info: &TardisInstrumentInfo,
@@ -92,7 +92,7 @@ pub fn create_currency_pair(
     ))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 #[must_use]
 pub fn create_crypto_perpetual(
     info: &TardisInstrumentInfo,
@@ -139,7 +139,7 @@ pub fn create_crypto_perpetual(
     ))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 #[must_use]
 pub fn create_crypto_future(
     info: &TardisInstrumentInfo,
@@ -190,7 +190,7 @@ pub fn create_crypto_future(
     ))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 /// Create a crypto option instrument definition.
 ///
 /// # Errors

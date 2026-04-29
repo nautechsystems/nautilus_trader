@@ -17,7 +17,9 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_core::{
-    UnixNanos, consts::NAUTILUS_USER_AGENT, parsing::precision_from_str, string::REDACTED,
+    UnixNanos,
+    consts::NAUTILUS_USER_AGENT,
+    string::{parsing::precision_from_str, secret::REDACTED, urlencoding},
 };
 use nautilus_model::instruments::InstrumentAny;
 use nautilus_network::http::HttpClient;
@@ -83,6 +85,7 @@ impl TardisHttpClient {
         base_url: Option<&str>,
         timeout_secs: Option<u64>,
         normalize_symbols: bool,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let credential = Credential::resolve(api_key.map(ToString::to_string));
 
@@ -112,7 +115,7 @@ impl TardisHttpClient {
             keyed_quotas,
             Some(*TARDIS_REST_QUOTA),
             timeout_secs.or(Some(60)),
-            None,
+            proxy_url,
         )?;
 
         Ok(Self {
@@ -206,7 +209,7 @@ impl TardisHttpClient {
     /// Returns an error if fetching instrument info or parsing into domain types fails.
     ///
     /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn instruments(
         &self,
         exchange: TardisExchange,

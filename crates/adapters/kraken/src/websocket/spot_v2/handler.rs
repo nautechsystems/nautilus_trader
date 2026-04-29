@@ -421,7 +421,8 @@ mod tests {
                 "low": 104711.00,
                 "high": 106613.10,
                 "change": 250.00,
-                "change_pct": 0.24
+                "change_pct": 0.24,
+                "timestamp": "2022-12-25T09:30:59.123456Z"
             }]
         }"#;
 
@@ -453,7 +454,8 @@ mod tests {
                 "low": 104711.00,
                 "high": 106613.10,
                 "change": 250.00,
-                "change_pct": 0.24
+                "change_pct": 0.24,
+                "timestamp": "2022-12-25T09:30:59.123456Z"
             }]
         }"#;
 
@@ -462,6 +464,7 @@ mod tests {
             result.is_some(),
             "Ticker message should pass with quotes subscription"
         );
+
         match result.unwrap() {
             KrakenSpotWsMessage::Ticker(data) => {
                 assert!(!data.is_empty(), "Should have ticker data");
@@ -491,7 +494,8 @@ mod tests {
                 "low": 104711.00,
                 "high": 106613.10,
                 "change": 250.00,
-                "change_pct": 0.24
+                "change_pct": 0.24,
+                "timestamp": "2022-12-25T09:30:59.123456Z"
             }]
         }"#;
 
@@ -500,6 +504,7 @@ mod tests {
             result.is_some(),
             "Ticker message should pass with ticker: subscription"
         );
+
         match result.unwrap() {
             KrakenSpotWsMessage::Ticker(data) => {
                 assert!(!data.is_empty(), "Should have ticker data");
@@ -519,7 +524,8 @@ mod tests {
                 "symbol": "BTC/USD",
                 "bids": [{"price": 105944.20, "qty": 2.5}],
                 "asks": [{"price": 105944.30, "qty": 3.2}],
-                "checksum": 12345
+                "checksum": 12345,
+                "timestamp": "2023-10-06T17:35:55.440295Z"
             }]
         }"#;
 
@@ -543,7 +549,8 @@ mod tests {
                 "symbol": "BTC/USD",
                 "bids": [{"price": 105944.20, "qty": 2.5}],
                 "asks": [{"price": 105944.30, "qty": 3.2}],
-                "checksum": 12345
+                "checksum": 12345,
+                "timestamp": "2023-10-06T17:35:55.440295Z"
             }]
         }"#;
 
@@ -552,6 +559,7 @@ mod tests {
             result.is_some(),
             "Book message should pass with book subscription"
         );
+
         match result.unwrap() {
             KrakenSpotWsMessage::Book { data, is_snapshot } => {
                 assert!(!data.is_empty());
@@ -574,7 +582,8 @@ mod tests {
                 "symbol": "BTC/USD",
                 "bids": [{"price": 105944.20, "qty": 2.5}],
                 "asks": [{"price": 105944.30, "qty": 3.2}],
-                "checksum": 12345
+                "checksum": 12345,
+                "timestamp": "2023-10-06T17:35:55.440295Z"
             }]
         }"#;
 
@@ -599,7 +608,8 @@ mod tests {
                 "low": 104711.00,
                 "high": 106613.10,
                 "change": 250.00,
-                "change_pct": 0.24
+                "change_pct": 0.24,
+                "timestamp": "2022-12-25T09:30:59.123456Z"
             }]
         }"#;
 

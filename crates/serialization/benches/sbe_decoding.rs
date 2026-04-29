@@ -21,7 +21,8 @@ use nautilus_serialization::sbe::SbeCursor;
 fn make_i64_buffer(count: usize) -> Vec<u8> {
     let mut buf = Vec::with_capacity(count * 8);
     for i in 0..count {
-        buf.extend_from_slice(&(i as i64).to_le_bytes());
+        let value = i64::try_from(i).expect("benchmark index must fit in i64");
+        buf.extend_from_slice(&value.to_le_bytes());
     }
     buf
 }

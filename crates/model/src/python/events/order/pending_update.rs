@@ -29,7 +29,7 @@ use crate::{
 impl OrderPendingUpdate {
     /// Represents an event where an `ModifyOrder` command has been sent to the
     /// trading venue.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, account_id, event_id, ts_event, ts_init, reconciliation, venue_order_id=None))]
     fn py_new(

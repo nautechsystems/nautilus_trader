@@ -305,6 +305,7 @@ impl OKXWsFeedHandler {
                             return Some(OKXWsMessage::Error(error));
                         }
                         OKXWsFrame::Reconnected => {
+                            self.auth_tracker.invalidate();
                             return Some(OKXWsMessage::Reconnected);
                         }
                         OKXWsFrame::Subscription {

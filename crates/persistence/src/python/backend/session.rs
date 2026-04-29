@@ -20,12 +20,19 @@ use nautilus_core::{
     python::{IntoPyObjectNautilusExt, to_pyruntime_err},
 };
 use nautilus_model::data::{
-    Bar, Data, DataFFI, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+    Bar, Data, DataFFI, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10,
+    QuoteTick, TradeTick,
 };
 use nautilus_serialization::arrow::custom::CustomDataDecoder;
 use pyo3::{prelude::*, types::PyCapsule};
 
 use crate::backend::session::{DataBackendSession, DataQueryResult};
+
+/// Wrapper to pass a raw pointer across the GIL release boundary.
+struct SendPtr<T>(*mut T);
+
+// SAFETY: Access is serialized by the calling `PyRefMut`
+unsafe impl<T> Send for SendPtr<T> {}
 
 /// Converts a `Data` variant into a Python object via PyO3.
 fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
@@ -38,6 +45,7 @@ fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
         Data::Depth10(depth) => Py::new(py, *depth).map(|x| x.into_any()),
         Data::IndexPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
         Data::MarkPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
+        Data::InstrumentStatus(status) => Py::new(py, status).map(|x| x.into_any()),
         Data::InstrumentClose(close) => Py::new(py, close).map(|x| x.into_any()),
         Data::Custom(custom) => Py::new(py, custom).map(|x| x.into_any()),
     }
@@ -55,6 +63,7 @@ pub enum NautilusDataType {
     TradeTick = 4,
     Bar = 5,
     MarkPriceUpdate = 6,
+    InstrumentStatus = 7,
 }
 
 #[pymethods]
@@ -116,6 +125,9 @@ impl DataBackendSession {
             NautilusDataType::MarkPriceUpdate => slf
                 .add_file::<MarkPriceUpdate>(table_name, file_path, sql_query, None)
                 .map_err(to_pyruntime_err),
+            NautilusDataType::InstrumentStatus => slf
+                .add_file::<InstrumentStatus>(table_name, file_path, sql_query, None)
+                .map_err(to_pyruntime_err),
         }
     }
 
@@ -138,8 +150,22 @@ impl DataBackendSession {
     }
 
     fn to_query_result(mut slf: PyRefMut<'_, Self>) -> DataQueryResult {
-        let query_result = slf.get_query_result();
-        DataQueryResult::new(query_result, slf.chunk_size)
+        let py = slf.py();
+        let chunk_size = slf.chunk_size;
+        let ptr = SendPtr(&raw mut *slf);
+
+        // SAFETY: see comment on `__next__` for the safety argument.
+        // The GIL release is needed here because `get_query_result` eagerly
+        // pulls the first element from each stream (via `KMerge::push_iter`),
+        // which blocks on the tokio channel while workers may need the GIL.
+        let query_result = unsafe {
+            py.detach(move || {
+                let p = ptr;
+                (*p.0).get_query_result()
+            })
+        };
+
+        DataQueryResult::new(query_result, chunk_size)
     }
 
     /// Register an object store with the session context from a URI with optional storage options
@@ -171,19 +197,38 @@ impl DataQueryResult {
     /// consumed by Cython `capsule_to_list`. For custom data types (which are not
     /// FFI-safe), returns a Python list of PyO3 objects directly.
     fn __next__(mut slf: PyRefMut<'_, Self>) -> PyResult<Option<Py<PyAny>>> {
-        match slf.next() {
-            Some(acc) if !acc.is_empty() => {
-                let has_custom = acc.iter().any(|d| matches!(d, Data::Custom(_)));
+        let py = slf.py();
+        let ptr = SendPtr(&raw mut *slf);
 
-                if has_custom {
-                    // Custom data: convert directly to Python objects (bypasses FFI)
-                    Python::attach(|py| {
-                        let objects: Vec<Py<PyAny>> = acc
-                            .into_iter()
-                            .map(|item| data_to_pyobject(py, item))
-                            .collect::<PyResult<_>>()?;
-                        Ok(Some(objects.into_py_any_unwrap(py)))
-                    })
+        // SAFETY: `PyRefMut` guarantees exclusive access to the underlying
+        // object for the duration of this method call. The runtime borrow
+        // flag prevents any other Python thread from accessing it.
+        //
+        // The GIL must be released here so that tokio worker threads can
+        // acquire it when decoding custom data types via `Python::attach`.
+        // Without this, custom-type streaming deadlocks: the main thread
+        // holds the GIL while blocking on `recv`, and workers block on
+        // `Python::attach` waiting for the GIL.
+        let acc = unsafe {
+            py.detach(move || {
+                let p = ptr;
+                (*p.0).next()
+            })
+        };
+
+        match acc {
+            Some(acc) if !acc.is_empty() => {
+                let has_non_ffi = acc
+                    .iter()
+                    .any(|d| matches!(d, Data::Custom(_) | Data::InstrumentStatus(_)));
+
+                if has_non_ffi {
+                    // Custom and instrument-status data: convert directly to Python objects (bypasses FFI)
+                    let objects: Vec<Py<PyAny>> = acc
+                        .into_iter()
+                        .map(|item| data_to_pyobject(py, item))
+                        .collect::<PyResult<_>>()?;
+                    Ok(Some(objects.into_py_any_unwrap(py)))
                 } else {
                     // Built-in types: FFI capsule path
                     let ffi_data: Vec<DataFFI> = acc
@@ -192,12 +237,10 @@ impl DataQueryResult {
                         .collect::<Result<Vec<_>, _>>()
                         .map_err(to_pyruntime_err)?;
                     let cvec: CVec = ffi_data.into();
-                    Python::attach(|py| {
-                        match PyCapsule::new_with_destructor::<CVec, _>(py, cvec, None, |_, _| {}) {
-                            Ok(capsule) => Ok(Some(capsule.into_py_any_unwrap(py))),
-                            Err(e) => Err(to_pyruntime_err(e)),
-                        }
-                    })
+                    match PyCapsule::new_with_destructor::<CVec, _>(py, cvec, None, |_, _| {}) {
+                        Ok(capsule) => Ok(Some(capsule.into_py_any_unwrap(py))),
+                        Err(e) => Err(to_pyruntime_err(e)),
+                    }
                 }
             }
             _ => Ok(None),

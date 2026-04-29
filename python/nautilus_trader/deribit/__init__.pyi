@@ -10,6 +10,7 @@ __all__ = [
     "DeribitCurrency",
     "DeribitDataClientConfig",
     "DeribitDataClientFactory",
+    "DeribitEnvironment",
     "DeribitExecClientConfig",
     "DeribitExecutionClientFactory",
     "DeribitHttpClient",
@@ -26,11 +27,12 @@ class DeribitDataClientConfig:
     def __init__(
         self,
         product_types: typing.Sequence[DeribitProductType] | None = None,
-        use_testnet: bool | None = None,
+        environment: DeribitEnvironment | None = None,
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url_http: str | None = None,
         base_url_ws: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -51,11 +53,12 @@ class DeribitExecClientConfig:
         trader_id: model.TraderId,
         account_id: model.AccountId,
         product_types: typing.Sequence[DeribitProductType] | None = None,
-        use_testnet: bool | None = None,
+        environment: DeribitEnvironment | None = None,
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url_http: str | None = None,
         base_url_ws: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -74,7 +77,7 @@ class DeribitHttpClient:
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url: str | None = None,
-        is_testnet: bool = False,
+        environment: DeribitEnvironment = ...,
         timeout_secs: int = 10,
         max_retries: int = 3,
         retry_delay_ms: int = 1000,
@@ -138,13 +141,18 @@ class DeribitWebSocketClient:
         api_key: str | None = None,
         api_secret: str | None = None,
         heartbeat_interval: int = 30,
-        is_testnet: bool = False,
+        environment: DeribitEnvironment = ...,
+        proxy_url: str | None = None,
     ) -> None: ...
     @staticmethod
-    def new_public(is_testnet: bool) -> DeribitWebSocketClient: ...
+    def new_public(
+        environment: DeribitEnvironment, proxy_url: str | None = None
+    ) -> DeribitWebSocketClient: ...
     @staticmethod
     def with_credentials(
-        is_testnet: bool, account_id: model.AccountId | None = None
+        environment: DeribitEnvironment,
+        account_id: model.AccountId | None = None,
+        proxy_url: str | None = None,
     ) -> DeribitWebSocketClient: ...
     @property
     def url(self) -> str: ...
@@ -202,6 +210,18 @@ class DeribitWebSocketClient:
         self, instrument_id: model.InstrumentId, interval: DeribitUpdateInterval | None = ...
     ) -> typing.Any: ...
     def unsubscribe_ticker(
+        self, instrument_id: model.InstrumentId, interval: DeribitUpdateInterval | None = ...
+    ) -> typing.Any: ...
+    def subscribe_mark_prices(
+        self, instrument_id: model.InstrumentId, interval: DeribitUpdateInterval | None = ...
+    ) -> typing.Any: ...
+    def unsubscribe_mark_prices(
+        self, instrument_id: model.InstrumentId, interval: DeribitUpdateInterval | None = ...
+    ) -> typing.Any: ...
+    def subscribe_index_prices(
+        self, instrument_id: model.InstrumentId, interval: DeribitUpdateInterval | None = ...
+    ) -> typing.Any: ...
+    def unsubscribe_index_prices(
         self, instrument_id: model.InstrumentId, interval: DeribitUpdateInterval | None = ...
     ) -> typing.Any: ...
     def subscribe_option_greeks(
@@ -301,6 +321,22 @@ class DeribitCurrency(enum.Enum):
     def from_str(cls, data: typing.Any) -> DeribitCurrency: ...
 
 @typing.final
+class DeribitEnvironment(enum.Enum):
+    MAINNET = ...
+    TESTNET = ...
+
+    def __init__(self, value: typing.Any) -> None: ...
+    def __hash__(self) -> int: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> int: ...
+    @classmethod
+    def variants(cls) -> list[str]: ...
+    @classmethod
+    def from_str(cls, data: typing.Any) -> DeribitEnvironment: ...
+
+@typing.final
 class DeribitProductType(enum.Enum):
     FUTURE = ...
     OPTION = ...
@@ -358,5 +394,5 @@ class DeribitWsChannel(enum.Enum):
     UserChanges = ...
     UserAccessLog = ...
 
-def get_deribit_http_base_url(is_testnet: bool) -> str: ...
-def get_deribit_ws_url(is_testnet: bool) -> str: ...
+def get_deribit_http_base_url(environment: DeribitEnvironment) -> str: ...
+def get_deribit_ws_url(environment: DeribitEnvironment) -> str: ...

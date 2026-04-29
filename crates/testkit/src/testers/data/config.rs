@@ -22,9 +22,11 @@ use nautilus_model::{
     enums::BookType,
     identifiers::{ClientId, InstrumentId},
 };
+use serde::{Deserialize, Serialize};
 
 /// Configuration for the data tester actor.
-#[derive(Debug, Clone, bon::Builder)]
+#[derive(Debug, Clone, Deserialize, Serialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 pub struct DataTesterConfig {
     /// Base data actor configuration.
     #[builder(default)]

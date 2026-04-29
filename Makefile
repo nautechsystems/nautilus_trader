@@ -15,6 +15,8 @@ CARGO_MACHETE_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-machet
 CARGO_NEXTEST_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-nextest)
 CARGO_VET_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-vet)
 LYCHEE_VERSION := $(shell bash scripts/cargo-tool-version.sh lychee)
+# Tool versions from tools.toml
+PREK_VERSION := $(shell bash scripts/tool-version.sh prek)
 UV_VERSION := $(shell bash scripts/uv-version.sh)
 
 V = 0  # 0 / 1 - verbose mode
@@ -198,20 +200,35 @@ build-dry-run:  #-- Show build commands without executing them
 .PHONY: clean
 clean: clean-build-artifacts clean-caches clean-builds  #-- Clean all build artifacts, caches, and builds
 
+.PHONY: ib-stop
+ib-stop:  #-- Stop local TWS/IBC processes and Docker IB Gateway containers
+	@echo "Stopping local TWS/IBC processes..."
+	@pkill -TERM -f "Trader Workstation" || true
+	@pkill -TERM -f "ibcstart.sh" || true
+	@pkill -TERM -f "displaybannerandlaunch.sh" || true
+	@echo "Stopping Docker IB Gateway containers..."
+	@docker ps --format '{{.Names}} {{.Image}}' | awk '/ib-gateway|ibgateway|Trader Workstation|tws/ {print $$1}' | xargs -r docker stop >/dev/null 2>&1 || true
+	@sleep 2
+	@pkill -KILL -f "Trader Workstation" || true
+	@pkill -KILL -f "ibcstart.sh" || true
+	@pkill -KILL -f "displaybannerandlaunch.sh" || true
+	@docker ps --format '{{.Names}} {{.Image}}' | awk '/ib-gateway|ibgateway|Trader Workstation|tws/ {print $$1}' | xargs -r docker kill >/dev/null 2>&1 || true
+	@echo "Done."
+
 .PHONY: clean-builds
 clean-builds:  #-- Clean distribution and target directories
-	$Q rm -rf dist target 2>/dev/null || true
+	$Q rm -rf dist target target-v2 2>/dev/null || true
 
 .PHONY: clean-build-artifacts
 clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, .pyc, .c files)
 	@echo "Cleaning build artifacts..."
 	# Clean Rust build artifacts (keep final libraries)
-	find target -name "*.rlib" -delete 2>/dev/null || true
-	find target -name "*.rmeta" -delete 2>/dev/null || true
-	rm -rf target/*/build target/*/deps 2>/dev/null || true
+	find target target-v2 -name "*.rlib" -delete 2>/dev/null || true
+	find target target-v2 -name "*.rmeta" -delete 2>/dev/null || true
+	rm -rf target/*/build target/*/deps target-v2/*/build target-v2/*/deps 2>/dev/null || true
 	# Clean Python build artifacts
 	find . -type d -name "__pycache__" -not -path "./.venv*" -exec rm -rf {} + 2>/dev/null || true
-	find . -type f -name "*.c" -not -path "./.venv*" -not -path "./target/*" -exec rm -f {} + 2>/dev/null || true
+	find . -type f -name "*.c" -not -path "./.venv*" -not -path "./target/*" -not -path "./target-v2/*" -exec rm -f {} + 2>/dev/null || true
 	find . -type f -a \( -name "*.pyc" -o -name "*.pyo" \) -not -path "./.venv*" -exec rm -f {} + 2>/dev/null || true
 	find . -type f -a \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -not -path "./.venv*" -exec rm -f {} + 2>/dev/null || true
 	rm -rf build/ cython_debug/ 2>/dev/null || true
@@ -223,6 +240,7 @@ clean-caches:  #-- Clean pytest, mypy, ruff, uv, and cargo caches
 	rm -rf .pytest_cache .mypy_cache .ruff_cache 2>/dev/null || true
 	-uv cache prune --force
 	-cargo clean --workspace
+	-CARGO_TARGET_DIR=target-v2 cargo clean --workspace
 
 .PHONY: distclean
 distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE=1)
@@ -242,7 +260,7 @@ format:  #-- Format Rust (with nightly) and Python code
 
 .PHONY: pre-commit
 pre-commit:  #-- Run all pre-commit hooks on all files
-	uv run --active --no-sync pre-commit run --all-files
+	prek run --all-files
 
 # The check-code target uses CARGO_FEATURES which is controlled by the HYPERSYNC flag.
 # By default, hypersync is excluded to speed up checks. Override with: make check-code HYPERSYNC=true
@@ -318,11 +336,20 @@ outdated: check-edit-installed  #-- Check for outdated dependencies
 	[ $$outdated_count -eq 0 ] && printf "$(GREEN)  All tools up to date ✓$(RESET)\n"
 
 .PHONY: update
-update: cargo-update  #-- Update all dependencies (cargo and uv)
-	uv self update $(UV_VERSION) && uv lock --upgrade
+update: cargo-update update-uv  #-- Update all dependencies (cargo and uv)
+	uv lock --upgrade
+
+.PHONY: update-uv
+update-uv:  #-- Install or upgrade uv to the version pinned in pyproject.toml
+	$(info $(M) Ensuring uv $(UV_VERSION) is installed...)
+	@if [ "$$(uv --version 2>/dev/null | awk '{print $$2}')" = "$(UV_VERSION)" ]; then \
+		printf "$(GREEN)uv $(UV_VERSION) already installed$(RESET)\n"; \
+	else \
+		curl -LsSf https://astral.sh/uv/$(UV_VERSION)/install.sh | sh; \
+	fi
 
 .PHONY: install-tools
-install-tools:  #-- Install required development tools (Rust tools from Cargo.toml, uv from pyproject.toml)
+install-tools: check-binstall-installed update-uv  #-- Install required development tools (pinned versions from Cargo.toml, tools.toml, pyproject.toml)
 	cargo install cargo-deny --version $(CARGO_DENY_VERSION) --locked \
 	&& cargo install cargo-edit --version $(CARGO_EDIT_VERSION) --locked \
 	&& cargo install cargo-machete --version $(CARGO_MACHETE_VERSION) --locked \
@@ -331,7 +358,8 @@ install-tools:  #-- Install required development tools (Rust tools from Cargo.to
 	&& cargo install cargo-audit --version $(CARGO_AUDIT_VERSION) --locked \
 	&& cargo install cargo-vet --version $(CARGO_VET_VERSION) --locked \
 	&& cargo install lychee --version $(LYCHEE_VERSION) --locked \
-	&& uv self update $(UV_VERSION)
+	&& cargo binstall prek --version $(PREK_VERSION) --no-confirm --locked \
+	&& bash scripts/install-osv-scanner.sh
 
 #== Security
 
@@ -390,8 +418,14 @@ docs-check-links:  #-- Check for broken links in documentation (periodic audit)
 		--timeout 30 \
 		--max-concurrency 10 \
 		--accept "100..=103,200..=299,429,502..=504" \
+		--include-fragments \
+		--fallback-extensions md,py,html \
+		--exclude-path .venv \
+		--exclude-path target \
+		--exclude-path docs/python-api-latest \
+		--exclude "file://.*/python-api-latest/.*" \
 		--exclude-file .lycheeignore \
-		"**/*.md"
+		"**/*.md" "docs/**/*.py"
 	@printf "$(GREEN)Link check passed$(RESET)\n"
 
 #== Rust Development
@@ -423,6 +457,15 @@ check-deny-installed:  #-- Verify cargo-deny is installed
 		exit 1; \
 	fi
 
+.PHONY: check-binstall-installed
+check-binstall-installed:  #-- Verify cargo-binstall is installed (one-off prerequisite for install-tools)
+	@if ! command -v cargo-binstall >/dev/null 2>&1; then \
+		printf "$(YELLOW)cargo-binstall is required but not installed$(RESET)\n"; \
+		printf "Install once per machine with: $(CYAN)cargo install cargo-binstall --locked$(RESET)\n"; \
+		printf "See: https://github.com/cargo-bins/cargo-binstall\n"; \
+		exit 1; \
+	fi
+
 .PHONY: check-vet-installed
 check-vet-installed:  #-- Verify cargo-vet is installed
 	@if ! cargo vet --version >/dev/null 2>&1; then \
@@ -431,10 +474,15 @@ check-vet-installed:  #-- Verify cargo-vet is installed
 	fi
 
 .PHONY: check-osv-scanner-installed
-check-osv-scanner-installed:  #-- Verify osv-scanner is installed
+check-osv-scanner-installed:  #-- Verify osv-scanner is installed and version matches tools.toml
 	@if ! osv-scanner --version >/dev/null 2>&1; then \
 		echo "osv-scanner is not installed. See https://google.github.io/osv-scanner/installation/"; \
 		exit 1; \
+	fi
+	@EXPECTED=$$(bash scripts/tool-version.sh osv-scanner); \
+	INSTALLED=$$(osv-scanner --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
+	if [ "$$INSTALLED" != "$$EXPECTED" ]; then \
+		printf "$(YELLOW)osv-scanner version mismatch: installed %s, expected %s (from tools.toml)$(RESET)\n" "$$INSTALLED" "$$EXPECTED"; \
 	fi
 
 # Testing tool checks
@@ -469,14 +517,14 @@ check-edit-installed:  #-- Verify cargo-edit is installed
 
 .PHONY: check-features
 check-features: check-hack-installed  #-- Verify crate feature combinations compile correctly
-	cargo hack --workspace check --each-feature
+	cargo hack --workspace check --each-feature --all-targets
 
 .PHONY: check-capnp-schemas  #-- Verify Cap'n Proto schemas are up-to-date
 check-capnp-schemas:
 	$(info $(M) Checking if Cap'n Proto schemas are up-to-date...)
 	@if ! command -v capnp > /dev/null 2>&1; then \
 		echo "$(YELLOW)⚠ capnp not installed, skipping schema check$(RESET)"; \
-	elif ! bash scripts/regen_capnp.sh > /dev/null 2>&1; then \
+	elif ! CAPNP_CHECK=1 bash scripts/regen_capnp.sh; then \
 		echo "$(RED)Error: Cap'n Proto regeneration failed$(RESET)"; \
 		echo "Run manually to see errors: ./scripts/regen_capnp.sh"; \
 		exit 1; \
@@ -556,6 +604,35 @@ else
 	$(info $(M) Running Rust tests for adapter crates (showing summary and failures only)...)
 	cargo nextest run --workspace --lib --tests --features "$(CARGO_FEATURES)" -E '$(ADAPTER_FILTERSET)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
 endif
+
+# DST simulation smoke test. Compiles the in-scope crates under cfg(madsim)
+# and runs every test that is sim-compatible today: all of nautilus-common,
+# nautilus-network, and nautilus-execution (transport-bound tests are gated
+# out at the source), plus the cross-crate seam pinning tests in nautilus-core.
+# Each leg runs with the standard fixed-precision build first, then again
+# under `high-precision` for the crates that consume `nautilus-model` types,
+# so the seam-routed code paths are exercised under both `QuantityRaw` /
+# `PriceRaw` widths (u64 vs u128). See docs/concepts/dst.md for the full
+# DST scope.
+.PHONY: cargo-test-sim
+cargo-test-sim: export RUST_BACKTRACE=1
+cargo-test-sim: export RUSTFLAGS=--cfg madsim
+cargo-test-sim: check-nextest-installed
+cargo-test-sim:  #-- Run DST simulation smoke tests (cfg madsim + simulation feature)
+	$(info $(M) Building in-scope crates under simulation (compile gate)...)
+	cargo build -p nautilus-common -p nautilus-core -p nautilus-network -p nautilus-execution --tests --lib --features simulation
+	$(info $(M) Running nautilus-common tests under simulation...)
+	cargo nextest run -p nautilus-common --features simulation $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
+	$(info $(M) Running nautilus-common tests under simulation + high-precision...)
+	cargo nextest run -p nautilus-common --features "simulation,high-precision" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
+	$(info $(M) Running nautilus-network tests under simulation...)
+	cargo nextest run -p nautilus-network --features simulation $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
+	$(info $(M) Running nautilus-execution tests under simulation...)
+	cargo nextest run -p nautilus-execution --features simulation $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
+	$(info $(M) Running nautilus-execution tests under simulation + high-precision...)
+	cargo nextest run -p nautilus-execution --features "simulation,high-precision" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
+	$(info $(M) Running nautilus-core DST seam pinning tests under simulation...)
+	cargo nextest run -p nautilus-core --features simulation -E 'test(~virtual_time)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
 
 .PHONY: cargo-test-core-debug
 cargo-test-core-debug: export RUST_BACKTRACE=1
@@ -703,10 +780,12 @@ init-db:  #-- Initialize PostgreSQL database schema
 
 #== Python Testing
 
+PYTEST_WORKERS ?= $(shell python3 -c "import os; print(min(64, os.cpu_count() or 64))")
+
 .PHONY: pytest
 pytest:  #-- Run Python tests with pytest in parallel with immediate failure reporting
-	$(info $(M) Running Python tests in parallel with immediate failure reporting...)
-	uv run --active --no-sync pytest --new-first --failed-first --tb=line -n logical --dist=loadgroup --maxfail=50 --durations=0 --durations-min=10.0
+	$(info $(M) Running Python tests in parallel with immediate failure reporting (workers=$(PYTEST_WORKERS))...)
+	uv run --active --no-sync pytest --new-first --failed-first --tb=line -n $(PYTEST_WORKERS) --dist=loadgroup --maxfail=50 --durations=0 --durations-min=10.0
 
 .PHONY: test-performance
 test-performance:  #-- Run performance tests with codspeed benchmarking

@@ -92,24 +92,28 @@ impl InstrumentClose {
 
     #[getter]
     #[pyo3(name = "close_price")]
+    #[must_use]
     pub fn py_close_price(&self) -> Price {
         self.close_price
     }
 
     #[getter]
     #[pyo3(name = "close_type")]
+    #[must_use]
     pub fn py_close_type(&self) -> InstrumentCloseType {
         self.close_type
     }
 
     #[getter]
     #[pyo3(name = "ts_event")]
+    #[must_use]
     pub fn py_ts_event(&self) -> u64 {
         self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
+    #[must_use]
     pub fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
     }
@@ -161,7 +165,7 @@ impl InstrumentClose {
         self.to_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
-    /// Return MsgPack encoded bytes representation of the object.
+    /// Return `MsgPack` encoded bytes representation of the object.
     #[pyo3(name = "to_msgpack_bytes")]
     fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
         self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)

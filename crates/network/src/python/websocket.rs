@@ -26,22 +26,22 @@ use nautilus_core::{
     python::{clone_py_object, to_pyruntime_err, to_pyvalue_err},
 };
 use pyo3::{Py, create_exception, exceptions::PyException, prelude::*, types::PyBytes};
-use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
 use crate::{
     RECONNECTED,
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
+    transport::{Message, TransportError},
     websocket::{
-        WebSocketClient, WebSocketConfig,
+        TransportBackend, WebSocketClient, WebSocketConfig,
         types::{MessageHandler, PingHandler, WriterCommand},
     },
 };
 
 create_exception!(network, WebSocketClientError, PyException);
 
-#[allow(clippy::needless_pass_by_value)]
-fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
+#[expect(clippy::needless_pass_by_value)]
+fn to_websocket_pyerr(e: TransportError) -> PyErr {
     PyErr::new::<WebSocketClientError, _>(e.to_string())
 }
 
@@ -72,7 +72,7 @@ impl WebSocketConfig {
     /// - Reconnection config fields are ignored.
     /// - On disconnect, client transitions to CLOSED state and caller must manually reconnect.
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[pyo3(signature = (
         url,
         headers,
@@ -85,6 +85,7 @@ impl WebSocketConfig {
         reconnect_jitter_ms=100,
         reconnect_max_attempts=None,
         idle_timeout_ms=None,
+        proxy_url=None,
     ))]
     fn py_new(
         url: String,
@@ -98,6 +99,7 @@ impl WebSocketConfig {
         reconnect_jitter_ms: Option<u64>,
         reconnect_max_attempts: Option<u32>,
         idle_timeout_ms: Option<u64>,
+        proxy_url: Option<String>,
     ) -> Self {
         Self {
             url,
@@ -111,6 +113,8 @@ impl WebSocketConfig {
             reconnect_jitter_ms,
             reconnect_max_attempts,
             idle_timeout_ms,
+            backend: TransportBackend::default(),
+            proxy_url,
         }
     }
 }
@@ -131,7 +135,7 @@ impl WebSocketClient {
     /// See `WebSocketConfig` documentation for comparison with stream mode.
     #[staticmethod]
     #[pyo3(name = "connect", signature = (loop_, config, handler, ping_handler = None, post_reconnection = None, keyed_quotas = Vec::new(), default_quota = None))]
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_connect(
         loop_: Py<PyAny>,
         config: WebSocketConfig,
@@ -147,14 +151,13 @@ impl WebSocketClient {
         let handler_clone = clone_py_object(&handler);
 
         let message_handler: MessageHandler = Arc::new(move |msg: Message| {
-            if matches!(msg, Message::Text(ref text) if text.as_str() == RECONNECTED) {
+            if matches!(msg, Message::Text(ref text) if text.as_ref() == RECONNECTED.as_bytes()) {
                 return;
             }
 
             Python::attach(|py| {
                 let py_bytes = match &msg {
-                    Message::Binary(data) => PyBytes::new(py, data),
-                    Message::Text(text) => PyBytes::new(py, text.as_bytes()),
+                    Message::Binary(data) | Message::Text(data) => PyBytes::new(py, data.as_ref()),
                     _ => return,
                 };
 
@@ -191,14 +194,14 @@ impl WebSocketClient {
         });
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            Self::connect(
+            Box::pin(Self::connect(
                 config,
                 Some(message_handler),
                 ping_handler_fn,
                 post_reconnection_fn,
                 keyed_quotas,
                 default_quota,
-            )
+            ))
             .await
             .map_err(to_websocket_pyerr)
         })
@@ -209,7 +212,7 @@ impl WebSocketClient {
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is alive
     #[pyo3(name = "disconnect")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let connection_mode = slf.connection_mode.clone();
         let state_notify = slf.state_notify.clone();
@@ -251,7 +254,7 @@ impl WebSocketClient {
     /// Returns `true` if the client is connected and has not been signalled to disconnect.
     /// The client will automatically retry connection based on its configuration.
     #[pyo3(name = "is_active")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_is_active(slf: PyRef<'_, Self>) -> bool {
         !slf.controller_task.is_finished()
     }
@@ -261,7 +264,7 @@ impl WebSocketClient {
     /// Returns `true` if the client lost connection and is attempting to reestablish it.
     /// The client will automatically retry connection based on its configuration.
     #[pyo3(name = "is_reconnecting")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_is_reconnecting(slf: PyRef<'_, Self>) -> bool {
         slf.is_reconnecting()
     }
@@ -270,7 +273,7 @@ impl WebSocketClient {
     ///
     /// Returns `true` if the client is in disconnect mode.
     #[pyo3(name = "is_disconnecting")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_is_disconnecting(slf: PyRef<'_, Self>) -> bool {
         slf.is_disconnecting()
     }
@@ -281,7 +284,7 @@ impl WebSocketClient {
     /// maximum reconnection attempts. In this state, the client cannot be reused
     /// and a new client must be created for further connections.
     #[pyo3(name = "is_closed")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_is_closed(slf: PyRef<'_, Self>) -> bool {
         slf.is_closed()
     }
@@ -293,7 +296,7 @@ impl WebSocketClient {
     /// - Raises `PyRuntimeError` if not able to send data.
     #[pyo3(name = "send")]
     #[pyo3(signature = (data, keys=None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_send<'py>(
         slf: PyRef<'_, Self>,
         data: Vec<u8>,
@@ -316,6 +319,7 @@ impl WebSocketClient {
             }
 
             tokio::select! {
+                biased;
                 () = rate_limiter.await_keys_ready(keys.as_deref()) => {}
                 () = poll_until_closed(&mode) => {
                     return Err(to_pyruntime_err(std::io::Error::new(
@@ -341,7 +345,7 @@ impl WebSocketClient {
     /// message. During reconnection, messages are buffered and replayed on the new connection.
     #[pyo3(name = "send_text")]
     #[pyo3(signature = (data, keys=None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_send_text<'py>(
         slf: PyRef<'_, Self>,
         data: Vec<u8>,
@@ -349,7 +353,6 @@ impl WebSocketClient {
         keys: Option<Vec<String>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let data_str = String::from_utf8(data).map_err(to_pyvalue_err)?;
-        let data = Utf8Bytes::from(data_str);
         let rate_limiter = slf.rate_limiter.clone();
         let writer_tx = slf.writer_tx.clone();
         let mode = slf.connection_mode.clone();
@@ -365,6 +368,7 @@ impl WebSocketClient {
             }
 
             tokio::select! {
+                biased;
                 () = rate_limiter.await_keys_ready(keys.as_deref()) => {}
                 () = poll_until_closed(&mode) => {
                     return Err(to_pyruntime_err(std::io::Error::new(
@@ -374,9 +378,9 @@ impl WebSocketClient {
                 }
             }
 
-            log::trace!("Sending text: {data}");
+            log::trace!("Sending text: {data_str}");
 
-            let msg = Message::Text(data);
+            let msg = Message::Text(data_str.into());
             writer_tx
                 .send(WriterCommand::Send(msg))
                 .map_err(to_pyruntime_err)
@@ -385,7 +389,7 @@ impl WebSocketClient {
 
     /// Sends a pong frame back to the server.
     #[pyo3(name = "send_pong")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_send_pong<'py>(
         slf: PyRef<'_, Self>,
         data: Vec<u8>,
@@ -442,13 +446,15 @@ mod tests {
     use tokio_tungstenite::{
         accept_hdr_async,
         tungstenite::{
-            Message,
             handshake::server::{self, Callback},
             http::HeaderValue,
         },
     };
 
-    use crate::websocket::{MessageHandler, WebSocketClient, WebSocketConfig};
+    use crate::{
+        transport::Message,
+        websocket::{MessageHandler, WebSocketClient, WebSocketConfig},
+    };
 
     struct TestServer {
         task: JoinHandle<()>,
@@ -462,7 +468,7 @@ mod tests {
     }
 
     impl Callback for TestCallback {
-        #[allow(clippy::panic_in_result_fn)]
+        #[expect(clippy::panic_in_result_fn)]
         fn on_request(
             self,
             request: &server::Request,
@@ -500,6 +506,8 @@ mod tests {
                         .unwrap();
 
                     task::spawn(async move {
+                        // Inner if consumes `msg`, cannot hoist into a match guard
+                        #[expect(clippy::collapsible_match)]
                         while let Some(Ok(msg)) = websocket.next().await {
                             match msg {
                                 tokio_tungstenite::tungstenite::protocol::Message::Text(txt)
@@ -606,6 +614,7 @@ counter = Counter()
             None,
             None,
             None,
+            None,
         );
 
         let handler_clone = Python::attach(|py| handler.clone_ref(py));
@@ -613,8 +622,7 @@ counter = Counter()
         let message_handler: MessageHandler = std::sync::Arc::new(move |msg: Message| {
             Python::attach(|py| {
                 let data = match msg {
-                    Message::Binary(data) => data.to_vec(),
-                    Message::Text(text) => text.as_bytes().to_vec(),
+                    Message::Binary(data) | Message::Text(data) => data.to_vec(),
                     _ => return,
                 };
                 let py_bytes = PyBytes::new(py, &data);
@@ -651,6 +659,7 @@ counter = Counter()
 
         // Send messages that increment the count
         sleep(Duration::from_secs(2)).await;
+
         for _ in 0..N {
             client.send_bytes(b"ping".to_vec(), None).await.unwrap();
             success_count += 1;
@@ -695,6 +704,7 @@ counter = Counter()
             None,
             None,
             None,
+            None,
         );
 
         let handler_clone = Python::attach(|py| handler.clone_ref(py));
@@ -702,8 +712,7 @@ counter = Counter()
         let message_handler: MessageHandler = std::sync::Arc::new(move |msg: Message| {
             Python::attach(|py| {
                 let data = match msg {
-                    Message::Binary(data) => data.to_vec(),
-                    Message::Text(text) => text.as_bytes().to_vec(),
+                    Message::Binary(data) | Message::Text(data) => data.to_vec(),
                     _ => return,
                 };
                 let py_bytes = PyBytes::new(py, &data);

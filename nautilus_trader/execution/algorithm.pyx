@@ -237,6 +237,7 @@ cdef class ExecAlgorithm(Actor):
             event_id=UUID4(),
             ts_event=ts_now,
             ts_init=ts_now,
+            is_quote_quantity=primary.is_quote_quantity,
         )
 
         primary.apply(updated)
@@ -283,6 +284,7 @@ cdef class ExecAlgorithm(Actor):
             event_id=UUID4(),
             ts_event=ts_now,
             ts_init=ts_now,
+            is_quote_quantity=primary.is_quote_quantity,
         )
 
         primary.apply(updated)
@@ -916,15 +918,17 @@ cdef class ExecAlgorithm(Actor):
             quantity=quantity,
             time_in_force=time_in_force,
             reduce_only=reduce_only,
+            quote_quantity=primary.is_quote_quantity,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             contingency_type=primary.contingency_type,
             order_list_id=primary.order_list_id,
-            linked_order_ids=primary.linked_order_ids,
+            linked_order_ids=list(primary.linked_order_ids) if primary.linked_order_ids is not None else None,
             parent_order_id=primary.parent_order_id,
             exec_algorithm_id=self.id,
+            exec_algorithm_params=dict(primary.exec_algorithm_params) if primary.exec_algorithm_params is not None else None,
             exec_spawn_id=primary.client_order_id,
-            tags=tags,
+            tags=list(tags) if tags is not None else (list(primary.tags) if primary.tags is not None else None),
         )
 
     cpdef LimitOrder spawn_limit(
@@ -1020,15 +1024,17 @@ cdef class ExecAlgorithm(Actor):
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             post_only=post_only,
             reduce_only=reduce_only,
+            quote_quantity=primary.is_quote_quantity,
             display_qty=display_qty,
             emulation_trigger=emulation_trigger,
             contingency_type=primary.contingency_type,
             order_list_id=primary.order_list_id,
-            linked_order_ids=primary.linked_order_ids,
+            linked_order_ids=list(primary.linked_order_ids) if primary.linked_order_ids is not None else None,
             parent_order_id=primary.parent_order_id,
             exec_algorithm_id=self.id,
+            exec_algorithm_params=dict(primary.exec_algorithm_params) if primary.exec_algorithm_params is not None else None,
             exec_spawn_id=primary.client_order_id,
-            tags=tags,
+            tags=list(tags) if tags is not None else (list(primary.tags) if primary.tags is not None else None),
         )
 
     cpdef MarketToLimitOrder spawn_market_to_limit(
@@ -1112,6 +1118,7 @@ cdef class ExecAlgorithm(Actor):
             order_side=primary.side,
             quantity=quantity,
             reduce_only=reduce_only,
+            quote_quantity=primary.is_quote_quantity,
             display_qty=display_qty,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
@@ -1119,11 +1126,12 @@ cdef class ExecAlgorithm(Actor):
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             contingency_type=primary.contingency_type,
             order_list_id=primary.order_list_id,
-            linked_order_ids=primary.linked_order_ids,
+            linked_order_ids=list(primary.linked_order_ids) if primary.linked_order_ids is not None else None,
             parent_order_id=primary.parent_order_id,
             exec_algorithm_id=self.id,
+            exec_algorithm_params=dict(primary.exec_algorithm_params) if primary.exec_algorithm_params is not None else None,
             exec_spawn_id=primary.client_order_id,
-            tags=tags,
+            tags=list(tags) if tags is not None else (list(primary.tags) if primary.tags is not None else None),
         )
 
     cpdef void submit_order(self, Order order):
@@ -1459,6 +1467,7 @@ cdef class ExecAlgorithm(Actor):
             event_id=UUID4(),
             ts_event=ts_now,
             ts_init=ts_now,
+            is_quote_quantity=order.is_quote_quantity,
         )
 
         order.apply(updated)

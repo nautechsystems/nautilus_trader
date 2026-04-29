@@ -39,7 +39,7 @@ pub struct CancelOrder {
 
 impl CancelOrder {
     /// Creates a new [`CancelOrder`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         trader_id: TraderId,
@@ -91,7 +91,7 @@ pub struct CancelAllOrders {
 
 impl CancelAllOrders {
     /// Creates a new [`CancelAllOrders`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         trader_id: TraderId,
@@ -141,7 +141,7 @@ pub struct BatchCancelOrders {
 
 impl BatchCancelOrders {
     /// Creates a new [`BatchCancelOrders`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         trader_id: TraderId,

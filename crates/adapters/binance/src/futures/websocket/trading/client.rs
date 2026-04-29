@@ -34,11 +34,13 @@ use std::{
 
 use arc_swap::ArcSwap;
 use nautilus_common::live::get_runtime;
-use nautilus_core::string::REDACTED;
+use nautilus_core::string::secret::REDACTED;
 use nautilus_network::{
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
-    websocket::{PingHandler, WebSocketClient, WebSocketConfig, channel_message_handler},
+    websocket::{
+        PingHandler, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
+    },
 };
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -66,7 +68,7 @@ pub static BINANCE_FUTURES_WS_RATE_LIMIT_KEY_ORDER: LazyLock<[Ustr; 1]> =
 
 /// Returns the Binance Futures WebSocket API order rate limit quota (1200 per minute).
 // Constant values are provably valid
-#[allow(clippy::missing_panics_doc)]
+#[expect(clippy::missing_panics_doc)]
 #[must_use]
 pub fn binance_futures_ws_order_quota() -> Quota {
     Quota::per_second(NonZeroU32::new(20).expect("non-zero")).expect("valid constant")
@@ -92,6 +94,7 @@ pub struct BinanceFuturesWsTradingClient {
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     request_id_counter: Arc<AtomicU64>,
     cancellation_token: CancellationToken,
+    transport_backend: TransportBackend,
 }
 
 impl Debug for BinanceFuturesWsTradingClient {
@@ -112,6 +115,7 @@ impl BinanceFuturesWsTradingClient {
         api_key: String,
         api_secret: String,
         heartbeat: Option<u64>,
+        transport_backend: TransportBackend,
     ) -> Self {
         let url = url.unwrap_or_else(|| BINANCE_FUTURES_USD_WS_API_URL.to_string());
         let credential = Arc::new(SigningCredential::new(api_key, api_secret));
@@ -131,6 +135,7 @@ impl BinanceFuturesWsTradingClient {
             task_handle: None,
             request_id_counter: Arc::new(AtomicU64::new(1)),
             cancellation_token: CancellationToken::new(),
+            transport_backend,
         }
     }
 
@@ -159,7 +164,7 @@ impl BinanceFuturesWsTradingClient {
     ///
     /// Returns an error if connection fails.
     // Mutex poisoning is not documented individually
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(clippy::missing_panics_doc)]
     pub async fn connect(&mut self) -> BinanceFuturesWsApiResult<()> {
         self.signal.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
@@ -184,6 +189,8 @@ impl BinanceFuturesWsTradingClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: self.transport_backend,
+            proxy_url: None,
         };
 
         let keyed_quotas = vec![(
@@ -231,6 +238,7 @@ impl BinanceFuturesWsTradingClient {
             .map_err(|e| BinanceFuturesWsApiError::HandlerUnavailable(e.to_string()))?;
 
         let cancellation_token = self.cancellation_token.clone();
+
         let handle = get_runtime().spawn(async move {
             tokio::select! {
                 () = cancellation_token.cancelled() => {
@@ -351,24 +359,6 @@ impl BinanceFuturesWsTradingClient {
     ) -> BinanceFuturesWsApiResult<()> {
         let cmd = BinanceFuturesWsTradingCommand::ModifyOrder { id, params };
         self.send_cmd(cmd).await
-    }
-
-    /// Cancels all open orders for a symbol via the WebSocket Trading API.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the handler is unavailable.
-    pub async fn cancel_all_orders(
-        &self,
-        symbol: impl Into<String>,
-    ) -> BinanceFuturesWsApiResult<String> {
-        let id = self.next_request_id();
-        let cmd = BinanceFuturesWsTradingCommand::CancelAllOrders {
-            id: id.clone(),
-            symbol: symbol.into(),
-        };
-        self.send_cmd(cmd).await?;
-        Ok(id)
     }
 
     /// Receives the next message from the handler.

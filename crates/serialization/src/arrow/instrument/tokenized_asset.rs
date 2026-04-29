@@ -28,7 +28,7 @@ use nautilus_model::{
     enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
     instruments::tokenized_asset::TokenizedAsset,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{money::Money, price::Price, quantity::Quantity},
 };
 #[allow(unused)]
 use rust_decimal::Decimal;
@@ -321,9 +321,18 @@ pub fn decode_tokenized_asset_batch(
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
         let asset_class = AssetClass::from_str(asset_class_values.value(i))
             .map_err(|e| EncodingError::ParseError("asset_class", format!("row {i}: {e}")))?;
-        let base_currency = Currency::get_or_create_crypto(base_currency_values.value(i));
-        let quote_currency = Currency::from_str(quote_currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("quote_currency", format!("row {i}: {e}")))?;
+        let base_currency = super::decode_currency(
+            base_currency_values.value(i),
+            "base_currency",
+            "tokenized_asset.base_currency",
+            i,
+        )?;
+        let quote_currency = super::decode_currency(
+            quote_currency_values.value(i),
+            "quote_currency",
+            "tokenized_asset.quote_currency",
+            i,
+        )?;
 
         let isin = if isin_values.is_null(i) {
             None
@@ -476,6 +485,7 @@ pub fn decode_tokenized_asset_batch(
                 .downcast_ref::<BinaryArray>()
                 .ok_or_else(|| EncodingError::ParseError("info", format!("row {i}: invalid type")))?
                 .value(i);
+
             match serde_json::from_slice::<Params>(info_bytes) {
                 Ok(info_dict) => Some(info_dict),
                 Err(e) => {

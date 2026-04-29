@@ -19,6 +19,7 @@ from typing import Any
 import pandas as pd
 
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
+from nautilus_trader.adapters.bybit.config import _resolve_environment
 from nautilus_trader.adapters.bybit.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
 from nautilus_trader.cache.cache import Cache
@@ -139,8 +140,7 @@ class BybitDataClient(LiveMarketDataClient):
         self._log.info(f"{config.recv_window_ms=:_}", LogColor.BLUE)
         self._log.info(f"{config.bars_timestamp_on_close=}", LogColor.BLUE)
         self._log.info(f"{config.instrument_status_poll_secs=}", LogColor.BLUE)
-        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = client
@@ -154,19 +154,14 @@ class BybitDataClient(LiveMarketDataClient):
         ] = {}
         self._ws_client_futures: set[asyncio.Future] = set()
 
-        # Priority: demo > testnet > mainnet
-        if config.demo:
-            environment = nautilus_pyo3.BybitEnvironment.DEMO
-        elif config.testnet:
-            environment = nautilus_pyo3.BybitEnvironment.TESTNET
-        else:
-            environment = nautilus_pyo3.BybitEnvironment.MAINNET
+        environment = _resolve_environment(config.environment, config.demo, config.testnet)
 
         for product_type in self._product_types:
             ws_client = nautilus_pyo3.BybitWebSocketClient.new_public(
                 product_type=product_type,
                 environment=environment,
                 url=config.base_url_http,
+                proxy_url=config.proxy_url,
             )
             ws_client.set_bars_timestamp_on_close(self._bars_timestamp_on_close)
             self._ws_clients[product_type] = ws_client
@@ -606,6 +601,7 @@ class BybitDataClient(LiveMarketDataClient):
 
                 # Accumulate statuses from all product types before diffing
                 all_statuses: dict[InstrumentId, MarketStatusAction] = {}
+
                 for product_type in self._product_types:
                     try:
                         new_statuses = await self._http_client.request_instrument_statuses(
@@ -873,7 +869,6 @@ class BybitDataClient(LiveMarketDataClient):
             )
         except Exception as e:
             self._log.error(f"Failed to request forward prices for {request.underlying}: {e}")
-            # Send empty response so engine can fall back
             self._handle_forward_prices([], request.id, request.params or {})
             return
 
@@ -893,11 +888,6 @@ class BybitDataClient(LiveMarketDataClient):
                 self._handle_data(data)
                 return
 
-            if isinstance(msg, nautilus_pyo3.FundingRateUpdate):
-                data = FundingRateUpdate.from_pyo3(msg)
-                self._handle_data(data)
-                return
-
             if isinstance(msg, nautilus_pyo3.MarkPriceUpdate):
                 data = MarkPriceUpdate.from_pyo3(msg)
                 self._handle_data(data)
@@ -905,6 +895,16 @@ class BybitDataClient(LiveMarketDataClient):
 
             if isinstance(msg, nautilus_pyo3.IndexPriceUpdate):
                 data = IndexPriceUpdate.from_pyo3(msg)
+                self._handle_data(data)
+                return
+
+            if isinstance(msg, nautilus_pyo3.FundingRateUpdate):
+                data = FundingRateUpdate.from_pyo3(msg)
+                self._handle_data(data)
+                return
+
+            if isinstance(msg, nautilus_pyo3.InstrumentStatus):
+                data = InstrumentStatus.from_pyo3(msg)
                 self._handle_data(data)
                 return
 

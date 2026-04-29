@@ -1371,6 +1371,7 @@ class TestBinanceFuturesExecutionClient:
             call.kwargs["client_order_id"] for call in mock_generate_denied.call_args_list
         }
         assert denied_client_order_ids == {order.client_order_id for order in bracket.orders}
+
         for call in mock_generate_denied.call_args_list:
             assert "UNSUPPORTED_OCO_CONDITIONAL_ORDERS" in call.kwargs["reason"]
 

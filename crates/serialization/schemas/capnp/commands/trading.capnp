@@ -1,5 +1,8 @@
 @0xc3d4e5f607182930;
 # Cap'n Proto schema for Nautilus trading commands
+#
+# WARNING: This schema is not yet stable and may change without notice
+# between releases. Do not depend on wire compatibility across versions.
 
 using Identifiers = import "../common/identifiers.capnp";
 using Types = import "../common/types.capnp";

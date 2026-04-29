@@ -1,0 +1,39 @@
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "result": {
+    "order": {
+      "label": "O-19700101-000000-001-001-3",
+      "price": "market_price",
+      "user_id": 96103,
+      "amount": 0.010,
+      "direction": "sell",
+      "time_in_force": "good_til_cancelled",
+      "instrument_name": "ETH_USDC-PERPETUAL",
+      "web": false,
+      "api": true,
+      "order_id": "USDC-104819327499",
+      "creation_timestamp": 1776960375531,
+      "replaced": false,
+      "filled_amount": 0.0,
+      "last_update_timestamp": 1776960375531,
+      "post_only": false,
+      "reduce_only": true,
+      "average_price": 0.0,
+      "trigger_price": 2228.0,
+      "trigger": "mark_price",
+      "mmp": false,
+      "contracts": 10.0,
+      "reject_post_only": false,
+      "order_state": "untriggered",
+      "order_type": "stop_market",
+      "is_liquidation": false,
+      "risk_reducing": true
+    },
+    "trades": []
+  },
+  "usIn": 1776960375520000,
+  "usOut": 1776960375530000,
+  "usDiff": 10000,
+  "testnet": true
+}

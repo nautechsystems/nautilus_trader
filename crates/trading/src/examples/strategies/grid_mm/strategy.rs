@@ -252,6 +252,7 @@ impl DataActor for GridMarketMaker {
 
             let mut position_qty = 0.0_f64;
             let mut position_dec = Decimal::ZERO;
+
             for p in cache.positions_open(None, instrument_id, strategy, None, None) {
                 position_qty += p.signed_qty;
                 position_dec += p.quantity.as_decimal()

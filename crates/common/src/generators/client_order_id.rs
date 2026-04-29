@@ -13,15 +13,78 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    fmt::{Debug, Write},
+    rc::Rc,
+};
 
+use chrono::{DateTime, Datelike, Timelike};
+use itoa::Buffer;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::{ClientOrderId, StrategyId, TraderId};
 
-use super::get_datetime_tag;
 use crate::clock::Clock;
 
-#[derive(Debug)]
+const DATETIME_TAG_LEN: usize = 15; // "YYYYMMDD-HHMMSS"
+const DATETIME_TAG_COMPACT_LEN: usize = 14; // "YYYYMMDDHHMMSS"
+const MAX_USIZE_DECIMAL_LEN: usize = 20; // Maximum decimal digits for a 64-bit usize
+
+#[inline]
+fn fixed_prefix_capacity(trader_tag: &str, strategy_tag: &str, use_hyphens: bool) -> usize {
+    if use_hyphens {
+        "O-".len()
+            + DATETIME_TAG_LEN
+            + "-".len()
+            + trader_tag.len()
+            + "-".len()
+            + strategy_tag.len()
+            + "-".len()
+    } else {
+        "O".len() + DATETIME_TAG_COMPACT_LEN + trader_tag.len() + strategy_tag.len()
+    }
+}
+
+/// Slow path across second boundaries: rebuilds the fixed prefix directly in the output buffer.
+fn write_fixed_prefix(
+    buf: &mut String,
+    trader_tag: &str,
+    strategy_tag: &str,
+    use_hyphens: bool,
+    epoch_second: u64,
+) {
+    let now_utc = DateTime::from_timestamp_millis((epoch_second * 1_000) as i64)
+        .expect("Milliseconds timestamp should be within valid range");
+
+    buf.clear();
+
+    if use_hyphens {
+        write!(
+            buf,
+            "O-{:04}{:02}{:02}-{:02}{:02}{:02}-{trader_tag}-{strategy_tag}-",
+            now_utc.year(),
+            now_utc.month(),
+            now_utc.day(),
+            now_utc.hour(),
+            now_utc.minute(),
+            now_utc.second(),
+        )
+        .expect("writing to String should not fail");
+    } else {
+        write!(
+            buf,
+            "O{:04}{:02}{:02}{:02}{:02}{:02}{trader_tag}{strategy_tag}",
+            now_utc.year(),
+            now_utc.month(),
+            now_utc.day(),
+            now_utc.hour(),
+            now_utc.minute(),
+            now_utc.second(),
+        )
+        .expect("writing to String should not fail");
+    }
+}
+
 pub struct ClientOrderIdGenerator {
     clock: Rc<RefCell<dyn Clock>>,
     trader_id: TraderId,
@@ -29,6 +92,30 @@ pub struct ClientOrderIdGenerator {
     count: usize,
     use_uuids: bool,
     use_hyphens: bool,
+    trader_tag: String,
+    strategy_tag: String,
+    buf: String,
+    fixed_prefix_len: usize,
+    epoch_second: u64,
+    count_buf: Buffer,
+}
+
+impl Debug for ClientOrderIdGenerator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ClientOrderIdGenerator))
+            .field("clock", &self.clock)
+            .field("trader_id", &self.trader_id)
+            .field("strategy_id", &self.strategy_id)
+            .field("count", &self.count)
+            .field("use_uuids", &self.use_uuids)
+            .field("use_hyphens", &self.use_hyphens)
+            .field("trader_tag", &self.trader_tag)
+            .field("strategy_tag", &self.strategy_tag)
+            .field("buf", &self.buf)
+            .field("fixed_prefix_len", &self.fixed_prefix_len)
+            .field("epoch_second", &self.epoch_second)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ClientOrderIdGenerator {
@@ -42,6 +129,12 @@ impl ClientOrderIdGenerator {
         use_uuids: bool,
         use_hyphens: bool,
     ) -> Self {
+        let trader_tag = trader_id.get_tag().to_string();
+        let strategy_tag = strategy_id.get_tag().to_string();
+        let buf = String::with_capacity(
+            fixed_prefix_capacity(&trader_tag, &strategy_tag, use_hyphens) + MAX_USIZE_DECIMAL_LEN,
+        );
+
         Self {
             trader_id,
             strategy_id,
@@ -49,6 +142,12 @@ impl ClientOrderIdGenerator {
             clock,
             use_uuids,
             use_hyphens,
+            trader_tag,
+            strategy_tag,
+            buf,
+            fixed_prefix_len: 0,
+            epoch_second: u64::MAX,
+            count_buf: Buffer::new(),
         }
     }
 
@@ -65,35 +164,46 @@ impl ClientOrderIdGenerator {
         self.count
     }
 
+    #[inline]
+    fn refresh_fixed_prefix(&mut self, timestamp_ms: u64) {
+        let epoch_second = timestamp_ms / 1_000;
+        if epoch_second == self.epoch_second {
+            return;
+        }
+
+        // Rewrite the fixed prefix only when the second changes; the same-second hot path reuses
+        // the existing prefix in `buf`.
+        write_fixed_prefix(
+            &mut self.buf,
+            &self.trader_tag,
+            &self.strategy_tag,
+            self.use_hyphens,
+            epoch_second,
+        );
+        self.fixed_prefix_len = self.buf.len();
+        self.epoch_second = epoch_second;
+    }
+
     pub fn generate(&mut self) -> ClientOrderId {
-        let value = if self.use_uuids {
+        if self.use_uuids {
             let mut uuid_value = UUID4::new().to_string();
 
             if !self.use_hyphens {
                 uuid_value = uuid_value.replace('-', "");
             }
-            uuid_value
-        } else {
-            let datetime_tag = get_datetime_tag(self.clock.borrow().timestamp_ms());
-            let trader_tag = self.trader_id.get_tag();
-            let strategy_tag = self.strategy_id.get_tag();
-            self.count += 1;
+            return ClientOrderId::from(uuid_value);
+        }
 
-            if self.use_hyphens {
-                format!(
-                    "O-{}-{}-{}-{}",
-                    datetime_tag, trader_tag, strategy_tag, self.count
-                )
-            } else {
-                let datetime_no_hyphens = datetime_tag.replace('-', "");
-                format!(
-                    "O{}{}{}{}",
-                    datetime_no_hyphens, trader_tag, strategy_tag, self.count
-                )
-            }
-        };
+        let timestamp_ms = self.clock.borrow().timestamp_ms();
+        self.refresh_fixed_prefix(timestamp_ms);
+        self.count += 1;
 
-        ClientOrderId::from(value)
+        // The hot path only truncates the old count and appends the new count, avoiding repeated
+        // copies of the fixed prefix.
+        self.buf.truncate(self.fixed_prefix_len);
+        self.buf.push_str(self.count_buf.format(self.count));
+
+        ClientOrderId::from(self.buf.as_str())
     }
 }
 
@@ -101,6 +211,7 @@ impl ClientOrderIdGenerator {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
+    use nautilus_core::UnixNanos;
     use nautilus_model::{
         identifiers::{ClientOrderId, StrategyId, TraderId},
         stubs::TestDefault,
@@ -167,6 +278,63 @@ mod tests {
         let result = generator.generate();
 
         assert_eq!(result, ClientOrderId::new("O197001010000000010011"));
+    }
+
+    #[rstest]
+    fn test_generate_persists_fixed_prefix_in_buffer_within_same_second() {
+        let mut generator = get_client_order_id_generator(None, false, true);
+
+        let result1 = generator.generate();
+        let fixed_prefix = "O-19700101-000000-001-001-";
+        let capacity_after_first = generator.buf.capacity();
+
+        assert_eq!(result1, ClientOrderId::new("O-19700101-000000-001-001-1"));
+        assert_eq!(generator.fixed_prefix_len, fixed_prefix.len());
+        assert_eq!(&generator.buf[..generator.fixed_prefix_len], fixed_prefix);
+
+        let result2 = generator.generate();
+
+        assert_eq!(result2, ClientOrderId::new("O-19700101-000000-001-001-2"));
+        assert_eq!(generator.fixed_prefix_len, fixed_prefix.len());
+        assert_eq!(&generator.buf[..generator.fixed_prefix_len], fixed_prefix);
+        assert_eq!(generator.buf.capacity(), capacity_after_first);
+    }
+
+    #[rstest]
+    fn test_generate_persists_compact_fixed_prefix_in_buffer() {
+        let mut generator = get_client_order_id_generator(None, false, false);
+
+        let result = generator.generate();
+        let fixed_prefix = "O19700101000000001001";
+
+        assert_eq!(result, ClientOrderId::new("O197001010000000010011"));
+        assert_eq!(generator.fixed_prefix_len, fixed_prefix.len());
+        assert_eq!(&generator.buf[..generator.fixed_prefix_len], fixed_prefix);
+    }
+
+    #[rstest]
+    fn test_generate_refreshes_persistent_fixed_prefix_when_second_changes() {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let mut generator = ClientOrderIdGenerator::new(
+            TraderId::test_default(),
+            StrategyId::test_default(),
+            0,
+            clock.clone(),
+            false,
+            true,
+        );
+
+        let result1 = generator.generate();
+        clock.borrow_mut().set_time(UnixNanos::from(1_000_000_000));
+        let result2 = generator.generate();
+
+        assert_eq!(result1, ClientOrderId::new("O-19700101-000000-001-001-1"));
+        assert_eq!(result2, ClientOrderId::new("O-19700101-000001-001-001-2"));
+        assert_eq!(generator.epoch_second, 1);
+        assert_eq!(
+            &generator.buf[..generator.fixed_prefix_len],
+            "O-19700101-000001-001-001-"
+        );
     }
 
     #[rstest]

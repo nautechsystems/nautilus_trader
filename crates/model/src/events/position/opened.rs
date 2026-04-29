@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::{UUID4, UnixNanos};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     enums::{OrderSide, PositionSide},
@@ -25,7 +26,7 @@ use crate::{
 
 /// Represents an event where a position has been opened.
 #[repr(C)]
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
@@ -72,6 +73,7 @@ pub struct PositionOpened {
 }
 
 impl PositionOpened {
+    #[must_use]
     pub fn create(
         position: &Position,
         fill: &OrderFilled,

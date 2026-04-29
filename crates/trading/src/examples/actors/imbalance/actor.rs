@@ -82,6 +82,12 @@ pub struct BookImbalanceActor {
 }
 
 impl BookImbalanceActor {
+    /// Creates a new [`BookImbalanceActor`] from config.
+    #[must_use]
+    pub fn from_config(config: super::config::BookImbalanceActorConfig) -> Self {
+        Self::new(config.instrument_ids, config.log_interval, config.actor_id)
+    }
+
     /// Creates a new [`BookImbalanceActor`].
     ///
     /// `actor_id` sets the actor identifier. Pass `None` for the default

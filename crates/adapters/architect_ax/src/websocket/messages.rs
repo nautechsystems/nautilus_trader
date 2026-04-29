@@ -1309,60 +1309,61 @@ mod tests {
         assert_eq!(orders[1].oid, "O-01KF4QM3K9FJZWYA02JF9Y1FJA");
     }
 
-    #[rstest]
-    fn test_raw_message_error_variant() {
-        let json = include_str!("../../test_data/ws_order_error_response.json");
-        let msg = parse_order_message(json).unwrap();
-        assert!(matches!(msg, AxOrdersWsFrame::Error(_)));
+    #[derive(Debug, Eq, PartialEq)]
+    enum FrameKind {
+        Error,
+        ListResponse,
+        AcknowledgedEvent,
+        PlaceResponse,
+        CancelResponse,
+        OpenOrdersResponse,
+    }
+
+    fn classify(frame: &AxOrdersWsFrame) -> FrameKind {
+        match frame {
+            AxOrdersWsFrame::Error(_) => FrameKind::Error,
+            AxOrdersWsFrame::Response(AxWsOrderResponse::List(_)) => FrameKind::ListResponse,
+            AxOrdersWsFrame::Response(AxWsOrderResponse::PlaceOrder(_)) => FrameKind::PlaceResponse,
+            AxOrdersWsFrame::Response(AxWsOrderResponse::CancelOrder(_)) => {
+                FrameKind::CancelResponse
+            }
+            AxOrdersWsFrame::Response(AxWsOrderResponse::OpenOrders(_)) => {
+                FrameKind::OpenOrdersResponse
+            }
+            AxOrdersWsFrame::Event(e) => match **e {
+                AxWsOrderEvent::Acknowledged(_) => FrameKind::AcknowledgedEvent,
+                _ => panic!("unexpected event variant"),
+            },
+        }
     }
 
     #[rstest]
-    fn test_raw_message_list_response_variant() {
-        let json = include_str!("../../test_data/ws_order_list_response.json");
-        let msg = parse_order_message(json).unwrap();
-        assert!(matches!(
-            msg,
-            AxOrdersWsFrame::Response(AxWsOrderResponse::List(_))
-        ));
-    }
-
-    #[rstest]
-    fn test_raw_message_event_variant() {
-        let json = include_str!("../../test_data/ws_order_acknowledged.json");
-        let msg = parse_order_message(json).unwrap();
-        assert!(matches!(
-            msg,
-            AxOrdersWsFrame::Event(ref e) if matches!(**e, AxWsOrderEvent::Acknowledged(_))
-        ));
-    }
-
-    #[rstest]
-    fn test_raw_message_place_response_variant() {
-        let json = include_str!("../../test_data/ws_order_place_response.json");
-        let msg = parse_order_message(json).unwrap();
-        assert!(matches!(
-            msg,
-            AxOrdersWsFrame::Response(AxWsOrderResponse::PlaceOrder(_))
-        ));
-    }
-
-    #[rstest]
-    fn test_raw_message_cancel_response_variant() {
-        let json = include_str!("../../test_data/ws_order_cancel_response.json");
-        let msg = parse_order_message(json).unwrap();
-        assert!(matches!(
-            msg,
-            AxOrdersWsFrame::Response(AxWsOrderResponse::CancelOrder(_))
-        ));
-    }
-
-    #[rstest]
-    fn test_raw_message_open_orders_response_variant() {
-        let json = include_str!("../../test_data/ws_order_open_orders_response.json");
-        let msg = parse_order_message(json).unwrap();
-        assert!(matches!(
-            msg,
-            AxOrdersWsFrame::Response(AxWsOrderResponse::OpenOrders(_))
-        ));
+    #[case::error(
+        include_str!("../../test_data/ws_order_error_response.json"),
+        FrameKind::Error,
+    )]
+    #[case::list(
+        include_str!("../../test_data/ws_order_list_response.json"),
+        FrameKind::ListResponse,
+    )]
+    #[case::acknowledged_event(
+        include_str!("../../test_data/ws_order_acknowledged.json"),
+        FrameKind::AcknowledgedEvent,
+    )]
+    #[case::place_response(
+        include_str!("../../test_data/ws_order_place_response.json"),
+        FrameKind::PlaceResponse,
+    )]
+    #[case::cancel_response(
+        include_str!("../../test_data/ws_order_cancel_response.json"),
+        FrameKind::CancelResponse,
+    )]
+    #[case::open_orders(
+        include_str!("../../test_data/ws_order_open_orders_response.json"),
+        FrameKind::OpenOrdersResponse,
+    )]
+    fn test_parse_order_message_variants(#[case] json: &str, #[case] expected: FrameKind) {
+        let msg = parse_order_message(json).expect("should parse");
+        assert_eq!(classify(&msg), expected);
     }
 }

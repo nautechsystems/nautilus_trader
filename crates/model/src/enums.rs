@@ -711,6 +711,7 @@ impl InstrumentClass {
     }
 
     /// Returns whether this instrument class allows negative prices.
+    #[must_use]
     pub const fn allows_negative_price(&self) -> bool {
         matches!(
             self,
@@ -805,7 +806,6 @@ impl FromU8 for InstrumentCloseType {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
 )]
-#[allow(clippy::enum_variant_names)]
 pub enum LiquiditySide {
     /// No liquidity side specified.
     NoLiquiditySide = 0,
@@ -1046,6 +1046,59 @@ pub enum OptionKind {
     Put = 2,
 }
 
+/// The numeraire convention for option greeks published by a venue.
+///
+/// Crypto option venues commonly publish two parallel greek sets for the same
+/// instrument: Black-Scholes greeks in USD, and price-adjusted greeks denominated
+/// in the underlying/coin units. Deribit and OKX both expose the distinction;
+/// see the OKX reference for the canonical definition:
+/// <https://www.okx.com/docs-v5/en/#public-data-websocket-option-market-data>.
+///
+/// This is orthogonal to the percent-greeks transformation in the internal
+/// [`GreeksCalculator`](../../../nautilus_common/greeks/struct.GreeksCalculator.html),
+/// which rescales the delta/gamma input step rather than the numeraire.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.core.nautilus_pyo3.model.enums",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
+)]
+pub enum GreeksConvention {
+    /// Black-Scholes greeks in USD.
+    #[default]
+    BlackScholes = 1,
+    /// Price-adjusted greeks in the underlying/coin units.
+    PriceAdjusted = 2,
+}
+
 /// Defines when OTO (One-Triggers-Other) child orders are released.
 #[repr(C)]
 #[derive(
@@ -1109,7 +1162,6 @@ pub enum OtoTriggerMode {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(clippy::enum_variant_names)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -1146,7 +1198,7 @@ impl OrderSide {
         match &self {
             Self::Buy => OrderSideSpecified::Buy,
             Self::Sell => OrderSideSpecified::Sell,
-            _ => panic!("Order invariant failed: side must be `Buy` or `Sell`"),
+            Self::NoOrderSide => panic!("Order invariant failed: side must be `Buy` or `Sell`"),
         }
     }
 }
@@ -1182,7 +1234,6 @@ impl FromU8 for OrderSide {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(clippy::enum_variant_names)]
 pub enum OrderSideSpecified {
     /// The order is a BUY.
     Buy = 1,
@@ -1481,7 +1532,6 @@ impl FromU8 for PositionAdjustmentType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(clippy::enum_variant_names)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -1521,7 +1571,9 @@ impl PositionSide {
             Self::Long => PositionSideSpecified::Long,
             Self::Short => PositionSideSpecified::Short,
             Self::Flat => PositionSideSpecified::Flat,
-            _ => panic!("Position invariant failed: side must be `Long`, `Short`, or `Flat`"),
+            Self::NoPositionSide => {
+                panic!("Position invariant failed: side must be `Long`, `Short`, or `Flat`")
+            }
         }
     }
 }
@@ -1545,7 +1597,6 @@ impl PositionSide {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(clippy::enum_variant_names)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -1902,6 +1953,7 @@ enum_strum_serde!(BookAction);
 enum_strum_serde!(BookType);
 enum_strum_serde!(ContingencyType);
 enum_strum_serde!(CurrencyType);
+enum_strum_serde!(GreeksConvention);
 enum_strum_serde!(InstrumentClass);
 enum_strum_serde!(InstrumentCloseType);
 enum_strum_serde!(LiquiditySide);
@@ -1937,5 +1989,23 @@ mod tests {
     #[case::max_u8(255, None)]
     fn test_aggressor_side_from_u8(#[case] value: u8, #[case] expected: Option<AggressorSide>) {
         assert_eq!(AggressorSide::from_u8(value), expected);
+    }
+
+    #[rstest]
+    #[case(GreeksConvention::BlackScholes, "\"BLACK_SCHOLES\"")]
+    #[case(GreeksConvention::PriceAdjusted, "\"PRICE_ADJUSTED\"")]
+    fn test_greeks_convention_serde_roundtrip(
+        #[case] input: GreeksConvention,
+        #[case] expected: &str,
+    ) {
+        let json = serde_json::to_string(&input).unwrap();
+        assert_eq!(json, expected);
+        let parsed: GreeksConvention = serde_json::from_str(expected).unwrap();
+        assert_eq!(parsed, input);
+    }
+
+    #[rstest]
+    fn test_greeks_convention_default_is_black_scholes() {
+        assert_eq!(GreeksConvention::default(), GreeksConvention::BlackScholes);
     }
 }

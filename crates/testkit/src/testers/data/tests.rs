@@ -377,13 +377,17 @@ fn test_config_with_all_subscriptions_enabled(mut config: DataTesterConfig) {
 
 #[rstest]
 fn test_on_option_greeks(config: DataTesterConfig) {
-    use nautilus_model::data::{OptionGreekValues, option_chain::OptionGreeks};
+    use nautilus_model::{
+        data::{OptionGreekValues, option_chain::OptionGreeks},
+        enums::GreeksConvention,
+    };
 
     let mut actor = DataTester::new(config);
 
     let instrument_id = InstrumentId::from("BTC-USD-250328-92000-C.OKX");
     let greeks = OptionGreeks {
         instrument_id,
+        convention: GreeksConvention::BlackScholes,
         greeks: OptionGreekValues {
             delta: 0.53,
             gamma: 0.00001,

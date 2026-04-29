@@ -672,7 +672,7 @@ mod tests {
             Ok(())
         }
 
-        #[allow(clippy::panic_in_result_fn)] // Intentional panic for testing
+        #[expect(clippy::panic_in_result_fn)] // Intentional panic for testing
         fn on_start(&mut self) -> anyhow::Result<()> {
             assert!(
                 !self.should_panic.load(Ordering::SeqCst),

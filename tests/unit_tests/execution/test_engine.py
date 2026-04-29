@@ -2781,6 +2781,7 @@ class TestExecutionEngine:
 
         # The flipped position should be the one that's open
         flipped_position = None
+
         for pos in positions:
             if pos.id != position_id and pos.is_open:
                 flipped_position = pos
@@ -3338,6 +3339,7 @@ class TestExecutionEngine:
 
         # === Test Case 2: Multiple orders at same price level ===
         same_price_orders = []
+
         for _ in range(3):
             order = strategy.order_factory.limit(
                 instrument_id=instrument.id,

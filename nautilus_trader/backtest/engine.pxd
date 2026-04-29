@@ -467,6 +467,7 @@ cdef class OrderMatchingEngine:
     cdef OrderFilled _option_create_close_fill(self, Position position, Price price, str trade_id, uint64_t ts_now)
     cdef OrderFilled _option_create_underlying_fill(self, Position position, Instrument underlying_instrument, Quantity quantity, PositionSide side, Price price, str trade_id_suffix, uint64_t ts_now)
     cdef void _option_send_events(self, list events)
+    cdef void _option_register_settlement_order(self, Position position, InstrumentId instrument_id, OrderSide order_side, Quantity quantity, ClientOrderId client_order_id, VenueOrderId venue_order_id, PositionId position_id, bint reduce_only, str tag)
     cdef void _process_trade_ticks_from_bar(self, Bar bar)
     cdef TradeTick _create_base_trade_tick(self, Bar bar, Quantity size)
     cdef void _process_trade_bar_open(self, Bar bar, TradeTick tick)
@@ -487,6 +488,7 @@ cdef class OrderMatchingEngine:
     cpdef void process_cancel(self, CancelOrder command, AccountId account_id)
     cpdef void process_cancel_all(self, CancelAllOrders command, AccountId account_id)
     cpdef void process_batch_cancel(self, BatchCancelOrders command, AccountId account_id)
+    cdef bint _convert_quote_to_base_quantity(self, Order order)
     cdef void _process_market_order(self, MarketOrder order)
     cdef void _process_market_to_limit_order(self, MarketToLimitOrder order)
     cdef void _process_limit_order(self, LimitOrder order)
@@ -568,8 +570,8 @@ cdef class OrderMatchingEngine:
     cdef PositionId _get_position_id(self, Order order, bint generate=*)
     cdef PositionId _generate_venue_position_id(self)
     cdef VenueOrderId _generate_venue_order_id(self)
-    cdef TradeId _generate_trade_id(self)
-    cdef str _generate_trade_id_str(self)
+    cdef TradeId _generate_trade_id(self, uint64_t ts_init)
+    cdef str _generate_trade_id_str(self, uint64_t ts_init)
 
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 

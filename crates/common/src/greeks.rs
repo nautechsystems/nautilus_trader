@@ -340,7 +340,7 @@ impl GreeksCalculator {
     /// # Panics
     ///
     /// Panics if the instrument has no underlying identifier.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn instrument_greeks(
         &self,
         instrument_id: InstrumentId,
@@ -434,7 +434,7 @@ impl GreeksCalculator {
         Ok(greeks_data)
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn calculate_non_option_greeks(
         &self,
         instrument: &InstrumentAny,
@@ -476,7 +476,7 @@ impl GreeksCalculator {
         Ok(greeks_data)
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn calculate_option_greeks(
         &self,
         instrument: &InstrumentAny,
@@ -637,7 +637,7 @@ impl GreeksCalculator {
         Ok(greeks_data)
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn apply_option_greeks_shocks(
         &self,
         greeks_data: &GreeksData,
@@ -749,7 +749,7 @@ impl GreeksCalculator {
     /// Also percent greeks assume a change of variable to percent returns by writing:
     /// V(x = x0 * (1 + stock_percent_return / 100))
     /// or V(I = I0 * (1 + index_percent_return / 100))
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn modify_greeks(
         &self,
         delta_input: f64,
@@ -838,8 +838,8 @@ impl GreeksCalculator {
     ///
     /// Returns an error if any underlying greeks calculation fails.
     ///
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::missing_panics_doc)] // Guarded by is_none check
+    #[expect(clippy::too_many_arguments)]
+    #[expect(clippy::missing_panics_doc)] // Guarded by is_none check
     pub fn portfolio_greeks(
         &self,
         underlyings: Option<&[String]>,

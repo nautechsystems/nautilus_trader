@@ -2322,24 +2322,6 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     async def _disconnect(self) -> None:
         raise NotImplementedError("implement `_disconnect` in your adapter subclass")
 
-    async def _submit_order(self, command: SubmitOrder) -> None:
-        raise NotImplementedError("implement `_submit_order` in your adapter subclass")
-
-    async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        raise NotImplementedError("implement `_submit_order_list` in your adapter subclass")
-
-    async def _modify_order(self, command: ModifyOrder) -> None:
-        raise NotImplementedError("implement `_modify_order` in your adapter subclass")
-
-    async def _cancel_order(self, command: CancelOrder) -> None:
-        raise NotImplementedError("implement `_cancel_order` in your adapter subclass")
-
-    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        raise NotImplementedError("implement `_cancel_all_orders` in your adapter subclass")
-
-    async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
-        raise NotImplementedError("implement `_batch_cancel_orders` in your adapter subclass")
-
     async def generate_order_status_report(
         self,
         command: GenerateOrderStatusReport,
@@ -2369,23 +2351,41 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         lookback_mins: int | None = None,
     ) -> ExecutionMassStatus | None:
         raise NotImplementedError("method `generate_mass_status` must be implemented in the subclass")
+
+    async def _submit_order(self, command: SubmitOrder) -> None:
+        raise NotImplementedError("implement `_submit_order` in your adapter subclass")
+
+    async def _submit_order_list(self, command: SubmitOrderList) -> None:
+        raise NotImplementedError("implement `_submit_order_list` in your adapter subclass")
+
+    async def _modify_order(self, command: ModifyOrder) -> None:
+        raise NotImplementedError("implement `_modify_order` in your adapter subclass")
+
+    async def _cancel_order(self, command: CancelOrder) -> None:
+        raise NotImplementedError("implement `_cancel_order` in your adapter subclass")
+
+    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        raise NotImplementedError("implement `_cancel_all_orders` in your adapter subclass")
+
+    async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
+        raise NotImplementedError("implement `_batch_cancel_orders` in your adapter subclass")
 ```
 
 | Method                             | Description                                               |
 |------------------------------------|-----------------------------------------------------------|
 | `_connect`                         | Establishes a connection to the venue APIs.               |
 | `_disconnect`                      | Closes the connection to the venue APIs.                  |
+| `generate_order_status_report`     | Generates a report for a specific order on the venue.     |
+| `generate_order_status_reports`    | Generates reports for all orders on the venue.            |
+| `generate_fill_reports`            | Generates reports for filled orders on the venue.         |
+| `generate_position_status_reports` | Generates reports for position status on the venue.       |
+| `generate_mass_status`             | Generates execution mass status reports.                  |
 | `_submit_order`                    | Submits a new order to the venue.                         |
 | `_submit_order_list`               | Submits a list of orders to the venue.                    |
 | `_modify_order`                    | Modifies an existing order on the venue.                  |
 | `_cancel_order`                    | Cancels a specific order on the venue.                    |
 | `_cancel_all_orders`               | Cancels all orders for an instrument on the venue.        |
 | `_batch_cancel_orders`             | Cancels a batch of orders for an instrument on the venue. |
-| `generate_order_status_report`     | Generates a report for a specific order on the venue.     |
-| `generate_order_status_reports`    | Generates reports for all orders on the venue.            |
-| `generate_fill_reports`            | Generates reports for filled orders on the venue.         |
-| `generate_position_status_reports` | Generates reports for position status on the venue.       |
-| `generate_mass_status`             | Generates execution mass status reports.                  |
 
 ### Configuration
 

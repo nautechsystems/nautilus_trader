@@ -23,9 +23,12 @@ use std::{fmt::Debug, time::Duration};
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
     enums::Environment,
+    messages::system::ShutdownSystem,
+    msgbus::{self, MessagingSwitchboard},
     nautilus_actor,
     testing::wait_until_async,
 };
+use nautilus_core::UUID4;
 use nautilus_live::{
     config::{LiveExecEngineConfig, LiveNodeConfig},
     node::{LiveNode, LiveNodeHandle, NodeState},
@@ -340,6 +343,7 @@ mod serial_tests {
 
         // Must stop after node enters Running (stop flag is cleared on Running transition)
         let stop_handle = handle.clone();
+
         tokio::spawn(async move {
             wait_until_async(
                 || async { stop_handle.is_running() },
@@ -382,6 +386,7 @@ mod serial_tests {
 
         // Spawn task to stop after node enters Running state
         let stop_handle = handle.clone();
+
         tokio::spawn(async move {
             wait_until_async(
                 || async { stop_handle.is_running() },
@@ -392,6 +397,53 @@ mod serial_tests {
         });
 
         // With no clients, run() completes startup immediately and waits for stop signal
+        let result = node.run().await;
+
+        assert!(result.is_ok());
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_shutdown_system_triggers_graceful_shutdown() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
+        let handle = node.handle();
+        let trader_id = node.kernel().trader_id();
+        let ts = node.kernel().generate_timestamp_ns();
+
+        // Publish ShutdownSystem once the node reaches Running. msgbus uses
+        // thread-local storage, so the publish must happen on the same thread
+        // as node.run(). The test runtime is pinned to current_thread above
+        // so tokio::spawn stays on this thread.
+        let state_handle = handle.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { state_handle.is_running() },
+                Duration::from_secs(5),
+            )
+            .await;
+            let command = ShutdownSystem::new(
+                trader_id,
+                ustr::Ustr::from("TestComponent"),
+                Some("integration test".to_string()),
+                UUID4::new(),
+                ts,
+            );
+            msgbus::publish_any(
+                MessagingSwitchboard::shutdown_system_topic(),
+                command.as_any(),
+            );
+        });
+
         let result = node.run().await;
 
         assert!(result.is_ok());
@@ -413,6 +465,7 @@ mod serial_tests {
         let handle = node.handle();
 
         let stop_handle = handle.clone();
+
         tokio::spawn(async move {
             wait_until_async(
                 || async { stop_handle.is_running() },

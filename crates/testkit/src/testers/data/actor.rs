@@ -444,6 +444,7 @@ impl DataActor for DataTester {
                 trades.len(),
                 color = LogColor::Cyan
             );
+
             for trade in trades.iter().take(5) {
                 log_info!("  {trade:?}", color = LogColor::Cyan);
             }
@@ -469,6 +470,7 @@ impl DataActor for DataTester {
                 funding_rates.len(),
                 color = LogColor::Cyan
             );
+
             for rate in funding_rates.iter().take(5) {
                 log_info!("  {rate:?}", color = LogColor::Cyan);
             }
@@ -491,6 +493,7 @@ impl DataActor for DataTester {
                 bars.len(),
                 color = LogColor::Cyan
             );
+
             for bar in bars.iter().take(5) {
                 log_info!("  {bar:?}", color = LogColor::Cyan);
             }

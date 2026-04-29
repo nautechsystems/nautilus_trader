@@ -820,6 +820,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 f"Subscribing to quotes (schema: {schema}) from dataset {dataset} for {len(instrument_ids)} instrument ids:",
                 LogColor.BLUE,
             )
+
             for i, instrument_id in enumerate(instrument_ids):
                 self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
@@ -916,6 +917,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             # Determine schema for all bar_types (must be the same)
             schemas = set()
             instrument_ids = []
+
             for bar_type in bar_types:
                 try:
                     schema = databento_schema_from_nautilus_bar_type(bar_type)
@@ -1126,6 +1128,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, inst_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {inst_id}", LogColor.BLUE)
 
@@ -1174,6 +1177,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, inst_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {inst_id}", LogColor.BLUE)
 
@@ -1221,6 +1225,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, inst_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {inst_id}", LogColor.BLUE)
 
@@ -1268,6 +1273,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, instrument_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
@@ -1361,6 +1367,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"Requesting quotes for {len(instrument_ids)} instruments: dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, instrument_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
@@ -1430,6 +1437,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"Requesting trades for {len(instrument_ids)} instruments: dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, instrument_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
@@ -1497,6 +1505,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, instrument_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
@@ -1556,6 +1565,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"depth={request.depth}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, instrument_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 

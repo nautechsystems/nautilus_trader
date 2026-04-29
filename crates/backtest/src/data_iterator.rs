@@ -142,7 +142,7 @@ impl BacktestDataIterator {
     }
 
     /// Returns the next [`Data`] element across all streams in chronological order.
-    #[allow(clippy::should_implement_trait)]
+    #[expect(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<Data> {
         // Fast path for single stream
         if let Some(p) = self.single_priority {

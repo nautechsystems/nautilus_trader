@@ -47,12 +47,25 @@
 //! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
+#![warn(clippy::pedantic)]
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![allow(
+    clippy::inline_always,
+    reason = "hot-path predicate guards use #[inline(always)] intentionally for constant-folding"
+)]
+#![allow(
+    clippy::manual_let_else,
+    reason = "match can be clearer than let-else for some patterns"
+)]
+#![allow(
+    clippy::redundant_closure_for_method_calls,
+    reason = "causes clippy ICE on Rust 1.94; matches the workaround in workspace Cargo.toml"
+)]
 
 pub mod collections;
 pub mod consts;
@@ -60,15 +73,11 @@ pub mod correctness;
 pub mod datetime;
 pub mod drop;
 pub mod env;
-pub mod formatting;
 pub mod hex;
 pub mod math;
 pub mod message;
 pub mod nanos;
 pub mod params;
-pub mod stack_str;
-
-pub mod parsing;
 pub mod paths;
 pub mod serialization;
 pub mod shared;
@@ -94,7 +103,7 @@ pub use crate::{
     nanos::UnixNanos,
     params::Params,
     shared::{SharedCell, WeakCell},
-    stack_str::{STACKSTR_CAPACITY, StackStr},
+    string::stack_str::{STACKSTR_CAPACITY, StackStr},
     time::AtomicTime,
     uuid::UUID4,
 };

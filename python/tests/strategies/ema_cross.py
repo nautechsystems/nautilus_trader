@@ -41,6 +41,24 @@ class EMACrossConfig(StrategyConfig):
     Configuration for the EMA cross test strategy.
     """
 
+    def __new__(cls, *args, strategy_id: str | None = None, **kwargs):
+        # `StrategyConfig` is a pyo3 @final type whose `__new__` validates
+        # `strategy_id` as a `StrategyId`. For tests that need to register
+        # multiple instances of the same strategy class, we accept a string
+        # `strategy_id` in the subclass `__new__`, strip just that override
+        # before delegating (so it doesn't fail base-type validation), and
+        # forward every remaining base `StrategyConfig` kwarg
+        # (`order_id_tag`, `log_events`, `oms_type`, etc.) so they're applied
+        # by the pyo3 base. The override is exposed via a property below.
+        kwargs.pop("instrument_id", None)
+        kwargs.pop("bar_type", None)
+        kwargs.pop("trade_size", None)
+        kwargs.pop("fast_ema_period", None)
+        kwargs.pop("slow_ema_period", None)
+        instance = super().__new__(cls, *args, **kwargs)
+        instance._strategy_id_override = strategy_id
+        return instance
+
     def __init__(
         self,
         instrument_id: str,
@@ -48,14 +66,23 @@ class EMACrossConfig(StrategyConfig):
         trade_size: str,
         fast_ema_period: int = 10,
         slow_ema_period: int = 20,
+        strategy_id: str | None = None,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        # The pyo3 base initialises its state in `__new__`, so `__init__`
+        # falls through to `object.__init__` which only accepts `self`.
+        super().__init__()
         self.instrument_id = instrument_id
         self.bar_type = bar_type
         self.trade_size = trade_size
         self.fast_ema_period = fast_ema_period
         self.slow_ema_period = slow_ema_period
+
+    @property
+    def strategy_id(self):
+        if self._strategy_id_override is not None:
+            return self._strategy_id_override
+        return super().strategy_id
 
 
 class EMACross(Strategy):

@@ -18,8 +18,8 @@ use std::collections::HashMap;
 use nautilus_core::{UnixNanos, python::to_pytype_err};
 use nautilus_model::{
     data::{
-        Bar, Data, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick,
-        TradeTick, close::InstrumentClose,
+        Bar, Data, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDelta,
+        OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose,
     },
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
 };
@@ -38,6 +38,7 @@ fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
         Data::Depth10(depth) => Py::new(py, *depth).map(|x| x.into_any()),
         Data::IndexPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
         Data::MarkPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
+        Data::InstrumentStatus(status) => Py::new(py, status).map(|x| x.into_any()),
         Data::InstrumentClose(close) => Py::new(py, close).map(|x| x.into_any()),
         Data::Custom(custom) => Py::new(py, custom).map(|x| x.into_any()),
     }
@@ -364,7 +365,7 @@ impl PyParquetDataCatalog {
     ///
     /// Returns a list of instrument objects (e.g. CurrencyPair, Equity).
     #[pyo3(signature = (instrument_ids=None, start=None, end=None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn instruments(
         &self,
         instrument_ids: Option<Vec<String>>,
@@ -396,7 +397,7 @@ impl PyParquetDataCatalog {
     /// - `start`: Start timestamp (nanoseconds since Unix epoch)
     /// - `end`: End timestamp (nanoseconds since Unix epoch)
     #[pyo3(signature = (data_cls, instrument_id=None, *, start, end))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn extend_file_name(
         &self,
         data_cls: &str,
@@ -449,7 +450,7 @@ impl PyParquetDataCatalog {
     /// - `ensure_contiguous_files`: Optional flag to ensure files are contiguous
     /// - `deduplicate`: Optional flag to deduplicate rows when combining files
     #[pyo3(signature = (type_name, instrument_id=None, start=None, end=None, ensure_contiguous_files=None, deduplicate=None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn consolidate_data(
         &self,
         type_name: &str,
@@ -529,7 +530,7 @@ impl PyParquetDataCatalog {
     /// - `end`: Optional end timestamp for consolidation range (nanoseconds since Unix epoch)
     /// - `ensure_contiguous_files`: Optional flag to control file naming strategy
     #[pyo3(signature = (type_name, identifier=None, period_nanos=None, start=None, end=None, ensure_contiguous_files=None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn consolidate_data_by_period(
         &mut self,
         type_name: &str,
@@ -569,7 +570,7 @@ impl PyParquetDataCatalog {
     /// - `data_cls`: The data class name
     /// - `instrument_id`: Optional instrument ID filter
     #[pyo3(signature = (data_cls, instrument_id=None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn reset_data_file_names(
         &self,
         data_cls: &str,
@@ -634,7 +635,7 @@ impl PyParquetDataCatalog {
     /// - The method ensures data integrity by using atomic operations where possible
     /// - Empty directories are not automatically removed after deletion
     #[pyo3(signature = (type_name, instrument_id=None, start=None, end=None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn delete_data_range(
         &mut self,
         type_name: &str,
@@ -753,7 +754,7 @@ impl PyParquetDataCatalog {
     ///
     /// Returns a list of (start, end) timestamp tuples representing missing intervals.
     #[pyo3(signature = (start, end, data_cls, instrument_id=None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn get_missing_intervals_for_request(
         &self,
         start: u64,
@@ -777,7 +778,7 @@ impl PyParquetDataCatalog {
     ///
     /// Returns the first timestamp as nanoseconds since Unix epoch, or None if no data exists.
     #[pyo3(signature = (data_cls, instrument_id=None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn query_first_timestamp(
         &self,
         data_cls: &str,
@@ -799,7 +800,7 @@ impl PyParquetDataCatalog {
     ///
     /// Returns the last timestamp as nanoseconds since Unix epoch, or None if no data exists.
     #[pyo3(signature = (data_cls, instrument_id=None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn query_last_timestamp(
         &self,
         data_cls: &str,
@@ -821,7 +822,7 @@ impl PyParquetDataCatalog {
     ///
     /// Returns a list of (start, end) timestamp tuples representing covered intervals.
     #[pyo3(signature = (data_cls, instrument_id=None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn get_intervals(
         &self,
         data_cls: &str,
@@ -834,7 +835,7 @@ impl PyParquetDataCatalog {
 
     /// Query Parquet files for data matching the given criteria.
     #[pyo3(signature = (data_type, identifiers=None, start=None, end=None, where_clause=None, files=None, optimize_file_loading=true))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn query(
         &mut self,
         py: Python<'_>,
@@ -947,6 +948,20 @@ impl PyParquetDataCatalog {
                     )
                     .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
                 prices.into_iter().map(Data::from).collect()
+            }
+            "instrument_status" => {
+                let statuses = self
+                    .inner
+                    .query_typed_data::<InstrumentStatus>(
+                        identifiers,
+                        start_nanos,
+                        end_nanos,
+                        where_clause,
+                        files,
+                        optimize_file_loading,
+                    )
+                    .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+                statuses.into_iter().map(Data::from).collect()
             }
             "instrument_closes" => {
                 let closes = self
@@ -1360,7 +1375,7 @@ impl PyParquetDataCatalog {
     /// )
     /// ```
     #[pyo3(signature = (instance_id, data_cls, subdirectory=None, identifiers=None, use_ts_event_for_ts_init=false))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn convert_stream_to_data(
         &mut self,
         instance_id: &str,
@@ -1370,6 +1385,7 @@ impl PyParquetDataCatalog {
         use_ts_event_for_ts_init: bool,
     ) -> PyResult<()> {
         let subdir = subdirectory.unwrap_or("backtest");
+
         match self.inner.convert_stream_to_data(
             instance_id,
             data_cls,
@@ -1386,7 +1402,7 @@ impl PyParquetDataCatalog {
 
     /// Query custom data from Parquet files.
     #[pyo3(signature = (type_name, identifiers=None, start=None, end=None, where_clause=None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn query_custom_data(
         &mut self,
         py: Python<'_>,
@@ -1414,6 +1430,7 @@ impl PyParquetDataCatalog {
             .map_err(|e| PyIOError::new_err(format!("Failed to query custom data: {e}")))?;
 
         let mut python_objects = Vec::new();
+
         for item in data {
             let py_obj: Py<PyAny> = match item {
                 Data::Custom(custom) => Py::new(py, custom.clone())?.into_any(),

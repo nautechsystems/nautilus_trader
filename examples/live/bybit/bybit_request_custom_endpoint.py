@@ -14,18 +14,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
 from datetime import timedelta
 
 from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.adapters.bybit import BYBIT_CLIENT_ID
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
+from nautilus_trader.adapters.bybit import BybitEnvironment
 from nautilus_trader.adapters.bybit import BybitExecClientConfig
 from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit import BybitLiveExecClientFactory
 from nautilus_trader.adapters.bybit import BybitProductType
 from nautilus_trader.adapters.bybit import BybitTickerData
-from nautilus_trader.common import Environment
 from nautilus_trader.common.events import TimeEvent
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
@@ -82,12 +81,8 @@ class RequestDemoStrategy(Strategy):
             self.log.info(f"{data}")
 
 
-api_key = os.getenv("BYBIT_TESTNET_API_KEY")
-api_secret = os.getenv("BYBIT_TESTNET_API_SECRET")
-
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
-    environment=Environment.LIVE,
     logging=LoggingConfig(log_level="INFO"),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
@@ -95,20 +90,16 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         BYBIT: BybitDataClientConfig(
-            api_key=api_key,
-            api_secret=api_secret,
             product_types=(BybitProductType.LINEAR,),
+            environment=BybitEnvironment.TESTNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            testnet=True,
         ),
     },
     exec_clients={
         BYBIT: BybitExecClientConfig(
-            api_key=api_key,
-            api_secret=api_secret,
             product_types=(BybitProductType.LINEAR,),
+            environment=BybitEnvironment.TESTNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            testnet=True,
         ),
     },
     timeout_connection=20.0,

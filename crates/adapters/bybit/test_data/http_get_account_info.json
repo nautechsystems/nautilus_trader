@@ -1,0 +1,14 @@
+{
+  "retCode": 0,
+  "retMsg": "OK",
+  "result": {
+    "marginMode": "REGULAR_MARGIN",
+    "updatedTime": "1697078946000",
+    "unifiedMarginStatus": 4,
+    "dcpStatus": "OFF",
+    "timeWindow": 10,
+    "smpGroup": 0,
+    "isMasterTrader": false,
+    "spotHedgingStatus": "OFF"
+  }
+}

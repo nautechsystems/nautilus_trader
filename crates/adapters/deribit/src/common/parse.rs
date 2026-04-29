@@ -27,7 +27,7 @@ use nautilus_model::{
     data::{Bar, BarType, BookOrder, TradeTick},
     enums::{AccountType, AggressorSide, BookType, OptionKind, OrderSide},
     events::AccountState,
-    identifiers::{AccountId, InstrumentId, Symbol, TradeId, Venue},
+    identifiers::{AccountId, InstrumentId, Symbol, TradeId},
     instruments::{CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair, any::InstrumentAny},
     orderbook::OrderBook,
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
@@ -455,39 +455,25 @@ pub fn parse_account_state(
         // Parse balance using margin_balance (not equity):
         // - total: margin_balance (equity minus fee reserves)
         // - free: available_funds
-        // - locked: total - free = initial_margin
-        //
-        // Key: available_funds = margin_balance - initial_margin
-        let total = Money::from_decimal(summary.margin_balance, currency)?;
-        let free = Money::from_decimal(summary.available_funds, currency)?;
-        let locked = Money::from_raw(total.raw - free.raw, currency);
-
-        let balance = AccountBalance::new(total, locked, free);
+        // - locked derived centrally at currency precision; for Deribit it equals
+        //   `initial_margin` since `available_funds = margin_balance - initial_margin`.
+        let balance = AccountBalance::from_total_and_free(
+            summary.margin_balance,
+            summary.available_funds,
+            currency,
+        )?;
         balances.push(balance);
 
         // Parse margin balances if present
         if let (Some(initial_margin), Some(maintenance_margin)) =
             (summary.initial_margin, summary.maintenance_margin)
+            && (!initial_margin.is_zero() || !maintenance_margin.is_zero())
         {
-            // Only create margin balance if there are actual margin requirements
-            if !initial_margin.is_zero() || !maintenance_margin.is_zero() {
-                let initial = Money::from_decimal(initial_margin, currency)?;
-                let maintenance = Money::from_decimal(maintenance_margin, currency)?;
-
-                // Create a synthetic instrument_id for account-level margins
-                // Format string "ACCOUNT-{currency}" always produces valid ASCII
-                // symbol since currency codes are uppercase alphanumeric (e.g., BTC, ETH, USDT)
-                let margin_instrument_id = InstrumentId::new(
-                    Symbol::from_str_unchecked(format!("ACCOUNT-{}", summary.currency)),
-                    Venue::new("DERIBIT"),
-                );
-
-                margins.push(MarginBalance::new(
-                    initial,
-                    maintenance,
-                    margin_instrument_id,
-                ));
-            }
+            let initial = Money::from_decimal(initial_margin, currency)?;
+            let maintenance = Money::from_decimal(maintenance_margin, currency)?;
+            // Deribit reports cross-margin per collateral currency; emit as an
+            // account-wide entry keyed by that currency.
+            margins.push(MarginBalance::new(initial, maintenance, None));
         }
     }
 
@@ -547,18 +533,13 @@ pub fn parse_portfolio_to_account_state(
     // Parse balance using margin_balance (not equity):
     // - total: margin_balance (equity minus fee reserves, used for margin calculations)
     // - free: available_funds (what can be used for new orders)
-    // - locked: derived as (total - free) which equals initial_margin
-    //
-    // Key relationship: available_funds = margin_balance - initial_margin
-    // So: locked = margin_balance - available_funds = initial_margin
-    //
-    // Using margin_balance instead of equity ensures locked is always non-negative
-    // and accurately reflects the margin requirement.
-    let total = Money::from_decimal(portfolio.margin_balance, currency)?;
-    let free = Money::from_decimal(portfolio.available_funds, currency)?;
-    let locked = Money::from_raw(total.raw - free.raw, currency);
-
-    let balance = AccountBalance::new(total, locked, free);
+    // - locked derived centrally at currency precision; for Deribit it equals
+    //   `initial_margin` since `available_funds = margin_balance - initial_margin`.
+    let balance = AccountBalance::from_total_and_free(
+        portfolio.margin_balance,
+        portfolio.available_funds,
+        currency,
+    )?;
     let balances = vec![balance];
 
     // Parse margin balances
@@ -570,18 +551,9 @@ pub fn parse_portfolio_to_account_state(
     if !initial_margin.is_zero() || !maintenance_margin.is_zero() {
         let initial = Money::from_decimal(initial_margin, currency)?;
         let maintenance = Money::from_decimal(maintenance_margin, currency)?;
-
-        // Create a synthetic instrument_id for account-level margins
-        let margin_instrument_id = InstrumentId::new(
-            Symbol::from_str_unchecked(format!("ACCOUNT-{}", portfolio.currency)),
-            Venue::new("DERIBIT"),
-        );
-
-        margins.push(MarginBalance::new(
-            initial,
-            maintenance,
-            margin_instrument_id,
-        ));
+        // Deribit reports cross-margin per collateral currency; emit as an
+        // account-wide entry keyed by that currency.
+        margins.push(MarginBalance::new(initial, maintenance, None));
     }
 
     let account_type = AccountType::Margin;
@@ -797,7 +769,7 @@ pub fn bar_spec_to_resolution(bar_type: &BarType) -> String {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::instruments::Instrument;
+    use nautilus_model::{identifiers::Venue, instruments::Instrument};
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
@@ -1342,10 +1314,8 @@ mod tests {
         let margin = &account_state.margins[0];
         assert_eq!(margin.initial.as_f64(), 1.100011);
         assert_eq!(margin.maintenance.as_f64(), 0.0);
-        assert_eq!(
-            margin.instrument_id,
-            InstrumentId::from("ACCOUNT-USDT.DERIBIT")
-        );
+        assert!(margin.instrument_id.is_none());
+        assert_eq!(margin.currency.code.as_str(), "USDT");
     }
 
     #[rstest]

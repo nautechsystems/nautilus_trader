@@ -39,7 +39,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::Quantity,
 };
-use nautilus_network::websocket::SubscriptionState;
+use nautilus_network::websocket::{SubscriptionState, TransportBackend};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
@@ -70,13 +70,14 @@ use crate::{
 impl KrakenFuturesWebSocketClient {
     /// WebSocket client for the Kraken Futures v1 streaming API.
     #[new]
-    #[pyo3(signature = (environment=None, base_url=None, heartbeat_secs=60, api_key=None, api_secret=None))]
+    #[pyo3(signature = (environment=None, base_url=None, heartbeat_secs=60, api_key=None, api_secret=None, proxy_url=None))]
     fn py_new(
         environment: Option<KrakenEnvironment>,
         base_url: Option<String>,
         heartbeat_secs: u64,
         api_key: Option<String>,
         api_secret: Option<String>,
+        proxy_url: Option<String>,
     ) -> Self {
         let env = environment.unwrap_or(KrakenEnvironment::Mainnet);
         let demo = env == KrakenEnvironment::Demo;
@@ -85,7 +86,13 @@ impl KrakenFuturesWebSocketClient {
         });
         let credential = KrakenCredential::resolve_futures(api_key, api_secret, demo);
 
-        Self::with_credentials(url, heartbeat_secs, credential)
+        Self::with_credentials(
+            url,
+            heartbeat_secs,
+            credential,
+            TransportBackend::default(),
+            proxy_url,
+        )
     }
 
     /// Returns true if the client has API credentials set.
@@ -134,10 +141,37 @@ impl KrakenFuturesWebSocketClient {
         })
     }
 
+    /// Returns true if the WebSocket is authenticated for private feeds.
+    #[pyo3(name = "is_authenticated")]
+    fn py_is_authenticated(&self) -> bool {
+        self.is_authenticated()
+    }
+
+    /// Waits until the WebSocket is authenticated or the timeout elapses.
+    ///
+    /// Returns an error on timeout or explicit auth failure.
+    #[pyo3(name = "wait_until_authenticated")]
+    fn py_wait_until_authenticated<'py>(
+        &self,
+        py: Python<'py>,
+        timeout_secs: f64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .wait_until_authenticated(timeout_secs)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
     /// Authenticates the WebSocket connection for private feeds.
     ///
-    /// This sends a challenge request, waits for the response, signs it,
-    /// and stores the credentials for use in private subscriptions.
+    /// Sends a challenge request and waits for the handler to parse the response,
+    /// sign it, and mark the `AuthTracker` successful. Private subscriptions gate
+    /// on the stored challenge / signed-challenge pair.
     #[pyo3(name = "authenticate")]
     fn py_authenticate<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -150,7 +184,7 @@ impl KrakenFuturesWebSocketClient {
 
     /// Connects to the WebSocket server.
     #[pyo3(name = "connect")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
@@ -292,7 +326,6 @@ impl KrakenFuturesWebSocketClient {
 
     /// Caches an instrument for execution report parsing.
     #[pyo3(name = "cache_instrument")]
-    #[allow(clippy::needless_pass_by_value)]
     fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
         self.cache_instrument(inst_any);
@@ -301,7 +334,6 @@ impl KrakenFuturesWebSocketClient {
 
     /// Caches multiple instruments for execution report parsing.
     #[pyo3(name = "cache_instruments")]
-    #[allow(clippy::needless_pass_by_value)]
     fn py_cache_instruments(&self, py: Python, instruments: Vec<Py<PyAny>>) -> PyResult<()> {
         let mut inst_vec = Vec::with_capacity(instruments.len());
         for inst in instruments {
@@ -701,7 +733,7 @@ fn dispatch_fill_to_python(report: FillReport, call_soon: &Py<PyAny>, callback: 
     });
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn handle_open_orders_delta(
     delta: &KrakenFuturesOpenOrdersDelta,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
@@ -714,6 +746,17 @@ fn handle_open_orders_delta(
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
 ) {
+    // The fills delta carries the real fill; skip the cancel-shaped delta
+    // Kraken emits when an order leaves the book because it filled.
+    if delta.is_fill_driven_cancel() {
+        log::debug!(
+            "Skipping fill-driven open_orders delta: order_id={}, reason={:?}",
+            delta.order.order_id,
+            delta.reason,
+        );
+        return;
+    }
+
     let product_id = delta.order.instrument.as_str();
 
     let Some(instrument) = lookup_instrument(instruments, product_id) else {
@@ -752,7 +795,7 @@ fn handle_open_orders_delta(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn handle_open_orders_cancel(
     cancel: &KrakenFuturesOpenOrdersCancel,
     account_id: &Arc<RwLock<Option<AccountId>>>,
@@ -834,7 +877,6 @@ fn handle_open_orders_cancel(
     dispatch_report_to_python(report, call_soon, callback);
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_fills_delta(
     fills_delta: &KrakenFuturesFillsDelta,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
@@ -931,7 +973,7 @@ fn handle_trade(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn handle_book_snapshot(
     snapshot: &KrakenFuturesBookSnapshot,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
@@ -993,7 +1035,7 @@ fn handle_book_snapshot(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn handle_book_delta(
     delta: &KrakenFuturesBookDelta,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,

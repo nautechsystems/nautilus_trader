@@ -21,6 +21,9 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.accounting.accounts.cash import CashAccount
+from nautilus_trader.analysis import CAGR
+from nautilus_trader.analysis import CalmarRatio
+from nautilus_trader.analysis import MaxDrawdown
 from nautilus_trader.analysis import ReturnsAverage
 from nautilus_trader.analysis import SharpeRatio
 from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
@@ -154,6 +157,20 @@ class TestPortfolioAnalyzer:
         assert stat.last_returns_input is not None
         assert isinstance(stat.last_returns_input, dict)
         assert list(stat.last_returns_input.values()) == [0.05]
+
+    @pytest.mark.parametrize("cls", [MaxDrawdown, CAGR, CalmarRatio])
+    def test_returns_based_pyo3_statistics_skip_pnl_and_position_calls(self, cls):
+        # Returns-based pyo3 statistics must implement the full PortfolioStatistic
+        # surface (returning None for non-applicable inputs) so registering them
+        # does not raise AttributeError during backtest end.
+        self.analyzer.register_statistic(cls())
+        self.analyzer.add_trade(PositionId("P-1"), Money(10, USD))
+
+        pnl_stats = self.analyzer.get_performance_stats_pnls(currency=USD)
+        general_stats = self.analyzer.get_performance_stats_general()
+
+        assert cls().name not in pnl_stats
+        assert cls().name not in general_stats
 
     def test_analyzer_tracks_position_returns(self):
         # Arrange
@@ -373,6 +390,47 @@ class TestPortfolioAnalyzer:
         assert self.analyzer.portfolio_returns().empty
         assert position_stats["Average (Return)"] == pytest.approx(0.30)
         assert returns_stats == position_stats
+
+    def test_portfolio_returns_skips_empty_balance_snapshots(self):
+        # Arrange
+        account_id = TestIdStubs.account_id()
+        account = CashAccount(
+            _create_cash_account_state(
+                account_id=account_id,
+                total=1_000.0,
+                ts_event=pd.Timestamp("2024-01-01", tz="UTC").value,
+            ),
+            calculate_account_state=False,
+        )
+        account.apply(
+            AccountState(
+                account_id=account_id,
+                account_type=AccountType.CASH,
+                base_currency=USD,
+                reported=True,
+                balances=[],
+                margins=[],
+                info={},
+                event_id=UUID4(),
+                ts_event=pd.Timestamp("2024-01-15", tz="UTC").value,
+                ts_init=pd.Timestamp("2024-01-15", tz="UTC").value,
+            ),
+        )
+        account.apply(
+            _create_cash_account_state(
+                account_id=account_id,
+                total=1_050.0,
+                ts_event=pd.Timestamp("2024-01-31", tz="UTC").value,
+            ),
+        )
+
+        # Act
+        self.analyzer.calculate_statistics(account, [])
+        portfolio_returns = self.analyzer.portfolio_returns()
+
+        # Assert
+        assert not portfolio_returns.empty
+        assert portfolio_returns.loc[pd.Timestamp("2024-01-31", tz="UTC")] == pytest.approx(0.05)
 
     def test_calculate_statistics_filters_non_finite_portfolio_returns(self):
         # Arrange

@@ -22,11 +22,11 @@ use nautilus_serialization::capnp::{FromCapnp, ToCapnp, types_capnp};
 use rstest::rstest;
 
 #[rstest]
-#[case(Price::from("100.50"), 2)]
-#[case(Price::from("0.00001"), 5)]
-#[case(Price::from("99999.999"), 3)]
-#[case(Price::from("1.0"), 1)]
-fn test_price_roundtrip(#[case] price: Price, #[case] _precision: u8) {
+#[case(Price::from("100.50"))]
+#[case(Price::from("0.00001"))]
+#[case(Price::from("99999.999"))]
+#[case(Price::from("1.0"))]
+fn test_price_roundtrip(#[case] price: Price) {
     let mut message = capnp::message::Builder::new_default();
     let builder = message.init_root::<types_capnp::price::Builder>();
     price.to_capnp(builder);
@@ -44,11 +44,11 @@ fn test_price_roundtrip(#[case] price: Price, #[case] _precision: u8) {
 }
 
 #[rstest]
-#[case(Quantity::from("1000.5"), 1)]
-#[case(Quantity::from("0.0001"), 4)]
-#[case(Quantity::from("999999.999"), 3)]
-#[case(Quantity::from("1.0"), 1)]
-fn test_quantity_roundtrip(#[case] qty: Quantity, #[case] _precision: u8) {
+#[case(Quantity::from("1000.5"))]
+#[case(Quantity::from("0.0001"))]
+#[case(Quantity::from("999999.999"))]
+#[case(Quantity::from("1.0"))]
+fn test_quantity_roundtrip(#[case] qty: Quantity) {
     let mut message = capnp::message::Builder::new_default();
     let builder = message.init_root::<types_capnp::quantity::Builder>();
     qty.to_capnp(builder);

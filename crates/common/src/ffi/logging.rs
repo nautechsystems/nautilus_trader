@@ -119,6 +119,9 @@ pub unsafe extern "C" fn logging_init(
         u8_as_bool(is_colored),
         u8_as_bool(print_config),
         false, // use_tracing - not exposed to FFI
+        u8_as_bool(is_bypassed),
+        None,  // file_config - passed separately to init_logging
+        false, // clear_log_file
     );
 
     // Configure file rotation if max_file_size > 0

@@ -216,6 +216,7 @@ def market_definition_to_instrument_closes(
     ts_init: int,
 ) -> list[InstrumentClose]:
     updates = []
+
     for runner in market_definition.runners:
         close = runner_to_instrument_close(runner, market_id, ts_event, ts_init)
         if close is not None:
@@ -264,6 +265,7 @@ def market_definition_to_betfair_starting_prices(
     ts_init: int,
 ) -> list[BetfairStartingPrice]:
     updates: list[BetfairStartingPrice] = []
+
     for runner in market_definition.runners:
         sp = runner_to_betfair_starting_price(runner, market_id, ts_event, ts_init)
         if sp is not None:
@@ -385,6 +387,7 @@ def runner_change_to_trade_ticks(
     ts_init: int,
 ) -> list[TradeTick]:
     trade_ticks: list[TradeTick] = []
+
     for trd in rc.trd:
         if trd.volume == 0:
             continue

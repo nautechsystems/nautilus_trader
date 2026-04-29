@@ -359,6 +359,7 @@ mod tests {
             Some(&future_timestamp.to_string()),
             None,
         );
+
         match err {
             BitmexError::Retryable {
                 source: BitmexRetryableError::RateLimit { remaining, .. },

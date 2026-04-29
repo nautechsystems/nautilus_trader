@@ -41,6 +41,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -64,6 +65,7 @@ cdef class ExecutionClient(Component):
     """If the client is connected.\n\n:returns: `bool`"""
 
     cpdef Account get_account(self)
+    cpdef Money calculate_commission(self, Instrument instrument, Quantity last_qty, Price last_px, LiquiditySide liquidity_side)
 
     cpdef void _set_connected(self, bint value=*)
     cpdef void _set_account_id(self, AccountId account_id)

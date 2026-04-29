@@ -16,10 +16,11 @@
 //! Configuration structures for the OKX adapter.
 
 use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 
 use crate::common::{
     credential::credential_env_vars,
-    enums::{OKXContractType, OKXInstrumentType, OKXMarginMode, OKXVipLevel},
+    enums::{OKXContractType, OKXEnvironment, OKXInstrumentType, OKXMarginMode, OKXVipLevel},
     urls::{
         get_http_base_url, get_ws_base_url_business, get_ws_base_url_private,
         get_ws_base_url_public,
@@ -57,16 +58,11 @@ pub struct OKXDataClientConfig {
     pub base_url_ws_public: Option<String>,
     /// Optional override for the business WebSocket URL.
     pub base_url_ws_business: Option<String>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
-    /// When true the client will use OKX demo endpoints.
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
+    /// The API environment (live or demo).
     #[builder(default)]
-    pub is_demo: bool,
+    pub environment: OKXEnvironment,
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -84,6 +80,9 @@ pub struct OKXDataClientConfig {
     pub update_instruments_interval_mins: u64,
     /// Optional VIP level that unlocks additional subscriptions.
     pub vip_level: Option<OKXVipLevel>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for OKXDataClientConfig {
@@ -117,20 +116,20 @@ impl OKXDataClientConfig {
             .unwrap_or_else(|| get_http_base_url().to_string())
     }
 
-    /// Returns the public WebSocket URL, respecting the demo flag and overrides.
+    /// Returns the public WebSocket URL, respecting the environment and overrides.
     #[must_use]
     pub fn ws_public_url(&self) -> String {
         self.base_url_ws_public
             .clone()
-            .unwrap_or_else(|| get_ws_base_url_public(self.is_demo).to_string())
+            .unwrap_or_else(|| get_ws_base_url_public(self.environment).to_string())
     }
 
-    /// Returns the business WebSocket URL, respecting the demo flag and overrides.
+    /// Returns the business WebSocket URL, respecting the environment and overrides.
     #[must_use]
     pub fn ws_business_url(&self) -> String {
         self.base_url_ws_business
             .clone()
-            .unwrap_or_else(|| get_ws_base_url_business(self.is_demo).to_string())
+            .unwrap_or_else(|| get_ws_base_url_business(self.environment).to_string())
     }
 
     /// Returns `true` when the business WebSocket should be instantiated.
@@ -180,16 +179,11 @@ pub struct OKXExecClientConfig {
     pub base_url_ws_private: Option<String>,
     /// Optional override for the business WebSocket URL.
     pub base_url_ws_business: Option<String>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
-    /// When true the client will use OKX demo endpoints.
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
+    /// The API environment (live or demo).
     #[builder(default)]
-    pub is_demo: bool,
+    pub environment: OKXEnvironment,
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -213,6 +207,9 @@ pub struct OKXExecClientConfig {
     /// Enables margin/leverage for SPOT trading when true.
     #[builder(default)]
     pub use_spot_margin: bool,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for OKXExecClientConfig {
@@ -246,19 +243,19 @@ impl OKXExecClientConfig {
             .unwrap_or_else(|| get_http_base_url().to_string())
     }
 
-    /// Returns the private WebSocket URL, respecting the demo flag and overrides.
+    /// Returns the private WebSocket URL, respecting the environment and overrides.
     #[must_use]
     pub fn ws_private_url(&self) -> String {
         self.base_url_ws_private
             .clone()
-            .unwrap_or_else(|| get_ws_base_url_private(self.is_demo).to_string())
+            .unwrap_or_else(|| get_ws_base_url_private(self.environment).to_string())
     }
 
-    /// Returns the business WebSocket URL, respecting the demo flag and overrides.
+    /// Returns the business WebSocket URL, respecting the environment and overrides.
     #[must_use]
     pub fn ws_business_url(&self) -> String {
         self.base_url_ws_business
             .clone()
-            .unwrap_or_else(|| get_ws_base_url_business(self.is_demo).to_string())
+            .unwrap_or_else(|| get_ws_base_url_business(self.environment).to_string())
     }
 }

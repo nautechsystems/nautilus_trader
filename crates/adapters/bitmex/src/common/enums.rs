@@ -858,6 +858,46 @@ pub enum BitmexMarkMethod {
     CompositeIndex,
 }
 
+/// BitMEX API environment.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(ascii_case_insensitive, serialize_all = "lowercase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        module = "nautilus_trader.core.nautilus_pyo3.bitmex",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bitmex")
+)]
+pub enum BitmexEnvironment {
+    /// Live trading environment.
+    #[default]
+    Mainnet,
+    /// Testnet environment.
+    Testnet,
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

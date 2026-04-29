@@ -117,6 +117,7 @@ def test_load_multi_stream_catalog_v2(benchmark) -> None:
 
     def run(result):
         count = 0
+
         for chunk in result:
             ticks = capsule_to_list(chunk)
             count += len(ticks)

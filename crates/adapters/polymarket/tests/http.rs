@@ -69,6 +69,8 @@ struct TestServerState {
     last_body: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_headers: Arc<tokio::sync::Mutex<AHashMap<String, String>>>,
     rate_limit_after: Arc<AtomicUsize>,
+    /// Delay before `handle_get_orders` responds. Used by the timeout test.
+    get_orders_delay_secs: Arc<AtomicUsize>,
     orders_pages: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     gamma_slug_responses: Arc<tokio::sync::Mutex<AHashMap<String, Value>>>,
@@ -89,6 +91,7 @@ impl Default for TestServerState {
             last_body: Arc::new(tokio::sync::Mutex::new(None)),
             last_headers: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
+            get_orders_delay_secs: Arc::new(AtomicUsize::new(0)),
             orders_pages: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             gamma_response: Arc::new(tokio::sync::Mutex::new(None)),
             gamma_slug_responses: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
@@ -119,11 +122,18 @@ fn test_credential() -> Credential {
 }
 
 fn create_clob_client(addr: &SocketAddr) -> PolymarketClobHttpClient {
+    create_clob_client_with_timeout(addr, 5)
+}
+
+fn create_clob_client_with_timeout(
+    addr: &SocketAddr,
+    timeout_secs: u64,
+) -> PolymarketClobHttpClient {
     PolymarketClobHttpClient::new(
         test_credential(),
         TEST_ADDRESS.to_string(),
         Some(format!("http://{addr}")),
-        5,
+        timeout_secs,
     )
     .unwrap()
 }
@@ -193,6 +203,10 @@ async fn maybe_rate_limit(state: &TestServerState) -> Option<Response> {
 async fn handle_get_orders(State(state): State<TestServerState>, headers: HeaderMap) -> Response {
     if let Some(r) = maybe_rate_limit(&state).await {
         return r;
+    }
+    let delay = state.get_orders_delay_secs.load(Ordering::Relaxed);
+    if delay > 0 {
+        tokio::time::sleep(Duration::from_secs(delay as u64)).await;
     }
     *state.last_headers.lock().await = extract_headers(&headers);
     let mut pages = state.orders_pages.lock().await;
@@ -500,10 +514,11 @@ async fn test_get_balance_allowance_returns_data() {
         .await
         .unwrap();
 
-    assert_eq!(balance.balance, rust_decimal_macros::dec!(1000.000000));
+    // Fixture is now in integer-micro-pUSD form, matching the live API.
+    assert_eq!(balance.balance, rust_decimal_macros::dec!(1_000_000_000));
     assert_eq!(
         balance.allowance,
-        Some(rust_decimal_macros::dec!(999999999.000000))
+        Some(rust_decimal_macros::dec!(999_999_999_000_000)),
     );
 }
 
@@ -629,6 +644,49 @@ async fn test_rate_limit_returns_error() {
     // Third request exceeds the limit
     let result = client.get_orders(GetOrdersParams::default()).await;
     assert!(result.is_err());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_times_out_when_server_is_slow() {
+    // Server stalls for 3s; client is configured with a 1s transport timeout.
+    // The request must error with a timeout near the 1s mark, not earlier
+    // (would mean a different error class) and not later (would mean the
+    // timeout did not engage).
+    let state = TestServerState::default();
+    state.get_orders_delay_secs.store(3, Ordering::Relaxed);
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client_with_timeout(&addr, 1);
+
+    let started = std::time::Instant::now();
+    let result = client.get_orders(GetOrdersParams::default()).await;
+    let elapsed = started.elapsed();
+
+    let err = result.expect_err("request must error when server exceeds timeout");
+    let err_text = err.to_string().to_lowercase();
+    assert!(
+        err_text.contains("timeout") || err_text.contains("timed out"),
+        "error must indicate a timeout, not some other failure (got: {err_text})",
+    );
+
+    // Lower bound: must not have errored before the configured timeout.
+    assert!(
+        elapsed >= Duration::from_millis(800),
+        "request errored before the timeout could engage (took {elapsed:?})",
+    );
+    // Upper bound: must not have hung past the configured timeout.
+    assert!(
+        elapsed < Duration::from_millis(2_500),
+        "request did not honour the timeout (took {elapsed:?})",
+    );
+
+    // Server must have actually received the request (one increment via
+    // `maybe_rate_limit` before the handler stalls).
+    assert_eq!(
+        *state.request_count.lock().await,
+        1,
+        "exactly one request should have reached the mock"
+    );
 }
 
 #[rstest]

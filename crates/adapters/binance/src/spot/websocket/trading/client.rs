@@ -34,11 +34,13 @@ use std::{
 
 use arc_swap::ArcSwap;
 use nautilus_common::live::get_runtime;
-use nautilus_core::string::REDACTED;
+use nautilus_core::string::secret::REDACTED;
 use nautilus_network::{
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
-    websocket::{PingHandler, WebSocketClient, WebSocketConfig, channel_message_handler},
+    websocket::{
+        PingHandler, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
+    },
 };
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -72,7 +74,7 @@ pub static BINANCE_WS_RATE_LIMIT_KEY_ORDER: LazyLock<[Ustr; 1]> =
 ///
 /// Based on Binance documentation for WebSocket API rate limits.
 // Constant values are provably valid
-#[allow(clippy::missing_panics_doc)]
+#[expect(clippy::missing_panics_doc)]
 #[must_use]
 pub fn binance_ws_order_quota() -> Quota {
     Quota::per_second(NonZeroU32::new(20).expect("non-zero")).expect("valid constant")
@@ -95,6 +97,7 @@ pub struct BinanceSpotWsTradingClient {
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     request_id_counter: Arc<AtomicU64>,
     cancellation_token: CancellationToken,
+    transport_backend: TransportBackend,
 }
 
 impl Debug for BinanceSpotWsTradingClient {
@@ -115,6 +118,7 @@ impl BinanceSpotWsTradingClient {
         api_key: String,
         api_secret: String,
         heartbeat: Option<u64>,
+        transport_backend: TransportBackend,
     ) -> Self {
         let url = url.unwrap_or_else(|| BINANCE_SPOT_SBE_WS_API_URL.to_string());
         let credential = Arc::new(SigningCredential::new(api_key, api_secret));
@@ -134,6 +138,7 @@ impl BinanceSpotWsTradingClient {
             task_handle: None,
             request_id_counter: Arc::new(AtomicU64::new(1)),
             cancellation_token: CancellationToken::new(),
+            transport_backend,
         }
     }
 
@@ -151,10 +156,17 @@ impl BinanceSpotWsTradingClient {
         api_key: Option<String>,
         api_secret: Option<String>,
         heartbeat: Option<u64>,
+        transport_backend: TransportBackend,
     ) -> anyhow::Result<Self> {
         let api_key = nautilus_core::env::get_or_env_var(api_key, BINANCE_API_KEY)?;
         let api_secret = nautilus_core::env::get_or_env_var(api_secret, BINANCE_API_SECRET)?;
-        Ok(Self::new(url, api_key, api_secret, heartbeat))
+        Ok(Self::new(
+            url,
+            api_key,
+            api_secret,
+            heartbeat,
+            transport_backend,
+        ))
     }
 
     /// Creates a new client with credentials loaded entirely from environment variables.
@@ -167,7 +179,7 @@ impl BinanceSpotWsTradingClient {
     ///
     /// Returns an error if environment variables are missing.
     pub fn from_env(url: Option<String>, heartbeat: Option<u64>) -> anyhow::Result<Self> {
-        Self::with_env(url, None, None, heartbeat)
+        Self::with_env(url, None, None, heartbeat, TransportBackend::default())
     }
 
     /// Returns whether the client is actively connected.
@@ -196,7 +208,7 @@ impl BinanceSpotWsTradingClient {
     ///
     /// Returns an error if connection fails.
     // Mutex poisoning is not documented individually
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(clippy::missing_panics_doc)]
     pub async fn connect(&mut self) -> BinanceWsApiResult<()> {
         self.signal.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
@@ -221,6 +233,8 @@ impl BinanceSpotWsTradingClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: self.transport_backend,
+            proxy_url: None,
         };
 
         // Configure rate limits for order operations
@@ -267,6 +281,7 @@ impl BinanceSpotWsTradingClient {
             .map_err(|e| BinanceWsApiError::HandlerUnavailable(e.to_string()))?;
 
         let cancellation_token = self.cancellation_token.clone();
+
         let handle = get_runtime().spawn(async move {
             tokio::select! {
                 () = cancellation_token.cancelled() => {

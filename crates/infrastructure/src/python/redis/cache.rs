@@ -79,6 +79,7 @@ impl RedisCacheDatabase {
         let result = get_runtime().block_on(async {
             DatabaseQueries::load_all(&self.con, self.get_encoding(), self.get_trader_key()).await
         });
+
         match result {
             Ok(cache_map) => Python::attach(|py| {
                 let dict = PyDict::new(py);
@@ -178,7 +179,7 @@ impl RedisCacheDatabase {
     ///
     /// Returns an error if the underlying Redis read operation fails.
     #[pyo3(name = "read_bulk")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_read_bulk(&mut self, py: Python, keys: Vec<String>) -> PyResult<Vec<Option<Py<PyAny>>>> {
         let result = get_runtime().block_on(async { self.read_bulk(&keys).await });
         match result {
@@ -268,7 +269,7 @@ impl RedisCacheDatabase {
     ///
     /// Returns an error if serialization fails or the insert command cannot be sent.
     #[pyo3(name = "add_custom_data")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_add_custom_data(&mut self, data: CustomData) -> PyResult<()> {
         self.add_custom_data(&data).map_err(to_pyvalue_err)
     }
@@ -279,7 +280,7 @@ impl RedisCacheDatabase {
     /// the result arrives via a channel. Safe from any thread context (Python,
     /// test runtimes, plain threads).
     #[pyo3(name = "load_custom_data")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_load_custom_data(
         &mut self,
         py: Python<'_>,

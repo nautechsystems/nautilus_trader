@@ -840,6 +840,7 @@ async fn test_trade_dedup_concurrent_inserts_only_one_wins() {
     for _ in 0..10 {
         let state = Arc::clone(&state);
         let counter = Arc::clone(&new_count);
+
         handles.push(tokio::spawn(async move {
             if !state.check_and_insert_trade(trade_id) {
                 counter.fetch_add(1, Ordering::SeqCst);
@@ -961,9 +962,10 @@ async fn test_query_account_does_not_block_within_runtime() {
         AccountId::from("OKX-001"),
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
-    let result = client.query_account(&cmd);
+    let result = client.query_account(cmd);
     assert!(result.is_ok());
 
     wait_until_async(

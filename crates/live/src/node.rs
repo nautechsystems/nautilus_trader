@@ -58,7 +58,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use nautilus_common::{
@@ -66,6 +66,7 @@ use nautilus_common::{
     cache::database::CacheDatabaseAdapter,
     component::Component,
     enums::{Environment, LogColor},
+    live::dst,
     log_info,
     messages::{
         DataEvent, ExecutionEvent, ExecutionReport, data::DataCommand, execution::TradingCommand,
@@ -78,7 +79,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     events::OrderEventAny,
-    identifiers::{StrategyId, TraderId},
+    identifiers::{ClientOrderId, StrategyId, TraderId},
     orders::Order,
 };
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
@@ -215,7 +216,7 @@ pub struct LiveNode {
     config: LiveNodeConfig,
     handle: LiveNodeHandle,
     exec_manager: ExecutionManager,
-    shutdown_deadline: Option<tokio::time::Instant>,
+    shutdown_deadline: Option<dst::time::Instant>,
     #[cfg(feature = "python")]
     #[allow(dead_code)] // TODO: Under development
     python_actors: Vec<pyo3::Py<pyo3::PyAny>>,
@@ -275,6 +276,8 @@ impl LiveNode {
                 anyhow::bail!("LiveNode cannot be used with Backtest environment");
             }
         }
+
+        config.validate_runtime_support()?;
 
         let runner = AsyncRunner::new();
         runner.bind_senders();
@@ -376,7 +379,7 @@ impl LiveNode {
         let delay = self.kernel.delay_post_stop();
         log::info!("Awaiting residual events ({delay:?})...");
 
-        tokio::time::sleep(delay).await;
+        dst::time::sleep(delay).await;
         self.finalize_stop().await
     }
 
@@ -389,7 +392,7 @@ impl LiveNode {
             self.config.timeout_connection
         );
 
-        let start = Instant::now();
+        let start = dst::time::Instant::now();
         let timeout = self.config.timeout_connection;
         let interval = Duration::from_millis(100);
 
@@ -398,7 +401,7 @@ impl LiveNode {
                 log::info!("All engine clients connected");
                 return true;
             }
-            tokio::time::sleep(interval).await;
+            dst::time::sleep(interval).await;
         }
 
         self.log_connection_status();
@@ -414,7 +417,7 @@ impl LiveNode {
             self.config.timeout_disconnection
         );
 
-        let start = Instant::now();
+        let start = dst::time::Instant::now();
         let timeout = self.config.timeout_disconnection;
         let interval = Duration::from_millis(100);
 
@@ -423,7 +426,7 @@ impl LiveNode {
                 log::info!("All engine clients disconnected");
                 return;
             }
-            tokio::time::sleep(interval).await;
+            dst::time::sleep(interval).await;
         }
 
         log::error!(
@@ -488,7 +491,7 @@ impl LiveNode {
     /// # Errors
     ///
     /// Returns an error if reconciliation fails or times out.
-    #[allow(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
+    #[expect(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
     async fn perform_startup_reconciliation(&mut self) -> anyhow::Result<()> {
         if !self.config.exec_engine.reconciliation {
             log::info!("Startup reconciliation disabled");
@@ -507,7 +510,7 @@ impl LiveNode {
             .map(|m| m as u64);
 
         let timeout = self.config.timeout_reconciliation;
-        let start = Instant::now();
+        let start = dst::time::Instant::now();
         let client_ids = self.kernel.exec_engine.borrow().client_ids();
 
         for client_id in client_ids {
@@ -641,8 +644,10 @@ impl LiveNode {
 
         self.handle.set_state(NodeState::Starting);
         self.kernel.start_async().await;
+        self.kernel.reset_shutdown_flag();
 
         let stop_handle = self.handle.clone();
+        let shutdown_flag = self.kernel.shutdown_flag();
         let mut pending = PendingEvents::default();
 
         // Startup phase 1: Connect data clients and drain instrument events into cache.
@@ -753,13 +758,17 @@ impl LiveNode {
             Duration::from_secs(1) // Unused, timer won't fire
         };
 
+        // `reconciliation_startup_delay_secs` is a post-reconciliation grace period:
+        // startup reconciliation has already completed above, and this delay offsets
+        // the first periodic tick to let the system stabilize before continuous checks
+        // begin. Matches the legacy Python semantics in `LiveExecutionEngine`.
         let startup_delay = if self.config.exec_engine.reconciliation {
             Duration::from_secs_f64(exec_config.reconciliation_startup_delay_secs)
         } else {
             Duration::ZERO
         };
 
-        let recon_start = tokio::time::Instant::now() + startup_delay;
+        let recon_start = dst::time::Instant::now() + startup_delay;
 
         let mut ts_last_inflight = self.exec_manager.generate_timestamp_ns();
         let mut ts_last_open = ts_last_inflight;
@@ -772,8 +781,8 @@ impl LiveNode {
 
         let make_timer = |opt_dur: Option<Duration>| {
             let dur = opt_dur.unwrap_or(far_future);
-            let mut timer = tokio::time::interval_at(recon_start + dur, dur);
-            timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            let mut timer = dst::time::interval_at(recon_start + dur, dur);
+            timer.set_missed_tick_behavior(dst::time::MissedTickBehavior::Delay);
             timer
         };
 
@@ -813,9 +822,16 @@ impl LiveNode {
 
         let mut prune_fills_timer = make_timer(Some(Duration::from_secs(60)));
 
+        // Stop-check timer is not subject to the reconciliation startup delay,
+        // so shutdown signals remain responsive from the moment the node reaches
+        // `Running`. Set `MissedTickBehavior::Skip` so backlog ticks do not fire
+        // a burst after the select arm was suspended by other branches.
+        let mut stop_check_timer = dst::time::interval(Duration::from_millis(100));
+        stop_check_timer.set_missed_tick_behavior(dst::time::MissedTickBehavior::Skip);
+
         // Running phase: runs until shutdown deadline expires
         let mut residual_events = 0usize;
-        let ctrl_c = tokio::signal::ctrl_c();
+        let ctrl_c = dst::signal::ctrl_c();
         tokio::pin!(ctrl_c);
 
         loop {
@@ -834,21 +850,18 @@ impl LiveNode {
                     }
                     self.initiate_shutdown();
                 }
-                () = async {
-                    loop {
-                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-                        if stop_handle.should_stop() {
-                            log::info!("Received stop signal from handle");
-                            return;
-                        }
+                _ = stop_check_timer.tick(), if is_running => {
+                    if stop_handle.should_stop() {
+                        log::info!("Received stop signal from handle");
+                        self.initiate_shutdown();
+                    } else if shutdown_flag.get() {
+                        log::info!("Received ShutdownSystem command, shutting down");
+                        self.initiate_shutdown();
                     }
-                }, if is_running => {
-                    self.initiate_shutdown();
                 }
                 () = async {
                     match shutdown_deadline {
-                        Some(deadline) => tokio::time::sleep_until(deadline).await,
+                        Some(deadline) => dst::time::sleep_until(deadline).await,
                         None => std::future::pending::<()>().await,
                     }
                 }, if self.state() == NodeState::ShuttingDown => {
@@ -913,7 +926,7 @@ impl LiveNode {
                         residual_events += 1;
                     }
 
-                    let mut maybe_close_id = None;
+                    let mut close_ids: Vec<ClientOrderId> = Vec::new();
 
                     match &evt {
                         ExecutionEvent::Order(order_evt) => {
@@ -941,7 +954,29 @@ impl LiveNode {
                                 }
                                 _ => {}
                             }
-                            maybe_close_id = Some(order_evt.client_order_id());
+                            close_ids.push(order_evt.client_order_id());
+                        }
+                        ExecutionEvent::OrderSubmittedBatch(batch) => {
+                            for submitted in &batch.events {
+                                self.exec_manager.record_local_activity(submitted.client_order_id);
+                            }
+                        }
+                        ExecutionEvent::OrderAcceptedBatch(batch) => {
+                            for accepted in &batch.events {
+                                self.exec_manager.record_local_activity(accepted.client_order_id);
+                                self.exec_manager.clear_recon_tracking(
+                                    &accepted.client_order_id, true,
+                                );
+                            }
+                        }
+                        ExecutionEvent::OrderCanceledBatch(batch) => {
+                            for canceled in &batch.events {
+                                self.exec_manager.record_local_activity(canceled.client_order_id);
+                                self.exec_manager.clear_recon_tracking(
+                                    &canceled.client_order_id, true,
+                                );
+                                close_ids.push(canceled.client_order_id);
+                            }
                         }
                         ExecutionEvent::Report(report) => {
                             if let ExecutionReport::Fill(fill_report) = report
@@ -960,11 +995,11 @@ impl LiveNode {
                     AsyncRunner::handle_exec_event(evt);
 
                     // Post-dispatch: clear tracking when order closes
-                    if let Some(coid) = maybe_close_id {
+                    for coid in &close_ids {
                         let is_closed = self.kernel.cache().borrow()
-                            .order(&coid).is_some_and(|o| o.is_closed());
+                            .order(coid).is_some_and(|o| o.is_closed());
                         if is_closed {
-                            self.exec_manager.clear_recon_tracking(&coid, true);
+                            self.exec_manager.clear_recon_tracking(coid, true);
                         }
                     }
                 }
@@ -973,6 +1008,7 @@ impl LiveNode {
                         log::debug!("Residual exec command: {cmd:?}");
                         residual_events += 1;
                     }
+
                     match &cmd {
                         TradingCommand::SubmitOrder(submit) => {
                             self.exec_manager.register_inflight(submit.client_order_id);
@@ -1059,7 +1095,7 @@ impl LiveNode {
         let delay = self.kernel.delay_post_stop();
         log::info!("Awaiting residual events ({delay:?})...");
 
-        self.shutdown_deadline = Some(tokio::time::Instant::now() + delay);
+        self.shutdown_deadline = Some(dst::time::Instant::now() + delay);
         self.handle.set_state(NodeState::ShuttingDown);
     }
 
@@ -1091,18 +1127,22 @@ impl LiveNode {
             AsyncRunner::handle_time_event(handler);
             drained += 1;
         }
+
         while let Ok(cmd) = data_cmd_rx.try_recv() {
             AsyncRunner::handle_data_command(cmd);
             drained += 1;
         }
+
         while let Ok(evt) = data_evt_rx.try_recv() {
             AsyncRunner::handle_data_event(evt);
             drained += 1;
         }
+
         while let Ok(cmd) = exec_cmd_rx.try_recv() {
             AsyncRunner::handle_exec_command(cmd);
             drained += 1;
         }
+
         while let Ok(evt) = exec_evt_rx.try_recv() {
             AsyncRunner::handle_exec_event(evt);
             drained += 1;
@@ -1316,8 +1356,7 @@ impl LiveNode {
     // get_all_clients() returns references into the engine's client map.
     // This is safe: select! runs one branch to completion, so no other
     // branch can borrow the same RefCells concurrently.
-    #[allow(clippy::await_holding_refcell_ref)]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::await_holding_refcell_ref)]
     async fn run_reconciliation_checks(
         &mut self,
         inflight_interval_ns: u64,
@@ -1443,6 +1482,21 @@ fn flush_all_pending(
             ExecutionEvent::Order(order_evt) => {
                 pending.order_evts.push(order_evt);
             }
+            ExecutionEvent::OrderSubmittedBatch(batch) => {
+                for submitted in batch {
+                    pending.order_evts.push(OrderEventAny::Submitted(submitted));
+                }
+            }
+            ExecutionEvent::OrderAcceptedBatch(batch) => {
+                for accepted in batch {
+                    pending.order_evts.push(OrderEventAny::Accepted(accepted));
+                }
+            }
+            ExecutionEvent::OrderCanceledBatch(batch) => {
+                for canceled in batch {
+                    pending.order_evts.push(OrderEventAny::Canceled(canceled));
+                }
+            }
         }
     }
 
@@ -1497,6 +1551,21 @@ async fn drive_with_event_buffering<F: std::future::Future>(
                     }
                     ExecutionEvent::Order(order_evt) => {
                         pending.order_evts.push(order_evt);
+                    }
+                    ExecutionEvent::OrderSubmittedBatch(batch) => {
+                        for submitted in batch {
+                            pending.order_evts.push(OrderEventAny::Submitted(submitted));
+                        }
+                    }
+                    ExecutionEvent::OrderAcceptedBatch(batch) => {
+                        for accepted in batch {
+                            pending.order_evts.push(OrderEventAny::Accepted(accepted));
+                        }
+                    }
+                    ExecutionEvent::OrderCanceledBatch(batch) => {
+                        for canceled in batch {
+                            pending.order_evts.push(OrderEventAny::Canceled(canceled));
+                        }
                     }
                 }
             }
@@ -1956,6 +2025,7 @@ mod tests {
             AccountId::from("TEST-001"),
             UUID4::new(),
             UnixNanos::default(),
+            None,
         ))
     }
 
@@ -2178,5 +2248,181 @@ mod tests {
         }
 
         assert!(!pending.is_empty());
+    }
+
+    fn stub_submitted_batch_event() -> ExecutionEvent {
+        use nautilus_core::{UUID4, UnixNanos};
+        use nautilus_model::{
+            events::{OrderSubmitted, OrderSubmittedBatch},
+            identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId},
+        };
+
+        let events = vec![
+            OrderSubmitted::new(
+                TraderId::from("TESTER-001"),
+                StrategyId::from("S-001"),
+                InstrumentId::from("TEST.VENUE"),
+                ClientOrderId::from("O-001"),
+                AccountId::from("TEST-001"),
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ),
+            OrderSubmitted::new(
+                TraderId::from("TESTER-001"),
+                StrategyId::from("S-001"),
+                InstrumentId::from("TEST.VENUE"),
+                ClientOrderId::from("O-002"),
+                AccountId::from("TEST-001"),
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ),
+        ];
+
+        ExecutionEvent::OrderSubmittedBatch(OrderSubmittedBatch::new(events))
+    }
+
+    fn stub_canceled_batch_event() -> ExecutionEvent {
+        use nautilus_core::{UUID4, UnixNanos};
+        use nautilus_model::{
+            events::{OrderCanceled, OrderCanceledBatch},
+            identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId},
+        };
+
+        let events = vec![
+            OrderCanceled::new(
+                TraderId::from("TESTER-001"),
+                StrategyId::from("S-001"),
+                InstrumentId::from("TEST.VENUE"),
+                ClientOrderId::from("O-001"),
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                false,
+                None,
+                Some(AccountId::from("TEST-001")),
+            ),
+            OrderCanceled::new(
+                TraderId::from("TESTER-001"),
+                StrategyId::from("S-001"),
+                InstrumentId::from("TEST.VENUE"),
+                ClientOrderId::from("O-002"),
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                false,
+                None,
+                Some(AccountId::from("TEST-001")),
+            ),
+        ];
+
+        ExecutionEvent::OrderCanceledBatch(OrderCanceledBatch::new(events))
+    }
+
+    #[rstest]
+    fn test_flush_all_pending_buffers_submitted_batch_as_individual_events() {
+        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
+        let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
+        let (exec_evt_tx, mut exec_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (_exec_cmd_tx, mut exec_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
+
+        let mut pending = PendingEvents::default();
+
+        exec_evt_tx.send(stub_submitted_batch_event()).unwrap();
+
+        flush_all_pending(
+            &mut pending,
+            &mut time_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
+            &mut exec_evt_rx,
+            &mut exec_cmd_rx,
+        );
+
+        // Batch should be unpacked into individual Submitted events then drained
+        assert!(pending.order_evts.is_empty());
+        assert!(exec_evt_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_flush_all_pending_buffers_canceled_batch_as_individual_events() {
+        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
+        let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
+        let (exec_evt_tx, mut exec_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (_exec_cmd_tx, mut exec_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
+
+        let mut pending = PendingEvents::default();
+
+        exec_evt_tx.send(stub_canceled_batch_event()).unwrap();
+
+        flush_all_pending(
+            &mut pending,
+            &mut time_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
+            &mut exec_evt_rx,
+            &mut exec_cmd_rx,
+        );
+
+        // Batch should be unpacked into individual Canceled events then drained
+        assert!(pending.order_evts.is_empty());
+        assert!(exec_evt_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_flush_all_pending_expands_batch_into_order_evts_before_drain() {
+        use nautilus_model::identifiers::ClientOrderId;
+
+        let (exec_evt_tx, mut exec_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+
+        exec_evt_tx.send(stub_canceled_batch_event()).unwrap();
+
+        let mut pending = PendingEvents::default();
+
+        // Manually replicate what flush_all_pending does before drain
+        while let Ok(evt) = exec_evt_rx.try_recv() {
+            match evt {
+                ExecutionEvent::Account(_) => {
+                    AsyncRunner::handle_exec_event(evt);
+                }
+                ExecutionEvent::Report(report) => {
+                    pending.exec_reports.push(report);
+                }
+                ExecutionEvent::Order(order_evt) => {
+                    pending.order_evts.push(order_evt);
+                }
+                ExecutionEvent::OrderSubmittedBatch(batch) => {
+                    for submitted in batch {
+                        pending.order_evts.push(OrderEventAny::Submitted(submitted));
+                    }
+                }
+                ExecutionEvent::OrderAcceptedBatch(batch) => {
+                    for accepted in batch {
+                        pending.order_evts.push(OrderEventAny::Accepted(accepted));
+                    }
+                }
+                ExecutionEvent::OrderCanceledBatch(batch) => {
+                    for canceled in batch {
+                        pending.order_evts.push(OrderEventAny::Canceled(canceled));
+                    }
+                }
+            }
+        }
+
+        assert_eq!(pending.order_evts.len(), 2);
+        assert!(
+            matches!(&pending.order_evts[0], OrderEventAny::Canceled(c) if c.client_order_id == ClientOrderId::from("O-001"))
+        );
+        assert!(
+            matches!(&pending.order_evts[1], OrderEventAny::Canceled(c) if c.client_order_id == ClientOrderId::from("O-002"))
+        );
     }
 }

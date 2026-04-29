@@ -905,6 +905,7 @@ class BinanceMarketHttpAPI:
         """
         end_time_ms = int(end_time) if end_time is not None else sys.maxsize
         all_bars: list[BinanceBar] = []
+
         while True:
             klines = await self.query_klines(
                 symbol=bar_type.instrument_id.symbol.value,

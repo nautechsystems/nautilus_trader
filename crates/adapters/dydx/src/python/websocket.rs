@@ -76,8 +76,9 @@ impl DydxWebSocketClient {
     /// the HTTP client, use `Self.new_public_with_cache` instead.
     #[staticmethod]
     #[pyo3(name = "new_public")]
-    fn py_new_public(url: String, heartbeat: Option<u64>) -> Self {
-        Self::new_public(url, heartbeat)
+    #[pyo3(signature = (url, heartbeat=None, proxy_url=None))]
+    fn py_new_public(url: String, heartbeat: Option<u64>, proxy_url: Option<String>) -> Self {
+        Self::new_public(url, heartbeat, proxy_url)
     }
 
     /// Creates a new private WebSocket client for account updates.
@@ -86,16 +87,20 @@ impl DydxWebSocketClient {
     /// the HTTP client, use `Self.new_private_with_cache` instead.
     #[staticmethod]
     #[pyo3(name = "new_private")]
+    #[pyo3(signature = (url, private_key, authenticator_ids, account_id, heartbeat=None, proxy_url=None))]
     fn py_new_private(
         url: String,
         private_key: &str,
         authenticator_ids: Vec<u64>,
         account_id: AccountId,
         heartbeat: Option<u64>,
+        proxy_url: Option<String>,
     ) -> PyResult<Self> {
         let credential = DydxCredential::from_private_key(private_key, authenticator_ids)
             .map_err(to_pyvalue_err)?;
-        Ok(Self::new_private(url, credential, account_id, heartbeat))
+        Ok(Self::new_private(
+            url, credential, account_id, heartbeat, proxy_url,
+        ))
     }
 
     /// Returns `true` when the client is connected.
@@ -177,7 +182,7 @@ impl DydxWebSocketClient {
     /// raw messages into venue-specific `DydxWsOutputMessage` values.
     #[pyo3(name = "connect")]
     #[pyo3(signature = (loop_, instruments, callback, trader_id=None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
@@ -189,6 +194,7 @@ impl DydxWebSocketClient {
         let call_soon = loop_.getattr(py, "call_soon_threadsafe")?;
 
         let mut instruments_any = Vec::new();
+
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
             instruments_any.push(inst_any);
@@ -861,6 +867,7 @@ impl DydxWebSocketClient {
     #[pyo3(name = "cache_instruments")]
     fn py_cache_instruments(&self, instruments: Vec<Py<PyAny>>, py: Python<'_>) -> PyResult<()> {
         let mut instruments_any = Vec::new();
+
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
             instruments_any.push(inst_any);
@@ -1216,7 +1223,7 @@ fn handle_markets_trading_data(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn ensure_accepted_to_python(
     client_order_id: ClientOrderId,
     account_id: AccountId,

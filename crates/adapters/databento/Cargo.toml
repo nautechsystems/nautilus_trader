@@ -18,23 +18,25 @@ workspace = true
 
 [lib]
 name = "nautilus_databento"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = ["live", "high-precision"]
 arrow = ["dep:arrow", "nautilus-serialization"]
 extension-module = [
   "nautilus-core/extension-module",
+  "nautilus-live?/extension-module",
   "nautilus-model/extension-module",
   "python",
   "pyo3/extension-module",
 ]
-live = ["nautilus-live", "nautilus-system", "dotenvy"]
+live = ["nautilus-live", "nautilus-live/node", "nautilus-system", "dotenvy"]
 python = [
   "arrow",
   "live",
   "nautilus-core/ffi",
   "nautilus-core/python",
+  "nautilus-live/python",
   "nautilus-model/ffi",
   "nautilus-model/python",
   "nautilus-serialization/python",
@@ -87,7 +89,6 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
-nautilus-testkit = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
@@ -97,6 +98,7 @@ name = "databento-sandbox"
 path = "bin/sandbox.rs"
 required-features = ["python"]
 doc = false
+test = false
 
 [[example]]
 name = "databento-data-tester"

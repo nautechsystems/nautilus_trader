@@ -17,4 +17,4 @@
 
 pub mod imbalance;
 
-pub use imbalance::BookImbalanceActor;
+pub use imbalance::{BookImbalanceActor, BookImbalanceActorConfig};

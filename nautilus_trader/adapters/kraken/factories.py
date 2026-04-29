@@ -269,7 +269,7 @@ class KrakenLiveDataClientFactory(LiveDataClientFactory):
                 max_retries=config.max_retries,
                 retry_delay_ms=config.retry_delay_initial_ms,
                 retry_delay_max_ms=config.retry_delay_max_ms,
-                proxy_url=config.http_proxy_url,
+                proxy_url=config.proxy_url,
                 max_requests_per_second=config.max_requests_per_second,
             )
 
@@ -283,7 +283,7 @@ class KrakenLiveDataClientFactory(LiveDataClientFactory):
                 max_retries=config.max_retries,
                 retry_delay_ms=config.retry_delay_initial_ms,
                 retry_delay_max_ms=config.retry_delay_max_ms,
-                proxy_url=config.http_proxy_url,
+                proxy_url=config.proxy_url,
                 max_requests_per_second=config.max_requests_per_second,
             )
 
@@ -362,7 +362,7 @@ class KrakenLiveExecClientFactory(LiveExecClientFactory):
                 max_retries=config.max_retries,
                 retry_delay_ms=config.retry_delay_initial_ms,
                 retry_delay_max_ms=config.retry_delay_max_ms,
-                proxy_url=config.http_proxy_url,
+                proxy_url=config.proxy_url,
                 max_requests_per_second=config.max_requests_per_second,
             )
 
@@ -376,7 +376,7 @@ class KrakenLiveExecClientFactory(LiveExecClientFactory):
                 max_retries=config.max_retries,
                 retry_delay_ms=config.retry_delay_initial_ms,
                 retry_delay_max_ms=config.retry_delay_max_ms,
-                proxy_url=config.http_proxy_url,
+                proxy_url=config.proxy_url,
                 max_requests_per_second=config.max_requests_per_second,
             )
 

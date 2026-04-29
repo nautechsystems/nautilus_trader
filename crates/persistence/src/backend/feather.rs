@@ -21,6 +21,7 @@ use std::{
     sync::Arc,
 };
 
+use ahash::AHashMap;
 use chrono_tz::Tz;
 use datafusion::arrow::{
     datatypes::Schema, error::ArrowError, ipc::writer::StreamWriter, record_batch::RecordBatch,
@@ -33,11 +34,20 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
-        Bar, CatalogPathPrefix, CustomData, CustomDataTrait, Data, IndexPriceUpdate,
-        MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
-        close::InstrumentClose, encode_custom_to_arrow, get_arrow_schema,
+        Bar, CatalogPathPrefix, CustomData, CustomDataTrait, Data, FundingRateUpdate,
+        IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
+        OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose, encode_custom_to_arrow,
+        get_arrow_schema,
+    },
+    events::{
+        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEmulated, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
+        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSnapshot,
+        OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged,
+        PositionClosed, PositionOpened, PositionSnapshot,
     },
     instruments::InstrumentAny,
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 use nautilus_serialization::arrow::{EncodeToRecordBatch, KEY_INSTRUMENT_ID};
 use object_store::{ObjectStore, ObjectStoreExt, path::Path};
@@ -249,6 +259,64 @@ impl FeatherWriter {
         Ok(())
     }
 
+    /// Writes a batch of data values as one or more `RecordBatch`es.
+    ///
+    /// Uses `T::chunk_metadata` to derive the file schema metadata. This protects
+    /// types like `OrderBookDelta` from having their file metadata poisoned by a
+    /// leading sentinel row (e.g. `BookAction::Clear`, which carries
+    /// `price_precision=0, size_precision=0`).
+    ///
+    /// Per-instrument types are partitioned by instrument so a mixed-instrument
+    /// batch lands in the correct file for each instrument.
+    pub async fn write_batch<T>(&mut self, data: Vec<T>) -> Result<(), Box<dyn std::error::Error>>
+    where
+        T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
+    {
+        if data.is_empty() || !self.should_write::<T>() {
+            return Ok(());
+        }
+
+        // Group by logical writer identity (instrument_id for per-instrument types).
+        // Grouping on FileWriterPath would split same-instrument rows across distinct
+        // timestamped paths when the writer does not yet exist under a LiveClock.
+        let type_str = T::path_prefix();
+        let needs_instrument =
+            self.per_instrument_types.contains(type_str) || type_str.starts_with("custom_");
+
+        let mut groups: AHashMap<Option<String>, Vec<T>> = AHashMap::new();
+
+        for item in data {
+            let instrument_id = if needs_instrument {
+                T::metadata(&item).get(KEY_INSTRUMENT_ID).cloned()
+            } else {
+                None
+            };
+            groups.entry(instrument_id).or_default().push(item);
+        }
+
+        for group in groups.into_values() {
+            let path = self.get_writer_path(&group[0])?;
+            let metadata = T::chunk_metadata(&group);
+
+            if !self.writers.contains_key(&path) {
+                self.create_writer_with_metadata::<T>(path.clone(), metadata.clone())?;
+            }
+
+            let batch = T::encode_batch(&metadata, &group)?;
+
+            if let Some(writer) = self.writers.get_mut(&path) {
+                let should_rotate = writer.write_record_batch(&batch)?;
+                if should_rotate || self.check_scheduled_rotation(&path) {
+                    self.rotate_writer(&path).await?;
+                }
+            }
+        }
+
+        self.check_flush().await?;
+
+        Ok(())
+    }
+
     /// Checks if enough time has passed since last flush and flushes if needed.
     async fn check_flush(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.flush_interval_ms == 0 {
@@ -381,8 +449,22 @@ impl FeatherWriter {
     where
         T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
     {
+        self.create_writer_with_metadata::<T>(path, T::metadata(data))
+    }
+
+    /// Creates (and inserts) a new `FileWriter` for type T with pre-computed metadata.
+    ///
+    /// Use this variant when the caller has selected metadata from a chunk
+    /// (e.g. via `T::chunk_metadata`) to avoid schema poisoning by sentinel rows.
+    fn create_writer_with_metadata<T>(
+        &mut self,
+        path: FileWriterPath,
+        metadata: HashMap<String, String>,
+    ) -> Result<(), ArrowError>
+    where
+        T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
+    {
         let schema = if self.per_instrument_types.contains(T::path_prefix()) {
-            let metadata = T::metadata(data);
             T::get_schema(Some(metadata))
         } else {
             T::get_schema(None)
@@ -489,6 +571,7 @@ impl FeatherWriter {
     /// its current buffer size and file path.
     pub fn get_current_file_info(&self) -> HashMap<String, (u64, String)> {
         let mut info = HashMap::new();
+
         for (path, buffer) in &self.writers {
             let key = match &path.instrument_id {
                 Some(id) => format!("{}:{}", path.type_str, id),
@@ -647,8 +730,7 @@ impl FeatherWriter {
     /// Writes a Data enum value to the appropriate writer.
     ///
     /// This is a convenience method that routes the Data enum to the appropriate
-    /// typed write method. FundingRateUpdate is intentionally not supported and
-    /// is not a variant of the Data enum here; it is not written to feather.
+    /// typed write method.
     pub async fn write_data(&mut self, data: Data) -> Result<(), Box<dyn std::error::Error>> {
         match data {
             Data::Quote(quote) => self.write(quote).await,
@@ -658,14 +740,12 @@ impl FeatherWriter {
             Data::Depth10(depth) => self.write(*depth).await,
             Data::IndexPriceUpdate(price) => self.write(price).await,
             Data::MarkPriceUpdate(price) => self.write(price).await,
+            Data::InstrumentStatus(status) => self.write(status).await,
             Data::InstrumentClose(close) => self.write(close).await,
             Data::Custom(custom) => self.write_custom_data(&custom).await,
             Data::Deltas(deltas_api) => {
-                // OrderBookDeltas_API contains multiple deltas - write each one individually
-                for delta in &deltas_api.deltas {
-                    self.write(*delta).await?;
-                }
-                Ok(())
+                // Batch write so chunk_metadata can skip a leading BookAction::Clear sentinel
+                self.write_batch(deltas_api.deltas.clone()).await
             }
         }
     }
@@ -722,8 +802,7 @@ impl FeatherWriter {
     /// Subscribes to all messages on the message bus (pattern "*").
     ///
     /// This will automatically write all supported data types that are published
-    /// on the message bus to the feather files. FundingRateUpdate is intentionally
-    /// not written; messages of that type are ignored (no downcast handler).
+    /// on the message bus to the feather files.
     ///
     /// The writer must be wrapped in `Rc<RefCell<>>` to be shareable with the message bus handler.
     ///
@@ -742,53 +821,61 @@ impl FeatherWriter {
             let _guard = runtime.enter();
 
             // Try to downcast to various data types and write them
-            if let Some(quote) = message.downcast_ref::<QuoteTick>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*quote)) {
-                    log::warn!("Failed to write QuoteTick: {e}");
-                }
-            } else if let Some(trade) = message.downcast_ref::<TradeTick>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*trade)) {
-                    log::warn!("Failed to write TradeTick: {e}");
-                }
-            } else if let Some(bar) = message.downcast_ref::<Bar>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*bar)) {
-                    log::warn!("Failed to write Bar: {e}");
-                }
-            } else if let Some(delta) = message.downcast_ref::<OrderBookDelta>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*delta)) {
-                    log::warn!("Failed to write OrderBookDelta: {e}");
-                }
-            } else if let Some(depth) = message.downcast_ref::<OrderBookDepth10>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*depth)) {
-                    log::warn!("Failed to write OrderBookDepth10: {e}");
-                }
-            } else if let Some(price) = message.downcast_ref::<IndexPriceUpdate>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*price)) {
-                    log::warn!("Failed to write IndexPriceUpdate: {e}");
-                }
-            } else if let Some(price) = message.downcast_ref::<MarkPriceUpdate>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*price)) {
-                    log::warn!("Failed to write MarkPriceUpdate: {e}");
-                }
-            } else if let Some(close) = message.downcast_ref::<InstrumentClose>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*close)) {
-                    log::warn!("Failed to write InstrumentClose: {e}");
-                }
-            } else if let Some(deltas) = message.downcast_ref::<OrderBookDeltas>() {
-                // OrderBookDeltas contains multiple deltas - write each one individually
-                let mut writer = writer.borrow_mut();
-                for delta in &deltas.deltas {
-                    if let Err(e) = runtime.block_on(writer.write(*delta)) {
-                        log::warn!("Failed to write OrderBookDelta from OrderBookDeltas: {e}");
+            macro_rules! try_write {
+                ($message:expr, $type:ty, $name:literal) => {
+                    if let Some(value) = $message.downcast_ref::<$type>() {
+                        let mut writer = writer.borrow_mut();
+                        if let Err(e) = runtime.block_on(writer.write(value.clone())) {
+                            log::warn!("Failed to write {}: {e}", $name);
+                        }
+                        return;
                     }
+                };
+            }
+
+            try_write!(message, QuoteTick, "QuoteTick");
+            try_write!(message, TradeTick, "TradeTick");
+            try_write!(message, Bar, "Bar");
+            try_write!(message, OrderBookDelta, "OrderBookDelta");
+            try_write!(message, OrderBookDepth10, "OrderBookDepth10");
+            try_write!(message, IndexPriceUpdate, "IndexPriceUpdate");
+            try_write!(message, MarkPriceUpdate, "MarkPriceUpdate");
+            try_write!(message, InstrumentStatus, "InstrumentStatus");
+            try_write!(message, InstrumentClose, "InstrumentClose");
+            try_write!(message, FundingRateUpdate, "FundingRateUpdate");
+            try_write!(message, AccountState, "AccountState");
+            try_write!(message, OrderInitialized, "OrderInitialized");
+            try_write!(message, OrderDenied, "OrderDenied");
+            try_write!(message, OrderEmulated, "OrderEmulated");
+            try_write!(message, OrderSubmitted, "OrderSubmitted");
+            try_write!(message, OrderAccepted, "OrderAccepted");
+            try_write!(message, OrderRejected, "OrderRejected");
+            try_write!(message, OrderPendingCancel, "OrderPendingCancel");
+            try_write!(message, OrderCanceled, "OrderCanceled");
+            try_write!(message, OrderCancelRejected, "OrderCancelRejected");
+            try_write!(message, OrderExpired, "OrderExpired");
+            try_write!(message, OrderTriggered, "OrderTriggered");
+            try_write!(message, OrderPendingUpdate, "OrderPendingUpdate");
+            try_write!(message, OrderReleased, "OrderReleased");
+            try_write!(message, OrderModifyRejected, "OrderModifyRejected");
+            try_write!(message, OrderUpdated, "OrderUpdated");
+            try_write!(message, OrderFilled, "OrderFilled");
+            try_write!(message, PositionOpened, "PositionOpened");
+            try_write!(message, PositionChanged, "PositionChanged");
+            try_write!(message, PositionClosed, "PositionClosed");
+            try_write!(message, PositionAdjusted, "PositionAdjusted");
+            try_write!(message, OrderSnapshot, "OrderSnapshot");
+            try_write!(message, PositionSnapshot, "PositionSnapshot");
+            try_write!(message, OrderStatusReport, "OrderStatusReport");
+            try_write!(message, FillReport, "FillReport");
+            try_write!(message, PositionStatusReport, "PositionStatusReport");
+            try_write!(message, ExecutionMassStatus, "ExecutionMassStatus");
+
+            if let Some(deltas) = message.downcast_ref::<OrderBookDeltas>() {
+                // Batch write so chunk_metadata can skip a leading BookAction::Clear sentinel
+                let mut writer = writer.borrow_mut();
+                if let Err(e) = runtime.block_on(writer.write_batch(deltas.deltas.clone())) {
+                    log::warn!("Failed to write OrderBookDeltas: {e}");
                 }
             } else if let Some(custom) = message.downcast_ref::<CustomData>() {
                 let mut writer = writer.borrow_mut();
@@ -801,7 +888,7 @@ impl FeatherWriter {
                     log::warn!("Failed to write InstrumentAny: {e}");
                 }
             }
-            // Silently ignore other message types (events, commands, etc.)
+            // Silently ignore unsupported message types.
         });
 
         // Subscribe to all messages using wildcard pattern

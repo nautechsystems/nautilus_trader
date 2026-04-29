@@ -26,6 +26,7 @@ use crate::defi::tick_map::tick::PoolTick;
 /// This function panics if:
 /// - Adding positive delta causes overflow.
 /// - Subtracting causes underflow.
+#[must_use]
 pub fn liquidity_math_add(x: u128, y: i128) -> u128 {
     if y < 0 {
         let delta = y.unsigned_abs();
@@ -51,6 +52,7 @@ pub fn liquidity_math_add(x: u128, y: i128) -> u128 {
 /// # Panics
 ///
 /// Panics if `tick_spacing` is zero.
+#[must_use]
 pub fn tick_spacing_to_max_liquidity_per_tick(tick_spacing: i32) -> u128 {
     assert!(tick_spacing != 0, "Tick spacing must be non-zero");
 
@@ -59,7 +61,7 @@ pub fn tick_spacing_to_max_liquidity_per_tick(tick_spacing: i32) -> u128 {
     let max_tick = (PoolTick::MAX_TICK / tick_spacing) * tick_spacing;
 
     // Calculate total number of ticks, cast to i64 to avoid potential overflow in subtraction
-    let num_ticks = ((max_tick as i64 - min_tick as i64) / tick_spacing as i64) + 1;
+    let num_ticks = ((i64::from(max_tick) - i64::from(min_tick)) / i64::from(tick_spacing)) + 1;
 
     u128::MAX / num_ticks as u128
 }
@@ -86,19 +88,19 @@ mod tests {
     #[should_panic(expected = "Liquidity addition overflow")]
     fn test_addition_overflow() {
         let x = u128::MAX - 14; // Close to max so adding 15 will overflow
-        liquidity_math_add(x, 15);
+        let _ = liquidity_math_add(x, 15);
     }
 
     #[rstest]
     #[should_panic(expected = "Liquidity subtraction underflow")]
     fn test_subtraction_underflow_zero() {
-        liquidity_math_add(0, -1);
+        let _ = liquidity_math_add(0, -1);
     }
 
     #[rstest]
     #[should_panic(expected = "Liquidity subtraction underflow")]
     fn test_subtraction_underflow() {
-        liquidity_math_add(3, -4);
+        let _ = liquidity_math_add(3, -4);
     }
 
     #[rstest]
@@ -106,22 +108,22 @@ mod tests {
         // 0.01 tier ot 1 tick spacing
         assert_eq!(
             tick_spacing_to_max_liquidity_per_tick(1),
-            191757530477355301479181766273477
+            191_757_530_477_355_301_479_181_766_273_477
         );
         // 0.05 % tier or 10 tick spacing
         assert_eq!(
             tick_spacing_to_max_liquidity_per_tick(10),
-            1917569901783203986719870431555990
+            1_917_569_901_783_203_986_719_870_431_555_990
         );
         // 0.3 % tier or 60 tick spacing
         assert_eq!(
             tick_spacing_to_max_liquidity_per_tick(60),
-            11505743598341114571880798222544994
+            11_505_743_598_341_114_571_880_798_222_544_994
         );
         // 1.00% tier or 200 tick spacing
         assert_eq!(
             tick_spacing_to_max_liquidity_per_tick(200),
-            38350317471085141830651933667504588
+            38_350_317_471_085_141_830_651_933_667_504_588
         );
     }
 }

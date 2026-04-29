@@ -27,12 +27,13 @@ workspace = true
 
 [lib]
 name = "nautilus_serialization"
-crate-type = ["rlib", "staticlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = []
 arrow = ["dep:arrow"]
 capnp = ["dep:capnp"]
+display = ["arrow"]
 sbe = []
 extension-module = [
   "nautilus-core/extension-module",
@@ -98,7 +99,7 @@ harness = false
 required-features = ["sbe"]
 
 [[bench]]
-name = "quote_tick_capnp_vs_sbe"
-path = "benches/quote_tick_capnp_vs_sbe.rs"
+name = "market_data_capnp_vs_sbe"
+path = "benches/market_data_capnp_vs_sbe.rs"
 harness = false
 required-features = ["capnp", "sbe"]

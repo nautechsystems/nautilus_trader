@@ -18,7 +18,19 @@ use nautilus_model::identifiers::ClientId;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for `ExecutionEngine` instances.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+)]
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(deny_unknown_fields)]
 pub struct ExecutionEngineConfig {
     /// If the cache should be loaded on initialization.
     #[serde(default = "default_true")]
@@ -39,7 +51,7 @@ pub struct ExecutionEngineConfig {
     #[builder(default)]
     pub snapshot_positions: bool,
     /// The interval (seconds) at which additional position state snapshots are persisted.
-    /// If None then no additional snapshots will be taken.
+    /// If `None` then no additional snapshots will be taken.
     #[serde(default)]
     pub snapshot_positions_interval_secs: Option<f64>,
     /// If order fills exceeding order quantity are allowed (logs warning instead of raising).

@@ -66,6 +66,7 @@ async fn test_public_endpoints() -> anyhow::Result<()> {
 
     // Test 1: Get server time
     println!("1. Testing GET /v5/market/time");
+
     match client.get_server_time().await {
         Ok(response) => {
             println!(
@@ -181,6 +182,7 @@ async fn test_authenticated_endpoints() -> anyhow::Result<()> {
 
     // Test 1: Get open orders
     println!("\n1. Testing GET /v5/order/realtime (open orders)");
+
     match client
         .get_open_orders(
             BybitProductType::Linear,

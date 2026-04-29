@@ -46,8 +46,8 @@ use nautilus_network::{
     http::USER_AGENT,
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, PingHandler, SubscriptionState, WebSocketClient, WebSocketConfig,
-        channel_message_handler,
+        AuthTracker, PingHandler, SubscriptionState, TransportBackend, WebSocketClient,
+        WebSocketConfig, channel_message_handler,
     },
 };
 use tokio_util::sync::CancellationToken;
@@ -69,7 +69,8 @@ use crate::common::{
         DERIBIT_WS_ORDER_QUOTA, DERIBIT_WS_SUBSCRIPTION_KEY, DERIBIT_WS_SUBSCRIPTION_QUOTA,
         DERIBIT_WS_URL,
     },
-    credential::Credential,
+    credential::{Credential, credential_env_vars},
+    enums::DeribitEnvironment,
     parse::bar_spec_to_resolution,
 };
 
@@ -88,7 +89,7 @@ const AUTHENTICATION_TIMEOUT_SECS: u64 = 30;
 )]
 pub struct DeribitWebSocketClient {
     url: String,
-    is_testnet: bool,
+    environment: DeribitEnvironment,
     heartbeat_interval: Option<u64>,
     credential: Option<Credential>,
     auth_state: Arc<tokio::sync::RwLock<Option<AuthState>>>,
@@ -107,13 +108,15 @@ pub struct DeribitWebSocketClient {
     account_id: Option<AccountId>,
     bars_timestamp_on_close: bool,
     subscribe_errors: Arc<Mutex<Vec<String>>>,
+    transport_backend: TransportBackend,
+    proxy_url: Option<String>,
 }
 
 impl Debug for DeribitWebSocketClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(DeribitWebSocketClient))
             .field("url", &self.url)
-            .field("is_testnet", &self.is_testnet)
+            .field("environment", &self.environment)
             .field("has_credentials", &self.credential.is_some())
             .field("is_authenticated", &self.auth_tracker.is_authenticated())
             .field(
@@ -138,41 +141,45 @@ impl DeribitWebSocketClient {
         api_key: Option<String>,
         api_secret: Option<String>,
         heartbeat_interval: u64,
-        is_testnet: bool,
+        environment: DeribitEnvironment,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         Self::new_inner(
             url,
             api_key,
             api_secret,
             heartbeat_interval,
-            is_testnet,
+            environment,
             true,
+            transport_backend,
+            proxy_url,
         )
     }
 
     /// Internal constructor with control over environment variable fallback.
+    #[expect(clippy::too_many_arguments)]
     fn new_inner(
         url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
         heartbeat_interval: u64,
-        is_testnet: bool,
+        environment: DeribitEnvironment,
         env_fallback: bool,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
-        let url = url.unwrap_or_else(|| {
-            if is_testnet {
-                DERIBIT_TESTNET_WS_URL.to_string()
-            } else {
-                DERIBIT_WS_URL.to_string()
-            }
+        let url = url.unwrap_or_else(|| match environment {
+            DeribitEnvironment::Testnet => DERIBIT_TESTNET_WS_URL.to_string(),
+            DeribitEnvironment::Mainnet => DERIBIT_WS_URL.to_string(),
         });
 
         // Resolve credential from config or environment variables (if env_fallback is true)
         let credential =
-            Credential::resolve_with_env_fallback(api_key, api_secret, is_testnet, env_fallback)?;
+            Credential::resolve_with_env_fallback(api_key, api_secret, environment, env_fallback)?;
 
         if credential.is_some() {
-            log::info!("Credentials loaded (testnet={is_testnet})");
+            log::info!("Credentials loaded ({environment})");
         } else {
             log::debug!("No credentials configured - unauthenticated mode");
         }
@@ -182,7 +189,7 @@ impl DeribitWebSocketClient {
 
         Ok(Self {
             url,
-            is_testnet,
+            environment,
             heartbeat_interval: Some(heartbeat_interval),
             credential,
             auth_state: Arc::new(tokio::sync::RwLock::new(None)),
@@ -206,6 +213,8 @@ impl DeribitWebSocketClient {
             account_id: None,
             bars_timestamp_on_close: true,
             subscribe_errors: Arc::new(Mutex::new(Vec::new())),
+            transport_backend,
+            proxy_url,
         })
     }
 
@@ -216,14 +225,19 @@ impl DeribitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if initialization fails.
-    pub fn new_public(is_testnet: bool) -> anyhow::Result<Self> {
+    pub fn new_public(
+        environment: DeribitEnvironment,
+        proxy_url: Option<String>,
+    ) -> anyhow::Result<Self> {
         Self::new_inner(
             None,
             None,
             None,
             DERIBIT_WS_HEARTBEAT_SECS,
-            is_testnet,
+            environment,
             false,
+            TransportBackend::default(),
+            proxy_url,
         )
     }
 
@@ -238,9 +252,18 @@ impl DeribitWebSocketClient {
     pub fn new_unauthenticated(
         url: Option<String>,
         heartbeat_interval: u64,
-        is_testnet: bool,
+        environment: DeribitEnvironment,
     ) -> anyhow::Result<Self> {
-        Self::new_inner(url, None, None, heartbeat_interval, is_testnet, false)
+        Self::new_inner(
+            url,
+            None,
+            None,
+            heartbeat_interval,
+            environment,
+            false,
+            TransportBackend::default(),
+            None,
+        )
     }
 
     /// Creates an authenticated client with credentials.
@@ -252,12 +275,11 @@ impl DeribitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if credentials are not found in environment variables.
-    pub fn with_credentials(is_testnet: bool) -> anyhow::Result<Self> {
-        let (key_env, secret_env) = if is_testnet {
-            ("DERIBIT_TESTNET_API_KEY", "DERIBIT_TESTNET_API_SECRET")
-        } else {
-            ("DERIBIT_API_KEY", "DERIBIT_API_SECRET")
-        };
+    pub fn with_credentials(
+        environment: DeribitEnvironment,
+        proxy_url: Option<String>,
+    ) -> anyhow::Result<Self> {
+        let (key_env, secret_env) = credential_env_vars(environment);
 
         let api_key = get_or_env_var_opt(None, key_env)
             .ok_or_else(|| anyhow::anyhow!("Missing environment variable: {key_env}"))?;
@@ -269,7 +291,9 @@ impl DeribitWebSocketClient {
             Some(api_key),
             Some(api_secret),
             DERIBIT_WS_HEARTBEAT_SECS,
-            is_testnet,
+            environment,
+            TransportBackend::default(),
+            proxy_url,
         )
     }
 
@@ -289,6 +313,12 @@ impl DeribitWebSocketClient {
     #[must_use]
     pub fn url(&self) -> &str {
         &self.url
+    }
+
+    /// Returns the environment for this client.
+    #[must_use]
+    pub fn environment(&self) -> DeribitEnvironment {
+        self.environment
     }
 
     /// Returns whether the client is closed.
@@ -429,6 +459,26 @@ impl DeribitWebSocketClient {
         self.index_price_subs = subs;
     }
 
+    /// Registers an instrument for mark price emission from ticker messages.
+    pub fn add_mark_price_sub(&self, instrument_id: InstrumentId) {
+        self.mark_price_subs.insert(instrument_id);
+    }
+
+    /// Unregisters an instrument from mark price emission.
+    pub fn remove_mark_price_sub(&self, instrument_id: &InstrumentId) {
+        self.mark_price_subs.remove(instrument_id);
+    }
+
+    /// Registers an instrument for index price emission from ticker messages.
+    pub fn add_index_price_sub(&self, instrument_id: InstrumentId) {
+        self.index_price_subs.insert(instrument_id);
+    }
+
+    /// Unregisters an instrument from index price emission.
+    pub fn remove_index_price_sub(&self, instrument_id: &InstrumentId) {
+        self.index_price_subs.remove(instrument_id);
+    }
+
     /// Registers an instrument for option greeks emission from ticker messages.
     pub fn add_option_greeks_sub(&self, instrument_id: InstrumentId) {
         self.option_greeks_subs.insert(instrument_id);
@@ -481,6 +531,8 @@ impl DeribitWebSocketClient {
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
 
         // Configure rate limits
@@ -665,6 +717,7 @@ impl DeribitWebSocketClient {
                                     let auth_tracker = auth_tracker.clone();
                                     let cmd_tx = cmd_tx.clone();
                                     let cancel = retry_cancel.clone();
+
                                     get_runtime().spawn(async move {
                                         tokio::select! {
                                             () = tokio::time::sleep(Duration::from_secs(delay_secs)) => {}
@@ -1491,7 +1544,7 @@ impl DeribitWebSocketClient {
     /// Returns an error if:
     /// - The client is not authenticated
     /// - The command fails to send
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn modify_order(
         &self,
         order_id: &str,

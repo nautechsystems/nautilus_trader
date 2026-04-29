@@ -96,7 +96,8 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     use_position_ids : bool, default True
         If venue position IDs will be generated on order fills.
     use_random_ids : bool, default False
-        If all venue generated identifiers will be random UUID4's.
+        If venue order IDs and position IDs will be random UUID4's.
+        Trade IDs are always deterministic and not affected by this flag.
     use_reduce_only : bool, default True
         If the `reduce_only` execution instruction on orders will be honored.
     use_market_order_acks : bool, default False

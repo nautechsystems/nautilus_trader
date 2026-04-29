@@ -19,8 +19,8 @@
 //! single collection (e.g. `Vec<AccountAny>`).  Each variant simply embeds one of the concrete
 //! account structs defined in this module.
 
-use ahash::AHashMap;
 use enum_dispatch::enum_dispatch;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -51,6 +51,7 @@ impl AccountAny {
         }
     }
 
+    #[must_use]
     pub fn last_event(&self) -> Option<AccountState> {
         match self {
             Self::Margin(margin) => margin.last_event(),
@@ -59,6 +60,7 @@ impl AccountAny {
         }
     }
 
+    #[must_use]
     pub fn events(&self) -> Vec<AccountState> {
         match self {
             Self::Margin(margin) => margin.events(),
@@ -81,7 +83,8 @@ impl AccountAny {
         }
     }
 
-    pub fn balances(&self) -> AHashMap<Currency, AccountBalance> {
+    #[must_use]
+    pub fn balances(&self) -> IndexMap<Currency, AccountBalance> {
         match self {
             Self::Margin(margin) => margin.balances(),
             Self::Cash(cash) => cash.balances(),
@@ -89,7 +92,8 @@ impl AccountAny {
         }
     }
 
-    pub fn balances_locked(&self) -> AHashMap<Currency, Money> {
+    #[must_use]
+    pub fn balances_locked(&self) -> IndexMap<Currency, Money> {
         match self {
             Self::Margin(margin) => margin.balances_locked(),
             Self::Cash(cash) => cash.balances_locked(),
@@ -97,6 +101,7 @@ impl AccountAny {
         }
     }
 
+    #[must_use]
     pub fn base_currency(&self) -> Option<Currency> {
         match self {
             Self::Margin(margin) => margin.base_currency(),
@@ -108,7 +113,7 @@ impl AccountAny {
     /// # Errors
     ///
     /// Returns an error if `events` is empty.
-    #[allow(clippy::missing_panics_doc)] // Guarded by empty check above
+    #[expect(clippy::missing_panics_doc)] // Guarded by empty check above
     pub fn from_events(events: &[AccountState]) -> anyhow::Result<Self> {
         if events.is_empty() {
             anyhow::bail!("No order events provided to create `AccountAny`");
@@ -174,6 +179,7 @@ impl AccountAny {
         }
     }
 
+    #[must_use]
     pub fn balance(&self, currency: Option<Currency>) -> Option<&AccountBalance> {
         match self {
             Self::Margin(margin) => margin.balance(currency),

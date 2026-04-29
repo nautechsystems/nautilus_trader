@@ -27,7 +27,7 @@
 //! # Usage
 //!
 //! ```sh
-//! cargo run --example polymarket-new-market-monitor --package nautilus-polymarket
+//! cargo run --example polymarket-new-market-monitor --package nautilus-polymarket --features examples
 //! ```
 
 use std::sync::Arc;
@@ -44,6 +44,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_polymarket::{
     common::{enums::SignatureType, models::PolymarketLabel},
     config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
@@ -137,6 +138,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_config = PolymarketDataClientConfig {
         subscribe_new_markets: true,
         filters: vec![Arc::new(search_filter)],
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -144,6 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         account_id,
         signature_type: SignatureType::PolyGnosisSafe,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

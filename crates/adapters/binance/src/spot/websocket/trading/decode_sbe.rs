@@ -20,6 +20,7 @@
 //! venue-level structs defined in [`super::user_data`].
 //! The existing JSON parse functions in [`super::parse`] then convert these to Nautilus types.
 
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::user_data::{
@@ -253,8 +254,8 @@ pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccount
 
         balances.push(BinanceSpotBalanceEntry {
             asset,
-            free: mantissa_to_decimal_string(free_mantissa, exponent),
-            locked: mantissa_to_decimal_string(locked_mantissa, exponent),
+            free: mantissa_to_decimal(free_mantissa, exponent),
+            locked: mantissa_to_decimal(locked_mantissa, exponent),
         });
     }
 
@@ -403,6 +404,15 @@ fn us_to_ms(us: i64) -> i64 {
     us / 1000
 }
 
+/// Converts an SBE `mantissa * 10^exponent` pair to a [`Decimal`] without floating-point.
+fn mantissa_to_decimal(mantissa: i64, exponent: i8) -> Decimal {
+    if exponent >= 0 {
+        Decimal::from(mantissa) * Decimal::from(10_i64.pow(exponent as u32))
+    } else {
+        Decimal::new(mantissa, (-exponent) as u32)
+    }
+}
+
 /// Converts a mantissa + exponent pair to a decimal string without floating-point.
 ///
 /// SBE encodes numeric values as `mantissa * 10^exponent`. For exponent = -2
@@ -467,7 +477,7 @@ mod tests {
         self_trade_prevention_mode::SelfTradePreventionMode, time_in_force::TimeInForce as SbeTif,
     };
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn encode_execution_report(
         symbol: &str,
         client_order_id: &str,
@@ -624,6 +634,25 @@ mod tests {
         assert_eq!(mantissa_to_decimal_string(42, 2), "4200");
         assert_eq!(mantissa_to_decimal_string(5, -3), "0.005");
         assert_eq!(mantissa_to_decimal_string(-250000, -2), "-2500.00");
+    }
+
+    #[rstest]
+    #[case::typical_price(250000_i64, -2_i8, "2500.00")]
+    #[case::btc_one(100000000_i64, -8_i8, "1.00000000")]
+    #[case::zero_negative_exp(0_i64, -8_i8, "0")]
+    #[case::zero_zero_exp(0_i64, 0_i8, "0")]
+    #[case::whole_no_scale(42_i64, 0_i8, "42")]
+    #[case::positive_exponent(42_i64, 2_i8, "4200")]
+    #[case::small_fractional(5_i64, -3_i8, "0.005")]
+    #[case::negative_mantissa(-250000_i64, -2_i8, "-2500.00")]
+    #[case::large_positive_exponent(1_i64, 9_i8, "1000000000")]
+    fn test_mantissa_to_decimal_parametrized(
+        #[case] mantissa: i64,
+        #[case] exponent: i8,
+        #[case] expected: &str,
+    ) {
+        let result = mantissa_to_decimal(mantissa, exponent);
+        assert_eq!(result, Decimal::from_str_exact(expected).unwrap());
     }
 
     #[rstest]
@@ -853,8 +882,14 @@ mod tests {
         assert_eq!(msg.event_time, 1709654400000);
         assert_eq!(msg.balances.len(), 1);
         assert_eq!(msg.balances[0].asset, "USDT");
-        assert_eq!(msg.balances[0].free, "10000.00000000");
-        assert_eq!(msg.balances[0].locked, "500.00000000");
+        assert_eq!(
+            msg.balances[0].free,
+            Decimal::from_str_exact("10000.00000000").unwrap()
+        );
+        assert_eq!(
+            msg.balances[0].locked,
+            Decimal::from_str_exact("500.00000000").unwrap()
+        );
     }
 
     #[rstest]
@@ -872,9 +907,15 @@ mod tests {
 
         assert_eq!(msg.balances.len(), 2);
         assert_eq!(msg.balances[0].asset, "BTC");
-        assert_eq!(msg.balances[0].free, "1.00000000");
+        assert_eq!(
+            msg.balances[0].free,
+            Decimal::from_str_exact("1.00000000").unwrap()
+        );
         assert_eq!(msg.balances[1].asset, "USDT");
-        assert_eq!(msg.balances[1].free, "50000.00000000");
+        assert_eq!(
+            msg.balances[1].free,
+            Decimal::from_str_exact("50000.00000000").unwrap()
+        );
     }
 
     #[rstest]
@@ -1012,9 +1053,15 @@ mod tests {
         assert_eq!(msg.event_type, "outboundAccountPosition");
         assert_eq!(msg.balances.len(), 3);
         assert_eq!(msg.balances[0].asset, "BTC");
-        assert_eq!(msg.balances[0].free, "1.00000000");
+        assert_eq!(
+            msg.balances[0].free,
+            Decimal::from_str_exact("1.00000000").unwrap()
+        );
         assert_eq!(msg.balances[1].asset, "BNB");
         assert_eq!(msg.balances[2].asset, "USDT");
-        assert_eq!(msg.balances[2].free, "50000.00000000");
+        assert_eq!(
+            msg.balances[2].free,
+            Decimal::from_str_exact("50000.00000000").unwrap()
+        );
     }
 }

@@ -52,6 +52,8 @@ use crate::{
 /// 2. HyperSync API for efficient historical data queries.
 #[derive(Debug)]
 pub struct BlockchainDataClient {
+    /// The client ID used to identify this client with the data engine.
+    pub client_id: ClientId,
     /// The blockchain being targeted by this client instance.
     pub chain: SharedChain,
     /// Configuration parameters for the blockchain data client.
@@ -76,11 +78,12 @@ pub struct BlockchainDataClient {
 impl BlockchainDataClient {
     /// Creates a new [`BlockchainDataClient`] instance for the specified configuration.
     #[must_use]
-    pub fn new(config: BlockchainDataClientConfig) -> Self {
+    pub fn new(client_id: ClientId, config: BlockchainDataClientConfig) -> Self {
         let chain = config.chain.clone();
         let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
         let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
         Self {
+            client_id,
             chain,
             core_client: None,
             config,
@@ -743,6 +746,7 @@ impl BlockchainDataClient {
 
                 let pool_identifier =
                     PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
+
                 match core_client.get_pool(&pool_identifier) {
                     Ok(pool) => {
                         let pool = pool.clone();
@@ -812,7 +816,7 @@ impl BlockchainDataClient {
 #[async_trait::async_trait(?Send)]
 impl DataClient for BlockchainDataClient {
     fn client_id(&self) -> ClientId {
-        ClientId::from(format!("BLOCKCHAIN-{}", self.chain.name).as_str())
+        self.client_id
     }
 
     fn venue(&self) -> Option<Venue> {
@@ -823,12 +827,11 @@ impl DataClient for BlockchainDataClient {
 
     fn start(&mut self) -> anyhow::Result<()> {
         log::info!(
-            "Starting blockchain data client: chain_name={}, dex_ids={:?}, use_hypersync_for_live_data={}, http_proxy_url={:?}, ws_proxy_url={:?}",
+            "Starting blockchain data client: chain_name={}, dex_ids={:?}, use_hypersync_for_live_data={}, proxy_url={:?}",
             self.chain.name,
             self.config.dex_ids,
             self.config.use_hypersync_for_live_data,
-            self.config.http_proxy_url,
-            self.config.ws_proxy_url
+            self.config.proxy_url
         );
         Ok(())
     }
@@ -906,50 +909,41 @@ impl DataClient for BlockchainDataClient {
         !self.is_connected()
     }
 
-    fn subscribe_blocks(&mut self, cmd: &SubscribeBlocks) -> anyhow::Result<()> {
-        let command = DefiDataCommand::Subscribe(DefiSubscribeCommand::Blocks(cmd.clone()));
+    fn subscribe_blocks(&mut self, cmd: SubscribeBlocks) -> anyhow::Result<()> {
+        let command = DefiDataCommand::Subscribe(DefiSubscribeCommand::Blocks(cmd));
         self.command_tx.send(command)?;
         Ok(())
     }
 
-    fn subscribe_pool(&mut self, cmd: &SubscribePool) -> anyhow::Result<()> {
-        let command = DefiDataCommand::Subscribe(DefiSubscribeCommand::Pool(cmd.clone()));
+    fn subscribe_pool(&mut self, cmd: SubscribePool) -> anyhow::Result<()> {
+        let command = DefiDataCommand::Subscribe(DefiSubscribeCommand::Pool(cmd));
         self.command_tx.send(command)?;
         Ok(())
     }
 
-    fn subscribe_pool_swaps(&mut self, cmd: &SubscribePoolSwaps) -> anyhow::Result<()> {
-        let command = DefiDataCommand::Subscribe(DefiSubscribeCommand::PoolSwaps(cmd.clone()));
+    fn subscribe_pool_swaps(&mut self, cmd: SubscribePoolSwaps) -> anyhow::Result<()> {
+        let command = DefiDataCommand::Subscribe(DefiSubscribeCommand::PoolSwaps(cmd));
         self.command_tx.send(command)?;
         Ok(())
     }
 
     fn subscribe_pool_liquidity_updates(
         &mut self,
-        cmd: &SubscribePoolLiquidityUpdates,
+        cmd: SubscribePoolLiquidityUpdates,
     ) -> anyhow::Result<()> {
-        let command =
-            DefiDataCommand::Subscribe(DefiSubscribeCommand::PoolLiquidityUpdates(cmd.clone()));
+        let command = DefiDataCommand::Subscribe(DefiSubscribeCommand::PoolLiquidityUpdates(cmd));
         self.command_tx.send(command)?;
         Ok(())
     }
 
-    fn subscribe_pool_fee_collects(
-        &mut self,
-        cmd: &SubscribePoolFeeCollects,
-    ) -> anyhow::Result<()> {
-        let command =
-            DefiDataCommand::Subscribe(DefiSubscribeCommand::PoolFeeCollects(cmd.clone()));
+    fn subscribe_pool_fee_collects(&mut self, cmd: SubscribePoolFeeCollects) -> anyhow::Result<()> {
+        let command = DefiDataCommand::Subscribe(DefiSubscribeCommand::PoolFeeCollects(cmd));
         self.command_tx.send(command)?;
         Ok(())
     }
 
-    fn subscribe_pool_flash_events(
-        &mut self,
-        cmd: &SubscribePoolFlashEvents,
-    ) -> anyhow::Result<()> {
-        let command =
-            DefiDataCommand::Subscribe(DefiSubscribeCommand::PoolFlashEvents(cmd.clone()));
+    fn subscribe_pool_flash_events(&mut self, cmd: SubscribePoolFlashEvents) -> anyhow::Result<()> {
+        let command = DefiDataCommand::Subscribe(DefiSubscribeCommand::PoolFlashEvents(cmd));
         self.command_tx.send(command)?;
         Ok(())
     }

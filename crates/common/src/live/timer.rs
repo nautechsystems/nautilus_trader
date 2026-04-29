@@ -77,7 +77,6 @@ impl LiveTimer {
     /// # Panics
     ///
     /// Panics if `name` is not a valid string.
-    #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         name: Ustr,

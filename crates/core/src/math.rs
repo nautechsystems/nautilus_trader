@@ -376,6 +376,10 @@ mod tests {
     }
 
     #[rstest]
+    #[expect(
+        clippy::float_cmp,
+        reason = "boundary inputs must return the exact boundary ys value"
+    )]
     fn test_quadratic_interpolation_boundary_conditions() {
         let xs = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let ys = vec![1.0, 4.0, 9.0, 16.0, 25.0]; // y = x^2

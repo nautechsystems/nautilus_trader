@@ -86,6 +86,15 @@ impl BetfairHttpError {
         }
     }
 
+    /// Returns whether this is a login/auth rejection from the Identity API.
+    ///
+    /// `keep_alive` returns this when the session is expired or unrecognised.
+    /// Transient errors (network, timeout) return different variants.
+    #[must_use]
+    pub fn is_login_failed(&self) -> bool {
+        matches!(self, Self::LoginFailed { .. })
+    }
+
     /// Returns whether this error is a session expiry that should trigger reconnection.
     ///
     /// Session errors (`NO_SESSION`, `INVALID_SESSION_INFORMATION`) occur every
@@ -236,6 +245,18 @@ mod tests {
     #[case(BetfairHttpError::UnexpectedStatus { status: 429, body: String::new() }, false)]
     fn test_is_session_error(#[case] error: BetfairHttpError, #[case] expected: bool) {
         assert_eq!(error.is_session_error(), expected);
+    }
+
+    #[rstest]
+    #[case(BetfairHttpError::LoginFailed { status: "NO_SESSION".to_string() }, true)]
+    #[case(BetfairHttpError::LoginFailed { status: "CERT_AUTH_REQUIRED".to_string() }, true)]
+    #[case(BetfairHttpError::NetworkError("timeout".to_string()), false)]
+    #[case(BetfairHttpError::Timeout("read".to_string()), false)]
+    #[case(BetfairHttpError::BetfairError { code: -32099, message: "server error".to_string() }, false)]
+    #[case(BetfairHttpError::JsonError("bad".to_string()), false)]
+    #[case(BetfairHttpError::MissingCredentials, false)]
+    fn test_is_login_failed(#[case] error: BetfairHttpError, #[case] expected: bool) {
+        assert_eq!(error.is_login_failed(), expected);
     }
 
     #[rstest]

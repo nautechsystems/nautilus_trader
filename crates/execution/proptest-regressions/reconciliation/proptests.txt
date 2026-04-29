@@ -1,0 +1,14 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 4fac717ff2aaf576ec68a957f64f9122f400411ba8e23d8d49d2861729151a81 # shrinks to order_qty = 10, filled = 1
+cc aa6711ca135bf56e20dc4b256519738a20747225ff82e3248bdc5bbb67be84b3 # shrinks to order_qty = 10, filled = 1, incr = 1
+cc 904fbfa6ec4d2133d568940386e35b114cbd6dd90bdd29d42b95be152ec061ab # shrinks to order_qty = 10, fill_qty = 1
+cc 33dd7d801815fe1c29cb7b868ba038c30327923749a588a24ab258146ac7c025 # shrinks to order_qty = 1, overfill = 1
+cc c2d902b29a92a36d23174db8d0aca3de49d175e9be220889fdc56de002526796 # shrinks to order_qty = 10, fill_qty = 1
+cc dbb6be68d26a8f8fc61c3041d50f96570fe55d88345ad89eccbcaf8be7d73c5f # shrinks to qty = 1
+cc 89271f1130d1565432c16fb0e17a65baccfd058303870ef21b01c9885dafc23e # shrinks to qty = 1
+cc 882cb1e6a6b78a64bff723f08c0cb53aa3208f7a3180165274d6e323d623a36e # shrinks to order_qty = 10, fill_qty = 1

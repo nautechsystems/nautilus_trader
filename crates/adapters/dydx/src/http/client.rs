@@ -61,6 +61,7 @@ use chrono::{DateTime, Utc};
 use nautilus_core::{
     UnixNanos,
     consts::NAUTILUS_USER_AGENT,
+    string::urlencoding,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
@@ -90,7 +91,7 @@ use super::error::DydxHttpError;
 use crate::{
     common::{
         consts::{DYDX_HTTP_URL, DYDX_TESTNET_HTTP_URL},
-        enums::DydxCandleResolution,
+        enums::{DydxCandleResolution, DydxNetwork},
         instrument_cache::InstrumentCache,
         parse::extract_raw_symbol,
     },
@@ -99,6 +100,9 @@ use crate::{
 
 /// Maximum number of candles returned per dYdX API request.
 const DYDX_MAX_BARS_PER_REQUEST: u32 = 1_000;
+
+/// Perpetual markets endpoint (shared between `get_markets` and `get_market`).
+const ENDPOINT_PERPETUAL_MARKETS: &str = "/v4/perpetualMarkets";
 
 fn bar_type_to_resolution(bar_type: &BarType) -> anyhow::Result<DydxCandleResolution> {
     if bar_type.aggregation_source() != AggregationSource::External {
@@ -152,12 +156,13 @@ pub struct DydxRawHttpClient {
     client: HttpClient,
     retry_manager: RetryManager<DydxHttpError>,
     cancellation_token: CancellationToken,
-    is_testnet: bool,
+    network: DydxNetwork,
 }
 
 impl Default for DydxRawHttpClient {
     fn default() -> Self {
-        Self::new(None, 60, None, false, None).expect("Failed to create default DydxRawHttpClient")
+        Self::new(None, 60, None, DydxNetwork::Mainnet, None)
+            .expect("Failed to create default DydxRawHttpClient")
     }
 }
 
@@ -165,7 +170,7 @@ impl Debug for DydxRawHttpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(DydxRawHttpClient))
             .field("base_url", &self.base_url)
-            .field("is_testnet", &self.is_testnet)
+            .field("network", &self.network)
             .finish_non_exhaustive()
     }
 }
@@ -193,13 +198,12 @@ impl DydxRawHttpClient {
         base_url: Option<String>,
         timeout_secs: u64,
         proxy_url: Option<String>,
-        is_testnet: bool,
+        network: DydxNetwork,
         retry_config: Option<RetryConfig>,
     ) -> anyhow::Result<Self> {
-        let base_url = if is_testnet {
-            base_url.unwrap_or_else(|| DYDX_TESTNET_HTTP_URL.to_string())
-        } else {
-            base_url.unwrap_or_else(|| DYDX_HTTP_URL.to_string())
+        let base_url = match network {
+            DydxNetwork::Testnet => base_url.unwrap_or_else(|| DYDX_TESTNET_HTTP_URL.to_string()),
+            DydxNetwork::Mainnet => base_url.unwrap_or_else(|| DYDX_HTTP_URL.to_string()),
         };
 
         let retry_manager = RetryManager::new(retry_config.unwrap_or_default());
@@ -224,14 +228,14 @@ impl DydxRawHttpClient {
             client,
             retry_manager,
             cancellation_token: CancellationToken::new(),
-            is_testnet,
+            network,
         })
     }
 
     /// Returns `true` if this client is configured for testnet.
     #[must_use]
     pub const fn is_testnet(&self) -> bool {
-        self.is_testnet
+        matches!(self.network, DydxNetwork::Testnet)
     }
 
     /// Returns the base URL used by this client.
@@ -426,7 +430,7 @@ impl DydxRawHttpClient {
     ///
     /// Returns an error if the HTTP request fails or response parsing fails.
     pub async fn get_markets(&self) -> Result<super::models::MarketsResponse, DydxHttpError> {
-        self.send_request(Method::GET, "/v4/perpetualMarkets", None)
+        self.send_request(Method::GET, ENDPOINT_PERPETUAL_MARKETS, None)
             .await
     }
 
@@ -442,7 +446,7 @@ impl DydxRawHttpClient {
         ticker: &str,
     ) -> Result<super::models::MarketsResponse, DydxHttpError> {
         let query = format!("ticker={ticker}");
-        self.send_request(Method::GET, "/v4/perpetualMarkets", Some(&query))
+        self.send_request(Method::GET, ENDPOINT_PERPETUAL_MARKETS, Some(&query))
             .await
     }
 
@@ -727,7 +731,8 @@ impl Clone for DydxHttpClient {
 
 impl Default for DydxHttpClient {
     fn default() -> Self {
-        Self::new(None, 60, None, false, None).expect("Failed to create default DydxHttpClient")
+        Self::new(None, 60, None, DydxNetwork::Mainnet, None)
+            .expect("Failed to create default DydxHttpClient")
     }
 }
 
@@ -748,14 +753,14 @@ impl DydxHttpClient {
         base_url: Option<String>,
         timeout_secs: u64,
         proxy_url: Option<String>,
-        is_testnet: bool,
+        network: DydxNetwork,
         retry_config: Option<RetryConfig>,
     ) -> anyhow::Result<Self> {
         Self::new_with_cache(
             base_url,
             timeout_secs,
             proxy_url,
-            is_testnet,
+            network,
             retry_config,
             Arc::new(InstrumentCache::new()),
         )
@@ -777,7 +782,7 @@ impl DydxHttpClient {
         base_url: Option<String>,
         timeout_secs: u64,
         proxy_url: Option<String>,
-        is_testnet: bool,
+        network: DydxNetwork,
         retry_config: Option<RetryConfig>,
         instrument_cache: Arc<InstrumentCache>,
     ) -> anyhow::Result<Self> {
@@ -786,7 +791,7 @@ impl DydxHttpClient {
                 base_url,
                 timeout_secs,
                 proxy_url,
-                is_testnet,
+                network,
                 retry_config,
             )?),
             instrument_cache,
@@ -1200,7 +1205,6 @@ impl DydxHttpClient {
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         const DYDX_MAX_TRADES_PER_REQUEST: u32 = 1_000;
-        const DYDX_BLOCK_TIME_SECS: f64 = 1.1;
 
         // Validation
         if let (Some(s), Some(e)) = (start, end) {
@@ -1216,41 +1220,20 @@ impl DydxHttpClient {
         let size_precision = instrument.size_precision();
         let ts_init = self.generate_ts_init();
 
-        // When an end time is provided, estimate the block height at that time
-        // so we can skip directly to the relevant window instead of paginating
-        // from the latest trade backward (which can be extremely slow for liquid markets).
-        let initial_cursor = if let Some(end_time) = end {
-            match self.inner.get_height().await {
-                Ok(height_resp) => {
-                    let secs_ahead = (height_resp.time - end_time).num_seconds();
-                    if secs_ahead > 0 {
-                        let blocks_to_skip = (secs_ahead as f64 / DYDX_BLOCK_TIME_SECS) as u64;
-                        let target = height_resp.height.saturating_sub(blocks_to_skip);
-                        log::debug!(
-                            "Estimated block height at {end_time}: {target} \
-                             (current: {}, skipping ~{blocks_to_skip} blocks)",
-                            height_resp.height,
-                        );
-                        Some(target)
-                    } else {
-                        None // end_time is in the future, start from latest
-                    }
-                }
-                Err(e) => {
-                    log::warn!(
-                        "Failed to get block height for time skip, paginating from latest: {e}"
-                    );
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
+        // We always start pagination from the chain head (cursor = None). An earlier
+        // version used `DEFAULT_BLOCK_TIME_SECS` with `get_height()` to skip directly
+        // to an estimated target block, but any hardcoded block-time estimate that
+        // underestimates the true average lands the cursor BEFORE the real `end`
+        // block and silently drops the trades in the skipped window. Walking back
+        // from head costs a few extra round-trips for stale `end` times but is
+        // always correct. Per-call trades above `end` are filtered inside the loop.
         let overall_limit = limit.unwrap_or(u32::MAX);
         let mut remaining = overall_limit;
-        let mut cursor_height: Option<u64> = initial_cursor;
+        let mut cursor_height: Option<u64> = None;
         let mut all_trades = Vec::new();
+        // Global trade-id dedup across pages. Using a set prevents non-adjacent duplicates
+        // from slipping past the legacy Vec::dedup_by adjacency check.
+        let mut seen_trade_ids: ahash::AHashSet<String> = ahash::AHashSet::new();
 
         loop {
             let page_limit = remaining.min(DYDX_MAX_TRADES_PER_REQUEST);
@@ -1266,43 +1249,28 @@ impl DydxHttpClient {
 
             // Trades come newest-first; oldest is last
             let oldest_trade = response.trades.last().unwrap();
+            let oldest_height = oldest_trade.created_at_height;
+            let oldest_created_at = oldest_trade.created_at;
 
-            // Update cursor for next page (go further back in time)
-            cursor_height = Some(oldest_trade.created_at_height.saturating_sub(1));
+            // Count how many unique (unseen) trades this page contributed
+            let mut new_trades_this_page: usize = 0;
+            let mut page_before_start = false;
 
-            // Break if we've reached before the start boundary
-            if let Some(s) = start
-                && oldest_trade.created_at < s
-            {
-                // This page contains trades before start -- filter and stop
-                for trade in &response.trades {
-                    if start.is_some_and(|s| trade.created_at < s) {
-                        continue;
-                    }
-
-                    if end.is_some_and(|e| trade.created_at > e) {
-                        continue;
-                    }
-                    all_trades.push(super::parse::parse_trade_tick(
-                        trade,
-                        instrument_id,
-                        price_precision,
-                        size_precision,
-                        ts_init,
-                    )?);
-                }
-                break;
-            }
-
-            // Convert all trades in this page (with time filtering)
             for trade in &response.trades {
+                if !seen_trade_ids.insert(trade.id.clone()) {
+                    // Already emitted; skip
+                    continue;
+                }
+
                 if start.is_some_and(|s| trade.created_at < s) {
+                    page_before_start = true;
                     continue;
                 }
 
                 if end.is_some_and(|e| trade.created_at > e) {
                     continue;
                 }
+
                 all_trades.push(super::parse::parse_trade_tick(
                     trade,
                     instrument_id,
@@ -1310,9 +1278,34 @@ impl DydxHttpClient {
                     size_precision,
                     ts_init,
                 )?);
+                new_trades_this_page += 1;
             }
 
-            remaining = remaining.saturating_sub(page_count);
+            // If the oldest trade is before the start boundary we're done
+            if let Some(s) = start
+                && oldest_created_at < s
+            {
+                let _ = page_before_start;
+                break;
+            }
+
+            // Advance the cursor by one block. `createdBeforeOrAtHeight` is an inclusive
+            // upper bound, and the endpoint has no `after`/offset cursor, so keeping the
+            // same height would re-request the same page. Any same-block trades that
+            // overflowed the previous page are lost here; the dYdX venue tops out well
+            // below `DYDX_MAX_TRADES_PER_REQUEST` trades per block in practice. The
+            // `saturating_sub(1)` bottoms out at 0, which the `page_count == 0` guard at
+            // the top of the loop handles.
+            let next_cursor = Some(oldest_height.saturating_sub(1));
+
+            // Terminal guard: if we're already at block 0 and this page produced nothing
+            // new, there is nowhere further back to paginate.
+            if oldest_height == 0 && new_trades_this_page == 0 {
+                break;
+            }
+            cursor_height = next_cursor;
+
+            remaining = remaining.saturating_sub(new_trades_this_page as u32);
 
             // Break on partial page (no more data) or limit reached
             if page_count < page_limit || remaining == 0 {
@@ -1320,9 +1313,8 @@ impl DydxHttpClient {
             }
         }
 
-        // Reverse to chronological order (oldest first) and dedup
+        // Reverse to chronological order (oldest first)
         all_trades.reverse();
-        all_trades.dedup_by(|a, b| a.trade_id == b.trade_id);
 
         // Truncate to requested limit
         if let Some(lim) = limit {
@@ -1411,14 +1403,29 @@ impl DydxHttpClient {
         let response = self.inner.get_orderbook(ticker).await?;
 
         let ts_init = self.generate_ts_init();
+        let snapshot_flag = RecordFlag::F_SNAPSHOT as u8;
 
         let mut deltas = Vec::with_capacity(1 + response.bids.len() + response.asks.len());
 
-        deltas.push(OrderBookDelta::clear(instrument_id, 0, ts_init, ts_init));
+        // Empty book snapshot: Clear alone must carry F_SNAPSHOT | F_LAST
+        if response.bids.is_empty() && response.asks.is_empty() {
+            let mut clear_delta = OrderBookDelta::clear(instrument_id, 0, ts_init, ts_init);
+            clear_delta.flags = snapshot_flag | RecordFlag::F_LAST as u8;
+            deltas.push(clear_delta);
+            return Ok(OrderBookDeltas::new(instrument_id, deltas));
+        }
+
+        let mut clear_delta = OrderBookDelta::clear(instrument_id, 0, ts_init, ts_init);
+        clear_delta.flags = snapshot_flag;
+        deltas.push(clear_delta);
 
         for (i, level) in response.bids.iter().enumerate() {
             let is_last = i == response.bids.len() - 1 && response.asks.is_empty();
-            let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
+            let flags = if is_last {
+                snapshot_flag | RecordFlag::F_LAST as u8
+            } else {
+                snapshot_flag
+            };
 
             let order = BookOrder::new(
                 NautilusOrderSide::Buy,
@@ -1440,7 +1447,11 @@ impl DydxHttpClient {
 
         for (i, level) in response.asks.iter().enumerate() {
             let is_last = i == response.asks.len() - 1;
-            let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
+            let flags = if is_last {
+                snapshot_flag | RecordFlag::F_LAST as u8
+            } else {
+                snapshot_flag
+            };
 
             let order = BookOrder::new(
                 NautilusOrderSide::Sell,
@@ -1753,7 +1764,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_raw_client_creation() {
-        let client = DydxRawHttpClient::new(None, 30, None, false, None);
+        let client = DydxRawHttpClient::new(None, 30, None, DydxNetwork::Mainnet, None);
         assert!(client.is_ok());
 
         let client = client.unwrap();
@@ -1763,7 +1774,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_raw_client_testnet() {
-        let client = DydxRawHttpClient::new(None, 30, None, true, None);
+        let client = DydxRawHttpClient::new(None, 30, None, DydxNetwork::Testnet, None);
         assert!(client.is_ok());
 
         let client = client.unwrap();
@@ -1773,7 +1784,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_domain_client_creation() {
-        let client = DydxHttpClient::new(None, 30, None, false, None);
+        let client = DydxHttpClient::new(None, 30, None, DydxNetwork::Mainnet, None);
         assert!(client.is_ok());
 
         let client = client.unwrap();
@@ -1785,7 +1796,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_domain_client_testnet() {
-        let client = DydxHttpClient::new(None, 30, None, true, None);
+        let client = DydxHttpClient::new(None, 30, None, DydxNetwork::Testnet, None);
         assert!(client.is_ok());
 
         let client = client.unwrap();
@@ -1803,7 +1814,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_domain_client_clone() {
-        let client = DydxHttpClient::new(None, 30, None, false, None).unwrap();
+        let client = DydxHttpClient::new(None, 30, None, DydxNetwork::Mainnet, None).unwrap();
 
         // Clone before initialization
         let cloned = client.clone();
@@ -1812,7 +1823,7 @@ mod tests {
         client.instrument_cache.insert_instruments_only(vec![]);
 
         // Clone after initialization
-        #[allow(clippy::redundant_clone)]
+        #[expect(clippy::redundant_clone)]
         let cloned_after = client.clone();
         assert!(cloned_after.is_cache_initialized());
     }
@@ -1863,8 +1874,14 @@ mod tests {
 
         // Keep HTTP client timeout at a typical value; rely on RetryManager
         // operation timeout to enforce non-blocking behavior.
-        let client =
-            DydxRawHttpClient::new(Some(base_url), 60, None, false, Some(retry_config)).unwrap();
+        let client = DydxRawHttpClient::new(
+            Some(base_url),
+            60,
+            None,
+            DydxNetwork::Mainnet,
+            Some(retry_config),
+        )
+        .unwrap();
 
         let start = std::time::Instant::now();
         let result: Result<serde_json::Value, error::DydxHttpError> =

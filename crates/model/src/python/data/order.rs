@@ -138,7 +138,7 @@ impl BookOrder {
         self.to_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
-    /// Return MsgPack encoded bytes representation of the object.
+    /// Return `MsgPack` encoded bytes representation of the object.
     #[pyo3(name = "to_msgpack_bytes")]
     fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
         self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)

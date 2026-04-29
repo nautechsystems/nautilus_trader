@@ -36,7 +36,7 @@
 //! - Rehedge check every 30 seconds
 //! - Entry disabled by default (set `enter_strangle` to enable live orders)
 //!
-//! Run with: `cargo run --example okx-delta-neutral --package nautilus-okx`
+//! Run with: `cargo run --example okx-delta-neutral --package nautilus-okx --features examples`
 
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;

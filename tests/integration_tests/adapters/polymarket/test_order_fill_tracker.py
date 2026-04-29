@@ -49,37 +49,89 @@ class TestOrderFillTracker:
         )
         assert tracker.contains(vid)
 
-    def test_snap_fill_qty_dust(self, tracker):
-        vid = VenueOrderId("order-1")
+    # Tolerances at size_precision=6:
+    #   SNAP_UNDERFILL_ULPS = 10_000 -> 0.01
+    #   SNAP_OVERFILL_ULPS  = 100    -> 0.0001
+    @pytest.mark.parametrize(
+        ("submitted", "fill", "expected"),
+        [
+            # Underfill well within tolerance: CLOB truncated the fill to a
+            # cent tick, snap UP so the order can reach FILLED cleanly.
+            pytest.param(23.696681, 23.690000, 23.696681, id="underfill_dust"),
+            # Underfill near tolerance (0.0099 < 0.01): still snaps.
+            pytest.param(100.000000, 99.990100, 100.000000, id="underfill_near_tolerance"),
+            # Underfill at exactly the tolerance must NOT snap.
+            pytest.param(100.000000, 99.990000, 99.990000, id="underfill_at_tolerance"),
+            # Underfill above the tolerance: no snap.
+            pytest.param(100.000000, 99.980000, 99.980000, id="underfill_above_tolerance"),
+            # Underfill far past tolerance: leave fill alone.
+            pytest.param(100.000000, 50.000000, 50.000000, id="large_underfill"),
+            # Overfill within the tighter tolerance: V2 market BUY where the
+            # SDK truncates registered qty to USDC scale but the on-chain
+            # fill comes back at full precision. Observed drift is 4 ulps
+            # (4e-6 at size_precision=6). Snap DOWN so the engine does not
+            # reject as overfill.
+            pytest.param(714.285710, 714.285714, 714.285710, id="overfill_dust"),
+            # Overfill near the overfill tolerance (0.000099 < 0.0001):
+            # still snaps.
+            pytest.param(100.000000, 100.000099, 100.000000, id="overfill_near_tolerance"),
+            # Overfill at exactly the overfill tolerance must NOT snap.
+            pytest.param(100.000000, 100.000100, 100.000100, id="overfill_at_tolerance"),
+            # Overfill above the overfill tolerance but below the underfill
+            # tolerance must NOT snap. This is the asymmetry: a 0.005
+            # overfill is suspicious and surfaces as an engine-side error
+            # rather than being silently absorbed.
+            pytest.param(100.000000, 100.005000, 100.005000, id="overfill_above_tolerance"),
+            # Overfill far past tolerance: leave fill alone.
+            pytest.param(100.000000, 150.000000, 150.000000, id="large_overfill"),
+            # Exact match: no-op (returns the fill qty, which equals submitted).
+            pytest.param(100.000000, 100.000000, 100.000000, id="exact"),
+        ],
+    )
+    def test_snap_fill_qty(self, tracker, submitted, fill, expected):
+        venue_order_id = VenueOrderId("order-1")
         tracker.register(
-            venue_order_id=vid,
-            submitted_qty=Quantity(23.696681, SIZE_PRECISION),
-            order_side=OrderSide.SELL,
-            instrument_id=INSTRUMENT_ID,
-            size_precision=SIZE_PRECISION,
-            price_precision=PRICE_PRECISION,
-        )
-
-        # Fill is 23.69 (truncated by CLOB), diff = 0.006681 < 0.01 -> snap
-        fill_qty = Quantity(23.69, SIZE_PRECISION)
-        snapped = tracker.snap_fill_qty(vid, fill_qty)
-        assert snapped == Quantity(23.696681, SIZE_PRECISION)
-
-    def test_snap_fill_qty_no_snap_large_diff(self, tracker):
-        vid = VenueOrderId("order-1")
-        tracker.register(
-            venue_order_id=vid,
-            submitted_qty=Quantity(100.0, SIZE_PRECISION),
+            venue_order_id=venue_order_id,
+            submitted_qty=Quantity(submitted, SIZE_PRECISION),
             order_side=OrderSide.BUY,
             instrument_id=INSTRUMENT_ID,
             size_precision=SIZE_PRECISION,
             price_precision=PRICE_PRECISION,
         )
 
-        # Fill is 50.0, diff = 50 >> 0.01 -> no snap
-        fill_qty = Quantity(50.0, SIZE_PRECISION)
-        result = tracker.snap_fill_qty(vid, fill_qty)
-        assert result == fill_qty
+        snapped = tracker.snap_fill_qty(venue_order_id, Quantity(fill, SIZE_PRECISION))
+        assert snapped == Quantity(expected, SIZE_PRECISION)
+
+    # Tolerances scale with size_precision: at size_precision=3 the
+    # underfill tolerance becomes 10 (10_000 * 1e-3) and the overfill
+    # tolerance becomes 0.1 (100 * 1e-3). This case verifies the scaling.
+    @pytest.mark.parametrize(
+        ("submitted", "fill", "expected"),
+        [
+            # Underfill within scaled tolerance (5 < 10): snap.
+            pytest.param(100.000, 95.000, 100.000, id="underfill_scaled_within"),
+            # Underfill above scaled tolerance (15 > 10): no snap.
+            pytest.param(100.000, 85.000, 85.000, id="underfill_scaled_above"),
+            # Overfill within scaled tolerance (0.05 < 0.1): snap.
+            pytest.param(100.000, 100.050, 100.000, id="overfill_scaled_within"),
+            # Overfill above scaled tolerance (0.2 > 0.1): no snap.
+            pytest.param(100.000, 100.200, 100.200, id="overfill_scaled_above"),
+        ],
+    )
+    def test_snap_fill_qty_scales_with_precision(self, tracker, submitted, fill, expected):
+        precision = 3
+        venue_order_id = VenueOrderId("order-1")
+        tracker.register(
+            venue_order_id=venue_order_id,
+            submitted_qty=Quantity(submitted, precision),
+            order_side=OrderSide.BUY,
+            instrument_id=INSTRUMENT_ID,
+            size_precision=precision,
+            price_precision=PRICE_PRECISION,
+        )
+
+        snapped = tracker.snap_fill_qty(venue_order_id, Quantity(fill, precision))
+        assert snapped == Quantity(expected, precision)
 
     def test_snap_fill_qty_unregistered(self, tracker):
         vid = VenueOrderId("unknown")

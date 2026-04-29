@@ -15,13 +15,23 @@
 
 //! Example demonstrating live execution testing with the AX Exchange adapter.
 //!
-//! Run with: `cargo run --example ax-exec-tester --package nautilus-architect-ax`
+//! Run with: `cargo run --example ax-exec-tester --package nautilus-architect-ax --features examples`
 //!
 //! Environment variables:
 //! - `AX_API_KEY`: Your API key
 //! - `AX_API_SECRET`: Your API secret
+//! - `AX_SYMBOL`: Instrument symbol (default: XAU-PERP)
+//!
+//! Example instruments across asset classes:
+//! - `XAU-PERP` (metals, qty=1, ~$4600)
+//! - `NVDA-PERP` (equities, qty=1, ~$167)
+//! - `XAG-PERP` (metals, qty=1, ~$73)
+//! - `UNG-PERP` (energy ETFs, qty=1, ~$12)
+//! - `OCPI-H100-PERP` (compute, qty=100, ~$1.60)
+//! - `EURUSD-PERP` (fx, qty=100, ~$1.15)
 
 use nautilus_architect_ax::{
+    common::enums::AxEnvironment,
     config::{AxDataClientConfig, AxExecClientConfig},
     factories::{AxDataClientFactory, AxExecutionClientFactory},
 };
@@ -31,6 +41,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
@@ -43,21 +54,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let account_id = AccountId::from("AX-001");
     let node_name = "AX-EXEC-TESTER-001".to_string();
     let client_id = ClientId::new("AX");
-    let instrument_id = InstrumentId::from("XAU-PERP.AX");
+    let symbol = std::env::var("AX_SYMBOL").unwrap_or_else(|_| "XAU-PERP".to_string());
+    let instrument_id = InstrumentId::from(format!("{symbol}.AX"));
+
+    let ax_environment = if std::env::var("AX_IS_SANDBOX")
+        .ok()
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(true)
+    {
+        AxEnvironment::Sandbox
+    } else {
+        AxEnvironment::Production
+    };
 
     let data_config = AxDataClientConfig {
-        api_key: None,    // Will use 'AX_API_KEY' env var
-        api_secret: None, // Will use 'AX_API_SECRET' env var
-        is_sandbox: true, // Use sandbox environment for testing
+        environment: ax_environment,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
     let exec_config = AxExecClientConfig {
         trader_id,
         account_id,
-        api_key: None,    // Will use 'AX_API_KEY' env var
-        api_secret: None, // Will use 'AX_API_SECRET' env var
-        is_sandbox: true, // Use sandbox environment for testing
+        environment: ax_environment,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -72,7 +92,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let order_qty = Quantity::from(1);
+    // Use minimum order size per instrument category
+    let order_qty = match symbol.as_str() {
+        s if s.starts_with("OCPI") => Quantity::from(100),
+        "EURUSD-PERP" | "GBPUSD-PERP" | "BRLUSD-PERP" => Quantity::from(100),
+        "MXNUSD-PERP" => Quantity::from(1000),
+        "JPYUSD-PERP" => Quantity::from(10000),
+        _ => Quantity::from(1),
+    };
 
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
@@ -84,8 +111,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .client_id(client_id)
         .order_qty(order_qty)
         .open_position_on_start_qty(order_qty.as_decimal())
-        .log_data(false)
         .use_post_only(true)
+        .log_data(false)
         .build();
 
     let tester = ExecTester::new(tester_config);

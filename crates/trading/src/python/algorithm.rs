@@ -27,7 +27,7 @@ use crate::algorithm::ImportableExecAlgorithmConfig;
 impl ImportableExecAlgorithmConfig {
     /// Configuration for creating execution algorithms from importable paths.
     #[new]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_new(
         exec_algorithm_path: String,
         config_path: String,
@@ -70,6 +70,7 @@ impl ImportableExecAlgorithmConfig {
     #[getter]
     fn config(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let py_dict = PyDict::new(py);
+
         for (key, value) in &self.config {
             let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
             let py_value = PyModule::import(py, "json")?.call_method("loads", (json_str,), None)?;

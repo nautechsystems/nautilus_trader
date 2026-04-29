@@ -17,6 +17,7 @@ import pkgutil
 from decimal import Decimal
 
 import msgspec
+import pandas as pd
 import pytest
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
@@ -31,9 +32,12 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStat
 from nautilus_trader.adapters.polymarket.common.parsing import basis_points_as_decimal
 from nautilus_trader.adapters.polymarket.common.parsing import calculate_commission
 from nautilus_trader.adapters.polymarket.common.parsing import determine_order_side
+from nautilus_trader.adapters.polymarket.common.parsing import determine_trade_id
+from nautilus_trader.adapters.polymarket.common.parsing import extract_fee_rates
 from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookLevel
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookSnapshot
+from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuote
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuotes
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTrade
@@ -46,14 +50,17 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.model.currencies import USDC
-from nautilus_trader.model.currencies import USDC_POS
+from nautilus_trader.model.currencies import pUSD
 from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.objects import Money
@@ -71,6 +78,7 @@ def test_parse_instruments() -> None:
 
     # Act
     instruments: list[BinaryOption] = []
+
     for market_info in response["data"]:
         for token_info in market_info["tokens"]:
             token_id = token_info["token_id"]
@@ -82,6 +90,108 @@ def test_parse_instruments() -> None:
 
     # Assert
     assert len(instruments) == 198
+    # CLOB payloads in markets.json have no feeSchedule so fees default to zero
+    for instrument in instruments:
+        assert instrument.maker_fee == Decimal(0)
+        assert instrument.taker_fee == Decimal(0)
+
+
+@pytest.mark.parametrize(
+    ("market_info", "expected"),
+    [
+        ({}, (Decimal(0), Decimal(0))),
+        ({"feeSchedule": {"rate": 0.03}}, (Decimal(0), Decimal("0.03"))),
+        (
+            {"_gamma_original": {"feeSchedule": {"rate": 0.072}}},
+            (Decimal(0), Decimal("0.072")),
+        ),
+        ({"feeSchedule": {"rate": None}}, (Decimal(0), Decimal(0))),
+        ({"_gamma_original": {}}, (Decimal(0), Decimal(0))),
+        (
+            # Top-level feeSchedule takes precedence over _gamma_original
+            {
+                "feeSchedule": {"rate": 0.04},
+                "_gamma_original": {"feeSchedule": {"rate": 0.072}},
+            },
+            (Decimal(0), Decimal("0.04")),
+        ),
+    ],
+)
+def test_extract_fee_rates(
+    market_info: dict,
+    expected: tuple[Decimal, Decimal],
+) -> None:
+    """
+    Polymarket charges fees from feeSchedule.rate; maker is always zero.
+
+    References
+    ----------
+    https://docs.polymarket.com/trading/fees
+
+    """
+    assert extract_fee_rates(market_info) == expected
+
+
+def test_parse_polymarket_instrument_populates_taker_fee_from_fee_schedule() -> None:
+    """
+    parse_polymarket_instrument should populate taker_fee from an attached feeSchedule,
+    leaving maker_fee at zero.
+    """
+    # Arrange: CLOB-shaped payload with a Gamma feeSchedule stitched on
+    token_id = "21742633143463906290569050155826241533067272736897614950488156847949938836455"
+    market_info: dict[str, object] = {
+        "condition_id": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+        "question": "Test market?",
+        "minimum_tick_size": 0.001,
+        "minimum_order_size": 5,
+        "end_date_iso": "2025-12-31T00:00:00Z",
+        "maker_base_fee": 1000,  # Max cap, must be ignored
+        "taker_base_fee": 1000,  # Max cap, must be ignored
+        "feeSchedule": {"rate": 0.03, "takerOnly": True, "exponent": 1, "rebateRate": 0.25},
+        "tokens": [{"token_id": token_id, "outcome": "Yes"}],
+    }
+
+    # Act
+    instrument = parse_polymarket_instrument(
+        market_info=market_info,
+        token_id=token_id,
+        outcome="Yes",
+        ts_init=0,
+    )
+
+    # Assert
+    assert instrument.maker_fee == Decimal(0)
+    assert instrument.taker_fee == Decimal("0.03")
+
+
+def test_parse_polymarket_instrument_defaults_fees_without_fee_schedule() -> None:
+    """
+    parse_polymarket_instrument leaves both fees at zero when feeSchedule is absent.
+    """
+    # Arrange
+    token_id = "21742633143463906290569050155826241533067272736897614950488156847949938836455"
+    market_info: dict[str, object] = {
+        "condition_id": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+        "question": "Test market?",
+        "minimum_tick_size": 0.001,
+        "minimum_order_size": 5,
+        "end_date_iso": "2025-12-31T00:00:00Z",
+        "maker_base_fee": 1000,
+        "taker_base_fee": 1000,
+        "tokens": [{"token_id": token_id, "outcome": "Yes"}],
+    }
+
+    # Act
+    instrument = parse_polymarket_instrument(
+        market_info=market_info,
+        token_id=token_id,
+        outcome="Yes",
+        ts_init=0,
+    )
+
+    # Assert
+    assert instrument.maker_fee == Decimal(0)
+    assert instrument.taker_fee == Decimal(0)
 
 
 def test_parse_order_book_snapshots() -> None:
@@ -160,6 +270,395 @@ def test_parse_quote_ticks() -> None:
         assert price_change.best_bid == "0.6"
         assert price_change.best_ask == "0.7"
         assert price_change.hash is not None
+
+
+def _make_last_quote(
+    instrument: BinaryOption,
+    bid_price: float,
+    ask_price: float,
+    bid_size: float = 500.0,
+    ask_size: float = 600.0,
+) -> QuoteTick:
+    return QuoteTick(
+        instrument_id=instrument.id,
+        bid_price=instrument.make_price(bid_price),
+        ask_price=instrument.make_price(ask_price),
+        bid_size=instrument.make_qty(bid_size),
+        ask_size=instrument.make_qty(ask_size),
+        ts_event=0,
+        ts_init=0,
+    )
+
+
+def test_parse_to_quote_ticks_uses_best_bid_ask_not_changed_level() -> None:
+    """
+    Regression test for https://github.com/nautechsystems/nautilus_trader/issues/3905.
+
+    A size=0 removal at a deep level must not be used as the new top of book.
+    The post-change top is carried in `best_bid`/`best_ask`.
+
+    """
+    # Arrange
+    instrument = TestInstrumentProvider.binary_option()
+    last_quote = _make_last_quote(instrument, bid_price=0.009, ask_price=0.155)
+
+    quotes = PolymarketQuotes(
+        market="0x13e081035bf10a67c7faf2adde3912d26da6986a5aa7c097d0a134ab4a075717",
+        price_changes=[
+            PolymarketQuote(
+                asset_id="39790575150005864502035112061767534106841339306960941347649609867025460648353",
+                price="0.156",
+                side=PolymarketOrderSide.SELL,
+                size="0",
+                hash="2aa07bfad07528cd22fffec6dbf7005e1f979720",
+                best_bid="0.009",
+                best_ask="0.155",
+            ),
+        ],
+        timestamp="1776713442539",
+    )
+
+    # Act
+    result = quotes.parse_to_quote_ticks(
+        instrument=instrument,
+        last_quote=last_quote,
+        ts_init=1,
+    )
+
+    # Assert
+    assert len(result) == 1
+    quote = result[0]
+    assert quote.bid_price == instrument.make_price(0.009)
+    assert quote.ask_price == instrument.make_price(0.155)
+    # Changed level (0.156) is not the new top; sizes must carry from last_quote
+    assert quote.bid_size == last_quote.bid_size
+    assert quote.ask_size == last_quote.ask_size
+
+
+@pytest.mark.parametrize(
+    ("side", "changed_price", "at_top"),
+    [
+        (PolymarketOrderSide.BUY, "0.52", True),  # BUY at new top
+        (PolymarketOrderSide.BUY, "0.48", False),  # BUY at deeper level
+        (PolymarketOrderSide.SELL, "0.60", True),  # SELL at new top
+        (PolymarketOrderSide.SELL, "0.65", False),  # SELL at deeper level
+    ],
+    ids=["buy-top", "buy-deep", "sell-top", "sell-deep"],
+)
+def test_parse_to_quote_ticks_size_propagation(
+    side: PolymarketOrderSide,
+    changed_price: str,
+    at_top: bool,
+) -> None:
+    """
+    When the changed level is the new top, its size is authoritative for that side;
+    otherwise the top size carries from `last_quote`.
+
+    The untouched side always
+    carries from `last_quote`.
+
+    """
+    # Arrange
+    instrument = TestInstrumentProvider.binary_option()
+    last_quote = _make_last_quote(instrument, bid_price=0.50, ask_price=0.60)
+
+    quotes = PolymarketQuotes(
+        market="0x1a4f04c2e6c000d9fc524eb12e7333217411a226c34745af140f195c0227cd5f",
+        price_changes=[
+            PolymarketQuote(
+                asset_id="23360939988679364027624185518382759743328544433592111535569478055890815567848",
+                price=changed_price,
+                side=side,
+                size="1234",
+                hash="aa",
+                best_bid="0.52",
+                best_ask="0.60",
+            ),
+        ],
+        timestamp="1729084877448",
+    )
+
+    # Act
+    result = quotes.parse_to_quote_ticks(
+        instrument=instrument,
+        last_quote=last_quote,
+        ts_init=1,
+    )
+
+    # Assert
+    assert len(result) == 1
+    quote = result[0]
+    assert quote.bid_price == instrument.make_price(0.52)
+    assert quote.ask_price == instrument.make_price(0.60)
+
+    if side == PolymarketOrderSide.BUY:
+        expected_bid_size = instrument.make_qty(1234) if at_top else last_quote.bid_size
+        assert quote.bid_size == expected_bid_size
+        assert quote.ask_size == last_quote.ask_size
+    else:
+        expected_ask_size = instrument.make_qty(1234) if at_top else last_quote.ask_size
+        assert quote.ask_size == expected_ask_size
+        assert quote.bid_size == last_quote.bid_size
+
+
+def test_parse_to_quote_ticks_skips_when_best_bid_ask_is_none() -> None:
+    """
+    `best_bid`/`best_ask` being `None` (Optional fields missing from the payload)
+    triggers the explicit None guard.
+    """
+    # Arrange
+    instrument = TestInstrumentProvider.binary_option()
+    last_quote = _make_last_quote(instrument, bid_price=0.50, ask_price=0.60)
+
+    quotes = PolymarketQuotes(
+        market="0x1a4f04c2e6c000d9fc524eb12e7333217411a226c34745af140f195c0227cd5f",
+        price_changes=[
+            PolymarketQuote(
+                asset_id="1",
+                price="0.50",
+                side=PolymarketOrderSide.BUY,
+                size="10",
+                hash="a",
+                best_bid=None,
+                best_ask=None,
+            ),
+        ],
+        timestamp="1729084877448",
+    )
+
+    # Act
+    result = quotes.parse_to_quote_ticks(
+        instrument=instrument,
+        last_quote=last_quote,
+        ts_init=1,
+    )
+
+    # Assert
+    assert result == []
+
+
+def test_parse_to_quote_ticks_skips_invalid_tops() -> None:
+    """
+    Entries with missing/zero best_bid or best_ask, or a locked/crossed book, are
+    skipped rather than producing degenerate quotes.
+    """
+    # Arrange
+    instrument = TestInstrumentProvider.binary_option()
+    last_quote = _make_last_quote(instrument, bid_price=0.50, ask_price=0.60)
+
+    quotes = PolymarketQuotes(
+        market="0x1a4f04c2e6c000d9fc524eb12e7333217411a226c34745af140f195c0227cd5f",
+        price_changes=[
+            # Zero best_bid (empty bid side)
+            PolymarketQuote(
+                asset_id="1",
+                price="0.50",
+                side=PolymarketOrderSide.SELL,
+                size="10",
+                hash="a",
+                best_bid="0",
+                best_ask="0.60",
+            ),
+            # Crossed (bid >= ask)
+            PolymarketQuote(
+                asset_id="1",
+                price="0.70",
+                side=PolymarketOrderSide.BUY,
+                size="10",
+                hash="b",
+                best_bid="0.70",
+                best_ask="0.60",
+            ),
+        ],
+        timestamp="1729084877448",
+    )
+
+    # Act
+    result = quotes.parse_to_quote_ticks(
+        instrument=instrument,
+        last_quote=last_quote,
+        ts_init=1,
+    )
+
+    # Assert
+    assert result == []
+
+
+@pytest.mark.parametrize(
+    ("bids", "asks", "expected_len"),
+    [
+        (
+            [
+                PolymarketBookLevel(price="0.40", size="150"),
+                PolymarketBookLevel(price="0.50", size="250"),
+            ],
+            [
+                PolymarketBookLevel(price="0.52", size="100"),
+                PolymarketBookLevel(price="0.60", size="200"),
+            ],
+            5,
+        ),
+        (
+            [
+                PolymarketBookLevel(price="0.40", size="150"),
+                PolymarketBookLevel(price="0.50", size="250"),
+            ],
+            [],
+            3,
+        ),
+        (
+            [],
+            [
+                PolymarketBookLevel(price="0.52", size="100"),
+                PolymarketBookLevel(price="0.60", size="200"),
+            ],
+            3,
+        ),
+    ],
+    ids=["two-sided", "bids-only", "asks-only"],
+)
+def test_parse_to_snapshot_flags_snapshot_bit_on_every_delta(
+    bids: list[PolymarketBookLevel],
+    asks: list[PolymarketBookLevel],
+    expected_len: int,
+) -> None:
+    """
+    Every snapshot delta (CLEAR + ADDs) must carry F_SNAPSHOT so downstream consumers
+    (data engine, wranglers) can distinguish the opening rebuild from an incremental
+    book reset.
+
+    F_LAST must be set on exactly one delta (the last).
+
+    """
+    # Arrange
+    snapshot = PolymarketBookSnapshot(
+        market="0x1a4f04c2e6c000d9fc524eb12e7333217411a226c34745af140f195c0227cd5f",
+        asset_id="23360939988679364027624185518382759743328544433592111535569478055890815567848",
+        bids=bids,
+        asks=asks,
+        timestamp="1728799418260",
+    )
+    instrument = TestInstrumentProvider.binary_option()
+
+    # Act
+    deltas = snapshot.parse_to_snapshot(instrument=instrument, ts_init=1)
+
+    # Assert
+    assert deltas is not None
+    assert len(deltas.deltas) == expected_len
+
+    for delta in deltas.deltas:
+        assert delta.flags & RecordFlag.F_SNAPSHOT, f"F_SNAPSHOT missing from {delta}"
+
+    f_last_count = sum(1 for d in deltas.deltas if d.flags & RecordFlag.F_LAST)
+    assert f_last_count == 1
+    assert deltas.deltas[-1].flags & RecordFlag.F_LAST
+
+
+def test_parse_to_deltas_flags_last_on_final_only() -> None:
+    """
+    F_LAST must be set on exactly the final delta in the batch, not on every entry.
+    """
+    # Arrange
+    quotes = PolymarketQuotes(
+        market="0x1a4f04c2e6c000d9fc524eb12e7333217411a226c34745af140f195c0227cd5f",
+        price_changes=[
+            PolymarketQuote(
+                asset_id="1",
+                price="0.50",
+                side=PolymarketOrderSide.BUY,
+                size="10",
+                hash="a",
+                best_bid="0.50",
+                best_ask="0.60",
+            ),
+            PolymarketQuote(
+                asset_id="1",
+                price="0.48",
+                side=PolymarketOrderSide.BUY,
+                size="20",
+                hash="b",
+                best_bid="0.50",
+                best_ask="0.60",
+            ),
+            PolymarketQuote(
+                asset_id="1",
+                price="0.60",
+                side=PolymarketOrderSide.SELL,
+                size="0",
+                hash="c",
+                best_bid="0.50",
+                best_ask="0.62",
+            ),
+        ],
+        timestamp="1729084877448",
+    )
+    instrument = TestInstrumentProvider.binary_option()
+
+    # Act
+    deltas = quotes.parse_to_deltas(instrument=instrument, ts_init=1)
+
+    # Assert
+    assert len(deltas.deltas) == 3
+    assert deltas.deltas[0].flags == 0
+    assert deltas.deltas[1].flags == 0
+    assert deltas.deltas[2].flags & RecordFlag.F_LAST
+
+
+def test_polymarket_quote_decodes_without_best_bid_ask() -> None:
+    """
+    `best_bid`/`best_ask` are optional; a payload that omits them must decode with the
+    fields defaulting to None rather than failing at the msgspec layer.
+    """
+    # Arrange
+    payload = {
+        "market": "0x1a4f04c2e6c000d9fc524eb12e7333217411a226c34745af140f195c0227cd5f",
+        "price_changes": [
+            {
+                "asset_id": "1",
+                "price": "0.50",
+                "side": "BUY",
+                "size": "10",
+                "hash": "a",
+            },
+        ],
+        "event_type": "price_change",
+        "timestamp": "1729084877448",
+    }
+
+    # Act
+    quotes = msgspec.json.decode(msgspec.json.encode(payload), type=PolymarketQuotes)
+
+    # Assert
+    assert len(quotes.price_changes) == 1
+    assert quotes.price_changes[0].best_bid is None
+    assert quotes.price_changes[0].best_ask is None
+
+
+def test_determine_trade_id_is_deterministic() -> None:
+    id1 = determine_trade_id("asset-1", PolymarketOrderSide.BUY, "0.5", "10", "1700000")
+    id2 = determine_trade_id("asset-1", PolymarketOrderSide.BUY, "0.5", "10", "1700000")
+    assert id1 == id2
+
+
+def test_determine_trade_id_differentiates_sides() -> None:
+    buy = determine_trade_id("asset-1", PolymarketOrderSide.BUY, "0.5", "10", "1700000")
+    sell = determine_trade_id("asset-1", PolymarketOrderSide.SELL, "0.5", "10", "1700000")
+    assert buy != sell
+
+
+def test_determine_trade_id_field_delimiter_prevents_collision() -> None:
+    # "0.12" + "34" would collide with "0.1" + "234" if fields were concatenated
+    a = determine_trade_id("asset-1", PolymarketOrderSide.BUY, "0.12", "34", "1700000")
+    b = determine_trade_id("asset-1", PolymarketOrderSide.BUY, "0.1", "234", "1700000")
+    assert a != b
+
+
+def test_determine_trade_id_format() -> None:
+    trade_id = determine_trade_id("asset-1", PolymarketOrderSide.BUY, "0.5", "10", "1700000")
+    value = trade_id.value
+    assert len(value) == 16
+    assert all(c in "0123456789abcdef" for c in value)
 
 
 def test_parse_trade_tick() -> None:
@@ -242,6 +741,29 @@ def test_parse_user_trade(data_file: str) -> None:
 
     # Assert
     assert isinstance(msg, PolymarketUserTrade)
+
+
+def test_maker_order_without_side_omits_field_in_encoded_json() -> None:
+    # PolymarketMakerOrder.side is optional because legacy / WS-channel
+    # payloads omit it; the V2 REST trade response carries it. The struct
+    # must NOT serialize the absent field as `"side": null` because that
+    # would corrupt fill `info=msg.to_dict()` payloads and the existing
+    # dict-shape regression tests. `omit_defaults=True` enforces this.
+    order = PolymarketMakerOrder(
+        asset_id="x",
+        fee_rate_bps="0",
+        maker_address="y",
+        matched_amount="1",
+        order_id="z",
+        outcome="Yes",
+        owner="o",
+        price="0.5",
+    )
+
+    encoded = msgspec.json.decode(msgspec.json.encode(order))
+
+    assert "side" not in encoded
+    assert encoded["asset_id"] == "x"
 
 
 def test_parse_user_trade_to_dict() -> None:
@@ -491,7 +1013,7 @@ def test_parse_empty_book_snapshot_returns_none():
         {
             "activation_ns": 0,
             "asset_class": "ALTERNATIVE",
-            "currency": "USDC.e",
+            "currency": "pUSD",
             "description": "Bitcoin Up or Down - September 3, 7PM ET",
             "expiration_ns": 1756944000000000000,
             "id": "0x22025ebf02ae8bf9aae999649b145ebe9b5db6e23a36acc7abe9ef5ca184ab57-46428986054832220603415781377952331535489217742718963672459046269597594860904.POLYMARKET",
@@ -558,15 +1080,42 @@ def test_parse_user_trade_to_fill_report_ts_event() -> None:
     assert fill_report.ts_event == 1725958681000000000  # September 10, 2024
 
 
+def _binary_option_with_taker_fee(taker_fee: Decimal) -> BinaryOption:
+    base = TestInstrumentProvider.binary_option()
+    return BinaryOption(
+        instrument_id=base.id,
+        raw_symbol=base.raw_symbol,
+        outcome=base.outcome,
+        description=base.description,
+        asset_class=base.asset_class,
+        currency=base.quote_currency,
+        price_precision=base.price_precision,
+        price_increment=base.price_increment,
+        size_precision=base.size_precision,
+        size_increment=base.size_increment,
+        activation_ns=base.activation_ns,
+        expiration_ns=base.expiration_ns,
+        max_quantity=base.max_quantity,
+        min_quantity=base.min_quantity,
+        maker_fee=Decimal(0),
+        taker_fee=taker_fee,
+        ts_event=base.ts_event,
+        ts_init=base.ts_init,
+    )
+
+
 def test_parse_user_trade_taker_commission_with_fees() -> None:
     """
-    Test that taker commission is correctly calculated from fee_rate_bps.
+    Test that taker commission uses the instrument's effective feeRate and follows the
+    Polymarket formula fee = C * feeRate * p * (1 - p).
 
-    This test uses a taker trade with 200 bps (2%) fees, as documented for Polymarket
-    15-minute crypto prediction markets.
+    Uses the sports-market rate (0.03) so the result matches docs example.
 
-    Commission = size * price * (fee_rate_bps / 10000)          = 100 * 0.50 * (200 /
-    10000)          = 50 * 0.02 = 1.0 USDC
+    Commission = 100 * 0.03 * 0.5 * 0.5 = 0.75 USDC
+
+    References
+    ----------
+    https://docs.polymarket.com/trading/fees
 
     """
     # Arrange
@@ -574,14 +1123,14 @@ def test_parse_user_trade_taker_commission_with_fees() -> None:
         "event_type": "trade",
         "asset_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
         "bucket_index": 0,
-        "fee_rate_bps": "200",  # 2% taker fee (Polymarket 15-min crypto markets)
+        "fee_rate_bps": "1000",  # Max fee cap from order signing; not used for commission
         "id": "test-taker-trade-001",
         "last_update": "1725958681",
         "maker_address": "0x1234567890123456789012345678901234567890",
         "maker_orders": [
             {
                 "asset_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
-                "fee_rate_bps": "0",
+                "fee_rate_bps": "1000",
                 "maker_address": "0x1234567890123456789012345678901234567890",
                 "matched_amount": "100",
                 "order_id": "0xmaker_order_id",
@@ -607,7 +1156,7 @@ def test_parse_user_trade_taker_commission_with_fees() -> None:
 
     decoder = msgspec.json.Decoder(PolymarketUserTrade)
     msg = decoder.decode(msgspec.json.encode(trade_data))
-    instrument = TestInstrumentProvider.binary_option()
+    instrument = _binary_option_with_taker_fee(Decimal("0.03"))
     account_id = AccountId("POLYMARKET-001")
 
     # Act
@@ -620,19 +1169,18 @@ def test_parse_user_trade_taker_commission_with_fees() -> None:
     )
 
     # Assert
-    # Commission = 100 * 0.50 * (200 / 10000) = 1.0 USDC.e
-    assert fill_report.commission == Money(1.0, USDC_POS)
+    assert fill_report.commission == Money(0.75, pUSD)
 
 
-def test_parse_user_trade_maker_commission_with_fees() -> None:
+def test_parse_user_trade_maker_commission_is_zero() -> None:
     """
-    Test that maker commission is correctly calculated from maker order's fee_rate_bps.
+    Test that maker fills never pay commission, regardless of feeRate.
 
-    For maker fills, the fee_rate_bps is taken from the individual maker_order, not from
-    the top-level trade message.
+    Polymarket docs: "Makers are never charged fees. Only takers pay fees."
 
-    Commission = matched_amount * price * (fee_rate_bps / 10000)          = 50 * 0.60 *
-    (100 / 10000)          = 30 * 0.01 = 0.30 USDC
+    References
+    ----------
+    https://docs.polymarket.com/trading/fees
 
     """
     # Arrange
@@ -642,14 +1190,14 @@ def test_parse_user_trade_maker_commission_with_fees() -> None:
         "event_type": "trade",
         "asset_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
         "bucket_index": 0,
-        "fee_rate_bps": "200",  # Taker's fee (not used for maker calculation)
+        "fee_rate_bps": "1000",
         "id": "test-maker-trade-001",
         "last_update": "1725958681",
         "maker_address": "0x1234567890123456789012345678901234567890",
         "maker_orders": [
             {
                 "asset_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
-                "fee_rate_bps": "100",  # 1% maker fee
+                "fee_rate_bps": "1000",
                 "maker_address": "0x1234567890123456789012345678901234567890",
                 "matched_amount": "50",
                 "order_id": maker_order_id,
@@ -675,7 +1223,7 @@ def test_parse_user_trade_maker_commission_with_fees() -> None:
 
     decoder = msgspec.json.Decoder(PolymarketUserTrade)
     msg = decoder.decode(msgspec.json.encode(trade_data))
-    instrument = TestInstrumentProvider.binary_option()
+    instrument = _binary_option_with_taker_fee(Decimal("0.03"))
     account_id = AccountId("POLYMARKET-001")
 
     # Act
@@ -688,15 +1236,15 @@ def test_parse_user_trade_maker_commission_with_fees() -> None:
     )
 
     # Assert
-    # Commission = 50 * 0.60 * (100 / 10000) = 0.30 USDC.e
-    assert fill_report.commission == Money(0.30, USDC_POS)
+    assert fill_report.commission == Money(0, pUSD)
 
 
 def test_parse_user_trade_zero_commission_with_no_fees() -> None:
     """
-    Test that commission is zero when fee_rate_bps is "0".
+    Test that commission is zero when the instrument has no taker fee.
 
-    This verifies the baseline case where no fees apply (most Polymarket markets).
+    This verifies the baseline case where no fees apply (CLOB-only instruments or
+    markets with a zero feeSchedule.rate).
 
     """
     # Arrange
@@ -750,7 +1298,7 @@ def test_parse_user_trade_zero_commission_with_no_fees() -> None:
     )
 
     # Assert
-    assert fill_report.commission == Money(0.0, USDC_POS)
+    assert fill_report.commission == Money(0.0, pUSD)
 
 
 @pytest.mark.parametrize(
@@ -769,31 +1317,47 @@ def test_basis_points_as_decimal(basis_points: Decimal, expected: Decimal) -> No
 
 
 @pytest.mark.parametrize(
-    ("quantity", "price", "fee_rate_bps", "expected"),
+    ("quantity", "price", "fee_rate", "liquidity_side", "expected"),
     [
-        # Zero fee rate
-        (Decimal(100), Decimal("0.50"), Decimal(0), 0.0),
-        # Standard fee calculation: 100 * 0.50 * 0.02 = 1.0
-        (Decimal(100), Decimal("0.50"), Decimal(200), 1.0),
-        # Sub-minimum rounds to zero: 1 * 0.01 * 0.0001 = 0.000001 -> 0.0
-        (Decimal(1), Decimal("0.01"), Decimal(1), 0.0),
-        # Exactly at minimum: 1 * 1.0 * 0.0001 = 0.0001
-        (Decimal(1), Decimal("1.0"), Decimal(1), 0.0001),
-        # Rounding to 4 decimals: 123.45 * 0.6789 * 0.015 = 1.25727... -> 1.2572
-        (Decimal("123.45"), Decimal("0.6789"), Decimal(150), 1.2572),
+        # Maker fills never pay commission regardless of rate
+        (Decimal(100), Decimal("0.50"), Decimal("0.03"), LiquiditySide.MAKER, 0.0),
+        # Taker with zero rate
+        (Decimal(100), Decimal("0.50"), Decimal(0), LiquiditySide.TAKER, 0.0),
+        # Crypto rate at p=0.5 peaks fee: 100 * 0.072 * 0.5 * 0.5 = 1.8
+        (Decimal(100), Decimal("0.50"), Decimal("0.072"), LiquiditySide.TAKER, 1.8),
+        # Crypto rate symmetric around p=0.5: same at 0.3 and 0.7
+        (Decimal(100), Decimal("0.30"), Decimal("0.072"), LiquiditySide.TAKER, 1.512),
+        (Decimal(100), Decimal("0.70"), Decimal("0.072"), LiquiditySide.TAKER, 1.512),
+        # Sports rate at p=0.5: 100 * 0.03 * 0.5 * 0.5 = 0.75
+        (Decimal(100), Decimal("0.50"), Decimal("0.03"), LiquiditySide.TAKER, 0.75),
+        # Sub-minimum rounds to zero: 1 * 0.01 * 0.0001 * 0.99 = 9.9e-7 -> 0.0
+        (Decimal(1), Decimal("0.01"), Decimal("0.0001"), LiquiditySide.TAKER, 0.0),
+        # Exactly at 5-decimal minimum after rounding
+        (Decimal(1), Decimal("0.50"), Decimal("0.00004"), LiquiditySide.TAKER, 1e-05),
     ],
 )
 def test_calculate_commission(
     quantity: Decimal,
     price: Decimal,
-    fee_rate_bps: Decimal,
+    fee_rate: Decimal,
+    liquidity_side: LiquiditySide,
     expected: float,
 ) -> None:
     """
-    Test commission calculation rounds to 4 decimal places (0.0001 USDC minimum).
+    Polymarket fee formula: fee = C * feeRate * p * (1 - p).
+
+    References
+    ----------
+    https://docs.polymarket.com/trading/fees
+
     """
-    result = calculate_commission(quantity, price, fee_rate_bps)
-    assert result == expected
+    result = calculate_commission(
+        quantity=quantity,
+        price=price,
+        fee_rate=fee_rate,
+        liquidity_side=liquidity_side,
+    )
+    assert result == pytest.approx(expected, abs=1e-9)
 
 
 def test_parse_empty_book_snapshot_in_backtest_engine():
@@ -820,7 +1384,7 @@ def test_parse_empty_book_snapshot_in_backtest_engine():
         {
             "activation_ns": 0,
             "asset_class": "ALTERNATIVE",
-            "currency": "USDC.e",
+            "currency": "pUSD",
             "description": "Bitcoin Up or Down - September 3, 7PM ET",
             "expiration_ns": 1756944000000000000,
             "id": "0x22025ebf02ae8bf9aae999649b145ebe9b5db6e23a36acc7abe9ef5ca184ab57-46428986054832220603415781377952331535489217742718963672459046269597594860904.POLYMARKET",
@@ -860,6 +1424,7 @@ def test_parse_empty_book_snapshot_in_backtest_engine():
 
     # Act - parse and add data (should skip empty snapshots)
     deltas = []
+
     for msg in raw_data:
         snapshot = msgspec.json.decode(msgspec.json.encode(msg), type=PolymarketBookSnapshot)
         ob_snapshot = snapshot.parse_to_snapshot(instrument=instrument, ts_init=0)
@@ -974,6 +1539,71 @@ def test_trade_report_get_asset_id_maker_returns_maker_order_asset_id() -> None:
     # Assert
     assert result == maker_asset_id
     assert result != taker_asset_id
+
+
+def test_parse_open_order_to_order_status_report_zero_expiration_is_none():
+    # `expiration="0"` is the V2 sentinel for non-GTD orders; it must
+    # surface as `expire_time=None`, not 1970-01-01.
+    open_order = PolymarketOpenOrder(
+        associate_trades=None,
+        id="0x0f76f4dc6eaf3332f4100f2e8a0b4a927351dd64646b7bb12f37df775c657a78",
+        status=PolymarketOrderStatus.LIVE,
+        market="0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+        original_size="5",
+        outcome="Yes",
+        maker_address="0xa3D82Ed56F4c68d2328Fb8c29e568Ba2cAF7d7c8",
+        owner="3e2c94ca-8124-c4c1-c7ea-be1ea21b71fe",
+        price="0.513",
+        side=PolymarketOrderSide.BUY,
+        size_matched="0",
+        asset_id="21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        expiration="0",
+        order_type=PolymarketOrderType.GTC,
+        created_at=1725842520,
+    )
+    instrument = TestInstrumentProvider.binary_option()
+
+    report = open_order.parse_to_order_status_report(
+        account_id=AccountId("POLYMARKET-001"),
+        instrument=instrument,
+        client_order_id=None,
+        ts_init=0,
+    )
+
+    assert report.expire_time is None
+
+
+def test_parse_open_order_to_order_status_report_nonzero_expiration_is_seconds():
+    # V2 emits expiration as Unix seconds. 1735689600 == 2025-01-01 00:00:00 UTC.
+    # Pre-fix this was parsed as ms and produced 1970-01-21.
+    open_order = PolymarketOpenOrder(
+        associate_trades=None,
+        id="0x0f76f4dc6eaf3332f4100f2e8a0b4a927351dd64646b7bb12f37df775c657a78",
+        status=PolymarketOrderStatus.LIVE,
+        market="0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+        original_size="5",
+        outcome="Yes",
+        maker_address="0xa3D82Ed56F4c68d2328Fb8c29e568Ba2cAF7d7c8",
+        owner="3e2c94ca-8124-c4c1-c7ea-be1ea21b71fe",
+        price="0.513",
+        side=PolymarketOrderSide.BUY,
+        size_matched="0",
+        asset_id="21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        expiration="1735689600",
+        order_type=PolymarketOrderType.GTD,
+        created_at=1725842520,
+    )
+    instrument = TestInstrumentProvider.binary_option()
+
+    report = open_order.parse_to_order_status_report(
+        account_id=AccountId("POLYMARKET-001"),
+        instrument=instrument,
+        client_order_id=None,
+        ts_init=0,
+    )
+
+    expected = pd.Timestamp(1735689600, unit="s", tz="UTC")
+    assert report.expire_time == expected
 
 
 def test_parse_open_order_to_order_status_report_ts_accepted():

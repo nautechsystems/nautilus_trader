@@ -29,7 +29,7 @@ use crate::{
 impl SocketConfig {
     /// Configuration for TCP socket connection.
     #[new]
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100, connection_max_retries=5, reconnect_max_attempts=None, idle_timeout_ms=None, certs_dir=None))]
     fn py_new(
         url: String,
@@ -143,7 +143,7 @@ impl SocketClient {
     /// Returns `true` if the client is connected and has not been signalled to disconnect.
     /// The client will automatically retry connection based on its configuration.
     #[pyo3(name = "is_active")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_is_active(slf: PyRef<'_, Self>) -> bool {
         slf.is_active()
     }
@@ -153,7 +153,7 @@ impl SocketClient {
     /// Returns `true` if the client lost connection and is attempting to reestablish it.
     /// The client will automatically retry connection based on its configuration.
     #[pyo3(name = "is_reconnecting")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_is_reconnecting(slf: PyRef<'_, Self>) -> bool {
         slf.is_reconnecting()
     }
@@ -162,7 +162,7 @@ impl SocketClient {
     ///
     /// Returns `true` if the client is in disconnect mode.
     #[pyo3(name = "is_disconnecting")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_is_disconnecting(slf: PyRef<'_, Self>) -> bool {
         slf.is_disconnecting()
     }
@@ -173,20 +173,20 @@ impl SocketClient {
     /// maximum reconnection attempts. In this state, the client cannot be reused
     /// and a new client must be created for further connections.
     #[pyo3(name = "is_closed")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_is_closed(slf: PyRef<'_, Self>) -> bool {
         slf.is_closed()
     }
 
     #[pyo3(name = "mode")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_mode(slf: PyRef<'_, Self>) -> String {
         slf.connection_mode().to_string()
     }
 
     /// Reconnect the client.
     #[pyo3(name = "reconnect")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_reconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let connection_mode = slf.connection_mode.clone();
         let state_notify = slf.state_notify.clone();
@@ -204,7 +204,7 @@ impl SocketClient {
                 ConnectionMode::Closed => {
                     log::warn!("Cannot reconnect - socket closed");
                 }
-                _ => {
+                ConnectionMode::Active => {
                     connection_mode.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
                     state_notify.notify_one();
 
@@ -223,6 +223,7 @@ impl SocketClient {
                             }
 
                             tokio::select! {
+                                biased;
                                 () = notified => {}
                                 () = tokio::time::sleep(fallback_interval) => {}
                             }
@@ -247,7 +248,7 @@ impl SocketClient {
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is not alive.
     #[pyo3(name = "close")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_close<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let connection_mode = slf.connection_mode.clone();
         let state_notify = slf.state_notify.clone();
@@ -290,7 +291,7 @@ impl SocketClient {
     ///
     /// - Throws an Exception if it is not able to send data.
     #[pyo3(name = "send")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_send<'py>(
         slf: PyRef<'_, Self>,
         data: Vec<u8>,
@@ -318,6 +319,7 @@ impl SocketClient {
                     let fallback_interval = Duration::from_millis(100);
 
                     log::debug!("Waiting for client to become ACTIVE before sending (2s)...");
+
                     match tokio::time::timeout(timeout, async {
                         loop {
                             let notified = state_notify.notified();
@@ -332,6 +334,7 @@ impl SocketClient {
                             }
 
                             tokio::select! {
+                                biased;
                                 () = notified => {}
                                 () = tokio::time::sleep(fallback_interval) => {}
                             }

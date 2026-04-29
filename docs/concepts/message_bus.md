@@ -16,6 +16,26 @@ Messages exchanged via the `MessageBus` fall into three categories:
 - Events
 - Commands
 
+## Message integrity
+
+Once a message is created, its fields must not be mutated. This includes container fields such as
+`params` maps. Components can read a message and derive local state from it, but they must not
+rewrite the original.
+
+Immutable messages keep every consumer seeing the same input, preserve what was true at emission
+time, and remove a class of shared-state races. Replay, debugging, and audit all depend on messages
+remaining stable after dispatch.
+
+Three ownership rules follow from this:
+
+- Caller-supplied request options stay on the message.
+- Response metadata returned to the caller stays on the response.
+- Component workflow state (bounded date ranges, grouping state, replay cursors, counters,
+  processing flags) stays in component-owned context keyed by message or request ID.
+
+When a component needs a derived message, it creates a new one with the required values instead of
+rewriting the original.
+
 ## Data and signal publishing
 
 While the `MessageBus` is a lower-level component that users typically interact with indirectly,
@@ -439,7 +459,10 @@ to ensure a simple and predictable stream key that the consumer nodes can regist
 
 ```python
 message_bus=MessageBusConfig(
-    database=DatabaseConfig(timeout=2),
+    database=DatabaseConfig(
+        connection_timeout=2,
+        response_timeout=2,
+    ),
     use_trader_id=False,
     use_trader_prefix=False,
     use_instance_id=False,
@@ -462,7 +485,10 @@ data_engine=LiveDataEngineConfig(
     external_clients=[ClientId("BINANCE_EXT")],
 ),
 message_bus=MessageBusConfig(
-    database=DatabaseConfig(timeout=2),
+    database=DatabaseConfig(
+        connection_timeout=2,
+        response_timeout=2,
+    ),
     external_streams=["binance"],  # <---
 ),
 ```

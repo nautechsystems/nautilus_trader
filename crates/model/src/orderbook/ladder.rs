@@ -99,16 +99,16 @@ impl Display for BookPrice {
 ///
 /// Separating MBP and snapshot batches prevents cross-contamination where
 /// stale MBP data could pollute a new snapshot. Without this distinction,
-/// an incomplete MBP stream (missing F_LAST) would leave batch state that
+/// an incomplete MBP stream (missing `F_LAST`) would leave batch state that
 /// incorrectly affects subsequent snapshot processing.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum L1BatchState {
     /// Not in any batch.
     #[default]
     None,
-    /// Accumulating an F_MBP batch (final two deltas accumulate).
+    /// Accumulating an `F_MBP` batch (final two deltas accumulate).
     MbpBatch,
-    /// Accumulating an F_SNAPSHOT batch (all deltas accumulate).
+    /// Accumulating an `F_SNAPSHOT` batch (all deltas accumulate).
     SnapshotBatch,
 }
 
@@ -159,10 +159,10 @@ impl BookLadder {
 
     /// Adds an order to the ladder at its price level.
     ///
-    /// For L1_MBP books, behavior depends on flags:
-    /// - F_MBP or F_SNAPSHOT (multi-level batch): Retains best after each add to prevent
-    ///   accumulation even if F_LAST is never sent.
-    /// - F_TOB or no batch flags (single replacement): Clears existing levels first,
+    /// For `L1_MBP` books, behavior depends on flags:
+    /// - `F_MBP` or `F_SNAPSHOT` (multi-level batch): Retains best after each add to prevent
+    ///   accumulation even if `F_LAST` is never sent.
+    /// - `F_TOB` or no batch flags (single replacement): Clears existing levels first,
     ///   allowing price to degrade.
     pub fn add(&mut self, order: BookOrder, flags: u8) {
         if self.book_type == BookType::L1_MBP && !self.handle_l1_add(&order, flags) {
@@ -181,14 +181,11 @@ impl BookLadder {
         let book_price = order.to_book_price();
         self.cache.insert(order.order_id, book_price);
 
-        match self.levels.get_mut(&book_price) {
-            Some(level) => {
-                level.add(order);
-            }
-            None => {
-                let level = BookLevel::from_order(order);
-                self.levels.insert(book_price, level);
-            }
+        if let Some(level) = self.levels.get_mut(&book_price) {
+            level.add(order);
+        } else {
+            let level = BookLevel::from_order(order);
+            self.levels.insert(book_price, level);
         }
 
         // For L1_MBP with F_MBP or F_SNAPSHOT, always retain best to prevent unbounded
@@ -208,14 +205,14 @@ impl BookLadder {
     /// Returns `true` to continue with normal add flow, `false` to abort.
     ///
     /// Behavior depends on flags:
-    /// - F_SNAPSHOT with F_LAST: End of snapshot batch. If in snapshot batch, accumulate;
+    /// - `F_SNAPSHOT` with `F_LAST`: End of snapshot batch. If in snapshot batch, accumulate;
     ///   otherwise clear (single-delta snapshot or cross-contamination from MBP).
-    /// - F_SNAPSHOT without F_LAST: Start/continue snapshot batch. Clears if not already
+    /// - `F_SNAPSHOT` without `F_LAST`: Start/continue snapshot batch. Clears if not already
     ///   in a snapshot batch (handles stale MBP data).
-    /// - F_MBP with F_LAST: End of MBP batch. If in MBP batch, accumulate final two;
+    /// - `F_MBP` with `F_LAST`: End of MBP batch. If in MBP batch, accumulate final two;
     ///   otherwise clear.
-    /// - F_MBP without F_LAST: Always clear (streaming mode, prevents stale prices).
-    /// - F_TOB or no batch flags: Single replacement (clears first).
+    /// - `F_MBP` without `F_LAST`: Always clear (streaming mode, prevents stale prices).
+    /// - `F_TOB` or no batch flags: Single replacement (clears first).
     ///
     /// Zero-size orders clear the entire L1 ladder.
     fn handle_l1_add(&mut self, order: &BookOrder, flags: u8) -> bool {
@@ -392,8 +389,8 @@ impl BookLadder {
 
     /// Retains only the best price level, removing all others.
     ///
-    /// For L1_MBP books, this ensures only the top-of-book level is kept after
-    /// processing multi-level data. The BTreeMap ordering ensures the first
+    /// For `L1_MBP` books, this ensures only the top-of-book level is kept after
+    /// processing multi-level data. The `BTreeMap` ordering ensures the first
     /// entry is always the best price (highest for bids, lowest for asks).
     fn retain_best_only(&mut self) {
         if self.levels.len() <= 1 {
@@ -412,6 +409,7 @@ impl BookLadder {
         // Rebuild cache from remaining level (necessary for L1 where
         // all orders use the same order_id and remove_level would corrupt cache)
         self.cache.clear();
+
         for (book_price, level) in &self.levels {
             for order_id in level.orders.keys() {
                 self.cache.insert(*order_id, *book_price);
@@ -1766,6 +1764,7 @@ mod tests {
         );
 
         let mut snapshot_ladder = BookLadder::new(OrderSideSpecified::Buy, BookType::L1_MBP);
+
         for (i, price_str) in prices.iter().enumerate() {
             let order = BookOrder {
                 side: OrderSide::Buy,

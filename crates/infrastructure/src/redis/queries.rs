@@ -665,6 +665,7 @@ impl DatabaseQueries {
         let request_identifier = data_type.identifier().unwrap_or("");
 
         let mut results = Vec::new();
+
         for value_opt in values {
             let Some(value_bytes) = value_opt else {
                 continue;

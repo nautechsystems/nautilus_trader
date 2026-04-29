@@ -46,3 +46,4 @@ ustr = { workspace = true }
 name = "nautilus"
 path = "src/bin/cli.rs"
 doc = false
+test = false

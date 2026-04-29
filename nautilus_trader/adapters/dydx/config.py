@@ -22,6 +22,7 @@ These classes provide Python-side configuration for the Rust-backed dYdX v4 clie
 from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
+from nautilus_trader.core.nautilus_pyo3 import DydxNetwork
 
 
 class DydxDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -34,14 +35,21 @@ class DydxDataClientConfig(LiveDataClientConfig, frozen=True):
         The dYdX wallet address.
         If ``None`` then will source `DYDX_WALLET_ADDRESS` or
         `DYDX_TESTNET_WALLET_ADDRESS` environment variables.
+    environment : DydxNetwork, optional
+        The dYdX network environment for the client (MAINNET or TESTNET).
+        If ``None`` then defaults to MAINNET.
+        Takes precedence over ``is_testnet`` if set.
     is_testnet : bool, default False
         If the client is connecting to the dYdX testnet API.
+        Deprecated: use ``environment=DydxNetwork.TESTNET`` instead.
     base_url_http : str, optional
         The base URL for HTTP API endpoints.
         If ``None`` then will use the default URL for the selected network.
     base_url_ws : str, optional
         The base URL for WebSocket connections.
         If ``None`` then will use the default URL for the selected network.
+    proxy_url : str, optional
+        The proxy URL for HTTP and WebSocket transports.
     bars_timestamp_on_close : bool, default True
         If bar `ts_event` timestamps should be the bar close time.
         If False, the venue-native open time will be used.
@@ -55,10 +63,12 @@ class DydxDataClientConfig(LiveDataClientConfig, frozen=True):
     """
 
     wallet_address: str | None = None
+    environment: DydxNetwork | None = None
     is_testnet: bool = False
     bars_timestamp_on_close: bool = True
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    proxy_url: str | None = None
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000
     retry_delay_max_ms: PositiveInt | None = 10_000
@@ -86,8 +96,13 @@ class DydxExecClientConfig(LiveExecClientConfig, frozen=True):
         When provided, transactions will include a TxExtension to enable trading
         via sub-accounts using delegated signing keys. This is an advanced feature
         for institutional setups with separated hot/cold wallet architectures.
+    environment : DydxNetwork, optional
+        The dYdX network environment for the client (MAINNET or TESTNET).
+        If ``None`` then defaults to MAINNET.
+        Takes precedence over ``is_testnet`` if set.
     is_testnet : bool, default False
         If the client is connecting to the dYdX testnet API.
+        Deprecated: use ``environment=DydxNetwork.TESTNET`` instead.
     base_url_http : str, optional
         The HTTP client custom endpoint override.
         If ``None`` then will use the default URL for the selected network.
@@ -97,6 +112,8 @@ class DydxExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_grpc : str, optional
         The gRPC client custom endpoint override.
         If ``None`` then will use the default URL for the selected network.
+    proxy_url : str, optional
+        The proxy URL for HTTP and WebSocket transports.
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay_initial_ms : PositiveInt, optional
@@ -114,10 +131,12 @@ class DydxExecClientConfig(LiveExecClientConfig, frozen=True):
     subaccount: int = 0
     private_key: str | None = None
     authenticator_ids: list[int] | None = None
+    environment: DydxNetwork | None = None
     is_testnet: bool = False
     base_url_http: str | None = None
     base_url_ws: str | None = None
     base_url_grpc: str | None = None
+    proxy_url: str | None = None
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000
     retry_delay_max_ms: PositiveInt | None = 10_000

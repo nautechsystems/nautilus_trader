@@ -20,8 +20,8 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use ahash::AHashSet;
 use async_trait::async_trait;
+use indexmap::IndexSet;
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
@@ -44,7 +44,7 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
         AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
-        PositionSideSpecified, TimeInForce,
+        PositionSideSpecified, TimeInForce, TriggerType,
     },
     events::{
         OrderEventAny, OrderFilled, OrderPendingCancel, OrderPendingUpdate,
@@ -665,14 +665,18 @@ async fn test_triggered_event_generated_before_canceled() {
 
     ctx.add_instrument(test_instrument());
 
-    // Create and cache an accepted order
-    let mut order = create_submitted_order(
-        "O-TRIG-CANCEL",
-        instrument_id,
-        OrderSide::Buy,
-        "1.0",
-        "3000.00",
-    );
+    // Create and cache an accepted StopLimit order (must be triggerable)
+    let mut order = OrderTestBuilder::new(OrderType::StopLimit)
+        .client_order_id(client_order_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("3000.00"))
+        .trigger_price(Price::from("3100.00"))
+        .trigger_type(TriggerType::LastPrice)
+        .build();
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    order.apply(submitted).unwrap();
     let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
     order.apply(accepted).unwrap();
     ctx.add_order(order);
@@ -1332,7 +1336,6 @@ fn test_config_default_values() {
     let config = ExecutionManagerConfig::default();
 
     assert!(config.reconciliation);
-    assert_eq!(config.reconciliation_startup_delay_secs, 10.0);
     assert_eq!(config.lookback_mins, Some(60));
     assert!(!config.filter_unclaimed_external);
     assert!(!config.filter_position_reports);
@@ -4586,6 +4589,10 @@ async fn test_netting_position_cross_zero_long_to_short() {
     // Second fill should be SELL 3.0 (open short)
     assert_eq!(fill_events[1].order_side, OrderSide::Sell);
     assert_eq!(fill_events[1].last_qty, Quantity::from("3.0"));
+
+    // Close and open legs must hash to distinct venue_order_ids so the engine
+    // can tell them apart across reconciliation replays.
+    assert_ne!(fill_events[0].venue_order_id, fill_events[1].venue_order_id);
 }
 
 #[tokio::test]
@@ -4661,6 +4668,10 @@ async fn test_netting_position_cross_zero_short_to_long() {
     // Second fill should be BUY 2.0 (open long)
     assert_eq!(fill_events[1].order_side, OrderSide::Buy);
     assert_eq!(fill_events[1].last_qty, Quantity::from("2.0"));
+
+    // Close and open legs must hash to distinct venue_order_ids so the engine
+    // can tell them apart across reconciliation replays.
+    assert_ne!(fill_events[0].venue_order_id, fill_events[1].venue_order_id);
 }
 
 #[tokio::test]
@@ -6093,7 +6104,7 @@ async fn test_filtered_client_order_ids_skips_matching_orders() {
     // Orders in filtered_client_order_ids should be skipped during reconciliation
     let filtered_id = ClientOrderId::from("O-FILTERED-001");
     let config = ExecutionManagerConfig {
-        filtered_client_order_ids: AHashSet::from([filtered_id]),
+        filtered_client_order_ids: IndexSet::from([filtered_id]),
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -6143,7 +6154,7 @@ async fn test_filtered_client_order_ids_skips_orphan_fills() {
     let filtered_id = ClientOrderId::from("O-FILTERED-002");
     let venue_order_id = VenueOrderId::from("V-FILTERED-002");
     let config = ExecutionManagerConfig {
-        filtered_client_order_ids: AHashSet::from([filtered_id]),
+        filtered_client_order_ids: IndexSet::from([filtered_id]),
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -6211,7 +6222,7 @@ async fn test_filtered_client_order_ids_skips_orphan_fills_via_venue_order_id_lo
     let filtered_id = ClientOrderId::from("O-FILTERED-003");
     let venue_order_id = VenueOrderId::from("V-FILTERED-003");
     let config = ExecutionManagerConfig {
-        filtered_client_order_ids: AHashSet::from([filtered_id]),
+        filtered_client_order_ids: IndexSet::from([filtered_id]),
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -6278,7 +6289,7 @@ async fn test_reconciliation_instrument_ids_filters_other_instruments() {
     // Only instruments in reconciliation_instrument_ids should be reconciled
     let included_instrument = test_instrument_id();
     let config = ExecutionManagerConfig {
-        reconciliation_instrument_ids: AHashSet::from([included_instrument]),
+        reconciliation_instrument_ids: IndexSet::from([included_instrument]),
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -6354,7 +6365,7 @@ async fn test_reconciliation_instrument_ids_filters_position_reports() {
     // Position reports for instruments NOT in reconciliation_instrument_ids should be skipped
     let included_instrument_id = test_instrument_id();
     let config = ExecutionManagerConfig {
-        reconciliation_instrument_ids: AHashSet::from([included_instrument_id]),
+        reconciliation_instrument_ids: IndexSet::from([included_instrument_id]),
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -6466,35 +6477,35 @@ impl ExecutionClient for MockExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, _cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, _cmd: SubmitOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn submit_order_list(&self, _cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, _cmd: SubmitOrderList) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn modify_order(&self, _cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, _cmd: ModifyOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn cancel_order(&self, _cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order(&self, _cmd: CancelOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn cancel_all_orders(&self, _cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, _cmd: CancelAllOrders) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, _cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, _cmd: BatchCancelOrders) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn query_order(&self, _cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -6925,35 +6936,35 @@ impl ExecutionClient for MockPositionExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, _cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, _cmd: SubmitOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn submit_order_list(&self, _cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, _cmd: SubmitOrderList) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn modify_order(&self, _cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, _cmd: ModifyOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn cancel_order(&self, _cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order(&self, _cmd: CancelOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn cancel_all_orders(&self, _cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, _cmd: CancelAllOrders) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, _cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, _cmd: BatchCancelOrders) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn query_order(&self, _cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
         Ok(())
     }
 

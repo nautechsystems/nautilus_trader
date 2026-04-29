@@ -161,7 +161,7 @@ impl EncodeToRecordBatch for BinanceBar {
 /// # Errors
 ///
 /// Returns an error if `data` is empty or encoding fails.
-#[allow(clippy::missing_panics_doc)] // Guarded by empty check
+#[expect(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn binance_bar_to_arrow_record_batch(
     data: &[BinanceBar],
 ) -> Result<RecordBatch, EncodingError> {

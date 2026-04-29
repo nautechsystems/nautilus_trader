@@ -44,6 +44,45 @@ pub struct ExchangeContext<'a> {
     pub cache: &'a Cache,
 }
 
+#[derive(Debug, Clone)]
+pub enum SimulationModuleAny {
+    FXRolloverInterest(FXRolloverInterestModule),
+}
+
+impl SimulationModule for SimulationModuleAny {
+    fn pre_process(&self, data: &Data) {
+        match self {
+            Self::FXRolloverInterest(module) => module.pre_process(data),
+        }
+    }
+
+    fn process(&self, ts_now: UnixNanos, ctx: &ExchangeContext) -> Vec<Money> {
+        match self {
+            Self::FXRolloverInterest(module) => module.process(ts_now, ctx),
+        }
+    }
+
+    fn log_diagnostics(&self) {
+        match self {
+            Self::FXRolloverInterest(module) => module.log_diagnostics(),
+        }
+    }
+
+    fn reset(&self) {
+        match self {
+            Self::FXRolloverInterest(module) => module.reset(),
+        }
+    }
+}
+
+impl From<SimulationModuleAny> for Box<dyn SimulationModule> {
+    fn from(value: SimulationModuleAny) -> Self {
+        match value {
+            SimulationModuleAny::FXRolloverInterest(module) => Box::new(module),
+        }
+    }
+}
+
 /// Trait for custom simulation modules that extend backtesting functionality.
 ///
 /// Implementations can add specialized behavior such as rollover interest,

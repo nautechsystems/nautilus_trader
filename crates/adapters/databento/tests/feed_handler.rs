@@ -784,6 +784,7 @@ async fn test_mbo_multiple_instruments() {
     let msg2 = recv_msg(&mut msg_rx).await;
 
     let mut symbols: Vec<String> = Vec::new();
+
     for msg in [msg1, msg2] {
         match msg {
             DatabentoMessage::Data(Data::Deltas(deltas)) => {

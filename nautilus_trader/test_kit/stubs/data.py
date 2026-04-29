@@ -545,6 +545,7 @@ class TestDataStubs:
     def l1_feed():
         provider = TestDataProvider()
         updates = []
+
         for _, row in provider.read_csv_ticks("truefx/usdjpy-ticks.csv").iterrows():
             for side, order_side in zip(
                 ("bid", "ask"),

@@ -35,6 +35,45 @@ pub trait LatencyModel: Debug {
     fn get_base_latency(&self) -> UnixNanos;
 }
 
+#[derive(Debug, Clone)]
+pub enum LatencyModelAny {
+    Static(StaticLatencyModel),
+}
+
+impl LatencyModel for LatencyModelAny {
+    fn get_insert_latency(&self) -> UnixNanos {
+        match self {
+            Self::Static(model) => model.get_insert_latency(),
+        }
+    }
+
+    fn get_update_latency(&self) -> UnixNanos {
+        match self {
+            Self::Static(model) => model.get_update_latency(),
+        }
+    }
+
+    fn get_delete_latency(&self) -> UnixNanos {
+        match self {
+            Self::Static(model) => model.get_delete_latency(),
+        }
+    }
+
+    fn get_base_latency(&self) -> UnixNanos {
+        match self {
+            Self::Static(model) => model.get_base_latency(),
+        }
+    }
+}
+
+impl From<LatencyModelAny> for Box<dyn LatencyModel> {
+    fn from(value: LatencyModelAny) -> Self {
+        match value {
+            LatencyModelAny::Static(model) => Box::new(model),
+        }
+    }
+}
+
 /// Static latency model with fixed latency values.
 ///
 /// Models the latency for different order operations including base network latency

@@ -120,7 +120,7 @@ impl PortfolioAnalyzer {
 
     /// Registers a new portfolio statistic for calculation.
     #[pyo3(name = "register_statistic")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_register_statistic(&mut self, py: Python, statistic: Py<PyAny>) -> PyResult<()> {
         let type_name = statistic
             .getattr(py, "__class__")?
@@ -208,7 +208,7 @@ impl PortfolioAnalyzer {
 
     /// Removes a specific statistic from calculation.
     #[pyo3(name = "deregister_statistic")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_deregister_statistic(&mut self, py: Python, statistic: Py<PyAny>) -> PyResult<()> {
         let type_name = statistic
             .getattr(py, "__class__")?
@@ -302,7 +302,7 @@ impl PortfolioAnalyzer {
 
     /// Adds new positions for analysis.
     #[pyo3(name = "add_positions")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_add_positions(&mut self, py: Python, positions: Vec<Py<PyAny>>) -> PyResult<()> {
         // Extract Position objects from Cython wrappers
         let positions: Vec<Position> = positions

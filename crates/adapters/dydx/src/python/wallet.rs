@@ -15,8 +15,6 @@
 
 //! Python bindings for dYdX wallet.
 
-#![allow(clippy::missing_errors_doc)]
-
 use std::sync::Arc;
 
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};

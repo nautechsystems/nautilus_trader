@@ -78,7 +78,7 @@ pub fn wait_until<F>(mut condition: F, timeout: Duration)
 where
     F: FnMut() -> bool,
 {
-    let start_time = Instant::now();
+    let start_time = Instant::now(); // dst-ok: test helper timer; uses real time by design
 
     loop {
         if condition() {
@@ -105,7 +105,7 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = bool>,
 {
-    let start_time = Instant::now();
+    let start_time = Instant::now(); // dst-ok: test helper timer; uses real time by design
 
     loop {
         if condition().await {

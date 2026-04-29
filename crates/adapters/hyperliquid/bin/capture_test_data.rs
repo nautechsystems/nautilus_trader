@@ -17,13 +17,15 @@
 
 use std::fs;
 
-use nautilus_hyperliquid::http::client::HyperliquidHttpClient;
+use nautilus_hyperliquid::{
+    common::enums::HyperliquidEnvironment, http::client::HyperliquidHttpClient,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Capturing Hyperliquid test data...");
 
-    let client = HyperliquidHttpClient::new(false, 60, None)?;
+    let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None)?;
 
     // Capture perpetuals metadata (first 3 markets to keep file small)
     println!("Fetching perpetuals metadata...");

@@ -319,7 +319,7 @@ pub trait ExecutionAlgorithm: DataActor {
             UUID4::new(),
             ts_init,
             reduce_only,
-            false, // quote_quantity
+            primary.is_quote_quantity(),
             primary.contingency_type(),
             primary.order_list_id(),
             primary.linked_order_ids().map(|ids| ids.to_vec()),
@@ -343,7 +343,7 @@ pub trait ExecutionAlgorithm: DataActor {
     /// by the spawned quantity. If the spawned order is subsequently denied or
     /// rejected (before acceptance), the deducted quantity is automatically
     /// restored to the primary order.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn spawn_limit(
         &mut self,
         primary: &mut OrderAny,
@@ -382,7 +382,7 @@ pub trait ExecutionAlgorithm: DataActor {
             expire_time,
             post_only,
             reduce_only,
-            false, // quote_quantity
+            primary.is_quote_quantity(),
             display_qty,
             emulation_trigger,
             None, // trigger_instrument_id
@@ -411,7 +411,7 @@ pub trait ExecutionAlgorithm: DataActor {
     /// by the spawned quantity. If the spawned order is subsequently denied or
     /// rejected (before acceptance), the deducted quantity is automatically
     /// restored to the primary order.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn spawn_market_to_limit(
         &mut self,
         primary: &mut OrderAny,
@@ -447,7 +447,7 @@ pub trait ExecutionAlgorithm: DataActor {
             expire_time,
             false, // post_only
             reduce_only,
-            false, // quote_quantity
+            primary.is_quote_quantity(),
             display_qty,
             primary.contingency_type(),
             primary.order_list_id(),
@@ -1209,7 +1209,9 @@ mod tests {
     };
     use nautilus_model::{
         enums::OrderSide,
-        events::{OrderAccepted, OrderCanceled, OrderDenied, OrderRejected},
+        events::{
+            OrderAccepted, OrderCanceled, OrderDenied, OrderRejected, order::spec::OrderFilledSpec,
+        },
         identifiers::{
             AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
             VenueOrderId,
@@ -1423,7 +1425,7 @@ mod tests {
         algo.on_order_modify_rejected(OrderModifyRejected::default());
         algo.on_order_cancel_rejected(OrderCancelRejected::default());
         algo.on_order_updated(OrderUpdated::default());
-        algo.on_algo_order_filled(OrderFilled::default());
+        algo.on_algo_order_filled(OrderFilledSpec::builder().build());
     }
 
     #[rstest]
@@ -1599,6 +1601,93 @@ mod tests {
         );
 
         assert_eq!(spawned.tags, Some(tags));
+    }
+
+    #[rstest]
+    fn test_algorithm_spawn_propagates_primary_fields() {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+
+        let mut params = indexmap::IndexMap::new();
+        params.insert(ustr::Ustr::from("horizon_secs"), ustr::Ustr::from("30"));
+        params.insert(ustr::Ustr::from("interval_secs"), ustr::Ustr::from("10"));
+        let primary_tags = vec![ustr::Ustr::from("PRIMARY_TAG")];
+        let linked_order_ids = vec![ClientOrderId::from("LINK-1")];
+
+        let mut primary = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRAT-001"),
+            InstrumentId::from("BTC/USDT.BINANCE"),
+            ClientOrderId::from("O-001"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            0.into(),
+            false, // reduce_only
+            true,  // quote_quantity
+            None,  // contingency_type
+            None,  // order_list_id
+            Some(linked_order_ids.clone()),
+            None, // parent_order_id
+            Some(algo.id()),
+            Some(params.clone()),
+            None, // exec_spawn_id
+            Some(primary_tags.clone()),
+        ));
+
+        let spawned_market = algo.spawn_market(
+            &mut primary,
+            Quantity::from("0.25"),
+            TimeInForce::Ioc,
+            false,
+            None, // falls back to primary.tags
+            false,
+        );
+        assert!(spawned_market.is_quote_quantity);
+        assert_eq!(spawned_market.exec_algorithm_params, Some(params.clone()));
+        assert_eq!(spawned_market.tags, Some(primary_tags.clone()));
+        assert_eq!(
+            spawned_market.linked_order_ids,
+            Some(linked_order_ids.clone())
+        );
+
+        let spawned_limit = algo.spawn_limit(
+            &mut primary,
+            Quantity::from("0.25"),
+            Price::from("50000.0"),
+            TimeInForce::Gtc,
+            None,  // expire_time
+            false, // post_only
+            false, // reduce_only
+            None,  // display_qty
+            None,  // emulation_trigger
+            None,  // falls back to primary.tags
+            false,
+        );
+        assert!(spawned_limit.is_quote_quantity);
+        assert_eq!(spawned_limit.exec_algorithm_params, Some(params.clone()));
+        assert_eq!(spawned_limit.tags, Some(primary_tags.clone()));
+        assert_eq!(
+            spawned_limit.linked_order_ids,
+            Some(linked_order_ids.clone())
+        );
+
+        let spawned_mtl = algo.spawn_market_to_limit(
+            &mut primary,
+            Quantity::from("0.25"),
+            TimeInForce::Gtc,
+            None,  // expire_time
+            false, // reduce_only
+            None,  // display_qty
+            None,  // emulation_trigger
+            None,  // falls back to primary.tags
+            false,
+        );
+        assert!(spawned_mtl.is_quote_quantity);
+        assert_eq!(spawned_mtl.exec_algorithm_params, Some(params));
+        assert_eq!(spawned_mtl.tags, Some(primary_tags));
+        assert_eq!(spawned_mtl.linked_order_ids, Some(linked_order_ids));
     }
 
     #[rstest]

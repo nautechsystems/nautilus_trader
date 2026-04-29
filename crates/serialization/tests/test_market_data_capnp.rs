@@ -16,6 +16,10 @@
 //! Cap'n Proto serialization integration tests for market data types.
 
 #![cfg(feature = "capnp")]
+#![allow(
+    clippy::unreadable_literal,
+    reason = "wire-format fixture timestamps and IDs are easier to compare in raw form"
+)]
 
 use nautilus_model::{
     data::{
@@ -430,11 +434,11 @@ fn test_instrument_status_with_no_optional_fields() {
 
     assert_eq!(status.instrument_id, decoded.instrument_id);
     assert_eq!(status.action, decoded.action);
-    assert_eq!(status.reason, None);
-    assert_eq!(status.trading_event, None);
-    assert_eq!(decoded.is_trading, Some(false));
-    assert_eq!(decoded.is_quoting, Some(false));
-    assert_eq!(decoded.is_short_sell_restricted, Some(false));
+    assert_eq!(decoded.reason, None);
+    assert_eq!(decoded.trading_event, None);
+    assert_eq!(decoded.is_trading, None);
+    assert_eq!(decoded.is_quoting, None);
+    assert_eq!(decoded.is_short_sell_restricted, None);
     assert_eq!(status.ts_event, decoded.ts_event);
     assert_eq!(status.ts_init, decoded.ts_init);
 }
@@ -470,8 +474,8 @@ fn test_instrument_status_with_empty_strings() {
 
     assert_eq!(status.instrument_id, decoded.instrument_id);
     assert_eq!(status.action, decoded.action);
-    assert_eq!(decoded.reason, None);
-    assert_eq!(decoded.trading_event, None);
+    assert_eq!(decoded.reason, Some(Ustr::from("")));
+    assert_eq!(decoded.trading_event, Some(Ustr::from("")));
     assert_eq!(status.is_trading, decoded.is_trading);
     assert_eq!(status.is_quoting, decoded.is_quoting);
     assert_eq!(
@@ -480,6 +484,47 @@ fn test_instrument_status_with_empty_strings() {
     );
     assert_eq!(status.ts_event, decoded.ts_event);
     assert_eq!(status.ts_init, decoded.ts_init);
+}
+
+#[rstest]
+#[case(None, None, None)]
+#[case(Some(true), Some(true), Some(true))]
+#[case(Some(false), Some(false), Some(false))]
+#[case(Some(true), None, Some(false))]
+#[case(None, Some(false), None)]
+fn test_instrument_status_optional_bool_roundtrip(
+    #[case] is_trading: Option<bool>,
+    #[case] is_quoting: Option<bool>,
+    #[case] is_short_sell_restricted: Option<bool>,
+) {
+    let status = InstrumentStatus {
+        instrument_id: InstrumentId::from("AAPL.NASDAQ"),
+        action: MarketStatusAction::Trading,
+        ts_event: 1234567890.into(),
+        ts_init: 1234567891.into(),
+        reason: None,
+        trading_event: None,
+        is_trading,
+        is_quoting,
+        is_short_sell_restricted,
+    };
+
+    let mut message = capnp::message::Builder::new_default();
+    let builder = message.init_root::<market_capnp::instrument_status::Builder>();
+    status.to_capnp(builder);
+
+    let mut bytes = Vec::new();
+    capnp::serialize::write_message(&mut bytes, &message).unwrap();
+
+    let reader =
+        capnp::serialize::read_message(&mut &bytes[..], capnp::message::ReaderOptions::new())
+            .unwrap();
+    let root = reader
+        .get_root::<market_capnp::instrument_status::Reader>()
+        .unwrap();
+    let decoded = InstrumentStatus::from_capnp(root).unwrap();
+
+    assert_eq!(status, decoded);
 }
 
 #[rstest]

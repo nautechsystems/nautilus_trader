@@ -96,7 +96,7 @@ impl OrderSubmitter {
     /// # Errors
     ///
     /// Returns error if wallet creation from private key fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         grpc_client: DydxGrpcClient,
         http_client: DydxHttpClient,
@@ -237,7 +237,7 @@ impl OrderSubmitter {
     /// # Errors
     ///
     /// Returns `DydxError` if gRPC submission fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_limit_order(
         &self,
         instrument_id: InstrumentId,
@@ -540,7 +540,7 @@ impl OrderSubmitter {
     /// # Errors
     ///
     /// Returns `DydxError` if gRPC submission fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_stop_market_order(
         &self,
         instrument_id: InstrumentId,
@@ -591,7 +591,7 @@ impl OrderSubmitter {
     /// # Errors
     ///
     /// Returns `DydxError` if gRPC submission fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_stop_limit_order(
         &self,
         instrument_id: InstrumentId,
@@ -648,7 +648,7 @@ impl OrderSubmitter {
     /// # Errors
     ///
     /// Returns `DydxError` if gRPC submission fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_take_profit_market_order(
         &self,
         instrument_id: InstrumentId,
@@ -699,7 +699,7 @@ impl OrderSubmitter {
     /// # Errors
     ///
     /// Returns `DydxError` if gRPC submission fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_take_profit_limit_order(
         &self,
         instrument_id: InstrumentId,
@@ -756,7 +756,7 @@ impl OrderSubmitter {
     /// # Errors
     ///
     /// Returns `DydxError` if gRPC submission fails or `limit_price` is missing for limit orders.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_conditional_order(
         &self,
         instrument_id: InstrumentId,

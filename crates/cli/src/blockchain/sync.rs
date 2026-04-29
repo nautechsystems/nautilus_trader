@@ -21,7 +21,7 @@ use nautilus_blockchain::{
     exchanges::{find_dex_type_case_insensitive, get_supported_dexes_for_chain},
     rpc::providers::check_infura_rpc_provider,
 };
-use nautilus_core::string::mask_api_key;
+use nautilus_core::string::secret::mask_api_key;
 use nautilus_infrastructure::sql::pg::get_postgres_connect_options;
 use nautilus_model::defi::chain::Chain;
 
@@ -81,18 +81,14 @@ pub async fn run_sync_dex(
 
     log::info!("Using RPC HTTP URL: '{masked_url}'");
 
-    let config = BlockchainDataClientConfig::new(
-        Arc::new(chain.to_owned()),
-        vec![dex_type],
-        rpc_http_url,
-        None,
-        multicall_calls_per_rpc_request,
-        None,
-        true,
-        None,
-        None,
-        Some(postgres_connect_options),
-    );
+    let config = BlockchainDataClientConfig::builder()
+        .chain(Arc::new(chain.to_owned()))
+        .dex_ids(vec![dex_type])
+        .http_rpc_url(rpc_http_url)
+        .maybe_multicall_calls_per_rpc_request(multicall_calls_per_rpc_request)
+        .use_hypersync_for_live_data(true)
+        .postgres_cache_database_config(postgres_connect_options)
+        .build();
     let cancellation_token = tokio_util::sync::CancellationToken::new();
     let mut data_client = BlockchainDataClientCore::new(config, None, None, cancellation_token);
     data_client.initialize_cache_database().await;
@@ -129,18 +125,12 @@ pub async fn run_sync_blocks(
         database.password,
         database.database,
     );
-    let config = BlockchainDataClientConfig::new(
-        chain.clone(),
-        vec![],
-        String::new(), // we dont need to http rpc url for block syncing
-        None,
-        None,
-        None,
-        true,
-        None,
-        None,
-        Some(postgres_connect_options),
-    );
+    let config = BlockchainDataClientConfig::builder()
+        .chain(chain.clone())
+        .http_rpc_url(String::new()) // we dont need to http rpc url for block syncing
+        .use_hypersync_for_live_data(true)
+        .postgres_cache_database_config(postgres_connect_options)
+        .build();
     let cancellation_token = tokio_util::sync::CancellationToken::new();
     let mut data_client = BlockchainDataClientCore::new(config, None, None, cancellation_token);
     data_client.initialize_cache_database().await;

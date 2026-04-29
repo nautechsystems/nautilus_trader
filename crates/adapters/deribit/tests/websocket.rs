@@ -37,15 +37,19 @@ use axum::{
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::testing::wait_until_async;
 use nautilus_core::{AtomicSet, UnixNanos};
-use nautilus_deribit::websocket::{
-    auth::DERIBIT_DATA_SESSION_NAME, client::DeribitWebSocketClient, enums::DeribitUpdateInterval,
-    messages::NautilusWsMessage,
+use nautilus_deribit::{
+    common::enums::DeribitEnvironment,
+    websocket::{
+        auth::DERIBIT_DATA_SESSION_NAME, client::DeribitWebSocketClient,
+        enums::DeribitUpdateInterval, messages::NautilusWsMessage,
+    },
 };
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{CryptoPerpetual, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
+use nautilus_network::websocket::TransportBackend;
 use serde_json::{Value, json};
 
 // ------------------------------------------------------------------------------------------------
@@ -294,6 +298,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                 params.get("channels").and_then(|c| c.as_array())
                         {
                             let mut unsubscribed = Vec::new();
+
                             for channel in channels {
                                 if let Some(channel_str) = channel.as_str() {
                                     state
@@ -529,6 +534,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                 params.get("channels").and_then(|c| c.as_array())
                         {
                             let mut unsubscribed = Vec::new();
+
                             for channel in channels {
                                 if let Some(channel_str) = channel.as_str() {
                                     state
@@ -559,6 +565,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                     _ => {}
                 }
             }
+            // Inner if consumes `data`, cannot hoist into a match guard
+            #[expect(clippy::collapsible_match)]
             Message::Ping(data) => {
                 if socket.send(Message::Pong(data)).await.is_err() {
                     break;
@@ -597,10 +605,12 @@ async fn start_ws_server(state: Arc<TestServerState>) -> SocketAddr {
 fn create_test_client(ws_url: &str) -> DeribitWebSocketClient {
     DeribitWebSocketClient::new(
         Some(ws_url.to_string()),
-        None, // api_key
-        None, // api_secret
-        30,   // heartbeat_interval
-        true, // is_testnet
+        None,                        // api_key
+        None,                        // api_secret
+        30,                          // heartbeat_interval
+        DeribitEnvironment::Testnet, // environment,
+        TransportBackend::default(),
+        None, // proxy_url
     )
     .expect("failed to construct deribit websocket client")
 }
@@ -609,8 +619,12 @@ fn create_test_client(ws_url: &str) -> DeribitWebSocketClient {
 ///
 /// Does NOT fall back to environment variables.
 fn create_test_client_without_credentials(ws_url: &str) -> DeribitWebSocketClient {
-    DeribitWebSocketClient::new_unauthenticated(Some(ws_url.to_string()), 30, true)
-        .expect("failed to construct deribit websocket client")
+    DeribitWebSocketClient::new_unauthenticated(
+        Some(ws_url.to_string()),
+        30,
+        DeribitEnvironment::Testnet,
+    )
+    .expect("failed to construct deribit websocket client")
 }
 
 #[tokio::test]
@@ -652,10 +666,12 @@ async fn test_websocket_connection() {
 async fn test_wait_until_active_timeout() {
     let client = DeribitWebSocketClient::new(
         Some("ws://127.0.0.1:0/ws/api/v2".to_string()),
-        None, // api_key
-        None, // api_secret
-        30,   // heartbeat_interval
-        true, // is_testnet
+        None,                        // api_key
+        None,                        // api_secret
+        30,                          // heartbeat_interval
+        DeribitEnvironment::Testnet, // environment,
+        TransportBackend::default(),
+        None, // proxy_url
     )
     .expect("construct client");
 
@@ -870,6 +886,68 @@ async fn test_ticker_subscription_flow() {
     match message {
         NautilusWsMessage::Data(data) => {
             assert!(!data.is_empty(), "expected ticker payload");
+        }
+        other => panic!("unexpected message: {other:?}"),
+    }
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_ticker_subscription_emits_index_price_update() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/api/v2");
+
+    let instruments = load_test_instruments();
+
+    let mut client = create_test_client(&ws_url);
+    client.cache_instruments(&instruments);
+
+    // Set index price subs so handler emits IndexPriceUpdate from ticker
+    let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+    let index_price_subs = Arc::new(AtomicSet::new());
+    index_price_subs.insert(instrument_id);
+    client.set_index_price_subs(index_price_subs);
+
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_ticker(instrument_id, None)
+        .await
+        .expect("subscribe failed");
+
+    // Verify subscription event recorded
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events()
+                    .await
+                    .iter()
+                    .any(|(ch, ok)| ch.starts_with("ticker.") && *ok)
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    // Receive ticker data from stream
+    let stream = client.stream().unwrap();
+    pin_mut!(stream);
+    let message = tokio::time::timeout(Duration::from_secs(5), stream.next())
+        .await
+        .expect("no message received")
+        .expect("stream ended unexpectedly");
+
+    match message {
+        NautilusWsMessage::Data(data) => {
+            assert!(!data.is_empty(), "expected index price payload");
         }
         other => panic!("unexpected message: {other:?}"),
     }
@@ -1389,8 +1467,10 @@ fn create_authenticated_client(ws_url: &str) -> DeribitWebSocketClient {
         Some(ws_url.to_string()),
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
-        30,   // heartbeat_interval
-        true, // is_testnet
+        30,                          // heartbeat_interval
+        DeribitEnvironment::Testnet, // environment,
+        TransportBackend::default(),
+        None, // proxy_url
     )
     .expect("failed to construct authenticated deribit websocket client")
 }

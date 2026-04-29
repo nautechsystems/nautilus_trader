@@ -29,7 +29,6 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
-use uuid::Uuid;
 
 use super::models::{
     BitmexExecution, BitmexInstrument, BitmexOrder, BitmexPosition, BitmexTrade, BitmexTradeBin,
@@ -41,7 +40,7 @@ use crate::common::{
     },
     parse::{
         clean_reason, convert_contract_quantity, derive_contract_decimal_and_increment,
-        extract_trigger_type, map_bitmex_currency, normalize_trade_bin_prices,
+        derive_trade_id, extract_trigger_type, map_bitmex_currency, normalize_trade_bin_prices,
         normalize_trade_bin_volume, parse_aggressor_side, parse_contracts_quantity,
         parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
         parse_position_side, parse_signed_contracts_quantity,
@@ -540,12 +539,17 @@ pub fn parse_trade(
     let price = Price::new(trade.price, instrument.price_precision());
     let size = parse_contracts_quantity(trade.size as u64, instrument);
     let aggressor_side = parse_aggressor_side(&trade.side);
-    let trade_id = TradeId::new(
-        trade
-            .trd_match_id
-            .map_or_else(|| Uuid::new_v4().to_string(), |uuid| uuid.to_string()),
-    );
     let ts_event = UnixNanos::from(trade.timestamp);
+    let trade_id = match trade.trd_match_id {
+        Some(uuid) => TradeId::new(uuid.to_string()),
+        None => derive_trade_id(
+            trade.symbol,
+            ts_event.as_u64(),
+            trade.price,
+            trade.size,
+            trade.side,
+        ),
+    };
 
     Ok(TradeTick::new(
         instrument_id,
@@ -1162,6 +1166,34 @@ mod tests {
         assert_eq!(trade3.side, Some(BitmexSide::Sell));
         assert_eq!(trade3.size, 50);
         assert_eq!(trade3.price, 98949.5);
+    }
+
+    #[rstest]
+    fn test_parse_trade_derives_trade_id_when_trd_match_id_missing() {
+        let json_data = load_test_json("http_get_trades.json");
+        let mut trades: Vec<BitmexTrade> = serde_json::from_str(&json_data).unwrap();
+        trades[0].trd_match_id = None;
+        trades[1] = trades[0].clone();
+        trades[2] = trades[0].clone();
+        trades[2].price += 1.0;
+
+        let instrument =
+            parse_perpetual_instrument(&create_test_perpetual_instrument(), UnixNanos::default())
+                .unwrap();
+
+        let tick_a = parse_trade(&trades[0], &instrument, UnixNanos::from(1)).unwrap();
+        let tick_b = parse_trade(&trades[1], &instrument, UnixNanos::from(1)).unwrap();
+        let tick_c = parse_trade(&trades[2], &instrument, UnixNanos::from(1)).unwrap();
+
+        assert_eq!(
+            tick_a.trade_id, tick_b.trade_id,
+            "derivation must be stable"
+        );
+        assert_eq!(tick_a.trade_id.as_str().len(), 16);
+        assert_ne!(
+            tick_a.trade_id, tick_c.trade_id,
+            "distinct price must distinguish"
+        );
     }
 
     #[rstest]

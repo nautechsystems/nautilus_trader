@@ -61,7 +61,10 @@ pub struct PostgresCacheDatabase {
     handle: tokio::task::JoinHandle<()>,
 }
 
-#[allow(clippy::large_enum_variant)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "variant sizes vary with feature unification; allow stays silent when the lint does not fire"
+)]
 #[derive(Debug, Clone)]
 pub enum DatabaseQuery {
     Close,

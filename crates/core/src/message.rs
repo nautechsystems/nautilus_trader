@@ -122,7 +122,7 @@ mod tests {
     }
 
     #[rstest]
-    #[allow(clippy::redundant_clone, reason = "Clone is the behavior under test")]
+    #[expect(clippy::redundant_clone, reason = "Clone is the behavior under test")]
     fn test_message_clone() {
         let msg = Message::Command {
             id: UUID4::new(),

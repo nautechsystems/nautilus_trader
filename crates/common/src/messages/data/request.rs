@@ -39,7 +39,7 @@ pub struct RequestCustomData {
 
 impl RequestCustomData {
     /// Creates a new [`RequestCustomData`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         client_id: ClientId,
         data_type: DataType,
@@ -76,7 +76,6 @@ pub struct RequestInstrument {
 
 impl RequestInstrument {
     /// Creates a new [`RequestInstrument`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         start: Option<DateTime<Utc>>,
@@ -111,7 +110,6 @@ pub struct RequestInstruments {
 
 impl RequestInstruments {
     /// Creates a new [`RequestInstruments`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
@@ -146,7 +144,6 @@ pub struct RequestBookSnapshot {
 
 impl RequestBookSnapshot {
     /// Creates a new [`RequestBookSnapshot`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         depth: Option<NonZeroUsize>,
@@ -180,7 +177,7 @@ pub struct RequestQuotes {
 
 impl RequestQuotes {
     /// Creates a new [`RequestQuotes`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         start: Option<DateTime<Utc>>,
@@ -218,7 +215,7 @@ pub struct RequestTrades {
 
 impl RequestTrades {
     /// Creates a new [`RequestTrades`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         start: Option<DateTime<Utc>>,
@@ -256,7 +253,7 @@ pub struct RequestFundingRates {
 
 impl RequestFundingRates {
     /// Creates a new [`RequestFundingRates`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         start: Option<DateTime<Utc>>,
@@ -293,7 +290,6 @@ pub struct RequestForwardPrices {
 
 impl RequestForwardPrices {
     /// Creates a new [`RequestForwardPrices`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         venue: Venue,
         underlying: Ustr,
@@ -330,7 +326,7 @@ pub struct RequestBookDepth {
 
 impl RequestBookDepth {
     /// Creates a new [`RequestBookDepth`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         start: Option<DateTime<Utc>>,
@@ -370,7 +366,7 @@ pub struct RequestBars {
 
 impl RequestBars {
     /// Creates a new [`RequestBars`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         bar_type: BarType,
         start: Option<DateTime<Utc>>,

@@ -1,10 +1,8 @@
 # Kraken
 
-Founded in 2011, Kraken is one of the most established cryptocurrency exchanges
-and the largest exchange in Europe by euro trading volume. The platform offers
-spot and derivatives trading across a wide range of digital assets. This
-integration connects to Kraken Pro and supports live market data ingest and order
-execution for both Kraken Spot and Kraken Derivatives (Futures) markets.
+Kraken offers spot and derivatives trading across a wide range of digital
+assets. This integration connects to Kraken Pro and supports live market data
+ingest and order execution for Kraken Spot and Kraken Derivatives (Futures).
 
 ## Overview
 
@@ -17,8 +15,10 @@ This guide assumes a trader is setting up for both live market data feeds and
 trade execution. The Kraken adapter includes multiple components, which can be
 used together or separately depending on the use case.
 
-- `KrakenRawHttpClient`: Low-level HTTP API connectivity for Spot and Futures.
-- `KrakenHttpClient`: Higher-level HTTP client with instrument caching and reconciliation support.
+- `KrakenSpotRawHttpClient` and `KrakenFuturesRawHttpClient`: Low-level HTTP
+  API connectivity.
+- `KrakenSpotHttpClient` and `KrakenFuturesHttpClient`: Higher-level HTTP
+  clients with instrument caching and reconciliation support.
 - `KrakenInstrumentProvider`: Instrument parsing and loading functionality.
 - `KrakenDataClient`: Market data feed manager.
 - `KrakenExecutionClient`: Account management and trade execution gateway.
@@ -182,12 +182,12 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 | `QuoteTick`            | ✓    | ✓       | Derived from ticker channel.           |
 | `TradeTick`            | ✓    | ✓       |                                        |
 | `OrderBookDeltas`      | ✓    | ✓       | L2 order book updates.                 |
-| `OrderBookDepth10`     | ✓    | -       | Spot only.                             |
+| `OrderBookDepth10`     | -    | -       | Use `OrderBookDeltas` with depth `10`. |
 | `Bar`                  | ✓    | -       | Spot WS OHLC channel. See bar section. |
 | `MarkPriceUpdate`      | -    | ✓       | From futures ticker feed.              |
 | `IndexPriceUpdate`     | -    | ✓       | From futures ticker feed.              |
 | `FundingRateUpdate`    | -    | ✓       | Perpetuals only.                       |
-| `InstrumentStatus`     | ✓    | ✓       | Polling‑based detection.               |
+| `InstrumentStatus`     | ✓    | ✓       | Python adapter polls instrument refreshes. |
 
 ### Requests (historical)
 
@@ -256,8 +256,8 @@ time rather than silently coercing them.
 
 | Operation          | Spot | Futures | Notes                                        |
 |--------------------|------|---------|----------------------------------------------|
-| Batch Submit       | -    | ✓       | Futures only, auto‑chunks into batches of 10.|
-| Batch Modify       | -    | -       | *Not yet implemented* (Futures only).        |
+| Batch Submit       | ✓    | ✓       | Spot chunks at 15 orders. Futures chunks at 10. |
+| Batch Modify       | -    | ✓       | Futures HTTP helper only. Execution uses single modify commands. |
 | Batch Cancel       | ✓    | ✓       | Auto‑chunks into batches of 50.              |
 
 :::note
@@ -449,8 +449,7 @@ The product types for each client must be specified in the configurations.
 | `base_url_http_futures`         | `None`    | Override for Kraken Futures REST base URL.                              |
 | `base_url_ws_spot`              | `None`    | Override for Kraken Spot WebSocket URL.                                 |
 | `base_url_ws_futures`           | `None`    | Override for Kraken Futures WebSocket URL.                              |
-| `http_proxy_url`                | `None`    | Optional HTTP proxy URL.                                                |
-| `ws_proxy_url`                  | `None`    | WebSocket proxy URL (*not yet implemented*).                            |
+| `proxy_url`                     | `None`    | Optional proxy URL for HTTP and WebSocket transports.                   |
 | `update_instruments_interval_mins` | `60`   | Interval (minutes) to reload instruments; `None` to disable.            |
 | `max_retries`                   | `None`    | Maximum retry attempts for REST requests.                               |
 | `retry_delay_initial_ms`        | `None`    | Initial delay (milliseconds) between retries.                           |
@@ -471,8 +470,7 @@ The product types for each client must be specified in the configurations.
 | `base_url_http_futures`         | `None`    | Override for Kraken Futures REST base URL.                              |
 | `base_url_ws_spot`              | `None`    | Override for Kraken Spot WebSocket URL.                                 |
 | `base_url_ws_futures`           | `None`    | Override for Kraken Futures WebSocket URL.                              |
-| `http_proxy_url`                | `None`    | Optional HTTP proxy URL.                                                |
-| `ws_proxy_url`                  | `None`    | WebSocket proxy URL (*not yet implemented*).                            |
+| `proxy_url`                     | `None`    | Optional proxy URL for HTTP and WebSocket transports.                   |
 | `max_retries`                   | `None`    | Maximum retry attempts for order submission/cancel calls.               |
 | `retry_delay_initial_ms`        | `None`    | Initial delay (milliseconds) between retries.                           |
 | `retry_delay_max_ms`            | `None`    | Maximum delay (milliseconds) between retries.                           |

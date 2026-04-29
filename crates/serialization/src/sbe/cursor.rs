@@ -71,6 +71,7 @@ impl<'a> SbeCursor<'a> {
     /// # Errors
     ///
     /// Returns `BufferTooShort` if fewer than `n` bytes remain.
+    #[inline]
     pub fn require(&self, n: usize) -> Result<(), SbeDecodeError> {
         if self.remaining() < n {
             return Err(SbeDecodeError::BufferTooShort {
@@ -86,6 +87,7 @@ impl<'a> SbeCursor<'a> {
     /// # Errors
     ///
     /// Returns `BufferTooShort` if fewer than `n` bytes remain.
+    #[inline]
     pub fn advance(&mut self, n: usize) -> Result<(), SbeDecodeError> {
         self.require(n)?;
         self.pos += n;
@@ -95,6 +97,7 @@ impl<'a> SbeCursor<'a> {
     /// Skips `n` bytes without bounds checking.
     ///
     /// Caller must ensure `n` bytes are available.
+    #[inline]
     pub fn skip(&mut self, n: usize) {
         self.pos += n;
     }
@@ -114,6 +117,7 @@ impl<'a> SbeCursor<'a> {
     /// # Errors
     ///
     /// Returns `BufferTooShort` if fewer than 1 byte remains.
+    #[inline]
     pub fn read_u8(&mut self) -> Result<u8, SbeDecodeError> {
         self.require(1)?;
         let value = self.buf[self.pos];
@@ -126,6 +130,7 @@ impl<'a> SbeCursor<'a> {
     /// # Errors
     ///
     /// Returns `BufferTooShort` if fewer than 1 byte remains.
+    #[inline]
     pub fn read_i8(&mut self) -> Result<i8, SbeDecodeError> {
         self.require(1)?;
         let value = self.buf[self.pos] as i8;
@@ -138,11 +143,9 @@ impl<'a> SbeCursor<'a> {
     /// # Errors
     ///
     /// Returns `BufferTooShort` if fewer than 2 bytes remain.
+    #[inline]
     pub fn read_u16_le(&mut self) -> Result<u16, SbeDecodeError> {
-        self.require(2)?;
-        let value = u16::from_le_bytes([self.buf[self.pos], self.buf[self.pos + 1]]);
-        self.pos += 2;
-        Ok(value)
+        Ok(u16::from_le_bytes(self.read_array::<2>()?))
     }
 
     /// Reads an i16 little-endian and advances by 2 bytes.
@@ -150,11 +153,9 @@ impl<'a> SbeCursor<'a> {
     /// # Errors
     ///
     /// Returns `BufferTooShort` if fewer than 2 bytes remain.
+    #[inline]
     pub fn read_i16_le(&mut self) -> Result<i16, SbeDecodeError> {
-        self.require(2)?;
-        let value = i16::from_le_bytes([self.buf[self.pos], self.buf[self.pos + 1]]);
-        self.pos += 2;
-        Ok(value)
+        Ok(i16::from_le_bytes(self.read_array::<2>()?))
     }
 
     /// Reads a u32 little-endian and advances by 4 bytes.
@@ -162,16 +163,9 @@ impl<'a> SbeCursor<'a> {
     /// # Errors
     ///
     /// Returns `BufferTooShort` if fewer than 4 bytes remain.
+    #[inline]
     pub fn read_u32_le(&mut self) -> Result<u32, SbeDecodeError> {
-        self.require(4)?;
-        let value = u32::from_le_bytes([
-            self.buf[self.pos],
-            self.buf[self.pos + 1],
-            self.buf[self.pos + 2],
-            self.buf[self.pos + 3],
-        ]);
-        self.pos += 4;
-        Ok(value)
+        Ok(u32::from_le_bytes(self.read_array::<4>()?))
     }
 
     /// Reads an i32 little-endian and advances by 4 bytes.
@@ -179,16 +173,9 @@ impl<'a> SbeCursor<'a> {
     /// # Errors
     ///
     /// Returns `BufferTooShort` if fewer than 4 bytes remain.
+    #[inline]
     pub fn read_i32_le(&mut self) -> Result<i32, SbeDecodeError> {
-        self.require(4)?;
-        let value = i32::from_le_bytes([
-            self.buf[self.pos],
-            self.buf[self.pos + 1],
-            self.buf[self.pos + 2],
-            self.buf[self.pos + 3],
-        ]);
-        self.pos += 4;
-        Ok(value)
+        Ok(i32::from_le_bytes(self.read_array::<4>()?))
     }
 
     /// Reads a u64 little-endian and advances by 8 bytes.
@@ -196,20 +183,9 @@ impl<'a> SbeCursor<'a> {
     /// # Errors
     ///
     /// Returns `BufferTooShort` if fewer than 8 bytes remain.
+    #[inline]
     pub fn read_u64_le(&mut self) -> Result<u64, SbeDecodeError> {
-        self.require(8)?;
-        let value = u64::from_le_bytes([
-            self.buf[self.pos],
-            self.buf[self.pos + 1],
-            self.buf[self.pos + 2],
-            self.buf[self.pos + 3],
-            self.buf[self.pos + 4],
-            self.buf[self.pos + 5],
-            self.buf[self.pos + 6],
-            self.buf[self.pos + 7],
-        ]);
-        self.pos += 8;
-        Ok(value)
+        Ok(u64::from_le_bytes(self.read_array::<8>()?))
     }
 
     /// Reads an i64 little-endian and advances by 8 bytes.
@@ -217,20 +193,29 @@ impl<'a> SbeCursor<'a> {
     /// # Errors
     ///
     /// Returns `BufferTooShort` if fewer than 8 bytes remain.
+    #[inline]
     pub fn read_i64_le(&mut self) -> Result<i64, SbeDecodeError> {
-        self.require(8)?;
-        let value = i64::from_le_bytes([
-            self.buf[self.pos],
-            self.buf[self.pos + 1],
-            self.buf[self.pos + 2],
-            self.buf[self.pos + 3],
-            self.buf[self.pos + 4],
-            self.buf[self.pos + 5],
-            self.buf[self.pos + 6],
-            self.buf[self.pos + 7],
-        ]);
-        self.pos += 8;
-        Ok(value)
+        Ok(i64::from_le_bytes(self.read_array::<8>()?))
+    }
+
+    /// Reads a u128 little-endian and advances by 16 bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns `BufferTooShort` if fewer than 16 bytes remain.
+    #[inline]
+    pub fn read_u128_le(&mut self) -> Result<u128, SbeDecodeError> {
+        Ok(u128::from_le_bytes(self.read_array::<16>()?))
+    }
+
+    /// Reads an i128 little-endian and advances by 16 bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns `BufferTooShort` if fewer than 16 bytes remain.
+    #[inline]
+    pub fn read_i128_le(&mut self) -> Result<i128, SbeDecodeError> {
+        Ok(i128::from_le_bytes(self.read_array::<16>()?))
     }
 
     /// Reads an optional i64 where `i64::MIN` represents None.
@@ -238,6 +223,7 @@ impl<'a> SbeCursor<'a> {
     /// # Errors
     ///
     /// Returns `BufferTooShort` if fewer than 8 bytes remain.
+    #[inline]
     pub fn read_optional_i64_le(&mut self) -> Result<Option<i64>, SbeDecodeError> {
         let value = self.read_i64_le()?;
         Ok(if value == i64::MIN { None } else { Some(value) })
@@ -248,11 +234,25 @@ impl<'a> SbeCursor<'a> {
     /// # Errors
     ///
     /// Returns `BufferTooShort` if fewer than `n` bytes remain.
+    #[inline]
     pub fn read_bytes(&mut self, n: usize) -> Result<&'a [u8], SbeDecodeError> {
         self.require(n)?;
         let slice = &self.buf[self.pos..self.pos + n];
         self.pos += n;
         Ok(slice)
+    }
+
+    // Const-generic slice-to-array conversion lets LLVM lower the read to
+    // a single aligned load after one bounds check, matching the pattern
+    // the compiler recognises for `from_le_bytes`.
+    #[inline]
+    fn read_array<const N: usize>(&mut self) -> Result<[u8; N], SbeDecodeError> {
+        self.require(N)?;
+        let bytes: [u8; N] = self.buf[self.pos..self.pos + N]
+            .try_into()
+            .expect("slice length matches N");
+        self.pos += N;
+        Ok(bytes)
     }
 
     /// Reads a varString8 (1-byte length prefix + UTF-8 data).
@@ -263,6 +263,7 @@ impl<'a> SbeCursor<'a> {
     ///
     /// Returns `BufferTooShort` if the buffer is too short, or `InvalidUtf8` if the data
     /// is not valid UTF-8.
+    #[inline]
     pub fn read_var_string8(&mut self) -> Result<String, SbeDecodeError> {
         let len = self.read_u8()? as usize;
         if len == 0 {
@@ -282,8 +283,50 @@ impl<'a> SbeCursor<'a> {
     ///
     /// Returns `BufferTooShort` if the buffer is too short, or `InvalidUtf8` if the data
     /// is not valid UTF-8.
+    #[inline]
     pub fn read_var_string8_ref(&mut self) -> Result<&'a str, SbeDecodeError> {
         let len = self.read_u8()? as usize;
+        if len == 0 {
+            return Ok("");
+        }
+        self.require(len)?;
+        let s = str::from_utf8(&self.buf[self.pos..self.pos + len])
+            .map_err(|_| SbeDecodeError::InvalidUtf8)?;
+        self.pos += len;
+        Ok(s)
+    }
+
+    /// Reads a varString16 (2-byte length prefix + UTF-8 data).
+    ///
+    /// Returns empty string if length is 0.
+    ///
+    /// # Errors
+    ///
+    /// Returns `BufferTooShort` if the buffer is too short, or `InvalidUtf8` if the data
+    /// is not valid UTF-8.
+    #[inline]
+    pub fn read_var_string16(&mut self) -> Result<String, SbeDecodeError> {
+        let len = usize::from(self.read_u16_le()?);
+        if len == 0 {
+            return Ok(String::new());
+        }
+        self.require(len)?;
+        let s = str::from_utf8(&self.buf[self.pos..self.pos + len])
+            .map_err(|_| SbeDecodeError::InvalidUtf8)?
+            .to_string();
+        self.pos += len;
+        Ok(s)
+    }
+
+    /// Reads a varString16 as a `&str` (zero-copy).
+    ///
+    /// # Errors
+    ///
+    /// Returns `BufferTooShort` if the buffer is too short, or `InvalidUtf8` if the data
+    /// is not valid UTF-8.
+    #[inline]
+    pub fn read_var_string16_ref(&mut self) -> Result<&'a str, SbeDecodeError> {
+        let len = usize::from(self.read_u16_le()?);
         if len == 0 {
             return Ok("");
         }
@@ -327,6 +370,37 @@ impl<'a> SbeCursor<'a> {
         Ok(bytes)
     }
 
+    /// Skips a varData16 field (2-byte length prefix + binary data).
+    ///
+    /// # Errors
+    ///
+    /// Returns `BufferTooShort` if the buffer is too short.
+    pub fn skip_var_data16(&mut self) -> Result<(), SbeDecodeError> {
+        let len = usize::from(self.read_u16_le()?);
+        if len > 0 {
+            self.advance(len)?;
+        }
+        Ok(())
+    }
+
+    /// Reads a varData16 field (2-byte length prefix + binary data).
+    ///
+    /// Returns the raw bytes without UTF-8 decoding.
+    ///
+    /// # Errors
+    ///
+    /// Returns `BufferTooShort` if the buffer is too short.
+    pub fn read_var_bytes16(&mut self) -> Result<Vec<u8>, SbeDecodeError> {
+        let len = usize::from(self.read_u16_le()?);
+        if len == 0 {
+            return Ok(Vec::new());
+        }
+        self.require(len)?;
+        let bytes = self.buf[self.pos..self.pos + len].to_vec();
+        self.pos += len;
+        Ok(bytes)
+    }
+
     /// Reads group header (u16 block_length + u32 num_in_group).
     ///
     /// Returns (block_length, num_in_group).
@@ -335,6 +409,7 @@ impl<'a> SbeCursor<'a> {
     ///
     /// Returns `BufferTooShort` if fewer than 6 bytes are available and
     /// `GroupSizeTooLarge` if `num_in_group` exceeds `MAX_GROUP_SIZE`.
+    #[inline]
     pub fn read_group_header(&mut self) -> Result<(u16, u32), SbeDecodeError> {
         let block_length = self.read_u16_le()?;
         let num_in_group = self.read_u32_le()?;
@@ -357,6 +432,7 @@ impl<'a> SbeCursor<'a> {
     ///
     /// Returns `BufferTooShort` if fewer than 4 bytes are available and
     /// `GroupSizeTooLarge` if `num_in_group` exceeds `MAX_GROUP_SIZE`.
+    #[inline]
     pub fn read_group_header_16(&mut self) -> Result<(u16, u16), SbeDecodeError> {
         let block_length = self.read_u16_le()?;
         let num_in_group = self.read_u16_le()?;
@@ -465,12 +541,30 @@ mod tests {
 
     #[rstest]
     fn test_read_i64_le() {
-        let value: i64 = -1234567890123456789;
+        let value: i64 = -1_234_567_890_123_456_789;
         let buf = value.to_le_bytes();
         let mut cursor = SbeCursor::new(&buf);
 
         assert_eq!(cursor.read_i64_le().unwrap(), value);
         assert_eq!(cursor.pos(), 8);
+    }
+
+    #[rstest]
+    #[case::u16(&[0x34][..], 2)]
+    #[case::u32(&[0x34, 0x12, 0x00][..], 4)]
+    #[case::u64(&[0; 7][..], 8)]
+    #[case::u128(&[0; 15][..], 16)]
+    fn test_multi_byte_reads_buffer_too_short(#[case] buf: &[u8], #[case] needed: usize) {
+        let mut cursor = SbeCursor::new(buf);
+        let err = match needed {
+            2 => cursor.read_u16_le().map(|_| ()).unwrap_err(),
+            4 => cursor.read_u32_le().map(|_| ()).unwrap_err(),
+            8 => cursor.read_u64_le().map(|_| ()).unwrap_err(),
+            16 => cursor.read_u128_le().map(|_| ()).unwrap_err(),
+            _ => unreachable!(),
+        };
+        assert!(matches!(err, SbeDecodeError::BufferTooShort { .. }));
+        assert_eq!(cursor.pos(), 0, "position must not advance on error");
     }
 
     #[rstest]
@@ -554,7 +648,9 @@ mod tests {
         buf.extend_from_slice(&200u32.to_le_bytes()); // item 1
 
         let mut cursor = SbeCursor::new(&buf);
-        let items: Vec<u32> = cursor.read_group(4, 2, |c| c.read_u32_le()).unwrap();
+        let items: Vec<u32> = cursor
+            .read_group(4, 2, super::SbeCursor::read_u32_le)
+            .unwrap();
 
         assert_eq!(items, vec![100, 200]);
         assert_eq!(cursor.pos(), 8);
@@ -570,7 +666,9 @@ mod tests {
         buf.extend_from_slice(&[0, 0, 0, 0]); // padding
 
         let mut cursor = SbeCursor::new(&buf);
-        let items: Vec<u32> = cursor.read_group(8, 2, |c| c.read_u32_le()).unwrap();
+        let items: Vec<u32> = cursor
+            .read_group(8, 2, super::SbeCursor::read_u32_le)
+            .unwrap();
 
         assert_eq!(items, vec![100, 200]);
         assert_eq!(cursor.pos(), 16); // 2 * 8

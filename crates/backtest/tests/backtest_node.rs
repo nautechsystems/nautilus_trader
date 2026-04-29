@@ -247,6 +247,52 @@ impl DataActor for MarketOrderStrategy {
     }
 }
 
+struct ShutdownOnTick {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    shutdown_after: usize,
+    tick_count: usize,
+}
+
+impl ShutdownOnTick {
+    fn new(instrument_id: InstrumentId, shutdown_after: usize) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("SHUTDOWN-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            shutdown_after,
+            tick_count: 0,
+        }
+    }
+}
+
+nautilus_strategy!(ShutdownOnTick);
+
+impl Debug for ShutdownOnTick {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ShutdownOnTick)).finish()
+    }
+}
+
+impl DataActor for ShutdownOnTick {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        self.tick_count += 1;
+        if self.tick_count == self.shutdown_after {
+            self.shutdown_system(Some("shutdown on tick".to_string()));
+        }
+        Ok(())
+    }
+}
+
 #[rstest]
 fn test_new_rejects_empty_configs() {
     let result = BacktestNode::new(vec![]);
@@ -444,6 +490,42 @@ fn test_run_streaming_with_strategy(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let results = node.run().unwrap();
     assert_eq!(results.len(), 1);
     assert!(results[0].total_orders >= 1);
+}
+
+#[rstest]
+fn test_run_streaming_shutdown_stops_between_chunks(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    // Regression for #3920: shutdown_system() during a streaming run must
+    // prevent later chunks from being loaded and processed.
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let total = 50usize;
+    let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, total, 1_000_000_000);
+
+    let chunk_size = 10usize;
+    let config = run_config(&catalog_path, instrument.id(), Some(chunk_size));
+    let config_id = config.id().to_string();
+
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+    node.build().unwrap();
+
+    let engine = node.get_engine_mut(&config_id).unwrap();
+    // Trigger shutdown in the first chunk so at least one later chunk exists
+    engine
+        .add_strategy(ShutdownOnTick::new(instrument.id(), 3))
+        .unwrap();
+
+    let results = node.run().unwrap();
+    assert_eq!(results.len(), 1);
+    // Shutdown fires at tick 3 inside the first chunk, so the engine must
+    // stop at that iteration and not process any data from later chunks
+    assert_eq!(
+        results[0].iterations, 3,
+        "Shutdown must stop streaming at tick 3 of the first chunk, was {}",
+        results[0].iterations,
+    );
+    assert!(
+        results[0].iterations < total,
+        "Shutdown must stop streaming before all {total} quotes are processed",
+    );
 }
 
 #[rstest]

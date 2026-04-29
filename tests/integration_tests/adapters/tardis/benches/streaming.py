@@ -81,6 +81,7 @@ def fetch_instruments(
     # Override the venues filter to use the correct Tardis exchange names
     if instrument_ids:
         tardis_exchanges = set()
+
         for instrument_id in instrument_ids:
             venue_str = instrument_id.venue.value.upper().replace("-", "_")
             tardis_exchanges.update(nautilus_pyo3.tardis_exchange_from_venue_str(venue_str))

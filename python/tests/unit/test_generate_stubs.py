@@ -650,6 +650,50 @@ class Strategy:
     assert "Standard = ..." in updated
 
 
+def test_elide_forward_class_defaults_in_signatures():
+    content = """
+class Client:
+    def __init__(self, network: DydxNetwork = DydxNetwork.MAINNET) -> None: ...
+
+    @staticmethod
+    def from_env(
+        environment: HyperliquidEnvironment = HyperliquidEnvironment.MAINNET,
+        book_type: model.BookType = model.BookType.L1_MBP,
+    ) -> Client: ...
+
+class DydxNetwork(Enum):
+    MAINNET = ...
+
+class HyperliquidEnvironment(Enum):
+    MAINNET = ...
+""".strip()
+
+    updated = generate_stubs.elide_forward_class_defaults_in_signatures(content)
+
+    assert "network: DydxNetwork = ..." in updated
+    assert "environment: HyperliquidEnvironment = ..." in updated
+    assert "book_type: model.BookType = model.BookType.L1_MBP" in updated
+    assert "DydxNetwork.MAINNET" not in updated
+    assert "HyperliquidEnvironment.MAINNET" not in updated
+
+
+def test_elide_forward_class_defaults_in_signatures_keeps_earlier_local_defaults():
+    content = """
+class BitmexEnvironment(Enum):
+    MAINNET = ...
+
+class Client:
+    def __init__(
+        self,
+        environment: BitmexEnvironment = BitmexEnvironment.MAINNET,
+    ) -> None: ...
+""".strip()
+
+    updated = generate_stubs.elide_forward_class_defaults_in_signatures(content)
+
+    assert "environment: BitmexEnvironment = BitmexEnvironment.MAINNET" in updated
+
+
 WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 STUB_ROOT = WORKSPACE_ROOT / "python" / "nautilus_trader"
 
@@ -665,6 +709,7 @@ def _parse_stub_enum_variants(stub_root: Path) -> dict[str, list[str]]:
 
     for pyi in sorted(stub_root.rglob("*.pyi")):
         current_enum: str | None = None
+
         for line in pyi.read_text().splitlines():
             class_match = STUB_ENUM_CLASS_RE.match(line)
             if class_match:
@@ -683,6 +728,49 @@ def _parse_stub_enum_variants(stub_root: Path) -> dict[str, list[str]]:
 
 
 SCREAMING_SNAKE_RE = re.compile(r"^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*_?$")
+
+
+def test_live_stub_exposes_native_live_node_config_signature():
+    live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text()
+
+    assert "@typing.final\nclass LiveNodeConfig:" in live_stub
+    assert re.search(
+        r"portfolio:\s+(?:portfolio\.)?PortfolioConfig \| None = None",
+        live_stub,
+    )
+    assert '"PortfolioConfig"' in live_stub
+
+
+def test_live_stub_exposes_builder_engine_config_methods():
+    live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text()
+
+    assert (
+        "def with_cache_config(self, config: common.CacheConfig) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+    assert (
+        "def with_portfolio_config(self, config: portfolio.PortfolioConfig) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+    assert (
+        "def with_data_engine_config(self, config: LiveDataEngineConfig) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+    assert (
+        "def with_risk_engine_config(self, config: LiveRiskEngineConfig) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+    assert (
+        "def with_exec_engine_config(self, config: LiveExecEngineConfig) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+
+
+def test_package_stub_exports_portfolio_module():
+    package_stub = (STUB_ROOT / "__init__.pyi").read_text()
+
+    assert "from . import portfolio" in package_stub
+    assert '"portfolio"' in package_stub
 
 
 def test_stub_enum_variants_match_screaming_snake_case():
@@ -717,6 +805,7 @@ def test_stub_enum_variants_match_runtime():
     runtime_enums = _collect_runtime_enum_variants(STUB_ROOT)
 
     mismatches: list[str] = []
+
     for name, runtime_members in sorted(runtime_enums.items()):
         expected_runtime_members = runtime_members
 

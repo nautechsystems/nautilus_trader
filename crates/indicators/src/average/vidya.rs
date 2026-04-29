@@ -279,10 +279,10 @@ mod tests {
             sma.update_raw(price);
             assert_eq!(sma.count(), std::cmp::min(ix + 1, period));
 
-            let got = sma.value();
+            let actual = sma.value();
             assert!(
-                (got - exp).abs() < 1e-12,
-                "tick {ix}: expected {exp}, was {got}"
+                (actual - exp).abs() < 1e-12,
+                "tick {ix}: expected {exp}, was {actual}"
             );
         }
     }
@@ -302,10 +302,10 @@ mod tests {
         for (ix, (&price, &exp)) in prices.iter().zip(reference.iter()).enumerate() {
             sma.update_raw(price);
 
-            let got = sma.value();
+            let actual = sma.value();
             assert!(
-                (got - exp).abs() < 1e-12,
-                "tick {ix}: expected {exp}, was {got}"
+                (actual - exp).abs() < 1e-12,
+                "tick {ix}: expected {exp}, was {actual}"
             );
         }
     }

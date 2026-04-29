@@ -94,6 +94,10 @@ If the RFC is approved, a contributor may proceed with a PR.
 Integrations must adhere closely to existing Rust-based adapter implementation patterns to ensure consistency and maintainability.
 Even then, inclusion in the official distribution depends on long-term sustainability and available resources.
 
+For adapter classification, community listings, and support boundaries, see
+[ADAPTERS.md](ADAPTERS.md). For naming rules and disclaimer requirements for
+independent projects, see [TRADEMARK.md](TRADEMARK.md).
+
 ## Long-term commitment
 
 NautilusTrader is an open-core project. All core trading engine

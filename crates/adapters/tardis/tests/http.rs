@@ -39,7 +39,7 @@ async fn start_mock_server(app: Router) -> (SocketAddr, tokio::task::JoinHandle<
 
 fn create_client(addr: SocketAddr) -> TardisHttpClient {
     let base_url = format!("http://{addr}");
-    TardisHttpClient::new(Some("test_key"), Some(&base_url), Some(5), true).unwrap()
+    TardisHttpClient::new(Some("test_key"), Some(&base_url), Some(5), true, None).unwrap()
 }
 
 #[rstest]

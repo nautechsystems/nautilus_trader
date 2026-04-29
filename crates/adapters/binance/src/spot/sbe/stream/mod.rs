@@ -68,6 +68,12 @@ pub enum StreamDecodeError {
     GroupSizeTooLarge { count: usize, max: usize },
     /// Invalid UTF-8 in symbol string.
     InvalidUtf8,
+    /// Invalid enum discriminant in the payload.
+    InvalidEnumValue { type_name: &'static str, value: u16 },
+    /// Numeric value cannot fit the target type.
+    NumericOverflow { type_name: &'static str },
+    /// Encoded field value is invalid.
+    InvalidValue { field: &'static str },
     /// Schema ID mismatch.
     SchemaMismatch { expected: u16, actual: u16 },
     /// Unknown template ID.
@@ -89,6 +95,13 @@ impl Display for StreamDecodeError {
                 write!(f, "Group size {count} exceeds maximum {max}")
             }
             Self::InvalidUtf8 => write!(f, "Invalid UTF-8 in symbol"),
+            Self::InvalidEnumValue { type_name, value } => {
+                write!(f, "Invalid enum value {value} for {type_name}")
+            }
+            Self::NumericOverflow { type_name } => {
+                write!(f, "Numeric value overflows target type {type_name}")
+            }
+            Self::InvalidValue { field } => write!(f, "Invalid value for {field}"),
             Self::SchemaMismatch { expected, actual } => {
                 write!(f, "Schema mismatch: expected {expected}, was {actual}")
             }
@@ -124,6 +137,11 @@ impl From<SbeDecodeError> for StreamDecodeError {
                 Self::InvalidBlockLength { expected, actual }
             }
             SbeDecodeError::InvalidUtf8 => Self::InvalidUtf8,
+            SbeDecodeError::InvalidEnumValue { type_name, value } => {
+                Self::InvalidEnumValue { type_name, value }
+            }
+            SbeDecodeError::NumericOverflow { type_name } => Self::NumericOverflow { type_name },
+            SbeDecodeError::InvalidValue { field } => Self::InvalidValue { field },
         }
     }
 }
@@ -282,6 +300,32 @@ mod tests {
             StreamDecodeError::SchemaMismatch {
                 expected: STREAM_SCHEMA_ID,
                 actual: 99
+            }
+        );
+    }
+
+    #[rstest]
+    fn test_decode_error_conversion_preserves_new_variants() {
+        assert_eq!(
+            StreamDecodeError::from(SbeDecodeError::InvalidEnumValue {
+                type_name: "AggressorSide",
+                value: 99,
+            }),
+            StreamDecodeError::InvalidEnumValue {
+                type_name: "AggressorSide",
+                value: 99,
+            }
+        );
+        assert_eq!(
+            StreamDecodeError::from(SbeDecodeError::NumericOverflow { type_name: "Price" }),
+            StreamDecodeError::NumericOverflow { type_name: "Price" }
+        );
+        assert_eq!(
+            StreamDecodeError::from(SbeDecodeError::InvalidValue {
+                field: "Price.precision",
+            }),
+            StreamDecodeError::InvalidValue {
+                field: "Price.precision",
             }
         );
     }

@@ -18,7 +18,7 @@
 //! This example demonstrates paper trading against live CME futures data from Databento
 //! using the sandbox execution client for order simulation.
 //!
-//! Run with: `cargo run --example databento-cme-sandbox --package nautilus-sandbox`
+//! Run with: `cargo run --example databento-cme-sandbox --package nautilus-sandbox --features example-databento`
 //!
 //! Environment variables:
 //! - DATABENTO_API_KEY: Your Databento API key

@@ -15,6 +15,9 @@
 
 //! Type stubs to facilitate testing.
 
+use std::cell::Cell;
+
+use nautilus_core::UUID4;
 use rstest::fixture;
 use rust_decimal::prelude::ToPrimitive;
 
@@ -28,6 +31,54 @@ use crate::{
     position::Position,
     types::{Money, Price, Quantity},
 };
+
+/// Seed used by [`test_uuid`] for deterministic UUIDs in test fixtures.
+pub(crate) const TEST_UUID_SEED: u64 = 42;
+
+thread_local! {
+    static TEST_UUID_STATE: Cell<u64> = const { Cell::new(TEST_UUID_SEED) };
+}
+
+// SplitMix64 PRNG (Steele, Lea, Flood 2014): owning the algorithm here keeps the test UUID
+// sequence stable regardless of upstream PRNG crate versions, with zero added dependencies.
+fn splitmix64(state: &mut u64) -> u64 {
+    *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut z = *state;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+/// Returns the next [`UUID4`] in a per-thread deterministic sequence seeded with a fixed value.
+///
+/// The official test runner is `cargo nextest`, which spawns one process per test, so the
+/// sequence resets at every test boundary without explicit teardown. Multiple events constructed
+/// within a single test get distinct UUIDs, and re-running the same test produces the same
+/// sequence.
+///
+/// Intended for use as a default in test specs and fixtures only.
+#[must_use]
+pub fn test_uuid() -> UUID4 {
+    TEST_UUID_STATE.with(|cell| {
+        let mut state = cell.get();
+        let hi = splitmix64(&mut state).to_be_bytes();
+        let lo = splitmix64(&mut state).to_be_bytes();
+        cell.set(state);
+
+        let mut bytes = [0u8; 16];
+        bytes[..8].copy_from_slice(&hi);
+        bytes[8..].copy_from_slice(&lo);
+        UUID4::from_bytes(bytes)
+    })
+}
+
+/// Resets the per-thread test UUID state to its seed.
+///
+/// Only needed under runners that share a process across tests (e.g. plain `cargo test`); under
+/// nextest each test starts with fresh thread-local state already.
+pub fn reset_test_uuid_rng() {
+    TEST_UUID_STATE.with(|cell| cell.set(TEST_UUID_SEED));
+}
 
 /// A trait for providing test-only default values.
 ///
@@ -46,6 +97,7 @@ pub trait TestDefault {
 /// This function panics if:
 /// - The liquidity side is `NoLiquiditySide`.
 /// - `instrument.maker_fee()` or `instrument.taker_fee()` cannot be converted to `f64`.
+#[must_use]
 pub fn calculate_commission(
     instrument: &InstrumentAny,
     last_qty: Quantity,
@@ -138,7 +190,7 @@ pub fn stub_order_book_mbp_appl_xnas() -> OrderBook {
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 #[must_use]
 pub fn stub_order_book_mbp(
     instrument_id: InstrumentId,
@@ -193,4 +245,25 @@ pub fn stub_order_book_mbp(
     }
 
     book
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_uuid_is_valid_v4_rfc4122() {
+        reset_test_uuid_rng();
+        let s = test_uuid().to_string();
+        // Format invariants per RFC 4122: position 14 is the version digit, position 19 the variant.
+        assert_eq!(s.len(), 36);
+        assert_eq!(&s[14..15], "4", "version digit must be 4, was {s}");
+        let variant = s.chars().nth(19).unwrap();
+        assert!(
+            matches!(variant, '8' | '9' | 'a' | 'b'),
+            "variant nibble must be one of 8/9/a/b, was {variant} in {s}",
+        );
+    }
 }

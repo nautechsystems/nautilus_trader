@@ -61,6 +61,7 @@ async def test_cancel_pending_tasks_successfully():
         await asyncio.sleep(10)
 
     created_tasks = []
+
     for _ in range(3):
         task = asyncio.create_task(long_running_task())
         tasks.add(task)

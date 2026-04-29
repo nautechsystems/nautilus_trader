@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_trading"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = []

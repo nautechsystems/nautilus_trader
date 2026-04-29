@@ -72,12 +72,13 @@ pub struct SwapQuote {
 }
 
 impl SwapQuote {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     /// Creates a [`SwapQuote`] instance with swap simulation results.
     ///
     /// The `trade_info` field is initialized to `None` and must be populated by calling
     /// [`calculate_trade_info()`](Self::calculate_trade_info) or will be lazily computed
     /// when accessing price impact or slippage methods.
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         amount0: I256,
@@ -142,17 +143,20 @@ impl SwapQuote {
 
     /// Determines swap direction from amount signs.
     ///
-    /// Returns `true` if swapping token0 for token1 (zero_for_one).
+    /// Returns `true` if swapping token0 for token1 (`zero_for_one`).
+    #[must_use]
     pub fn zero_for_one(&self) -> bool {
         self.amount0.is_positive()
     }
 
     /// Returns the total fees paid in input token(LP fees + protocol fees).
+    #[must_use]
     pub fn total_fee(&self) -> U256 {
         self.lp_fee + self.protocol_fee
     }
 
     /// Gets the effective fee rate in basis points based on actual fees charged
+    #[must_use]
     pub fn get_effective_fee_bps(&self) -> u32 {
         let input_amount = self.get_input_amount();
         if input_amount.is_zero() {
@@ -172,11 +176,13 @@ impl SwapQuote {
     ///
     /// This equals the length of the `crossed_ticks` vector and indicates
     /// how much liquidity the swap traversed.
+    #[must_use]
     pub fn total_crossed_ticks(&self) -> u32 {
         self.crossed_ticks.len() as u32
     }
 
     /// Gets the output amount for the given swap direction.
+    #[must_use]
     pub fn get_output_amount(&self) -> U256 {
         if self.zero_for_one() {
             self.amount1.unsigned_abs()
@@ -186,6 +192,7 @@ impl SwapQuote {
     }
 
     /// Gets the input amount for the given swap direction.
+    #[must_use]
     pub fn get_input_amount(&self) -> U256 {
         if self.zero_for_one() {
             self.amount0.unsigned_abs()
@@ -261,7 +268,7 @@ impl SwapQuote {
     ///
     /// # Returns
     /// A [`PoolSwap`] event containing both the quote data and provided metadata
-    #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn to_swap_event(
         &self,
         chain: SharedChain,
@@ -319,9 +326,9 @@ mod tests {
             amount1,
             sqrt_x96_price_before,
             U160::from_str("76812046714213096298497129").unwrap(),
-            -138746,
-            -138782,
-            292285495328044734302670,
+            -138_746,
+            -138_782,
+            292_285_495_328_044_734_302_670,
             U256::ZERO,
             U256::ZERO,
             U256::ZERO,
@@ -368,9 +375,9 @@ mod tests {
             amount1,
             sqrt_x96_price_before,
             U160::from_str("76857455902960072891859299").unwrap(),
-            -138778,
-            -138770,
-            292285495328044734302670,
+            -138_778,
+            -138_770,
+            292_285_495_328_044_734_302_670,
             U256::ZERO,
             U256::ZERO,
             U256::ZERO,

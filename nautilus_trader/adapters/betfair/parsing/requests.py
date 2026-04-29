@@ -345,6 +345,7 @@ def order_list_to_place_order_params(
     Convert a SubmitOrderList command into a batch PlaceOrders request.
     """
     instructions = []
+
     for order in command.order_list.orders:
         submit = SubmitOrder(
             trader_id=command.trader_id,

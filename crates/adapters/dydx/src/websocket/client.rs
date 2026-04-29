@@ -65,7 +65,8 @@ use nautilus_network::{
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
     websocket::{
-        AuthTracker, SubscriptionState, WebSocketClient, WebSocketConfig, channel_message_handler,
+        AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
+        channel_message_handler,
     },
 };
 use ustr::Ustr;
@@ -132,6 +133,8 @@ pub struct DydxWebSocketClient {
     bar_types: Arc<DashMap<String, BarType>>,
     bars_timestamp_on_close: Arc<AtomicBool>,
     ws_dispatch_state: Arc<DydxWsDispatchState>,
+    transport_backend: TransportBackend,
+    proxy_url: Option<String>,
 }
 
 impl Clone for DydxWebSocketClient {
@@ -154,6 +157,8 @@ impl Clone for DydxWebSocketClient {
             bar_types: self.bar_types.clone(),
             bars_timestamp_on_close: self.bars_timestamp_on_close.clone(),
             ws_dispatch_state: self.ws_dispatch_state.clone(),
+            transport_backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         }
     }
 }
@@ -164,8 +169,14 @@ impl DydxWebSocketClient {
     /// This creates a new independent instrument cache. To share a cache with
     /// the HTTP client, use [`Self::new_public_with_cache`] instead.
     #[must_use]
-    pub fn new_public(url: String, heartbeat: Option<u64>) -> Self {
-        Self::new_public_with_cache(url, Arc::new(InstrumentCache::new()), heartbeat)
+    pub fn new_public(url: String, heartbeat: Option<u64>, proxy_url: Option<String>) -> Self {
+        Self::new_public_with_cache(
+            url,
+            Arc::new(InstrumentCache::new()),
+            heartbeat,
+            TransportBackend::default(),
+            proxy_url,
+        )
     }
 
     /// Creates a new public WebSocket client with a shared instrument cache.
@@ -176,6 +187,8 @@ impl DydxWebSocketClient {
         url: String,
         instrument_cache: Arc<InstrumentCache>,
         heartbeat: Option<u64>,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> Self {
         // Create dummy command channel (will be replaced on connect)
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -200,6 +213,8 @@ impl DydxWebSocketClient {
             bar_types: Arc::new(DashMap::new()),
             bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
             ws_dispatch_state: Arc::new(DydxWsDispatchState::default()),
+            transport_backend,
+            proxy_url,
         }
     }
 
@@ -213,6 +228,7 @@ impl DydxWebSocketClient {
         credential: DydxCredential,
         account_id: AccountId,
         heartbeat: Option<u64>,
+        proxy_url: Option<String>,
     ) -> Self {
         Self::new_private_with_cache(
             url,
@@ -220,6 +236,8 @@ impl DydxWebSocketClient {
             account_id,
             Arc::new(InstrumentCache::new()),
             heartbeat,
+            TransportBackend::default(),
+            proxy_url,
         )
     }
 
@@ -233,6 +251,8 @@ impl DydxWebSocketClient {
         account_id: AccountId,
         instrument_cache: Arc<InstrumentCache>,
         heartbeat: Option<u64>,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> Self {
         // Create dummy command channel (will be replaced on connect)
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -257,6 +277,8 @@ impl DydxWebSocketClient {
             bar_types: Arc::new(DashMap::new()),
             bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
             ws_dispatch_state: Arc::new(DydxWsDispatchState::default()),
+            transport_backend,
+            proxy_url,
         }
     }
 
@@ -453,6 +475,8 @@ impl DydxWebSocketClient {
             reconnect_jitter_ms: Some(200),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
 
         let client = WebSocketClient::connect(

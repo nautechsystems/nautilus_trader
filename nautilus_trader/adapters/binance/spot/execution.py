@@ -217,6 +217,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
 
         # Fallback to individual order cancellation
         successful_cancels = 0
+
         for cancel_command in command.cancels:
             try:
                 await self._cancel_order(cancel_command)

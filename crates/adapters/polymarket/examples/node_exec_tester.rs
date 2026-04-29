@@ -27,7 +27,7 @@
 //! # Usage
 //!
 //! ```sh
-//! cargo run --example polymarket-exec-tester --package nautilus-polymarket
+//! cargo run --example polymarket-exec-tester --package nautilus-polymarket --features examples
 //! ```
 
 use std::sync::Arc;
@@ -39,6 +39,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_polymarket::{
     common::enums::SignatureType,
     config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
@@ -58,17 +59,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let node_name = "POLYMARKET-EXEC-TESTER-001".to_string();
     let client_id = ClientId::new("POLYMARKET");
 
-    // Presidential Election Winner 2028 — JD Vance Yes
+    // GTA VI Released Before June 2026 (Yes)
+    // https://polymarket.com/event/gta-vi-released-before-june-2026
     let instrument_id = InstrumentId::from(
-        "0x7ad403c3508f8e3912940fd1a913f227591145ca0614074208e0b962d5fcc422-16040015440196279900485035793550429453516625694844857319147506590755961451627.POLYMARKET",
+        "0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902-8441400852834915183759801017793514978104486628517653995211751018945988243154.POLYMARKET",
     );
 
     // Use EventSlugFilter to load only instruments for this event
-    let event_slugs = vec!["presidential-election-winner-2028".to_string()];
+    let event_slugs = vec!["gta-vi-released-before-june-2026".to_string()];
     let data_filter = EventSlugFilter::from_slugs(event_slugs);
 
     let data_config = PolymarketDataClientConfig {
         filters: vec![Arc::new(data_filter)],
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
     let data_factory = PolymarketDataClientFactory;
@@ -78,6 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         account_id,
         signature_type: SignatureType::PolyGnosisSafe,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
     let exec_factory = PolymarketExecutionClientFactory;
@@ -98,6 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
+    let order_qty = Quantity::from("5");
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
@@ -106,13 +111,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
-        .order_qty(Quantity::from("5")) // Polymarket min_qty = 5 shares
-        .log_data(false)
+        .order_qty(order_qty) // Polymarket min_qty = 5 shares
+        // .open_position_on_start_qty(order_qty.as_decimal())
+        // .use_quote_quantity(true)
         .use_post_only(true)
         .tob_offset_ticks(5) // 5 ticks = 0.005 offset (price range 0.001-0.999)
         .enable_limit_sells(false) // Can't sell without inventory on Polymarket
         .enable_stop_buys(false) // Polymarket doesn't support stop orders
         .enable_stop_sells(false)
+        .reduce_only_on_stop(false) // Polymarket does not support reduce-only orders
+        .log_data(false)
         .build();
 
     let tester = ExecTester::new(tester_config);

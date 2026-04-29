@@ -61,6 +61,7 @@ fn sqrt_price_x98() -> U160 {
 /// # Panics
 ///
 /// Panics if chain metadata or initial parameters are invalid for pool creation.
+#[must_use]
 pub fn pool_definition(
     fee: Option<u32>,
     tick_spacing: Option<i32>,
@@ -123,7 +124,7 @@ fn create_mint_event(
         pool_definition.instrument_id,
         pool_definition.pool_identifier,
         PoolLiquidityUpdateType::Mint,
-        100000,
+        100_000,
         "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
         0,
         next_log_index(),
@@ -158,7 +159,7 @@ fn create_burn_event(
         pool_definition.instrument_id,
         pool_definition.pool_identifier,
         PoolLiquidityUpdateType::Burn,
-        100000,
+        100_000,
         "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
         0,
         next_log_index(),
@@ -185,7 +186,7 @@ fn create_collect_event(
         uniswap_v3(),
         pool_definition.instrument_id,
         pool_definition.pool_identifier,
-        100000,
+        100_000,
         "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
         0,
         next_log_index(),
@@ -200,7 +201,7 @@ fn create_collect_event(
 
 fn create_block_position() -> BlockPosition {
     BlockPosition::new(
-        100000,
+        100_000,
         "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
         0,
         next_log_index(),
@@ -317,7 +318,7 @@ fn test_if_pool_process_fails_if_outside_tick_bounds(mut profiler: PoolProfiler)
         pool_definition.instrument_id,
         pool_definition.pool_identifier,
         PoolLiquidityUpdateType::Mint,
-        100000,
+        100_000,
         "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
         0,
         1,
@@ -768,7 +769,7 @@ fn test_mint_above_current_price(mut uni_pool_profiler: PoolProfiler) {
     active_tick_values.sort_unstable();
     assert_eq!(
         active_tick_values,
-        vec![-887220, lower_tick, upper_tick, 887220]
+        vec![-887_220, lower_tick, upper_tick, 887_220]
     );
     assert!(
         uni_pool_profiler
@@ -800,7 +801,10 @@ fn test_max_tick_with_high_leverage(mut uni_pool_profiler: PoolProfiler) {
     assert_eq!(position.liquidity, liquidity);
     assert_eq!(position.tick_lower, lower_tick);
     assert_eq!(position.tick_upper, upper_tick);
-    assert_eq!(position.total_amount0_deposited, U256::from(828011525u32));
+    assert_eq!(
+        position.total_amount0_deposited,
+        U256::from(828_011_525_u32)
+    );
     assert_eq!(position.total_amount1_deposited, U256::ZERO);
     // We have only three active ticks, and max_tick is updated two times (from init mint and this mint)
     assert_eq!(uni_pool_profiler.get_active_tick_count(), 3);
@@ -812,7 +816,7 @@ fn test_max_tick_with_high_leverage(mut uni_pool_profiler: PoolProfiler) {
     );
     let mut active_tick_values = uni_pool_profiler.get_active_tick_values();
     active_tick_values.sort_unstable();
-    assert_eq!(active_tick_values, vec![-887220, lower_tick, max_tick]);
+    assert_eq!(active_tick_values, vec![-887_220, lower_tick, max_tick]);
 }
 
 #[rstest]
@@ -850,7 +854,7 @@ fn test_minting_works_for_max_tick(mut uni_pool_profiler: PoolProfiler) {
     );
     let mut active_tick_values = uni_pool_profiler.get_active_tick_values();
     active_tick_values.sort_unstable();
-    assert_eq!(active_tick_values, vec![-887220, lower_tick, max_tick]);
+    assert_eq!(active_tick_values, vec![-887_220, lower_tick, max_tick]);
 }
 
 #[rstest]
@@ -1391,7 +1395,7 @@ fn test_mint_below_current_price_when_really_high_leverage(mut uni_pool_profiler
     assert_eq!(position.tick_lower, lower_tick);
     assert_eq!(position.tick_upper, upper_tick);
     assert_eq!(position.total_amount0_deposited, 0);
-    assert_eq!(position.total_amount1_deposited, 828011520);
+    assert_eq!(position.total_amount1_deposited, 828_011_520);
     assert_eq!(position.tokens_owed_0, 0);
     assert_eq!(position.tokens_owed_1, 0);
 }
@@ -1530,9 +1534,9 @@ fn test_collect_works_with_multiple_lps(mut empty_low_fee_pool_profiler: PoolPro
         .expect("Position 1 should exist");
 
     // Position 0 (full range, 1e18 liquidity) should get 1/3 of fees
-    assert_eq!(position0.tokens_owed_0, 166666666666667);
+    assert_eq!(position0.tokens_owed_0, 166_666_666_666_667);
     // Position 1 (narrower range, 2e18 liquidity) should get 2/3 of fees
-    assert_eq!(position1.tokens_owed_0, 333333333333334);
+    assert_eq!(position1.tokens_owed_0, 333_333_333_333_334);
 }
 
 // ---------- WORKS ACROSS LARGE FEE INCREASES ----------
@@ -1676,7 +1680,7 @@ fn test_overflow_boundary_token0(mut empty_low_fee_pool_profiler: PoolProfiler) 
 
     // When fee_growth wraps around from MaxUint256, the underflow-safe calculation
     // should still correctly compute fees
-    assert_eq!(position.tokens_owed_0, 499999999999999);
+    assert_eq!(position.tokens_owed_0, 499_999_999_999_999);
     assert_eq!(position.tokens_owed_1, 0);
 }
 
@@ -1714,7 +1718,7 @@ fn test_overflow_boundary_token1(mut empty_low_fee_pool_profiler: PoolProfiler) 
         .expect("Position should exist");
 
     assert_eq!(position.tokens_owed_0, 0);
-    assert_eq!(position.tokens_owed_1, 499999999999999);
+    assert_eq!(position.tokens_owed_1, 499_999_999_999_999);
 }
 
 #[rstest]
@@ -1757,8 +1761,8 @@ fn test_overflow_boundary_token0_and_token1(mut empty_low_fee_pool_profiler: Poo
         .expect("Position should exist");
 
     // Both tokens should have fees from their respective swaps
-    assert_eq!(position.tokens_owed_0, 499999999999999);
-    assert_eq!(position.tokens_owed_1, 500000000000000);
+    assert_eq!(position.tokens_owed_0, 499_999_999_999_999);
+    assert_eq!(position.tokens_owed_1, 500_000_000_000_000);
 }
 
 #[rstest]
@@ -2141,7 +2145,7 @@ fn format_price(sqrt_price_x96: U160) -> String {
     let remainder = price_squared % divisor;
 
     // Calculate 5 decimal places for rounding to 4
-    let decimal_part = (remainder * U256::from(100000u64) + divisor / U256::from(2u64)) / divisor;
+    let decimal_part = (remainder * U256::from(100_000_u64) + divisor / U256::from(2u64)) / divisor;
 
     // Round to 4 decimal places
     let rounded_decimal = decimal_part / U256::from(10u64);
@@ -2218,8 +2222,8 @@ fn test_pool_swaps(pool_test_case: PoolTestCase) {
                     expected_result.execution_price
                 );
             }
-            Err(_) => {
-                panic!("Add error testing for failed swap")
+            Err(e) => {
+                panic!("Add error testing for failed swap: {e}")
             }
         }
     }

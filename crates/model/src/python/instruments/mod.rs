@@ -16,7 +16,10 @@
 //! Instrument definitions the trading domain model.
 
 use nautilus_core::python::to_pyvalue_err;
-use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, Python};
+use pyo3::{
+    IntoPyObjectExt, Py, PyAny, PyResult, Python,
+    types::{PyAnyMethods, PyDict, PyDictMethods},
+};
 
 use crate::{
     instruments::{
@@ -25,8 +28,41 @@ use crate::{
         OptionContract, OptionSpread, PerpetualContract, TokenizedAsset,
         crypto_option::CryptoOption,
     },
-    types::{Money, Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
+
+/// Pre-registers crypto currency codes from a dict prior to strict deserialization.
+///
+/// Crypto instrument roundtrips (e.g. `CryptoPerpetual.from_dict(...)`) can carry
+/// newly listed assets not present in the built-in currency map. Looking up each
+/// named field with [`Currency::get_or_create_crypto`] registers any unknown code
+/// as a crypto currency (precision 8), mirroring the non-strict Cython path.
+///
+/// Callers must only pass fields that are guaranteed to hold crypto assets (the
+/// underlying of a derivative); `quote_currency` and `settlement_currency` can
+/// legitimately be fiat (e.g. inverse perps on BitMEX quoted in USD) and must
+/// stay on the strict deserialization path.
+///
+/// Codes are trimmed before lookup; empty or whitespace-only values are skipped
+/// so downstream serde deserialization raises a normal `PyErr` instead of
+/// panicking in `Currency::new`.
+pub(crate) fn register_crypto_currencies_from_dict(
+    py: Python<'_>,
+    values: &Py<PyDict>,
+    fields: &[&str],
+) {
+    let dict = values.bind(py);
+    for field in fields {
+        if let Ok(Some(value)) = dict.get_item(field)
+            && let Ok(code) = value.extract::<String>()
+        {
+            let trimmed = code.trim();
+            if !trimmed.is_empty() {
+                let _ = Currency::get_or_create_crypto(trimmed);
+            }
+        }
+    }
+}
 
 macro_rules! impl_instrument_common_pymethods {
     ($type:ty) => {
@@ -142,7 +178,7 @@ pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyRe
 /// # Errors
 ///
 /// Returns a `PyErr` if extraction fails or the instrument type is unsupported.
-#[allow(clippy::needless_pass_by_value)]
+#[expect(clippy::needless_pass_by_value)]
 pub fn pyobject_to_instrument_any(py: Python, instrument: Py<PyAny>) -> PyResult<InstrumentAny> {
     match instrument.getattr(py, "type_name")?.extract::<&str>(py)? {
         stringify!(BettingInstrument) => Ok(InstrumentAny::Betting(
@@ -192,5 +228,108 @@ pub fn pyobject_to_instrument_any(py: Python, instrument: Py<PyAny>) -> PyResult
         _ => Err(to_pyvalue_err(
             "Error in conversion from `Py<PyAny>` to `InstrumentAny`",
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pyo3::{prelude::*, types::PyDict};
+    use rstest::rstest;
+
+    use super::register_crypto_currencies_from_dict;
+    use crate::{enums::CurrencyType, types::Currency};
+
+    #[rstest]
+    fn test_register_crypto_currencies_from_dict_unknown_code() {
+        Python::initialize();
+        Python::attach(|py| {
+            let dict = PyDict::new(py);
+            dict.set_item("base_currency", "NEWHLP1").unwrap();
+            let values: Py<PyDict> = dict.unbind();
+
+            register_crypto_currencies_from_dict(py, &values, &["base_currency"]);
+
+            let created = Currency::try_from_str("NEWHLP1").unwrap();
+            assert_eq!(created.precision, 8);
+            assert_eq!(created.currency_type, CurrencyType::Crypto);
+        });
+    }
+
+    #[rstest]
+    fn test_register_crypto_currencies_from_dict_known_code_not_overwritten() {
+        Python::initialize();
+        Python::attach(|py| {
+            let dict = PyDict::new(py);
+            dict.set_item("quote_currency", "USD").unwrap();
+            let values: Py<PyDict> = dict.unbind();
+
+            register_crypto_currencies_from_dict(py, &values, &["quote_currency"]);
+
+            let usd = Currency::try_from_str("USD").unwrap();
+            assert_eq!(usd.precision, 2);
+            assert_eq!(usd.currency_type, CurrencyType::Fiat);
+        });
+    }
+
+    #[rstest]
+    fn test_register_crypto_currencies_from_dict_missing_key() {
+        Python::initialize();
+        Python::attach(|py| {
+            let dict = PyDict::new(py);
+            let values: Py<PyDict> = dict.unbind();
+
+            register_crypto_currencies_from_dict(py, &values, &["base_currency"]);
+
+            assert!(Currency::try_from_str("base_currency").is_none());
+        });
+    }
+
+    #[rstest]
+    fn test_register_crypto_currencies_from_dict_non_string_value() {
+        Python::initialize();
+        Python::attach(|py| {
+            let dict = PyDict::new(py);
+            dict.set_item("base_currency", 42).unwrap();
+            let values: Py<PyDict> = dict.unbind();
+
+            register_crypto_currencies_from_dict(py, &values, &["base_currency"]);
+
+            assert!(Currency::try_from_str("42").is_none());
+        });
+    }
+
+    #[rstest]
+    fn test_register_crypto_currencies_from_dict_trims_padding() {
+        // Whitespace-padded codes must be trimmed before registration so the
+        // global map doesn't accumulate `" BTC "`-style garbage entries.
+        Python::initialize();
+        Python::attach(|py| {
+            let dict = PyDict::new(py);
+            dict.set_item("base_currency", "  NEWHLP2  ").unwrap();
+            let values: Py<PyDict> = dict.unbind();
+
+            register_crypto_currencies_from_dict(py, &values, &["base_currency"]);
+
+            assert!(Currency::try_from_str("NEWHLP2").is_some());
+            assert!(Currency::try_from_str("  NEWHLP2  ").is_none());
+        });
+    }
+
+    #[rstest]
+    fn test_register_crypto_currencies_from_dict_blank_code_skipped() {
+        // Blank or whitespace-only codes must be skipped so strict deserialize produces
+        // a normal PyErr, not a panic from `Currency::new` via get_or_create_crypto.
+        Python::initialize();
+        Python::attach(|py| {
+            let dict = PyDict::new(py);
+            dict.set_item("base_currency", "").unwrap();
+            dict.set_item("quote_currency", "   ").unwrap();
+            let values: Py<PyDict> = dict.unbind();
+
+            register_crypto_currencies_from_dict(py, &values, &["base_currency", "quote_currency"]);
+
+            assert!(Currency::try_from_str("").is_none());
+            assert!(Currency::try_from_str("   ").is_none());
+        });
     }
 }

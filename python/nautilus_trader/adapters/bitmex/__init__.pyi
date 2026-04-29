@@ -11,6 +11,7 @@ __all__ = [
     "BITMEX_WS_URL",
     "BitmexDataClientConfig",
     "BitmexDataClientFactory",
+    "BitmexEnvironment",
     "BitmexExecClientConfig",
     "BitmexExecFactoryConfig",
     "BitmexExecutionClientFactory",
@@ -28,6 +29,23 @@ BITMEX_HTTP_URL: str
 BITMEX_WS_URL: str
 
 @typing.final
+class BitmexEnvironment(enum.Enum):
+    MAINNET = ...
+    TESTNET = ...
+
+    def __init__(self, value: typing.Any) -> None: ...
+    def __hash__(self) -> int: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> int: ...
+    @staticmethod
+    @classmethod
+    def variants() -> list[str]: ...
+    @classmethod
+    def from_str(cls, data: typing.Any) -> BitmexEnvironment: ...
+
+@typing.final
 class BitmexDataClientConfig:
     def __init__(
         self,
@@ -35,7 +53,7 @@ class BitmexDataClientConfig:
         api_secret: str | None = None,
         base_url_http: str | None = None,
         base_url_ws: str | None = None,
-        http_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -62,7 +80,7 @@ class BitmexExecClientConfig:
         api_secret: str | None = None,
         base_url_http: str | None = None,
         base_url_ws: str | None = None,
-        http_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -99,7 +117,7 @@ class BitmexHttpClient:
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url: str | None = None,
-        testnet: bool = False,
+        environment: BitmexEnvironment = BitmexEnvironment.MAINNET,
         timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_ms: int | None = None,
@@ -211,7 +229,7 @@ class CancelBroadcaster:
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url: str | None = None,
-        testnet: bool = False,
+        environment: BitmexEnvironment = BitmexEnvironment.MAINNET,
         timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_ms: int | None = None,
@@ -255,7 +273,8 @@ class BitmexWebSocketClient:
         api_secret: str | None = None,
         account_id: model.AccountId | None = None,
         heartbeat: int | None = None,
-        testnet: bool = False,
+        environment: BitmexEnvironment = BitmexEnvironment.MAINNET,
+        proxy_url: str | None = None,
     ) -> None: ...
     @staticmethod
     def from_env() -> BitmexWebSocketClient: ...
@@ -329,7 +348,7 @@ class SubmitBroadcaster:
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url: str | None = None,
-        testnet: bool = False,
+        environment: BitmexEnvironment = BitmexEnvironment.MAINNET,
         timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_ms: int | None = None,
@@ -340,6 +359,7 @@ class SubmitBroadcaster:
         health_check_interval_secs: int = 30,
         health_check_timeout_secs: int = 5,
         expected_reject_patterns: typing.Sequence[str] | None = None,
+        proxy_urls: typing.Sequence[str | None] | None = None,
     ) -> None: ...
     def start(self) -> typing.Any: ...
     def stop(self) -> typing.Any: ...
@@ -392,5 +412,5 @@ class BitmexSymbolStatus(enum.Enum):
     @classmethod
     def from_str(cls, data: typing.Any) -> BitmexSymbolStatus: ...
 
-def get_bitmex_http_base_url(testnet: bool) -> str: ...
-def get_bitmex_ws_url(testnet: bool) -> str: ...
+def get_bitmex_http_base_url(environment: BitmexEnvironment) -> str: ...
+def get_bitmex_ws_url(environment: BitmexEnvironment) -> str: ...

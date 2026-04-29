@@ -84,6 +84,7 @@ pub struct OrderTestBuilder {
 
 impl OrderTestBuilder {
     /// Creates a new [`OrderTestBuilder`] instance.
+    #[must_use]
     pub fn new(kind: OrderType) -> Self {
         Self {
             kind,
@@ -486,6 +487,7 @@ impl OrderTestBuilder {
     ///
     /// Panics if required fields (instrument ID, quantity, price, offsets, etc.) are not set,
     /// or if internal calls to `.expect(...)` or `.unwrap()` fail during order construction.
+    #[must_use]
     pub fn build(&self) -> OrderAny {
         let mut order = match self.kind {
             OrderType::Market => OrderAny::Market(MarketOrder::new(

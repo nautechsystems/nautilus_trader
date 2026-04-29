@@ -62,6 +62,10 @@ impl HttpClientError {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HttpMethod {
+    #[expect(
+        clippy::cast_possible_wrap,
+        reason = "Python __hash__ requires isize; wrapping is the standard convention"
+    )]
     fn __hash__(&self) -> isize {
         let mut h = DefaultHasher::new();
         self.hash(&mut h);
@@ -143,7 +147,7 @@ impl HttpClient {
     /// # Examples
     ///
     /// If requesting `/foo/bar`, pass rate-limit keys `["foo/bar", "foo"]`.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[pyo3(name = "request")]
     #[pyo3(signature = (method, url, params=None, headers=None, body=None, keys=None, timeout_secs=None))]
     fn py_request<'py>(
@@ -201,7 +205,7 @@ impl HttpClient {
     }
 
     /// Sends an HTTP POST request.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[pyo3(name = "post")]
     #[pyo3(signature = (url, params=None, headers=None, body=None, keys=None, timeout_secs=None))]
     fn py_post<'py>(
@@ -225,7 +229,7 @@ impl HttpClient {
     }
 
     /// Sends an HTTP PATCH request.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[pyo3(name = "patch")]
     #[pyo3(signature = (url, params=None, headers=None, body=None, keys=None, timeout_secs=None))]
     fn py_patch<'py>(
@@ -271,7 +275,7 @@ impl HttpClient {
     }
 }
 
-/// Converts Python dict params to HashMap<String, Vec<String>> for URL encoding.
+/// Converts Python dict params to `HashMap<String, Vec<String>>` for URL encoding.
 ///
 /// Accepts a dict where values can be:
 /// - Single values (str, int, float, bool) -> converted to single-item vec.
@@ -315,7 +319,7 @@ fn params_to_hashmap(
 
 /// Blocking HTTP GET request.
 ///
-/// Creates an HttpClient internally and blocks on the async operation using a dedicated runtime.
+/// Creates an `HttpClient` internally and blocks on the async operation using a dedicated runtime.
 ///
 /// # Errors
 ///
@@ -362,7 +366,7 @@ pub fn http_get(
 
 /// Blocking HTTP POST request.
 ///
-/// Creates an HttpClient internally and blocks on the async operation using a dedicated runtime.
+/// Creates an `HttpClient` internally and blocks on the async operation using a dedicated runtime.
 ///
 /// # Errors
 ///
@@ -410,7 +414,7 @@ pub fn http_post(
 
 /// Blocking HTTP PATCH request.
 ///
-/// Creates an HttpClient internally and blocks on the async operation using a dedicated runtime.
+/// Creates an `HttpClient` internally and blocks on the async operation using a dedicated runtime.
 ///
 /// # Errors
 ///
@@ -458,7 +462,7 @@ pub fn http_patch(
 
 /// Blocking HTTP DELETE request.
 ///
-/// Creates an HttpClient internally and blocks on the async operation using a dedicated runtime.
+/// Creates an `HttpClient` internally and blocks on the async operation using a dedicated runtime.
 ///
 /// # Errors
 ///
@@ -824,7 +828,7 @@ mod tests {
         assert!(err.to_string().contains("params must be a dict"));
     }
 
-    async fn create_test_router() -> Router {
+    fn create_test_router() -> Router {
         Router::new()
             .route("/get", get(|| async { "hello-world!" }))
             .route("/post", axum::routing::post(|| async { "posted" }))
@@ -837,7 +841,7 @@ mod tests {
         let addr = listener.local_addr()?;
 
         tokio::spawn(async move {
-            let app = create_test_router().await;
+            let app = create_test_router();
             axum::serve(listener, app).await.unwrap();
         });
 

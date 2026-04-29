@@ -61,7 +61,7 @@ pub struct KrakenFuturesSendOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
 
-    /// Trigger signal for stop orders: last, mark, or index.
+    /// Trigger signal for stop orders: last, mark, or spot.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger_signal: Option<KrakenTriggerSignal>,
@@ -434,6 +434,40 @@ mod tests {
         let json = serde_json::to_string(&params).unwrap();
         assert!(json.contains("\"orderType\":\"ioc\""));
         assert!(json.contains("\"limitPrice\":\"48000.0\""));
+    }
+
+    #[rstest]
+    fn test_send_order_params_serialization_with_trigger_signal() {
+        let params = KrakenFuturesSendOrderParamsBuilder::default()
+            .symbol("PI_XBTUSD")
+            .side(KrakenOrderSide::Buy)
+            .order_type(KrakenFuturesOrderType::Stop)
+            .size("500")
+            .stop_price("47000.0")
+            .trigger_signal(KrakenTriggerSignal::Mark)
+            .build()
+            .unwrap();
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("\"triggerSignal\":\"mark\""));
+        assert!(json.contains("\"stopPrice\":\"47000.0\""));
+    }
+
+    #[rstest]
+    fn test_send_order_params_serialization_with_index_trigger_signal() {
+        let params = KrakenFuturesSendOrderParamsBuilder::default()
+            .symbol("PI_XBTUSD")
+            .side(KrakenOrderSide::Buy)
+            .order_type(KrakenFuturesOrderType::Stop)
+            .size("500")
+            .stop_price("47000.0")
+            .trigger_signal(KrakenTriggerSignal::Index)
+            .build()
+            .unwrap();
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("\"triggerSignal\":\"spot\""));
+        assert!(json.contains("\"stopPrice\":\"47000.0\""));
     }
 
     #[rstest]

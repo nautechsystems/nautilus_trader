@@ -27,7 +27,10 @@ use nautilus_model::{
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
 use crate::{
-    common::{credential::credential_env_vars, enums::BitmexPegPriceType},
+    common::{
+        credential::credential_env_vars,
+        enums::{BitmexEnvironment, BitmexPegPriceType},
+    },
     http::{client::BitmexHttpClient, error::BitmexHttpError},
 };
 
@@ -39,13 +42,13 @@ impl BitmexHttpClient {
     /// This is the high-level client that wraps the inner client and provides
     /// Nautilus-specific functionality for trading operations.
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, testnet=false, timeout_secs=60, max_retries=3, retry_delay_ms=1_000, retry_delay_max_ms=10_000, recv_window_ms=10_000, max_requests_per_second=10, max_requests_per_minute=120, proxy_url=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, environment=BitmexEnvironment::Mainnet, timeout_secs=60, max_retries=3, retry_delay_ms=1_000, retry_delay_max_ms=10_000, recv_window_ms=10_000, max_requests_per_second=10, max_requests_per_minute=120, proxy_url=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<&str>,
         api_secret: Option<&str>,
         base_url: Option<&str>,
-        testnet: bool,
+        environment: BitmexEnvironment,
         timeout_secs: u64,
         max_retries: u32,
         retry_delay_ms: u64,
@@ -57,8 +60,7 @@ impl BitmexHttpClient {
     ) -> PyResult<Self> {
         // If credentials not provided, try to load from environment
         let (final_api_key, final_api_secret) = if api_key.is_none() && api_secret.is_none() {
-            // Choose environment variables based on testnet flag
-            let (key_var, secret_var) = credential_env_vars(testnet);
+            let (key_var, secret_var) = credential_env_vars(environment);
 
             let env_key = std::env::var(key_var).ok();
             let env_secret = std::env::var(secret_var).ok();
@@ -71,7 +73,7 @@ impl BitmexHttpClient {
             base_url.map(String::from),
             final_api_key,
             final_api_secret,
-            testnet,
+            environment,
             timeout_secs,
             max_retries,
             retry_delay_ms,
@@ -381,7 +383,7 @@ impl BitmexHttpClient {
         peg_price_type = None,
         peg_offset_value = None
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
         &self,
         py: Python<'py>,
@@ -531,7 +533,7 @@ impl BitmexHttpClient {
         price=None,
         trigger_price=None
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
         &self,
         py: Python<'py>,

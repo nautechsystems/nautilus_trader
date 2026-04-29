@@ -172,7 +172,7 @@ impl DatabentoHistoricalClient {
             .symbols(symbols)
             .stype_in(stype_in)
             .schema(dbn::Schema::Definition)
-            .limit(params.limit.and_then(NonZeroU64::new))
+            .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
         let mut client = self.inner.lock().await;
@@ -255,7 +255,7 @@ impl DatabentoHistoricalClient {
             .symbols(symbols)
             .stype_in(stype_in)
             .schema(dbn_schema)
-            .limit(params.limit.and_then(NonZeroU64::new))
+            .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
         let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
@@ -362,7 +362,7 @@ impl DatabentoHistoricalClient {
             .symbols(symbols)
             .stype_in(stype_in)
             .schema(dbn::Schema::Mbp10)
-            .limit(params.limit.and_then(NonZeroU64::new))
+            .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
         let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
@@ -428,7 +428,7 @@ impl DatabentoHistoricalClient {
             .symbols(symbols)
             .stype_in(stype_in)
             .schema(dbn::Schema::Mbo)
-            .limit(params.limit.and_then(NonZeroU64::new))
+            .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
         let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
@@ -498,7 +498,7 @@ impl DatabentoHistoricalClient {
             .symbols(symbols)
             .stype_in(stype_in)
             .schema(dbn::Schema::Trades)
-            .limit(params.limit.and_then(NonZeroU64::new))
+            .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
         let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
@@ -580,7 +580,7 @@ impl DatabentoHistoricalClient {
             .symbols(symbols)
             .stype_in(stype_in)
             .schema(schema)
-            .limit(params.limit.and_then(NonZeroU64::new))
+            .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
         let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
@@ -652,7 +652,7 @@ impl DatabentoHistoricalClient {
             .symbols(symbols)
             .stype_in(stype_in)
             .schema(dbn::Schema::Imbalance)
-            .limit(params.limit.and_then(NonZeroU64::new))
+            .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
         let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
@@ -711,7 +711,7 @@ impl DatabentoHistoricalClient {
             .symbols(symbols)
             .stype_in(stype_in)
             .schema(dbn::Schema::Statistics)
-            .limit(params.limit.and_then(NonZeroU64::new))
+            .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
         let price_precision = params.price_precision.unwrap_or(Currency::USD().precision);
@@ -770,7 +770,7 @@ impl DatabentoHistoricalClient {
             .symbols(symbols)
             .stype_in(stype_in)
             .schema(dbn::Schema::Status)
-            .limit(params.limit.and_then(NonZeroU64::new))
+            .maybe_limit(params.limit.and_then(NonZeroU64::new))
             .build();
 
         let mut client = self.inner.lock().await;

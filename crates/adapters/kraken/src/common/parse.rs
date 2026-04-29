@@ -19,7 +19,7 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use nautilus_core::{
-    datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, parsing::precision_from_str,
+    datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, string::parsing::precision_from_str,
     uuid::UUID4,
 };
 use nautilus_model::{
@@ -43,8 +43,8 @@ use crate::{
     common::{
         consts::KRAKEN_VENUE,
         enums::{
-            KrakenFillType, KrakenInstrumentType, KrakenPositionSide, KrakenSpotTrigger,
-            KrakenTriggerSignal,
+            KrakenFillType, KrakenFuturesOrderEventType, KrakenInstrumentType, KrakenPositionSide,
+            KrakenSpotTrigger, KrakenTriggerSignal,
         },
     },
     http::models::{
@@ -825,6 +825,7 @@ pub fn parse_fill_report(
         last_px,
         commission,
         liquidity_side,
+        avg_px: None,
         report_id: UUID4::new(),
         ts_event,
         ts_init,
@@ -919,6 +920,7 @@ pub fn parse_futures_order_status_report(
 /// Returns an error if order ID, quantities, or prices cannot be parsed.
 pub fn parse_futures_order_event_status_report(
     event: &FuturesOrderEvent,
+    event_type: Option<KrakenFuturesOrderEventType>,
     instrument: &InstrumentAny,
     account_id: AccountId,
     ts_init: UnixNanos,
@@ -934,14 +936,7 @@ pub fn parse_futures_order_event_status_report(
         order_type
     };
 
-    // Infer status from filled quantity since historical events don't include explicit status
-    let order_status = if event.filled >= event.quantity {
-        OrderStatus::Filled
-    } else if event.filled > 0.0 {
-        OrderStatus::PartiallyFilled
-    } else {
-        OrderStatus::Canceled
-    };
+    let order_status = parse_futures_order_event_status(event_type, event.filled, event.quantity);
 
     let quantity = Quantity::new(event.quantity, instrument.size_precision());
     let filled_qty = Quantity::new(event.filled, instrument.size_precision());
@@ -958,8 +953,6 @@ pub fn parse_futures_order_event_status_report(
         .stop_price
         .map(|p| Price::new(p, instrument.price_precision()));
 
-    // FuturesOrderEvent doesn't have trigger_signal, so we pass None
-    // This will default to TriggerType::Default for conditional orders
     let trigger_type = parse_futures_trigger_type(order_type, None);
 
     Ok(OrderStatusReport {
@@ -996,6 +989,41 @@ pub fn parse_futures_order_event_status_report(
         cancel_reason: None,
         ts_triggered: None,
     })
+}
+
+fn parse_futures_order_event_status(
+    event_type: Option<KrakenFuturesOrderEventType>,
+    filled: f64,
+    quantity: f64,
+) -> OrderStatus {
+    match event_type {
+        Some(KrakenFuturesOrderEventType::Cancel) => OrderStatus::Canceled,
+        Some(KrakenFuturesOrderEventType::Reject) => OrderStatus::Rejected,
+        Some(KrakenFuturesOrderEventType::Expire) => OrderStatus::Expired,
+        Some(
+            KrakenFuturesOrderEventType::Fill
+            | KrakenFuturesOrderEventType::Execution
+            | KrakenFuturesOrderEventType::Place
+            | KrakenFuturesOrderEventType::Edit,
+        ) => {
+            if filled >= quantity {
+                OrderStatus::Filled
+            } else if filled > 0.0 {
+                OrderStatus::PartiallyFilled
+            } else {
+                OrderStatus::Accepted
+            }
+        }
+        _ => {
+            if filled >= quantity {
+                OrderStatus::Filled
+            } else if filled > 0.0 {
+                OrderStatus::PartiallyFilled
+            } else {
+                OrderStatus::Canceled
+            }
+        }
+    }
 }
 
 /// Parses a Kraken futures fill into a Nautilus FillReport.
@@ -1044,6 +1072,7 @@ pub fn parse_futures_fill_report(
         last_px,
         commission,
         liquidity_side,
+        avg_px: None,
         report_id: UUID4::new(),
         ts_event,
         ts_init,
@@ -1198,7 +1227,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::enums::{KrakenFuturesOrderStatus, KrakenFuturesOrderType, KrakenOrderSide},
+        common::enums::{
+            KrakenFuturesOrderEventType, KrakenFuturesOrderStatus, KrakenFuturesOrderType,
+            KrakenOrderSide,
+        },
         http::{
             futures::models::{FuturesOpenOrder, FuturesOrderEvent},
             models::AssetPairsResponse,
@@ -1337,6 +1369,34 @@ mod tests {
                 assert!(!perp.is_inverse);
                 assert_eq!(perp.size_increment.as_f64(), 1000.0);
                 assert_eq!(perp.size_precision(), 0);
+            }
+            _ => panic!("Expected CryptoPerpetual"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_futures_instrument_tokenized_underlying() {
+        let json = load_test_json("http_futures_instruments.json");
+        let response: crate::http::models::FuturesInstrumentsResponse =
+            serde_json::from_str(&json).unwrap();
+
+        let fut_instrument = &response.instruments[3];
+
+        let instrument = parse_futures_instrument(fut_instrument, TS, TS).unwrap();
+
+        match instrument {
+            InstrumentAny::CryptoPerpetual(perp) => {
+                assert_eq!(perp.id.symbol.as_str(), "PF_AAPLxUSD");
+                assert_eq!(perp.raw_symbol.as_str(), "PF_AAPLxUSD");
+                assert_eq!(perp.base_currency.code.as_str(), "AAPLx");
+                assert_eq!(perp.quote_currency.code.as_str(), "USD");
+                assert_eq!(perp.settlement_currency.code.as_str(), "USD");
+                assert!(!perp.is_inverse);
+                assert_eq!(perp.price_increment.as_f64(), 0.01);
+                assert_eq!(perp.size_increment.as_f64(), 0.01);
+                assert_eq!(perp.size_precision(), 2);
+                assert_eq!(perp.margin_init, dec!(0.2));
+                assert_eq!(perp.margin_maint, dec!(0.1));
             }
             _ => panic!("Expected CryptoPerpetual"),
         }
@@ -1707,8 +1767,14 @@ mod tests {
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");
 
-        let report =
-            parse_futures_order_event_status_report(&event, &instrument, account_id, TS).unwrap();
+        let report = parse_futures_order_event_status_report(
+            &event,
+            Some(KrakenFuturesOrderEventType::Fill),
+            &instrument,
+            account_id,
+            TS,
+        )
+        .unwrap();
 
         assert_eq!(report.order_type, OrderType::MarketIfTouched);
         assert_eq!(report.trigger_price.unwrap().as_f64(), 40000.0);
@@ -1735,15 +1801,146 @@ mod tests {
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");
 
-        let report =
-            parse_futures_order_event_status_report(&event, &instrument, account_id, TS).unwrap();
+        let report = parse_futures_order_event_status_report(
+            &event,
+            Some(KrakenFuturesOrderEventType::Place),
+            &instrument,
+            account_id,
+            TS,
+        )
+        .unwrap();
 
         assert_eq!(report.order_type, OrderType::LimitIfTouched);
         assert_eq!(report.trigger_price.unwrap().as_f64(), 40000.0);
         assert_eq!(report.price.unwrap().as_f64(), 39500.0);
         assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert!(report.reduce_only);
+    }
+
+    #[rstest]
+    fn test_parse_futures_order_event_cancel_status() {
+        let event = FuturesOrderEvent {
+            order_id: "cancel-evt-001".to_string(),
+            cli_ord_id: Some("cancel-evt".to_string()),
+            order_type: KrakenFuturesOrderType::Stop,
+            symbol: "PI_XBTUSD".to_string(),
+            side: KrakenOrderSide::Sell,
+            quantity: 200.0,
+            filled: 0.0,
+            limit_price: None,
+            stop_price: Some(39000.0),
+            timestamp: "2023-11-14T22:13:20.000Z".to_string(),
+            last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
+            reduce_only: true,
+        };
+        let instrument = create_mock_perp();
+        let account_id = AccountId::new("KRAKEN-001");
+
+        let report = parse_futures_order_event_status_report(
+            &event,
+            Some(KrakenFuturesOrderEventType::Cancel),
+            &instrument,
+            account_id,
+            TS,
+        )
+        .unwrap();
+
         assert_eq!(report.order_status, OrderStatus::Canceled);
         assert!(report.reduce_only);
+    }
+
+    #[rstest]
+    fn test_parse_futures_order_event_reject_status() {
+        let event = FuturesOrderEvent {
+            order_id: "reject-evt-001".to_string(),
+            cli_ord_id: Some("reject-evt".to_string()),
+            order_type: KrakenFuturesOrderType::Limit,
+            symbol: "PI_XBTUSD".to_string(),
+            side: KrakenOrderSide::Buy,
+            quantity: 200.0,
+            filled: 0.0,
+            limit_price: Some(35000.0),
+            stop_price: None,
+            timestamp: "2023-11-14T22:13:20.000Z".to_string(),
+            last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
+            reduce_only: false,
+        };
+        let instrument = create_mock_perp();
+        let account_id = AccountId::new("KRAKEN-001");
+
+        let report = parse_futures_order_event_status_report(
+            &event,
+            Some(KrakenFuturesOrderEventType::Reject),
+            &instrument,
+            account_id,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Rejected);
+    }
+
+    #[rstest]
+    fn test_parse_futures_order_event_expire_status() {
+        let event = FuturesOrderEvent {
+            order_id: "expire-evt-001".to_string(),
+            cli_ord_id: Some("expire-evt".to_string()),
+            order_type: KrakenFuturesOrderType::Limit,
+            symbol: "PI_XBTUSD".to_string(),
+            side: KrakenOrderSide::Buy,
+            quantity: 200.0,
+            filled: 0.0,
+            limit_price: Some(35000.0),
+            stop_price: None,
+            timestamp: "2023-11-14T22:13:20.000Z".to_string(),
+            last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
+            reduce_only: false,
+        };
+        let instrument = create_mock_perp();
+        let account_id = AccountId::new("KRAKEN-001");
+
+        let report = parse_futures_order_event_status_report(
+            &event,
+            Some(KrakenFuturesOrderEventType::Expire),
+            &instrument,
+            account_id,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Expired);
+    }
+
+    #[rstest]
+    fn test_parse_futures_order_event_execution_status() {
+        let event = FuturesOrderEvent {
+            order_id: "execution-evt-001".to_string(),
+            cli_ord_id: Some("execution-evt".to_string()),
+            order_type: KrakenFuturesOrderType::Limit,
+            symbol: "PI_XBTUSD".to_string(),
+            side: KrakenOrderSide::Buy,
+            quantity: 200.0,
+            filled: 50.0,
+            limit_price: Some(35000.0),
+            stop_price: None,
+            timestamp: "2023-11-14T22:13:20.000Z".to_string(),
+            last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
+            reduce_only: false,
+        };
+        let instrument = create_mock_perp();
+        let account_id = AccountId::new("KRAKEN-001");
+
+        let report = parse_futures_order_event_status_report(
+            &event,
+            Some(KrakenFuturesOrderEventType::Execution),
+            &instrument,
+            account_id,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
     }
 
     #[rstest]

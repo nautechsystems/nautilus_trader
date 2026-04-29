@@ -17,9 +17,13 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use nautilus_common::{cache::Cache, clients::DataClient, clock::Clock};
+use nautilus_common::{
+    cache::Cache,
+    clients::DataClient,
+    clock::Clock,
+    factories::{ClientConfig, DataClientFactory},
+};
 use nautilus_model::identifiers::ClientId;
-use nautilus_system::factories::{ClientConfig, DataClientFactory};
 
 use crate::{common::consts::TARDIS, config::TardisDataClientConfig, data::TardisDataClient};
 

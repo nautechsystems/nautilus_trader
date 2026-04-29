@@ -20,10 +20,14 @@
 //! The handler emits venue-specific types via [`BinanceFuturesWsStreamsMessage`].
 //! Data and execution client layers convert these to Nautilus domain types.
 
+use nautilus_core::serialization::{
+    deserialize_decimal_from_str, deserialize_optional_decimal_from_str,
+};
 use nautilus_model::identifiers::{
     ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
 };
 use nautilus_network::websocket::WebSocketClient;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -43,7 +47,6 @@ use crate::{
 /// events. The data and execution client layers convert these to Nautilus
 /// domain types using parse functions with instrument context.
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
 pub enum BinanceFuturesWsStreamsMessage {
     /// Aggregate trade stream.
     AggTrade(BinanceFuturesAggTradeMsg),
@@ -65,6 +68,8 @@ pub enum BinanceFuturesWsStreamsMessage {
     AccountUpdate(BinanceFuturesAccountUpdateMsg),
     /// Order/trade update.
     OrderUpdate(Box<BinanceFuturesOrderUpdateMsg>),
+    /// Trade Lite fill notification (low-latency subset of `OrderUpdate`).
+    TradeLite(Box<BinanceFuturesTradeLiteMsg>),
     /// Algo order update (conditional orders via Algo Service).
     AlgoUpdate(Box<BinanceFuturesAlgoUpdateMsg>),
     /// Margin call warning.
@@ -90,10 +95,6 @@ pub struct BinanceFuturesWsErrorMsg {
 
 /// Handler command for data client-handler communication.
 #[derive(Debug)]
-#[allow(
-    clippy::large_enum_variant,
-    reason = "Commands are ephemeral and immediately consumed"
-)]
 pub enum BinanceFuturesWsStreamsCommand {
     /// Set the WebSocket client reference.
     SetClient(WebSocketClient),
@@ -107,7 +108,7 @@ pub enum BinanceFuturesWsStreamsCommand {
 
 /// Handler command for execution client-handler communication.
 #[derive(Debug)]
-#[allow(
+#[expect(
     clippy::large_enum_variant,
     reason = "Commands are ephemeral and immediately consumed"
 )]
@@ -580,14 +581,18 @@ pub struct BalanceUpdate {
     #[serde(rename = "a")]
     pub asset: Ustr,
     /// Wallet balance.
-    #[serde(rename = "wb")]
-    pub wallet_balance: String,
+    #[serde(rename = "wb", deserialize_with = "deserialize_decimal_from_str")]
+    pub wallet_balance: Decimal,
     /// Cross wallet balance.
-    #[serde(rename = "cw")]
-    pub cross_wallet_balance: String,
+    #[serde(rename = "cw", deserialize_with = "deserialize_decimal_from_str")]
+    pub cross_wallet_balance: Decimal,
     /// Balance change (except for PnL and commission).
-    #[serde(rename = "bc", default)]
-    pub balance_change: Option<String>,
+    #[serde(
+        rename = "bc",
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub balance_change: Option<Decimal>,
 }
 
 /// Position update within account update.
@@ -760,9 +765,14 @@ impl OrderUpdateData {
     }
 
     /// Returns true if this is a settlement order.
+    ///
+    /// USDT-margined futures use `settlement_autoclose-` for funding/margin
+    /// settlement; coin-margined delivery futures use `delivery_autoclose-`
+    /// when an expiring contract auto-closes.
     #[must_use]
     pub fn is_settlement(&self) -> bool {
         self.client_order_id.starts_with("settlement_autoclose-")
+            || self.client_order_id.starts_with("delivery_autoclose-")
     }
 
     /// Returns true if this is an exchange-generated order.
@@ -770,6 +780,55 @@ impl OrderUpdateData {
     pub fn is_exchange_generated(&self) -> bool {
         self.is_liquidation() || self.is_adl() || self.is_settlement()
     }
+}
+
+/// Trade Lite event from user data stream.
+///
+/// Binance pushes `TRADE_LITE` alongside `ORDER_TRADE_UPDATE` as a lower-latency
+/// subset containing only the fields needed to recognize a fill. Clients that
+/// prioritize latency can opt to act on `TRADE_LITE` and dedup the matching
+/// fill portion of the full `ORDER_TRADE_UPDATE` event.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BinanceFuturesTradeLiteMsg {
+    /// Event type.
+    #[serde(rename = "e")]
+    pub event_type: String,
+    /// Event time in milliseconds.
+    #[serde(rename = "E")]
+    pub event_time: i64,
+    /// Transaction time in milliseconds.
+    #[serde(rename = "T")]
+    pub transaction_time: i64,
+    /// Symbol.
+    #[serde(rename = "s")]
+    pub symbol: Ustr,
+    /// Client order ID.
+    #[serde(rename = "c")]
+    pub client_order_id: String,
+    /// Order side.
+    #[serde(rename = "S")]
+    pub side: BinanceSide,
+    /// Original quantity.
+    #[serde(rename = "q")]
+    pub original_qty: String,
+    /// Original price.
+    #[serde(rename = "p")]
+    pub original_price: String,
+    /// Order ID.
+    #[serde(rename = "i")]
+    pub order_id: i64,
+    /// Last executed quantity.
+    #[serde(rename = "l")]
+    pub last_filled_qty: String,
+    /// Last executed price.
+    #[serde(rename = "L")]
+    pub last_filled_price: String,
+    /// Trade ID.
+    #[serde(rename = "t")]
+    pub trade_id: i64,
+    /// Is maker.
+    #[serde(rename = "m")]
+    pub is_maker: bool,
 }
 
 /// Execution type for order updates.

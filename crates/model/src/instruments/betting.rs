@@ -17,14 +17,18 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     Params, UnixNanos,
-    correctness::{FAILED, check_equal_u8},
+    correctness::{CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8},
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{Instrument, any::InstrumentAny};
+use super::{
+    Instrument,
+    any::InstrumentAny,
+    tick_scheme::{BETFAIR_TICK_SCHEME, BETFAIR_TICK_SCHEME_NAME, TickSchemeRule},
+};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
@@ -131,7 +135,7 @@ impl BettingInstrument {
     /// # Errors
     ///
     /// Returns an error if any input validation fails (precision mismatches or non-positive increments).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new_checked(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -169,7 +173,7 @@ impl BettingInstrument {
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> CorrectnessResult<Self> {
         check_equal_u8(
             price_precision,
             price_increment.precision,
@@ -230,7 +234,8 @@ impl BettingInstrument {
     /// # Panics
     ///
     /// Panics if any required parameter is invalid or parsing fails during `new_checked`.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -307,7 +312,11 @@ impl BettingInstrument {
             ts_event,
             ts_init,
         )
-        .expect(FAILED)
+        .expect_display(FAILED)
+    }
+
+    fn uses_betfair_tick_scheme(&self) -> bool {
+        self.id.venue.as_str() == BETFAIR_TICK_SCHEME_NAME
     }
 }
 
@@ -326,6 +335,11 @@ impl Hash for BettingInstrument {
 }
 
 impl Instrument for BettingInstrument {
+    fn tick_scheme(&self) -> Option<&dyn TickSchemeRule> {
+        self.uses_betfair_tick_scheme()
+            .then_some(&*BETFAIR_TICK_SCHEME as &dyn TickSchemeRule)
+    }
+
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::Betting(self)
     }
@@ -411,11 +425,17 @@ impl Instrument for BettingInstrument {
     }
 
     fn max_price(&self) -> Option<Price> {
-        self.max_price
+        self.max_price.or_else(|| {
+            self.uses_betfair_tick_scheme()
+                .then(|| BETFAIR_TICK_SCHEME.max_price())
+        })
     }
 
     fn min_price(&self) -> Option<Price> {
-        self.min_price
+        self.min_price.or_else(|| {
+            self.uses_betfair_tick_scheme()
+                .then(|| BETFAIR_TICK_SCHEME.min_price())
+        })
     }
 
     fn ts_event(&self) -> UnixNanos {
@@ -537,5 +557,29 @@ mod tests {
         let json = serde_json::to_string(&betting).unwrap();
         let deserialized: BettingInstrument = serde_json::from_str(&json).unwrap();
         assert_eq!(betting, deserialized);
+    }
+
+    #[rstest]
+    fn test_betfair_tick_scheme_navigation(mut betting: BettingInstrument) {
+        betting.max_price = None;
+        betting.min_price = None;
+
+        assert_eq!(betting.min_price(), Some(Price::from("1.01")));
+        assert_eq!(betting.max_price(), Some(Price::from("1000.00")));
+        assert_eq!(betting.next_ask_price(4.0, 1), Some(Price::from("4.10")));
+        assert_eq!(betting.next_bid_price(2.027, 2), Some(Price::from("1.99")));
+        assert_eq!(betting.next_bid_prices(1.102, 20).len(), 10);
+        assert_eq!(betting.next_ask_prices(1.102, 20).len(), 20);
+    }
+
+    #[rstest]
+    fn test_non_betfair_venue_no_tick_scheme(mut betting: BettingInstrument) {
+        betting.id = InstrumentId::from("1-123456789.SMARKETS");
+        betting.max_price = None;
+        betting.min_price = None;
+
+        assert!(betting.tick_scheme().is_none());
+        assert!(betting.min_price().is_none());
+        assert!(betting.max_price().is_none());
     }
 }

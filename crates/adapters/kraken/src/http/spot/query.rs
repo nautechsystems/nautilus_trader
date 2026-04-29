@@ -19,7 +19,7 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::common::enums::{KrakenOrderSide, KrakenOrderType};
+use crate::common::enums::{KrakenAssetClass, KrakenOrderSide, KrakenOrderType};
 
 /// Parameters for adding an order via `POST /0/private/AddOrder`.
 ///
@@ -86,6 +86,11 @@ pub struct KrakenSpotAddOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub broker: Option<Ustr>,
+
+    /// Asset class override for tokenized assets (xStocks).
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset_class: Option<KrakenAssetClass>,
 }
 
 impl KrakenSpotAddOrderParamsBuilder {
@@ -113,6 +118,91 @@ impl KrakenSpotAddOrderParamsBuilder {
         }
         Ok(())
     }
+}
+
+/// A single order payload for `POST /0/private/AddOrderBatch`.
+///
+/// This mirrors `KrakenSpotAddOrderParams` without the shared top-level `pair`
+/// and broker fields.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KrakenSpotBatchOrderParams {
+    /// Order side: "buy" or "sell".
+    #[serde(rename = "type")]
+    pub side: KrakenOrderSide,
+
+    /// Order type: market, limit, stop-loss, etc.
+    #[serde(rename = "ordertype")]
+    pub order_type: KrakenOrderType,
+
+    /// Order quantity in base currency.
+    pub volume: String,
+
+    /// Limit price or trigger price, depending on order type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<String>,
+
+    /// Secondary limit price for supported conditional orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price2: Option<String>,
+
+    /// Client order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cl_ord_id: Option<String>,
+
+    /// Order flags (comma-separated: post, fcib, fciq, nompp, viqc).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oflags: Option<String>,
+
+    /// Time in force: GTC, IOC, GTD.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeinforce: Option<String>,
+
+    /// Expiration time for GTD orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expiretm: Option<String>,
+
+    /// Trigger reference for conditional orders: "last" or "index".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<String>,
+
+    /// Display volume for iceberg orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub displayvol: Option<String>,
+}
+
+impl From<KrakenSpotAddOrderParams> for KrakenSpotBatchOrderParams {
+    fn from(params: KrakenSpotAddOrderParams) -> Self {
+        Self {
+            side: params.side,
+            order_type: params.order_type,
+            volume: params.volume,
+            price: params.price,
+            price2: params.price2,
+            cl_ord_id: params.cl_ord_id,
+            oflags: params.oflags,
+            timeinforce: params.timeinforce,
+            expiretm: params.expiretm,
+            trigger: params.trigger,
+            displayvol: params.displayvol,
+        }
+    }
+}
+
+/// Parameters for batch adding orders via `POST /0/private/AddOrderBatch`.
+///
+/// # References
+/// - <https://docs.kraken.com/api/docs/rest-api/add-order-batch>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KrakenSpotAddOrderBatchParams {
+    /// Asset pair shared across all orders in the batch.
+    pub pair: Ustr,
+
+    /// List of orders to submit for that pair.
+    pub orders: Vec<KrakenSpotBatchOrderParams>,
+
+    /// Asset class override for tokenized assets (xStocks).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset_class: Option<KrakenAssetClass>,
 }
 
 /// Parameters for cancelling an order via `POST /0/private/CancelOrder`.

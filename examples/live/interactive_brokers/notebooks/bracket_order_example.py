@@ -21,6 +21,8 @@
 import datetime
 import os
 import sys
+import threading
+import time
 
 import pandas as pd
 
@@ -42,6 +44,7 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
 )
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.examples.interactive_brokers import resolve_ib_endpoint
 
 # from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.live.config import LiveDataEngineConfig
@@ -61,8 +64,12 @@ from nautilus_trader.trading.config import StrategyConfig
 
 
 # %%
+IB_HOST, IB_PORT = resolve_ib_endpoint("IB_EXAMPLE_HOST", "IB_EXAMPLE_PORT")
+
+
+# %%
 class Strat_mre_config(StrategyConfig, frozen=True):
-    tradable_instrument_id: str | None = "NQZ5.CME"
+    tradable_instrument_id: str | None = "ESM6.CME"
 
 
 class Strat_mre(Strategy):
@@ -163,12 +170,12 @@ class Strat_mre(Strategy):
 es_contract = IBContract(
     secType="FUT",
     exchange="CME",
-    localSymbol="ESZ5",
-    lastTradeDateOrContractMonth="20251219",
+    localSymbol="ESM6",
+    lastTradeDateOrContractMonth="20260618",
 )
 
 contracts = [es_contract]
-tradable_instrument_id = "ESZ5.CME"
+tradable_instrument_id = "ESM6.CME"
 
 
 # Configure the trading node
@@ -192,9 +199,9 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         IB: InteractiveBrokersDataClientConfig(
-            ibg_host="127.0.0.1",
-            ibg_port=7497,
-            ibg_client_id=9003,
+            ibg_host=IB_HOST,
+            ibg_port=IB_PORT,
+            ibg_client_id=int(os.getenv("IB_EXAMPLE_DATA_CLIENT_ID", "1231")),
             market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,
             instrument_provider=instrument_provider,
             use_regular_trading_hours=False,
@@ -202,9 +209,9 @@ config_node = TradingNodeConfig(
     },
     exec_clients={
         IB: InteractiveBrokersExecClientConfig(
-            ibg_host="127.0.0.1",
-            ibg_port=7497,
-            ibg_client_id=9003,
+            ibg_host=IB_HOST,
+            ibg_port=IB_PORT,
+            ibg_client_id=int(os.getenv("IB_EXAMPLE_EXEC_CLIENT_ID", "1232")),
             account_id=os.environ.get("TWS_ACCOUNT"),
             instrument_provider=instrument_provider,
             routing=RoutingConfig(
@@ -218,7 +225,12 @@ config_node = TradingNodeConfig(
         time_bars_build_with_no_updates=False,
     ),
 )
-strat_config = Strat_mre_config(tradable_instrument_id=tradable_instrument_id)
+strat_config = Strat_mre_config(
+    tradable_instrument_id=tradable_instrument_id,
+    manage_stop=True,
+    market_exit_time_in_force=TimeInForce.DAY,
+    market_exit_reduce_only=False,
+)
 # Instantiate your strategy
 strategy = Strat_mre(config=strat_config)
 
@@ -233,13 +245,17 @@ node.add_data_client_factory(IB, InteractiveBrokersLiveDataClientFactory)
 node.add_exec_client_factory(IB, InteractiveBrokersLiveExecClientFactory)
 node.build()
 
-# %%
-node.run()
+if __name__ == "__main__":
+    auto_stop_seconds = int(os.getenv("IB_EXAMPLE_AUTO_STOP_SECONDS", "20"))
 
-# %%
-node.stop()
+    def stop_after_delay() -> None:
+        time.sleep(auto_stop_seconds)
+        node.stop()
 
-# %%
-node.dispose()
+    if auto_stop_seconds > 0:
+        threading.Thread(target=stop_after_delay, daemon=True).start()
 
-# %%
+    try:
+        node.run()
+    finally:
+        node.dispose()

@@ -61,7 +61,7 @@ pub struct PositionStatusReport {
 
 impl PositionStatusReport {
     /// Creates a new [`PositionStatusReport`] instance with required fields.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         account_id: AccountId,

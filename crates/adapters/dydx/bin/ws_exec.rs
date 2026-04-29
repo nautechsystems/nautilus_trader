@@ -39,6 +39,7 @@ use nautilus_dydx::{
     common::{
         consts::{DYDX_TESTNET_HTTP_URL, DYDX_TESTNET_WS_URL},
         credential::credential_env_vars,
+        enums::DydxNetwork,
     },
     execution::wallet::Wallet,
     http::client::DydxHttpClient,
@@ -60,8 +61,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|s| s.parse::<u32>().ok())
         .unwrap_or(DEFAULT_SUBACCOUNT);
 
-    let is_testnet = !is_mainnet;
-    let (pk_var, _) = credential_env_vars(is_testnet);
+    let network = if is_mainnet {
+        DydxNetwork::Mainnet
+    } else {
+        DydxNetwork::Testnet
+    };
+    let (pk_var, _) = credential_env_vars(network);
     let private_key =
         env::var(pk_var).map_err(|_| format!("{pk_var} environment variable not set"))?;
 
@@ -91,13 +96,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Wallet address: {wallet_address}");
     log::info!("");
 
-    let http_client = DydxHttpClient::new(Some(http_url.clone()), 30, None, !is_mainnet, None)?;
+    let http_client = DydxHttpClient::new(Some(http_url.clone()), 30, None, network, None)?;
 
     log::info!("Fetching instruments from HTTP API...");
     let instruments = http_client.request_instruments(None, None, None).await?;
     log::info!("Fetched {} instruments", instruments.len());
 
-    let mut ws_client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut ws_client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     ws_client.cache_instruments(instruments);
     ws_client.connect().await?;
 

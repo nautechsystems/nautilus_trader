@@ -1,64 +1,88 @@
 # Gold Perpetual Book Imbalance with Proxy Futures Data (AX Exchange)
 
-This tutorial walks through backtesting an **order book imbalance** strategy on
-**XAU-PERP** (gold perpetual) using [AX Exchange](https://architect.exchange) instrument
-definitions and [Databento](https://databento.com) CME gold futures data as a proxy.
+This tutorial backtests a top-of-book imbalance strategy on **XAU-PERP** at
+[AX Exchange](https://architect.exchange) using
+[Databento](https://databento.com) CME gold futures (`GC.v.0`) `mbp-1`
+quotes as a proxy.
 
 ## Introduction
 
-Order book imbalance is a canonical microstructure signal used in high-frequency and
-short-term trading. When there is significantly more volume resting on one side of the
-book than the other, this can signal informed flow and near-term price movement in that
-direction. For a deeper dive into the statistical foundations,
-see Databento's [blog post on HFT signals with sklearn](https://databento.com/blog/hft-sklearn-python)
-which demonstrates the predictive power of book imbalance features.
+Top-of-book imbalance is a microstructure signal: when one side of the BBO
+holds significantly more resting size than the other, the book is leaning
+and short-term price often moves toward the thinner side as the heavier
+side absorbs flow. The shipped `OrderBookImbalance` strategy fires a
+fill-or-kill (FOK) limit order against the thicker side every time the
+ratio between sides clears a threshold and a cooldown has elapsed.
 
-For demonstration purposes, NautilusTrader ships with an `OrderBookImbalance` example
-strategy that is intentionally simple (no alpha advantage).
-The strategy monitors the ratio of the smaller to larger side at the top of book, and when
-this ratio drops below a configurable threshold it fires a fill-or-kill (FOK) limit order. Because
-it only needs top-of-book data, it works with Databento `mbp-1` (market by price best bid/ask) quotes
-rather than full depth-of-book, which is significantly cheaper to source.
+Because the strategy only needs the BBO, it works with `mbp-1` (market by
+price, single best bid/ask) quote data rather than the full L2 book. That
+keeps source costs down for backtesting.
 
-### Why proxy data?
+`OrderBookImbalance` is a teaching strategy and has no edge.
 
-AX Exchange is a new venue and is not yet covered specifically by data vendors like Databento.
-CME gold futures (GC) are the most liquid gold derivatives market globally, and
-provide representative price action for backtesting gold strategies. We download CME GC
-quote data from Databento and replay it through a NautilusTrader backtest with an AX-style
-`PerpetualContract` instrument definition.
+```mermaid
+flowchart LR
+    subgraph Inputs ["Data"]
+        D["Databento mbp-1 quotes"]
+    end
+
+    subgraph Engine ["BacktestEngine"]
+        L["DatabentoDataLoader"]
+        Q["QuoteTick stream"]
+        B["L1 OrderBook in cache"]
+    end
+
+    subgraph Strategy ["OrderBookImbalance"]
+        R{{"larger >= trigger_min_size<br/>AND smaller/larger < ratio<br/>AND cooldown elapsed"}}
+        D2{{"bid_size > ask_size?"}}
+        BUY["Submit FOK BUY at best ask"]
+        SELL["Submit FOK SELL at best bid"]
+    end
+
+    D --> L --> Q --> B
+    B --> R
+    R -->|yes| D2
+    D2 -->|yes| BUY
+    D2 -->|no| SELL
+```
+
+### Why proxy data
+
+AX Exchange is new and not yet covered by Databento. CME `GC` gold futures
+are the most liquid gold derivatives globally and provide representative
+microstructure for backtesting gold strategies. We use the **continuous
+contract** `GC.v.0` so the file stitches across expiries on the highest-volume
+contract, mirroring how a perpetual chases liquidity. The
+`stype_in="continuous"` parameter resolves the symbol through Databento's
+continuous mapping at request time. The `instrument_id` override at load
+time is safe because the continuous contract maps to a single underlying
+instrument at any moment.
+
+For a deeper read on the predictive power of book imbalance features, see
+Databento's
+[blog post on HFT signals with sklearn](https://databento.com/blog/hft-sklearn-python).
 
 ## Prerequisites
 
-- **NautilusTrader** installed (see the [installation guide](../getting_started/installation.md)).
-- **Databento API key**: Sign up at [databento.com](https://databento.com) and set the
-  environment variable:
+- Python 3.12+
+- [NautilusTrader](https://pypi.org/project/nautilus_trader/) installed.
+- A Databento API key:
 
 ```bash
 export DATABENTO_API_KEY="your-api-key"
 ```
 
-- **Databento Python client**: Install with `pip install databento`.
+- The Databento Python client: `pip install databento`.
 
 ## Data preparation
 
 ### Download CME gold futures quotes
 
-We use Databento's `mbp-1` schema (top-of-book best bid/ask), which maps directly to
-NautilusTrader `QuoteTick` objects. This is simpler and cheaper than downloading full
-depth-of-book data.
-
-We use a Databento **continuous contract** (`GC.v.0`) rather than a specific expiration like
-`GCZ4`. Continuous contracts stitch together successive contracts based on a roll rule.
-`v.0` tracks the highest-volume contract, which closely mirrors how a perpetual follows
-liquidity. The `stype_in="continuous"` parameter tells Databento to resolve the symbol
-through its continuous contract mapping.
-
 ```python
 import databento as db
 from pathlib import Path
 
-data_path = Path("gc_gold_mbp1.dbn.zst")
+data_path = Path("gc_gold_quotes.dbn.zst")
 
 if not data_path.exists():
     client = db.Historical()
@@ -73,16 +97,13 @@ if not data_path.exists():
     data.to_file(data_path)
 ```
 
-This downloads one day of top-of-book data for the front-month gold contract. The
-file is written once and reused on subsequent runs. The `instrument_id` override in the
-loading step below is safe because the continuous contract resolves to a single instrument
-at any point in time.
+This pulls one trading day. The file is reused on subsequent runs.
 
-### Load the data
+### Load into Nautilus quote ticks
 
-Use the `DatabentoDataLoader` to parse the DBN file into Nautilus quote ticks.
-We pass `instrument_id` to override the Databento symbology with our AX instrument ID,
-so all quote ticks appear to come from XAU-PERP.AX:
+`DatabentoDataLoader.from_dbn_file` parses the `.dbn.zst` archive and
+emits `QuoteTick` objects. The `instrument_id` argument overrides the
+Databento symbology so every tick appears to come from `XAU-PERP.AX`.
 
 ```python
 from nautilus_trader.adapters.databento import DatabentoDataLoader
@@ -92,16 +113,16 @@ instrument_id = InstrumentId.from_str("XAU-PERP.AX")
 
 loader = DatabentoDataLoader()
 quotes = loader.from_dbn_file(
-    path=data_path,
+    path="gc_gold_quotes.dbn.zst",
     instrument_id=instrument_id,
 )
 ```
 
 ## Instrument definition
 
-Since we are using proxy data, we define the XAU-PERP instrument manually as a
-`PerpetualContract`. The price precision and tick size are set to match the CME source
-data, while margin and fee parameters reflect AX Exchange conditions:
+Proxy data needs a manual instrument definition. Price precision and tick
+size match the CME source data; margin and fee parameters reflect AX
+conditions.
 
 ```python
 from decimal import Decimal
@@ -136,90 +157,61 @@ XAU_PERP = PerpetualContract(
 )
 ```
 
-Fees are explicit backtest assumptions and should be set deliberately. Check the
-[AX Exchange documentation](https://docs.architect.exchange/) for current rates.
+Fees are explicit backtest assumptions. Check
+[AX documentation](https://docs.architect.exchange/) for current rates.
 
-## Strategy overview
+## Strategy configuration
 
-The `OrderBookImbalance` strategy works as follows:
+`use_quote_ticks=True` and `book_type="L1_MBP"` together tell the strategy
+to consume quotes and maintain its own L1 book in cache rather than
+subscribing to L2 deltas.
 
-1. **Monitor top of book**: On each quote tick update, compute the ratio of the
-   smaller side to the larger side (`smaller / larger`).
-2. **Check trigger conditions**: If the larger side exceeds `trigger_min_size` and
-   the ratio falls below `trigger_imbalance_ratio`, a trigger fires.
-3. **Determine direction**: If bid size > ask size, the strategy buys at the ask
-   (anticipating upward pressure). If ask size > bid size, it sells at the bid.
-4. **Submit FOK order**: A fill-or-kill limit order is submitted at the opposing
-   best price, sized to the lesser of the opposing level size and `max_trade_size`.
-5. **Cooldown**: A configurable minimum time between triggers prevents overtrading.
-
-### Configuration
-
-We use `use_quote_ticks=True` with `book_type="L1_MBP"` since our data is top-of-book
-quotes rather than order book deltas:
+| Parameter                      | Value     | Description                                   |
+| ------------------------------ | --------- | --------------------------------------------- |
+| `max_trade_size`               | `10`      | Cap on contracts per FOK order.               |
+| `trigger_min_size`             | `1.0`     | Larger side must hold at least one contract.  |
+| `trigger_imbalance_ratio`      | `0.10`    | Trigger when smaller / larger < 10%.          |
+| `min_seconds_between_triggers` | `5.0`     | Cooldown between consecutive triggers.        |
+| `book_type`                    | `L1_MBP`  | Top of book only.                             |
+| `use_quote_ticks`              | `True`    | Drive the strategy from quote ticks.          |
 
 ```python
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 
-strategy_config = OrderBookImbalanceConfig(
-    instrument_id=instrument_id,
-    max_trade_size=Decimal("10"),
-    trigger_min_size=1.0,
-    trigger_imbalance_ratio=0.10,
-    min_seconds_between_triggers=5.0,
-    book_type="L1_MBP",
-    use_quote_ticks=True,
+strategy = OrderBookImbalance(
+    OrderBookImbalanceConfig(
+        instrument_id=instrument_id,
+        max_trade_size=Decimal(10),
+        trigger_min_size=1.0,
+        trigger_imbalance_ratio=0.10,
+        min_seconds_between_triggers=5.0,
+        book_type="L1_MBP",
+        use_quote_ticks=True,
+    ),
 )
-
-strategy = OrderBookImbalance(config=strategy_config)
 ```
 
-| Parameter                      | Value    | Description                                   |
-| ------------------------------ | -------- | --------------------------------------------- |
-| `max_trade_size`               | `10`     | Maximum 10 contracts per order.               |
-| `trigger_min_size`             | `1.0`    | Minimum 1 contract on the larger side.        |
-| `trigger_imbalance_ratio`      | `0.10`   | Trigger when ratio drops below 10%.           |
-| `min_seconds_between_triggers` | `5.0`    | 5-second cooldown between consecutive trades. |
-| `book_type`                    | `L1_MBP` | Top‑of‑book data only.                        |
-| `use_quote_ticks`              | `True`   | Drive the strategy from quote ticks.          |
-
-:::tip
-Start with conservative parameters (higher ratio, longer cooldown) and tighten them
-as you study the backtest results. A `trigger_imbalance_ratio` of 0.10 means the smaller
-side must be less than 10% of the larger side to trigger.
-:::
-
 ## Backtest setup
-
-### Configure the engine
 
 ```python
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.config import LoggingConfig
-from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 
-config = BacktestEngineConfig(
-    trader_id=TraderId("BACKTESTER-001"),
-    logging=LoggingConfig(log_level="INFO"),
+engine = BacktestEngine(
+    BacktestEngineConfig(
+        trader_id=TraderId("BACKTESTER-001"),
+        logging=LoggingConfig(log_level="INFO"),
+    ),
 )
 
-engine = BacktestEngine(config=config)
-```
-
-### Add the venue
-
-AX Exchange uses margin accounts with netting position management:
-
-```python
 AX = Venue("AX")
-
 engine.add_venue(
     venue=AX,
     oms_type=OmsType.NETTING,
@@ -227,80 +219,98 @@ engine.add_venue(
     base_currency=USD,
     starting_balances=[Money(100_000, USD)],
 )
-```
 
-### Add instrument, data, and strategy
-
-```python
 engine.add_instrument(XAU_PERP)
 engine.add_data(quotes)
 engine.add_strategy(strategy)
-```
-
-### Run the backtest
-
-```python
 engine.run()
 ```
 
-## Results
-
-After the run completes, generate reports to analyze performance:
+Reports are on `engine.trader`:
 
 ```python
-import pandas as pd
+print(engine.trader.generate_account_report(AX))
+print(engine.trader.generate_order_fills_report())
+print(engine.trader.generate_positions_report())
 
-with pd.option_context(
-    "display.max_rows", 100,
-    "display.max_columns", None,
-    "display.width", 300,
-):
-    print(engine.trader.generate_account_report(AX))
-    print(engine.trader.generate_order_fills_report())
-    print(engine.trader.generate_positions_report())
-```
-
-Clean up when done:
-
-```python
 engine.reset()
 engine.dispose()
 ```
 
-## Complete script
+The runnable example is at
+[`architect_ax_book_imbalance.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/backtest/architect_ax_book_imbalance.py).
 
-The complete script is available as
-[`architect_ax_book_imbalance.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/backtest/architect_ax_book_imbalance.py)
-in the examples directory.
+## What the run produces
+
+Replaying 2024-11-15 GC.v.0 mbp-1 (one trading day) through
+`OrderBookImbalance(0.10, 1.0, 5s)` prints 2,378 FOK fills net into 5 closed
+position cycles. Cumulative realised pnl ends at **-4,170 USD**: the
+strategy bleeds steadily across the day, mostly through spread cost on
+incremental FOK fills that add to existing positions.
+
+![GC.v.0 top of book around an active cycle](./assets/gold_book_imbalance_ax/panel_a_top_book.png)
+
+**Figure 1.** *GC.v.0 top of book around the cycle that opened with a short
+entry near 09:26 and exited near 09:31, then re-entered long until 09:35.
+Triangles are entries from flat, crosses are returns to flat, open circles
+are incremental FOK fills that grew the position.*
+
+![Imbalance ratio distribution](./assets/gold_book_imbalance_ax/panel_b_imbalance_dist.png)
+
+**Figure 2.** *`smaller / larger` BBO size ratio across all sampled top-of-book
+snapshots, with the 0.10 trigger threshold marked. The mass left of the
+threshold is the addressable trigger region.*
+
+![Mid and top-of-book size across the day](./assets/gold_book_imbalance_ax/panel_c_size_landscape.png)
+
+**Figure 3.** *Mid price (top) and best bid/ask size in contracts (bottom)
+across the trading day. Top-of-book sizes flicker between roughly two and
+fifty contracts; the mid traverses about a fifteen-dollar range.*
+
+![Cumulative realised pnl per closed position](./assets/gold_book_imbalance_ax/panel_d_pnl.png)
+
+**Figure 4.** *Cumulative realised USD pnl across the five closed position
+cycles. The slope is consistently negative and the per-cycle pnl is
+dominated by spread.*
+
+### Regenerate the panels
+
+A self-contained renderer re-runs the backtest with a quote-sampling actor
+and writes PNGs to the asset directory using the `nautilus_dark` tearsheet
+theme.
+
+```bash
+uv sync --extra visualization
+GC_DBN=tests/test_data/local/Databento/gc_gold_quotes.dbn.zst \
+    python3 docs/tutorials/assets/gold_book_imbalance_ax/render_panels.py
+```
 
 ## Next steps
 
-- **Tune parameters**: Experiment with `trigger_imbalance_ratio`, `min_seconds_between_triggers`,
-  and `max_trade_size` to understand their effect on fill rates and PnL.
-- **Try different data**: Download different time periods or different front-month contracts
-  to see how the strategy performs across varying market conditions.
-- **Go live on AX sandbox**: Once you are satisfied with backtest results, connect to the
-  AX sandbox environment for paper trading. See the
-  [AX Exchange integration guide](../integrations/architect_ax.md) for setup instructions.
-- **Explore other instruments**: AX offers perpetuals on FX pairs (GBPUSD-PERP, EURUSD-PERP),
-  metals (XAG-PERP), and more. Adapt this tutorial by downloading the corresponding CME
-  futures data from Databento.
+- **Stricter trigger**. Lower `trigger_imbalance_ratio` to `0.05` or raise
+  `trigger_min_size` to `5` to require more conviction before firing.
+- **Different sessions**. Replay regular trading hours (RTH) only or roll
+  through several days to see how the strategy behaves across regimes.
+- **Other instruments**. AX offers FX perpetuals (`EURUSD-PERP`,
+  `GBPUSD-PERP`) and silver (`XAG-PERP`). The same proxy approach works
+  with the corresponding CME futures.
+- **Go live on the AX sandbox**. See the
+  [AX Exchange integration guide](../integrations/architect_ax.md) once the
+  backtest behaves.
 
 ## Running live
 
-The same strategy used in this backtest can be run live with no code changes - only a
-launch script is needed. NautilusTrader's architecture means your strategy is
-venue-agnostic: switching from backtest to live is a configuration change, not a rewrite.
+The same `OrderBookImbalance` strategy runs live against AX Exchange. The
+launch script swaps the `BacktestEngine` for a `TradingNode` with the AX
+data and execution clients configured. See the live example:
+[`ax_book_imbalance.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/ax_book_imbalance.py).
 
-See the complete live example:
-[`ax_book_imbalance.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/ax_book_imbalance.py)
-
-For connection setup and API key configuration, refer to the
+For connection setup and API key configuration, see the
 [AX Exchange integration guide](../integrations/architect_ax.md).
 
 ## Further reading
 
-- [AX Exchange book imbalance backtest example](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/backtest/architect_ax_book_imbalance.py)
 - [`OrderBookImbalance` strategy source](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/examples/strategies/orderbook_imbalance.py)
+- [Mean Reversion with Proxy FX Data tutorial](fx_mean_reversion_ax.md)
 - [Architect Exchange documentation](https://docs.architect.exchange/)
 - [Databento: HFT signals with sklearn](https://databento.com/blog/hft-sklearn-python)

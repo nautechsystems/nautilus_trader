@@ -78,6 +78,12 @@ LIMIT_ORDER_TYPES = {
     OrderType.MARKET_TO_LIMIT,
 }
 
+TRIGGERABLE_ORDER_TYPES = {
+    OrderType.STOP_LIMIT,
+    OrderType.TRAILING_STOP_LIMIT,
+    OrderType.LIMIT_IF_TOUCHED,
+}
+
 CANCELLABLE_ORDER_STATUSES = {
     OrderStatus.ACCEPTED,
     OrderStatus.TRIGGERED,
@@ -1066,11 +1072,7 @@ cdef class Order:
             self.is_quote_quantity = event.is_quote_quantity
         elif isinstance(event, OrderTriggered):
             Condition.is_true(
-                (
-                    self.order_type == OrderType.STOP_LIMIT
-                    or self.order_type == OrderType.TRAILING_STOP_LIMIT
-                    or self.order_type == OrderType.LIMIT_IF_TOUCHED
-                ),
+                self.order_type in TRIGGERABLE_ORDER_TYPES,
                 "can only trigger STOP_LIMIT, TRAILING_STOP_LIMIT and LIMIT_IF_TOUCHED orders",
             )
             self._fsm.trigger(OrderStatus.TRIGGERED)

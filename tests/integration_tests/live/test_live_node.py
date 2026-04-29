@@ -22,6 +22,7 @@ from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
+from nautilus_trader.config import ImportableConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
@@ -45,7 +46,7 @@ RAW_CONFIG = msgspec.json.encode(
                 },
                 "config": {
                     "instrument_provider": {
-                        "instrument_provider": {"load_all": False},
+                        "load_all": False,
                     },
                 },
             },
@@ -58,7 +59,7 @@ RAW_CONFIG = msgspec.json.encode(
                 "path": "nautilus_trader.adapters.binance.config:BinanceExecClientConfig",
                 "config": {
                     "instrument_provider": {
-                        "instrument_provider": {"load_all": False},
+                        "load_all": False,
                     },
                 },
             },
@@ -125,6 +126,30 @@ class TestTradingNodeConfiguration:
         # Assert
         assert node.trader.id.value == "Test-111"
         assert node.trader.strategy_ids() == [StrategyId("VolatilityMarketMaker-000")]
+
+    def test_node_config_from_raw_preserves_client_factory(self):
+        # Arrange, Act
+        config = TradingNodeConfig.parse(RAW_CONFIG)
+
+        # Assert
+        data_client = config.data_clients["BINANCE"]
+        exec_client = config.exec_clients["BINANCE"]
+
+        assert isinstance(data_client, ImportableConfig)
+        assert data_client.path == "nautilus_trader.adapters.binance.config:BinanceDataClientConfig"
+        assert data_client.factory is not None
+        assert (
+            data_client.factory.path
+            == "nautilus_trader.adapters.binance.factories:BinanceLiveDataClientFactory"
+        )
+
+        assert isinstance(exec_client, ImportableConfig)
+        assert exec_client.path == "nautilus_trader.adapters.binance.config:BinanceExecClientConfig"
+        assert exec_client.factory is not None
+        assert (
+            exec_client.factory.path
+            == "nautilus_trader.adapters.binance.factories:BinanceLiveExecClientFactory"
+        )
 
     def test_setting_instance_id(self, monkeypatch, event_loop_for_setup):
         # Arrange

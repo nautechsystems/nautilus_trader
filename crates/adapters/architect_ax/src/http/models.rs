@@ -1157,43 +1157,7 @@ impl CancelAllOrdersRequest {
 /// # References
 /// - <https://docs.architect.exchange/api-reference/order-management/place-order>
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AxCancelAllOrdersResponse {
-    /// Number of orders canceled.
-    #[serde(default)]
-    pub canceled_count: i64,
-}
-
-/// Request body for batch cancel orders.
-///
-/// # References
-/// - <https://docs.architect.exchange/api-reference/order-management/place-order>
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BatchCancelOrdersRequest {
-    /// List of order IDs to cancel.
-    pub order_ids: Vec<String>,
-}
-
-impl BatchCancelOrdersRequest {
-    /// Creates a new [`BatchCancelOrdersRequest`].
-    #[must_use]
-    pub fn new(order_ids: Vec<String>) -> Self {
-        Self { order_ids }
-    }
-}
-
-/// Response payload returned by batch cancel orders.
-///
-/// # References
-/// - <https://docs.architect.exchange/api-reference/order-management/place-order>
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AxBatchCancelOrdersResponse {
-    /// Number of orders successfully canceled.
-    #[serde(default)]
-    pub canceled_count: i64,
-    /// Order IDs that failed to cancel.
-    #[serde(default)]
-    pub failed_order_ids: Vec<String>,
-}
+pub struct AxCancelAllOrdersResponse {}
 
 #[cfg(test)]
 mod tests {
@@ -1350,16 +1314,7 @@ mod tests {
     #[rstest]
     fn test_deserialize_cancel_all_orders_response() {
         let json = include_str!("../../test_data/http_cancel_all_orders.json");
-        let response: AxCancelAllOrdersResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.canceled_count, 3);
-    }
-
-    #[rstest]
-    fn test_deserialize_batch_cancel_orders_response() {
-        let json = include_str!("../../test_data/http_batch_cancel_orders.json");
-        let response: AxBatchCancelOrdersResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.canceled_count, 2);
-        assert_eq!(response.failed_order_ids.len(), 1);
+        let _response: AxCancelAllOrdersResponse = serde_json::from_str(json).unwrap();
     }
 
     #[rstest]

@@ -27,6 +27,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.secure import mask_api_key
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.nautilus_pyo3 import DeribitEnvironment
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
@@ -119,8 +120,13 @@ class DeribitExecutionClient(LiveExecutionClient):
         product_types = (
             [i.name.upper() for i in config.product_types] if config.product_types else None
         )
+        environment = (
+            config.environment
+            if config.environment is not None
+            else (DeribitEnvironment.TESTNET if config.is_testnet else DeribitEnvironment.MAINNET)
+        )
         self._log.info(f"config.product_types={product_types}", LogColor.BLUE)
-        self._log.info(f"{config.is_testnet=}", LogColor.BLUE)
+        self._log.info(f"config.environment={environment}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
@@ -133,8 +139,9 @@ class DeribitExecutionClient(LiveExecutionClient):
         self.pyo3_account_id = nautilus_pyo3.AccountId(account_id.value)
         self._http_client = http_client
         self._ws_client = nautilus_pyo3.DeribitWebSocketClient.with_credentials(
-            is_testnet=config.is_testnet,
+            environment=environment,
             account_id=self.pyo3_account_id,
+            proxy_url=config.proxy_url,
         )
 
         if config.api_key:

@@ -248,6 +248,7 @@ mod tests {
 
         // Fixture contains a mix of Executable and ExecutionComplete orders
         let mut has_filled = false;
+
         for order in &resp.current_orders {
             let report = parse_current_order_report(
                 order,

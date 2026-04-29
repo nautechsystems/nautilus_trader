@@ -248,3 +248,33 @@ fn test_empty_deltas_batch_increments_count() {
     assert_eq!(state.ask_volume_total, 0.0);
     assert_eq!(state.imbalance(), 0.0);
 }
+
+#[rstest]
+fn test_config_new_sets_defaults() {
+    let ids = vec![instrument_a()];
+    let config = BookImbalanceActorConfig::new(ids.clone());
+    assert_eq!(config.instrument_ids, ids);
+    assert_eq!(config.log_interval, 100);
+    assert!(config.actor_id.is_none());
+}
+
+#[rstest]
+fn test_config_builder_overrides() {
+    let ids = vec![instrument_a()];
+    let config = BookImbalanceActorConfig::new(ids)
+        .with_log_interval(50)
+        .with_actor_id(ActorId::from("MY_ACTOR-001"));
+    assert_eq!(config.log_interval, 50);
+    assert_eq!(config.actor_id, Some(ActorId::from("MY_ACTOR-001")));
+}
+
+#[rstest]
+fn test_from_config_creates_actor() {
+    let ids = vec![instrument_a(), instrument_b()];
+    let config = BookImbalanceActorConfig::new(ids)
+        .with_log_interval(50)
+        .with_actor_id(ActorId::from("MY_ACTOR-001"));
+    let actor = BookImbalanceActor::from_config(config);
+    assert!(actor.states().is_empty());
+    assert_eq!(actor.actor_id, ActorId::from("MY_ACTOR-001"));
+}

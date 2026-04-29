@@ -34,12 +34,13 @@ use std::{
 
 use futures_util::Stream;
 use nautilus_common::live::get_runtime;
-use nautilus_core::{AtomicMap, string::REDACTED};
+use nautilus_core::{AtomicMap, string::secret::REDACTED};
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::{
     mode::ConnectionMode,
     websocket::{
-        PingHandler, SubscriptionState, WebSocketClient, WebSocketConfig, channel_message_handler,
+        PingHandler, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
+        channel_message_handler,
     },
 };
 use tokio_util::sync::CancellationToken;
@@ -86,6 +87,7 @@ pub struct BinanceSpotWebSocketClient {
     out_rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BinanceSpotWsMessage>>>>,
     request_id_counter: Arc<AtomicU64>,
     instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
+    transport_backend: TransportBackend,
 }
 
 impl Debug for BinanceSpotWebSocketClient {
@@ -100,7 +102,7 @@ impl Debug for BinanceSpotWebSocketClient {
 
 impl Default for BinanceSpotWebSocketClient {
     fn default() -> Self {
-        Self::new(None, None, None, None).unwrap()
+        Self::new(None, None, None, None, TransportBackend::default()).unwrap()
     }
 }
 
@@ -115,6 +117,7 @@ impl BinanceSpotWebSocketClient {
         api_key: Option<String>,
         api_secret: Option<String>,
         heartbeat: Option<u64>,
+        transport_backend: TransportBackend,
     ) -> anyhow::Result<Self> {
         let url = url.unwrap_or(BINANCE_SPOT_SBE_WS_URL.to_string());
 
@@ -133,12 +136,13 @@ impl BinanceSpotWebSocketClient {
             out_rx: Arc::new(Mutex::new(None)),
             request_id_counter: Arc::new(AtomicU64::new(1)),
             instruments_cache: Arc::new(AtomicMap::new()),
+            transport_backend,
         })
     }
 
     /// Returns whether any connection in the pool is active.
     #[must_use]
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn is_active(&self) -> bool {
         let slots = self.slots.lock().expect("slots lock poisoned");
         slots
@@ -148,7 +152,7 @@ impl BinanceSpotWebSocketClient {
 
     /// Returns whether all connections in the pool are closed.
     #[must_use]
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn is_closed(&self) -> bool {
         let slots = self.slots.lock().expect("slots lock poisoned");
         slots.is_empty()
@@ -159,7 +163,7 @@ impl BinanceSpotWebSocketClient {
 
     /// Returns the total number of confirmed subscriptions across all connections.
     #[must_use]
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn subscription_count(&self) -> usize {
         let slots = self.slots.lock().expect("slots lock poisoned");
         slots.iter().map(|s| s.subscriptions_state.len()).sum()
@@ -170,7 +174,7 @@ impl BinanceSpotWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if connection fails.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub async fn connect(&mut self) -> BinanceWsResult<()> {
         self.signal.store(false, Ordering::Relaxed);
 
@@ -193,7 +197,7 @@ impl BinanceSpotWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if disconnect fails.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub async fn close(&mut self) -> BinanceWsResult<()> {
         self.signal.store(true, Ordering::Relaxed);
 
@@ -224,7 +228,7 @@ impl BinanceSpotWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the pool is exhausted or command delivery fails.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub async fn subscribe(&self, streams: Vec<String>) -> BinanceWsResult<()> {
         // Phase 1: filter already-subscribed streams (brief lock)
         let new_streams: Vec<String> = {
@@ -313,7 +317,7 @@ impl BinanceSpotWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if command delivery fails.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub async fn unsubscribe(&self, streams: Vec<String>) -> BinanceWsResult<()> {
         let mut slots = self.slots.lock().expect("slots lock poisoned");
         let mut slot_batches: Vec<(usize, Vec<String>)> = Vec::new();
@@ -340,6 +344,7 @@ impl BinanceSpotWebSocketClient {
                         "Handler not available for pool slot {slot_idx}: {e}"
                     ))
                 })?;
+
             for stream in batch {
                 slots[*slot_idx].streams.retain(|s| s != stream);
             }
@@ -428,6 +433,8 @@ impl BinanceSpotWebSocketClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: self.transport_backend,
+            proxy_url: None,
         };
 
         let keyed_quotas = vec![(

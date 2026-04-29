@@ -124,6 +124,7 @@ cdef class DataEngine(Component):
     cdef readonly dict[UUID4, list] _request_group_responses
     cdef readonly dict[UUID4, object] _long_request_generator
     cdef readonly dict[UUID4, RequestData] _requests
+    cdef readonly dict[UUID4, object] _request_workflows
     cdef readonly dict[UUID4, UUID4] _parent_long_request_id
     cdef readonly dict[UUID4, UUID4] _parent_join_request_id
     cdef readonly dict[UUID4, UUID4] _parent_request_id
@@ -260,7 +261,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_request_order_book_deltas(self, DataClient client, RequestOrderBookDeltas request)
     cpdef void _handle_request_order_book_depth(self, DataClient client, RequestOrderBookDepth request)
     cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request)
-    cpdef void _handle_order_book_deltas_snapshot_replay(self, DataResponse response)
+    cpdef list _handle_order_book_deltas_snapshot_replay(self, UUID4 correlation_id, list data, dict params)
     cpdef tuple _bound_dates(self, RequestData request)
     cpdef void _date_range_client_request(self, DataClient client, RequestData request)
     cpdef void _handle_date_range_request(self, DataClient client, RequestData request)
@@ -320,6 +321,9 @@ cdef class DataEngine(Component):
 
     cdef tuple _get_bar_aggregator_key(self, BarType bar_type, UUID4 request_id = *)
     cdef tuple _get_spread_quote_aggregator_key(self, InstrumentId spread_instrument_id, UUID4 request_id = *)
+    cdef object _ensure_request_workflows(self, RequestData request)
+    cdef object _inherit_request_workflows(self, RequestData target, RequestData source)
+    cdef dict _request_response_params(self, UUID4 request_id, dict fallback_params = *)
     cdef list _get_bar_types_from_aggregators(self)
     cpdef void _init_historical_aggregators(self, RequestData request)
     cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command)

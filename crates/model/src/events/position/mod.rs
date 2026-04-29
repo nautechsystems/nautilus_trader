@@ -32,6 +32,7 @@ pub enum PositionEvent {
 }
 
 impl PositionEvent {
+    #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
         match self {
             Self::PositionOpened(position) => position.instrument_id,
@@ -41,6 +42,7 @@ impl PositionEvent {
         }
     }
 
+    #[must_use]
     pub fn account_id(&self) -> AccountId {
         match self {
             Self::PositionOpened(position) => position.account_id,

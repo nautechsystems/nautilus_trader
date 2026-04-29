@@ -66,6 +66,7 @@ impl BookLevel {
         level
     }
 
+    #[must_use]
     pub fn side(&self) -> OrderSideSpecified {
         self.price.side
     }

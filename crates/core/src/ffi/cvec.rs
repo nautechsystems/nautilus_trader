@@ -82,7 +82,7 @@ impl CVec {
     /// absence of data when crossing the FFI boundary.
     ///
     /// Uses a dangling pointer (like `Vec::new()`) rather than null to satisfy
-    /// `Vec::from_raw_parts` preconditions when the CVec is later dropped.
+    /// `Vec::from_raw_parts` preconditions when the `CVec` is later dropped.
     #[must_use]
     pub fn empty() -> Self {
         Self {

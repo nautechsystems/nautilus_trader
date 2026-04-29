@@ -51,6 +51,7 @@ class BSPOrderBookDelta(OrderBookDelta):
     def from_batch(batch: pa.RecordBatch) -> list[BSPOrderBookDelta]:
         PyCondition.not_none(batch, "batch")
         data = []
+
         for idx in range(batch.num_rows):
             instrument_id = InstrumentId.from_str(batch.schema.metadata[b"instrument_id"].decode())
             action: BookAction = BookAction(batch["action"].to_pylist()[idx])

@@ -98,7 +98,7 @@ impl PoolPosition {
 
     /// Updates the position's fee tracking based on current fee growth inside the position's range.
     ///
-    /// Calculates the fees earned since the last update and adds them to tokens_owed.
+    /// Calculates the fees earned since the last update and adds them to `tokens_owed`.
     /// Updates the last known fee growth values for future calculations.
     pub fn update_fees(&mut self, fee_growth_inside_0: U256, fee_growth_inside_1: U256) {
         if self.liquidity > 0 {
@@ -128,7 +128,7 @@ impl PoolPosition {
 
     /// Collects fees owed to the position, up to the requested amounts.
     ///
-    /// Reduces tokens_owed by the collected amounts and tracks total collections.
+    /// Reduces `tokens_owed` by the collected amounts and tracks total collections.
     /// Cannot collect more than what is currently owed.
     pub fn collect_fees(&mut self, amount0: u128, amount1: u128) {
         let collect_amount_0 = amount0.min(self.tokens_owed_0);

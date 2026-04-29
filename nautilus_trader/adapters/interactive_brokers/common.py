@@ -347,6 +347,7 @@ def dict_to_contract_details(dict_details: dict) -> IBContractDetails:
         "lastPricePrecision",
         "lastSizePrecision",
     ]
+
     for field in decimal_fields:
         if field in details_copy and isinstance(details_copy[field], str):
             try:

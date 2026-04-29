@@ -176,13 +176,13 @@ mod tests {
             let callback = TimeEventCallback::from(py_append.into_any());
 
             let spread_event = TimeEvent::new(
-                Ustr::from("spread_quote_ESM4"),
+                Ustr::from("SPREAD_QUOTE_ESM4"),
                 UUID4::new(),
                 100.into(),
                 100.into(),
             );
             let time_bar_event = TimeEvent::new(
-                Ustr::from("time_bar_ESM4-2-MINUTE-ASK-INTERNAL"),
+                Ustr::from("TIME_BAR_ESM4-2-MINUTE-ASK-INTERNAL"),
                 UUID4::new(),
                 100.into(),
                 100.into(),
@@ -373,6 +373,7 @@ mod tests {
             }
 
             let mut count = 0;
+
             while let Some(handler) = accumulator.pop_next_at_or_before(100.into()) {
                 assert_eq!(handler.event.ts_event.as_u64(), 100);
                 count += 1;

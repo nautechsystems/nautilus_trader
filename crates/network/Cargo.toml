@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_network"
-crate-type = ["rlib", "staticlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = []
@@ -33,7 +33,13 @@ python = [
   "pyo3-async-runtimes",
   "pyo3-stub-gen",
 ]
+simulation = ["dep:madsim", "nautilus-core/simulation"]
 turmoil = ["dep:turmoil"]
+# Backend selection for the WebSocket transport abstraction.
+# `tokio-tungstenite` is always compiled; `transport-sockudo` adds the
+# alternative `sockudo-ws` backend, selectable at runtime via
+# `WebSocketConfig.backend`.
+transport-sockudo = ["dep:sockudo-ws"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -45,6 +51,7 @@ nautilus-cryptography = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+base64 = { workspace = true }
 bon = { workspace = true }
 bytes = { workspace = true }
 dashmap = { workspace = true }
@@ -52,9 +59,8 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 http = { workspace = true }
 log = { workspace = true }
-memchr = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
 rustls = { workspace = true }
 rustls-pemfile = { workspace = true }
 serde = { workspace = true }
@@ -69,9 +75,11 @@ url = { workspace = true }
 ustr = { workspace = true }
 webpki-roots = { workspace = true }
 
+madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
+sockudo-ws = { workspace = true, optional = true }
 turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -93,4 +101,14 @@ harness = false
 [[bench]]
 name = "http_response"
 path = "benches/http_response.rs"
+harness = false
+
+[[bench]]
+name = "websocket_transport"
+path = "benches/websocket_transport.rs"
+harness = false
+
+[[bench]]
+name = "websocket_latency"
+path = "benches/websocket_latency.rs"
 harness = false

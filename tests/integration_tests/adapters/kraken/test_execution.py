@@ -26,13 +26,18 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -44,6 +49,10 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import OrderList
+from nautilus_trader.model.orders import StopMarketOrder
+from nautilus_trader.model.orders import TrailingStopLimitOrder
+from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.kraken.conftest import _create_exec_ws_mock_futures
 from tests.integration_tests.adapters.kraken.conftest import _create_exec_ws_mock_spot
@@ -559,6 +568,365 @@ async def test_submit_limit_order_futures(
         http_client.submit_order.assert_awaited_once()
     finally:
         await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_stop_market_order_spot_passes_trigger_type(
+    exec_client_builder_spot,
+    monkeypatch,
+    instrument,
+):
+    client, _, http_client, _ = exec_client_builder_spot(monkeypatch)
+    await client._connect()
+
+    order = StopMarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-SPOT-STOP-123456"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.10000000"),
+        trigger_price=Price.from_str("49000.0"),
+        trigger_type=TriggerType.INDEX_PRICE,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+    )
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+    )
+
+    try:
+        await client._submit_order(command)
+
+        http_client.submit_order.assert_awaited_once()
+        call_kwargs = http_client.submit_order.call_args.kwargs
+        assert call_kwargs["order_type"] == nautilus_pyo3.OrderType.STOP_MARKET
+        assert call_kwargs["trigger_type"] == nautilus_pyo3.TriggerType.INDEX_PRICE
+        assert str(call_kwargs["trigger_price"]) == "49000.0"
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_limit_order_spot_passes_quote_quantity_and_display_qty(
+    exec_client_builder_spot,
+    monkeypatch,
+    instrument,
+):
+    client, _, http_client, _ = exec_client_builder_spot(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-SPOT-LIMIT-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.10000000"),
+        price=Price.from_str("50000.0"),
+        quote_quantity=True,
+        display_qty=Quantity.from_str("0.05000000"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+    )
+
+    try:
+        await client._submit_order(command)
+
+        http_client.submit_order.assert_awaited_once()
+        call_kwargs = http_client.submit_order.call_args.kwargs
+        assert call_kwargs["quote_quantity"] is True
+        assert str(call_kwargs["display_qty"]) == "0.05000000"
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_trailing_stop_limit_order_spot_passes_offsets(
+    exec_client_builder_spot,
+    monkeypatch,
+    instrument,
+):
+    client, _, http_client, _ = exec_client_builder_spot(monkeypatch)
+    await client._connect()
+
+    order = TrailingStopLimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-SPOT-TRAIL-123456"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.10000000"),
+        price=Price.from_str("49950.0"),
+        trigger_price=Price.from_str("50000.0"),
+        trigger_type=TriggerType.LAST_PRICE,
+        limit_offset=Decimal(25),
+        trailing_offset=Decimal(50),
+        trailing_offset_type=TrailingOffsetType.PRICE,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+    )
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+    )
+
+    try:
+        await client._submit_order(command)
+
+        http_client.submit_order.assert_awaited_once()
+        call_kwargs = http_client.submit_order.call_args.kwargs
+        assert call_kwargs["order_type"] == nautilus_pyo3.OrderType.TRAILING_STOP_LIMIT
+        assert call_kwargs["trigger_type"] == nautilus_pyo3.TriggerType.LAST_PRICE
+        assert call_kwargs["trailing_offset"] == "50"
+        assert call_kwargs["limit_offset"] == "25"
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_stop_market_order_futures_passes_trigger_type(
+    exec_client_builder_futures,
+    monkeypatch,
+    futures_instrument,
+    cache,
+):
+    cache.add_instrument(futures_instrument)
+
+    client, _, http_client, _ = exec_client_builder_futures(monkeypatch)
+    await client._connect()
+
+    order = StopMarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=futures_instrument.id,
+        client_order_id=ClientOrderId("O-FUT-STOP-123456"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("10"),
+        trigger_price=Price.from_str("49000.0"),
+        trigger_type=TriggerType.MARK_PRICE,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+    )
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+    )
+
+    try:
+        await client._submit_order(command)
+
+        http_client.submit_order.assert_awaited_once()
+        call_kwargs = http_client.submit_order.call_args.kwargs
+        assert call_kwargs["order_type"] == nautilus_pyo3.OrderType.STOP_MARKET
+        assert call_kwargs["trigger_type"] == nautilus_pyo3.TriggerType.MARK_PRICE
+        assert str(call_kwargs["trigger_price"]) == "49000.0"
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_list_spot_routes_non_batchable_orders_individually(
+    exec_client_builder_spot,
+    monkeypatch,
+    instrument,
+):
+    client, _, _, _ = exec_client_builder_spot(monkeypatch)
+    client._submit_order_from_list = AsyncMock()
+    client._submit_spot_order_list_batch = AsyncMock()
+
+    batch_order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-SPOT-BATCH-1"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.10000000"),
+        price=Price.from_str("50000.0"),
+        time_in_force=TimeInForce.GTC,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    gtd_order = LimitOrder(
+        trader_id=batch_order.trader_id,
+        strategy_id=batch_order.strategy_id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-SPOT-GTD-1"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.10000000"),
+        price=Price.from_str("51000.0"),
+        time_in_force=TimeInForce.GTD,
+        expire_time_ns=1_704_067_200_000_000_000,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    fok_market_order = MarketOrder(
+        trader_id=batch_order.trader_id,
+        strategy_id=batch_order.strategy_id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-SPOT-FOK-1"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.10000000"),
+        time_in_force=TimeInForce.FOK,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    order_list = OrderList(
+        order_list_id=TestIdStubs.order_list_id(),
+        orders=[batch_order, gtd_order, fok_market_order],
+    )
+    command = TestCommandStubs.submit_order_list_command(order_list)
+
+    await client._submit_order_list(command)
+
+    submitted_ids = [
+        call.args[0].client_order_id.value
+        for call in client._submit_order_from_list.await_args_list
+    ]
+    assert submitted_ids == [
+        gtd_order.client_order_id.value,
+        fok_market_order.client_order_id.value,
+    ]
+
+    client._submit_spot_order_list_batch.assert_awaited_once()
+    batch_orders, batch_command = client._submit_spot_order_list_batch.await_args.args
+    assert batch_orders == [batch_order]
+    assert batch_command == command
+
+
+@pytest.mark.asyncio
+async def test_submit_order_list_futures_fallback_submits_each_order_once(
+    exec_client_builder_futures,
+    monkeypatch,
+    futures_instrument,
+):
+    client, _, _, _ = exec_client_builder_futures(monkeypatch)
+    client._http_client_futures = None
+    client._submit_order_from_list = AsyncMock()
+
+    market_order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=futures_instrument.id,
+        client_order_id=ClientOrderId("O-FUT-MKT-1"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("10"),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    limit_order = LimitOrder(
+        trader_id=market_order.trader_id,
+        strategy_id=market_order.strategy_id,
+        instrument_id=futures_instrument.id,
+        client_order_id=ClientOrderId("O-FUT-LMT-1"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("10"),
+        price=Price.from_str("51000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    order_list = OrderList(
+        order_list_id=TestIdStubs.order_list_id(),
+        orders=[market_order, limit_order],
+    )
+    command = TestCommandStubs.submit_order_list_command(order_list)
+
+    await client._submit_order_list(command)
+
+    submitted_ids = [
+        call.args[0].client_order_id.value
+        for call in client._submit_order_from_list.await_args_list
+    ]
+    assert submitted_ids == [market_order.client_order_id.value, limit_order.client_order_id.value]
+
+
+@pytest.mark.asyncio
+async def test_submit_order_list_futures_batches_only_non_market_orders(
+    exec_client_builder_futures,
+    monkeypatch,
+    futures_instrument,
+):
+    client, _, _, _ = exec_client_builder_futures(monkeypatch)
+    client._submit_order_from_list = AsyncMock()
+    client._submit_futures_order_list_batch = AsyncMock()
+
+    market_order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=futures_instrument.id,
+        client_order_id=ClientOrderId("O-FUT-MKT-2"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("10"),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    stop_order = StopMarketOrder(
+        trader_id=market_order.trader_id,
+        strategy_id=market_order.strategy_id,
+        instrument_id=futures_instrument.id,
+        client_order_id=ClientOrderId("O-FUT-STOP-2"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("10"),
+        trigger_price=Price.from_str("49000.0"),
+        trigger_type=TriggerType.LAST_PRICE,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+        time_in_force=TimeInForce.GTC,
+    )
+    order_list = OrderList(
+        order_list_id=TestIdStubs.order_list_id(),
+        orders=[market_order, stop_order],
+    )
+    command = TestCommandStubs.submit_order_list_command(order_list)
+
+    await client._submit_order_list(command)
+
+    submitted_ids = [
+        call.args[0].client_order_id.value
+        for call in client._submit_order_from_list.await_args_list
+    ]
+    assert submitted_ids == [market_order.client_order_id.value]
+
+    client._submit_futures_order_list_batch.assert_awaited_once()
+    batch_orders, batch_command = client._submit_futures_order_list_batch.await_args.args
+    assert batch_orders == [stop_order]
+    assert batch_command == command
 
 
 # ============================================================================
@@ -2017,6 +2385,310 @@ async def test_generate_order_status_report_with_instrument_id_queries_one_clien
         http_client_futures.request_order_status_reports.assert_not_awaited()
     finally:
         pass  # No disconnect needed - not connected
+
+
+@pytest.mark.asyncio
+async def test_generate_order_status_report_futures_fill_fallback_queries_futures_client_only(
+    exec_client_builder_dual,
+    monkeypatch,
+    futures_instrument,
+    cache,
+):
+    # Arrange
+    cache.add_instrument(futures_instrument)
+    (
+        client,
+        _,
+        _,
+        http_client_spot,
+        http_client_futures,
+        _,
+    ) = exec_client_builder_dual(monkeypatch)
+    venue_order_id = VenueOrderId("KRAKEN-788")
+
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=futures_instrument.id,
+        client_order_id=ClientOrderId("O-FAST-FILL-000"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("100"),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+    cache.add_venue_order_id(order.client_order_id, venue_order_id)
+
+    http_client_futures.request_order_status_reports.return_value = []
+    http_client_futures.request_fill_reports.return_value = [
+        nautilus_pyo3.FillReport(
+            account_id=nautilus_pyo3.AccountId("KRAKEN-UNIFIED"),
+            instrument_id=nautilus_pyo3.InstrumentId.from_str(futures_instrument.id.value),
+            venue_order_id=nautilus_pyo3.VenueOrderId(venue_order_id.value),
+            trade_id=nautilus_pyo3.TradeId("T-000"),
+            order_side=nautilus_pyo3.OrderSide.BUY,
+            last_qty=nautilus_pyo3.Quantity.from_str("100"),
+            last_px=nautilus_pyo3.Price.from_str("50000.0"),
+            commission=nautilus_pyo3.Money.from_str("0 USD"),
+            liquidity_side=nautilus_pyo3.LiquiditySide.TAKER,
+            ts_event=1,
+            client_order_id=nautilus_pyo3.ClientOrderId(order.client_order_id.value),
+            report_id=nautilus_pyo3.UUID4(),
+            ts_init=1,
+        ),
+    ]
+
+    command = GenerateOrderStatusReport(
+        instrument_id=futures_instrument.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=venue_order_id,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    report = await client.generate_order_status_report(command)
+
+    # Assert
+    http_client_spot.request_order_status_reports.assert_not_awaited()
+    http_client_futures.request_order_status_reports.assert_awaited_once()
+    http_client_spot.request_fill_reports.assert_not_awaited()
+    http_client_futures.request_fill_reports.assert_awaited_once()
+    assert report is not None
+    assert report.order_status == OrderStatus.FILLED
+
+
+@pytest.mark.asyncio
+async def test_generate_order_status_report_futures_falls_back_to_matched_fills(
+    exec_client_builder_futures,
+    monkeypatch,
+    futures_instrument,
+    cache,
+):
+    # Arrange
+    cache.add_instrument(futures_instrument)
+    client, _, http_client, _ = exec_client_builder_futures(monkeypatch)
+    venue_order_id = VenueOrderId("KRAKEN-789")
+
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=futures_instrument.id,
+        client_order_id=ClientOrderId("O-FAST-FILL-001"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("100"),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+    cache.add_venue_order_id(order.client_order_id, venue_order_id)
+
+    http_client.request_order_status_reports.return_value = []
+    http_client.request_fill_reports.return_value = [
+        nautilus_pyo3.FillReport(
+            account_id=nautilus_pyo3.AccountId("KRAKEN-UNIFIED"),
+            instrument_id=nautilus_pyo3.InstrumentId.from_str(futures_instrument.id.value),
+            venue_order_id=nautilus_pyo3.VenueOrderId(venue_order_id.value),
+            trade_id=nautilus_pyo3.TradeId("T-001"),
+            order_side=nautilus_pyo3.OrderSide.BUY,
+            last_qty=nautilus_pyo3.Quantity.from_str("40"),
+            last_px=nautilus_pyo3.Price.from_str("50000.0"),
+            commission=nautilus_pyo3.Money.from_str("0 USD"),
+            liquidity_side=nautilus_pyo3.LiquiditySide.TAKER,
+            ts_event=1,
+            client_order_id=nautilus_pyo3.ClientOrderId(order.client_order_id.value),
+            report_id=nautilus_pyo3.UUID4(),
+            ts_init=1,
+        ),
+        nautilus_pyo3.FillReport(
+            account_id=nautilus_pyo3.AccountId("KRAKEN-UNIFIED"),
+            instrument_id=nautilus_pyo3.InstrumentId.from_str(futures_instrument.id.value),
+            venue_order_id=nautilus_pyo3.VenueOrderId(venue_order_id.value),
+            trade_id=nautilus_pyo3.TradeId("T-002"),
+            order_side=nautilus_pyo3.OrderSide.BUY,
+            last_qty=nautilus_pyo3.Quantity.from_str("60"),
+            last_px=nautilus_pyo3.Price.from_str("50010.0"),
+            commission=nautilus_pyo3.Money.from_str("0 USD"),
+            liquidity_side=nautilus_pyo3.LiquiditySide.TAKER,
+            ts_event=2,
+            client_order_id=nautilus_pyo3.ClientOrderId(order.client_order_id.value),
+            report_id=nautilus_pyo3.UUID4(),
+            ts_init=2,
+        ),
+        nautilus_pyo3.FillReport(
+            account_id=nautilus_pyo3.AccountId("KRAKEN-UNIFIED"),
+            instrument_id=nautilus_pyo3.InstrumentId.from_str(futures_instrument.id.value),
+            venue_order_id=nautilus_pyo3.VenueOrderId("KRAKEN-OTHER"),
+            trade_id=nautilus_pyo3.TradeId("T-OTHER"),
+            order_side=nautilus_pyo3.OrderSide.BUY,
+            last_qty=nautilus_pyo3.Quantity.from_str("999"),
+            last_px=nautilus_pyo3.Price.from_str("1.0"),
+            commission=nautilus_pyo3.Money.from_str("0 USD"),
+            liquidity_side=nautilus_pyo3.LiquiditySide.TAKER,
+            ts_event=3,
+            client_order_id=nautilus_pyo3.ClientOrderId(order.client_order_id.value),
+            report_id=nautilus_pyo3.UUID4(),
+            ts_init=3,
+        ),
+    ]
+
+    command = GenerateOrderStatusReport(
+        instrument_id=futures_instrument.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=venue_order_id,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    report = await client.generate_order_status_report(command)
+
+    # Assert
+    http_client.request_order_status_reports.assert_awaited_once()
+    http_client.request_fill_reports.assert_awaited_once()
+    assert report is not None
+    assert report.venue_order_id == venue_order_id
+    assert report.client_order_id == order.client_order_id
+    assert report.order_status == OrderStatus.FILLED
+    assert report.order_type == OrderType.MARKET
+    assert report.time_in_force == TimeInForce.IOC
+    assert report.quantity == order.quantity
+    assert report.filled_qty == order.quantity
+    assert report.avg_px == Decimal("50006.0")
+
+
+@pytest.mark.asyncio
+async def test_generate_order_status_report_futures_fill_fallback_requires_full_size(
+    exec_client_builder_futures,
+    monkeypatch,
+    futures_instrument,
+    cache,
+):
+    # Arrange
+    cache.add_instrument(futures_instrument)
+    client, _, http_client, _ = exec_client_builder_futures(monkeypatch)
+    venue_order_id = VenueOrderId("KRAKEN-790")
+
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=futures_instrument.id,
+        client_order_id=ClientOrderId("O-FAST-FILL-002"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("100"),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+    cache.add_venue_order_id(order.client_order_id, venue_order_id)
+
+    http_client.request_order_status_reports.return_value = []
+    http_client.request_fill_reports.return_value = [
+        nautilus_pyo3.FillReport(
+            account_id=nautilus_pyo3.AccountId("KRAKEN-UNIFIED"),
+            instrument_id=nautilus_pyo3.InstrumentId.from_str(futures_instrument.id.value),
+            venue_order_id=nautilus_pyo3.VenueOrderId(venue_order_id.value),
+            trade_id=nautilus_pyo3.TradeId("T-003"),
+            order_side=nautilus_pyo3.OrderSide.BUY,
+            last_qty=nautilus_pyo3.Quantity.from_str("40"),
+            last_px=nautilus_pyo3.Price.from_str("50000.0"),
+            commission=nautilus_pyo3.Money.from_str("0 USD"),
+            liquidity_side=nautilus_pyo3.LiquiditySide.TAKER,
+            ts_event=1,
+            client_order_id=nautilus_pyo3.ClientOrderId(order.client_order_id.value),
+            report_id=nautilus_pyo3.UUID4(),
+            ts_init=1,
+        ),
+    ]
+
+    command = GenerateOrderStatusReport(
+        instrument_id=futures_instrument.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=venue_order_id,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    report = await client.generate_order_status_report(command)
+
+    # Assert
+    http_client.request_fill_reports.assert_awaited_once()
+    assert report is None
+
+
+@pytest.mark.asyncio
+async def test_generate_order_status_report_futures_fill_fallback_matches_truncated_client_order_id(
+    exec_client_builder_futures,
+    monkeypatch,
+    futures_instrument,
+    cache,
+):
+    # Arrange
+    cache.add_instrument(futures_instrument)
+    client, _, http_client, _ = exec_client_builder_futures(monkeypatch)
+
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=futures_instrument.id,
+        client_order_id=ClientOrderId("O202602270023210040011"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("100"),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    http_client.request_order_status_reports.return_value = []
+    http_client.request_fill_reports.return_value = [
+        nautilus_pyo3.FillReport(
+            account_id=nautilus_pyo3.AccountId("KRAKEN-UNIFIED"),
+            instrument_id=nautilus_pyo3.InstrumentId.from_str(futures_instrument.id.value),
+            venue_order_id=nautilus_pyo3.VenueOrderId("KRAKEN-791"),
+            trade_id=nautilus_pyo3.TradeId("T-004"),
+            order_side=nautilus_pyo3.OrderSide.BUY,
+            last_qty=nautilus_pyo3.Quantity.from_str("100"),
+            last_px=nautilus_pyo3.Price.from_str("50000.0"),
+            commission=nautilus_pyo3.Money.from_str("0 USD"),
+            liquidity_side=nautilus_pyo3.LiquiditySide.TAKER,
+            ts_event=1,
+            client_order_id=nautilus_pyo3.ClientOrderId(
+                client._truncate_client_order_id(order.client_order_id),
+            ),
+            report_id=nautilus_pyo3.UUID4(),
+            ts_init=1,
+        ),
+    ]
+
+    command = GenerateOrderStatusReport(
+        instrument_id=futures_instrument.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    report = await client.generate_order_status_report(command)
+
+    # Assert
+    http_client.request_fill_reports.assert_awaited_once()
+    assert report is not None
+    assert report.client_order_id == order.client_order_id
+    assert report.order_status == OrderStatus.FILLED
 
 
 # ============================================================================

@@ -33,7 +33,7 @@ impl PositionStatusReport {
     /// Represents a position status at a point in time.
     #[new]
     #[pyo3(signature = (account_id, instrument_id, position_side, quantity, ts_last, ts_init, report_id=None, venue_position_id=None, avg_px_open=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         account_id: AccountId,
         instrument_id: InstrumentId,
@@ -177,6 +177,7 @@ impl PositionStatusReport {
         dict.set_item("type", stringify!(PositionStatusReport))?;
         dict.set_item("account_id", self.account_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
+
         match self.venue_position_id {
             Some(venue_position_id) => {
                 dict.set_item("venue_position_id", venue_position_id.to_string())?;

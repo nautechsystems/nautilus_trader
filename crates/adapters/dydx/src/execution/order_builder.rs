@@ -222,7 +222,7 @@ impl OrderMessageBuilder {
     /// # Errors
     ///
     /// Returns an error if market parameters cannot be retrieved or order building fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn build_limit_order(
         &self,
         instrument_id: InstrumentId,
@@ -490,6 +490,7 @@ impl OrderMessageBuilder {
     ) -> Result<Any, DydxError> {
         // Group client_ids by clob_pair_id
         let mut clob_groups: HashMap<u32, Vec<u32>> = HashMap::new();
+
         for (instrument_id, client_order_id) in orders {
             let market_params = self.get_market_params(*instrument_id)?;
             clob_groups
@@ -540,7 +541,7 @@ impl OrderMessageBuilder {
     /// # Errors
     ///
     /// Returns an error if cancellation or replacement order fails to build.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn build_cancel_and_replace(
         &self,
         instrument_id: InstrumentId,
@@ -604,7 +605,7 @@ impl OrderMessageBuilder {
     /// # Errors
     ///
     /// Returns an error if market parameters cannot be retrieved or order building fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn build_conditional_order(
         &self,
         instrument_id: InstrumentId,
@@ -697,7 +698,7 @@ impl OrderMessageBuilder {
     /// # Errors
     ///
     /// Returns an error if the conditional order fails to build.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn build_stop_market_order(
         &self,
         instrument_id: InstrumentId,
@@ -730,7 +731,7 @@ impl OrderMessageBuilder {
     /// # Errors
     ///
     /// Returns an error if the conditional order fails to build.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn build_stop_limit_order(
         &self,
         instrument_id: InstrumentId,
@@ -766,7 +767,7 @@ impl OrderMessageBuilder {
     /// # Errors
     ///
     /// Returns an error if the conditional order fails to build.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn build_take_profit_market_order(
         &self,
         instrument_id: InstrumentId,
@@ -799,7 +800,7 @@ impl OrderMessageBuilder {
     /// # Errors
     ///
     /// Returns an error if the conditional order fails to build.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn build_take_profit_limit_order(
         &self,
         instrument_id: InstrumentId,

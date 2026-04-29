@@ -81,7 +81,9 @@ impl<T> SharedCell<T> {
 
     /// Attempts to immutably borrow the inner value.
     ///
-    /// Returns `Err` if the value is currently mutably borrowed.
+    /// # Errors
+    ///
+    /// Returns [`BorrowError`] if the value is currently mutably borrowed.
     #[inline]
     pub fn try_borrow(&self) -> Result<Ref<'_, T>, BorrowError> {
         self.0.try_borrow()
@@ -89,7 +91,10 @@ impl<T> SharedCell<T> {
 
     /// Attempts to mutably borrow the inner value.
     ///
-    /// Returns `Err` if the value is currently borrowed (mutably or immutably).
+    /// # Errors
+    ///
+    /// Returns [`BorrowMutError`] if the value is currently borrowed
+    /// (mutably or immutably).
     #[inline]
     pub fn try_borrow_mut(&self) -> Result<RefMut<'_, T>, BorrowMutError> {
         self.0.try_borrow_mut()
@@ -235,7 +240,7 @@ mod tests {
     }
 
     #[rstest]
-    #[allow(clippy::redundant_clone, reason = "Clone is the behavior under test")]
+    #[expect(clippy::redundant_clone, reason = "Clone is the behavior under test")]
     fn test_weak_cell_clone() {
         let cell = SharedCell::new(5);
         let weak1 = cell.downgrade();

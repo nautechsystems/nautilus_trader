@@ -36,7 +36,7 @@ impl BybitDataClientConfig {
         base_url_http = None,
         base_url_ws_public = None,
         base_url_ws_private = None,
-        http_proxy_url = None,
+        proxy_url = None,
         http_timeout_secs = None,
         max_retries = None,
         retry_delay_initial_ms = None,
@@ -46,7 +46,7 @@ impl BybitDataClientConfig {
         update_instruments_interval_mins = None,
         instrument_status_poll_secs = None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         product_types: Option<Vec<BybitProductType>>,
         environment: Option<BybitEnvironment>,
@@ -55,7 +55,7 @@ impl BybitDataClientConfig {
         base_url_http: Option<String>,
         base_url_ws_public: Option<String>,
         base_url_ws_private: Option<String>,
-        http_proxy_url: Option<String>,
+        proxy_url: Option<String>,
         http_timeout_secs: Option<u64>,
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
@@ -74,8 +74,7 @@ impl BybitDataClientConfig {
             base_url_http,
             base_url_ws_public,
             base_url_ws_private,
-            http_proxy_url,
-            ws_proxy_url: None,
+            proxy_url,
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_retries: max_retries.unwrap_or(defaults.max_retries),
             retry_delay_initial_ms: retry_delay_initial_ms
@@ -88,6 +87,7 @@ impl BybitDataClientConfig {
                 .or(defaults.update_instruments_interval_mins),
             instrument_status_poll_secs: instrument_status_poll_secs
                 .or(defaults.instrument_status_poll_secs),
+            transport_backend: defaults.transport_backend,
         }
     }
 
@@ -109,7 +109,7 @@ impl BybitExecClientConfig {
         base_url_http = None,
         base_url_ws_private = None,
         base_url_ws_trade = None,
-        http_proxy_url = None,
+        proxy_url = None,
         http_timeout_secs = None,
         max_retries = None,
         retry_delay_initial_ms = None,
@@ -120,7 +120,7 @@ impl BybitExecClientConfig {
         use_spot_position_reports = None,
         margin_mode = None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         product_types: Option<Vec<BybitProductType>>,
         environment: Option<BybitEnvironment>,
@@ -129,7 +129,7 @@ impl BybitExecClientConfig {
         base_url_http: Option<String>,
         base_url_ws_private: Option<String>,
         base_url_ws_trade: Option<String>,
-        http_proxy_url: Option<String>,
+        proxy_url: Option<String>,
         http_timeout_secs: Option<u64>,
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
@@ -149,8 +149,7 @@ impl BybitExecClientConfig {
             base_url_http,
             base_url_ws_private,
             base_url_ws_trade,
-            http_proxy_url,
-            ws_proxy_url: None,
+            proxy_url,
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_retries: max_retries.unwrap_or(defaults.max_retries),
             retry_delay_initial_ms: retry_delay_initial_ms
@@ -165,6 +164,7 @@ impl BybitExecClientConfig {
             futures_leverages: None,
             position_mode: None,
             margin_mode,
+            transport_backend: defaults.transport_backend,
         }
     }
 

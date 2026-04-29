@@ -18,6 +18,7 @@
 use std::collections::HashMap;
 
 use nautilus_model::identifiers::AccountId;
+use nautilus_network::websocket::TransportBackend;
 
 use crate::common::{
     enums::{BybitEnvironment, BybitMarginMode, BybitPositionMode, BybitProductType},
@@ -51,13 +52,8 @@ pub struct BybitDataClientConfig {
     pub base_url_ws_public: Option<String>,
     /// Optional override for the private WebSocket URL.
     pub base_url_ws_private: Option<String>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
     /// REST timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -82,6 +78,9 @@ pub struct BybitDataClientConfig {
     /// Interval in seconds for polling instrument status changes.
     /// When `None`, status polling is disabled.
     pub instrument_status_poll_secs: Option<u64>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for BybitDataClientConfig {
@@ -180,13 +179,8 @@ pub struct BybitExecClientConfig {
     pub base_url_ws_private: Option<String>,
     /// Optional override for the trade WebSocket URL.
     pub base_url_ws_trade: Option<String>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
     /// REST timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -216,6 +210,9 @@ pub struct BybitExecClientConfig {
     pub position_mode: Option<HashMap<String, BybitPositionMode>>,
     /// Unified margin mode setting.
     pub margin_mode: Option<BybitMarginMode>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for BybitExecClientConfig {

@@ -21,6 +21,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.core.nautilus_pyo3 import HyperliquidEnvironment
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -67,8 +68,8 @@ if __name__ == "__main__":
         # ),
         data_clients={
             HYPERLIQUID: HyperliquidDataClientConfig(
+                environment=HyperliquidEnvironment.MAINNET,
                 instrument_provider=InstrumentProviderConfig(load_all=True),
-                testnet=False,  # If client uses the testnet
             ),
         },
         timeout_connection=20.0,

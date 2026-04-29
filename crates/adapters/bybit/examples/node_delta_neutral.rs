@@ -32,7 +32,7 @@
 //! - Rehedge check every 30 seconds
 //! - Entry disabled by default (set `enter_strangle` to enable live orders)
 //!
-//! Run with: `cargo run --example bybit-delta-neutral --package nautilus-bybit`
+//! Run with: `cargo run --example bybit-delta-neutral --package nautilus-bybit --features examples`
 
 use nautilus_bybit::{
     common::enums::BybitProductType,

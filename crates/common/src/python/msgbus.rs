@@ -71,7 +71,7 @@ impl DatabaseConfig {
     ///
     /// If `database_type` is `"redis"`, it requires Redis version 6.2 or higher for correct operation.
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[pyo3(signature = (database_type=None, host=None, port=None, username=None, password=None, ssl=None, connection_timeout=None, response_timeout=None, number_of_retries=None, exponent_base=None, max_delay=None, factor=None))]
     fn py_new(
         database_type: Option<String>,
@@ -178,7 +178,7 @@ impl DatabaseConfig {
 impl MessageBusConfig {
     /// Configuration for `MessageBus` instances.
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[pyo3(signature = (database=None, encoding=None, timestamps_as_iso8601=None, buffer_interval_ms=None, autotrim_mins=None, use_trader_prefix=None, use_trader_id=None, use_instance_id=None, streams_prefix=None, stream_per_topic=None, external_streams=None, types_filter=None, heartbeat_interval_secs=None))]
     fn py_new(
         database: Option<DatabaseConfig>,
@@ -399,7 +399,7 @@ impl PyMessageBus {
     /// thread-local bus, then wraps it for Python access.
     #[new]
     #[pyo3(signature = (trader_id, clock=None, instance_id=None, name=None, serializer=None, database=None, config=None))]
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         py: Python<'_>,
         trader_id: TraderId,
@@ -596,7 +596,7 @@ impl PyMessageBus {
 
     /// Returns whether the given type is registered for streaming.
     #[pyo3(name = "is_streaming_type")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_is_streaming_type(&self, py: Python<'_>, cls: Py<PyAny>) -> bool {
         let cls_ref = cls.bind(py);
         self.streaming_types.iter().any(|t| t.bind(py).is(cls_ref))
@@ -623,7 +623,7 @@ impl PyMessageBus {
     /// Deregisters the handler from the given endpoint address.
     #[pyo3(name = "deregister")]
     #[pyo3(signature = (endpoint, handler=None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_deregister(&self, endpoint: &str, handler: Option<Py<PyAny>>) {
         let _ = handler;
         let endpoint = MStr::<Endpoint>::from(endpoint);
@@ -668,7 +668,7 @@ impl PyMessageBus {
 
     /// Handles a response by invoking the correlated callback.
     #[pyo3(name = "response")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_response(&mut self, py: Python<'_>, response: Py<PyAny>) -> PyResult<()> {
         let correlation_id: UUID4 = response.getattr(py, "correlation_id")?.extract(py)?;
 
@@ -710,7 +710,7 @@ impl PyMessageBus {
     /// Publishes a message for the given topic.
     #[pyo3(name = "publish")]
     #[pyo3(signature = (topic, msg, external_pub=true))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_publish(
         &mut self,
         py: Python<'_>,

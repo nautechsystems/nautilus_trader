@@ -172,7 +172,7 @@ pub fn resolve_commission(
 /// # Errors
 ///
 /// Returns an error if report construction fails.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn parse_futures_order_update_to_fill(
     msg: &BinanceFuturesOrderUpdateMsg,
     account_id: AccountId,
@@ -298,20 +298,13 @@ pub fn parse_futures_account_update(
         .balances
         .iter()
         .filter_map(|b| {
-            let wallet_balance: f64 = b.wallet_balance.parse().unwrap_or(0.0);
-            let cross_wallet: f64 = b.cross_wallet_balance.parse().unwrap_or(0.0);
-            let locked = wallet_balance - cross_wallet;
-
-            if wallet_balance == 0.0 {
+            if b.wallet_balance.is_zero() {
                 return None;
             }
 
             let currency = Currency::from(&b.asset);
-            Some(AccountBalance::new(
-                Money::new(wallet_balance, currency),
-                Money::new(locked.max(0.0), currency),
-                Money::new(cross_wallet, currency),
-            ))
+            AccountBalance::from_total_and_free(b.wallet_balance, b.cross_wallet_balance, currency)
+                .ok()
         })
         .collect();
 
@@ -505,6 +498,35 @@ mod tests {
         assert_eq!(state.account_type, AccountType::Margin);
         assert!(state.is_reported);
         assert_eq!(state.balances.len(), 1);
+    }
+
+    // Regression for the #3867 bug class: WS balances whose `wb` and `cw` have more decimal
+    // places than the asset's currency precision used to trip the invariant when Money::new
+    // rounded each side independently.
+    #[rstest]
+    fn test_parse_account_update_precision_drift() {
+        let json = r#"{
+            "e": "ACCOUNT_UPDATE",
+            "E": 1700000000000,
+            "T": 1700000000000,
+            "a": {
+                "m": "ORDER",
+                "B": [{
+                    "a": "USDT",
+                    "wb": "10.000000034999",
+                    "cw": "9.999999994999"
+                }],
+                "P": []
+            }
+        }"#;
+        let msg: BinanceFuturesAccountUpdateMsg = serde_json::from_str(json).unwrap();
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let state = parse_futures_account_update(&msg, account_id(), ts_init).unwrap();
+
+        assert_eq!(state.balances.len(), 1);
+        let balance = &state.balances[0];
+        assert_eq!(balance.total.raw, balance.locked.raw + balance.free.raw);
     }
 
     #[rstest]
@@ -797,6 +819,16 @@ mod tests {
             load_user_data_fixture("order_update_settlement.json");
         assert!(msg.order.is_exchange_generated());
         assert!(msg.order.is_settlement());
+    }
+
+    #[rstest]
+    fn test_is_exchange_generated_delivery_autoclose() {
+        let msg: BinanceFuturesOrderUpdateMsg =
+            load_user_data_fixture("order_update_delivery.json");
+        assert!(msg.order.is_exchange_generated());
+        assert!(msg.order.is_settlement());
+        assert!(!msg.order.is_liquidation());
+        assert!(!msg.order.is_adl());
     }
 
     #[rstest]

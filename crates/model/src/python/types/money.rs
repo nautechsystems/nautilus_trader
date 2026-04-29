@@ -382,6 +382,12 @@ impl Money {
         self.is_zero()
     }
 
+    /// Returns `true` if the value of this instance is positive (> 0).
+    #[pyo3(name = "is_positive")]
+    fn py_is_positive(&self) -> bool {
+        self.is_positive()
+    }
+
     /// Returns the value of this instance as a `Decimal`.
     #[pyo3(name = "as_decimal")]
     fn py_as_decimal(&self) -> Decimal {
@@ -396,5 +402,35 @@ impl Money {
     #[pyo3(name = "to_formatted_str")]
     fn py_to_formatted_str(&self) -> String {
         self.to_formatted_string()
+    }
+
+    /// Performs a checked addition, returning `None` on raw integer overflow, when
+    /// the result falls outside `[MONEY_RAW_MIN, MONEY_RAW_MAX]`, or when the operands
+    /// have mixed raw scales (e.g. a wei-scaled `Money` and a `FIXED_SCALAR`-scaled
+    /// `Money`, even if their currency codes match).
+    #[pyo3(name = "checked_add")]
+    fn py_checked_add(&self, other: Self) -> PyResult<Option<Self>> {
+        if self.currency != other.currency {
+            return Err(to_pyvalue_err(format!(
+                "Currency mismatch: cannot add {} to {}",
+                other.currency.code, self.currency.code
+            )));
+        }
+        Ok(self.checked_add(other))
+    }
+
+    /// Performs a checked subtraction, returning `None` on raw integer underflow, when
+    /// the result falls outside `[MONEY_RAW_MIN, MONEY_RAW_MAX]`, or when the operands
+    /// have mixed raw scales (e.g. a wei-scaled `Money` and a `FIXED_SCALAR`-scaled
+    /// `Money`, even if their currency codes match).
+    #[pyo3(name = "checked_sub")]
+    fn py_checked_sub(&self, other: Self) -> PyResult<Option<Self>> {
+        if self.currency != other.currency {
+            return Err(to_pyvalue_err(format!(
+                "Currency mismatch: cannot subtract {} from {}",
+                other.currency.code, self.currency.code
+            )));
+        }
+        Ok(self.checked_sub(other))
     }
 }

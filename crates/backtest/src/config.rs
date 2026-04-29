@@ -24,17 +24,28 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::config::DataEngineConfig;
-use nautilus_execution::engine::config::ExecutionEngineConfig;
+use nautilus_execution::{
+    engine::config::ExecutionEngineConfig,
+    models::{
+        fee::FeeModelAny,
+        fill::FillModelAny,
+        latency::{LatencyModel, LatencyModelAny},
+    },
+};
 use nautilus_model::{
+    accounts::margin_model::MarginModelAny,
     data::{BarSpecification, BarType},
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
-    identifiers::{ClientId, InstrumentId, TraderId},
-    types::Currency,
+    identifiers::{ClientId, InstrumentId, TraderId, Venue},
+    types::{Currency, Money},
 };
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_system::config::{NautilusKernelConfig, StreamingConfig};
+use rust_decimal::Decimal;
 use ustr::Ustr;
+
+use crate::modules::{SimulationModule, SimulationModuleAny};
 
 /// Represents a type of market data for catalog queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -46,6 +57,7 @@ pub enum NautilusDataType {
     OrderBookDepth10,
     MarkPriceUpdate,
     IndexPriceUpdate,
+    InstrumentStatus,
     InstrumentClose,
 }
 
@@ -67,6 +79,7 @@ impl FromStr for NautilusDataType {
             stringify!(OrderBookDepth10) => Ok(Self::OrderBookDepth10),
             stringify!(MarkPriceUpdate) => Ok(Self::MarkPriceUpdate),
             stringify!(IndexPriceUpdate) => Ok(Self::IndexPriceUpdate),
+            stringify!(InstrumentStatus) => Ok(Self::InstrumentStatus),
             stringify!(InstrumentClose) => Ok(Self::InstrumentClose),
             _ => anyhow::bail!("Invalid `NautilusDataType`: '{s}'"),
         }
@@ -77,7 +90,11 @@ impl FromStr for NautilusDataType {
 #[derive(Debug, Clone, bon::Builder)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", from_py_object)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.backtest",
+        from_py_object,
+        unsendable
+    )
 )]
 #[cfg_attr(
     feature = "python",
@@ -120,6 +137,10 @@ pub struct BacktestEngineConfig {
     #[builder(default = Duration::from_secs(5))]
     pub timeout_shutdown: Duration,
     /// The cache configuration.
+    ///
+    /// [`crate::engine::BacktestEngine`] always overrides
+    /// `drop_instruments_on_reset` to `false` on this config so that
+    /// successive runs can reuse the same dataset.
     pub cache: Option<CacheConfig>,
     /// The message bus configuration.
     pub msgbus: Option<MessageBusConfig>,
@@ -225,11 +246,83 @@ impl Default for BacktestEngineConfig {
     }
 }
 
+/// Imperative-API configuration for registering a simulated venue on
+/// [`crate::engine::BacktestEngine`].
+///
+/// Constructed via [`bon::Builder`] so callers only specify what differs from
+/// the documented defaults. Field types mirror the internal
+/// `SimulatedExchange` shapes (trait objects for modules/latency, typed
+/// `Money` balances), which is why this is distinct from the YAML-friendly
+/// [`BacktestVenueConfig`] used by `BacktestNode`.
+#[derive(bon::Builder)]
+#[allow(missing_debug_implementations)]
+pub struct SimulatedVenueConfig {
+    pub venue: Venue,
+    pub oms_type: OmsType,
+    pub account_type: AccountType,
+    pub book_type: BookType,
+    pub starting_balances: Vec<Money>,
+    pub base_currency: Option<Currency>,
+    // Left optional so the engine can fall back to an account-type-appropriate
+    // default (10x for margin, 1x otherwise) when the caller has no preference.
+    pub default_leverage: Option<Decimal>,
+    #[builder(default)]
+    pub leverages: AHashMap<InstrumentId, Decimal>,
+    pub margin_model: Option<MarginModelAny>,
+    #[builder(default)]
+    pub modules: Vec<Box<dyn SimulationModule>>,
+    #[builder(default)]
+    pub fill_model: FillModelAny,
+    #[builder(default)]
+    pub fee_model: FeeModelAny,
+    pub latency_model: Option<Box<dyn LatencyModel>>,
+    #[builder(default = false)]
+    pub routing: bool,
+    #[builder(default = true)]
+    pub reject_stop_orders: bool,
+    #[builder(default = true)]
+    pub support_gtd_orders: bool,
+    #[builder(default = true)]
+    pub support_contingent_orders: bool,
+    #[builder(default = true)]
+    pub use_position_ids: bool,
+    #[builder(default = false)]
+    pub use_random_ids: bool,
+    #[builder(default = true)]
+    pub use_reduce_only: bool,
+    #[builder(default = true)]
+    pub use_message_queue: bool,
+    #[builder(default = false)]
+    pub use_market_order_acks: bool,
+    #[builder(default = true)]
+    pub bar_execution: bool,
+    #[builder(default = false)]
+    pub bar_adaptive_high_low_ordering: bool,
+    #[builder(default = true)]
+    pub trade_execution: bool,
+    #[builder(default = false)]
+    pub liquidity_consumption: bool,
+    #[builder(default = false)]
+    pub allow_cash_borrowing: bool,
+    #[builder(default = false)]
+    pub frozen_account: bool,
+    #[builder(default = false)]
+    pub queue_position: bool,
+    #[builder(default = false)]
+    pub oto_full_trigger: bool,
+    #[builder(default = 0)]
+    pub price_protection_points: u32,
+}
+
 /// Represents a venue configuration for one specific backtest engine.
 #[derive(Debug, Clone, bon::Builder)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", from_py_object)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.backtest",
+        from_py_object,
+        unsendable
+    )
 )]
 #[cfg_attr(
     feature = "python",
@@ -266,7 +359,8 @@ pub struct BacktestVenueConfig {
     /// If venue position IDs will be generated on order fills.
     #[builder(default = true)]
     use_position_ids: bool,
-    /// If all venue generated identifiers will be random UUID4's.
+    /// If venue order IDs and position IDs will be random UUID4's.
+    /// Trade IDs are always deterministic and not affected by this flag.
     #[builder(default)]
     use_random_ids: bool,
     /// If the `reduce_only` execution instruction on orders will be honored.
@@ -304,13 +398,27 @@ pub struct BacktestVenueConfig {
     /// The account base currency for the exchange. Use `None` for multi-currency accounts.
     base_currency: Option<Currency>,
     /// The account default leverage (for margin accounts).
-    default_leverage: Option<f64>,
+    #[builder(default = Decimal::ONE)]
+    default_leverage: Decimal,
     /// The instrument specific leverage configuration (for margin accounts).
-    leverages: Option<AHashMap<InstrumentId, f64>>,
+    leverages: Option<AHashMap<InstrumentId, Decimal>>,
+    /// The margin model for the venue.
+    margin_model: Option<MarginModelAny>,
+    /// The simulation modules for the venue.
+    #[builder(default)]
+    modules: Vec<SimulationModuleAny>,
+    /// The fill model for the venue.
+    fill_model: Option<FillModelAny>,
+    /// The latency model for the venue.
+    latency_model: Option<LatencyModelAny>,
+    /// The fee model for the venue.
+    fee_model: Option<FeeModelAny>,
     /// Defines an exchange-calculated price boundary to prevent a market order from being
     /// filled at an extremely aggressive price.
     #[builder(default)]
     price_protection_points: u32,
+    /// Settlement prices for expiring instruments keyed by instrument ID.
+    settlement_prices: Option<AHashMap<InstrumentId, f64>>,
 }
 
 impl BacktestVenueConfig {
@@ -425,18 +533,48 @@ impl BacktestVenueConfig {
     }
 
     #[must_use]
-    pub fn default_leverage(&self) -> Option<f64> {
+    pub fn default_leverage(&self) -> Decimal {
         self.default_leverage
     }
 
     #[must_use]
-    pub fn leverages(&self) -> Option<&AHashMap<InstrumentId, f64>> {
+    pub fn leverages(&self) -> Option<&AHashMap<InstrumentId, Decimal>> {
         self.leverages.as_ref()
+    }
+
+    #[must_use]
+    pub fn margin_model(&self) -> Option<&MarginModelAny> {
+        self.margin_model.as_ref()
+    }
+
+    #[must_use]
+    pub fn modules(&self) -> &[SimulationModuleAny] {
+        &self.modules
+    }
+
+    #[must_use]
+    pub fn fill_model(&self) -> Option<&FillModelAny> {
+        self.fill_model.as_ref()
+    }
+
+    #[must_use]
+    pub fn latency_model(&self) -> Option<&LatencyModelAny> {
+        self.latency_model.as_ref()
+    }
+
+    #[must_use]
+    pub fn fee_model(&self) -> Option<&FeeModelAny> {
+        self.fee_model.as_ref()
     }
 
     #[must_use]
     pub fn price_protection_points(&self) -> u32 {
         self.price_protection_points
+    }
+
+    #[must_use]
+    pub fn settlement_prices(&self) -> Option<&AHashMap<InstrumentId, f64>> {
+        self.settlement_prices.as_ref()
     }
 }
 
@@ -444,7 +582,11 @@ impl BacktestVenueConfig {
 #[derive(Debug, Clone, bon::Builder)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", from_py_object)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.backtest",
+        from_py_object,
+        unsendable
+    )
 )]
 #[cfg_attr(
     feature = "python",
@@ -459,6 +601,8 @@ pub struct BacktestDataConfig {
     catalog_fs_protocol: Option<String>,
     /// The filesystem storage options for the catalog (e.g. cloud auth credentials).
     catalog_fs_storage_options: Option<AHashMap<String, String>>,
+    /// Rust-specific storage options for the catalog backend.
+    catalog_fs_rust_storage_options: Option<AHashMap<String, String>>,
     /// The instrument ID for the data configuration (single).
     instrument_id: Option<InstrumentId>,
     /// Multiple instrument IDs for the data configuration.
@@ -502,6 +646,11 @@ impl BacktestDataConfig {
     #[must_use]
     pub fn catalog_fs_storage_options(&self) -> Option<&AHashMap<String, String>> {
         self.catalog_fs_storage_options.as_ref()
+    }
+
+    #[must_use]
+    pub fn catalog_fs_rust_storage_options(&self) -> Option<&AHashMap<String, String>> {
+        self.catalog_fs_rust_storage_options.as_ref()
     }
 
     #[must_use]
@@ -633,7 +782,11 @@ impl BacktestDataConfig {
 #[derive(Debug, Clone, bon::Builder)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.backtest", from_py_object)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.backtest",
+        from_py_object,
+        unsendable
+    )
 )]
 #[cfg_attr(
     feature = "python",
@@ -653,6 +806,9 @@ pub struct BacktestRunConfig {
     /// The number of data points to process in each chunk during streaming mode.
     /// If `None`, the backtest will run without streaming, loading all data at once.
     chunk_size: Option<usize>,
+    /// If exceptions during build or run should interrupt processing.
+    #[builder(default)]
+    raise_exception: bool,
     /// If the backtest engine should be disposed on completion of the run.
     /// If `True`, then will drop data and all state.
     /// If `False`, then will *only* drop data.
@@ -690,6 +846,11 @@ impl BacktestRunConfig {
     #[must_use]
     pub fn chunk_size(&self) -> Option<usize> {
         self.chunk_size
+    }
+
+    #[must_use]
+    pub fn raise_exception(&self) -> bool {
+        self.raise_exception
     }
 
     #[must_use]

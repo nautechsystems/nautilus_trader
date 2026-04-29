@@ -49,7 +49,7 @@ use anyhow::Context;
 use chrono::{DateTime, Utc};
 use nautilus_core::{
     AtomicMap, AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT,
-    datetime::NANOSECONDS_IN_MILLISECOND, env::get_or_env_var, string::REDACTED,
+    datetime::NANOSECONDS_IN_MILLISECOND, env::get_or_env_var, string::secret::REDACTED,
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
@@ -108,9 +108,10 @@ use crate::{
         },
         credential::Credential,
         enums::{
-            OKXAlgoOrderType, OKXContractType, OKXInstrumentStatus, OKXInstrumentType,
-            OKXOrderStatus, OKXOrderType, OKXPositionMode, OKXPositionSide, OKXSide,
-            OKXTargetCurrency, OKXTradeMode, OKXTriggerType, conditional_order_to_algo_type,
+            OKXAlgoOrderType, OKXContractType, OKXEnvironment, OKXInstrumentStatus,
+            OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionMode, OKXPositionSide,
+            OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
+            conditional_order_to_algo_type,
         },
         models::OKXInstrument,
         parse::{
@@ -130,6 +131,19 @@ use crate::{
 };
 
 const OKX_SUCCESS_CODE: &str = "0";
+
+/// Ranks a spot instrument's quote currency for deterministic tie-breaking
+/// when multiple pairs share the same base. Matches OKX's dominant-quote
+/// ordering so spot-margin position reports stay on a stable instrument id
+/// across restarts.
+fn spot_quote_priority(symbol: &str) -> u8 {
+    symbol.rsplit_once('-').map_or(4, |(_, quote)| match quote {
+        "USDT" => 0,
+        "USDC" => 1,
+        "USD" => 2,
+        _ => 3,
+    })
+}
 
 fn resolve_okx_error_message(response_body: &[u8], top_level_msg: &str) -> String {
     let message = top_level_msg.trim();
@@ -278,12 +292,12 @@ pub struct OKXRawHttpClient {
     credential: Option<Credential>,
     retry_manager: RetryManager<OKXHttpError>,
     cancellation_token: CancellationToken,
-    is_demo: bool,
+    environment: OKXEnvironment,
 }
 
 impl Default for OKXRawHttpClient {
     fn default() -> Self {
-        Self::new(None, 60, 3, 1000, 10_000, false, None)
+        Self::new(None, 60, 3, 1000, 10_000, OKXEnvironment::Live, None)
             .expect("Failed to create default OKXRawHttpClient")
     }
 }
@@ -385,7 +399,7 @@ impl OKXRawHttpClient {
         max_retries: u32,
         retry_delay_ms: u64,
         retry_delay_max_ms: u64,
-        is_demo: bool,
+        environment: OKXEnvironment,
         proxy_url: Option<String>,
     ) -> Result<Self, OKXHttpError> {
         let retry_config = RetryConfig {
@@ -404,7 +418,7 @@ impl OKXRawHttpClient {
         Ok(Self {
             base_url: base_url.unwrap_or(OKX_HTTP_URL.to_string()),
             client: HttpClient::new(
-                Self::default_headers(is_demo),
+                Self::default_headers(environment),
                 vec![],
                 Self::rate_limiter_quotas(),
                 Some(*OKX_REST_QUOTA),
@@ -417,7 +431,7 @@ impl OKXRawHttpClient {
             credential: None,
             retry_manager,
             cancellation_token: CancellationToken::new(),
-            is_demo,
+            environment,
         })
     }
 
@@ -427,7 +441,7 @@ impl OKXRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the retry manager cannot be created.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
@@ -437,7 +451,7 @@ impl OKXRawHttpClient {
         max_retries: u32,
         retry_delay_ms: u64,
         retry_delay_max_ms: u64,
-        is_demo: bool,
+        environment: OKXEnvironment,
         proxy_url: Option<String>,
     ) -> Result<Self, OKXHttpError> {
         let retry_config = RetryConfig {
@@ -456,7 +470,7 @@ impl OKXRawHttpClient {
         Ok(Self {
             base_url,
             client: HttpClient::new(
-                Self::default_headers(is_demo),
+                Self::default_headers(environment),
                 vec![],
                 Self::rate_limiter_quotas(),
                 Some(*OKX_REST_QUOTA),
@@ -469,16 +483,16 @@ impl OKXRawHttpClient {
             credential: Some(Credential::new(api_key, api_secret, api_passphrase)),
             retry_manager,
             cancellation_token: CancellationToken::new(),
-            is_demo,
+            environment,
         })
     }
 
     /// Builds the default headers to include with each request (e.g., `User-Agent`).
-    fn default_headers(is_demo: bool) -> HashMap<String, String> {
+    fn default_headers(environment: OKXEnvironment) -> HashMap<String, String> {
         let mut headers =
             HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())]);
 
-        if is_demo {
+        if environment == OKXEnvironment::Demo {
             headers.insert("x-simulated-trading".to_string(), "1".to_string());
         }
 
@@ -634,7 +648,10 @@ impl OKXRawHttpClient {
                     }
 
                     Err(OKXHttpError::UnexpectedStatus {
-                        status: StatusCode::from_u16(resp.status.as_u16()).unwrap(),
+                        // Fall back to 500 if the venue returns a non-standard
+                        // code so we never panic in the error path.
+                        status: StatusCode::from_u16(resp.status.as_u16())
+                            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
                         body: error_body.to_string(),
                     })
                 }
@@ -1218,7 +1235,7 @@ impl Clone for OKXHttpClient {
 
 impl Default for OKXHttpClient {
     fn default() -> Self {
-        Self::new(None, 60, 3, 1000, 10_000, false, None)
+        Self::new(None, 60, 3, 1000, 10_000, OKXEnvironment::Live, None)
             .expect("Failed to create default OKXHttpClient")
     }
 }
@@ -1239,7 +1256,7 @@ impl OKXHttpClient {
         max_retries: u32,
         retry_delay_ms: u64,
         retry_delay_max_ms: u64,
-        is_demo: bool,
+        environment: OKXEnvironment,
         proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -1249,7 +1266,7 @@ impl OKXHttpClient {
                 max_retries,
                 retry_delay_ms,
                 retry_delay_max_ms,
-                is_demo,
+                environment,
                 proxy_url,
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
@@ -1270,7 +1287,18 @@ impl OKXHttpClient {
     ///
     /// Returns an error if the operation fails.
     pub fn from_env() -> anyhow::Result<Self> {
-        Self::with_credentials(None, None, None, None, 60, 3, 1000, 10_000, false, None)
+        Self::with_credentials(
+            None,
+            None,
+            None,
+            None,
+            60,
+            3,
+            1000,
+            10_000,
+            OKXEnvironment::Live,
+            None,
+        )
     }
 
     /// Creates a new [`OKXHttpClient`] configured with credentials
@@ -1279,7 +1307,7 @@ impl OKXHttpClient {
     /// # Errors
     ///
     /// Returns an error if the operation fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: Option<String>,
         api_secret: Option<String>,
@@ -1289,7 +1317,7 @@ impl OKXHttpClient {
         max_retries: u32,
         retry_delay_ms: u64,
         retry_delay_max_ms: u64,
-        is_demo: bool,
+        environment: OKXEnvironment,
         proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let api_key = get_or_env_var(api_key, "OKX_API_KEY")?;
@@ -1307,7 +1335,7 @@ impl OKXHttpClient {
                 max_retries,
                 retry_delay_ms,
                 retry_delay_max_ms,
-                is_demo,
+                environment,
                 proxy_url,
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
@@ -1356,7 +1384,7 @@ impl OKXHttpClient {
     /// Returns whether the client is configured for demo trading.
     #[must_use]
     pub fn is_demo(&self) -> bool {
-        self.inner.is_demo
+        self.inner.environment == OKXEnvironment::Demo
     }
 
     /// Requests the current server time from OKX.
@@ -2107,8 +2135,6 @@ impl OKXHttpClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or trade parsing fails.
-    // Guarded by is_empty check
-    #[allow(clippy::missing_panics_doc)]
     pub async fn request_trades(
         &self,
         instrument_id: InstrumentId,
@@ -2470,8 +2496,6 @@ impl OKXHttpClient {
     ///
     /// - <https://tr.okx.com/docs-v5/en/#order-book-trading-market-data-get-candlesticks>
     /// - <https://tr.okx.com/docs-v5/en/#order-book-trading-market-data-get-candlesticks-history>
-    // Guarded by non-empty page check
-    #[allow(clippy::missing_panics_doc)]
     pub async fn request_bars(
         &self,
         bar_type: BarType,
@@ -3081,7 +3105,7 @@ impl OKXHttpClient {
     ///
     /// - <https://www.okx.com/docs-v5/en/#order-book-trading-trade-get-order-history-last-7-days>.
     /// - <https://www.okx.com/docs-v5/en/#order-book-trading-trade-get-order-history-last-3-months>.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn request_order_status_reports(
         &self,
         account_id: AccountId,
@@ -3686,31 +3710,52 @@ impl OKXHttpClient {
         let ts_init = self.generate_ts_init();
         let mut reports = Vec::new();
 
+        // Build a base-currency lookup over the cached spot pairs once per
+        // call. Restricting to `CurrencyPair` (spot) ensures a derivative
+        // sharing the same base (e.g. `BTC-USDT-SWAP`) is never reported as
+        // a spot margin position with the wrong instrument id or size
+        // precision.
+        //
+        // When multiple spot pairs share the same base currency, prefer the
+        // dominant OKX quote (USDT, then USDC, then USD) so a live
+        // `BTC-USDT` margin position stays reported under `BTC-USDT.OKX`
+        // rather than being redirected to `BTC-USD.OKX` or any other
+        // lexically-earlier pair. Unknown quotes fall back to a stable
+        // lexical order by symbol, matching OKX's own listing precedence
+        // and keeping the selection deterministic across runs.
+        let cache_snapshot = self.instruments_cache.load();
+        let mut candidates: Vec<&InstrumentAny> = cache_snapshot
+            .values()
+            .filter(|inst| matches!(inst, InstrumentAny::CurrencyPair(_)))
+            .collect();
+        candidates.sort_by(|a, b| {
+            let a_sym = a.id().symbol.as_str().to_string();
+            let b_sym = b.id().symbol.as_str().to_string();
+            spot_quote_priority(&a_sym)
+                .cmp(&spot_quote_priority(&b_sym))
+                .then_with(|| a_sym.cmp(&b_sym))
+        });
+
+        let mut by_base: AHashMap<Ustr, (InstrumentId, u8)> = AHashMap::new();
+
+        for inst in candidates {
+            if let Some(base) = inst.base_currency() {
+                let base_code = Ustr::from(base.code.as_str());
+                by_base
+                    .entry(base_code)
+                    .or_insert_with(|| (inst.id(), inst.size_precision()));
+            }
+        }
+
         for account in accounts {
             for balance in account.details {
                 let ccy_str = balance.ccy.as_str();
 
-                // Try to find instrument by constructing potential spot pair symbols
-                let potential_symbols = [
-                    format!("{ccy_str}-USDT"),
-                    format!("{ccy_str}-USD"),
-                    format!("{ccy_str}-USDC"),
-                ];
-
-                let instrument_result = potential_symbols.iter().find_map(|symbol| {
-                    self.instrument_from_cache(Ustr::from(symbol))
-                        .ok()
-                        .map(|inst| (inst.id(), inst.size_precision()))
-                });
-
-                let (instrument_id, size_precision) = match instrument_result {
-                    Some((id, prec)) => (id, prec),
-                    None => {
-                        log::debug!(
-                            "Skipping balance for {ccy_str} - no matching instrument in cache"
-                        );
-                        continue;
-                    }
+                let Some((instrument_id, size_precision)) =
+                    by_base.get(&Ustr::from(ccy_str)).copied()
+                else {
+                    log::debug!("Skipping balance for {ccy_str} - no matching instrument in cache");
+                    continue;
                 };
 
                 match parse_spot_margin_position_from_balance(
@@ -3990,7 +4035,7 @@ impl OKXHttpClient {
     /// # Errors
     ///
     /// Returns an error if the request fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn amend_algo_order_with_domain_types(
         &self,
         instrument_id: InstrumentId,
@@ -4025,7 +4070,7 @@ impl OKXHttpClient {
     /// # Errors
     ///
     /// Returns an error if the request fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn place_order_with_domain_types(
         &self,
         instrument_id: InstrumentId,
@@ -4198,7 +4243,7 @@ impl OKXHttpClient {
     /// # Errors
     ///
     /// Returns an error if the request fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn place_algo_order_with_domain_types(
         &self,
         instrument_id: InstrumentId,
@@ -4401,7 +4446,7 @@ impl OKXHttpClient {
     /// # Errors
     ///
     /// Returns an error if the request fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn request_algo_order_status_reports(
         &self,
         account_id: AccountId,
@@ -4483,27 +4528,37 @@ impl OKXHttpClient {
                 return Ok(reports);
             }
 
-            let remaining = limit.map(|l| (l as usize).saturating_sub(reports.len()));
-            let history = self.paginate_algo_history(&params, remaining).await?;
-            self.collect_algo_reports(
-                account_id,
-                &history,
-                &mut instruments_cache,
-                ts_init,
-                &mut seen,
-                &mut reports,
-            )
-            .await?;
+            // OKX's `/orders-algo-history` endpoint rejects calls that
+            // carry neither a `state` nor an `algoId` / `algoClOrdId`
+            // narrowing with code 50015. The reconciliation path wants
+            // only currently-live algo orders (those already appear in
+            // the pending response above), so skip the history leg when
+            // the caller supplied no narrowing. Specific-lookup callers
+            // still hit history because `has_specific_lookup` implies
+            // `algoId` or `algoClOrdId`, which the endpoint accepts.
+            if state.is_some() || has_specific_lookup {
+                let remaining = limit.map(|l| (l as usize).saturating_sub(reports.len()));
+                let history = self.paginate_algo_history(&params, remaining).await?;
+                self.collect_algo_reports(
+                    account_id,
+                    &history,
+                    &mut instruments_cache,
+                    ts_init,
+                    &mut seen,
+                    &mut reports,
+                )
+                .await?;
 
-            if has_specific_lookup && !reports.is_empty() {
-                return Ok(reports);
-            }
+                if has_specific_lookup && !reports.is_empty() {
+                    return Ok(reports);
+                }
 
-            if let Some(lim) = limit
-                && reports.len() >= lim as usize
-            {
-                reports.truncate(lim as usize);
-                return Ok(reports);
+                if let Some(lim) = limit
+                    && reports.len() >= lim as usize
+                {
+                    reports.truncate(lim as usize);
+                    return Ok(reports);
+                }
             }
         }
 

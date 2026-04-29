@@ -28,7 +28,9 @@
 //! Alternative implementations can be written on top of the generic engine - which
 //! just need to override the `execute`, `process`, `send` and `receive` methods.
 
+pub mod bar;
 pub mod book;
+mod commands;
 pub mod config;
 mod handlers;
 
@@ -38,14 +40,19 @@ pub mod pool;
 use std::{
     any::{Any, type_name},
     cell::{Ref, RefCell},
-    collections::{VecDeque, hash_map::Entry},
+    collections::VecDeque,
     fmt::{Debug, Display},
     num::NonZeroUsize,
     rc::Rc,
 };
 
 use ahash::{AHashMap, AHashSet};
-use book::{BookSnapshotInfo, BookSnapshotter, BookUpdater};
+pub use bar::BarAggregatorSubscription;
+use book::{
+    BookSnapshotInfo, BookSnapshotInfos, BookSnapshotKey, BookSnapshotUnsubscribeResult,
+    BookSnapshotter, BookUpdater,
+};
+pub(crate) use commands::{DeferredCommand, DeferredCommandQueue};
 use config::DataEngineConfig;
 use futures::future::join_all;
 use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler};
@@ -63,7 +70,7 @@ use nautilus_common::{
         UnsubscribeQuotes,
     },
     msgbus::{
-        self, MStr, ShareableMessageHandler, Topic, TypedHandler, TypedIntoHandler,
+        self, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
         switchboard::{self, MessagingSwitchboard},
     },
     runner::get_data_cmd_sender,
@@ -113,62 +120,6 @@ use crate::{
     option_chains::OptionChainManager,
 };
 
-/// Deferred subscribe/unsubscribe command.
-///
-/// Components that lack direct `DataClientAdapter` access (handlers, timers)
-/// push commands here; the `DataEngine` drains on each data tick.
-#[derive(Debug, Clone)]
-pub(crate) enum DeferredCommand {
-    Subscribe(SubscribeCommand),
-    Unsubscribe(UnsubscribeCommand),
-    ExpireSeries(OptionSeriesId),
-}
-
-/// Shared queue for deferred subscribe/unsubscribe commands.
-pub(crate) type DeferredCommandQueue = Rc<RefCell<VecDeque<DeferredCommand>>>;
-
-/// Typed subscription for bar aggregator handlers.
-///
-/// Stores the topic and handler for each data type so we can properly
-/// unsubscribe from the typed routers.
-#[derive(Clone)]
-pub enum BarAggregatorSubscription {
-    Bar {
-        topic: MStr<Topic>,
-        handler: TypedHandler<Bar>,
-    },
-    Trade {
-        topic: MStr<Topic>,
-        handler: TypedHandler<TradeTick>,
-    },
-    Quote {
-        topic: MStr<Topic>,
-        handler: TypedHandler<QuoteTick>,
-    },
-}
-
-impl Debug for BarAggregatorSubscription {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Bar { topic, handler } => f
-                .debug_struct(stringify!(Bar))
-                .field("topic", topic)
-                .field("handler_id", &handler.id())
-                .finish(),
-            Self::Trade { topic, handler } => f
-                .debug_struct(stringify!(Trade))
-                .field("topic", topic)
-                .field("handler_id", &handler.id())
-                .finish(),
-            Self::Quote { topic, handler } => f
-                .debug_struct(stringify!(Quote))
-                .field("topic", topic)
-                .field("handler_id", &handler.id())
-                .finish(),
-        }
-    }
-}
-
 /// Provides a high-performance `DataEngine` for all environments.
 #[derive(Debug)]
 pub struct DataEngine {
@@ -180,12 +131,13 @@ pub struct DataEngine {
     #[cfg(feature = "streaming")]
     catalogs: AHashMap<Ustr, ParquetDataCatalog>,
     routing_map: IndexMap<Venue, ClientId>,
-    book_intervals: AHashMap<NonZeroUsize, AHashSet<InstrumentId>>,
+    book_intervals: AHashMap<NonZeroUsize, BookSnapshotInfos>,
+    book_snapshot_counts: IndexMap<BookSnapshotKey, usize>,
     book_deltas_subs: AHashSet<InstrumentId>,
     book_depth10_subs: AHashSet<InstrumentId>,
     book_updaters: AHashMap<InstrumentId, Rc<BookUpdater>>,
-    book_snapshotters: AHashMap<InstrumentId, Rc<BookSnapshotter>>,
-    bar_aggregators: AHashMap<BarType, Rc<RefCell<Box<dyn BarAggregator>>>>,
+    book_snapshotters: AHashMap<NonZeroUsize, Rc<BookSnapshotter>>,
+    bar_aggregators: IndexMap<BarType, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarType, Vec<BarAggregatorSubscription>>,
     option_chain_managers: AHashMap<OptionSeriesId, Rc<RefCell<OptionChainManager>>>,
     option_chain_instrument_index: AHashMap<InstrumentId, OptionSeriesId>,
@@ -194,6 +146,10 @@ pub struct DataEngine {
     _synthetic_quote_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
     _synthetic_trade_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: AHashMap<InstrumentId, OrderBookDeltas>,
+    command_count: u64,
+    data_count: u64,
+    request_count: u64,
+    response_count: u64,
     pub(crate) msgbus_priority: u8,
     pub(crate) config: DataEngineConfig,
     #[cfg(feature = "defi")]
@@ -233,11 +189,12 @@ impl DataEngine {
             catalogs: AHashMap::new(),
             routing_map: IndexMap::new(),
             book_intervals: AHashMap::new(),
+            book_snapshot_counts: IndexMap::new(),
             book_deltas_subs: AHashSet::new(),
             book_depth10_subs: AHashSet::new(),
             book_updaters: AHashMap::new(),
             book_snapshotters: AHashMap::new(),
-            bar_aggregators: AHashMap::new(),
+            bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
             option_chain_managers: AHashMap::new(),
             option_chain_instrument_index: AHashMap::new(),
@@ -246,6 +203,10 @@ impl DataEngine {
             _synthetic_quote_feeds: AHashMap::new(),
             _synthetic_trade_feeds: AHashMap::new(),
             buffered_deltas_map: AHashMap::new(),
+            command_count: 0,
+            data_count: 0,
+            request_count: 0,
+            response_count: 0,
             msgbus_priority: 10, // High-priority for built-in component
             config,
             #[cfg(feature = "defi")]
@@ -325,6 +286,47 @@ impl DataEngine {
                 }
             }),
         );
+    }
+
+    /// Returns the total count of data commands received by the engine.
+    #[must_use]
+    pub const fn command_count(&self) -> u64 {
+        self.command_count
+    }
+
+    /// Returns the total count of data stream objects received by the engine.
+    #[must_use]
+    pub const fn data_count(&self) -> u64 {
+        self.data_count
+    }
+
+    #[cfg(feature = "defi")]
+    pub(crate) const fn increment_data_count(&mut self) {
+        self.data_count += 1;
+    }
+
+    /// Returns the total count of data requests received by the engine.
+    #[must_use]
+    pub const fn request_count(&self) -> u64 {
+        self.request_count
+    }
+
+    /// Returns the total count of data responses received by the engine.
+    #[must_use]
+    pub const fn response_count(&self) -> u64 {
+        self.response_count
+    }
+
+    /// Returns whether an `OptionChainManager` exists for the given series.
+    #[must_use]
+    pub fn has_option_chain_manager(&self, series_id: &OptionSeriesId) -> bool {
+        self.option_chain_managers.contains_key(series_id)
+    }
+
+    /// Returns the count of pending option-chain bootstrap requests.
+    #[must_use]
+    pub fn pending_option_chain_request_count(&self) -> usize {
+        self.pending_option_chain_requests.len()
     }
 
     /// Returns a read-only reference to the engines clock.
@@ -473,6 +475,11 @@ impl DataEngine {
                 log::error!("Error stopping bar aggregator during reset for {bar_type}: {e}");
             }
         }
+
+        self.command_count = 0;
+        self.data_count = 0;
+        self.request_count = 0;
+        self.response_count = 0;
     }
 
     /// Disposes the engine, stopping all clients and canceling any timers.
@@ -665,9 +672,9 @@ impl DataEngine {
     /// Returns all instrument IDs for which book snapshot subscriptions exist.
     #[must_use]
     pub fn subscribed_book_snapshots(&self) -> Vec<InstrumentId> {
-        self.book_intervals
-            .values()
-            .flat_map(|set| set.iter().copied())
+        self.book_snapshot_counts
+            .keys()
+            .map(|(instrument_id, _)| *instrument_id)
             .collect()
     }
 
@@ -725,14 +732,26 @@ impl DataEngine {
     ///
     /// Errors during execution are logged.
     pub fn execute(&mut self, cmd: DataCommand) {
+        match &cmd {
+            DataCommand::Subscribe(_) | DataCommand::Unsubscribe(_) => self.command_count += 1,
+            DataCommand::Request(_) => self.request_count += 1,
+            #[cfg(feature = "defi")]
+            DataCommand::DefiRequest(_) => self.request_count += 1,
+            #[cfg(feature = "defi")]
+            DataCommand::DefiSubscribe(_) | DataCommand::DefiUnsubscribe(_) => {
+                self.command_count += 1;
+            }
+            _ => {}
+        }
+
         if let Err(e) = match cmd {
-            DataCommand::Subscribe(c) => self.execute_subscribe(&c),
+            DataCommand::Subscribe(c) => self.execute_subscribe(c),
             DataCommand::Unsubscribe(c) => self.execute_unsubscribe(&c),
             DataCommand::Request(c) => self.execute_request(c),
             #[cfg(feature = "defi")]
             DataCommand::DefiRequest(c) => self.execute_defi_request(c),
             #[cfg(feature = "defi")]
-            DataCommand::DefiSubscribe(c) => self.execute_defi_subscribe(&c),
+            DataCommand::DefiSubscribe(c) => self.execute_defi_subscribe(c),
             #[cfg(feature = "defi")]
             DataCommand::DefiUnsubscribe(c) => self.execute_defi_unsubscribe(&c),
             _ => {
@@ -750,7 +769,7 @@ impl DataEngine {
     ///
     /// Returns an error if the subscription is invalid (e.g., synthetic instrument for book data),
     /// or if the underlying client operation fails.
-    pub fn execute_subscribe(&mut self, cmd: &SubscribeCommand) -> anyhow::Result<()> {
+    pub fn execute_subscribe(&mut self, cmd: SubscribeCommand) -> anyhow::Result<()> {
         // Update internal engine state
         match &cmd {
             SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(cmd)?,
@@ -763,6 +782,18 @@ impl DataEngine {
             SubscribeCommand::OptionChain(cmd) => {
                 self.subscribe_option_chain(cmd);
                 return Ok(());
+            }
+            SubscribeCommand::Instrument(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!("Cannot subscribe for synthetic instrument `Instrument` data");
+            }
+            SubscribeCommand::InstrumentStatus(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!("Cannot subscribe for synthetic instrument `InstrumentStatus` data");
+            }
+            SubscribeCommand::InstrumentClose(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!("Cannot subscribe for synthetic instrument `InstrumentClose` data");
+            }
+            SubscribeCommand::OptionGreeks(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!("Cannot subscribe for synthetic instrument `OptionGreeks` data");
             }
             _ => {} // Do nothing else
         }
@@ -796,8 +827,12 @@ impl DataEngine {
     /// Returns an error if the underlying client operation fails.
     pub fn execute_unsubscribe(&mut self, cmd: &UnsubscribeCommand) -> anyhow::Result<()> {
         match &cmd {
-            UnsubscribeCommand::BookDeltas(cmd) => self.unsubscribe_book_deltas(cmd),
-            UnsubscribeCommand::BookDepth10(cmd) => self.unsubscribe_book_depth10(cmd),
+            UnsubscribeCommand::BookDeltas(cmd) if !self.unsubscribe_book_deltas(cmd) => {
+                return Ok(());
+            }
+            UnsubscribeCommand::BookDepth10(cmd) if !self.unsubscribe_book_depth10(cmd) => {
+                return Ok(());
+            }
             UnsubscribeCommand::BookSnapshots(cmd) => {
                 // Handles client forwarding internally (forwards as BookDeltas)
                 self.unsubscribe_book_snapshots(cmd);
@@ -807,6 +842,22 @@ impl DataEngine {
             UnsubscribeCommand::OptionChain(cmd) => {
                 self.unsubscribe_option_chain(cmd);
                 return Ok(());
+            }
+            UnsubscribeCommand::Instrument(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!("Cannot unsubscribe from synthetic instrument `Instrument` data");
+            }
+            UnsubscribeCommand::InstrumentStatus(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!(
+                    "Cannot unsubscribe from synthetic instrument `InstrumentStatus` data"
+                );
+            }
+            UnsubscribeCommand::InstrumentClose(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!(
+                    "Cannot unsubscribe from synthetic instrument `InstrumentClose` data"
+                );
+            }
+            UnsubscribeCommand::OptionGreeks(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!("Cannot unsubscribe from synthetic instrument `OptionGreeks` data");
             }
             _ => {} // Do nothing else
         }
@@ -878,6 +929,7 @@ impl DataEngine {
     ///
     /// Currently supports `InstrumentAny` and `FundingRateUpdate`; unrecognized types are logged as errors.
     pub fn process(&mut self, data: &dyn Any) {
+        self.data_count += 1;
         // TODO: Eventually these can be added to the `Data` enum (C/Cython blocking), process here for now
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument);
@@ -899,6 +951,8 @@ impl DataEngine {
 
     /// Processes a `Data` enum instance, dispatching to appropriate handlers.
     pub fn process_data(&mut self, data: Data) {
+        self.data_count += 1;
+
         match data {
             Data::Delta(delta) => self.handle_delta(delta),
             Data::Deltas(deltas) => self.handle_deltas(deltas.into_inner()),
@@ -917,16 +971,21 @@ impl DataEngine {
                 self.handle_index_price(index_price);
                 self.drain_deferred_commands();
             }
+            Data::InstrumentStatus(status) => {
+                self.handle_instrument_status(status);
+                self.drain_deferred_commands();
+            }
             Data::InstrumentClose(close) => self.handle_instrument_close(close),
             Data::Custom(custom) => self.handle_custom_data(&custom),
         }
     }
 
     /// Processes a `DataResponse`, handling and publishing the response message.
-    #[allow(clippy::needless_pass_by_value)] // Required by message bus dispatch
+    #[expect(clippy::needless_pass_by_value)] // Required by message bus dispatch
     pub fn response(&mut self, resp: DataResponse) {
         log::debug!("{RECV}{RES} {resp:?}");
 
+        self.response_count += 1;
         let correlation_id = *resp.correlation_id();
 
         match &resp {
@@ -1180,6 +1239,15 @@ impl DataEngine {
     }
 
     fn handle_instrument_status(&mut self, status: InstrumentStatus) {
+        if let Err(e) = self
+            .cache
+            .as_ref()
+            .borrow_mut()
+            .add_instrument_status(status)
+        {
+            log_error_on_cache_insert(&e);
+        }
+
         let topic = switchboard::get_instrument_status_topic(status.instrument_id);
         msgbus::publish_any(topic, &status);
 
@@ -1259,7 +1327,7 @@ impl DataEngine {
                     DeferredCommand::Subscribe(sub) => {
                         let client = self.get_client(sub.client_id(), sub.venue());
                         if let Some(client) = client {
-                            client.execute_subscribe(&sub);
+                            client.execute_subscribe(sub);
                         }
                     }
                     DeferredCommand::Unsubscribe(unsub) => {
@@ -1333,64 +1401,15 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
 
-        // Track snapshot intervals per instrument, and set up timer on first subscription
-        let first_for_interval = match self.book_intervals.entry(cmd.interval_ms) {
-            Entry::Vacant(e) => {
-                let mut set = AHashSet::new();
-                set.insert(cmd.instrument_id);
-                e.insert(set);
-                true
-            }
-            Entry::Occupied(mut e) => {
-                e.get_mut().insert(cmd.instrument_id);
-                false
-            }
-        };
+        let had_snapshots = self.has_book_snapshot_subscriptions(&cmd.instrument_id);
+        let inserted = self.increment_book_snapshot_subscription(cmd);
 
-        if first_for_interval {
-            // Initialize snapshotter and schedule its timer
-            let interval_ns = millis_to_nanos_unchecked(cmd.interval_ms.get() as f64);
-            let topic = switchboard::get_book_snapshots_topic(cmd.instrument_id, cmd.interval_ms);
-
-            let snap_info = BookSnapshotInfo {
-                instrument_id: cmd.instrument_id,
-                venue: cmd.instrument_id.venue,
-                is_composite: cmd.instrument_id.symbol.is_composite(),
-                root: Ustr::from(cmd.instrument_id.symbol.root()),
-                topic,
-                interval_ms: cmd.interval_ms,
-            };
-
-            // Schedule the first snapshot at the next interval boundary
-            let now_ns = self.clock.borrow().timestamp_ns().as_u64();
-            let start_time_ns = now_ns - (now_ns % interval_ns) + interval_ns;
-
-            let snapshotter = Rc::new(BookSnapshotter::new(snap_info, self.cache.clone()));
-            self.book_snapshotters
-                .insert(cmd.instrument_id, snapshotter.clone());
-            let timer_name = snapshotter.timer_name;
-
-            let callback_fn: Rc<dyn Fn(TimeEvent)> =
-                Rc::new(move |event| snapshotter.snapshot(event));
-            let callback = TimeEventCallback::from(callback_fn);
-
-            self.clock
-                .borrow_mut()
-                .set_timer_ns(
-                    &timer_name,
-                    interval_ns,
-                    Some(start_time_ns.into()),
-                    None,
-                    Some(callback),
-                    None,
-                    None,
-                )
-                .expect(FAILED);
+        if inserted && !had_snapshots && !self.book_deltas_subs.contains(&cmd.instrument_id) {
+            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, true)?;
         }
 
-        // Only set up book updater if not already subscribed to deltas
-        if !self.subscribed_book_deltas().contains(&cmd.instrument_id) {
-            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, true)?;
+        if had_snapshots || self.book_deltas_subs.contains(&cmd.instrument_id) {
+            return Ok(());
         }
 
         if let Some(client_id) = cmd.client_id.as_ref()
@@ -1426,7 +1445,7 @@ impl DataEngine {
                 "Calling client.execute_subscribe for BookDeltas: {}",
                 cmd.instrument_id
             );
-            client.execute_subscribe(&SubscribeCommand::BookDeltas(deltas_cmd));
+            client.execute_subscribe(SubscribeCommand::BookDeltas(deltas_cmd));
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",
@@ -1457,96 +1476,69 @@ impl DataEngine {
         Ok(())
     }
 
-    fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) {
-        if !self.subscribed_book_deltas().contains(&cmd.instrument_id) {
+    fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> bool {
+        if !self.book_deltas_subs.contains(&cmd.instrument_id) {
             log::warn!("Cannot unsubscribe from `OrderBookDeltas` data: not subscribed");
-            return;
+            return false;
         }
 
         self.book_deltas_subs.remove(&cmd.instrument_id);
+        self.maintain_book_updater(&cmd.instrument_id);
 
-        let topics = vec![
-            switchboard::get_book_deltas_topic(cmd.instrument_id),
-            switchboard::get_book_depth10_topic(cmd.instrument_id),
-            // TODO: Unsubscribe from snapshots?
-        ];
-
-        self.maintain_book_updater(&cmd.instrument_id, &topics);
-        self.maintain_book_snapshotter(&cmd.instrument_id);
+        // Snapshot subscriptions reuse the deltas feed.
+        // Keep the client subscribed until the last snapshot consumer is gone.
+        !self.has_book_snapshot_subscriptions(&cmd.instrument_id)
     }
 
-    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) {
+    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> bool {
         if !self.book_depth10_subs.contains(&cmd.instrument_id) {
             log::warn!("Cannot unsubscribe from `OrderBookDepth10` data: not subscribed");
-            return;
+            return false;
         }
 
         self.book_depth10_subs.remove(&cmd.instrument_id);
+        self.maintain_book_updater(&cmd.instrument_id);
 
-        let topics = vec![
-            switchboard::get_book_deltas_topic(cmd.instrument_id),
-            switchboard::get_book_depth10_topic(cmd.instrument_id),
-        ];
-
-        self.maintain_book_updater(&cmd.instrument_id, &topics);
-        self.maintain_book_snapshotter(&cmd.instrument_id);
+        true
     }
 
     fn unsubscribe_book_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) {
-        let is_subscribed = self
-            .book_intervals
-            .values()
-            .any(|set| set.contains(&cmd.instrument_id));
+        match self.decrement_book_snapshot_subscription(cmd.instrument_id, cmd.interval_ms) {
+            BookSnapshotUnsubscribeResult::NotSubscribed => {
+                log::warn!("Cannot unsubscribe from `OrderBook` snapshots: not subscribed");
+                return;
+            }
+            BookSnapshotUnsubscribeResult::Decremented => return,
+            BookSnapshotUnsubscribeResult::Removed => {}
+        }
 
-        if !is_subscribed {
-            log::warn!("Cannot unsubscribe from `OrderBook` snapshots: not subscribed");
+        if self.has_book_snapshot_subscriptions(&cmd.instrument_id) {
             return;
         }
 
-        // Remove instrument from interval tracking, and drop empty intervals
-        let mut to_remove = Vec::new();
-        for (interval, set) in &mut self.book_intervals {
-            if set.remove(&cmd.instrument_id) && set.is_empty() {
-                to_remove.push(*interval);
-            }
+        self.maintain_book_updater(&cmd.instrument_id);
+
+        if self.book_deltas_subs.contains(&cmd.instrument_id) {
+            return;
         }
 
-        for interval in to_remove {
-            self.book_intervals.remove(&interval);
+        if let Some(client_id) = cmd.client_id.as_ref()
+            && self.external_clients.contains(client_id)
+        {
+            return;
         }
 
-        let topics = vec![
-            switchboard::get_book_deltas_topic(cmd.instrument_id),
-            switchboard::get_book_depth10_topic(cmd.instrument_id),
-        ];
-
-        self.maintain_book_updater(&cmd.instrument_id, &topics);
-        self.maintain_book_snapshotter(&cmd.instrument_id);
-
-        let still_in_intervals = self
-            .book_intervals
-            .values()
-            .any(|set| set.contains(&cmd.instrument_id));
-
-        if !still_in_intervals && !self.book_deltas_subs.contains(&cmd.instrument_id) {
-            if let Some(client_id) = cmd.client_id.as_ref()
-                && self.external_clients.contains(client_id)
-            {
-                return;
-            }
-
-            if let Some(client) = self.get_client(cmd.client_id.as_ref(), cmd.venue.as_ref()) {
-                let deltas_cmd = UnsubscribeBookDeltas::new(
-                    cmd.instrument_id,
-                    cmd.client_id,
-                    cmd.venue,
-                    UUID4::new(),
-                    cmd.ts_init,
-                    Some(cmd.command_id),
-                    cmd.params.clone(),
-                );
-                client.execute_unsubscribe(&UnsubscribeCommand::BookDeltas(deltas_cmd));
-            }
+        if let Some(client) = self.get_client(cmd.client_id.as_ref(), cmd.venue.as_ref()) {
+            let deltas_cmd = UnsubscribeBookDeltas::new(
+                cmd.instrument_id,
+                cmd.client_id,
+                cmd.venue,
+                UUID4::new(),
+                cmd.ts_init,
+                Some(cmd.command_id),
+                cmd.params.clone(),
+            );
+            client.execute_unsubscribe(&UnsubscribeCommand::BookDeltas(deltas_cmd));
         }
     }
 
@@ -1760,22 +1752,21 @@ impl DataEngine {
         }
     }
 
-    fn maintain_book_updater(&mut self, instrument_id: &InstrumentId, _topics: &[MStr<Topic>]) {
+    fn maintain_book_updater(&mut self, instrument_id: &InstrumentId) {
         let Some(updater) = self.book_updaters.get(instrument_id) else {
             return;
         };
 
-        // Check which internal subscriptions still exist
         let has_deltas = self.book_deltas_subs.contains(instrument_id);
         let has_depth10 = self.book_depth10_subs.contains(instrument_id);
+        let has_snapshots = self.has_book_snapshot_subscriptions(instrument_id);
 
         let deltas_topic = switchboard::get_book_deltas_topic(*instrument_id);
         let depth_topic = switchboard::get_book_depth10_topic(*instrument_id);
         let deltas_handler: TypedHandler<OrderBookDeltas> = TypedHandler::new(updater.clone());
         let depth_handler: TypedHandler<OrderBookDepth10> = TypedHandler::new(updater.clone());
 
-        // Unsubscribe from topics that no longer have subscriptions
-        if !has_deltas {
+        if !has_deltas && !has_snapshots {
             msgbus::unsubscribe_book_deltas(deltas_topic.into(), &deltas_handler);
         }
 
@@ -1783,31 +1774,131 @@ impl DataEngine {
             msgbus::unsubscribe_book_depth10(depth_topic.into(), &depth_handler);
         }
 
-        // Remove BookUpdater only when no subscriptions remain
-        if !has_deltas && !has_depth10 {
+        if !has_deltas && !has_depth10 && !has_snapshots {
             self.book_updaters.remove(instrument_id);
             log::debug!("Removed BookUpdater for instrument ID {instrument_id}");
         }
     }
 
-    fn maintain_book_snapshotter(&mut self, instrument_id: &InstrumentId) {
-        if let Some(snapshotter) = self.book_snapshotters.get(instrument_id) {
-            let topic = switchboard::get_book_snapshots_topic(
-                *instrument_id,
-                snapshotter.snap_info.interval_ms,
-            );
+    fn has_book_snapshot_subscriptions(&self, instrument_id: &InstrumentId) -> bool {
+        self.book_snapshot_counts
+            .keys()
+            .any(|(id, _)| id == instrument_id)
+    }
 
-            // Check remaining snapshot subscriptions, if none then remove snapshotter
-            if msgbus::subscriber_count_book_snapshots(topic) == 0 {
+    fn increment_book_snapshot_subscription(&mut self, cmd: &SubscribeBookSnapshots) -> bool {
+        let key = (cmd.instrument_id, cmd.interval_ms);
+
+        if let Some(count) = self.book_snapshot_counts.get_mut(&key) {
+            *count += 1;
+            return false;
+        }
+
+        self.book_snapshot_counts.insert(key, 1);
+
+        let snapshot_infos = if let Some(snapshot_infos) = self.book_intervals.get(&cmd.interval_ms)
+        {
+            snapshot_infos.clone()
+        } else {
+            let snapshot_infos = Rc::new(RefCell::new(IndexMap::new()));
+            self.book_intervals
+                .insert(cmd.interval_ms, snapshot_infos.clone());
+            self.schedule_book_snapshotter(cmd.interval_ms, snapshot_infos.clone());
+            snapshot_infos
+        };
+
+        let topic = switchboard::get_book_snapshots_topic(cmd.instrument_id, cmd.interval_ms);
+        let snap_info = BookSnapshotInfo {
+            instrument_id: cmd.instrument_id,
+            venue: cmd.instrument_id.venue,
+            is_composite: cmd.instrument_id.symbol.is_composite(),
+            root: Ustr::from(cmd.instrument_id.symbol.root()),
+            topic,
+            interval_ms: cmd.interval_ms,
+        };
+
+        snapshot_infos
+            .borrow_mut()
+            .insert(cmd.instrument_id, snap_info);
+
+        true
+    }
+
+    fn decrement_book_snapshot_subscription(
+        &mut self,
+        instrument_id: InstrumentId,
+        interval_ms: NonZeroUsize,
+    ) -> BookSnapshotUnsubscribeResult {
+        let key = (instrument_id, interval_ms);
+
+        let Some(count) = self.book_snapshot_counts.get_mut(&key) else {
+            return BookSnapshotUnsubscribeResult::NotSubscribed;
+        };
+
+        if *count > 1 {
+            *count -= 1;
+            return BookSnapshotUnsubscribeResult::Decremented;
+        }
+
+        self.book_snapshot_counts.shift_remove(&key);
+
+        let remove_interval = if let Some(snapshot_infos) = self.book_intervals.get(&interval_ms) {
+            let mut snapshot_infos = snapshot_infos.borrow_mut();
+            snapshot_infos.shift_remove(&instrument_id);
+            snapshot_infos.is_empty()
+        } else {
+            false
+        };
+
+        if remove_interval {
+            self.book_intervals.remove(&interval_ms);
+
+            if let Some(snapshotter) = self.book_snapshotters.remove(&interval_ms) {
                 let timer_name = snapshotter.timer_name;
-                self.book_snapshotters.remove(instrument_id);
                 let mut clock = self.clock.borrow_mut();
                 if clock.timer_exists(&timer_name) {
                     clock.cancel_timer(&timer_name);
                 }
-                log::debug!("Removed BookSnapshotter for instrument ID {instrument_id}");
             }
         }
+
+        BookSnapshotUnsubscribeResult::Removed
+    }
+
+    fn schedule_book_snapshotter(
+        &mut self,
+        interval_ms: NonZeroUsize,
+        snapshot_infos: BookSnapshotInfos,
+    ) {
+        let interval_ns = millis_to_nanos_unchecked(interval_ms.get() as f64);
+        let now_ns = self.clock.borrow().timestamp_ns().as_u64();
+        let start_time_ns = now_ns - (now_ns % interval_ns) + interval_ns;
+
+        let snapshotter = Rc::new(BookSnapshotter::new(
+            interval_ms,
+            snapshot_infos,
+            self.cache.clone(),
+        ));
+        let timer_name = snapshotter.timer_name;
+        let snapshotter_callback = snapshotter.clone();
+        let callback_fn: Rc<dyn Fn(TimeEvent)> =
+            Rc::new(move |event| snapshotter_callback.snapshot(event));
+        let callback = TimeEventCallback::from(callback_fn);
+
+        self.clock
+            .borrow_mut()
+            .set_timer_ns(
+                &timer_name,
+                interval_ns,
+                Some(start_time_ns.into()),
+                None,
+                Some(callback),
+                None,
+                None,
+            )
+            .expect(FAILED);
+
+        self.book_snapshotters.insert(interval_ms, snapshotter);
     }
 
     // -- RESPONSE HANDLERS -----------------------------------------------------------------------
@@ -1921,7 +2012,6 @@ impl DataEngine {
 
     // -- INTERNAL --------------------------------------------------------------------------------
 
-    #[allow(clippy::too_many_arguments)]
     fn setup_book_updater(
         &mut self,
         instrument_id: &InstrumentId,
@@ -2063,9 +2153,8 @@ impl DataEngine {
                     instrument.price_increment(),
                     handler,
                 )) as Box<dyn BarAggregator>,
-                _ => panic!(
-                    "BarAggregation {:?} is not currently implemented. Supported aggregations: MILLISECOND, SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, YEAR, TICK, TICK_IMBALANCE, TICK_RUNS, VOLUME, VOLUME_IMBALANCE, VOLUME_RUNS, VALUE, VALUE_IMBALANCE, VALUE_RUNS, RENKO",
-                    bar_type.spec().aggregation
+                other => unreachable!(
+                    "Unsupported internal bar aggregation dispatch for {other:?}; update `create_bar_aggregator`"
                 ),
             }
         }
@@ -2207,7 +2296,7 @@ impl DataEngine {
     fn stop_bar_aggregator(&mut self, bar_type: BarType) -> anyhow::Result<()> {
         let aggregator = self
             .bar_aggregators
-            .remove(&bar_type.standard())
+            .shift_remove(&bar_type.standard())
             .ok_or_else(|| {
                 anyhow::anyhow!("Cannot stop bar aggregator: no aggregator to stop for {bar_type}")
             })?;

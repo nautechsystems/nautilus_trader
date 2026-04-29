@@ -226,7 +226,7 @@ pub fn ensure_file_exists_or_download_http_with_config(
 
         if !verify_sha256_checksum(filepath, checksums_file)? {
             let actual = calculate_sha256(filepath)?;
-            println!("Checksum mismatch after download (got {actual}), retrying...");
+            println!("Checksum mismatch after download (calculated {actual}), retrying...");
             remove_file(filepath)?;
             drop(_guard);
 
@@ -238,7 +238,7 @@ pub fn ensure_file_exists_or_download_http_with_config(
                 let actual = calculate_sha256(filepath)?;
                 remove_file(filepath)?;
                 anyhow::bail!(
-                    "Checksum mismatch after retry for {} (got {actual})",
+                    "Checksum mismatch after retry for {} (calculated {actual})",
                     filepath.file_name().unwrap_or_default().display(),
                 );
             }
@@ -863,7 +863,7 @@ mod tests {
     }
 
     #[rstest]
-    #[allow(clippy::panic_in_result_fn)]
+    #[expect(clippy::panic_in_result_fn)]
     fn test_calculate_sha256() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
         let test_file_path = temp_dir.path().join("test_file.txt");
@@ -879,7 +879,7 @@ mod tests {
     }
 
     #[rstest]
-    #[allow(clippy::panic_in_result_fn)]
+    #[expect(clippy::panic_in_result_fn)]
     fn test_verify_sha256_checksum() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
         let test_file_path = temp_dir.path().join("test_file.txt");

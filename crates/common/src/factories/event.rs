@@ -237,7 +237,7 @@ impl OrderEventFactory {
     }
 
     /// Generates an order updated event.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn generate_order_updated(
         &self,
@@ -343,7 +343,7 @@ impl OrderEventFactory {
     }
 
     /// Generates an order filled event.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn generate_order_filled(
         &self,

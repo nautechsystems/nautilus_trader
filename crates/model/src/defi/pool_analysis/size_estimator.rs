@@ -87,6 +87,7 @@ pub struct SizeForImpactResult {
 
 impl SizeForImpactResult {
     /// Check if the result is within the specified tolerance.
+    #[must_use]
     pub fn within_tolerance(&self, tolerance_bps: u32) -> bool {
         let diff = self.actual_impact_bps.abs_diff(self.target_impact_bps);
         diff <= tolerance_bps
@@ -96,12 +97,13 @@ impl SizeForImpactResult {
     ///
     /// # Returns
     /// Accuracy percentage (100.0 = perfect match, lower = less accurate)
+    #[must_use]
     pub fn accuracy_percent(&self) -> f64 {
         if self.target_impact_bps == 0 {
             return 100.0;
         }
-        let diff = self.actual_impact_bps.abs_diff(self.target_impact_bps) as f64;
-        let target = self.target_impact_bps as f64;
+        let diff = f64::from(self.actual_impact_bps.abs_diff(self.target_impact_bps));
+        let target = f64::from(self.target_impact_bps);
         100.0 - (diff / target * 100.0).min(100.0)
     }
 }
@@ -130,17 +132,18 @@ struct BinarySearchState {
 
 /// Estimates the maximum trade size for a given impact target.
 ///
-/// Uses a simple heuristic: size ≈ liquidity × price_factor × impact_ratio × safety_multiplier
+/// Uses a simple heuristic: size ≈ liquidity × `price_factor` × `impact_ratio` × `safety_multiplier`
 /// The binary search will refine this estimate, so perfect accuracy isn't needed.
 ///
 /// # Arguments
 /// * `profiler` - Reference to the pool profiler
 /// * `impact_bps` - Target impact in basis points
 /// * `zero_for_one` - Swap direction
-/// * `config` - Estimation configuration (only uses safety_multiplier)
+/// * `config` - Estimation configuration (only uses `safety_multiplier`)
 ///
 /// # Returns
 /// Estimated maximum size as U256
+#[must_use]
 pub fn estimate_max_size_for_impact(
     profiler: &PoolProfiler,
     impact_bps: u32,
@@ -254,13 +257,12 @@ fn binary_search_for_size(
         }
 
         // Calculate slippage at midpoint
-        let slippage_mid = match slippage_for_size_bps(profiler, mid, zero_for_one) {
-            Ok(s) => s,
-            Err(_) => {
-                // Swap failed, mid too large
-                high = mid;
-                continue;
-            }
+        let slippage_mid = if let Ok(s) = slippage_for_size_bps(profiler, mid, zero_for_one) {
+            s
+        } else {
+            // Swap failed, mid too large
+            high = mid;
+            continue;
         };
 
         // Check convergence by slippage

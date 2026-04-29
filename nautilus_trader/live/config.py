@@ -15,15 +15,20 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import msgspec
 
 from nautilus_trader.common import Environment
 from nautilus_trader.common.config import ActorConfig
+from nautilus_trader.common.config import ImportableConfig
 from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.common.config import NonNegativeInt
 from nautilus_trader.common.config import PositiveFloat
 from nautilus_trader.common.config import PositiveInt
+from nautilus_trader.common.config import msgspec_decoding_hook
+from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.common.config import resolve_config_path
 from nautilus_trader.common.config import resolve_path
 from nautilus_trader.core.correctness import PyCondition
@@ -304,9 +309,55 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
     data_engine: LiveDataEngineConfig = LiveDataEngineConfig()
     risk_engine: LiveRiskEngineConfig = LiveRiskEngineConfig()
     exec_engine: LiveExecEngineConfig = LiveExecEngineConfig()
-    data_clients: dict[str, LiveDataClientConfig] = {}
-    exec_clients: dict[str, LiveExecClientConfig] = {}
+    data_clients: dict[str, Any] = {}
+    exec_clients: dict[str, Any] = {}
 
     def __post_init__(self):
         if isinstance(self.trader_id, str):
             msgspec.structs.force_setattr(self, "trader_id", TraderId(self.trader_id))
+
+        msgspec.structs.force_setattr(
+            self,
+            "data_clients",
+            self._parse_client_configs(self.data_clients, LiveDataClientConfig),
+        )
+        msgspec.structs.force_setattr(
+            self,
+            "exec_clients",
+            self._parse_client_configs(self.exec_clients, LiveExecClientConfig),
+        )
+
+    @staticmethod
+    def _parse_client_configs(
+        configs: dict[str, Any],
+        config_type: type[LiveDataClientConfig | LiveExecClientConfig],
+    ) -> dict[str, ImportableConfig | LiveDataClientConfig | LiveExecClientConfig]:
+        parsed: dict[str, ImportableConfig | LiveDataClientConfig | LiveExecClientConfig] = {}
+
+        for name, config in configs.items():
+            parsed[name] = TradingNodeConfig._parse_client_config(config, config_type)
+
+        return parsed
+
+    @staticmethod
+    def _parse_client_config(
+        config: Any,
+        config_type: type[LiveDataClientConfig | LiveExecClientConfig],
+    ) -> ImportableConfig | LiveDataClientConfig | LiveExecClientConfig:
+        if isinstance(config, (ImportableConfig, LiveDataClientConfig, LiveExecClientConfig)):
+            return config
+
+        if not isinstance(config, dict):
+            raise TypeError(
+                f"Expected {config_type.__name__} or ImportableConfig, was {type(config).__name__}",
+            )
+
+        encoded = msgspec.json.encode(config, enc_hook=msgspec_encoding_hook)
+        if "path" in config:
+            return msgspec.json.decode(
+                encoded,
+                type=ImportableConfig,
+                dec_hook=msgspec_decoding_hook,
+            )
+
+        return msgspec.json.decode(encoded, type=config_type, dec_hook=msgspec_decoding_hook)

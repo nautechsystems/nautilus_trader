@@ -43,13 +43,13 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, AtomicSet, UnixNanos,
+    AtomicMap, Params, UnixNanos,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
     data::{Data, FundingRateUpdate, InstrumentStatus, OrderBookDeltas_API},
-    enums::{BookType, MarketStatusAction},
+    enums::{BookType, GreeksConvention, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
@@ -63,7 +63,8 @@ use crate::{
             OKX_VENUE, OKX_WS_HEARTBEAT_SECS, resolve_book_depth, resolve_instrument_families,
         },
         enums::{
-            OKXBookChannel, OKXContractType, OKXInstrumentStatus, OKXInstrumentType, OKXVipLevel,
+            OKXBookChannel, OKXContractType, OKXGreeksType, OKXInstrumentStatus, OKXInstrumentType,
+            OKXVipLevel,
         },
         parse::{
             extract_inst_family, okx_instrument_type_from_symbol, okx_status_to_market_action,
@@ -84,6 +85,54 @@ use crate::{
     },
 };
 
+/// Resolves the set of [`OKXGreeksType`] conventions for an option greeks subscription.
+///
+/// Reads the `greeks_convention` key from `params`, accepting either a single
+/// [`GreeksConvention`] string (e.g. `"BLACK_SCHOLES"` or `"PRICE_ADJUSTED"`) or a
+/// JSON array of such strings. Unrecognized entries log a warning and are skipped.
+/// Returns the default set `{Bs, Pa}` when the key is absent, unparsable, or
+/// yields no valid entries so every subscription defaults to both conventions.
+pub(crate) fn parse_greeks_conventions_from_params(
+    params: &Option<Params>,
+) -> AHashSet<OKXGreeksType> {
+    let default_set: AHashSet<OKXGreeksType> =
+        [OKXGreeksType::Bs, OKXGreeksType::Pa].into_iter().collect();
+
+    let Some(value) = params.as_ref().and_then(|p| p.get("greeks_convention")) else {
+        return default_set;
+    };
+
+    let mut out = AHashSet::new();
+    match value {
+        serde_json::Value::String(s) => push_convention_str(&mut out, s),
+        serde_json::Value::Array(items) => {
+            for item in items {
+                if let Some(s) = item.as_str() {
+                    push_convention_str(&mut out, s);
+                } else {
+                    log::warn!("Ignoring non-string greeks_convention entry {item:?}");
+                }
+            }
+        }
+        other => {
+            log::warn!(
+                "Unsupported greeks_convention value {other:?}, defaulting to both conventions"
+            );
+        }
+    }
+
+    if out.is_empty() { default_set } else { out }
+}
+
+fn push_convention_str(out: &mut AHashSet<OKXGreeksType>, raw: &str) {
+    match raw.parse::<GreeksConvention>() {
+        Ok(convention) => {
+            out.insert(convention.into());
+        }
+        Err(_) => log::warn!("Unrecognized greeks_convention {raw:?}, skipping"),
+    }
+}
+
 #[derive(Debug)]
 pub struct OKXDataClient {
     client_id: ClientId,
@@ -98,8 +147,11 @@ pub struct OKXDataClient {
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     book_channels: Arc<AtomicMap<InstrumentId, OKXBookChannel>>,
     index_ticker_map: Arc<AtomicMap<Ustr, AHashSet<Ustr>>>,
-    option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
-    option_summary_family_subs: AHashMap<Ustr, usize>,
+    option_greeks_subs: Arc<AtomicMap<InstrumentId, AHashSet<OKXGreeksType>>>,
+    // `Mutex<AHashMap>` so the spawned subscribe task can roll back the
+    // refcount on failure. A bare `AHashMap` would leave the count
+    // permanently incremented and wedge future Greeks subscribes.
+    option_summary_family_subs: Arc<std::sync::Mutex<AHashMap<Ustr, usize>>>,
     clock: &'static AtomicTime,
 }
 
@@ -123,8 +175,8 @@ impl OKXDataClient {
                 config.max_retries,
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
-                config.is_demo,
-                config.http_proxy_url.clone(),
+                config.environment,
+                config.proxy_url.clone(),
             )?
         } else {
             OKXHttpClient::new(
@@ -133,8 +185,8 @@ impl OKXDataClient {
                 config.max_retries,
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
-                config.is_demo,
-                config.http_proxy_url.clone(),
+                config.environment,
+                config.proxy_url.clone(),
             )?
         };
 
@@ -146,22 +198,25 @@ impl OKXDataClient {
             None,
             Some(OKX_WS_HEARTBEAT_SECS),
             None,
+            config.transport_backend,
+            config.proxy_url.clone(),
         )
         .context("failed to construct OKX public websocket client")?;
 
         let ws_business = if config.requires_business_ws() {
-            Some(
-                OKXWebSocketClient::new(
-                    Some(config.ws_business_url()),
-                    None, // No auth needed for public business channels
-                    None,
-                    None,
-                    None,
-                    Some(OKX_WS_HEARTBEAT_SECS),
-                    None,
-                )
-                .context("failed to construct OKX business websocket client")?,
+            let ws = OKXWebSocketClient::new(
+                Some(config.ws_business_url()),
+                None, // No auth needed for public business channels
+                None,
+                None,
+                None,
+                Some(OKX_WS_HEARTBEAT_SECS),
+                None,
+                config.transport_backend,
+                config.proxy_url.clone(),
             )
+            .context("failed to construct OKX business websocket client")?;
+            Some(ws)
         } else {
             None
         };
@@ -187,8 +242,8 @@ impl OKXDataClient {
             instruments: Arc::new(AtomicMap::new()),
             book_channels: Arc::new(AtomicMap::new()),
             index_ticker_map: Arc::new(AtomicMap::new()),
-            option_greeks_subs: Arc::new(AtomicSet::new()),
-            option_summary_family_subs: AHashMap::new(),
+            option_greeks_subs: Arc::new(AtomicMap::new()),
+            option_summary_family_subs: Arc::new(std::sync::Mutex::new(AHashMap::new())),
             clock,
         })
     }
@@ -230,7 +285,7 @@ impl OKXDataClient {
         });
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn handle_ws_message(
         message: OKXWsMessage,
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
@@ -239,7 +294,7 @@ impl OKXDataClient {
         quote_cache: &mut QuoteCache,
         funding_cache: &mut AHashMap<Ustr, (Ustr, u64)>,
         index_ticker_map: &Arc<AtomicMap<Ustr, AHashSet<Ustr>>>,
-        option_greeks_subs: &Arc<AtomicSet<InstrumentId>>,
+        option_greeks_subs: &Arc<AtomicMap<InstrumentId, AHashSet<OKXGreeksType>>>,
         clock: &AtomicTime,
     ) {
         match message {
@@ -253,6 +308,7 @@ impl OKXDataClient {
                     return;
                 };
                 let ts_init = clock.get_time_ns();
+
                 match parse_book_msg_vec(
                     data,
                     &instrument.id(),
@@ -279,6 +335,7 @@ impl OKXDataClient {
                 // its own inst_id that we resolve per-message.
                 if matches!(channel, OKXWsChannel::OptionSummary) {
                     let ts_init = clock.get_time_ns();
+
                     match serde_json::from_value::<Vec<OKXOptionSummaryMsg>>(data) {
                         Ok(msgs) => {
                             let subs = option_greeks_subs.load();
@@ -289,22 +346,32 @@ impl OKXDataClient {
                                     continue;
                                 };
                                 let instrument_id = instrument.id();
-                                if !subs.contains(&instrument_id) {
+                                let Some(conventions) = subs.get(&instrument_id) else {
                                     continue;
-                                }
-                                match parse_option_summary_greeks(msg, &instrument_id, ts_init) {
-                                    Ok(greeks) => {
-                                        if let Err(e) =
-                                            data_sender.send(DataEvent::OptionGreeks(greeks))
-                                        {
-                                            log::error!("Failed to emit option greeks event: {e}");
+                                };
+
+                                for greeks_type in conventions {
+                                    match parse_option_summary_greeks(
+                                        msg,
+                                        &instrument_id,
+                                        *greeks_type,
+                                        ts_init,
+                                    ) {
+                                        Ok(greeks) => {
+                                            if let Err(e) =
+                                                data_sender.send(DataEvent::OptionGreeks(greeks))
+                                            {
+                                                log::error!(
+                                                    "Failed to emit option greeks event: {e}"
+                                                );
+                                            }
                                         }
-                                    }
-                                    Err(e) => {
-                                        log::error!(
-                                            "Failed to parse option summary for {}: {e}",
-                                            msg.inst_id
-                                        );
+                                        Err(e) => {
+                                            log::error!(
+                                                "Failed to parse option summary for {} ({greeks_type:?}): {e}",
+                                                msg.inst_id
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -339,6 +406,7 @@ impl OKXDataClient {
                             log::warn!("No cached instrument for index ticker symbol: {sym}");
                             continue;
                         };
+
                         match parse_index_price_msg_vec(
                             data.clone(),
                             &instrument.id(),
@@ -620,13 +688,12 @@ impl DataClient for OKXDataClient {
 
     fn start(&mut self) -> anyhow::Result<()> {
         log::info!(
-            "Started: client_id={}, vip_level={:?}, instrument_types={:?}, is_demo={}, http_proxy_url={:?}, ws_proxy_url={:?}",
+            "Started: client_id={}, vip_level={:?}, instrument_types={:?}, environment={}, proxy_url={:?}",
             self.client_id,
             self.vip_level(),
             self.config.instrument_types,
-            self.config.is_demo,
-            self.config.http_proxy_url,
-            self.config.ws_proxy_url,
+            self.config.environment,
+            self.config.proxy_url,
         );
         Ok(())
     }
@@ -644,8 +711,12 @@ impl DataClient for OKXDataClient {
         self.cancellation_token = CancellationToken::new();
         self.tasks.clear();
         self.book_channels.store(AHashMap::new());
-        self.option_greeks_subs.store(AHashSet::new());
-        self.option_summary_family_subs.clear();
+        self.option_greeks_subs
+            .store(AHashMap::<InstrumentId, AHashSet<OKXGreeksType>>::new());
+        self.option_summary_family_subs
+            .lock()
+            .expect("option_summary_family_subs mutex poisoned")
+            .clear();
         Ok(())
     }
 
@@ -749,6 +820,7 @@ impl DataClient for OKXDataClient {
             let greeks_subs = self.option_greeks_subs.clone();
             let cancel = self.cancellation_token.clone();
             let clock = self.clock;
+
             let handle = get_runtime().spawn(async move {
                 let mut instruments_by_symbol: AHashMap<Ustr, InstrumentAny> = insts
                     .load()
@@ -758,6 +830,7 @@ impl DataClient for OKXDataClient {
                 let mut quote_cache = QuoteCache::new();
                 let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
                 pin_mut!(stream);
+
                 loop {
                     tokio::select! {
                         Some(message) = stream.next() => {
@@ -810,6 +883,7 @@ impl DataClient for OKXDataClient {
             let greeks_subs = self.option_greeks_subs.clone();
             let cancel = self.cancellation_token.clone();
             let clock = self.clock;
+
             let handle = get_runtime().spawn(async move {
                 let mut instruments_by_symbol: AHashMap<Ustr, InstrumentAny> = insts
                     .load()
@@ -819,6 +893,7 @@ impl DataClient for OKXDataClient {
                 let mut quote_cache = QuoteCache::new();
                 let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
                 pin_mut!(stream);
+
                 loop {
                     tokio::select! {
                         Some(message) = stream.next() => {
@@ -888,8 +963,12 @@ impl DataClient for OKXDataClient {
         }
 
         self.book_channels.store(AHashMap::new());
-        self.option_greeks_subs.store(AHashSet::new());
-        self.option_summary_family_subs.clear();
+        self.option_greeks_subs
+            .store(AHashMap::<InstrumentId, AHashSet<OKXGreeksType>>::new());
+        self.option_summary_family_subs
+            .lock()
+            .expect("option_summary_family_subs mutex poisoned")
+            .clear();
         self.is_connected.store(false, Ordering::Release);
         log::info!("Disconnected: client_id={}", self.client_id);
         Ok(())
@@ -903,7 +982,7 @@ impl DataClient for OKXDataClient {
         !self.is_connected()
     }
 
-    fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
+    fn subscribe_instruments(&mut self, _cmd: SubscribeInstruments) -> anyhow::Result<()> {
         for inst_type in &self.config.instrument_types {
             let ws = self.public_ws()?.clone();
             let inst_type = *inst_type;
@@ -921,7 +1000,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
         // OKX instruments channel doesn't support subscribing to individual instruments via instId
         // Instead, subscribe to the instrument type if not already subscribed
         let instrument_id = cmd.instrument_id;
@@ -939,7 +1018,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!("OKX only supports L2_MBP order book deltas");
         }
@@ -1001,7 +1080,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
+    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
 
@@ -1016,7 +1095,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
 
@@ -1031,7 +1110,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
+    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
 
@@ -1046,7 +1125,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
         let symbol = instrument_id.symbol.inner();
@@ -1068,7 +1147,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
         let ws = self.business_ws()?.clone();
         let bar_type = cmd.bar_type;
 
@@ -1083,7 +1162,7 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
 
@@ -1098,20 +1177,47 @@ impl DataClient for OKXDataClient {
         Ok(())
     }
 
-    fn subscribe_option_greeks(&mut self, cmd: &SubscribeOptionGreeks) -> anyhow::Result<()> {
+    fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
-        self.option_greeks_subs.insert(instrument_id);
+        let conventions = parse_greeks_conventions_from_params(&cmd.params);
+        self.option_greeks_subs.insert(instrument_id, conventions);
 
         let family = extract_inst_family(instrument_id.symbol.inner().as_str())?;
-        let count = self.option_summary_family_subs.entry(family).or_default();
-        *count += 1;
-        if *count == 1 {
+        let is_first = {
+            let mut family_subs = self
+                .option_summary_family_subs
+                .lock()
+                .expect("option_summary_family_subs mutex poisoned");
+            let count = family_subs.entry(family).or_default();
+            *count += 1;
+            *count == 1
+        };
+
+        if is_first {
             let ws = self.public_ws()?.clone();
+            let family_subs = self.option_summary_family_subs.clone();
             self.spawn_ws(
                 async move {
-                    ws.subscribe_option_summary(family)
+                    let result = ws
+                        .subscribe_option_summary(family)
                         .await
-                        .context("opt-summary subscription")
+                        .context("opt-summary subscription");
+
+                    if result.is_err() {
+                        // Roll back the refcount so a retry can re-arm the subscribe;
+                        // otherwise the family wedges and Greeks stay dark.
+                        let mut subs = family_subs
+                            .lock()
+                            .expect("option_summary_family_subs mutex poisoned");
+
+                        if let Some(count) = subs.get_mut(&family) {
+                            *count = count.saturating_sub(1);
+                            if *count == 0 {
+                                subs.remove(&family);
+                            }
+                        }
+                    }
+                    result
                 },
                 "option greeks subscription",
             );
@@ -1121,7 +1227,7 @@ impl DataClient for OKXDataClient {
 
     fn subscribe_instrument_status(
         &mut self,
-        cmd: &SubscribeInstrumentStatus,
+        cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         let ws = self.public_ws()?.clone();
         let instrument_id = cmd.instrument_id;
@@ -1224,6 +1330,12 @@ impl DataClient for OKXDataClient {
         let instrument_id = cmd.instrument_id;
         let symbol = instrument_id.symbol.inner();
 
+        // The OKX index-tickers channel is keyed by base pair, so multiple
+        // instruments on the same pair share one subscription. Per-base-pair
+        // refcounting lives on the WS client, so we always forward the
+        // unsubscribe and let the WS layer fire the venue request only when
+        // it knows the last subscriber dropped. Local routing in
+        // `index_ticker_map` is still maintained for downstream emit fan-out.
         if let Ok((base, quote)) = parse_base_quote_from_symbol(symbol.as_str()) {
             let base_pair = Ustr::from(&format!("{base}-{quote}"));
             self.index_ticker_map.rcu(|m| {
@@ -1282,20 +1394,35 @@ impl DataClient for OKXDataClient {
         self.option_greeks_subs.remove(&instrument_id);
 
         let family = extract_inst_family(instrument_id.symbol.inner().as_str())?;
-        if let Some(count) = self.option_summary_family_subs.get_mut(&family) {
-            *count = count.saturating_sub(1);
-            if *count == 0 {
-                self.option_summary_family_subs.remove(&family);
-                let ws = self.public_ws()?.clone();
-                self.spawn_ws(
-                    async move {
-                        ws.unsubscribe_option_summary(family)
-                            .await
-                            .context("opt-summary unsubscription")
-                    },
-                    "option greeks unsubscription",
-                );
+        let should_unsubscribe = {
+            let mut family_subs = self
+                .option_summary_family_subs
+                .lock()
+                .expect("option_summary_family_subs mutex poisoned");
+
+            if let Some(count) = family_subs.get_mut(&family) {
+                *count = count.saturating_sub(1);
+                if *count == 0 {
+                    family_subs.remove(&family);
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
             }
+        };
+
+        if should_unsubscribe {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_option_summary(family)
+                        .await
+                        .context("opt-summary unsubscription")
+                },
+                "option greeks unsubscription",
+            );
         }
         Ok(())
     }
@@ -1702,5 +1829,116 @@ impl DataClient for OKXDataClient {
         });
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use serde_json::json;
+
+    use super::*;
+
+    fn both() -> AHashSet<OKXGreeksType> {
+        [OKXGreeksType::Bs, OKXGreeksType::Pa].into_iter().collect()
+    }
+
+    fn only(greeks_type: OKXGreeksType) -> AHashSet<OKXGreeksType> {
+        [greeks_type].into_iter().collect()
+    }
+
+    #[rstest]
+    fn parse_conventions_returns_both_when_params_missing() {
+        let result = parse_greeks_conventions_from_params(&None);
+        assert_eq!(result, both());
+    }
+
+    #[rstest]
+    fn parse_conventions_returns_both_when_key_absent() {
+        let mut params = Params::new();
+        params.insert("other_key".to_string(), json!("value"));
+        let result = parse_greeks_conventions_from_params(&Some(params));
+        assert_eq!(result, both());
+    }
+
+    #[rstest]
+    #[case("BLACK_SCHOLES", OKXGreeksType::Bs)]
+    #[case("PRICE_ADJUSTED", OKXGreeksType::Pa)]
+    #[case("black_scholes", OKXGreeksType::Bs)]
+    #[case("price_adjusted", OKXGreeksType::Pa)]
+    fn parse_conventions_accepts_single_string(#[case] raw: &str, #[case] expected: OKXGreeksType) {
+        let mut params = Params::new();
+        params.insert("greeks_convention".to_string(), json!(raw));
+        let result = parse_greeks_conventions_from_params(&Some(params));
+        assert_eq!(result, only(expected));
+    }
+
+    #[rstest]
+    fn parse_conventions_accepts_list_of_strings() {
+        let mut params = Params::new();
+        params.insert(
+            "greeks_convention".to_string(),
+            json!(["BLACK_SCHOLES", "PRICE_ADJUSTED"]),
+        );
+        let result = parse_greeks_conventions_from_params(&Some(params));
+        assert_eq!(result, both());
+    }
+
+    #[rstest]
+    fn parse_conventions_accepts_single_entry_list() {
+        let mut params = Params::new();
+        params.insert("greeks_convention".to_string(), json!(["PRICE_ADJUSTED"]));
+        let result = parse_greeks_conventions_from_params(&Some(params));
+        assert_eq!(result, only(OKXGreeksType::Pa));
+    }
+
+    #[rstest]
+    fn parse_conventions_deduplicates_list_entries() {
+        let mut params = Params::new();
+        params.insert(
+            "greeks_convention".to_string(),
+            json!(["BLACK_SCHOLES", "black_scholes"]),
+        );
+        let result = parse_greeks_conventions_from_params(&Some(params));
+        assert_eq!(result, only(OKXGreeksType::Bs));
+    }
+
+    #[rstest]
+    fn parse_conventions_skips_unknown_list_entries() {
+        let mut params = Params::new();
+        params.insert(
+            "greeks_convention".to_string(),
+            json!(["BOGUS", "PRICE_ADJUSTED"]),
+        );
+        let result = parse_greeks_conventions_from_params(&Some(params));
+        assert_eq!(result, only(OKXGreeksType::Pa));
+    }
+
+    #[rstest]
+    fn parse_conventions_falls_back_to_both_on_all_unknown() {
+        let mut params = Params::new();
+        params.insert("greeks_convention".to_string(), json!(["BOGUS"]));
+        let result = parse_greeks_conventions_from_params(&Some(params));
+        assert_eq!(result, both());
+    }
+
+    #[rstest]
+    #[case(json!(1))]
+    #[case(json!(null))]
+    #[case(json!(true))]
+    #[case(json!({"nested": "object"}))]
+    fn parse_conventions_falls_back_on_non_string_value(#[case] value: serde_json::Value) {
+        let mut params = Params::new();
+        params.insert("greeks_convention".to_string(), value);
+        let result = parse_greeks_conventions_from_params(&Some(params));
+        assert_eq!(result, both());
+    }
+
+    #[rstest]
+    fn parse_conventions_falls_back_on_unknown_single_string() {
+        let mut params = Params::new();
+        params.insert("greeks_convention".to_string(), json!("BOGUS"));
+        let result = parse_greeks_conventions_from_params(&Some(params));
+        assert_eq!(result, both());
     }
 }

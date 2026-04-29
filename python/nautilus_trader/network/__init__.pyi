@@ -172,6 +172,7 @@ class WebSocketConfig:
         reconnect_jitter_ms: int | None = 100,
         reconnect_max_attempts: int | None = None,
         idle_timeout_ms: int | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
 
 @typing.final

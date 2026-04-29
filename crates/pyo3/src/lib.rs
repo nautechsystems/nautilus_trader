@@ -169,6 +169,13 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "cython-compat")]
     re_export_module_attributes(m, n)?;
 
+    let n = "risk";
+    let submodule = pyo3::wrap_pymodule!(nautilus_risk::python::risk);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    #[cfg(feature = "cython-compat")]
+    re_export_module_attributes(m, n)?;
+
     let n = "serialization";
     let submodule = pyo3::wrap_pymodule!(nautilus_serialization::python::serialization);
     m.add_wrapped(submodule)?;
@@ -229,6 +236,13 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "cython-compat")]
     re_export_module_attributes(m, n)?;
 
+    let n = "coinbase";
+    let submodule = pyo3::wrap_pymodule!(nautilus_coinbase::python::coinbase);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    #[cfg(feature = "cython-compat")]
+    re_export_module_attributes(m, n)?;
+
     let n = "databento";
     let submodule = pyo3::wrap_pymodule!(nautilus_databento::python::databento);
     m.add_wrapped(submodule)?;
@@ -259,6 +273,13 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     let n = "kraken";
     let submodule = pyo3::wrap_pymodule!(nautilus_kraken::python::kraken);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    #[cfg(feature = "cython-compat")]
+    re_export_module_attributes(m, n)?;
+
+    let n = "interactive_brokers";
+    let submodule = pyo3::wrap_pymodule!(nautilus_interactive_brokers::python::interactive_brokers);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     #[cfg(feature = "cython-compat")]

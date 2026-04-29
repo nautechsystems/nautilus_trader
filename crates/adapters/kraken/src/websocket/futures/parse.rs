@@ -309,7 +309,7 @@ pub fn parse_futures_ws_order_status_report(
             TriggerType::Default,
             |s| match s {
                 "mark" | "mark_price" => TriggerType::MarkPrice,
-                "index" | "index_price" => TriggerType::IndexPrice,
+                "spot" | "spot_price" | "index" | "index_price" => TriggerType::IndexPrice,
                 _ => TriggerType::LastPrice,
             },
         ));
@@ -683,6 +683,33 @@ mod tests {
         assert_eq!(report.trigger_price.unwrap().as_f64(), 36000.0);
         assert_eq!(report.price.unwrap().as_f64(), 35500.0);
         assert_eq!(report.order_side, OrderSide::Sell);
+    }
+
+    #[rstest]
+    fn test_parse_futures_ws_order_status_report_spot_trigger_signal() {
+        let order = KrakenFuturesOpenOrder {
+            instrument: ustr::Ustr::from("PI_XBTUSD"),
+            time: 1700000000000,
+            last_update_time: 1700000000100,
+            qty: 500.0,
+            filled: 0.0,
+            limit_price: None,
+            stop_price: Some(36000.0),
+            order_type: KrakenFuturesOrderType::TakeProfit,
+            order_id: "tp-spot-001".to_string(),
+            cli_ord_id: Some("my-tp-spot-1".to_string()),
+            direction: 0,
+            reduce_only: false,
+            trigger_signal: Some("spot".to_string()),
+        };
+        let instrument = create_mock_perp();
+        let account_id = AccountId::from("KRAKEN-001");
+
+        let report =
+            parse_futures_ws_order_status_report(&order, false, None, &instrument, account_id, TS)
+                .unwrap();
+
+        assert_eq!(report.trigger_type, Some(TriggerType::IndexPrice));
     }
 
     #[rstest]

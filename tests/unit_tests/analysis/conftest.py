@@ -23,6 +23,7 @@ def convert_series_to_dict(series: pd.Series) -> dict[int, float]:
     if series.empty:
         return {}
     result = {}
+
     for idx, val in series.items():
         # Check if index is datetime (has .value attribute for nanoseconds)
         if hasattr(idx, "value"):

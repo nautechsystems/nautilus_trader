@@ -33,12 +33,14 @@ from nautilus_trader.core.nautilus_pyo3 import KrakenProductType
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstruments
+from nautilus_trader.data.messages import SubscribeInstrumentStatus
 from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
@@ -48,6 +50,7 @@ from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstruments
+from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
 from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
@@ -56,12 +59,22 @@ from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOU
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import MarketStatusAction
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 class KrakenDataClient(LiveMarketDataClient):
@@ -148,6 +161,7 @@ class KrakenDataClient(LiveMarketDataClient):
                 environment=environment,
                 base_url=config.base_url_ws_spot,
                 heartbeat_secs=config.ws_heartbeat_secs,
+                proxy_url=config.proxy_url,
             )
             self._log.info(f"Spot WebSocket URL {self._ws_client_spot.url}", LogColor.BLUE)
 
@@ -159,12 +173,15 @@ class KrakenDataClient(LiveMarketDataClient):
                 environment=environment,
                 base_url=config.base_url_ws_futures,
                 heartbeat_secs=config.ws_heartbeat_secs,
+                proxy_url=config.proxy_url,
             )
             self._log.info(f"Futures WebSocket URL {self._ws_client_futures.url}", LogColor.BLUE)
 
         self._ws_client_async_futures: set[asyncio.Future] = set()
 
         self._update_instruments_task: asyncio.Task | None = None
+        self._instrument_status_subs: set[InstrumentId] = set()
+        self._status_cache: dict[InstrumentId, MarketStatusAction] = {}
 
     @property
     def instrument_provider(self) -> KrakenInstrumentProvider:
@@ -223,6 +240,7 @@ class KrakenDataClient(LiveMarketDataClient):
             )
 
         if self._config.update_instruments_interval_mins:
+            await self._seed_instrument_status_cache()
             self._update_instruments_task = self.create_task(
                 self._update_instruments(self._config.update_instruments_interval_mins),
             )
@@ -314,6 +332,28 @@ class KrakenDataClient(LiveMarketDataClient):
         else:
             self._log.warning(
                 "Instrument subscription requested but update_instruments_interval_mins is not configured",
+            )
+
+    async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
+        if self._config.update_instruments_interval_mins:
+            self._log.debug(
+                f"subscribe_instrument_status: {command.instrument_id} "
+                f"(status changes detected via periodic instrument polling)",
+            )
+        else:
+            self._log.warning(
+                "Instrument status subscription requested but "
+                "update_instruments_interval_mins is not configured",
+            )
+
+        self._instrument_status_subs.add(command.instrument_id)
+
+        cached_action = self._status_cache.get(command.instrument_id)
+        if cached_action is not None:
+            self._emit_instrument_status(
+                command.instrument_id,
+                cached_action,
+                self._clock.timestamp_ns(),
             )
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
@@ -459,6 +499,10 @@ class KrakenDataClient(LiveMarketDataClient):
         # Instruments are updated via polling task, no WebSocket unsubscribe needed
         pass
 
+    async def _unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
+        self._log.debug(f"unsubscribe_instrument_status: {command.instrument_id}")
+        self._instrument_status_subs.discard(command.instrument_id)
+
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         symbol = command.instrument_id.symbol.value
         ws_client = self._get_ws_client_for_symbol(symbol)
@@ -573,6 +617,7 @@ class KrakenDataClient(LiveMarketDataClient):
             all_pyo3_instruments.extend(pyo3_instruments)
 
         instruments = []
+
         for pyo3_instrument in all_pyo3_instruments:
             if isinstance(pyo3_instrument, KRAKEN_INSTRUMENT_TYPES):
                 self._cache_instrument(pyo3_instrument)
@@ -615,6 +660,125 @@ class KrakenDataClient(LiveMarketDataClient):
                 return
 
         self._log.warning(f"Instrument {request.instrument_id} not found")
+
+    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
+        symbol = request.instrument_id.symbol.value
+        client = self._get_http_client_for_symbol(symbol)
+
+        if client is None:
+            self._log.error(f"No HTTP client for instrument {request.instrument_id}")
+            return
+
+        instrument = self._cache.instrument(request.instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot find instrument for {request.instrument_id}")
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
+        depth = request.limit or None
+
+        try:
+            pyo3_book = await client.request_book_snapshot(
+                instrument_id=pyo3_instrument_id,
+                depth=depth,
+            )
+        except Exception as e:
+            self._log.exception(
+                f"Failed to request book snapshot for {request.instrument_id}",
+                e,
+            )
+            return
+
+        ts_event = pyo3_book.ts_last
+        ts_init = self._clock.timestamp_ns()
+        sequence = pyo3_book.sequence
+
+        # Tag every snapshot delta with F_SNAPSHOT so downstream consumers can
+        # recognize and flush a complete snapshot (final delta also gets F_LAST).
+        snapshot_flag = RecordFlag.F_SNAPSHOT
+        deltas: list[OrderBookDelta] = [
+            OrderBookDelta(
+                instrument_id=request.instrument_id,
+                action=BookAction.CLEAR,
+                order=BookOrder(
+                    side=OrderSide.NO_ORDER_SIDE,
+                    price=instrument.make_price(0),
+                    size=instrument.make_qty(0),
+                    order_id=0,
+                ),
+                flags=snapshot_flag,
+                sequence=sequence,
+                ts_event=ts_event,
+                ts_init=ts_init,
+            ),
+        ]
+
+        bids = list(pyo3_book.bids())
+        asks = list(pyo3_book.asks())
+
+        for i, level in enumerate(bids):
+            order = BookOrder(
+                side=OrderSide.BUY,
+                price=instrument.make_price(level.price.as_double()),
+                size=instrument.make_qty(level.size()),
+                order_id=i,
+            )
+            deltas.append(
+                OrderBookDelta(
+                    instrument_id=request.instrument_id,
+                    action=BookAction.ADD,
+                    order=order,
+                    flags=snapshot_flag,
+                    sequence=sequence,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                ),
+            )
+
+        for i, level in enumerate(asks):
+            order = BookOrder(
+                side=OrderSide.SELL,
+                price=instrument.make_price(level.price.as_double()),
+                size=instrument.make_qty(level.size()),
+                order_id=len(bids) + i,
+            )
+            deltas.append(
+                OrderBookDelta(
+                    instrument_id=request.instrument_id,
+                    action=BookAction.ADD,
+                    order=order,
+                    flags=snapshot_flag,
+                    sequence=sequence,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                ),
+            )
+
+        last = deltas[-1]
+        deltas[-1] = OrderBookDelta(
+            instrument_id=last.instrument_id,
+            action=last.action,
+            order=last.order,
+            flags=snapshot_flag | RecordFlag.F_LAST,
+            sequence=last.sequence,
+            ts_event=last.ts_event,
+            ts_init=last.ts_init,
+        )
+
+        snapshot = OrderBookDeltas(instrument_id=request.instrument_id, deltas=deltas)
+
+        data_type = DataType(
+            OrderBookDeltas,
+            metadata={"instrument_id": request.instrument_id},
+        )
+        self._handle_data_response(
+            data_type=data_type,
+            data=[snapshot],
+            correlation_id=request.id,
+            start=None,
+            end=None,
+            params=request.params,
+        )
 
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
         symbol = request.instrument_id.symbol.value
@@ -711,11 +875,117 @@ class KrakenDataClient(LiveMarketDataClient):
                 self._cache_instruments()
 
                 self._send_all_instruments_to_data_engine()
+                await self._poll_instrument_statuses()
             except asyncio.CancelledError:
                 self._log.debug("Canceled task 'update_instruments'")
                 return
             except Exception as e:
                 self._log.error(f"Error updating instruments: {e}")
+
+    async def _request_all_instrument_statuses(
+        self,
+    ) -> tuple[dict[InstrumentId, MarketStatusAction], set[KrakenProductType]]:
+        statuses: dict[InstrumentId, MarketStatusAction] = {}
+        successful: set[KrakenProductType] = set()
+
+        if self._http_client_spot is not None:
+            try:
+                spot_statuses = await self._http_client_spot.request_instrument_statuses()
+                statuses.update(spot_statuses)
+                successful.add(KrakenProductType.SPOT)
+            except Exception as e:
+                self._log.warning(f"Spot instrument status fetch failed: {e}")
+
+        if self._http_client_futures is not None:
+            try:
+                futures_statuses = await self._http_client_futures.request_instrument_statuses()
+                statuses.update(futures_statuses)
+                successful.add(KrakenProductType.FUTURES)
+            except Exception as e:
+                self._log.warning(f"Futures instrument status fetch failed: {e}")
+
+        return statuses, successful
+
+    async def _seed_instrument_status_cache(self) -> None:
+        try:
+            statuses, _ = await self._request_all_instrument_statuses()
+            self._status_cache = statuses
+            self._log.info(
+                f"Seeded instrument status cache with {len(self._status_cache)} entries",
+                LogColor.BLUE,
+            )
+        except Exception as e:
+            self._log.warning(f"Failed to seed instrument status cache: {e}")
+
+    async def _poll_instrument_statuses(self) -> None:
+        if not self._instrument_status_subs:
+            return
+
+        try:
+            new_statuses, successful = await self._request_all_instrument_statuses()
+        except Exception as e:
+            self._log.warning(f"Instrument status poll failed: {e}")
+            return
+
+        if not successful:
+            return
+
+        self._diff_and_emit_statuses(new_statuses, successful)
+
+    def _diff_and_emit_statuses(
+        self,
+        new_statuses: dict[InstrumentId, MarketStatusAction],
+        successful: set[KrakenProductType],
+    ) -> None:
+        ts_ns = self._clock.timestamp_ns()
+
+        for instrument_id, new_action in new_statuses.items():
+            cached = self._status_cache.get(instrument_id)
+            if cached is None or cached != new_action:
+                self._status_cache[instrument_id] = new_action
+                if instrument_id in self._instrument_status_subs:
+                    self._emit_instrument_status(instrument_id, new_action, ts_ns)
+
+        # Only mark instruments as removed when their owning endpoint succeeded,
+        # otherwise a transient spot/futures failure would emit spurious
+        # NOT_AVAILABLE_FOR_TRADING events for the other endpoint's instruments.
+        removed = []
+
+        for instrument_id in self._status_cache:
+            if instrument_id in new_statuses:
+                continue
+            symbol = instrument_id.symbol.value
+            product_type = nautilus_pyo3.kraken_product_type_from_symbol(symbol)
+            if product_type in successful:
+                removed.append(instrument_id)
+
+        for instrument_id in removed:
+            del self._status_cache[instrument_id]
+            if instrument_id in self._instrument_status_subs:
+                self._emit_instrument_status(
+                    instrument_id,
+                    MarketStatusAction.NOT_AVAILABLE_FOR_TRADING,
+                    ts_ns,
+                )
+
+    def _emit_instrument_status(
+        self,
+        instrument_id: InstrumentId,
+        action: MarketStatusAction,
+        ts_ns: int,
+    ) -> None:
+        status = InstrumentStatus(
+            instrument_id=instrument_id,
+            action=action,
+            ts_event=ts_ns,
+            ts_init=ts_ns,
+            reason=None,
+            trading_event=None,
+            is_trading=action == MarketStatusAction.TRADING,
+            is_quoting=None,
+            is_short_sell_restricted=None,
+        )
+        self._handle_data(status)
 
     def _handle_msg(self, msg: Any) -> None:
         try:
@@ -729,6 +999,8 @@ class KrakenDataClient(LiveMarketDataClient):
                 self._handle_instrument_update(msg)
             elif isinstance(msg, nautilus_pyo3.FundingRateUpdate):
                 self._handle_data(FundingRateUpdate.from_pyo3(msg))
+            elif isinstance(msg, nautilus_pyo3.InstrumentStatus):
+                self._handle_data(InstrumentStatus.from_pyo3(msg))
             else:
                 self._log.warning(f"Cannot handle message {msg}, not implemented")
         except Exception as e:

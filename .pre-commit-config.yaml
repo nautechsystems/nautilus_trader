@@ -30,7 +30,7 @@ repos:
       - id: gitlint
 
   - repo: https://github.com/scop/pre-commit-shfmt
-    rev: v3.13.0-1
+    rev: v3.13.1-1
     hooks:
       - id: shfmt
         args: ["-i", "2", "-ci", "-sr", "-ln", "bash", "-w"]
@@ -92,12 +92,20 @@ repos:
         description: Checks GitHub Actions workflow syntax and structural correctness
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.23.1
+    rev: v1.24.1
     hooks:
       - id: zizmor
         name: zizmor (security)
         description: Scans GitHub Actions workflows for security misconfigurations
-        args: ["--no-online-audits", "--min-severity", "medium", "--config", ".zizmor.yml", ".github/"]
+        args:
+          [
+            "--no-online-audits",
+            "--min-severity",
+            "medium",
+            "--config",
+            ".zizmor.yml",
+            ".github/",
+          ]
         pass_filenames: false
 
   ##############################################################################
@@ -115,7 +123,8 @@ repos:
 
       - id: check-non-latin-text
         name: check non-Latin text
-        description: Detect non-Latin characters (CJK, Cyrillic, Arabic, etc.) to enforce English-only
+        description: Detect non-Latin characters (CJK, Cyrillic, Arabic, etc.) to
+          enforce English-only
         entry: bash .pre-commit-hooks/check_non_latin_text.sh
         language: system
         types: [text]
@@ -160,6 +169,13 @@ repos:
         files: ^python/
         pass_filenames: false
 
+      - id: check-links-offline
+        name: check links (offline)
+        description: Verifies internal markdown links resolve on disk via lychee
+        entry: bash .pre-commit-hooks/check_links_offline.sh
+        language: system
+        files: '(\.md$|^docs/.*\.py$)'
+
   ##############################################################################
   #  Rust formatting and linting
   ##############################################################################
@@ -187,6 +203,14 @@ repos:
         entry: bash .pre-commit-hooks/check_tokio_usage.sh
         language: system
         files: '\.rs$|Cargo\.toml$'
+        pass_filenames: false
+
+      - id: check-dst-conventions
+        name: check DST conventions
+        description: Enforces deterministic simulation testing path bans
+        entry: bash .pre-commit-hooks/check_dst_conventions.sh
+        language: system
+        files: '\.rs$'
         pass_filenames: false
 
       - id: check-pyo3-conventions
@@ -290,7 +314,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.8
+    rev: v0.15.12
     hooks:
       - id: ruff
         name: ruff
@@ -299,6 +323,7 @@ repos:
         name: ruff-format
 
   - repo: https://github.com/pycqa/isort
+    # Pinned to 8.0.1: do not bump until isort 9.x leaves alpha
     rev: 8.0.1
     hooks:
       - id: isort
@@ -308,42 +333,44 @@ repos:
         args: ["--settings-file", "pyproject.toml"]
 
   - repo: https://github.com/PyCQA/docformatter
+    # Pinned to 1.7.7 because v1.7.8 conflicts with this repo's Ruff docstring rules
     rev: v1.7.7
     hooks:
       - id: docformatter
         language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
         additional_dependencies: [tomli]
-        args: [
-          "--wrap-summaries", "88",
-          "--wrap-descriptions", "88",
-          "--make-summary-multi-line",
-          "--pre-summary-newline",
-          "--blank",
-          "--recursive",
-          "--in-place",
-        ]
+        args:
+          [
+            "--wrap-summaries",
+            "88",
+            "--wrap-descriptions",
+            "88",
+            "--make-summary-multi-line",
+            "--pre-summary-newline",
+            "--blank",
+            "--recursive",
+            "--in-place",
+          ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.20.0
+    rev: v1.20.2
     hooks:
       - id: mypy
         language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
         exclude: (^python/|^nautilus_trader/.*\.pyi$|^docs/(getting_started|tutorials)/)
-        args: [
-          "--config", "pyproject.toml",
-          "--allow-incomplete-defs",
-        ]
-        additional_dependencies: [
-          msgspec,
-          types-frozendict,
-          types-pytz,
-          types-redis,
-          types-requests,
-          types-toml,
-        ]
+        args: ["--config", "pyproject.toml", "--allow-incomplete-defs"]
+        additional_dependencies:
+          [
+            msgspec,
+            types-frozendict,
+            types-pytz,
+            types-redis,
+            types-requests,
+            types-toml,
+          ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.3 # Must match [tool.uv] required-version in pyproject.toml
+    rev: 0.11.8 # Must match [tool.uv] required-version in pyproject.toml
     hooks:
       - id: uv-lock
         files: ^(uv\.lock|python/uv\.lock)$
@@ -357,7 +384,7 @@ repos:
   #  Markdown formatting and linting
   ##############################################################################
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.22.0
+    rev: v0.22.1
     hooks:
       - id: markdownlint-cli2
         name: markdownlint

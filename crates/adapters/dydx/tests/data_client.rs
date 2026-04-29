@@ -25,7 +25,10 @@ use axum::{
     routing::get,
 };
 use nautilus_common::testing::wait_until_async;
-use nautilus_dydx::{common::enums::DydxCandleResolution, http::client::DydxHttpClient};
+use nautilus_dydx::{
+    common::enums::{DydxCandleResolution, DydxNetwork},
+    http::client::DydxHttpClient,
+};
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::Instrument,
@@ -157,7 +160,7 @@ async fn test_request_instruments_returns_all_active_markets() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
     let instruments = client.request_instruments(None, None, None).await.unwrap();
 
     // All active markets from fixture (BTC-USD, ETH-USD, SOL-USD)
@@ -182,7 +185,7 @@ async fn test_instrument_properties_btc() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
     let instruments = client.request_instruments(None, None, None).await.unwrap();
 
     let btc = instruments
@@ -202,7 +205,7 @@ async fn test_instrument_properties_eth() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
     let instruments = client.request_instruments(None, None, None).await.unwrap();
 
     let eth = instruments
@@ -220,7 +223,7 @@ async fn test_instrument_caching() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
     let instruments = client.request_instruments(None, None, None).await.unwrap();
 
     // Cache instruments
@@ -239,7 +242,7 @@ async fn test_cache_single_instrument() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
     let instruments = client.request_instruments(None, None, None).await.unwrap();
 
     let btc = instruments
@@ -263,7 +266,7 @@ async fn test_request_trades_success() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
     let trades = client.request_trades("BTC-USD", None, None).await.unwrap();
 
     assert_eq!(trades.trades.len(), 3);
@@ -278,7 +281,7 @@ async fn test_trades_chronological_order() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
     let trades = client.request_trades("BTC-USD", None, None).await.unwrap();
 
     // dYdX returns trades in reverse chronological order (newest first)
@@ -298,7 +301,7 @@ async fn test_trades_with_limit() {
     let (addr, state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
     let _trades = client
         .request_trades("BTC-USD", Some(10), None)
         .await
@@ -318,7 +321,7 @@ async fn test_request_candles_success() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
     let candles = client
         .request_candles("BTC-USD", DydxCandleResolution::OneMinute, None, None, None)
         .await
@@ -338,7 +341,7 @@ async fn test_candles_ohlcv_values() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
     let candles = client
         .request_candles("BTC-USD", DydxCandleResolution::OneMinute, None, None, None)
         .await
@@ -357,7 +360,7 @@ async fn test_candles_resolution_param() {
     let (addr, state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
     let _candles = client
         .request_candles(
             "BTC-USD",
@@ -383,7 +386,7 @@ async fn test_candles_chronological_order() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
     let candles = client
         .request_candles("BTC-USD", DydxCandleResolution::OneMinute, None, None, None)
         .await
@@ -419,7 +422,7 @@ async fn test_empty_instruments_response() {
     wait_for_server(addr, "/v4/perpetualMarkets").await;
 
     let base_url = format!("http://{addr}");
-    let client = DydxHttpClient::new(Some(base_url), 5, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
 
     let instruments = client.request_instruments(None, None, None).await.unwrap();
     assert!(instruments.is_empty());
@@ -428,8 +431,14 @@ async fn test_empty_instruments_response() {
 #[rstest]
 #[tokio::test]
 async fn test_network_error() {
-    let client =
-        DydxHttpClient::new(Some("http://localhost:1".to_string()), 1, None, false, None).unwrap();
+    let client = DydxHttpClient::new(
+        Some("http://localhost:1".to_string()),
+        1,
+        None,
+        DydxNetwork::Mainnet,
+        None,
+    )
+    .unwrap();
 
     let result = client.request_instruments(None, None, None).await;
     assert!(result.is_err());
@@ -459,7 +468,7 @@ async fn test_server_error_500() {
     wait_for_server(addr, "/v4/perpetualMarkets").await;
 
     let base_url = format!("http://{addr}");
-    let client = DydxHttpClient::new(Some(base_url), 5, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
 
     let result = client.request_instruments(None, None, None).await;
     assert!(result.is_err());
@@ -489,7 +498,7 @@ async fn test_server_error_429_rate_limit() {
     wait_for_server(addr, "/v4/perpetualMarkets").await;
 
     let base_url = format!("http://{addr}");
-    let client = DydxHttpClient::new(Some(base_url), 5, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
 
     let result = client.request_instruments(None, None, None).await;
     assert!(result.is_err());
@@ -514,7 +523,7 @@ async fn test_malformed_json_response() {
     wait_for_server(addr, "/v4/perpetualMarkets").await;
 
     let base_url = format!("http://{addr}");
-    let client = DydxHttpClient::new(Some(base_url), 5, None, false, None).unwrap();
+    let client = DydxHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
 
     let result = client.request_instruments(None, None, None).await;
     assert!(result.is_err());
@@ -523,14 +532,14 @@ async fn test_malformed_json_response() {
 #[rstest]
 #[tokio::test]
 async fn test_client_testnet_url() {
-    let client = DydxHttpClient::new(None, 30, None, true, None).unwrap();
+    let client = DydxHttpClient::new(None, 30, None, DydxNetwork::Testnet, None).unwrap();
     assert!(client.base_url().contains("testnet"));
 }
 
 #[rstest]
 #[tokio::test]
 async fn test_client_mainnet_url() {
-    let client = DydxHttpClient::new(None, 30, None, false, None).unwrap();
+    let client = DydxHttpClient::new(None, 30, None, DydxNetwork::Mainnet, None).unwrap();
     assert!(client.base_url().contains("indexer.dydx.trade"));
 }
 
@@ -538,6 +547,13 @@ async fn test_client_mainnet_url() {
 #[tokio::test]
 async fn test_custom_base_url() {
     let custom_url = "https://custom.dydx.exchange";
-    let client = DydxHttpClient::new(Some(custom_url.to_string()), 30, None, false, None).unwrap();
+    let client = DydxHttpClient::new(
+        Some(custom_url.to_string()),
+        30,
+        None,
+        DydxNetwork::Mainnet,
+        None,
+    )
+    .unwrap();
     assert_eq!(client.base_url(), custom_url);
 }

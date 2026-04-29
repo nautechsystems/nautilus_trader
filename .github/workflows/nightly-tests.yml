@@ -16,10 +16,14 @@ on:
 jobs:
   turmoil:
     name: turmoil network tests
-    runs-on: depot-ubuntu-22.04-8
+    runs-on: [self-hosted, Linux, X64, self-hosted-linux-x86]
+    env:
+      # Outside the workspace so it survives actions/checkout's git clean -ffdx,
+      # giving us persistent on-disk Rust artifact reuse between runs.
+      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/turmoil
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -36,12 +40,24 @@ jobs:
         uses: ./.github/actions/common-setup
         with:
           python-version: "3.13"
+          # free-disk-space auto-skips on the nautilus-ci-runner-* pool.
           free-disk-space: "true"
+          # Persistent CARGO_TARGET_DIR replaces Swatinem/rust-cache here.
+          rust-cache-enabled: "false"
 
-      - name: Run turmoil network tests
+      - name: Run turmoil network tests (tungstenite)
         env:
           RUST_BACKTRACE: 1
         run: cargo nextest run -p nautilus-network --features turmoil --cargo-profile nextest --status-level fail
+
+      - name: Run turmoil network tests (sockudo)
+        env:
+          RUST_BACKTRACE: 1
+        run: |
+          cargo nextest run -p nautilus-network \
+            --features "turmoil,transport-sockudo" \
+            --test turmoil_sockudo \
+            --cargo-profile nextest --status-level fail
 
   build-macos:
     name: build-macos (nightly)
@@ -62,7 +78,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -115,3 +131,157 @@ jobs:
       - name: Run tests
         run: |
           uv run --no-sync pytest --ignore=tests/performance_tests --reruns 2 --reruns-delay 1
+
+  build-linux-arm:
+    name: build-linux-arm (nightly)
+    runs-on: depot-ubuntu-22.04-arm-8
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
+          - "3.14"
+    defaults:
+      run:
+        shell: bash
+    env:
+      BUILD_MODE: release
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-linux-arm-test-py${{ matrix.python-version }}
+      RUST_BACKTRACE: 1
+    # yamllint disable rule:line-length
+    services:
+      redis:
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: nautilus
+        ports:
+          - 5432:5432
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries 5
+    # yamllint enable rule:line-length
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: ${{ matrix.python-version }}
+          free-disk-space: "true"
+          rust-cache-key: build-linux-arm-test-${{ matrix.python-version }}
+          rust-cache-workspaces: . -> target/build-linux-arm-test-py${{ matrix.python-version }}
+
+      - name: Install Nautilus CLI
+        env:
+          NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
+        run: bash scripts/ci/install-nautilus-cli.sh
+
+      - name: Init postgres schema
+        run: nautilus database init --schema ${{ github.workspace }}/schema/sql
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USERNAME: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DATABASE: nautilus
+
+      - name: Cached test data
+        uses: ./.github/actions/common-test-data
+
+      - name: Run Rust tests (core)
+        run: make cargo-test-core EXTRA_FEATURES="capnp" NEXTEST_PROFILE=ci
+
+      - name: Run Rust tests (adapters)
+        run: make cargo-test-adapters EXTRA_FEATURES="capnp" NEXTEST_PROFILE=ci
+
+      - name: Clean Rust test artifacts
+        run: |
+          rm -rf "${CARGO_TARGET_DIR}/nextest"
+          df -h .
+
+      - name: Build and install wheel
+        uses: ./.github/actions/common-wheel-build
+        with:
+          python-version: ${{ matrix.python-version }}
+          github_ref: ${{ github.ref }}
+
+      - name: Run tests
+        run: |
+          uv run --no-sync pytest --ignore=tests/performance_tests --reruns 2 --reruns-delay 1
+
+  build-windows:
+    name: build-windows (nightly)
+    runs-on: depot-windows-2022-8
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
+          - "3.14"
+    defaults:
+      run:
+        shell: bash
+    env:
+      BUILD_MODE: release
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-windows-test-py${{ matrix.python-version }}
+      HIGH_PRECISION: false
+      PARALLEL_BUILD: false
+      RUST_BACKTRACE: 1
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: ${{ matrix.python-version }}
+          free-disk-space: "true"
+          rust-cache-key: build-windows-test-${{ matrix.python-version }}
+          rust-cache-workspaces: . -> target/build-windows-test-py${{ matrix.python-version }}
+
+      - name: Build and install wheel
+        uses: ./.github/actions/common-wheel-build
+        with:
+          python-version: ${{ matrix.python-version }}
+          github_ref: ${{ github.ref }}
+
+      - name: Cached test data
+        uses: ./.github/actions/common-test-data
+
+      - name: Run tests
+        run: |
+          uv run --no-sync python -m pytest --ignore=tests/performance_tests --reruns 2 --reruns-delay 1

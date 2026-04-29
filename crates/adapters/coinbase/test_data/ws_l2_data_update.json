@@ -1,0 +1,26 @@
+{
+  "channel": "l2_data",
+  "client_id": "",
+  "timestamp": "2026-04-07T14:30:01.456789Z",
+  "sequence_num": 1,
+  "events": [
+    {
+      "type": "update",
+      "product_id": "BTC-USD",
+      "updates": [
+        {
+          "side": "bid",
+          "event_time": "2026-04-07T14:30:01.456789Z",
+          "price_level": "68900.00",
+          "new_quantity": "2.00000000"
+        },
+        {
+          "side": "offer",
+          "event_time": "2026-04-07T14:30:01.456789Z",
+          "price_level": "68901.00",
+          "new_quantity": "0.00000000"
+        }
+      ]
+    }
+  ]
+}

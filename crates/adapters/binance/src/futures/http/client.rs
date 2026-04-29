@@ -110,7 +110,7 @@ impl BinanceRawFuturesHttpClient {
     /// # Errors
     ///
     /// Returns an error if credentials are incomplete or the HTTP client fails to build.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         product_type: BinanceProductType,
         environment: BinanceEnvironment,
@@ -307,7 +307,7 @@ impl BinanceRawFuturesHttpClient {
             query.push_str(&format!("&recvWindow={recv_window}"));
         }
 
-        let signature = cred.sign(&query);
+        let signature = Self::percent_encode(&cred.sign(&query));
         query.push_str(&format!("&signature={signature}"));
 
         let url = self.build_url(path, &query);
@@ -396,7 +396,10 @@ impl BinanceRawFuturesHttpClient {
                 query.push_str(&format!("&recvWindow={recv_window}"));
             }
 
-            let signature = cred.sign(&query);
+            // Percent-encode the signature: Ed25519 signatures are base64 and
+            // contain `+`, `/`, `=` which are not URL-safe. HMAC hex is
+            // already safe but percent-encoding it is a no-op.
+            let signature = Self::percent_encode(&cred.sign(&query));
             query.push_str(&format!("&signature={signature}"));
             headers.insert(
                 BINANCE_API_KEY_HEADER.to_string(),
@@ -1113,7 +1116,7 @@ impl BinanceFuturesHttpClient {
     /// # Errors
     ///
     /// Returns an error if the product type is invalid or HTTP client creation fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         product_type: BinanceProductType,
         environment: BinanceEnvironment,
@@ -1256,6 +1259,7 @@ impl BinanceFuturesHttpClient {
                     .inner
                     .get("exchangeInfo", None::<&()>, false, false)
                     .await?;
+
                 for symbol in info.symbols {
                     self.instruments
                         .insert(symbol.symbol, BinanceFuturesInstrument::UsdM(symbol));
@@ -1266,6 +1270,7 @@ impl BinanceFuturesHttpClient {
                     .inner
                     .get("exchangeInfo", None::<&()>, false, false)
                     .await?;
+
                 for symbol in info.symbols {
                     self.instruments
                         .insert(symbol.symbol, BinanceFuturesInstrument::CoinM(symbol));
@@ -1301,6 +1306,7 @@ impl BinanceFuturesHttpClient {
                     .inner
                     .get("exchangeInfo", None::<&()>, false, false)
                     .await?;
+
                 for symbol in &info.symbols {
                     statuses.insert(symbol.symbol, MarketStatusAction::from(symbol.status));
                 }
@@ -1310,6 +1316,7 @@ impl BinanceFuturesHttpClient {
                     .inner
                     .get("exchangeInfo", None::<&()>, false, false)
                     .await?;
+
                 for symbol in &info.symbols {
                     let action = symbol
                         .contract_status
@@ -1571,7 +1578,7 @@ impl BinanceFuturesHttpClient {
     /// - The order type or time-in-force is unsupported.
     /// - Stop orders are submitted without a trigger price.
     /// - The request fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_order(
         &self,
         account_id: AccountId,
@@ -1677,7 +1684,7 @@ impl BinanceFuturesHttpClient {
     /// - The order type requires a trigger price but none is provided.
     /// - The instrument is not cached.
     /// - The request fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_algo_order(
         &self,
         account_id: AccountId,
@@ -1800,7 +1807,7 @@ impl BinanceFuturesHttpClient {
     /// - Neither venue_order_id nor client_order_id is provided.
     /// - The instrument is not cached.
     /// - The request fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn modify_order(
         &self,
         account_id: AccountId,

@@ -18,13 +18,22 @@ workspace = true
 
 [lib]
 name = "nautilus_kraken"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = ["high-precision"]
+examples = [
+  "dep:nautilus-backtest",
+  "dep:nautilus-tardis",
+  "nautilus-live/node",
+  "nautilus-network/transport-sockudo",
+  "nautilus-trading/examples",
+]
 python = [
+  "dep:nautilus-system",
   "nautilus-common/python",
   "nautilus-core/python",
+  "nautilus-live/python",
   "nautilus-model/python",
   "nautilus-network/python",
   "nautilus-system/python",
@@ -35,10 +44,11 @@ python = [
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
+  "nautilus-live/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
-  "python",
   "pyo3/extension-module",
+  "python",
 ]
 high-precision = ["nautilus-model/high-precision"]
 
@@ -48,8 +58,7 @@ nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
-nautilus-system = { workspace = true }
-nautilus-trading = { workspace = true }
+nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -78,18 +87,21 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
+nautilus-backtest = { workspace = true, optional = true }
+nautilus-tardis = { workspace = true, optional = true }
+
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+nautilus-trading = { workspace = true }
 
 axum = { workspace = true }
 criterion = { workspace = true }
 dotenvy = { workspace = true }
 rstest = { workspace = true }
-url = { workspace = true }
 
 # Run with `cargo bench -p nautilus-kraken --bench websocket`
 [[bench]]
@@ -100,25 +112,44 @@ harness = false
 name = "kraken-http-spot-raw"
 path = "bin/http_spot_raw.rs"
 doc = false
+test = false
 
 [[bin]]
 name = "kraken-http-spot-public"
 path = "bin/http_spot_public.rs"
 doc = false
+test = false
 
 [[bin]]
 name = "kraken-ws-spot-data"
 path = "bin/ws_spot_data.rs"
 doc = false
+test = false
 
-# Run with `cargo run -p nautilus-kraken --example kraken-data-tester`
+# Run with `cargo run -p nautilus-kraken --example kraken-data-tester --features examples`
 [[example]]
 name = "kraken-data-tester"
 path = "examples/node_data_tester.rs"
+required-features = ["examples"]
 doc = false
 
-# Run with `cargo run -p nautilus-kraken --example kraken-exec-tester`
+# Run with `cargo run -p nautilus-kraken --example kraken-exec-tester --features examples`
 [[example]]
 name = "kraken-exec-tester"
 path = "examples/node_exec_tester.rs"
+required-features = ["examples"]
+doc = false
+
+# Run with `cargo run -p nautilus-kraken --features examples --example kraken-hurst-vpin-backtest --release`
+[[example]]
+name = "kraken-hurst-vpin-backtest"
+path = "examples/engine_hurst_vpin_backtest.rs"
+required-features = ["examples"]
+doc = false
+
+# Run with `cargo run -p nautilus-kraken --features examples --example kraken-hurst-vpin-live`
+[[example]]
+name = "kraken-hurst-vpin-live"
+path = "examples/node_hurst_vpin_live.rs"
+required-features = ["examples"]
 doc = false

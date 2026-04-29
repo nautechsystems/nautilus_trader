@@ -181,22 +181,8 @@ The following `BarAggregation` methods are available:
 - `VALUE_IMBALANCE`
 - `VALUE_RUNS`
 
-Currently implemented aggregations:
-
-- `MILLISECOND`
-- `SECOND`
-- `MINUTE`
-- `HOUR`
-- `DAY`
-- `WEEK`
-- `MONTH`
-- `YEAR`
-- `TICK`
-- `VOLUME`
-- `VALUE`
-- `RENKO`
-
-Aggregations listed above that are not repeated in the implemented list are planned but not yet available.
+All listed aggregations are implemented for internal aggregation.
+Information-driven aggregations require `TradeTick` data.
 
 The price types and bar aggregations can be combined with step sizes >= 1 in any way through a `BarSpecification`.
 This allows alternative bars to be aggregated for live trading.

@@ -151,7 +151,7 @@ impl GridMarketMakerConfig {
         expire_time_secs=None,
         on_cancel_resubmit=false,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         instrument_id: InstrumentId,
         max_position: Quantity,

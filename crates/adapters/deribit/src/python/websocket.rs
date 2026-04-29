@@ -48,11 +48,12 @@ use nautilus_model::{
     },
     types::{Price, Quantity},
 };
+use nautilus_network::websocket::TransportBackend;
 use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
     common::{
-        enums::{DeribitTimeInForce, resolve_trigger_type},
+        enums::{DeribitEnvironment, DeribitTimeInForce, resolve_trigger_type},
         parse::parse_instrument_kind_currency,
     },
     websocket::{
@@ -82,16 +83,27 @@ impl DeribitWebSocketClient {
         api_key=None,
         api_secret=None,
         heartbeat_interval=30,
-        is_testnet=false,
+        environment=DeribitEnvironment::Mainnet,
+        proxy_url=None,
     ))]
     fn py_new(
         url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
         heartbeat_interval: u64,
-        is_testnet: bool,
+        environment: DeribitEnvironment,
+        proxy_url: Option<String>,
     ) -> PyResult<Self> {
-        Self::new(url, api_key, api_secret, heartbeat_interval, is_testnet).map_err(to_pyvalue_err)
+        Self::new(
+            url,
+            api_key,
+            api_secret,
+            heartbeat_interval,
+            environment,
+            TransportBackend::default(),
+            proxy_url,
+        )
+        .map_err(to_pyvalue_err)
     }
 
     /// Creates a new public (unauthenticated) client.
@@ -102,9 +114,9 @@ impl DeribitWebSocketClient {
     ///
     /// Returns an error if initialization fails.
     #[staticmethod]
-    #[pyo3(name = "new_public")]
-    fn py_new_public(is_testnet: bool) -> PyResult<Self> {
-        Self::new_public(is_testnet).map_err(to_pyvalue_err)
+    #[pyo3(name = "new_public", signature = (environment, proxy_url = None))]
+    fn py_new_public(environment: DeribitEnvironment, proxy_url: Option<String>) -> PyResult<Self> {
+        Self::new_public(environment, proxy_url).map_err(to_pyvalue_err)
     }
 
     /// Creates an authenticated client with credentials.
@@ -112,14 +124,14 @@ impl DeribitWebSocketClient {
     /// Uses environment variables to load credentials:
     /// - Testnet: `DERIBIT_TESTNET_API_KEY` and `DERIBIT_TESTNET_API_SECRET`
     /// - Mainnet: `DERIBIT_API_KEY` and `DERIBIT_API_SECRET`
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if credentials are not found in environment variables.
     #[staticmethod]
-    #[pyo3(name = "with_credentials", signature = (is_testnet, account_id = None))]
-    fn py_with_credentials(is_testnet: bool, account_id: Option<AccountId>) -> PyResult<Self> {
-        let mut client = Self::with_credentials(is_testnet).map_err(to_pyvalue_err)?;
+    #[pyo3(name = "with_credentials", signature = (environment, account_id = None, proxy_url = None))]
+    fn py_with_credentials(
+        environment: DeribitEnvironment,
+        account_id: Option<AccountId>,
+        proxy_url: Option<String>,
+    ) -> PyResult<Self> {
+        let mut client = Self::with_credentials(environment, proxy_url).map_err(to_pyvalue_err)?;
 
         if let Some(id) = account_id {
             client.set_account_id(id);
@@ -139,8 +151,7 @@ impl DeribitWebSocketClient {
     #[pyo3(name = "is_testnet")]
     #[must_use]
     pub fn py_is_testnet(&self) -> bool {
-        // Check if the URL contains "test"
-        self.url().contains("test")
+        self.environment() == DeribitEnvironment::Testnet
     }
 
     /// Returns whether the client is actively connected.
@@ -216,7 +227,7 @@ impl DeribitWebSocketClient {
 
     /// Connects to the Deribit WebSocket API.
     #[pyo3(name = "connect")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
@@ -227,6 +238,7 @@ impl DeribitWebSocketClient {
         let call_soon: Py<PyAny> = loop_.getattr(py, "call_soon_threadsafe")?;
 
         let mut instruments_any = Vec::new();
+
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
             instruments_any.push(inst_any);
@@ -647,6 +659,98 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to mark prices for the given instrument.
+    ///
+    /// Registers the instrument in the `mark_price_subs` set so the handler
+    /// emits `MarkPriceUpdate` from ticker messages, then subscribes to the ticker channel.
+    #[pyo3(name = "subscribe_mark_prices")]
+    #[pyo3(signature = (instrument_id, interval=None))]
+    fn py_subscribe_mark_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.add_mark_price_sub(instrument_id);
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_ticker(instrument_id, interval)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Unsubscribes from mark prices for the given instrument.
+    ///
+    /// Removes the instrument from the `mark_price_subs` set and unsubscribes
+    /// from the ticker channel.
+    #[pyo3(name = "unsubscribe_mark_prices")]
+    #[pyo3(signature = (instrument_id, interval=None))]
+    fn py_unsubscribe_mark_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.remove_mark_price_sub(&instrument_id);
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_ticker(instrument_id, interval)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Subscribes to index prices for the given instrument.
+    ///
+    /// Registers the instrument in the `index_price_subs` set so the handler
+    /// emits `IndexPriceUpdate` from ticker messages, then subscribes to the ticker channel.
+    #[pyo3(name = "subscribe_index_prices")]
+    #[pyo3(signature = (instrument_id, interval=None))]
+    fn py_subscribe_index_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.add_index_price_sub(instrument_id);
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_ticker(instrument_id, interval)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Unsubscribes from index prices for the given instrument.
+    ///
+    /// Removes the instrument from the `index_price_subs` set and unsubscribes
+    /// from the ticker channel.
+    #[pyo3(name = "unsubscribe_index_prices")]
+    #[pyo3(signature = (instrument_id, interval=None))]
+    fn py_unsubscribe_index_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        self.remove_index_price_sub(&instrument_id);
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_ticker(instrument_id, interval)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
     /// Subscribes to option greeks for the given instrument.
     ///
     /// Registers the instrument in the `option_greeks_subs` set so the handler
@@ -1034,7 +1138,7 @@ impl DeribitWebSocketClient {
         trigger_price=None,
         trigger_type=None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
         &self,
         py: Python<'py>,
@@ -1101,7 +1205,7 @@ impl DeribitWebSocketClient {
     /// The order parameters are sent using the `private/edit` JSON-RPC method.
     /// Requires authentication (call `authenticate_session()` first).
     #[pyo3(name = "modify_order")]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
         &self,
         py: Python<'py>,

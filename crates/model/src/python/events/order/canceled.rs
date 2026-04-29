@@ -28,7 +28,7 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderCanceled {
     /// Represents an event where an order has been canceled at the trading venue.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, event_id, ts_event, ts_init, reconciliation, venue_order_id=None, account_id=None))]
     fn py_new(
@@ -155,6 +155,7 @@ impl OrderCanceled {
             Some(venue_order_id) => dict.set_item("venue_order_id", venue_order_id.to_string())?,
             None => dict.set_item("venue_order_id", py.None())?,
         }
+
         match self.account_id {
             Some(account_id) => dict.set_item("account_id", account_id.to_string())?,
             None => dict.set_item("account_id", py.None())?,

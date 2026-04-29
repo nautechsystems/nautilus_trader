@@ -38,6 +38,7 @@ pub struct TokenBalance {
 
 impl TokenBalance {
     /// Creates a new [`TokenBalance`] instance.
+    #[must_use]
     pub const fn new(amount: U256, token: Token) -> Self {
         Self {
             amount,
@@ -52,7 +53,7 @@ impl TokenBalance {
     ///
     /// Returns an error if the U256 amount cannot be converted to a `Quantity`.
     pub fn as_quantity(&self) -> anyhow::Result<Quantity> {
-        Quantity::from_u256(self.amount, self.token.decimals)
+        Quantity::from_u256(self.amount, self.token.decimals).map_err(Into::into)
     }
 
     /// Sets the USD equivalent value for this token balance.
@@ -64,6 +65,7 @@ impl TokenBalance {
 impl Display for TokenBalance {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let quantity = self.as_quantity().unwrap_or_default();
+
         match &self.amount_usd {
             Some(usd) => write!(
                 f,
@@ -99,6 +101,7 @@ pub struct WalletBalance {
 
 impl WalletBalance {
     /// Creates a new [`WalletBalance`] with the specified token universe.
+    #[must_use]
     pub const fn new(token_universe: HashSet<Address>) -> Self {
         Self {
             native_currency: None,
@@ -108,6 +111,7 @@ impl WalletBalance {
     }
 
     /// Returns `true` if the token universe has been initialized with token addresses.
+    #[must_use]
     pub fn is_token_universe_initialized(&self) -> bool {
         !self.token_universe.is_empty()
     }
@@ -176,7 +180,7 @@ mod tests {
         // Raw amount: 92220728254 (92220.728254 * 10^6)
         // Expected: 92220.728254
         let token = create_token("USDC", 6);
-        let amount = U256::from(92220728254u64);
+        let amount = U256::from(92_220_728_254_u64);
         let balance = TokenBalance::new(amount, token);
 
         let quantity = balance.as_quantity().unwrap();
@@ -195,7 +199,7 @@ mod tests {
             "mETH".to_string(),
             18,
         );
-        let amount = U256::from(758325512078001391u64);
+        let amount = U256::from(758_325_512_078_001_391_u64);
         let balance = TokenBalance::new(amount, token);
 
         let quantity = balance.as_quantity().unwrap();
@@ -225,7 +229,7 @@ mod tests {
     fn test_token_balance_display_6_decimals() {
         // Test Display implementation with 6 decimal token (USDC)
         let token = create_token("USDC", 6);
-        let amount = U256::from(92220728254u64); // 92220.728254 USDC
+        let amount = U256::from(92_220_728_254_u64); // 92220.728254 USDC
         let balance = TokenBalance::new(amount, token);
 
         let display = balance.to_string();
@@ -277,7 +281,7 @@ mod tests {
 
         assert!(wallet.native_currency.is_none());
 
-        let eth_balance = Money::new(50.936054, crate::types::Currency::ETH());
+        let eth_balance = Money::new(50.936_054, crate::types::Currency::ETH());
         wallet.set_native_currency_balance(eth_balance);
 
         assert!(wallet.native_currency.is_some());

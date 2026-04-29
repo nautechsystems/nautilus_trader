@@ -55,7 +55,7 @@ pub struct FlashEvent {
 impl FlashEvent {
     /// Creates a new [`FlashEvent`] instance with the specified parameters.
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         dex: SharedDex,
         pool_identifier: PoolIdentifier,

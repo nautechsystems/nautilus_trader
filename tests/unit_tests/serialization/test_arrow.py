@@ -559,6 +559,28 @@ class TestArrowSerializer:
         # Assert
         assert deserialized == [event]
 
+    def test_serialize_and_deserialize_account_state_with_empty_balances_and_margins(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("BINANCE-001"),
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=1_000_000_000,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(AccountState, serialized)
+
+        # Assert
+        assert deserialized == [event]
+
     def test_serialize_and_deserialize_market_order_initialized_events(self):
         # Arrange
         event = OrderInitialized(
@@ -1178,6 +1200,45 @@ class TestArrowSerializer:
         self.catalog.write_data([instrument])
         df = self.catalog.instruments()
         assert len(df) == 1
+
+    def test_serialize_and_deserialize_pyo3_instrument_status(self):
+        from nautilus_trader.core import nautilus_pyo3
+
+        instrument_id = nautilus_pyo3.InstrumentId.from_str("AAPL.XNAS")
+        status = nautilus_pyo3.InstrumentStatus(
+            instrument_id=instrument_id,
+            action=nautilus_pyo3.MarketStatusAction.TRADING,
+            ts_event=1_000_000_000,
+            ts_init=1_000_000_001,
+            reason="Normal trading",
+            trading_event="MARKET_OPEN",
+            is_trading=True,
+            is_quoting=True,
+            is_short_sell_restricted=False,
+        )
+
+        batch = ArrowSerializer.serialize_batch(
+            [status],
+            data_cls=nautilus_pyo3.InstrumentStatus,
+        )
+        assert isinstance(batch, pa.Table)
+        assert batch.num_rows == 1
+
+        deserialized = ArrowSerializer.deserialize(
+            data_cls=nautilus_pyo3.InstrumentStatus,
+            batch=batch,
+        )
+        assert len(deserialized) == 1
+        roundtripped = deserialized[0]
+        assert roundtripped.instrument_id == instrument_id
+        assert roundtripped.action == nautilus_pyo3.MarketStatusAction.TRADING
+        assert roundtripped.ts_event == 1_000_000_000
+        assert roundtripped.ts_init == 1_000_000_001
+        assert roundtripped.reason == "Normal trading"
+        assert roundtripped.trading_event == "MARKET_OPEN"
+        assert roundtripped.is_trading is True
+        assert roundtripped.is_quoting is True
+        assert roundtripped.is_short_sell_restricted is False
 
     @pytest.mark.parametrize("obj", nautilus_objects())
     def test_serialize_and_deserialize_all(self, obj):

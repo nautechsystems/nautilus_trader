@@ -22,7 +22,7 @@ use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::{Account, AccountAny, BettingAccount, CashAccount, MarginAccount},
-    enums::{AccountType, OrderSide, OrderSideSpecified, PriceType},
+    enums::{AccountType, OrderSide, PriceType},
     events::{AccountState, OrderFilled},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
@@ -308,11 +308,8 @@ impl AccountsManager {
             if let Some(base_currency) = account.base_currency {
                 if base_xrate.is_none() {
                     currency = base_currency;
-                    base_xrate = self.calculate_xrate_to_base(
-                        &AccountAny::Margin(account.clone()),
-                        instrument,
-                        position.entry.as_specified(),
-                    );
+                    base_xrate = self
+                        .calculate_xrate_to_base(&AccountAny::Margin(account.clone()), instrument);
                 }
 
                 if let Some(xrate) = base_xrate {
@@ -400,11 +397,8 @@ impl AccountsManager {
             if let Some(base_curr) = account.base_currency() {
                 if base_xrate.is_none() {
                     currency = base_curr;
-                    base_xrate = self.calculate_xrate_to_base(
-                        &AccountAny::Cash(account.clone()),
-                        instrument,
-                        order.order_side_specified(),
-                    );
+                    base_xrate = self
+                        .calculate_xrate_to_base(&AccountAny::Cash(account.clone()), instrument);
                 }
 
                 if let Some(xrate) = base_xrate {
@@ -537,11 +531,8 @@ impl AccountsManager {
             if let Some(base_currency) = account.base_currency {
                 if base_xrate.is_none() {
                     currency = base_currency;
-                    base_xrate = self.calculate_xrate_to_base(
-                        &AccountAny::Margin(account.clone()),
-                        instrument,
-                        order.order_side_specified(),
-                    );
+                    base_xrate = self
+                        .calculate_xrate_to_base(&AccountAny::Margin(account.clone()), instrument);
                 }
 
                 if let Some(xrate) = base_xrate {
@@ -630,11 +621,8 @@ impl AccountsManager {
             if let Some(base_curr) = account.base_currency() {
                 if base_xrate.is_none() {
                     currency = base_curr;
-                    base_xrate = self.calculate_xrate_to_base(
-                        &AccountAny::Betting(account.clone()),
-                        instrument,
-                        order.order_side_specified(),
-                    );
+                    base_xrate = self
+                        .calculate_xrate_to_base(&AccountAny::Betting(account.clone()), instrument);
                 }
 
                 if let Some(xrate) = base_xrate {
@@ -924,17 +912,24 @@ impl AccountsManager {
 
     fn generate_account_state(&self, account: AccountAny, ts_event: UnixNanos) -> AccountState {
         match account {
-            AccountAny::Margin(margin_account) => AccountState::new(
-                margin_account.id,
-                AccountType::Margin,
-                vec![],
-                margin_account.margins.clone().into_values().collect(),
-                false,
-                UUID4::new(),
-                ts_event,
-                self.clock.borrow().timestamp_ns(),
-                margin_account.base_currency(),
-            ),
+            AccountAny::Margin(margin_account) => {
+                // Include both per-instrument (`margins`) and account-wide
+                // (`account_margins`, keyed by collateral currency) entries so
+                // regenerated state events preserve the full margin picture.
+                let mut margins: Vec<_> = margin_account.margins.values().copied().collect();
+                margins.extend(margin_account.account_margins.values().copied());
+                AccountState::new(
+                    margin_account.id,
+                    AccountType::Margin,
+                    vec![],
+                    margins,
+                    false,
+                    UUID4::new(),
+                    ts_event,
+                    self.clock.borrow().timestamp_ns(),
+                    margin_account.base_currency(),
+                )
+            }
             AccountAny::Cash(cash_account) => AccountState::new(
                 cash_account.id,
                 AccountType::Cash,
@@ -964,7 +959,6 @@ impl AccountsManager {
         &self,
         account: &AccountAny,
         instrument: &InstrumentAny,
-        side: OrderSideSpecified,
     ) -> Option<f64> {
         match account.base_currency() {
             None => Some(1.0),
@@ -972,10 +966,7 @@ impl AccountsManager {
                 instrument.id().venue,
                 instrument.settlement_currency(),
                 base_curr,
-                match side {
-                    OrderSideSpecified::Sell => PriceType::Bid,
-                    OrderSideSpecified::Buy => PriceType::Ask,
-                },
+                PriceType::Mid,
             ),
         }
     }
@@ -987,10 +978,12 @@ mod tests {
 
     use nautilus_common::{cache::Cache, clock::TestClock};
     use nautilus_model::{
-        accounts::{BettingAccount, CashAccount},
+        accounts::{BettingAccount, CashAccount, MarginAccount},
         enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
         events::{AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
-        identifiers::{AccountId, PositionId, StrategyId, TradeId, TraderId, VenueOrderId},
+        identifiers::{
+            AccountId, InstrumentId, PositionId, StrategyId, TradeId, TraderId, VenueOrderId,
+        },
         instruments::{
             Instrument, InstrumentAny,
             stubs::{audusd_sim, betting},
@@ -998,7 +991,7 @@ mod tests {
         orders::{OrderAny, OrderTestBuilder},
         position::Position,
         stubs::TestDefault,
-        types::{AccountBalance, Currency, Money, Price, Quantity},
+        types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
     };
     use rstest::rstest;
 
@@ -1859,5 +1852,64 @@ mod tests {
         } else {
             panic!("Expected CashAccount");
         }
+    }
+
+    #[rstest]
+    fn test_generate_account_state_preserves_per_instrument_and_account_wide_margins() {
+        let usd = Currency::USD();
+        let audusd = InstrumentId::from("AUD/USD.SIM");
+        let account_state = AccountState::new(
+            AccountId::new("SIM-001"),
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                Money::new(1_000_000.0, usd),
+                Money::new(0.0, usd),
+                Money::new(1_000_000.0, usd),
+            )],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(usd),
+        );
+        let mut account = MarginAccount::new(account_state, false);
+        account.update_margin(MarginBalance::new(
+            Money::new(150.0, usd),
+            Money::new(75.0, usd),
+            Some(audusd),
+        ));
+        account.update_margin(MarginBalance::new(
+            Money::new(500.0, usd),
+            Money::new(250.0, usd),
+            None,
+        ));
+
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+
+        let state =
+            manager.generate_account_state(AccountAny::Margin(account), UnixNanos::default());
+
+        assert_eq!(state.margins.len(), 2);
+        let per_instrument: Vec<_> = state
+            .margins
+            .iter()
+            .filter(|m| m.instrument_id.is_some())
+            .collect();
+        let account_wide: Vec<_> = state
+            .margins
+            .iter()
+            .filter(|m| m.instrument_id.is_none())
+            .collect();
+        assert_eq!(per_instrument.len(), 1);
+        assert_eq!(per_instrument[0].instrument_id, Some(audusd));
+        assert_eq!(per_instrument[0].initial, Money::new(150.0, usd));
+        assert_eq!(per_instrument[0].maintenance, Money::new(75.0, usd));
+        assert_eq!(account_wide.len(), 1);
+        assert_eq!(account_wide[0].currency, usd);
+        assert_eq!(account_wide[0].initial, Money::new(500.0, usd));
+        assert_eq!(account_wide[0].maintenance, Money::new(250.0, usd));
     }
 }

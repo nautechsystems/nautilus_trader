@@ -49,6 +49,7 @@ from nautilus_trader.model.data cimport BarSpecification
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
+from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -130,6 +131,7 @@ cdef class Cache(CacheFacade):
         self._mark_prices: dict[InstrumentId, deque[MarkPriceUpdate]] = {}
         self._index_prices: dict[InstrumentId, deque[IndexPriceUpdate]] = {}
         self._funding_rates: dict[InstrumentId, deque[FundingRateUpdate]] = {}
+        self._instrument_statuses: dict[InstrumentId, deque[InstrumentStatus]] = {}
         self._bars: dict[BarType, deque[Bar]] = {}
         self._bars_bid: dict[InstrumentId, Bar] = {}
         self._bars_ask: dict[InstrumentId, Bar] = {}
@@ -1204,6 +1206,7 @@ cdef class Cache(CacheFacade):
         self._mark_prices.clear()
         self._index_prices.clear()
         self._funding_rates.clear()
+        self._instrument_statuses.clear()
         self._bars.clear()
         self._bars_bid.clear()
         self._bars_ask.clear()
@@ -1740,6 +1743,27 @@ cdef class Cache(CacheFacade):
             self._funding_rates[funding_rate.instrument_id] = funding_rates
 
         funding_rates.appendleft(funding_rate)
+
+    cpdef void add_instrument_status(self, InstrumentStatus status):
+        """
+        Add the given instrument status update to the cache.
+
+        Parameters
+        ----------
+        status : InstrumentStatus
+            The instrument status update to add.
+
+        """
+        Condition.not_none(status, "status")
+
+        statuses = self._instrument_statuses.get(status.instrument_id)
+
+        if not statuses:
+            # The instrument_id was not registered
+            statuses = deque(maxlen=self.tick_capacity)
+            self._instrument_statuses[status.instrument_id] = statuses
+
+        statuses.appendleft(status)
 
     cpdef void add_bar(self, Bar bar):
         """
@@ -2823,6 +2847,24 @@ cdef class Cache(CacheFacade):
 
         return list(self._funding_rates.get(instrument_id, []))
 
+    cpdef list instrument_statuses(self, InstrumentId instrument_id):
+        """
+        Return instrument status updates for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the statuses to get.
+
+        Returns
+        -------
+        list[InstrumentStatus]
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return list(self._instrument_statuses.get(instrument_id, []))
+
     cpdef list bars(self, BarType bar_type):
         """
         Return bars for the given bar type.
@@ -3233,6 +3275,41 @@ cdef class Cache(CacheFacade):
         except IndexError:
             return None
 
+    cpdef InstrumentStatus instrument_status(self, InstrumentId instrument_id, int index = 0):
+        """
+        Return the instrument status for the given instrument ID at the given index (if found).
+
+        Last instrument status if no index specified.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the status to get.
+        index : int, optional
+            The index for the status to get.
+
+        Returns
+        -------
+        InstrumentStatus or ``None``
+            If no statuses or no status at the index then returns ``None``.
+
+        Notes
+        -----
+        Reverse indexed (most recent status at index 0).
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        statuses = self._instrument_statuses.get(instrument_id)
+
+        if not statuses:
+            return None
+
+        try:
+            return statuses[index]
+        except IndexError:
+            return None
+
     cpdef Bar bar(self, BarType bar_type, int index = 0):
         """
         Return the bar for the given bar type at the given index (if found).
@@ -3381,6 +3458,24 @@ cdef class Cache(CacheFacade):
 
         return len(self._funding_rates.get(instrument_id, []))
 
+    cpdef int instrument_status_count(self, InstrumentId instrument_id):
+        """
+        The count of instrument status updates for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the statuses.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return len(self._instrument_statuses.get(instrument_id, []))
+
     cpdef int bar_count(self, BarType bar_type):
         """
         The count of bars for the given bar type.
@@ -3510,6 +3605,25 @@ cdef class Cache(CacheFacade):
         Condition.not_none(instrument_id, "instrument_id")
 
         return self.funding_rate_count(instrument_id) > 0
+
+    cpdef bint has_instrument_statuses(self, InstrumentId instrument_id):
+        """
+        Return a value indicating whether the cache has instrument status updates
+        for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the statuses.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return self.instrument_status_count(instrument_id) > 0
 
     cpdef bint has_bars(self, BarType bar_type):
         """

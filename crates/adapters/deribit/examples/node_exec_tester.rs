@@ -15,10 +15,10 @@
 
 //! Example demonstrating live execution testing with the Deribit adapter.
 //!
-//! Run with: `cargo run --example deribit-exec-tester --package nautilus-deribit`
+//! Run with: `cargo run --example deribit-exec-tester --package nautilus-deribit --features examples`
 //!
 //! For production, set USE_TESTNET=false:
-//! `USE_TESTNET=false cargo run --example deribit-exec-tester --package nautilus-deribit`
+//! `USE_TESTNET=false cargo run --example deribit-exec-tester --package nautilus-deribit --features examples`
 //!
 //! Environment variables:
 //! - DERIBIT_TESTNET_API_KEY / DERIBIT_API_KEY: Your Deribit API key
@@ -26,6 +26,7 @@
 
 use nautilus_common::enums::Environment;
 use nautilus_deribit::{
+    common::enums::DeribitEnvironment,
     config::{DeribitDataClientConfig, DeribitExecClientConfig},
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
     http::models::DeribitProductType,
@@ -35,6 +36,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
@@ -42,8 +44,13 @@ use nautilus_trading::strategy::StrategyConfig;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    // Read USE_TESTNET from environment (default true for safety)
-    let use_testnet = std::env::var("USE_TESTNET").map_or(true, |v| v.to_lowercase() != "false");
+    // Read DERIBIT_ENVIRONMENT from environment (default testnet for safety)
+    let deribit_environment =
+        if std::env::var("USE_TESTNET").map_or(true, |v| v.to_lowercase() != "false") {
+            DeribitEnvironment::Testnet
+        } else {
+            DeribitEnvironment::Mainnet
+        };
 
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");
@@ -56,7 +63,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: None,    // Will use env var
         api_secret: None, // Will use env var
         product_types: vec![DeribitProductType::Future],
-        use_testnet,
+        environment: deribit_environment,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -66,7 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: None,    // Will use env var
         api_secret: None, // Will use env var
         product_types: vec![DeribitProductType::Future],
-        use_testnet,
+        environment: deribit_environment,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

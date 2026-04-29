@@ -268,12 +268,11 @@ impl BlackScholesGreeksResult {
     }
 }
 
-/// Computes Black-Scholes greeks using the fast compute_greeks implementation.
-/// This function uses compute_greeks from black_scholes.rs which is optimized for performance.
+/// Computes Black-Scholes greeks using the fast `compute_greeks` implementation.
+/// This function uses `compute_greeks` from `black_scholes.rs` which is optimized for performance.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(name = "black_scholes_greeks")]
-#[allow(clippy::too_many_arguments)]
 pub fn py_black_scholes_greeks(
     s: f64,
     r: f64,
@@ -308,11 +307,10 @@ pub fn py_imply_vol(
 }
 
 /// Computes implied volatility and greeks using the fast implementations.
-/// This function uses compute_greeks after implying volatility.
+/// This function uses `compute_greeks` after implying volatility.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(name = "imply_vol_and_greeks")]
-#[allow(clippy::too_many_arguments)]
 pub fn py_imply_vol_and_greeks(
     s: f64,
     r: f64,
@@ -326,12 +324,12 @@ pub fn py_imply_vol_and_greeks(
 }
 
 /// Refines implied volatility using an initial guess and computes greeks.
-/// This function uses compute_iv_and_greeks which performs a Halley iteration
+/// This function uses `compute_iv_and_greeks` which performs a Halley iteration
 /// to refine the volatility estimate from an initial guess.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(name = "refine_vol_and_greeks")]
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn py_refine_vol_and_greeks(
     s: f64,
     r: f64,

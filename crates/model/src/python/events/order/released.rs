@@ -29,7 +29,7 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderReleased {
     /// Represents an event where an order was released from the `OrderEmulated` by the Nautilus system.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[new]
     fn py_new(
         trader_id: TraderId,

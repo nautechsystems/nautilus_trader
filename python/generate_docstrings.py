@@ -257,6 +257,7 @@ def format_as_doc_comment(doc_lines: list[str], indent: str) -> list[str]:
     Format lines as Rust ``///`` doc comments with the given indentation.
     """
     formatted = []
+
     for line in doc_lines:
         if line:
             formatted.append(f"{indent}/// {line}")

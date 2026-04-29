@@ -76,7 +76,7 @@ pub fn register_json_deserializer(
 /// Use this where repeated registration can occur (e.g. module init).
 ///
 /// # Errors
-/// Does not return an error (idempotent insert into DashMap).
+/// Does not return an error (idempotent insert into `DashMap`).
 pub fn ensure_json_deserializer_registered(
     type_name: &str,
     deserializer: JsonDeserializer,
@@ -88,7 +88,7 @@ pub fn ensure_json_deserializer_registered(
     Ok(())
 }
 
-/// Parses a "data_type" JSON object into DataType (type_name, metadata, identifier).
+/// Parses a "`data_type`" JSON object into `DataType` (`type_name`, metadata, identifier).
 fn parse_data_type_from_value(value: &serde_json::Value) -> Option<DataType> {
     let obj = value.get("data_type")?.as_object()?;
     let type_name = obj.get("type_name")?.as_str()?;
@@ -107,7 +107,7 @@ fn parse_data_type_from_value(value: &serde_json::Value) -> Option<DataType> {
     Some(DataType::new(type_name, metadata, identifier))
 }
 
-/// Parses the canonical CustomData JSON envelope `{ type, data_type, payload }` and returns
+/// Parses the canonical `CustomData` JSON envelope `{ type, data_type, payload }` and returns
 /// the payload value to pass to the registered type deserializer. Does not depend on
 /// user payload field names.
 fn parse_envelope_payload(value: &serde_json::Value) -> Result<serde_json::Value, anyhow::Error> {
@@ -169,7 +169,7 @@ pub fn register_arrow(
 /// Use this where repeated registration can occur (e.g. module init).
 ///
 /// # Errors
-/// Does not return an error (idempotent insert into DashMap).
+/// Does not return an error (idempotent insert into `DashMap`).
 pub fn ensure_arrow_registered(
     type_name: &str,
     schema: Arc<Schema>,
@@ -184,6 +184,7 @@ pub fn ensure_arrow_registered(
 }
 
 /// Returns the Arrow schema for the given custom type name, if registered.
+#[must_use]
 pub fn get_arrow_schema(type_name: &str) -> Option<Arc<Schema>> {
     let reg = registries();
     reg.arrow
@@ -191,7 +192,7 @@ pub fn get_arrow_schema(type_name: &str) -> Option<Arc<Schema>> {
         .map(|entry| Arc::clone(&entry.value().0))
 }
 
-/// Encodes a slice of custom data trait objects to a RecordBatch using the registered encoder.
+/// Encodes a slice of custom data trait objects to a `RecordBatch` using the registered encoder.
 ///
 /// # Errors
 /// Returns an error if the type is not registered or encoding fails.
@@ -208,10 +209,14 @@ pub fn encode_custom_to_arrow(
     encoder(items).map(Some)
 }
 
-/// Decodes a RecordBatch into `Vec<Data>` using the registered decoder.
+/// Decodes a `RecordBatch` into `Vec<Data>` using the registered decoder.
 ///
 /// # Errors
 /// Returns an error if the type is not registered or decoding fails.
+#[expect(
+    clippy::implicit_hasher,
+    reason = "callers always use the default hasher"
+)]
 pub fn decode_custom_from_arrow(
     type_name: &str,
     metadata: &HashMap<String, String>,
@@ -238,8 +243,8 @@ fn py_extractors() -> &'static DashMap<String, PyExtractor> {
     PY_EXTRACTORS.get_or_init(DashMap::new)
 }
 
-/// Registers a PyExtractor for the given custom data type name.
-/// Used by CustomData constructor to convert Python objects to `Arc<dyn CustomDataTrait>`.
+/// Registers a `PyExtractor` for the given custom data type name.
+/// Used by `CustomData` constructor to convert Python objects to `Arc<dyn CustomDataTrait>`.
 ///
 /// # Errors
 /// Returns an error if the type is already registered.
@@ -259,12 +264,12 @@ pub fn register_py_extractor(type_name: &str, extractor: PyExtractor) -> Result<
     }
 }
 
-/// Registers a PyExtractor for the given custom data type name if not already registered.
+/// Registers a `PyExtractor` for the given custom data type name if not already registered.
 /// If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module init).
 ///
 /// # Errors
-/// Does not return an error (idempotent insert into DashMap).
+/// Does not return an error (idempotent insert into `DashMap`).
 #[cfg(feature = "python")]
 pub fn ensure_py_extractor_registered(
     type_name: &str,
@@ -279,6 +284,7 @@ pub fn ensure_py_extractor_registered(
 /// Tries to extract `Arc<dyn CustomDataTrait>` from a Python object using the registered extractor.
 /// Returns None if no extractor is registered or extraction fails.
 #[cfg(feature = "python")]
+#[must_use]
 pub fn try_extract_from_py(
     type_name: &str,
     obj: &pyo3::Bound<'_, pyo3::PyAny>,
@@ -299,10 +305,10 @@ fn rust_extractor_factories() -> &'static DashMap<String, RustExtractorFactory> 
     RUST_EXTRACTOR_FACTORIES.get_or_init(DashMap::new)
 }
 
-/// Registers a factory that produces a PyExtractor for the given type name.
+/// Registers a factory that produces a `PyExtractor` for the given type name.
 /// Crates (e.g. persistence) call this at load time for each Rust custom data type.
-/// When register_custom_data_class(cls) is called with that type's class, the factory is invoked
-/// and the extractor is registered in the main PyExtractor registry.
+/// When `register_custom_data_class(cls)` is called with that type's class, the factory is invoked
+/// and the extractor is registered in the main `PyExtractor` registry.
 ///
 /// # Errors
 /// Returns an error if the type name is already registered.
@@ -323,12 +329,12 @@ pub fn register_rust_extractor_factory(
     }
 }
 
-/// Registers a factory that produces a PyExtractor for the given type name if not already
+/// Registers a factory that produces a `PyExtractor` for the given type name if not already
 /// registered. If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module load).
 ///
 /// # Errors
-/// Does not return an error (idempotent insert into DashMap).
+/// Does not return an error (idempotent insert into `DashMap`).
 #[cfg(feature = "python")]
 pub fn ensure_rust_extractor_factory_registered(
     type_name: &str,
@@ -366,7 +372,7 @@ where
 /// Use this where repeated registration can occur (e.g. module load).
 ///
 /// # Errors
-/// Does not return an error (idempotent insert into DashMap).
+/// Does not return an error (idempotent insert into `DashMap`).
 #[cfg(feature = "python")]
 pub fn ensure_rust_extractor_registered<T>() -> Result<(), anyhow::Error>
 where
@@ -385,6 +391,7 @@ where
 
 /// Calls the registered factory for the given type name and returns the extractor, if any.
 #[cfg(feature = "python")]
+#[must_use]
 pub fn get_rust_extractor(type_name: &str) -> Option<PyExtractor> {
     let reg = rust_extractor_factories();
     let factory_ref = reg.get(type_name)?;

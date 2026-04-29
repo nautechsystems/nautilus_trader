@@ -77,24 +77,26 @@ whatever symbol the API returns.
 
 ## Environments
 
-Bybit provides three trading environments. Configure the appropriate environment using the `demo` and `testnet` flags in your client configuration.
+Bybit provides three trading environments. Configure the appropriate
+environment with the `environment` enum on your client configuration.
 
-| Environment  | Config                        | Description                                                      |
-|--------------|-------------------------------|------------------------------------------------------------------|
-| **Mainnet**  | `demo=False, testnet=False`   | Production trading with real funds.                              |
-| **Demo**     | `demo=True`                   | Practice trading with simulated funds on mainnet infrastructure. |
-| **Testnet**  | `testnet=True`                | Separate test network for development and integration testing.   |
+| Environment  | Config                                | Description                                                      |
+|--------------|---------------------------------------|------------------------------------------------------------------|
+| **Mainnet**  | `BybitEnvironment.MAINNET`            | Production trading with real funds.                              |
+| **Demo**     | `BybitEnvironment.DEMO`               | Practice trading with simulated funds on mainnet infrastructure. |
+| **Testnet**  | `BybitEnvironment.TESTNET`            | Separate test network for development and integration testing.   |
 
 ### Mainnet (Production)
 
 The default environment for live trading with real funds.
 
 ```python
+from nautilus_trader.adapters.bybit import BybitEnvironment
+
 config = BybitExecClientConfig(
     api_key="YOUR_API_KEY",
     api_secret="YOUR_API_SECRET",
-    # demo=False (default)
-    # testnet=False (default)
+    environment=BybitEnvironment.MAINNET,
 )
 ```
 
@@ -102,13 +104,17 @@ Environment variables: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
 
 ### Demo trading
 
-Demo trading uses Bybit's mainnet infrastructure with simulated funds. Create demo API keys from the [Bybit demo trading page](https://www.bybit.com/en/demo-trading).
+Demo trading uses Bybit's mainnet infrastructure with simulated funds.
+Create demo API keys from the
+[Bybit demo trading page](https://www.bybit.com/en/demo-trading).
 
 ```python
+from nautilus_trader.adapters.bybit import BybitEnvironment
+
 config = BybitExecClientConfig(
     api_key="YOUR_DEMO_API_KEY",
     api_secret="YOUR_DEMO_API_SECRET",
-    demo=True,
+    environment=BybitEnvironment.DEMO,
 )
 ```
 
@@ -119,31 +125,68 @@ Environment variables: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
 
 - The WebSocket Trade API is **not supported** for demo trading. NautilusTrader automatically uses the HTTP REST API for order operations in demo mode.
 - Some advanced order features available via WebSocket (trigger orders, post-only with is_quote_quantity) are not available in demo mode.
-- **Options are not supported in demo mode.** Bybit does not provide public WebSocket streams for options on `stream-demo.bybit.com`. Instrument definitions load over REST, but real-time data (Greeks, quotes, orderbook) requires mainnet or testnet.
+- Demo private streams use `wss://stream-demo.bybit.com`, but public market data uses Bybit's mainnet public stream `wss://stream.bybit.com`.
 
 :::
 
 ### Testnet
 
-A separate test network for development. Create testnet API keys from [testnet.bybit.com](https://testnet.bybit.com).
+A separate test network for development and integration testing.
 
 ```python
+from nautilus_trader.adapters.bybit import BybitEnvironment
+
 config = BybitExecClientConfig(
     api_key="YOUR_TESTNET_API_KEY",
     api_secret="YOUR_TESTNET_API_SECRET",
-    testnet=True,
+    environment=BybitEnvironment.TESTNET,
 )
 ```
 
 Environment variables: `BYBIT_TESTNET_API_KEY`, `BYBIT_TESTNET_API_SECRET`
 
 :::note
-Testnet supports all trading features including the WebSocket Trade API. It uses completely separate infrastructure from mainnet, so market data and liquidity differ significantly from production.
+Testnet supports all trading features including the WebSocket Trade API.
+It uses completely separate infrastructure from mainnet, so market data
+and liquidity differ significantly from production.
 :::
 
-### Environment priority
+When `environment=BybitEnvironment.TESTNET`, the adapter resolves Bybit's
+documented testnet endpoints automatically:
 
-If both `demo` and `testnet` are set to `True`, demo takes priority.
+- REST API: `https://api-testnet.bybit.com`
+- Public WebSocket: `wss://stream-testnet.bybit.com/v5/public/{spot|linear|inverse|option}`
+- Private WebSocket: `wss://stream-testnet.bybit.com/v5/private`
+- Trade WebSocket: `wss://stream-testnet.bybit.com/v5/trade`
+
+### Testnet setup
+
+To set up a Bybit testnet account and credentials:
+
+1. Open [testnet.bybit.com](https://testnet.bybit.com) in a desktop browser.
+2. Create a separate testnet account or sign in to your existing testnet account.
+3. Request test coins from **Assets -> Assets Overview -> Request Test Coins**
+   so the account has balances for testing.
+4. Open **API Management** at
+   [testnet.bybit.com/app/user/api-management](https://testnet.bybit.com/app/user/api-management).
+5. Click **Create New Key**.
+6. Select the required permissions for your use case.
+7. Complete the 2FA prompt and copy the API key and secret.
+8. Export the credentials in your shell:
+
+   ```bash
+   export BYBIT_TESTNET_API_KEY="YOUR_TESTNET_API_KEY"
+   export BYBIT_TESTNET_API_SECRET="YOUR_TESTNET_API_SECRET"
+   ```
+
+Bybit's current testnet guidance also notes:
+
+- API keys are created on the website, not in the mobile app.
+- New users may be unable to create API keys for the first 48 hours after
+  registration.
+- Testnet is separate from mainnet. Do not deposit real funds into a testnet
+  account.
+- Bybit currently documents testnet account setup through a desktop browser.
 
 ## Orders capability
 
@@ -204,6 +247,67 @@ All the order types listed below can be used as *either* entries or exits, excep
 | Leverage control    | -    | ✓      | ✓       | -      | Not applicable for Options.              |
 | Margin mode         | -    | ✓      | ✓       | ✓      | Cross, Isolated, or Portfolio Margin.    |
 
+#### Hedge mode (BothSides)
+
+Bybit only accepts `BOTH_SIDES` on USDT linear perpetuals. For other product
+types configure `MERGED_SINGLE` or omit them from `position_mode`. Configure
+per symbol:
+
+```python
+from nautilus_trader.adapters.bybit import BybitPositionMode
+
+config = BybitExecClientConfig(
+    ...,
+    position_mode={"ETHUSDT-LINEAR": BybitPositionMode.BOTH_SIDES},
+)
+```
+
+On connect the adapter calls `/v5/position/switch-mode` for each entry, then
+derives `positionIdx` for every order: opening BUY -> `1` (long), opening
+SELL -> `2` (short), reduce-only SELL -> `1`, reduce-only BUY -> `2`.
+
+To override, pass `position_idx` via `params`:
+
+```python
+params={"position_idx": 1}  # 0 one-way, 1 long, 2 short
+```
+
+### Risk events
+
+| Feature                   | Spot | Linear | Inverse | Option | Notes                                     |
+|---------------------------|------|--------|---------|--------|-------------------------------------------|
+| Liquidation handling      | -    | ✓      | ✓       | ✓      | Takeover fills flagged as exchange‑generated. |
+| ADL handling              | -    | ✓      | ✓       | ✓      | Auto‑deleveraging fills flagged and logged.   |
+| ADL rank warnings         | -    | ✓      | ✓       | ✓      | Position reports logged when `adlRankIndicator >= 4`. |
+
+Bybit emits venue-initiated fills with `execType` set to:
+
+- `AdlTrade`: Auto-deleveraging execution. An opposing profitable position was
+  selected to close the undercollateralised counterparty after the insurance
+  fund could not cover the loss.
+- `BustTrade`: Liquidation takeover. The liquidation engine seized the
+  position after margin was exhausted.
+- `Delivery`: USDC futures delivery.
+- `Settle`: Inverse futures settlement.
+
+The adapter flags each as exchange-generated and logs a warning containing the
+execution ID, symbol, side, quantity, and price. Fills flow through the normal
+`FillReport` path; because these orders carry an empty `orderLinkId`, the
+execution engine treats them as external and assigns them via
+`external_order_claims` (or the `EXTERNAL` strategy by default).
+
+Bybit also publishes an ADL ranking on position updates via the
+`adlRankIndicator` field. The range is 0 (flat / no position) to 5 (next to
+deleverage). The adapter logs a warning whenever an open position carries a
+rank of 4 or higher so you can react before the venue force-closes.
+
+Upstream references:
+
+- [V5 `execType` values](https://bybit-exchange.github.io/docs/v5/enum#exectype)
+- [V5 `createType` values](https://bybit-exchange.github.io/docs/v5/enum#createtype)
+- [Liquidation mechanism](https://www.bybit.com/en/help-center/article/Liquidation-Process-Derivatives-Trading)
+- [Auto-Deleveraging mechanism](https://www.bybit.com/en/help-center/article/Auto-Deleveraging-ADL-Derivatives-Trading)
+
 ### Order querying
 
 | Feature             | Spot | Linear | Inverse | Option | Notes                                   |
@@ -240,6 +344,7 @@ Individual orders can be customized using the `params` dictionary when submittin
 | `tp_trigger_price` | `str` or `float`       | Custom TP trigger price (overrides `take_profit`).                      |
 | `sl_trigger_price` | `str` or `float`       | Custom SL trigger price (overrides `stop_loss`).                        |
 | `close_on_trigger` | `bool`                 | Close the position when TP/SL triggers. Default: `False`.               |
+| `position_idx`     | `int`                  | Hedge‑mode position index. See [Hedge mode](#hedge-mode-bothsides).     |
 
 :::note
 Native TP/SL params are not supported in demo mode. The `is_leverage` param applies to
@@ -480,7 +585,7 @@ the WebSocket trade channel on mainnet. They are not supported in demo mode.
 
 #### Options trading limitations
 
-- Demo mode is not supported. Use mainnet or testnet for options.
+- IV-based option orders and WS-trade-only features are not supported in demo mode.
 - Leverage is not configurable. Option buyers pay premium; sellers post margin.
 - Position mode is one-way only. Hedge mode is not supported.
 - Conditional order types (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`,
@@ -635,14 +740,14 @@ The product types for each client must be specified in the configurations.
 
 | Option                           | Default | Description |
 |----------------------------------|---------|-------------|
-| `api_key`                        | `None`  | API key; loaded from `BYBIT_API_KEY`/`BYBIT_TESTNET_API_KEY` when omitted. |
-| `api_secret`                     | `None`  | API secret; loaded from `BYBIT_API_SECRET`/`BYBIT_TESTNET_API_SECRET` when omitted. |
+| `api_key`                        | `None`  | API key; loaded from the matching environment variable when omitted. |
+| `api_secret`                     | `None`  | API secret; loaded from the matching environment variable when omitted. |
 | `product_types`                  | `None`  | Sequence of `BybitProductType` values to enable; loads all products when `None`. |
+| `environment`                    | `None`  | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`. |
 | `base_url_http`                  | `None`  | Override for the REST base URL. |
-| `http_proxy_url`                 | `None`  | Optional HTTP proxy URL. |
-| `ws_proxy_url`                   | `None`  | Optional WebSocket proxy URL (not yet implemented). |
-| `demo`                           | `False` | Connect to the Bybit demo environment when `True`. |
-| `testnet`                        | `False` | Connect to the Bybit testnet when `True`. |
+| `proxy_url`                      | `None`  | Optional proxy URL for HTTP and WebSocket transports. |
+| `demo`                           | `False` | Deprecated: use `environment=BybitEnvironment.DEMO`. |
+| `testnet`                        | `False` | Deprecated: use `environment=BybitEnvironment.TESTNET`. |
 | `update_instruments_interval_mins` | `60`  | Interval (minutes) between instrument catalogue refreshes. |
 | `recv_window_ms`                 | `5,000` | Receive window (milliseconds) for signed REST requests. |
 | `bars_timestamp_on_close`        | `True`  | Timestamp bars on the close (`True`) or open (`False`) of the interval. |
@@ -654,16 +759,16 @@ The product types for each client must be specified in the configurations.
 
 | Option                           | Default | Description |
 |----------------------------------|---------|-------------|
-| `api_key`                        | `None`  | API key; loaded from `BYBIT_API_KEY`/`BYBIT_TESTNET_API_KEY` when omitted. |
-| `api_secret`                     | `None`  | API secret; loaded from `BYBIT_API_SECRET`/`BYBIT_TESTNET_API_SECRET` when omitted. |
+| `api_key`                        | `None`  | API key; loaded from the matching environment variable when omitted. |
+| `api_secret`                     | `None`  | API secret; loaded from the matching environment variable when omitted. |
 | `product_types`                  | `None`  | Sequence of `BybitProductType` values to enable (Spot cannot be mixed with derivatives for execution). |
+| `environment`                    | `None`  | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`. |
 | `base_url_http`                  | `None`  | Override for the REST base URL. |
 | `base_url_ws_private`            | `None`  | Override for the private WebSocket base URL. |
 | `base_url_ws_trade`              | `None`  | Override for the trade WebSocket base URL. |
-| `http_proxy_url`                 | `None`  | Optional HTTP proxy URL. |
-| `ws_proxy_url`                   | `None`  | Optional WebSocket proxy URL (not yet implemented). |
-| `demo`                           | `False` | Connect to the Bybit demo environment when `True`. |
-| `testnet`                        | `False` | Connect to the Bybit testnet when `True`. |
+| `proxy_url`                      | `None`  | Optional proxy URL for HTTP and WebSocket transports. |
+| `demo`                           | `False` | Deprecated: use `environment=BybitEnvironment.DEMO`. |
+| `testnet`                        | `False` | Deprecated: use `environment=BybitEnvironment.TESTNET`. |
 | `use_gtd`                        | `False` | Remap GTD orders to GTC when `True` (Bybit lacks native GTD support). |
 | `use_ws_execution_fast`          | `False` | Subscribe to the low‑latency execution stream. |
 | `use_http_batch_api`             | `False` | Use Bybit's HTTP batch trading API (deprecated). |
@@ -678,7 +783,7 @@ The product types for each client must be specified in the configurations.
 | `ws_trade_timeout_secs`          | `5.0`   | Timeout (seconds) waiting for trade WebSocket acknowledgements. |
 | `ws_auth_timeout_secs`           | `5.0`   | Timeout (seconds) waiting for auth WebSocket acknowledgements. |
 | `futures_leverages`              | `None`  | Mapping of `BybitSymbol` to leverage settings. |
-| `position_mode`                  | `None`  | Mapping of `BybitSymbol` to position mode (one‑way vs hedge). |
+| `position_mode`                  | `None`  | Mapping of `BybitSymbol` to position mode. See [Hedge mode](#hedge-mode-bothsides). |
 | `margin_mode`                    | `None`  | Margin mode setting for the account. |
 
 The most common use case is to configure a live `TradingNode` to include Bybit
@@ -687,8 +792,10 @@ configuration(s):
 
 ```python
 from nautilus_trader.adapters.bybit import BYBIT
+from nautilus_trader.adapters.bybit import BybitEnvironment
 from nautilus_trader.adapters.bybit import BybitProductType
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.live.node import TradingNodeConfig
 
 config = TradingNodeConfig(
     ...,  # Omitted
@@ -697,8 +804,8 @@ config = TradingNodeConfig(
             "api_key": "YOUR_BYBIT_API_KEY",
             "api_secret": "YOUR_BYBIT_API_SECRET",
             "base_url_http": None,  # Override with custom endpoint
+            "environment": BybitEnvironment.MAINNET,
             "product_types": [BybitProductType.LINEAR],
-            "testnet": False,
         },
     },
     exec_clients={
@@ -706,8 +813,8 @@ config = TradingNodeConfig(
             "api_key": "YOUR_BYBIT_API_KEY",
             "api_secret": "YOUR_BYBIT_API_SECRET",
             "base_url_http": None,  # Override with custom endpoint
+            "environment": BybitEnvironment.MAINNET,
             "product_types": [BybitProductType.LINEAR],
-            "testnet": False,
         },
     },
 )

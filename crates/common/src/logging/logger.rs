@@ -36,11 +36,14 @@ use ustr::Ustr;
 
 pub use super::config::LoggerConfig;
 use super::{LOGGING_BYPASSED, LOGGING_GUARDS_ACTIVE, LOGGING_INITIALIZED, LOGGING_REALTIME};
+#[cfg(not(all(feature = "simulation", madsim)))]
+use crate::logging::writer::{FileWriter, LogWriter, StderrWriter, StdoutWriter};
 use crate::{
     enums::{LogColor, LogLevel},
-    logging::writer::{FileWriter, FileWriterConfig, LogWriter, StderrWriter, StdoutWriter},
+    logging::writer::FileWriterConfig,
 };
 
+#[cfg(not(all(feature = "simulation", madsim)))]
 const LOGGING: &str = "logging";
 const KV_COLOR: &str = "color";
 const KV_COMPONENT: &str = "component";
@@ -248,7 +251,6 @@ impl Log for Logger {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 impl Logger {
     /// Initializes the logger based on the `NAUTILUS_LOG` environment variable.
     ///
@@ -299,6 +301,10 @@ impl Logger {
             );
         }
 
+        if config.bypass_logging {
+            super::logging_set_bypass();
+        }
+
         let is_colored = config.is_colored;
 
         let print_config = config.print_config;
@@ -307,25 +313,38 @@ impl Logger {
             println!("Logger initialized with {config:?} {file_config:?}");
         }
 
-        let handle = std::thread::Builder::new()
-            .name(LOGGING.to_string())
-            .spawn(move || {
-                Self::handle_messages(
-                    trader_id.to_string(),
-                    instance_id.to_string(),
-                    config,
-                    file_config,
-                    rx,
-                );
-            })?;
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        {
+            let handle = std::thread::Builder::new()
+                .name(LOGGING.to_string())
+                .spawn(move || {
+                    Self::handle_messages(
+                        trader_id.to_string(),
+                        instance_id.to_string(),
+                        config,
+                        file_config,
+                        rx,
+                    );
+                })?;
 
-        // Store the handle globally
-        if let Ok(mut handle_guard) = LOGGER_HANDLE.lock() {
-            debug_assert!(
-                handle_guard.is_none(),
-                "LOGGER_HANDLE already set - re-initialization not supported"
-            );
-            *handle_guard = Some(handle);
+            // Store the handle globally
+            if let Ok(mut handle_guard) = LOGGER_HANDLE.lock() {
+                debug_assert!(
+                    handle_guard.is_none(),
+                    "LOGGER_HANDLE already set - re-initialization not supported"
+                );
+                *handle_guard = Some(handle);
+            }
+        }
+
+        #[cfg(all(feature = "simulation", madsim))]
+        {
+            // Under simulation, the background writer thread would escape the
+            // madsim scheduler. Drop the receiver so the channel closes cleanly
+            // and force the bypass flag so subsequent log calls no-op without
+            // SendError noise.
+            let _ = (trader_id, instance_id, config, file_config, rx);
+            super::logging_set_bypass();
         }
 
         let max_level = log::LevelFilter::Trace;
@@ -342,7 +361,8 @@ impl Logger {
             .ok_or_else(|| anyhow::anyhow!("Failed to create LogGuard from global sender"))
     }
 
-    #[allow(clippy::needless_pass_by_value)]
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    #[expect(clippy::needless_pass_by_value)]
     fn handle_messages(
         trader_id: String,
         instance_id: String,
@@ -359,6 +379,9 @@ impl Logger {
             is_colored,
             print_config: _,
             use_tracing: _,
+            bypass_logging: _,
+            file_config: _,
+            clear_log_file: _,
         } = config;
 
         // Pre-sort module filters by descending path length for O(n) longest-prefix lookup
@@ -687,8 +710,6 @@ impl Drop for LogGuard {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use ahash::AHashMap;
     use log::LevelFilter;
     use nautilus_core::UUID4;
@@ -699,11 +720,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::{
-        enums::LogColor,
-        logging::{logging_clock_set_static_mode, logging_clock_set_static_time},
-        testing::wait_until,
-    };
+    use crate::enums::LogColor;
 
     #[rstest]
     fn log_message_serialization() {
@@ -742,6 +759,7 @@ mod tests {
                 is_colored: true,
                 print_config: false,
                 use_tracing: false,
+                ..Default::default()
             }
         );
     }
@@ -760,6 +778,7 @@ mod tests {
                 is_colored: true,
                 print_config: true,
                 use_tracing: false,
+                ..Default::default()
             }
         );
     }
@@ -782,6 +801,7 @@ mod tests {
                 is_colored: true,
                 print_config: false,
                 use_tracing: false,
+                ..Default::default()
             }
         );
     }
@@ -1097,11 +1117,23 @@ mod tests {
 
     // These tests use global logging state (one logger per process).
     // They run correctly with cargo-nextest which isolates each test in its own process.
+    //
+    // Gated out under `cfg(madsim)`: every test here drives the file-logging writer
+    // thread, which is itself gated out under simulation (see `Logger::init_with_config`),
+    // so log events are dropped and these tests would either hang on `wait_until` or
+    // assert against an empty log file. Logging is outside the determinism contract.
+    #[cfg(not(all(feature = "simulation", madsim)))]
     mod serial_tests {
-        use std::sync::atomic::Ordering;
+        use std::{sync::atomic::Ordering, time::Duration};
 
         use super::*;
-        use crate::logging::{LOGGING_BYPASSED, logging_is_initialized, logging_set_bypass};
+        use crate::{
+            logging::{
+                LOGGING_BYPASSED, logging_clock_set_static_mode, logging_clock_set_static_time,
+                logging_is_initialized, logging_set_bypass,
+            },
+            testing::wait_until,
+        };
 
         #[rstest]
         fn test_logging_to_file() {
@@ -1517,6 +1549,48 @@ mod tests {
             assert!(
                 !log_contents.contains("SHOULD NOT APPEAR"),
                 "Binance info should be filtered (adapters=Warn)"
+            );
+        }
+    }
+
+    #[cfg(all(feature = "simulation", madsim))]
+    mod sim_tests {
+        use std::sync::atomic::Ordering;
+
+        use super::*;
+        use crate::logging::LOGGING_BYPASSED;
+
+        #[rstest]
+        fn test_init_under_madsim_skips_writer_thread_and_forces_bypass() {
+            let config = LoggerConfig {
+                bypass_logging: false,
+                ..Default::default()
+            };
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let _guard = Logger::init_with_config(
+                TraderId::from("TRADER-SIM"),
+                UUID4::new(),
+                config,
+                file_config,
+            )
+            .expect("init should succeed under simulation");
+
+            assert!(LOGGING_INITIALIZED.load(Ordering::SeqCst));
+            assert!(
+                LOGGING_BYPASSED.load(Ordering::SeqCst),
+                "bypass must be forced under cfg(madsim) even when config disables it"
+            );
+            assert!(
+                LOGGER_HANDLE
+                    .lock()
+                    .expect("LOGGER_HANDLE mutex should not be poisoned")
+                    .is_none(),
+                "writer thread must not be spawned under cfg(madsim)"
             );
         }
     }

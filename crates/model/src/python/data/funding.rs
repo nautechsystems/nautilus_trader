@@ -183,7 +183,7 @@ impl FundingRateUpdate {
 
     #[staticmethod]
     #[pyo3(name = "from_dict")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_from_dict(py: Python<'_>, values: Py<PyAny>) -> PyResult<Self> {
         let dict = values.cast_bound::<pyo3::types::PyDict>(py)?;
 

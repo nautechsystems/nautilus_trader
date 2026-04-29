@@ -139,6 +139,7 @@ impl RelativeVolatilityIndex {
         } else {
             let mean = self.ma.value();
             let mut var_sum = 0.0;
+
             for &price in &self.prices {
                 let diff = price - mean;
                 var_sum += diff * diff;

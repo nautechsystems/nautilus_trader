@@ -227,6 +227,7 @@ impl TransactionManager {
         );
 
         let mut matching_ids = Vec::new();
+
         for auth in &authenticators {
             if Self::authenticator_matches_pubkey(auth, &signing_pubkey_b64) {
                 matching_ids.push(auth.id);

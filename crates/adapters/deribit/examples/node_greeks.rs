@@ -22,7 +22,7 @@
 //! 4. Subscribes to OptionGreeks for each one
 //! 5. Logs received greeks in the `on_option_greeks` handler
 //!
-//! Run with: `cargo run --example deribit-greeks-tester --package nautilus-deribit`
+//! Run with: `cargo run --example deribit-greeks-tester --package nautilus-deribit --features examples`
 
 use std::fmt::Debug;
 
@@ -33,8 +33,8 @@ use nautilus_common::{
     timer::TimeEvent,
 };
 use nautilus_deribit::{
-    config::DeribitDataClientConfig, factories::DeribitDataClientFactory,
-    http::models::DeribitProductType,
+    common::enums::DeribitEnvironment, config::DeribitDataClientConfig,
+    factories::DeribitDataClientFactory, http::models::DeribitProductType,
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
@@ -44,6 +44,7 @@ use nautilus_model::{
     instruments::Instrument,
     stubs::TestDefault,
 };
+use nautilus_network::websocket::TransportBackend;
 use ustr::Ustr;
 
 // ---------------------------------------------------------------------------
@@ -195,7 +196,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: None,    // Will use 'DERIBIT_API_KEY' env var
         api_secret: None, // Will use 'DERIBIT_API_SECRET' env var
         product_types: vec![DeribitProductType::Option],
-        use_testnet: false,
+        environment: DeribitEnvironment::Mainnet,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

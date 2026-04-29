@@ -4,7 +4,7 @@
 # 2. Sections must be in standard order: package, lints, lib, features, package.metadata.docs.rs,
 #    dependencies, dev-dependencies, build-dependencies, bench, bin, example, test
 # 3. Crates with [lib] or [[bin]] must have [lints] workspace = true
-# 4. All [[bin]] and [[example]] sections must have doc = false
+# 4. All [[bin]] and [[example]] sections must have doc = false; [[bin]] must also have test = false
 # 5. [package] section must have required fields in correct order
 # 6. [lib] crate-type must use order: rlib, staticlib, cdylib
 # 7. All [workspace.dependencies] must be used by at least one crate
@@ -163,23 +163,26 @@ if [[ -n "$lints_violations" ]]; then
   VIOLATIONS=$((VIOLATIONS + $(echo "$lints_violations" | wc -l)))
 fi
 
-# Check 4: [[bin]] and [[example]] must have doc = false
+# Check 4: [[bin]] and [[example]] must have doc = false; [[bin]] must also have test = false
 doc_violations=$(rg --files -g "Cargo.toml" --glob "!target/*" crates/ 2> /dev/null | while read -r file; do
   awk '
   function check_pending() {
     if (section_line > 0 && !has_doc_false) {
       printf "  %s:%d [[%s]] missing doc = false\n", FILENAME, section_line, section_type
     }
+    if (section_line > 0 && section_type == "bin" && !has_test_false) {
+      printf "  %s:%d [[%s]] missing test = false\n", FILENAME, section_line, section_type
+    }
   }
 
   /^\[\[bin\]\]/ || /^\[\[example\]\]/ {
-    # Check previous section before starting new one
     check_pending()
 
     section_type = $0
     gsub(/^\[\[|\]\]$/, "", section_type)
     section_line = NR
     has_doc_false = 0
+    has_test_false = 0
     next
   }
 
@@ -187,10 +190,15 @@ doc_violations=$(rg --files -g "Cargo.toml" --glob "!target/*" crates/ 2> /dev/n
     has_doc_false = 1
   }
 
+  section_line > 0 && /^test[[:space:]]*=[[:space:]]*false/ {
+    has_test_false = 1
+  }
+
   section_line > 0 && /^\[/ && !/^\[\[bin\]\]/ && !/^\[\[example\]\]/ {
     check_pending()
     section_line = 0
     has_doc_false = 0
+    has_test_false = 0
   }
 
   END {
@@ -200,7 +208,7 @@ doc_violations=$(rg --files -g "Cargo.toml" --glob "!target/*" crates/ 2> /dev/n
 done) || true
 
 if [[ -n "$doc_violations" ]]; then
-  echo -e "${RED}Missing doc = false:${NC}"
+  echo -e "${RED}Missing doc = false or test = false:${NC}"
   echo "$doc_violations"
   echo
   VIOLATIONS=$((VIOLATIONS + $(echo "$doc_violations" | wc -l)))
@@ -491,6 +499,7 @@ if [[ $VIOLATIONS -gt 0 ]]; then
   echo "    [dependencies], [dev-dependencies], [build-dependencies], [[bench]], [[bin]], [[example]]"
   echo "  - Add [lints] workspace = true after [package] for all crates"
   echo "  - Add doc = false to all [[bin]] and [[example]] sections"
+  echo "  - Add test = false to all [[bin]] sections"
   echo "  - [package] fields must be in order: name, readme, version.workspace, edition.workspace,"
   echo "    rust-version.workspace, authors.workspace, license.workspace, description,"
   echo "    categories.workspace, keywords.workspace, documentation.workspace, repository.workspace,"

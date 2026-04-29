@@ -70,7 +70,7 @@ pub struct PoolFeeCollect {
 impl PoolFeeCollect {
     /// Creates a new [`PoolFeeCollect`] instance with the specified properties.
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub const fn new(
         chain: SharedChain,
         dex: SharedDex,

@@ -5,3 +5,6 @@ self-hosted-runner:
     - depot-windows-2022-8
     - depot-macos-14
     - depot-macos-15
+    - self-hosted-linux-x86
+    - build
+    - build-v2

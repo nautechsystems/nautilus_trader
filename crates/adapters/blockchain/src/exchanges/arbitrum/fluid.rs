@@ -54,7 +54,7 @@ pub static FLUID_DEX: LazyLock<DexExtended> = LazyLock::new(|| {
     dex
 });
 
-#[allow(clippy::needless_pass_by_value)] // Must match function pointer signature
+#[expect(clippy::needless_pass_by_value)] // Must match function pointer signature
 fn parse_fluid_dex_pool_created_event_hypersync(
     log: HypersyncLog,
 ) -> anyhow::Result<PoolCreatedEvent> {

@@ -25,6 +25,7 @@ use std::{
     },
 };
 
+use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use nautilus_core::{
@@ -34,15 +35,15 @@ use nautilus_core::{
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, TradeTick},
     enums::{
-        AccountType, BookType, CurrencyType, OrderSide, OrderType, PositionSideSpecified,
-        TimeInForce, TriggerType,
+        AccountType, BookType, CurrencyType, MarketStatusAction, OrderSide, OrderType,
+        PositionSideSpecified, TimeInForce, TriggerType,
     },
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Price, Quantity},
 };
 use nautilus_network::{
     http::{HttpClient, Method, USER_AGENT},
@@ -57,13 +58,19 @@ use ustr::Ustr;
 use super::{models::*, query::*};
 use crate::{
     common::{
-        consts::{KRAKEN_OFLAG_POST_ONLY, KRAKEN_OFLAG_QUOTE_QUANTITY, NAUTILUS_KRAKEN_BROKER_ID},
+        consts::{
+            KRAKEN_OFLAG_POST_ONLY, KRAKEN_OFLAG_QUOTE_QUANTITY, KRAKEN_VENUE,
+            NAUTILUS_KRAKEN_BROKER_ID,
+        },
         credential::KrakenCredential,
-        enums::{KrakenEnvironment, KrakenOrderSide, KrakenOrderType, KrakenProductType},
+        enums::{
+            KrakenAssetClass, KrakenEnvironment, KrakenOrderSide, KrakenOrderType,
+            KrakenProductType,
+        },
         parse::{
-            bar_type_to_spot_interval, normalize_currency_code, parse_bar, parse_fill_report,
-            parse_order_status_report, parse_spot_instrument, parse_tokenized_instrument,
-            parse_trade_tick_from_array, truncate_cl_ord_id,
+            bar_type_to_spot_interval, normalize_currency_code, normalize_spot_symbol, parse_bar,
+            parse_fill_report, parse_order_status_report, parse_spot_instrument,
+            parse_tokenized_instrument, parse_trade_tick_from_array, truncate_cl_ord_id,
         },
         urls::get_kraken_http_base_url,
     },
@@ -77,6 +84,9 @@ const KRAKEN_GLOBAL_RATE_KEY: &str = "kraken:spot:global";
 
 /// Maximum orders per batch cancel request for Kraken Spot API.
 const BATCH_CANCEL_LIMIT: usize = 50;
+
+/// Maximum orders per batch submit request for Kraken Spot API.
+const BATCH_SUBMIT_LIMIT: usize = 15;
 
 /// Computes the time-in-force and expiration time parameters for Kraken Spot orders.
 ///
@@ -150,7 +160,7 @@ impl Debug for KrakenSpotRawHttpClient {
 
 impl KrakenSpotRawHttpClient {
     /// Creates a new [`KrakenSpotRawHttpClient`].
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         environment: KrakenEnvironment,
         base_url_override: Option<String>,
@@ -197,7 +207,7 @@ impl KrakenSpotRawHttpClient {
     }
 
     /// Creates a new [`KrakenSpotRawHttpClient`] with credentials.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
@@ -508,8 +518,13 @@ impl KrakenSpotRawHttpClient {
     pub async fn get_ticker(
         &self,
         pairs: Vec<String>,
+        asset_class: Option<KrakenAssetClass>,
     ) -> anyhow::Result<TickerResponse, KrakenHttpError> {
-        let endpoint = format!("/0/public/Ticker?pair={}", pairs.join(","));
+        let mut endpoint = format!("/0/public/Ticker?pair={}", pairs.join(","));
+
+        if let Some(aclass) = asset_class {
+            endpoint.push_str(&format!("&asset_class={aclass}"));
+        }
 
         let response: KrakenResponse<TickerResponse> = self
             .send_request(Method::GET, &endpoint, None, false)
@@ -526,8 +541,13 @@ impl KrakenSpotRawHttpClient {
         pair: &str,
         interval: Option<u32>,
         since: Option<i64>,
+        asset_class: Option<KrakenAssetClass>,
     ) -> anyhow::Result<OhlcResponse, KrakenHttpError> {
         let mut endpoint = format!("/0/public/OHLC?pair={pair}");
+
+        if let Some(aclass) = asset_class {
+            endpoint.push_str(&format!("&asset_class={aclass}"));
+        }
 
         if let Some(interval) = interval {
             endpoint.push_str(&format!("&interval={interval}"));
@@ -551,8 +571,13 @@ impl KrakenSpotRawHttpClient {
         &self,
         pair: &str,
         count: Option<u32>,
+        asset_class: Option<KrakenAssetClass>,
     ) -> anyhow::Result<OrderBookResponse, KrakenHttpError> {
         let mut endpoint = format!("/0/public/Depth?pair={pair}");
+
+        if let Some(aclass) = asset_class {
+            endpoint.push_str(&format!("&asset_class={aclass}"));
+        }
 
         if let Some(count) = count {
             endpoint.push_str(&format!("&count={count}"));
@@ -572,8 +597,13 @@ impl KrakenSpotRawHttpClient {
         &self,
         pair: &str,
         since: Option<String>,
+        asset_class: Option<KrakenAssetClass>,
     ) -> anyhow::Result<TradesResponse, KrakenHttpError> {
         let mut endpoint = format!("/0/public/Trades?pair={pair}");
+
+        if let Some(aclass) = asset_class {
+            endpoint.push_str(&format!("&asset_class={aclass}"));
+        }
 
         if let Some(since) = since {
             endpoint.push_str(&format!("&since={since}"));
@@ -777,6 +807,81 @@ impl KrakenSpotRawHttpClient {
             .await?;
 
         response
+            .result
+            .ok_or_else(|| KrakenHttpError::ParseError("Missing result in response".to_string()))
+    }
+
+    /// Submits multiple orders in a single batch request (requires authentication).
+    pub async fn add_order_batch(
+        &self,
+        params: &KrakenSpotAddOrderBatchParams,
+    ) -> anyhow::Result<SpotAddOrderBatchResponse, KrakenHttpError> {
+        let credential = self.credential.as_ref().ok_or_else(|| {
+            KrakenHttpError::AuthenticationError(
+                "API credentials required for adding orders".to_string(),
+            )
+        })?;
+
+        let _guard = self.auth_mutex.lock().await;
+
+        let endpoint = "/0/private/AddOrderBatch";
+        let nonce = self.generate_nonce();
+
+        let mut json_body = serde_json::json!({
+            "nonce": nonce.to_string(),
+            "pair": params.pair,
+            "orders": params.orders,
+        });
+
+        if let Some(aclass) = &params.asset_class {
+            json_body["asset_class"] = serde_json::json!(aclass);
+        }
+        let json_str = serde_json::to_string(&json_body)
+            .map_err(|e| KrakenHttpError::ParseError(format!("Failed to serialize: {e}")))?;
+
+        let signature = credential
+            .sign_spot_json(endpoint, nonce, &json_str)
+            .map_err(|e| KrakenHttpError::AuthenticationError(format!("Failed to sign: {e}")))?;
+
+        let mut headers = Self::default_headers();
+        headers.insert("API-Key".to_string(), credential.api_key().to_string());
+        headers.insert("API-Sign".to_string(), signature);
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+        let url = format!("{}{endpoint}", self.base_url);
+        let rate_limit_keys = Self::rate_limit_keys(endpoint);
+
+        let response = self
+            .client
+            .request(
+                Method::POST,
+                url,
+                None,
+                Some(headers),
+                Some(json_str.into_bytes()),
+                None,
+                Some(rate_limit_keys),
+            )
+            .await
+            .map_err(|e| KrakenHttpError::NetworkError(e.to_string()))?;
+
+        if !response.status.is_success() {
+            return Err(KrakenHttpError::NetworkError(format!(
+                "HTTP {:?} for {}",
+                response.status, endpoint
+            )));
+        }
+
+        let parsed: KrakenResponse<SpotAddOrderBatchResponse> =
+            serde_json::from_slice(&response.body).map_err(|e| {
+                KrakenHttpError::ParseError(format!("Failed to parse JSON response: {e}"))
+            })?;
+
+        if !parsed.error.is_empty() {
+            return Err(KrakenHttpError::ApiError(parsed.error));
+        }
+
+        parsed
             .result
             .ok_or_else(|| KrakenHttpError::ParseError("Missing result in response".to_string()))
     }
@@ -1036,7 +1141,7 @@ impl Debug for KrakenSpotHttpClient {
 
 impl KrakenSpotHttpClient {
     /// Creates a new [`KrakenSpotHttpClient`].
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         environment: KrakenEnvironment,
         base_url_override: Option<String>,
@@ -1067,7 +1172,7 @@ impl KrakenSpotHttpClient {
     }
 
     /// Creates a new [`KrakenSpotHttpClient`] with credentials.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
@@ -1108,7 +1213,7 @@ impl KrakenSpotHttpClient {
     /// Note: Kraken Spot does not have a testnet/demo environment.
     ///
     /// Falls back to unauthenticated client if credentials are not set.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn from_env(
         environment: KrakenEnvironment,
         base_url_override: Option<String>,
@@ -1191,6 +1296,15 @@ impl KrakenSpotHttpClient {
         self.clock.get_time_ns()
     }
 
+    // Kraken requires `asset_class=tokenized_asset` on every request that references a tokenized pair.
+    fn asset_class_for(instrument: &InstrumentAny) -> Option<KrakenAssetClass> {
+        if matches!(instrument, InstrumentAny::TokenizedAsset(_)) {
+            Some(KrakenAssetClass::TokenizedAsset)
+        } else {
+            None
+        }
+    }
+
     /// Sets whether to generate position reports from wallet balances for SPOT instruments.
     pub fn set_use_spot_position_reports(&self, value: bool) {
         self.use_spot_position_reports
@@ -1271,6 +1385,27 @@ impl KrakenSpotHttpClient {
         Ok(instruments)
     }
 
+    /// Requests the current market status for Kraken Spot instruments.
+    ///
+    /// Fetches both regular and tokenized asset pairs. The call returns an error if
+    /// either fetch fails so callers can avoid emitting partial snapshots that would
+    /// otherwise cause the missing tokenized symbols to be diffed as removed.
+    pub async fn request_instrument_statuses(
+        &self,
+        pairs: Option<Vec<String>>,
+    ) -> anyhow::Result<AHashMap<InstrumentId, MarketStatusAction>, KrakenHttpError> {
+        let asset_pairs = self.inner.get_asset_pairs(pairs.clone(), None).await?;
+        let mut statuses = collect_spot_statuses(&asset_pairs);
+
+        let tokenized_pairs = self
+            .inner
+            .get_asset_pairs(pairs, Some("tokenized_asset"))
+            .await?;
+        statuses.extend(collect_spot_statuses(&tokenized_pairs));
+
+        Ok(statuses)
+    }
+
     /// Requests historical trades for an instrument.
     pub async fn request_trades(
         &self,
@@ -1288,11 +1423,15 @@ impl KrakenSpotHttpClient {
             })?;
 
         let raw_symbol = instrument.raw_symbol().to_string();
+        let asset_class = Self::asset_class_for(&instrument);
         let ts_init = self.generate_ts_init();
 
         // Kraken trades API expects nanoseconds since epoch as string
         let since = start.map(|dt| (dt.timestamp_nanos_opt().unwrap_or(0) as u64).to_string());
-        let response = self.inner.get_trades(&raw_symbol, since).await?;
+        let response = self
+            .inner
+            .get_trades(&raw_symbol, since, asset_class)
+            .await?;
 
         let end_ns = end.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64);
         let mut trades = Vec::new();
@@ -1342,6 +1481,7 @@ impl KrakenSpotHttpClient {
             })?;
 
         let raw_symbol = instrument.raw_symbol().to_string();
+        let asset_class = Self::asset_class_for(&instrument);
         let ts_init = self.generate_ts_init();
 
         let interval = Some(
@@ -1352,7 +1492,10 @@ impl KrakenSpotHttpClient {
         // Kraken OHLC API expects Unix timestamp in seconds
         let since = start.map(|dt| dt.timestamp());
         let end_ns = end.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64);
-        let response = self.inner.get_ohlc(&raw_symbol, interval, since).await?;
+        let response = self
+            .inner
+            .get_ohlc(&raw_symbol, interval, since, asset_class)
+            .await?;
 
         let mut bars = Vec::new();
 
@@ -1415,11 +1558,15 @@ impl KrakenSpotHttpClient {
             })?;
 
         let raw_symbol = instrument.raw_symbol().to_string();
+        let asset_class = Self::asset_class_for(&instrument);
         let price_precision = instrument.price_precision();
         let size_precision = instrument.size_precision();
         let ts_event = self.generate_ts_init();
 
-        let response = self.inner.get_book_depth(&raw_symbol, depth).await?;
+        let response = self
+            .inner
+            .get_book_depth(&raw_symbol, depth, asset_class)
+            .await?;
 
         let book_data = response.values().next().ok_or_else(|| {
             KrakenHttpError::ParseError(format!("No book data returned for {instrument_id}"))
@@ -1427,13 +1574,15 @@ impl KrakenSpotHttpClient {
 
         let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
+        // Pass sequence=0 so the snapshot does not advance the book's high-water sequence,
+        // the WS subscription owns sequencing once it starts streaming deltas.
         for (i, level) in book_data.bids.iter().enumerate() {
             let price_str = level.first().and_then(|v| v.as_str()).unwrap_or("0");
             let size_str = level.get(1).and_then(|v| v.as_str()).unwrap_or("0");
             let price = Price::new(price_str.parse::<f64>().unwrap_or(0.0), price_precision);
             let size = Quantity::new(size_str.parse::<f64>().unwrap_or(0.0), size_precision);
             let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
-            book.add(order, 0, i as u64, ts_event);
+            book.add(order, 0, 0, ts_event);
         }
 
         let bids_len = book_data.bids.len();
@@ -1444,7 +1593,7 @@ impl KrakenSpotHttpClient {
             let price = Price::new(price_str.parse::<f64>().unwrap_or(0.0), price_precision);
             let size = Quantity::new(size_str.parse::<f64>().unwrap_or(0.0), size_precision);
             let order = BookOrder::new(OrderSide::Sell, price, size, (bids_len + i) as u64);
-            book.add(order, 0, (bids_len + i) as u64, ts_event);
+            book.add(order, 0, 0, ts_event);
         }
 
         Ok(book)
@@ -1463,8 +1612,8 @@ impl KrakenSpotHttpClient {
         let balances: Vec<AccountBalance> = balances_raw
             .iter()
             .filter_map(|(currency_code, amount_str)| {
-                let amount = amount_str.parse::<f64>().ok()?;
-                if amount == 0.0 {
+                let amount = Decimal::from_str_exact(amount_str).ok()?;
+                if amount.is_zero() {
                     return None;
                 }
 
@@ -1482,11 +1631,8 @@ impl KrakenSpotHttpClient {
                     CurrencyType::Crypto,
                 );
 
-                let total = Money::new(amount, currency);
-                let locked = Money::new(0.0, currency);
-
                 // Balance endpoint returns total only, so free = total (no locked info)
-                Some(AccountBalance::new(total, locked, total))
+                AccountBalance::from_total_and_locked(amount, Decimal::ZERO, currency).ok()
             })
             .collect();
 
@@ -1794,7 +1940,7 @@ impl KrakenSpotHttpClient {
     /// - The order type or time in force is not supported.
     /// - The request fails.
     /// - The order is rejected.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_order(
         &self,
         _account_id: AccountId,
@@ -1815,151 +1961,24 @@ impl KrakenSpotHttpClient {
         quote_quantity: bool,
         display_qty: Option<Quantity>,
     ) -> anyhow::Result<VenueOrderId> {
-        let instrument = self
-            .get_cached_instrument(&instrument_id.symbol.inner())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
-
-        let raw_symbol = instrument.raw_symbol().inner();
-
-        let kraken_side = match order_side {
-            OrderSide::Buy => KrakenOrderSide::Buy,
-            OrderSide::Sell => KrakenOrderSide::Sell,
-            _ => anyhow::bail!("Invalid order side: {order_side:?}"),
-        };
-
-        let kraken_order_type = match order_type {
-            OrderType::Market => KrakenOrderType::Market,
-            OrderType::Limit => KrakenOrderType::Limit,
-            OrderType::StopMarket => KrakenOrderType::StopLoss,
-            OrderType::StopLimit => KrakenOrderType::StopLossLimit,
-            OrderType::MarketIfTouched => KrakenOrderType::TakeProfit,
-            OrderType::LimitIfTouched => KrakenOrderType::TakeProfitLimit,
-            OrderType::TrailingStopMarket => KrakenOrderType::TrailingStop,
-            OrderType::TrailingStopLimit => KrakenOrderType::TrailingStopLimit,
-            _ => anyhow::bail!("Unsupported order type: {order_type:?}"),
-        };
-
-        let mut oflags = Vec::new();
-        let is_limit_order = matches!(
+        let params = self.build_add_order_params(
+            instrument_id,
+            client_order_id,
+            order_side,
             order_type,
-            OrderType::Limit
-                | OrderType::StopLimit
-                | OrderType::LimitIfTouched
-                | OrderType::TrailingStopLimit
-        );
-
-        // FOK is only valid for plain limit orders, not conditional orders
-        if time_in_force == TimeInForce::Fok && order_type != OrderType::Limit {
-            anyhow::bail!("FOK time in force only supported for LIMIT orders on Kraken Spot");
-        }
-
-        let (timeinforce, expiretm) =
-            compute_time_in_force(is_limit_order, time_in_force, expire_time)?;
-
-        if post_only {
-            oflags.push(KRAKEN_OFLAG_POST_ONLY);
-        }
-
-        if reduce_only {
-            log::warn!("reduce_only is not supported by Kraken Spot API, ignoring");
-        }
-
-        if quote_quantity {
-            oflags.push(KRAKEN_OFLAG_QUOTE_QUANTITY);
-        }
-
-        let mut builder = KrakenSpotAddOrderParamsBuilder::default();
-        builder
-            .cl_ord_id(truncate_cl_ord_id(&client_order_id))
-            .broker(NAUTILUS_KRAKEN_BROKER_ID)
-            .pair(raw_symbol)
-            .side(kraken_side)
-            .volume(quantity.to_string())
-            .order_type(kraken_order_type);
-
-        // For stop/conditional orders:
-        // - price = trigger price (when the order activates)
-        // - price2 = limit price (for stop-limit and take-profit-limit)
-        // For regular limit orders:
-        // - price = limit price
-        let is_conditional = matches!(
-            order_type,
-            OrderType::StopMarket
-                | OrderType::StopLimit
-                | OrderType::MarketIfTouched
-                | OrderType::LimitIfTouched
-                | OrderType::TrailingStopMarket
-                | OrderType::TrailingStopLimit
-        );
-
-        let is_trailing = matches!(
-            order_type,
-            OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
-        );
-
-        if is_trailing {
-            // Kraken trailing stops trail immediately; activation prices not supported
-            if trigger_price.is_some() {
-                anyhow::bail!(
-                    "Kraken Spot trailing stops do not support activation trigger prices"
-                );
-            }
-
-            // Kraken trailing stops: price = trailing offset, price2 = limit offset
-            if let Some(offset) = trailing_offset {
-                builder.price(offset.to_string());
-            }
-
-            if let Some(offset) = limit_offset {
-                builder.price2(offset.to_string());
-            }
-        } else if is_conditional {
-            if let Some(trigger) = trigger_price {
-                builder.price(trigger.to_string());
-            }
-
-            if let Some(limit) = price {
-                builder.price2(limit.to_string());
-            }
-        } else if let Some(limit) = price {
-            builder.price(limit.to_string());
-        }
-
-        // Kraken Spot supports "last" (default) and "index" trigger references
-        if is_conditional {
-            match trigger_type {
-                Some(TriggerType::IndexPrice) => {
-                    builder.trigger("index".to_string());
-                }
-                Some(TriggerType::LastPrice | TriggerType::Default) | None => {}
-                Some(other) => {
-                    anyhow::bail!(
-                        "Unsupported trigger type for Kraken Spot: {other:?} (only LastPrice and IndexPrice supported)"
-                    );
-                }
-            }
-        }
-
-        if !oflags.is_empty() {
-            builder.oflags(oflags.join(","));
-        }
-
-        if let Some(tif) = timeinforce {
-            builder.timeinforce(tif);
-        }
-
-        if let Some(expire) = expiretm {
-            builder.expiretm(expire);
-        }
-
-        if let Some(dq) = display_qty {
-            builder.displayvol(dq.to_string());
-        }
-
-        let params = builder
-            .build()
-            .map_err(|e| anyhow::anyhow!("Failed to build order params: {e}"))?;
-
+            quantity,
+            time_in_force,
+            expire_time,
+            price,
+            trigger_price,
+            trigger_type,
+            trailing_offset,
+            limit_offset,
+            reduce_only,
+            post_only,
+            quote_quantity,
+            display_qty,
+        )?;
         let response = self.inner.add_order(&params).await?;
 
         let venue_order_id = response
@@ -1968,6 +1987,155 @@ impl KrakenSpotHttpClient {
             .ok_or_else(|| anyhow::anyhow!("No transaction ID in order response"))?;
 
         Ok(VenueOrderId::new(venue_order_id))
+    }
+
+    /// Submits multiple orders to the Kraken Spot exchange.
+    ///
+    /// Automatically groups orders by pair and chunks batch requests at the venue
+    /// limit. Single-order groups fall back to `AddOrder`.
+    #[expect(clippy::type_complexity)]
+    pub async fn submit_orders_batch(
+        &self,
+        orders: Vec<(
+            InstrumentId,
+            ClientOrderId,
+            OrderSide,
+            OrderType,
+            Quantity,
+            TimeInForce,
+            Option<UnixNanos>,
+            Option<Price>,
+            Option<Price>,
+            Option<TriggerType>,
+            Option<Decimal>,
+            Option<Decimal>,
+            bool,
+            bool,
+            bool,
+            Option<Quantity>,
+        )>,
+    ) -> anyhow::Result<Vec<String>> {
+        let count = orders.len();
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut all_statuses: Vec<Option<String>> = vec![None; count];
+        let mut grouped: AHashMap<Ustr, Vec<(usize, KrakenSpotAddOrderParams)>> = AHashMap::new();
+
+        for (
+            idx,
+            (
+                instrument_id,
+                client_order_id,
+                order_side,
+                order_type,
+                quantity,
+                time_in_force,
+                expire_time,
+                price,
+                trigger_price,
+                trigger_type,
+                trailing_offset,
+                limit_offset,
+                reduce_only,
+                post_only,
+                quote_quantity,
+                display_qty,
+            ),
+        ) in orders.into_iter().enumerate()
+        {
+            match self.build_add_order_params(
+                instrument_id,
+                client_order_id,
+                order_side,
+                order_type,
+                quantity,
+                time_in_force,
+                expire_time,
+                price,
+                trigger_price,
+                trigger_type,
+                trailing_offset,
+                limit_offset,
+                reduce_only,
+                post_only,
+                quote_quantity,
+                display_qty,
+            ) {
+                Ok(params) => {
+                    grouped.entry(params.pair).or_default().push((idx, params));
+                }
+                Err(e) => {
+                    all_statuses[idx] = Some(format!("validation_error: {e}"));
+                }
+            }
+        }
+
+        let mut grouped_batches: Vec<_> = grouped.into_values().collect();
+        grouped_batches.sort_by_key(|group| group.first().map_or(usize::MAX, |(idx, _)| *idx));
+
+        for grouped_orders in grouped_batches {
+            for chunk in grouped_orders.chunks(BATCH_SUBMIT_LIMIT) {
+                if chunk.len() == 1 {
+                    let (idx, params) = &chunk[0];
+                    match self.inner.add_order(params).await {
+                        Ok(response) => {
+                            let status = if response.txid.is_empty() {
+                                "Unknown error".to_string()
+                            } else {
+                                "placed".to_string()
+                            };
+                            all_statuses[*idx] = Some(status);
+                        }
+                        Err(e) => {
+                            all_statuses[*idx] = Some(format!("batch_error: {e}"));
+                        }
+                    }
+                    continue;
+                }
+
+                let batch_params = KrakenSpotAddOrderBatchParams {
+                    pair: chunk[0].1.pair,
+                    orders: chunk
+                        .iter()
+                        .map(|(_, params)| params.clone().into())
+                        .collect(),
+                    asset_class: chunk[0].1.asset_class,
+                };
+
+                match self.inner.add_order_batch(&batch_params).await {
+                    Ok(response) => {
+                        for (offset, (idx, _)) in chunk.iter().enumerate() {
+                            let status = response.orders.get(offset).map_or_else(
+                                || "Unknown error".to_string(),
+                                |order| {
+                                    if order.txid.is_some() {
+                                        "placed".to_string()
+                                    } else {
+                                        order
+                                            .error
+                                            .clone()
+                                            .unwrap_or_else(|| "Unknown error".to_string())
+                                    }
+                                },
+                            );
+                            all_statuses[*idx] = Some(status);
+                        }
+                    }
+                    Err(e) => {
+                        for (idx, _) in chunk {
+                            all_statuses[*idx] = Some(format!("batch_error: {e}"));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(all_statuses
+            .into_iter()
+            .map(|status| status.unwrap_or_else(|| "Unknown error".to_string()))
+            .collect())
     }
 
     /// Modifies an existing order on the Kraken Spot exchange using atomic amend.
@@ -2101,10 +2269,191 @@ impl KrakenSpotHttpClient {
 
         Ok(total_cancelled)
     }
+
+    #[expect(clippy::too_many_arguments)]
+    fn build_add_order_params(
+        &self,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        expire_time: Option<UnixNanos>,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+        trigger_type: Option<TriggerType>,
+        trailing_offset: Option<Decimal>,
+        limit_offset: Option<Decimal>,
+        reduce_only: bool,
+        post_only: bool,
+        quote_quantity: bool,
+        display_qty: Option<Quantity>,
+    ) -> anyhow::Result<KrakenSpotAddOrderParams> {
+        let instrument = self
+            .get_cached_instrument(&instrument_id.symbol.inner())
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
+
+        let raw_symbol = instrument.raw_symbol().inner();
+        let asset_class = Self::asset_class_for(&instrument);
+
+        let kraken_side = match order_side {
+            OrderSide::Buy => KrakenOrderSide::Buy,
+            OrderSide::Sell => KrakenOrderSide::Sell,
+            _ => anyhow::bail!("Invalid order side: {order_side:?}"),
+        };
+
+        let kraken_order_type = match order_type {
+            OrderType::Market => KrakenOrderType::Market,
+            OrderType::Limit => KrakenOrderType::Limit,
+            OrderType::StopMarket => KrakenOrderType::StopLoss,
+            OrderType::StopLimit => KrakenOrderType::StopLossLimit,
+            OrderType::MarketIfTouched => KrakenOrderType::TakeProfit,
+            OrderType::LimitIfTouched => KrakenOrderType::TakeProfitLimit,
+            OrderType::TrailingStopMarket => KrakenOrderType::TrailingStop,
+            OrderType::TrailingStopLimit => KrakenOrderType::TrailingStopLimit,
+            _ => anyhow::bail!("Unsupported order type: {order_type:?}"),
+        };
+
+        let mut oflags = Vec::new();
+        let is_limit_order = matches!(
+            order_type,
+            OrderType::Limit
+                | OrderType::StopLimit
+                | OrderType::LimitIfTouched
+                | OrderType::TrailingStopLimit
+        );
+
+        if time_in_force == TimeInForce::Fok && order_type != OrderType::Limit {
+            anyhow::bail!("FOK time in force only supported for LIMIT orders on Kraken Spot");
+        }
+
+        let (timeinforce, expiretm) =
+            compute_time_in_force(is_limit_order, time_in_force, expire_time)?;
+
+        if post_only {
+            oflags.push(KRAKEN_OFLAG_POST_ONLY);
+        }
+
+        if reduce_only {
+            log::warn!("reduce_only is not supported by Kraken Spot API, ignoring");
+        }
+
+        if quote_quantity {
+            oflags.push(KRAKEN_OFLAG_QUOTE_QUANTITY);
+        }
+
+        let mut builder = KrakenSpotAddOrderParamsBuilder::default();
+        builder
+            .cl_ord_id(truncate_cl_ord_id(&client_order_id))
+            .broker(NAUTILUS_KRAKEN_BROKER_ID)
+            .pair(raw_symbol)
+            .side(kraken_side)
+            .volume(quantity.to_string())
+            .order_type(kraken_order_type);
+
+        let is_conditional = matches!(
+            order_type,
+            OrderType::StopMarket
+                | OrderType::StopLimit
+                | OrderType::MarketIfTouched
+                | OrderType::LimitIfTouched
+                | OrderType::TrailingStopMarket
+                | OrderType::TrailingStopLimit
+        );
+
+        let is_trailing = matches!(
+            order_type,
+            OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+        );
+
+        if is_trailing {
+            if trigger_price.is_some() {
+                anyhow::bail!(
+                    "Kraken Spot trailing stops do not support activation trigger prices"
+                );
+            }
+
+            if let Some(offset) = trailing_offset {
+                builder.price(offset.to_string());
+            }
+
+            if let Some(offset) = limit_offset {
+                builder.price2(offset.to_string());
+            }
+        } else if is_conditional {
+            if let Some(trigger) = trigger_price {
+                builder.price(trigger.to_string());
+            }
+
+            if let Some(limit) = price {
+                builder.price2(limit.to_string());
+            }
+        } else if let Some(limit) = price {
+            builder.price(limit.to_string());
+        }
+
+        if is_conditional {
+            match trigger_type {
+                Some(TriggerType::IndexPrice) => {
+                    builder.trigger("index".to_string());
+                }
+                Some(TriggerType::LastPrice | TriggerType::Default) | None => {}
+                Some(other) => {
+                    anyhow::bail!(
+                        "Unsupported trigger type for Kraken Spot: {other:?} (only LastPrice and IndexPrice supported)"
+                    );
+                }
+            }
+        }
+
+        if !oflags.is_empty() {
+            builder.oflags(oflags.join(","));
+        }
+
+        if let Some(tif) = timeinforce {
+            builder.timeinforce(tif);
+        }
+
+        if let Some(expire) = expiretm {
+            builder.expiretm(expire);
+        }
+
+        if let Some(dq) = display_qty {
+            builder.displayvol(dq.to_string());
+        }
+
+        if let Some(ac) = asset_class {
+            builder.asset_class(ac);
+        }
+
+        builder
+            .build()
+            .map_err(|e| anyhow::anyhow!("Failed to build order params: {e}"))
+    }
+}
+
+fn collect_spot_statuses(
+    asset_pairs: &AssetPairsResponse,
+) -> AHashMap<InstrumentId, MarketStatusAction> {
+    asset_pairs
+        .iter()
+        .map(|(_, definition)| {
+            let symbol_str = definition.wsname.as_ref().unwrap_or(&definition.altname);
+            let normalized_symbol = normalize_spot_symbol(symbol_str.as_str());
+            let instrument_id = InstrumentId::new(Symbol::new(&normalized_symbol), *KRAKEN_VENUE);
+            let action = definition
+                .status
+                .map_or(MarketStatusAction::Trading, MarketStatusAction::from);
+
+            (instrument_id, action)
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::instruments::CurrencyPair;
     use rstest::rstest;
 
     use super::*;
@@ -2226,5 +2575,132 @@ mod tests {
         let result = compute_time_in_force(true, tif, expire_time);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains(expected_error));
+    }
+
+    #[rstest]
+    fn test_build_add_order_params_sets_index_trigger_for_conditional_orders() {
+        let client = KrakenSpotHttpClient::default();
+        let instrument_id = cache_test_spot_instrument(&client);
+
+        let params = client
+            .build_add_order_params(
+                instrument_id,
+                ClientOrderId::new("spot-trigger-index"),
+                OrderSide::Buy,
+                OrderType::StopMarket,
+                Quantity::from("0.01"),
+                TimeInForce::Gtc,
+                None,
+                None,
+                Some(Price::from("50000")),
+                Some(TriggerType::IndexPrice),
+                None,
+                None,
+                false,
+                false,
+                false,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(params.trigger, Some("index".to_string()));
+        assert_eq!(params.price, Some("50000".to_string()));
+    }
+
+    #[rstest]
+    fn test_build_add_order_params_sets_trailing_offsets() {
+        let client = KrakenSpotHttpClient::default();
+        let instrument_id = cache_test_spot_instrument(&client);
+
+        let params = client
+            .build_add_order_params(
+                instrument_id,
+                ClientOrderId::new("spot-trailing"),
+                OrderSide::Sell,
+                OrderType::TrailingStopLimit,
+                Quantity::from("0.01"),
+                TimeInForce::Gtc,
+                None,
+                Some(Price::from("49900")),
+                None,
+                Some(TriggerType::LastPrice),
+                Some(Decimal::from(50)),
+                Some(Decimal::from(25)),
+                false,
+                false,
+                false,
+                Some(Quantity::from("0.005")),
+            )
+            .unwrap();
+
+        assert_eq!(params.price, Some("50".to_string()));
+        assert_eq!(params.price2, Some("25".to_string()));
+        assert_eq!(params.trigger, None);
+        assert_eq!(params.displayvol, Some("0.005".to_string()));
+    }
+
+    #[rstest]
+    fn test_build_add_order_params_rejects_unsupported_trigger_type() {
+        let client = KrakenSpotHttpClient::default();
+        let instrument_id = cache_test_spot_instrument(&client);
+
+        let error = client
+            .build_add_order_params(
+                instrument_id,
+                ClientOrderId::new("spot-trigger-invalid"),
+                OrderSide::Buy,
+                OrderType::StopMarket,
+                Quantity::from("0.01"),
+                TimeInForce::Gtc,
+                None,
+                None,
+                Some(Price::from("50000")),
+                Some(TriggerType::MarkPrice),
+                None,
+                None,
+                false,
+                false,
+                false,
+                None,
+            )
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Unsupported trigger type for Kraken Spot")
+        );
+    }
+
+    fn cache_test_spot_instrument(client: &KrakenSpotHttpClient) -> InstrumentId {
+        let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
+
+        client.cache_instrument(InstrumentAny::CurrencyPair(CurrencyPair::new(
+            instrument_id,
+            Symbol::new("XBTUSD"),
+            Currency::BTC(),
+            Currency::USD(),
+            1,
+            8,
+            Price::from("0.1"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        )));
+
+        instrument_id
     }
 }

@@ -31,6 +31,7 @@ from nautilus_trader.common.secure import mask_api_key
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
+from nautilus_trader.core.nautilus_pyo3 import OKXEnvironment
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.core.nautilus_pyo3 import OKXTradeMode
@@ -169,12 +170,19 @@ class OKXExecutionClient(LiveExecutionClient):
         )
         margin_mode = str(config.margin_mode) if config.margin_mode else None
 
+        # Resolve environment: explicit setting takes precedence over is_demo
+        self._environment = (
+            config.environment
+            if config.environment is not None
+            else (OKXEnvironment.DEMO if config.is_demo else OKXEnvironment.LIVE)
+        )
+
         # Configuration
         self._config = config
         self._log.info(f"config.instrument_types={instrument_types}", LogColor.BLUE)
         self._log.info(f"{config.instrument_families=}", LogColor.BLUE)
         self._log.info(f"config.contract_types={contract_types}", LogColor.BLUE)
-        self._log.info(f"{config.is_demo=}", LogColor.BLUE)
+        self._log.info(f"environment={self._environment}", LogColor.BLUE)
         self._log.info(f"config.margin_mode={margin_mode}", LogColor.BLUE)
         self._log.info(f"{config.use_spot_margin=}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
@@ -184,8 +192,7 @@ class OKXExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.use_fills_channel=}", LogColor.BLUE)
         self._log.info(f"{config.use_mm_mass_cancel=}", LogColor.BLUE)
         self._log.info(f"{config.use_spot_cash_position_reports=}", LogColor.BLUE)
-        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
 
         if config.use_spot_cash_position_reports:
             self._log.warning(
@@ -216,12 +223,13 @@ class OKXExecutionClient(LiveExecutionClient):
         self._attached_oco_bindings: dict[ClientOrderId, _OKXAttachedOcoBinding] = {}
 
         # WebSocket API
-        _private_url = config.base_url_ws or nautilus_pyo3.get_okx_ws_url_private(config.is_demo)
+        _private_url = config.base_url_ws or nautilus_pyo3.get_okx_ws_url_private(self._environment)
         self._ws_client = nautilus_pyo3.OKXWebSocketClient.with_credentials(
             url=_private_url,
             account_id=self.pyo3_account_id,
             heartbeat=20,
             auth_timeout_secs=config.ws_auth_timeout_secs,
+            proxy_url=config.proxy_url,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
 
@@ -230,6 +238,7 @@ class OKXExecutionClient(LiveExecutionClient):
             account_id=self.pyo3_account_id,
             heartbeat=20,
             auth_timeout_secs=config.ws_auth_timeout_secs,
+            proxy_url=config.proxy_url,
         )
         self._ws_business_client_futures: set[asyncio.Future] = set()
 
@@ -571,6 +580,7 @@ class OKXExecutionClient(LiveExecutionClient):
         pyo3_instrument_id: nautilus_pyo3.InstrumentId,
     ) -> OrderStatusReport | None:
         fallback_ids: list[ClientOrderId] = []
+
         for candidate in (
             canonical_requested_id,
             self._exchange_client_order_id(command.client_order_id),
@@ -580,6 +590,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 fallback_ids.append(candidate)
 
         algo_ids: set[str] = set()
+
         for candidate in fallback_ids:
             candidate_report = await self._fetch_algo_order_status_report(
                 candidate,
@@ -659,6 +670,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 instrument_id=pyo3_instrument_id,
                 algo_id=algo_id,
             )
+
             for algo_report in algo_reports:
                 algo_report = self._hydrate_zero_quantity_algo_report(algo_report)
                 report = OrderStatusReport.from_pyo3(algo_report)
@@ -1118,6 +1130,7 @@ class OKXExecutionClient(LiveExecutionClient):
             self._clear_attached_oco_binding(
                 parent_order.client_order_id if "parent_order" in locals() else None,
             )
+
             for order in order_list.orders:
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
@@ -1276,6 +1289,7 @@ class OKXExecutionClient(LiveExecutionClient):
 
         sl_order: Order | None = None
         tp_order: Order | None = None
+
         for child_order in child_orders:
             self._validate_attached_bracket_child(
                 parent_order=parent_order,
@@ -2262,6 +2276,7 @@ class OKXExecutionClient(LiveExecutionClient):
             return [venue_report]
 
         reports: list[OrderStatusReport] = []
+
         for child_client_order_id in child_client_order_ids:
             child_order = self._cache.order(child_client_order_id)
             if child_order is None or not self._is_conditional_order(child_order):

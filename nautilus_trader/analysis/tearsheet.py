@@ -25,6 +25,7 @@ from __future__ import annotations
 import numbers
 from collections.abc import Callable
 from difflib import get_close_matches
+from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -58,8 +59,19 @@ except ImportError:
 # Constants
 TRADING_DAYS_PER_YEAR = 252  # Standard number of trading days for annualization
 
+_STATIC_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".svg", ".pdf"})
+
 # Chart registry for custom visualizations
 _CHART_REGISTRY: dict[str, Callable] = {}
+
+
+def _write_figure(fig: go.Figure, output_path: str) -> None:
+    # Static image export uses Kaleido (install via `nautilus_trader[visualization]`).
+    suffix = Path(output_path).suffix.lower()
+    if suffix in _STATIC_IMAGE_SUFFIXES:
+        fig.write_image(output_path)
+    else:
+        fig.write_html(output_path)
 
 
 def _hex_to_rgba(hex_color: str, alpha: float = 1.0) -> str:
@@ -285,7 +297,9 @@ def create_tearsheet(  # noqa: C901
     engine : BacktestEngine
         The backtest engine with completed run.
     output_path : str, optional
-        Path to save HTML tearsheet. If None, returns HTML string.
+        Path to save the tearsheet. File extension selects the format:
+        ``.html`` (interactive), or ``.png``, ``.jpg``, ``.webp``, ``.svg``, ``.pdf``
+        (static, via Kaleido). If None, returns HTML string.
     title : str, default "NautilusTrader Backtest Results"
         Title for the tearsheet.
     currency : Currency, optional
@@ -584,7 +598,9 @@ def create_tearsheet_from_stats(
     returns : pd.Series
         Returns series from analyzer.
     output_path : str, optional
-        Path to save HTML tearsheet. If None, returns HTML string.
+        Path to save the tearsheet. File extension selects the format:
+        ``.html`` (interactive), or ``.png``, ``.jpg``, ``.webp``, ``.svg``, ``.pdf``
+        (static, via Kaleido). If None, returns HTML string.
     title : str, default "NautilusTrader Backtest Results"
         Title for the tearsheet.
     config : TearsheetConfig, optional
@@ -674,7 +690,7 @@ def create_tearsheet_from_stats(
 
     # Save to HTML or return as string
     if output_path:
-        fig.write_html(output_path)
+        _write_figure(fig, output_path)
         return None
     else:
         return fig.to_html()
@@ -762,7 +778,7 @@ def create_equity_curve(
     )
 
     if output_path:
-        fig.write_html(output_path)
+        _write_figure(fig, output_path)
 
     return fig
 
@@ -834,7 +850,7 @@ def create_drawdown_chart(
     )
 
     if output_path:
-        fig.write_html(output_path)
+        _write_figure(fig, output_path)
 
     return fig
 
@@ -932,7 +948,7 @@ def create_monthly_returns_heatmap(
     )
 
     if output_path:
-        fig.write_html(output_path)
+        _write_figure(fig, output_path)
 
     return fig
 
@@ -993,7 +1009,7 @@ def create_returns_distribution(
     )
 
     if output_path:
-        fig.write_html(output_path)
+        _write_figure(fig, output_path)
 
     return fig
 
@@ -1077,7 +1093,7 @@ def create_rolling_sharpe(
     )
 
     if output_path:
-        fig.write_html(output_path)
+        _write_figure(fig, output_path)
 
     return fig
 
@@ -1152,7 +1168,7 @@ def create_yearly_returns(
     )
 
     if output_path:
-        fig.write_html(output_path)
+        _write_figure(fig, output_path)
 
     return fig
 
@@ -1842,7 +1858,7 @@ def create_bars_with_fills(
     fig.update_yaxes(fixedrange=False, row=1, col=1)
 
     if output_path:
-        fig.write_html(output_path)
+        _write_figure(fig, output_path)
 
     return fig
 

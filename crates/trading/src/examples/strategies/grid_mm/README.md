@@ -92,6 +92,10 @@ node.add_strategy(strategy)?;
 
 ## Python usage (v2)
 
+Pass the config to `add_native_strategy` on a `LiveNode` or
+`BacktestEngine`. Python provides the configuration; the strategy
+runs entirely in Rust.
+
 ```python
 from nautilus_trader.core.nautilus_pyo3.trading import GridMarketMakerConfig
 
@@ -104,4 +108,6 @@ config = GridMarketMakerConfig(
     skew_factor=0.5,
     requote_threshold_bps=5,
 )
+
+node.add_native_strategy(config)
 ```

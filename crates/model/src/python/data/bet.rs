@@ -60,8 +60,8 @@ impl Bet {
 
     /// Creates a bet from a stake or liability depending on the bet side.
     ///
-    /// For `BetSide::Back` this calls [Self::from_stake] and for
-    /// `BetSide::Lay` it calls [Self::from_liability].
+    /// For `BetSide::Back` this calls `Self.from_stake` and for
+    /// `BetSide::Lay` it calls `Self.from_liability`.
     #[staticmethod]
     #[pyo3(name = "from_stake_or_liability")]
     fn py_from_stake_or_liability(price: Decimal, volume: Decimal, side: BetSide) -> Self {
@@ -245,7 +245,7 @@ impl BetPosition {
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(name = "calc_bets_pnl")]
-#[allow(clippy::needless_pass_by_value)]
+#[expect(clippy::needless_pass_by_value)]
 pub fn py_calc_bets_pnl(bets: Vec<Bet>) -> PyResult<Decimal> {
     Ok(calc_bets_pnl(&bets))
 }

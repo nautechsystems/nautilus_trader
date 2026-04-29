@@ -104,11 +104,13 @@ fn main() -> anyhow::Result<()> {
 
     println!("\n--- Instruments ---");
     let mut seen: BTreeMap<String, &InstrumentAny> = BTreeMap::new();
+
     for item in &items {
         if let BetfairDataItem::Instrument(inst) = item {
             seen.entry(inst.id().to_string()).or_insert(inst);
         }
     }
+
     for (id, inst) in &seen {
         if let InstrumentAny::Betting(b) = inst {
             println!(
@@ -119,6 +121,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     println!("\n--- Settlement ---");
+
     for item in &items {
         if let BetfairDataItem::InstrumentClose(close) = item {
             let label = if close.close_price.as_f64() > 0.5 {

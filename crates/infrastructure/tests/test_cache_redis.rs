@@ -279,6 +279,7 @@ mod serial_tests {
             format!("{trader_key}:index:order_position"),
             format!("{trader_key}:index:order_client"),
         ];
+
         for hash_key in &hash_keys {
             let _: () = conn
                 .hset(hash_key, &order_id_str, "test_value")
@@ -324,6 +325,7 @@ mod serial_tests {
             let exists: bool = conn.sismember(index_key, &order_id_str).await.unwrap();
             assert!(exists, "Order ID should exist in index {index_key}");
         }
+
         for hash_key in &hash_keys {
             let exists: bool = conn.hexists(hash_key, &order_id_str).await.unwrap();
             assert!(exists, "Order ID should exist in hash {hash_key}");
@@ -370,6 +372,7 @@ mod serial_tests {
             let exists: bool = conn.sismember(index_key, &order_id_str).await.unwrap();
             assert!(!exists, "Order ID should be removed from index {index_key}");
         }
+
         for hash_key in &hash_keys {
             let exists: bool = conn.hexists(hash_key, &order_id_str).await.unwrap();
             assert!(!exists, "Order ID should be removed from hash {hash_key}");

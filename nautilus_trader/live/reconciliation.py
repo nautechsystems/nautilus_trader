@@ -22,6 +22,7 @@ from nautilus_trader.cache.transformers import transform_instrument_to_pyo3
 from nautilus_trader.common.component import Logger
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -402,6 +403,10 @@ def create_order_filled_event(
     OrderFilled
 
     """
+    info = None
+    if report.avg_px is not None:
+        info = {"avg_px": instrument.make_price(report.avg_px)}
+
     return OrderFilled(
         trader_id=order.trader_id,
         strategy_id=order.strategy_id,
@@ -422,6 +427,7 @@ def create_order_filled_event(
         ts_event=report.ts_event,
         ts_init=ts_now,
         reconciliation=True,
+        info=info,
     )
 
 
@@ -430,6 +436,7 @@ def create_inferred_order_filled_event(
     ts_now: int,
     report: OrderStatusReport,
     instrument: Instrument,
+    client: ExecutionClient | None = None,
 ) -> OrderFilled:
     """
     Create an inferred OrderFilled event for reconciliation.
@@ -447,6 +454,11 @@ def create_inferred_order_filled_event(
         The order status report showing filled quantity.
     instrument : Instrument
         The instrument for the order.
+    client : ExecutionClient, optional
+        The execution client for venue-specific commission calculation.
+        When provided, calls ``client.calculate_commission`` to obtain the
+        commission. Falls back to zero when the client returns ``None`` or
+        no client is provided.
 
     Returns
     -------
@@ -489,8 +501,27 @@ def create_inferred_order_filled_event(
         else:
             last_px = instrument.make_price(report.avg_px)
 
-    notional_value: Money = instrument.notional_value(last_qty, last_px)
-    commission: Money = Money(notional_value * instrument.taker_fee, instrument.quote_currency)
+    commission: Money | None = None
+    if client is not None:
+        commission = client.calculate_commission(instrument, last_qty, last_px, liquidity_side)
+    if commission is None:
+        commission = Money(0, instrument.quote_currency)
+
+    position_id = report.venue_position_id or PositionId(f"{instrument.id}-EXTERNAL")
+    pyo3_trade_id = nautilus_pyo3.create_inferred_reconciliation_trade_id(
+        nautilus_pyo3.AccountId(report.account_id.value),
+        nautilus_pyo3.InstrumentId.from_str(report.instrument_id.value),
+        nautilus_pyo3.ClientOrderId(order.client_order_id.value),
+        nautilus_pyo3.VenueOrderId(report.venue_order_id.value) if report.venue_order_id else None,
+        nautilus_pyo3.OrderSide(order.side.name),
+        nautilus_pyo3.OrderType(order.order_type.name),
+        nautilus_pyo3.Quantity.from_str(str(report.filled_qty)),
+        nautilus_pyo3.Quantity.from_str(str(last_qty)),
+        nautilus_pyo3.Price.from_str(str(last_px)),
+        nautilus_pyo3.PositionId(position_id.value),
+        report.ts_last,
+    )
+    trade_id = TradeId(pyo3_trade_id.value)
 
     return OrderFilled(
         trader_id=order.trader_id,
@@ -499,8 +530,8 @@ def create_inferred_order_filled_event(
         client_order_id=order.client_order_id,
         venue_order_id=report.venue_order_id,
         account_id=report.account_id,
-        position_id=report.venue_position_id or PositionId(f"{instrument.id}-EXTERNAL"),
-        trade_id=TradeId(UUID4().value),
+        position_id=position_id,
+        trade_id=trade_id,
         order_side=order.side,
         order_type=order.order_type,
         last_qty=last_qty,
@@ -613,6 +644,7 @@ def adjust_fills_for_partial_window(
     """
     # Register all required commission currencies
     seen_currencies: set[Currency] = set()
+
     for fill_list in mass_status.fill_reports.values():
         for fill in fill_list:
             currency = fill.commission.currency

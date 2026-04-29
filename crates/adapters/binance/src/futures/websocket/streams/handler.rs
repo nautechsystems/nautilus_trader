@@ -39,8 +39,8 @@ use super::{
         BinanceFuturesAlgoUpdateMsg, BinanceFuturesBookTickerMsg, BinanceFuturesDepthUpdateMsg,
         BinanceFuturesKlineMsg, BinanceFuturesLiquidationMsg, BinanceFuturesListenKeyExpiredMsg,
         BinanceFuturesMarginCallMsg, BinanceFuturesMarkPriceMsg, BinanceFuturesOrderUpdateMsg,
-        BinanceFuturesTickerMsg, BinanceFuturesTradeMsg, BinanceFuturesWsErrorMsg,
-        BinanceFuturesWsErrorResponse, BinanceFuturesWsStreamsCommand,
+        BinanceFuturesTickerMsg, BinanceFuturesTradeLiteMsg, BinanceFuturesTradeMsg,
+        BinanceFuturesWsErrorMsg, BinanceFuturesWsErrorResponse, BinanceFuturesWsStreamsCommand,
         BinanceFuturesWsStreamsMessage, BinanceFuturesWsSubscribeRequest,
         BinanceFuturesWsSubscribeResponse,
     },
@@ -376,6 +376,20 @@ impl BinanceFuturesDataWsFeedHandler {
                         BinanceFuturesWsStreamsMessage::OrderUpdate(Box::new(msg))
                     })
                     .map_err(|e| log::warn!("Failed to parse order update: {e}"))
+                    .ok()
+            }
+            BinanceWsEventType::TradeLite => {
+                serde_json::from_value::<BinanceFuturesTradeLiteMsg>(json.clone())
+                    .map(|msg| {
+                        log::debug!(
+                            "Trade lite: symbol={}, order_id={}, trade_id={}",
+                            msg.symbol,
+                            msg.order_id,
+                            msg.trade_id
+                        );
+                        BinanceFuturesWsStreamsMessage::TradeLite(Box::new(msg))
+                    })
+                    .map_err(|e| log::warn!("Failed to parse trade lite: {e}"))
                     .ok()
             }
             BinanceWsEventType::AlgoUpdate => {

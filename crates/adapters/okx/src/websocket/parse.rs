@@ -53,7 +53,7 @@ use crate::{
     common::{
         consts::{OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE},
         enums::{
-            OKXAlgoOrderType, OKXBookAction, OKXCandleConfirm, OKXInstrumentStatus,
+            OKXAlgoOrderType, OKXBookAction, OKXCandleConfirm, OKXGreeksType, OKXInstrumentStatus,
             OKXInstrumentType, OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXSide,
             OKXTargetCurrency, OKXTriggerType,
         },
@@ -150,7 +150,7 @@ pub struct OrderStateSnapshot {
 /// # Errors
 ///
 /// Returns an error if parsing order identifiers or numeric fields fails.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn parse_order_event(
     msg: &OKXOrderMsg,
     client_order_id: ClientOrderId,
@@ -299,6 +299,34 @@ pub fn parse_order_event(
 
 /// Case-insensitive substring check.
 #[inline]
+/// Builds a deterministic synthesized `TradeId` for fills where OKX omits
+/// the venue `trade_id`. Hashes the immutable fill fields with FNV-1a so
+/// the result fits inside the 36-character `TradeId` cap and stays stable
+/// across reconnect replays of the same physical fill.
+fn synthesize_trade_id(msg: &OKXOrderMsg) -> String {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut hasher: u64 = FNV_OFFSET;
+    let mut update = |bytes: &[u8]| {
+        for byte in bytes {
+            hasher ^= u64::from(*byte);
+            hasher = hasher.wrapping_mul(FNV_PRIME);
+        }
+        // Field separator so that "ab" + "c" doesn't hash to the same as "a" + "bc".
+        hasher ^= 0xff;
+        hasher = hasher.wrapping_mul(FNV_PRIME);
+    };
+
+    update(msg.ord_id.as_bytes());
+    update(msg.fill_time.to_string().as_bytes());
+    update(msg.fill_sz.as_bytes());
+    update(msg.fill_px.as_bytes());
+    update(msg.acc_fill_sz.as_deref().unwrap_or("").as_bytes());
+
+    format!("synth-{hasher:016x}")
+}
+
 fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
     haystack
         .as_bytes()
@@ -1620,10 +1648,16 @@ pub fn parse_fill_report(
         .or_else(|| parse_client_order_id(&msg.cl_ord_id));
     let venue_order_id = VenueOrderId::new(msg.ord_id);
 
-    // TODO: Extract to dedicated function:
-    // OKX may not provide a trade_id, so generate a UUID4 as fallback
+    // OKX may not provide a `trade_id` (some algo trigger payloads, manual
+    // settlements). Derive a deterministic id from the immutable fill fields
+    // via FNV-1a so reconnect replays of the same fill collapse to one event
+    // in the downstream `WsDispatchState::check_and_insert_trade` dedup. A
+    // random UUID4 here would defeat dedup, since each replay would mint a
+    // new id. The hash output keeps the synthesized id within `TradeId`'s
+    // 36-character cap.
     let trade_id = if msg.trade_id.is_empty() {
-        TradeId::new(UUID4::new().as_str())
+        let synthetic = synthesize_trade_id(msg);
+        TradeId::new(&synthetic)
     } else {
         TradeId::new(&msg.trade_id)
     };
@@ -1806,8 +1840,10 @@ pub fn parse_fill_report(
 
 /// Parses an option summary payload into [`OptionGreeks`].
 ///
-/// Uses Black-Scholes greeks (`delta_bs`, `gamma_bs`, `vega_bs`, `theta_bs`) as primary
-/// values to align with what Deribit and Bybit provide.
+/// Selects Black-Scholes (`delta_bs`, `gamma_bs`, `vega_bs`, `theta_bs`) or
+/// price-adjusted (`delta`, `gamma`, `vega`, `theta`) greeks based on `greeks_type`.
+/// BS greeks align with what Deribit and Bybit provide; PA greeks are denominated
+/// in the underlying/coin units and match OKX's native contract convention.
 ///
 /// # Errors
 ///
@@ -1815,14 +1851,39 @@ pub fn parse_fill_report(
 pub fn parse_option_summary_greeks(
     msg: &OKXOptionSummaryMsg,
     instrument_id: &InstrumentId,
+    greeks_type: OKXGreeksType,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OptionGreeks> {
     let ts_event = UnixNanos::from(msg.ts * 1_000_000);
 
-    let delta: f64 = msg.delta_bs.parse().context("invalid delta_bs")?;
-    let gamma: f64 = msg.gamma_bs.parse().context("invalid gamma_bs")?;
-    let vega: f64 = msg.vega_bs.parse().context("invalid vega_bs")?;
-    let theta: f64 = msg.theta_bs.parse().context("invalid theta_bs")?;
+    let (delta_s, gamma_s, vega_s, theta_s, delta_ctx, gamma_ctx, vega_ctx, theta_ctx) =
+        match greeks_type {
+            OKXGreeksType::Bs => (
+                &msg.delta_bs,
+                &msg.gamma_bs,
+                &msg.vega_bs,
+                &msg.theta_bs,
+                "invalid delta_bs",
+                "invalid gamma_bs",
+                "invalid vega_bs",
+                "invalid theta_bs",
+            ),
+            OKXGreeksType::Pa => (
+                &msg.delta,
+                &msg.gamma,
+                &msg.vega,
+                &msg.theta,
+                "invalid delta (pa)",
+                "invalid gamma (pa)",
+                "invalid vega (pa)",
+                "invalid theta (pa)",
+            ),
+        };
+
+    let delta: f64 = delta_s.parse().context(delta_ctx)?;
+    let gamma: f64 = gamma_s.parse().context(gamma_ctx)?;
+    let vega: f64 = vega_s.parse().context(vega_ctx)?;
+    let theta: f64 = theta_s.parse().context(theta_ctx)?;
 
     let bid_iv: f64 = msg.bid_vol.parse().context("invalid bid_vol")?;
     let ask_iv: f64 = msg.ask_vol.parse().context("invalid ask_vol")?;
@@ -1838,6 +1899,7 @@ pub fn parse_option_summary_greeks(
 
     Ok(OptionGreeks {
         instrument_id: *instrument_id,
+        convention: greeks_type.into(),
         greeks: OptionGreekValues {
             delta,
             gamma,
@@ -1867,7 +1929,7 @@ pub fn parse_option_summary_greeks(
 /// Panics only in the case where `okx_channel_to_bar_spec(channel)` returns
 /// `None` after a prior `is_some` check – an unreachable scenario indicating a
 /// logic error.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn parse_ws_message_data(
     channel: &OKXWsChannel,
     data: serde_json::Value,
@@ -2009,6 +2071,7 @@ mod tests {
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
         data::bar::BAR_SPEC_1_DAY_LAST,
+        enums::GreeksConvention,
         identifiers::{ClientOrderId, Symbol},
         instruments::CryptoPerpetual,
         types::Currency,
@@ -4900,6 +4963,96 @@ mod tests {
     }
 
     #[rstest]
+    fn test_synthesize_trade_id_is_deterministic_and_under_36_chars() {
+        let mut msg = create_order_msg_for_event_test(
+            OKXOrderStatus::Filled,
+            "client-1",
+            "venue-1",
+            "50000.0",
+            "0.001",
+        );
+        msg.fill_px = "50000.0".to_string();
+        msg.fill_sz = "0.001".to_string();
+        msg.fill_time = 1_746_947_317_500;
+        msg.acc_fill_sz = Some("0.001".to_string());
+
+        let id1 = synthesize_trade_id(&msg);
+        let id2 = synthesize_trade_id(&msg);
+
+        assert_eq!(id1, id2, "synthesized id must be deterministic");
+        assert!(
+            id1.len() <= 36,
+            "synthesized id must fit in TradeId, was {}",
+            id1.len()
+        );
+        assert!(id1.starts_with("synth-"));
+    }
+
+    #[rstest]
+    fn test_synthesize_trade_id_changes_with_fill_fields() {
+        let mut msg = create_order_msg_for_event_test(
+            OKXOrderStatus::Filled,
+            "client-1",
+            "venue-1",
+            "50000.0",
+            "0.001",
+        );
+        msg.fill_px = "50000.0".to_string();
+        msg.fill_sz = "0.001".to_string();
+        msg.fill_time = 1_746_947_317_500;
+        msg.acc_fill_sz = Some("0.001".to_string());
+
+        let baseline = synthesize_trade_id(&msg);
+
+        msg.fill_sz = "0.002".to_string();
+        let different_size = synthesize_trade_id(&msg);
+        assert_ne!(baseline, different_size);
+
+        msg.fill_sz = "0.001".to_string();
+        msg.fill_time = 1_746_947_317_999;
+        let different_time = synthesize_trade_id(&msg);
+        assert_ne!(baseline, different_time);
+    }
+
+    #[rstest]
+    fn test_empty_trade_id_fill_deduped_across_replays() {
+        use crate::websocket::dispatch::WsDispatchState;
+
+        // Two identical fill messages with no venue trade_id — the dedup in
+        // `WsDispatchState::check_and_insert_trade` must suppress the replay.
+        // Regression lock for the empty-trade_id UUID fabrication bug: if
+        // `synthesize_trade_id` drifts back to a non-deterministic id, the
+        // second `check_and_insert_trade` would return false (not a dupe)
+        // and this test fails.
+        let mut msg = create_order_msg_for_event_test(
+            OKXOrderStatus::Filled,
+            "client-1",
+            "venue-1",
+            "50000.0",
+            "0.001",
+        );
+        msg.trade_id = String::new();
+        msg.fill_px = "50000.0".to_string();
+        msg.fill_sz = "0.001".to_string();
+        msg.fill_time = 1_746_947_317_500;
+        msg.acc_fill_sz = Some("0.001".to_string());
+
+        let first_id = TradeId::new(synthesize_trade_id(&msg));
+        let second_id = TradeId::new(synthesize_trade_id(&msg));
+        assert_eq!(first_id, second_id, "synthesized id must survive replay");
+
+        let state = WsDispatchState::default();
+        assert!(
+            !state.check_and_insert_trade(first_id),
+            "first insert is not a duplicate"
+        );
+        assert!(
+            state.check_and_insert_trade(second_id),
+            "replayed fill with empty trade_id must dedup"
+        );
+    }
+
+    #[rstest]
     fn test_parse_order_event_live_returns_accepted() {
         let instrument = create_stub_instrument();
         let msg = create_order_msg_for_event_test(
@@ -6269,7 +6422,8 @@ mod tests {
         let instrument_id = InstrumentId::from("BTC-USD-250328-92000-C.OKX");
         let ts_init = UnixNanos::from(1_711_612_900_000_000_000u64);
         let greeks =
-            parse_option_summary_greeks(&msgs[0], &instrument_id, ts_init).expect("parse failed");
+            parse_option_summary_greeks(&msgs[0], &instrument_id, OKXGreeksType::Bs, ts_init)
+                .expect("parse failed");
 
         assert_eq!(greeks.instrument_id, instrument_id);
         assert!((greeks.greeks.delta - 0.5312).abs() < 1e-10);
@@ -6282,6 +6436,7 @@ mod tests {
         assert!((greeks.ask_iv.unwrap() - 0.55).abs() < 1e-10);
         assert!((greeks.underlying_price.unwrap() - 92150.50).abs() < 1e-10);
         assert!(greeks.open_interest.is_none());
+        assert_eq!(greeks.convention, GreeksConvention::BlackScholes);
         assert_eq!(
             greeks.ts_event,
             UnixNanos::from(1_711_612_800_000_000_000u64)
@@ -6326,9 +6481,51 @@ mod tests {
         let instrument_id = InstrumentId::from("BTC-USD-250328-92000-P.OKX");
         let ts_init = UnixNanos::from(1_711_612_900_000_000_000u64);
         let greeks =
-            parse_option_summary_greeks(&msgs[1], &instrument_id, ts_init).expect("parse failed");
+            parse_option_summary_greeks(&msgs[1], &instrument_id, OKXGreeksType::Bs, ts_init)
+                .expect("parse failed");
 
         assert!((greeks.greeks.delta - (-0.4688)).abs() < 1e-10);
+    }
+
+    #[rstest]
+    fn test_parse_option_summary_greeks_pa() {
+        let json_str = load_test_json("ws_opt_summary.json");
+        let msgs: Vec<OKXOptionSummaryMsg> =
+            serde_json::from_str(&json_str).expect("Failed to deserialize opt-summary fixture");
+        assert_eq!(msgs.len(), 2);
+
+        let instrument_id = InstrumentId::from("BTC-USD-250328-92000-C.OKX");
+        let ts_init = UnixNanos::from(1_711_612_900_000_000_000u64);
+        let greeks =
+            parse_option_summary_greeks(&msgs[0], &instrument_id, OKXGreeksType::Pa, ts_init)
+                .expect("parse failed");
+
+        assert_eq!(greeks.instrument_id, instrument_id);
+        assert!((greeks.greeks.delta - 0.5234).abs() < 1e-10);
+        assert!((greeks.greeks.gamma - 0.0000123).abs() < 1e-15);
+        assert!((greeks.greeks.vega - 0.0034).abs() < 1e-10);
+        assert!((greeks.greeks.theta - (-0.0012)).abs() < 1e-10);
+        assert!((greeks.greeks.rho - 0.0).abs() < 1e-10);
+        assert!((greeks.mark_iv.unwrap() - 0.53).abs() < 1e-10);
+        assert!((greeks.bid_iv.unwrap() - 0.52).abs() < 1e-10);
+        assert!((greeks.ask_iv.unwrap() - 0.55).abs() < 1e-10);
+        assert!((greeks.underlying_price.unwrap() - 92150.50).abs() < 1e-10);
+        assert_eq!(greeks.convention, GreeksConvention::PriceAdjusted);
+    }
+
+    #[rstest]
+    fn test_parse_option_summary_greeks_pa_put() {
+        let json_str = load_test_json("ws_opt_summary.json");
+        let msgs: Vec<OKXOptionSummaryMsg> =
+            serde_json::from_str(&json_str).expect("Failed to deserialize opt-summary fixture");
+
+        let instrument_id = InstrumentId::from("BTC-USD-250328-92000-P.OKX");
+        let ts_init = UnixNanos::from(1_711_612_900_000_000_000u64);
+        let greeks =
+            parse_option_summary_greeks(&msgs[1], &instrument_id, OKXGreeksType::Pa, ts_init)
+                .expect("parse failed");
+
+        assert!((greeks.greeks.delta - (-0.4766)).abs() < 1e-10);
     }
 
     #[rstest]
@@ -6348,6 +6545,7 @@ mod tests {
         subs.insert(call_id);
 
         let mut results = Vec::new();
+
         for msg in &msgs {
             let inst_id_str = format!("{}.OKX", msg.inst_id);
             let instrument_id = InstrumentId::from(inst_id_str.as_str());
@@ -6355,7 +6553,9 @@ mod tests {
                 continue;
             }
 
-            if let Ok(greeks) = parse_option_summary_greeks(msg, &instrument_id, ts_init) {
+            if let Ok(greeks) =
+                parse_option_summary_greeks(msg, &instrument_id, OKXGreeksType::Bs, ts_init)
+            {
                 results.push(greeks);
             }
         }
@@ -6368,6 +6568,7 @@ mod tests {
         subs.insert(put_id);
 
         let mut results = Vec::new();
+
         for msg in &msgs {
             let inst_id_str = format!("{}.OKX", msg.inst_id);
             let instrument_id = InstrumentId::from(inst_id_str.as_str());
@@ -6375,7 +6576,9 @@ mod tests {
                 continue;
             }
 
-            if let Ok(greeks) = parse_option_summary_greeks(msg, &instrument_id, ts_init) {
+            if let Ok(greeks) =
+                parse_option_summary_greeks(msg, &instrument_id, OKXGreeksType::Bs, ts_init)
+            {
                 results.push(greeks);
             }
         }
@@ -6397,6 +6600,7 @@ mod tests {
         let subs: AHashSet<InstrumentId> = AHashSet::new();
 
         let mut results = Vec::new();
+
         for msg in &msgs {
             let inst_id_str = format!("{}.OKX", msg.inst_id);
             let instrument_id = InstrumentId::from(inst_id_str.as_str());
@@ -6404,7 +6608,9 @@ mod tests {
                 continue;
             }
 
-            if let Ok(greeks) = parse_option_summary_greeks(msg, &instrument_id, ts_init) {
+            if let Ok(greeks) =
+                parse_option_summary_greeks(msg, &instrument_id, OKXGreeksType::Bs, ts_init)
+            {
                 results.push(greeks);
             }
         }

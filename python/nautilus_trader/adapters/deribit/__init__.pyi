@@ -37,6 +37,7 @@ class DeribitDataClientConfig:
         retry_delay_max_ms: int | None = None,
         heartbeat_interval_secs: int | None = None,
         update_instruments_interval_mins: int | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
 
 @typing.final
@@ -60,6 +61,7 @@ class DeribitExecClientConfig:
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
 
 @typing.final
@@ -139,12 +141,18 @@ class DeribitWebSocketClient:
         api_secret: str | None = None,
         heartbeat_interval: int | None = None,
         is_testnet: bool = False,
+        proxy_url: str | None = None,
     ) -> None: ...
     @staticmethod
-    def new_public(is_testnet: bool) -> DeribitWebSocketClient: ...
+    def new_public(
+        is_testnet: bool,
+        proxy_url: str | None = None,
+    ) -> DeribitWebSocketClient: ...
     @staticmethod
     def with_credentials(
-        is_testnet: bool, account_id: model.AccountId | None = None
+        is_testnet: bool,
+        account_id: model.AccountId | None = None,
+        proxy_url: str | None = None,
     ) -> DeribitWebSocketClient: ...
     @property
     def url(self) -> str: ...

@@ -36,6 +36,7 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
+    orders::TRIGGERABLE_ORDER_TYPES,
     reports::FillReport,
     types::{Currency, Money, Quantity},
 };
@@ -185,7 +186,7 @@ impl WsDispatchState {
 /// proper order events (OrderAccepted, OrderCanceled, OrderFilled, etc.).
 /// For untracked orders (external or pre-existing), falls back to execution
 /// reports for downstream reconciliation.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn dispatch_ws_message(
     message: OKXWsMessage,
     emitter: &ExecutionEventEmitter,
@@ -227,6 +228,7 @@ pub fn dispatch_ws_message(
         }
         OKXWsMessage::Account(data) => {
             let ts_init = clock.get_time_ns();
+
             match serde_json::from_value::<Vec<OKXAccount>>(data) {
                 Ok(accounts) => {
                     for account in &accounts {
@@ -243,6 +245,7 @@ pub fn dispatch_ws_message(
         }
         OKXWsMessage::Positions(data) => {
             let ts_init = clock.get_time_ns();
+
             match serde_json::from_value::<Vec<OKXPosition>>(data) {
                 Ok(positions) => {
                     for position in positions {
@@ -252,6 +255,7 @@ pub fn dispatch_ws_message(
                         };
                         let instrument_id = instrument.id();
                         let size_precision = instrument.size_precision();
+
                         match crate::common::parse::parse_position_status_report(
                             &position,
                             account_id,
@@ -396,6 +400,7 @@ pub fn dispatch_ws_message(
 
             if let Some(client_order_id) = client_order_id {
                 let ts_init = clock.get_time_ns();
+
                 match op {
                     Some(
                         OKXWsOperation::Order
@@ -481,7 +486,7 @@ pub fn dispatch_ws_message(
 
 /// Dispatches order messages, producing proper order events for tracked orders
 /// and falling back to execution reports for untracked/external orders.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn dispatch_order_messages(
     order_msgs: &[OKXOrderMsg],
     emitter: &ExecutionEventEmitter,
@@ -635,7 +640,7 @@ fn dispatch_order_messages(
 /// Guarantees the `Submitted -> Accepted -> ...` lifecycle by synthesizing
 /// `OrderAccepted` before any other event when one has not yet been emitted.
 /// Duplicate `Accepted` events (e.g. from reconnect replays) are suppressed.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn dispatch_parsed_order_event(
     event: ParsedOrderEvent,
     client_order_id: ClientOrderId,
@@ -669,6 +674,16 @@ fn dispatch_parsed_order_event(
                 log::debug!("Skipping stale Triggered for {client_order_id} (already filled)");
                 return;
             }
+
+            if !TRIGGERABLE_ORDER_TYPES.contains(&identity.order_type) {
+                log::debug!(
+                    "Skipping OrderTriggered for {} order {client_order_id}: market-style stops have no TRIGGERED state",
+                    identity.order_type,
+                );
+                state.insert_triggered(client_order_id);
+                return;
+            }
+
             ensure_accepted_emitted(
                 client_order_id,
                 account_id,
@@ -838,7 +853,7 @@ fn fill_report_to_order_filled(
 }
 
 /// Falls back to the report path for a single order message.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn dispatch_order_msg_as_report(
     msg: &OKXOrderMsg,
     account_id: AccountId,
@@ -909,6 +924,8 @@ pub fn dispatch_execution_reports(
             ExecutionReport::Order(order_report) => {
                 if let Some(cid) = order_report.client_order_id {
                     match order_report.order_status {
+                        // Guard form reformats awkwardly across multiple lines
+                        #[expect(clippy::collapsible_match)]
                         OrderStatus::Accepted => {
                             if state.filled_orders.contains(&cid)
                                 || state.triggered_orders.contains(&cid)

@@ -41,8 +41,8 @@ use nautilus_network::{
     backoff::ExponentialBackoff,
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, PingHandler, SubscriptionState, WebSocketClient, WebSocketConfig,
-        channel_message_handler,
+        AuthTracker, PingHandler, SubscriptionState, TransportBackend, WebSocketClient,
+        WebSocketConfig, channel_message_handler,
     },
 };
 use serde_json::Value;
@@ -54,8 +54,8 @@ use crate::{
         consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_WS_TOPIC_DELIMITER},
         credential::Credential,
         enums::{
-            BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce,
-            BybitTpSlMode, BybitWsOrderRequestOp, resolve_trigger_type,
+            BybitEnvironment, BybitOrderSide, BybitOrderType, BybitPositionIdx, BybitProductType,
+            BybitTimeInForce, BybitTpSlMode, BybitWsOrderRequestOp, resolve_trigger_type,
         },
         parse::{
             bar_spec_to_bybit_interval, extract_base_coin, extract_raw_symbol, map_time_in_force,
@@ -79,6 +79,7 @@ use crate::{
 };
 
 const WEBSOCKET_AUTH_WINDOW_MS: i64 = 5_000;
+const AUTH_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const BATCH_PROCESSING_LIMIT: usize = 20;
 
 /// Tracks a pending Python execution request for OrderResponse correlation.
@@ -120,7 +121,9 @@ pub struct BybitWebSocketClient {
     option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
     bars_timestamp_on_close: Arc<AtomicBool>,
     pending_py_requests: Arc<DashMap<String, Vec<PendingPyRequest>>>,
+    transport_backend: TransportBackend,
     cancellation_token: CancellationToken,
+    proxy_url: Option<String>,
 }
 
 impl Debug for BybitWebSocketClient {
@@ -160,7 +163,9 @@ impl Clone for BybitWebSocketClient {
             option_greeks_subs: Arc::clone(&self.option_greeks_subs),
             bars_timestamp_on_close: Arc::clone(&self.bars_timestamp_on_close),
             pending_py_requests: Arc::clone(&self.pending_py_requests),
+            transport_backend: self.transport_backend,
             cancellation_token: self.cancellation_token.clone(),
+            proxy_url: self.proxy_url.clone(),
         }
     }
 }
@@ -174,6 +179,8 @@ impl BybitWebSocketClient {
             BybitEnvironment::Mainnet,
             url,
             heartbeat,
+            TransportBackend::default(),
+            None,
         )
     }
 
@@ -184,6 +191,8 @@ impl BybitWebSocketClient {
         environment: BybitEnvironment,
         url: Option<String>,
         heartbeat: u64,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> Self {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
 
@@ -212,7 +221,9 @@ impl BybitWebSocketClient {
             pending_py_requests: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
+            transport_backend,
             cancellation_token: CancellationToken::new(),
+            proxy_url,
         }
     }
 
@@ -230,6 +241,8 @@ impl BybitWebSocketClient {
         api_secret: Option<String>,
         url: Option<String>,
         heartbeat: u64,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> Self {
         let credential = Credential::resolve(api_key, api_secret, environment);
 
@@ -260,7 +273,9 @@ impl BybitWebSocketClient {
             pending_py_requests: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
+            transport_backend,
             cancellation_token: CancellationToken::new(),
+            proxy_url,
         }
     }
 
@@ -278,6 +293,8 @@ impl BybitWebSocketClient {
         api_secret: Option<String>,
         url: Option<String>,
         heartbeat: u64,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> Self {
         let credential = Credential::resolve(api_key, api_secret, environment);
 
@@ -308,7 +325,9 @@ impl BybitWebSocketClient {
             pending_py_requests: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
+            transport_backend,
             cancellation_token: CancellationToken::new(),
+            proxy_url,
         }
     }
 
@@ -350,6 +369,8 @@ impl BybitWebSocketClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
 
         // Retry initial connection with exponential backoff to handle transient DNS/network issues
@@ -427,6 +448,7 @@ impl BybitWebSocketClient {
         };
 
         self.connection_mode.store(client.connection_mode_atomic());
+        client.set_auth_tracker(self.auth_tracker.clone(), self.requires_auth);
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<BybitWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
@@ -506,6 +528,7 @@ impl BybitWebSocketClient {
                         let confirmed_topics: Vec<String> = {
                             let confirmed = subscriptions.confirmed();
                             let mut topics = Vec::new();
+
                             for entry in confirmed.iter() {
                                 let (channel, symbols) = entry.pair();
                                 for symbol in symbols {
@@ -524,6 +547,7 @@ impl BybitWebSocketClient {
                                 "Marking confirmed subscriptions as pending for replay: count={}",
                                 confirmed_topics.len()
                             );
+
                             for topic in confirmed_topics {
                                 subscriptions.mark_failure(&topic);
                             }
@@ -1187,17 +1211,52 @@ impl BybitWebSocketClient {
             .await
     }
 
+    /// Waits for the session to be authenticated, aborting early if the client
+    /// enters a terminal state (closed or disconnecting) during the wait.
+    async fn require_authenticated(&self) -> BybitWsResult<()> {
+        if self.is_closed() {
+            return Err(BybitWsError::ClientError(
+                "WebSocket client is closed".to_string(),
+            ));
+        }
+
+        if self.auth_tracker.is_authenticated() {
+            return Ok(());
+        }
+
+        tokio::select! {
+            authenticated = self.auth_tracker.wait_for_authenticated(AUTH_WAIT_TIMEOUT) => {
+                if authenticated {
+                    Ok(())
+                } else {
+                    Err(BybitWsError::Authentication(
+                        "Must be authenticated".to_string(),
+                    ))
+                }
+            }
+            () = async {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+
+                    if self.is_closed() {
+                        return;
+                    }
+                }
+            } => {
+                Err(BybitWsError::ClientError(
+                    "WebSocket client closed during authentication wait".to_string(),
+                ))
+            }
+        }
+    }
+
     /// Places an order via WebSocket, returning the request ID for correlation.
     ///
     /// # Errors
     ///
     /// Returns an error if the order request fails or if not authenticated.
     pub async fn place_order(&self, params: BybitWsPlaceOrderParams) -> BybitWsResult<String> {
-        if !self.auth_tracker.is_authenticated() {
-            return Err(BybitWsError::Authentication(
-                "Must be authenticated to place orders".to_string(),
-            ));
-        }
+        self.require_authenticated().await?;
 
         let req_id = UUID4::new().to_string();
 
@@ -1226,11 +1285,7 @@ impl BybitWebSocketClient {
     ///
     /// Returns an error if the amend request fails or if not authenticated.
     pub async fn amend_order(&self, params: BybitWsAmendOrderParams) -> BybitWsResult<String> {
-        if !self.auth_tracker.is_authenticated() {
-            return Err(BybitWsError::Authentication(
-                "Must be authenticated to amend orders".to_string(),
-            ));
-        }
+        self.require_authenticated().await?;
 
         let req_id = UUID4::new().to_string();
 
@@ -1253,11 +1308,7 @@ impl BybitWebSocketClient {
     ///
     /// Returns an error if the cancel request fails or if not authenticated.
     pub async fn cancel_order(&self, params: BybitWsCancelOrderParams) -> BybitWsResult<String> {
-        if !self.auth_tracker.is_authenticated() {
-            return Err(BybitWsError::Authentication(
-                "Must be authenticated to cancel orders".to_string(),
-            ));
-        }
+        self.require_authenticated().await?;
 
         let req_id = UUID4::new().to_string();
 
@@ -1283,11 +1334,7 @@ impl BybitWebSocketClient {
         &self,
         orders: Vec<BybitWsPlaceOrderParams>,
     ) -> BybitWsResult<Vec<String>> {
-        if !self.auth_tracker.is_authenticated() {
-            return Err(BybitWsError::Authentication(
-                "Must be authenticated to place orders".to_string(),
-            ));
-        }
+        self.require_authenticated().await?;
 
         if orders.is_empty() {
             log::warn!("Batch place orders called with empty orders list");
@@ -1295,6 +1342,7 @@ impl BybitWebSocketClient {
         }
 
         let mut req_ids = Vec::new();
+
         for chunk in orders.chunks(BATCH_PROCESSING_LIMIT) {
             let req_id = self.batch_place_orders_chunk(chunk.to_vec()).await?;
             req_ids.push(req_id);
@@ -1350,6 +1398,7 @@ impl BybitWebSocketClient {
                 tp_limit_price: order.tp_limit_price,
                 order_iv: order.order_iv,
                 mmp: order.mmp,
+                position_idx: order.position_idx,
             })
             .collect();
 
@@ -1380,11 +1429,7 @@ impl BybitWebSocketClient {
         &self,
         orders: Vec<BybitWsAmendOrderParams>,
     ) -> BybitWsResult<Vec<String>> {
-        if !self.auth_tracker.is_authenticated() {
-            return Err(BybitWsError::Authentication(
-                "Must be authenticated to amend orders".to_string(),
-            ));
-        }
+        self.require_authenticated().await?;
 
         if orders.is_empty() {
             log::warn!("Batch amend orders called with empty orders list");
@@ -1392,6 +1437,7 @@ impl BybitWebSocketClient {
         }
 
         let mut req_ids = Vec::new();
+
         for chunk in orders.chunks(BATCH_PROCESSING_LIMIT) {
             let req_id = self.batch_amend_orders_chunk(chunk.to_vec()).await?;
             req_ids.push(req_id);
@@ -1428,11 +1474,7 @@ impl BybitWebSocketClient {
         &self,
         orders: Vec<BybitWsCancelOrderParams>,
     ) -> BybitWsResult<Vec<String>> {
-        if !self.auth_tracker.is_authenticated() {
-            return Err(BybitWsError::Authentication(
-                "Must be authenticated to cancel orders".to_string(),
-            ));
-        }
+        self.require_authenticated().await?;
 
         if orders.is_empty() {
             log::warn!("Batch cancel orders called with empty orders list");
@@ -1440,6 +1482,7 @@ impl BybitWebSocketClient {
         }
 
         let mut req_ids = Vec::new();
+
         for chunk in orders.chunks(BATCH_PROCESSING_LIMIT) {
             let req_id = self.batch_cancel_orders_chunk(chunk.to_vec()).await?;
             req_ids.push(req_id);
@@ -1491,7 +1534,7 @@ impl BybitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if order submission fails or if not authenticated.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_order(
         &self,
         product_type: BybitProductType,
@@ -1508,6 +1551,7 @@ impl BybitWebSocketClient {
         post_only: Option<bool>,
         reduce_only: Option<bool>,
         is_leverage: bool,
+        position_idx: Option<BybitPositionIdx>,
     ) -> BybitWsResult<String> {
         let params = self.build_place_order_params(
             product_type,
@@ -1526,6 +1570,7 @@ impl BybitWebSocketClient {
             is_leverage,
             None,
             None,
+            position_idx,
         )?;
 
         self.place_order(params).await
@@ -1536,7 +1581,6 @@ impl BybitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if modification fails or if not authenticated.
-    #[allow(clippy::too_many_arguments)]
     pub async fn modify_order(
         &self,
         product_type: BybitProductType,
@@ -1581,7 +1625,7 @@ impl BybitWebSocketClient {
     }
 
     /// Builds order params for placing an order.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn build_place_order_params(
         &self,
         product_type: BybitProductType,
@@ -1600,6 +1644,7 @@ impl BybitWebSocketClient {
         is_leverage: bool,
         take_profit: Option<Price>,
         stop_loss: Option<Price>,
+        position_idx: Option<BybitPositionIdx>,
     ) -> BybitWsResult<BybitWsPlaceOrderParams> {
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
             .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
@@ -1670,6 +1715,7 @@ impl BybitWebSocketClient {
                 tp_limit_price: None,
                 order_iv: None,
                 mmp: None,
+                position_idx,
             }
         } else {
             BybitWsPlaceOrderParams {
@@ -1705,6 +1751,7 @@ impl BybitWebSocketClient {
                 tp_limit_price: None,
                 order_iv: None,
                 mmp: None,
+                position_idx,
             }
         };
 
@@ -1712,7 +1759,6 @@ impl BybitWebSocketClient {
     }
 
     /// Builds order params for amending an order.
-    #[allow(clippy::too_many_arguments)]
     pub fn build_amend_order_params(
         &self,
         product_type: BybitProductType,
@@ -2031,6 +2077,8 @@ mod tests {
             Some("test-secret".to_string()),
             None,
             20,
+            TransportBackend::default(),
+            None,
         );
 
         let params = client
@@ -2049,6 +2097,7 @@ mod tests {
                 None,
                 None,
                 is_leverage,
+                None,
                 None,
                 None,
             )
@@ -2097,6 +2146,8 @@ mod tests {
             Some("test-secret".to_string()),
             None,
             20,
+            TransportBackend::default(),
+            None,
         );
 
         let params = client
@@ -2119,6 +2170,7 @@ mod tests {
                 None,
                 None,
                 false,
+                None,
                 None,
                 None,
             )

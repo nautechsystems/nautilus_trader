@@ -163,6 +163,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             # First, load all individual leg instruments and collect their details
             leg_contract_details = []
             leg_tuples = []
+
             for combo_leg in bag_contract.comboLegs:
                 # Create a more complete leg contract using information from the combo leg
                 leg_contract = IBContract(
@@ -241,7 +242,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     def get_price_magnifier(self, instrument_id: InstrumentId) -> int:
         contract_details = self.contract_details.get(instrument_id)
         if contract_details:
-            return contract_details.priceMagnifier
+            return contract_details.priceMagnifier or 1
 
         return 1
 
@@ -277,6 +278,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         loaded instruments.
         """
         loaded_instrument_ids = []
+
         for instrument_id in instrument_ids:
             loaded_ids = await self.load_with_return_async(
                 instrument_id,
@@ -413,6 +415,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
             # First, load all individual leg instruments to get their contract details
             leg_contract_details = []
+
             for leg_instrument_id, ratio in leg_tuples:
                 self._log.info(f"Loading leg instrument: {leg_instrument_id} (ratio: {ratio})")
 
@@ -461,6 +464,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         # Create BAG contract from leg details
         if bag_contract is None:
             combo_legs = []
+
             for leg_details, ratio in leg_contract_details:
                 action = "BUY" if ratio > 0 else "SELL"
                 abs_ratio = abs(ratio)
@@ -638,6 +642,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             expirations = sorted(
                 exp for exp in chain[1] if (min_expiry <= pd.Timestamp(exp, tz="UTC") <= max_expiry)
             )
+
             for expiration in expirations:
                 option_contracts_detail = await self.get_option_chain_details_by_expiry(
                     underlying=underlying,
@@ -730,6 +735,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         """
         processed_instrument_ids = []
+
         for details in copy.deepcopy(contract_details):
             if not isinstance(details, IBContractDetails):
                 details = IBContractDetails.from_contract_details(details)

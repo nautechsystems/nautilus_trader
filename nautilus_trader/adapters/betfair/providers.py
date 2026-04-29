@@ -174,6 +174,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
                 min_notional=default_min_notional,
             )
         ]
+
         for instrument in instruments:
             self.add(instrument=instrument)
 
@@ -386,6 +387,7 @@ def get_market_book(client, market_ids):
         price_projection={"priceData": ["EX_TRADED"]},
     )
     data = []
+
     for market in resp:
         for runner in market["runners"]:
             data.append(

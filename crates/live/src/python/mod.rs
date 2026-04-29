@@ -15,16 +15,17 @@
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 
-#![allow(
-    clippy::missing_errors_doc,
-    reason = "errors documented on underlying Rust methods"
-)]
-
 pub mod config;
 pub mod node;
 
 use nautilus_portfolio::config::PortfolioConfig;
 use pyo3::prelude::*;
+
+pyo3_stub_gen::reexport_module_members!(
+    "nautilus_trader.live",
+    "nautilus_trader.portfolio",
+    "PortfolioConfig"
+);
 
 /// Loaded as `nautilus_pyo3.live`.
 ///

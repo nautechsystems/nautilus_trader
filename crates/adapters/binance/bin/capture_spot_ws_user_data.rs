@@ -61,7 +61,7 @@ use nautilus_binance::common::{
     enums::{BinanceEnvironment, BinanceProductType},
 };
 use nautilus_network::websocket::{
-    PingHandler, WebSocketClient, WebSocketConfig, channel_message_handler,
+    PingHandler, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
 };
 use serde::Serialize;
 use tokio_tungstenite::tungstenite::Message;
@@ -186,6 +186,8 @@ async fn main() -> anyhow::Result<()> {
         reconnect_jitter_ms: None,
         reconnect_max_attempts: Some(0),
         idle_timeout_ms: None,
+        backend: TransportBackend::Tungstenite,
+        proxy_url: None,
     };
 
     let client = WebSocketClient::connect(
@@ -305,6 +307,7 @@ async fn main() -> anyhow::Result<()> {
     if !early_frames.is_empty() {
         println!("Processing {} early binary frames...", early_frames.len());
     }
+
     for data in early_frames {
         capture_binary_frame(&data, &output_root, &mut counts, &mut fixtures)?;
     }

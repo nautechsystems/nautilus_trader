@@ -56,7 +56,7 @@ impl PyFifoCache {
         self.inner.len()
     }
 
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn __contains__(&self, key: String) -> bool {
         self.inner.contains(&key)
     }
@@ -65,7 +65,7 @@ impl PyFifoCache {
         self.inner.add(key);
     }
 
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn remove(&mut self, key: String) {
         self.inner.remove(&key);
     }

@@ -1,0 +1,22 @@
+{
+  "channel": "candles",
+  "client_id": "",
+  "timestamp": "2026-04-07T14:30:05.000000Z",
+  "sequence_num": 3,
+  "events": [
+    {
+      "type": "update",
+      "candles": [
+        {
+          "start": "1775521800",
+          "high": "68950.00",
+          "low": "68850.00",
+          "open": "68900.00",
+          "close": "68920.50",
+          "volume": "42.15000000",
+          "product_id": "BTC-USD"
+        }
+      ]
+    }
+  ]
+}

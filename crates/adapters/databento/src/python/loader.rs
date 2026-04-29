@@ -41,7 +41,7 @@ use crate::{
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, PublisherId},
 };
 
-#[allow(clippy::needless_pass_by_value)]
+#[expect(clippy::needless_pass_by_value)]
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DatabentoDataLoader {
@@ -143,6 +143,7 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
+
         for instrument in iter {
             let py_object = instrument_any_to_pyobject(py, instrument)?;
             data.push(py_object);
@@ -492,6 +493,7 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
+
         for result in iter {
             match result {
                 Ok(item) => data.push(item),
@@ -515,6 +517,7 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
+
         for result in iter {
             match result {
                 Ok(item) => data.push(item),
@@ -538,6 +541,7 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
+
         for result in iter {
             match result {
                 Ok(item) => data.push(item),
@@ -554,6 +558,7 @@ fn exhaust_data_iter_to_pycapsule(
     iter: impl Iterator<Item = anyhow::Result<(Option<Data>, Option<Data>)>>,
 ) -> anyhow::Result<Py<PyAny>> {
     let mut data = Vec::new();
+
     for result in iter {
         match result {
             Ok((Some(item1), None)) => data.push(item1),

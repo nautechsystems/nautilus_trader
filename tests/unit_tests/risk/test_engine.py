@@ -2074,7 +2074,7 @@ class TestRiskEngineWithCashAccount:
         assert order.status == OrderStatus.DENIED
         assert self.exec_engine.command_count == 0
 
-    def test_submit_order_with_quote_quantity_validates_against_effective_quantity(self):
+    def test_submit_order_with_quote_quantity_skips_min_max_quantity_check(self):
         # Arrange - Create BTCUSDT instrument with max_quantity = 83 BTC
         btc_usdt = CurrencyPair(
             instrument_id=InstrumentId(
@@ -2129,9 +2129,9 @@ class TestRiskEngineWithCashAccount:
         )
 
         # Create order with quote_quantity = 100 USDT
-        # Effective quantity: 100 USDT / $100,000 = 0.001 BTC
-        # Should be ALLOWED since 0.001 < 83 BTC max_quantity
-        # Before fix: Would compare 100 > 83 and incorrectly DENY
+        # Base-quantity bounds (min/max_quantity) are skipped for quote quantities;
+        # the venue is authoritative, so this order passes risk regardless of
+        # what the converted base quantity would be.
         order = strategy.order_factory.market(
             btc_usdt.id,
             OrderSide.BUY,
@@ -2151,11 +2151,11 @@ class TestRiskEngineWithCashAccount:
         # Act
         self.risk_engine.execute(submit_order)
 
-        # Assert - Order should be allowed (effective quantity 0.001 BTC < 83 BTC)
+        # Assert
         assert order.status == OrderStatus.INITIALIZED
         assert self.exec_engine.command_count == 1
 
-    def test_submit_order_with_quote_quantity_exceeds_max_after_conversion(self):
+    def test_submit_order_with_quote_quantity_does_not_deny_on_base_max_quantity(self):
         # Arrange - Create BTCUSDT instrument with max_quantity = 0.5 BTC (small limit)
         btc_usdt = CurrencyPair(
             instrument_id=InstrumentId(
@@ -2210,8 +2210,8 @@ class TestRiskEngineWithCashAccount:
         )
 
         # Create order with quote_quantity = 100,000 USDT
-        # Effective quantity: 100,000 USDT / $100,000 = 1 BTC
-        # Should be DENIED since 1 > 0.5 BTC max_quantity
+        # Converted base quantity (1 BTC) would exceed max_quantity (0.5 BTC), but
+        # base-quantity bounds do not apply to quote-denominated orders.
         order = strategy.order_factory.market(
             btc_usdt.id,
             OrderSide.BUY,
@@ -2231,7 +2231,162 @@ class TestRiskEngineWithCashAccount:
         # Act
         self.risk_engine.execute(submit_order)
 
-        # Assert - Order should be denied (effective quantity 1 BTC > 0.5 BTC)
+        # Assert
+        assert order.status == OrderStatus.INITIALIZED
+        assert self.exec_engine.command_count == 1
+
+    def test_submit_order_with_quote_quantity_does_not_deny_on_base_min_quantity(self):
+        # Arrange - Instrument carries a large base `min_quantity` (e.g. 5 shares),
+        # but a small quote order whose converted base quantity is below it should
+        # still be allowed. Mirrors the Polymarket scenario from #3874.
+        btc_usdt = CurrencyPair(
+            instrument_id=InstrumentId(
+                symbol=Symbol("BTCUSDT"),
+                venue=self.venue,
+            ),
+            raw_symbol=Symbol("BTCUSDT"),
+            base_currency=BTC,
+            quote_currency=USDT,
+            price_precision=1,
+            size_precision=6,
+            price_increment=Price(0.1, precision=1),
+            size_increment=Quantity(0.000001, precision=6),
+            lot_size=Quantity(0.000001, precision=6),
+            max_quantity=None,
+            min_quantity=Quantity(5, precision=6),
+            max_notional=None,
+            min_notional=Money(1, USDT),
+            max_price=None,
+            min_price=None,
+            margin_init=Decimal("0.1"),
+            margin_maint=Decimal("0.1"),
+            maker_fee=Decimal("-0.00005"),
+            taker_fee=Decimal("0.00015"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(btc_usdt)
+
+        quote = QuoteTick(
+            instrument_id=btc_usdt.id,
+            bid_price=Price(99999.9, precision=1),
+            ask_price=Price(100000.0, precision=1),
+            bid_size=Quantity(1.0, precision=6),
+            ask_size=Quantity(1.0, precision=6),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # 10 USDT at $100k/BTC -> 0.0001 BTC, well under min_quantity of 5.
+        order = strategy.order_factory.market(
+            btc_usdt.id,
+            OrderSide.BUY,
+            Quantity.from_int(10),
+            quote_quantity=True,
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order.status == OrderStatus.INITIALIZED
+        assert self.exec_engine.command_count == 1
+
+    def test_submit_order_with_quote_quantity_still_enforces_min_notional(self):
+        # Arrange - Base-quantity bounds are skipped for quote-denominated orders,
+        # but `min_notional` still applies.
+        btc_usdt = CurrencyPair(
+            instrument_id=InstrumentId(
+                symbol=Symbol("BTCUSDT"),
+                venue=self.venue,
+            ),
+            raw_symbol=Symbol("BTCUSDT"),
+            base_currency=BTC,
+            quote_currency=USDT,
+            price_precision=1,
+            size_precision=6,
+            price_increment=Price(0.1, precision=1),
+            size_increment=Quantity(0.000001, precision=6),
+            lot_size=Quantity(0.000001, precision=6),
+            max_quantity=None,
+            min_quantity=None,
+            max_notional=None,
+            min_notional=Money(10, USDT),
+            max_price=None,
+            min_price=None,
+            margin_init=Decimal("0.1"),
+            margin_maint=Decimal("0.1"),
+            maker_fee=Decimal("-0.00005"),
+            taker_fee=Decimal("0.00015"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(btc_usdt)
+
+        quote = QuoteTick(
+            instrument_id=btc_usdt.id,
+            bid_price=Price(99999.9, precision=1),
+            ask_price=Price(100000.0, precision=1),
+            bid_size=Quantity(1.0, precision=6),
+            ask_size=Quantity(1.0, precision=6),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # 1 USDT quote quantity, below the 10 USDT minimum notional.
+        order = strategy.order_factory.market(
+            btc_usdt.id,
+            OrderSide.BUY,
+            Quantity.from_int(1),
+            quote_quantity=True,
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
         assert order.status == OrderStatus.DENIED
         assert self.exec_engine.command_count == 0
 

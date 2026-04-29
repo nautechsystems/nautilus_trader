@@ -23,10 +23,13 @@ use std::{
 };
 
 use nautilus_common::{
-    cache::Cache, clock::TestClock, live::runner::set_data_event_sender, messages::DataEvent,
+    cache::Cache,
+    clock::TestClock,
+    factories::{ClientConfig, DataClientFactory},
+    live::runner::set_data_event_sender,
+    messages::DataEvent,
 };
 use nautilus_model::identifiers::ClientId;
-use nautilus_system::factories::{ClientConfig, DataClientFactory};
 use nautilus_tardis::{config::TardisDataClientConfig, factories::TardisDataClientFactory};
 use rstest::rstest;
 

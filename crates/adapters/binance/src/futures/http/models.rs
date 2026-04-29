@@ -16,11 +16,17 @@
 //! Binance Futures HTTP response models.
 
 use anyhow::Context;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{
+    UUID4, UnixNanos,
+    serialization::{
+        deserialize_decimal_or_zero, deserialize_optional_decimal_from_str,
+        serialize_decimal_as_str, serialize_optional_decimal_as_str,
+    },
+};
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
@@ -446,45 +452,93 @@ pub struct BinanceFuturesBalance {
     /// Asset code (e.g., "USDT").
     pub asset: Ustr,
     /// Wallet balance (v2 uses walletBalance, v1 uses balance).
-    #[serde(alias = "balance")]
-    pub wallet_balance: String,
+    #[serde(
+        alias = "balance",
+        deserialize_with = "deserialize_decimal_or_zero",
+        serialize_with = "serialize_decimal_as_str"
+    )]
+    pub wallet_balance: Decimal,
     /// Unrealized profit.
-    #[serde(default)]
-    pub unrealized_profit: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub unrealized_profit: Option<Decimal>,
     /// Margin balance.
-    #[serde(default)]
-    pub margin_balance: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub margin_balance: Option<Decimal>,
     /// Maintenance margin required.
-    #[serde(default)]
-    pub maint_margin: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub maint_margin: Option<Decimal>,
     /// Initial margin required.
-    #[serde(default)]
-    pub initial_margin: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub initial_margin: Option<Decimal>,
     /// Position initial margin.
-    #[serde(default)]
-    pub position_initial_margin: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub position_initial_margin: Option<Decimal>,
     /// Open order initial margin.
-    #[serde(default)]
-    pub open_order_initial_margin: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub open_order_initial_margin: Option<Decimal>,
     /// Cross wallet balance.
-    #[serde(default)]
-    pub cross_wallet_balance: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub cross_wallet_balance: Option<Decimal>,
     /// Unrealized PnL for cross positions.
-    #[serde(default)]
-    pub cross_un_pnl: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub cross_un_pnl: Option<Decimal>,
     /// Available balance.
-    pub available_balance: String,
+    #[serde(
+        deserialize_with = "deserialize_decimal_or_zero",
+        serialize_with = "serialize_decimal_as_str"
+    )]
+    pub available_balance: Decimal,
     /// Maximum withdrawable amount.
-    #[serde(default)]
-    pub max_withdraw_amount: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub max_withdraw_amount: Option<Decimal>,
     /// Whether margin trading is available.
     #[serde(default)]
     pub margin_available: Option<bool>,
     /// Timestamp of last update in milliseconds.
     pub update_time: i64,
     /// Withdrawable amount (COIN-M specific).
-    #[serde(default)]
-    pub withdraw_available: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub withdraw_available: Option<Decimal>,
 }
 
 /// Account position from `GET /fapi/v2/account` positions array.
@@ -664,38 +718,82 @@ pub struct BinanceUserTrade {
 #[serde(rename_all = "camelCase")]
 pub struct BinanceFuturesAccountInfo {
     /// Total initial margin required.
-    #[serde(default)]
-    pub total_initial_margin: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub total_initial_margin: Option<Decimal>,
     /// Total maintenance margin required.
-    #[serde(default)]
-    pub total_maint_margin: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub total_maint_margin: Option<Decimal>,
     /// Total wallet balance.
-    #[serde(default)]
-    pub total_wallet_balance: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub total_wallet_balance: Option<Decimal>,
     /// Total unrealized profit.
-    #[serde(default)]
-    pub total_unrealized_profit: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub total_unrealized_profit: Option<Decimal>,
     /// Total margin balance.
-    #[serde(default)]
-    pub total_margin_balance: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub total_margin_balance: Option<Decimal>,
     /// Total position initial margin.
-    #[serde(default)]
-    pub total_position_initial_margin: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub total_position_initial_margin: Option<Decimal>,
     /// Total open order initial margin.
-    #[serde(default)]
-    pub total_open_order_initial_margin: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub total_open_order_initial_margin: Option<Decimal>,
     /// Total cross wallet balance.
-    #[serde(default)]
-    pub total_cross_wallet_balance: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub total_cross_wallet_balance: Option<Decimal>,
     /// Total cross unrealized PnL.
-    #[serde(default)]
-    pub total_cross_un_pnl: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub total_cross_un_pnl: Option<Decimal>,
     /// Available balance.
-    #[serde(default)]
-    pub available_balance: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub available_balance: Option<Decimal>,
     /// Max withdraw amount.
-    #[serde(default)]
-    pub max_withdraw_amount: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_str",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub max_withdraw_amount: Option<Decimal>,
     /// Can deposit.
     #[serde(default)]
     pub can_deposit: Option<bool>,
@@ -738,31 +836,12 @@ impl BinanceFuturesAccountInfo {
                 Some("futures balance"),
             );
 
-            let total: Decimal = if asset.wallet_balance.is_empty() {
-                Decimal::ZERO
-            } else {
-                asset.wallet_balance.parse().context("invalid balance")?
-            };
-            let available: Decimal = if asset.available_balance.is_empty() {
-                Decimal::ZERO
-            } else {
-                asset
-                    .available_balance
-                    .parse()
-                    .context("invalid available_balance")?
-            };
-            let locked = total - available;
-
-            let total_money = Money::from_decimal(total, currency)
-                .unwrap_or_else(|_| Money::new(total.to_string().parse().unwrap_or(0.0), currency));
-            let locked_money = Money::from_decimal(locked, currency).unwrap_or_else(|_| {
-                Money::new(locked.to_string().parse().unwrap_or(0.0), currency)
-            });
-            let free_money = Money::from_decimal(available, currency).unwrap_or_else(|_| {
-                Money::new(available.to_string().parse().unwrap_or(0.0), currency)
-            });
-
-            let balance = AccountBalance::new(total_money, locked_money, free_money);
+            let balance = AccountBalance::from_total_and_free(
+                asset.wallet_balance,
+                asset.available_balance,
+                currency,
+            )
+            .context("failed to build account balance")?;
             balances.push(balance);
         }
 
@@ -774,36 +853,29 @@ impl BinanceFuturesAccountInfo {
             balances.push(zero_balance);
         }
 
-        // Parse margin requirements
+        // Emit account-wide (cross-margin) margin balances per collateral asset.
+        // Binance reports per-asset `initialMargin` / `maintMargin` which covers both
+        // USDT-M (single collateral, typically USDT or BNB under multi-assets mode) and
+        // COIN-M (one entry per base coin, e.g. BTC / ETH).
         let mut margins = Vec::new();
 
-        let initial_margin_dec = self
-            .total_initial_margin
-            .as_ref()
-            .and_then(|s| Decimal::from_str_exact(s).ok());
-        let maint_margin_dec = self
-            .total_maint_margin
-            .as_ref()
-            .and_then(|s| Decimal::from_str_exact(s).ok());
+        for asset in &self.assets {
+            let initial_dec = asset.initial_margin.unwrap_or_default();
+            let maint_dec = asset.maint_margin.unwrap_or_default();
 
-        if let (Some(initial_margin_dec), Some(maint_margin_dec)) =
-            (initial_margin_dec, maint_margin_dec)
-        {
-            let has_margin = !initial_margin_dec.is_zero() || !maint_margin_dec.is_zero();
-            if has_margin {
-                let margin_currency = Currency::USDT();
-                let margin_instrument_id =
-                    InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("BINANCE"));
-
-                let initial_margin = Money::from_decimal(initial_margin_dec, margin_currency)
-                    .unwrap_or_else(|_| Money::zero(margin_currency));
-                let maintenance_margin = Money::from_decimal(maint_margin_dec, margin_currency)
-                    .unwrap_or_else(|_| Money::zero(margin_currency));
-
-                let margin_balance =
-                    MarginBalance::new(initial_margin, maintenance_margin, margin_instrument_id);
-                margins.push(margin_balance);
+            if initial_dec.is_zero() && maint_dec.is_zero() {
+                continue;
             }
+
+            let currency = Currency::get_or_create_crypto_with_context(
+                asset.asset.as_str(),
+                Some("futures margin"),
+            );
+            let initial = Money::from_decimal(initial_dec, currency)
+                .unwrap_or_else(|_| Money::zero(currency));
+            let maintenance =
+                Money::from_decimal(maint_dec, currency).unwrap_or_else(|_| Money::zero(currency));
+            margins.push(MarginBalance::new(initial, maintenance, None));
         }
 
         let ts_event = self
@@ -1351,11 +1423,14 @@ mod tests {
 
         assert_eq!(
             account.total_wallet_balance,
-            Some("23.72469206".to_string())
+            Some(Decimal::from_str_exact("23.72469206").unwrap())
         );
         assert_eq!(account.assets.len(), 1);
         assert_eq!(account.assets[0].asset.as_str(), "USDT");
-        assert_eq!(account.assets[0].wallet_balance, "23.72469206");
+        assert_eq!(
+            account.assets[0].wallet_balance,
+            Decimal::from_str_exact("23.72469206").unwrap()
+        );
         assert_eq!(account.positions.len(), 1);
         assert_eq!(account.positions[0].symbol.as_str(), "BTCUSDT");
         assert_eq!(account.positions[0].leverage, Some("100".to_string()));
@@ -1387,6 +1462,8 @@ mod tests {
                 "asset": "USDT",
                 "walletBalance": "10000.00000000",
                 "availableBalance": "9500.00000000",
+                "initialMargin": "500.25000000",
+                "maintMargin": "250.75000000",
                 "updateTime": 1617939110373
             }],
             "positions": []
@@ -1400,10 +1477,86 @@ mod tests {
 
         assert_eq!(state.margins.len(), 1);
         let margin = &state.margins[0];
-        assert_eq!(margin.instrument_id.symbol.as_str(), "ACCOUNT");
-        assert_eq!(margin.instrument_id.venue.as_str(), "BINANCE");
+        assert!(margin.instrument_id.is_none());
+        assert_eq!(margin.currency.code.as_str(), "USDT");
         assert_eq!(margin.initial.as_f64(), 500.25);
         assert_eq!(margin.maintenance.as_f64(), 250.75);
+    }
+
+    #[rstest]
+    fn test_account_info_to_account_state_coin_margined_per_base_coin() {
+        let json = r#"{
+            "totalWalletBalance": "0.00000000",
+            "assets": [
+                {
+                    "asset": "BTC",
+                    "walletBalance": "1.50000000",
+                    "availableBalance": "1.40000000",
+                    "initialMargin": "0.05000000",
+                    "maintMargin": "0.02500000",
+                    "updateTime": 1617939110373
+                },
+                {
+                    "asset": "ETH",
+                    "walletBalance": "10.00000000",
+                    "availableBalance": "9.00000000",
+                    "initialMargin": "0.80000000",
+                    "maintMargin": "0.40000000",
+                    "updateTime": 1617939110373
+                }
+            ],
+            "positions": []
+        }"#;
+        let account: BinanceFuturesAccountInfo =
+            serde_json::from_str(json).expect("Failed to parse account info");
+
+        let account_id = AccountId::from("BINANCE-001");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let state = account.to_account_state(account_id, ts_init).unwrap();
+
+        assert_eq!(state.margins.len(), 2);
+        assert!(state.margins.iter().all(|m| m.instrument_id.is_none()));
+        let btc = state
+            .margins
+            .iter()
+            .find(|m| m.currency.code.as_str() == "BTC")
+            .expect("BTC margin missing");
+        assert_eq!(btc.initial.as_f64(), 0.05);
+        assert_eq!(btc.maintenance.as_f64(), 0.025);
+        let eth = state
+            .margins
+            .iter()
+            .find(|m| m.currency.code.as_str() == "ETH")
+            .expect("ETH margin missing");
+        assert_eq!(eth.initial.as_f64(), 0.8);
+        assert_eq!(eth.maintenance.as_f64(), 0.4);
+    }
+
+    // Regression for the #3867 bug class: wire values with more decimal places
+    // than the currency precision (USDT=8) previously tripped the
+    // `total == locked + free` invariant when Money::new rounded each side
+    // independently. The `from_total_and_free` helper must keep the invariant.
+    #[rstest]
+    fn test_account_info_to_account_state_precision_drift() {
+        let json = r#"{
+            "assets": [{
+                "asset": "USDT",
+                "walletBalance": "10.000000034999",
+                "availableBalance": "9.999999994999",
+                "updateTime": 1617939110373
+            }],
+            "positions": []
+        }"#;
+        let account: BinanceFuturesAccountInfo =
+            serde_json::from_str(json).expect("Failed to parse account info");
+
+        let account_id = AccountId::from("BINANCE-001");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let state = account.to_account_state(account_id, ts_init).unwrap();
+
+        assert_eq!(state.balances.len(), 1);
+        let balance = &state.balances[0];
+        assert_eq!(balance.total.raw, balance.locked.raw + balance.free.raw);
     }
 
     #[rstest]
@@ -1474,8 +1627,14 @@ mod tests {
         assert_eq!(balances.len(), 1);
         assert_eq!(balances[0].asset.as_str(), "USDT");
         // Uses alias to parse 'balance' into wallet_balance
-        assert_eq!(balances[0].wallet_balance, "122.12345678");
-        assert_eq!(balances[0].available_balance, "122.12345678");
+        assert_eq!(
+            balances[0].wallet_balance,
+            Decimal::from_str_exact("122.12345678").unwrap()
+        );
+        assert_eq!(
+            balances[0].available_balance,
+            Decimal::from_str_exact("122.12345678").unwrap()
+        );
     }
 
     #[rstest]
@@ -1492,7 +1651,10 @@ mod tests {
             serde_json::from_str(json).expect("Failed to parse balance");
 
         assert_eq!(balance.asset.as_str(), "USDT");
-        assert_eq!(balance.wallet_balance, "100.00000000");
+        assert_eq!(
+            balance.wallet_balance,
+            Decimal::from_str_exact("100.00000000").unwrap()
+        );
     }
 
     #[rstest]

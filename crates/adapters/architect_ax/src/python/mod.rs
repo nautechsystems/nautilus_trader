@@ -15,7 +15,7 @@
 
 //! Python bindings for the Ax adapter.
 
-#![allow(
+#![expect(
     clippy::missing_errors_doc,
     reason = "errors documented on underlying Rust methods"
 )]

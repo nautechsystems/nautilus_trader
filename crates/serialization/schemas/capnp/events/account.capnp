@@ -1,5 +1,8 @@
 @0xfec455d315607b3f;
 # Cap'n Proto schema for Nautilus account events
+#
+# WARNING: This schema is not yet stable and may change without notice
+# between releases. Do not depend on wire compatibility across versions.
 
 using Identifiers = import "../common/identifiers.capnp";
 using Types = import "../common/types.capnp";

@@ -32,6 +32,7 @@ use serde::{Deserialize, Deserializer, Serialize, de::Visitor};
 use ustr::Ustr;
 
 use crate::common::{
+    consts::{STREAM_OP_AUTHENTICATION, STREAM_OP_HEARTBEAT, STREAM_OP_RACE_SUBSCRIPTION},
     enums::{
         ChangeType, LapseStatusReasonCode, MarketBettingType, MarketDataFilterField, MarketStatus,
         PriceLadderType, RunnerStatus, SegmentType, StatusErrorCode, StreamingOrderStatus,
@@ -580,7 +581,7 @@ impl Authentication {
     #[must_use]
     pub fn new(app_key: String, session: String) -> Self {
         Self {
-            op: "authentication".to_string(),
+            op: STREAM_OP_AUTHENTICATION.to_string(),
             id: None,
             app_key,
             session,
@@ -640,7 +641,7 @@ impl RaceSubscription {
     #[must_use]
     pub fn new(id: u64) -> Self {
         Self {
-            op: "raceSubscription".to_string(),
+            op: STREAM_OP_RACE_SUBSCRIPTION.to_string(),
             id: Some(id),
         }
     }
@@ -657,7 +658,7 @@ impl StreamHeartbeat {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            op: "heartbeat".to_string(),
+            op: STREAM_OP_HEARTBEAT.to_string(),
             id: None,
         }
     }

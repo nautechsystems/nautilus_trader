@@ -5,7 +5,11 @@ import typing
 
 from nautilus_trader import common
 from nautilus_trader import core
+from nautilus_trader import data
+from nautilus_trader import execution
 from nautilus_trader import model
+from nautilus_trader import portfolio
+from nautilus_trader import risk
 from nautilus_trader import trading
 
 __all__ = [
@@ -34,6 +38,7 @@ class BacktestDataConfig:
         catalog_path: str,
         catalog_fs_protocol: str | None = None,
         catalog_fs_storage_options: typing.Mapping[str, str] | None = None,
+        catalog_fs_rust_storage_options: typing.Mapping[str, str] | None = None,
         instrument_id: model.InstrumentId | None = None,
         instrument_ids: typing.Sequence[model.InstrumentId] | None = None,
         start_time: int | None = None,
@@ -58,6 +63,18 @@ class BacktestEngineConfig:
     def bypass_logging(self) -> bool: ...
     @property
     def run_analysis(self) -> bool: ...
+    @property
+    def cache(self) -> common.CacheConfig | None: ...
+    @property
+    def msgbus(self) -> common.MessageBusConfig | None: ...
+    @property
+    def data_engine(self) -> data.DataEngineConfig | None: ...
+    @property
+    def risk_engine(self) -> risk.RiskEngineConfig | None: ...
+    @property
+    def exec_engine(self) -> execution.ExecutionEngineConfig | None: ...
+    @property
+    def portfolio(self) -> portfolio.PortfolioConfig | None: ...
     def __new__(
         cls,
         trader_id: model.TraderId | None = None,
@@ -73,6 +90,12 @@ class BacktestEngineConfig:
         timeout_shutdown: int | None = None,
         logging: common.LoggerConfig | None = None,
         instance_id: core.UUID4 | None = None,
+        cache: common.CacheConfig | None = None,
+        msgbus: common.MessageBusConfig | None = None,
+        data_engine: data.DataEngineConfig | None = None,
+        risk_engine: risk.RiskEngineConfig | None = None,
+        exec_engine: execution.ExecutionEngineConfig | None = None,
+        portfolio: portfolio.PortfolioConfig | None = None,
     ) -> BacktestEngineConfig: ...
 
 @typing.final
@@ -126,6 +149,7 @@ class BacktestRunConfig:
         engine: BacktestEngineConfig | None = None,
         id: str | None = None,
         chunk_size: int | None = None,
+        raise_exception: bool | None = None,
         dispose_on_completion: bool | None = None,
         start: int | None = None,
         end: int | None = None,
@@ -171,9 +195,15 @@ class BacktestVenueConfig:
         queue_position: bool | None = None,
         oto_trigger_mode: model.OtoTriggerMode | None = None,
         base_currency: model.Currency | None = None,
-        default_leverage: float | None = None,
-        leverages: typing.Mapping[model.InstrumentId, float] | None = None,
+        default_leverage: decimal.Decimal | None = None,
+        leverages: typing.Mapping[model.InstrumentId, decimal.Decimal] | None = None,
+        margin_model: typing.Any | None = None,
+        modules: typing.Sequence[typing.Any] | None = None,
+        fill_model: typing.Any | None = None,
+        latency_model: typing.Any | None = None,
+        fee_model: typing.Any | None = None,
         price_protection_points: int | None = None,
+        settlement_prices: typing.Mapping[model.InstrumentId, float] | None = None,
     ) -> BacktestVenueConfig: ...
 
 @typing.final
@@ -189,9 +219,25 @@ class BacktestEngine:
     @property
     def trader_id(self) -> model.TraderId: ...
     @property
+    def machine_id(self) -> str: ...
+    @property
     def instance_id(self) -> core.UUID4: ...
     @property
     def iteration(self) -> int: ...
+    @property
+    def run_config_id(self) -> str | None: ...
+    @property
+    def run_id(self) -> core.UUID4 | None: ...
+    @property
+    def run_started(self) -> int | None: ...
+    @property
+    def run_finished(self) -> int | None: ...
+    @property
+    def backtest_start(self) -> int | None: ...
+    @property
+    def backtest_end(self) -> int | None: ...
+    @property
+    def cache(self) -> common.Cache: ...
     def __new__(cls, config: BacktestEngineConfig) -> BacktestEngine: ...
     def add_venue(
         self,
@@ -226,6 +272,7 @@ class BacktestEngine:
         frozen_account: bool = False,
         oto_trigger_mode: model.OtoTriggerMode = model.OtoTriggerMode.PARTIAL,
         price_protection_points: int | None = None,
+        settlement_prices: typing.Mapping[model.InstrumentId, model.Price] | None = None,
     ) -> None: ...
     def change_fill_model(self, venue: model.Venue, fill_model: typing.Any) -> None: ...
     def add_data(
@@ -238,6 +285,8 @@ class BacktestEngine:
     def add_instrument(self, instrument: typing.Any) -> None: ...
     def add_actor_from_config(self, config: common.ImportableActorConfig) -> None: ...
     def add_strategy_from_config(self, config: trading.ImportableStrategyConfig) -> None: ...
+    def add_native_strategy(self, config: typing.Any) -> None: ...
+    def add_native_actor(self, config: typing.Any) -> None: ...
     def run(
         self,
         start: int | None = None,
@@ -250,7 +299,14 @@ class BacktestEngine:
     def dispose(self) -> None: ...
     def get_result(self) -> BacktestResult: ...
     def clear_data(self) -> None: ...
+    def clear_actors(self) -> None: ...
     def clear_strategies(self) -> None: ...
     def clear_exec_algorithms(self) -> None: ...
+    def add_actors_from_configs(
+        self, configs: typing.Sequence[common.ImportableActorConfig]
+    ) -> None: ...
+    def add_strategies_from_configs(
+        self, configs: typing.Sequence[trading.ImportableStrategyConfig]
+    ) -> None: ...
     def sort_data(self) -> None: ...
     def list_venues(self) -> list[model.Venue]: ...

@@ -25,7 +25,7 @@ use nautilus_common::{
     logging::log_task_awaiting,
     msgbus::database::{DatabaseConfig, MessageBusConfig},
 };
-use nautilus_core::{UUID4, string::SemVer};
+use nautilus_core::{UUID4, string::semver::SemVer};
 use nautilus_model::identifiers::TraderId;
 use redis::RedisError;
 

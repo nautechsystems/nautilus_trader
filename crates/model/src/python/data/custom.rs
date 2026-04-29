@@ -34,7 +34,6 @@ impl CustomData {
     /// Custom data is always Rust-defined (optionally with PyO3 bindings).
     #[new]
     #[pyo3(signature = (data_type, data))]
-    #[allow(clippy::needless_pass_by_value)]
     fn py_new(py: Python<'_>, data_type: DataType, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         let type_name = data_type.type_name();
         if let Some(arc) = try_extract_from_py(type_name, data) {
@@ -64,12 +63,12 @@ impl CustomData {
         self.data.ts_init().as_u64()
     }
 
-    /// Serializes this CustomData to JSON bytes for roundtrip with from_json_bytes.
+    /// Serializes this `CustomData` to JSON bytes for roundtrip with `from_json_bytes`.
     fn to_json_bytes(&self) -> PyResult<Vec<u8>> {
         serde_json::to_vec(self).map_err(to_pyvalue_err)
     }
 
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn __richcmp__(
         &self,
         other: pyo3::Bound<'_, PyAny>,
@@ -104,7 +103,7 @@ impl CustomData {
 
 #[pymethods]
 impl CustomData {
-    /// Deserializes CustomData from JSON bytes (full CustomData format).
+    /// Deserializes `CustomData` from JSON bytes (full `CustomData` format).
     #[classmethod]
     #[pyo3(name = "from_json_bytes")]
     fn py_from_json_bytes_py(
@@ -117,6 +116,7 @@ impl CustomData {
 
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
+#[must_use]
 pub fn custom_data_backend_kind(custom: &CustomData) -> &'static str {
     if custom
         .data

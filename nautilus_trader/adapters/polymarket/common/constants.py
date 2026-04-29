@@ -39,6 +39,9 @@ VALID_POLYMARKET_TIME_IN_FORCE: Final[set[TimeInForce]] = {
 
 POLYMARKET_INVALID_API_KEY: Final[str] = "Unauthorized/Invalid api key"
 POLYMARKET_CANCEL_ALREADY_DONE: Final[str] = "already canceled or matched"
+POLYMARKET_NAUTILUS_BUILDER_CODE: Final[str] = (
+    "0x4f2c0bba608033563f74b82300e2ed59f54f8d0de08281031f03fb2c62819e63"
+)
 
 POLYMARKET_FINALIZED_TRADE_STATUSES: Final[tuple[PolymarketTradeStatus, ...]] = (
     PolymarketTradeStatus.MINED,
@@ -47,4 +50,16 @@ POLYMARKET_FINALIZED_TRADE_STATUSES: Final[tuple[PolymarketTradeStatus, ...]] = 
 
 POLYMARKET_HTTP_RATE_LIMIT: Final[int] = 100  # requests per minute
 
-DUST_SNAP_THRESHOLD: Final[float] = 0.01
+# Minimum position size (in shares) reported in position status reports.
+# Smaller positions are filtered as dust during reconciliation.
+DUST_POSITION_THRESHOLD: Final[float] = 0.01
+
+# Underfill tolerance for OrderFillTracker, in ulps of the instrument
+# size precision (resolves to 0.01 at size_precision=6).
+# See ``docs/integrations/polymarket.md`` (Fill quantity normalization).
+SNAP_UNDERFILL_ULPS: Final[float] = 10_000.0
+
+# Overfill tolerance for OrderFillTracker, in ulps of the instrument
+# size precision (resolves to 0.0001 at size_precision=6).
+# See ``docs/integrations/polymarket.md`` (Fill quantity normalization).
+SNAP_OVERFILL_ULPS: Final[float] = 100.0

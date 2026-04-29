@@ -32,7 +32,6 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import secs_to_nanos
-from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
@@ -1149,11 +1148,11 @@ class TestDataGenerator:
                 Price(row["price"], price_prec),
                 Quantity(row["quantity"], quantity_prec),
                 AggressorSide.NO_AGGRESSOR,
-                TradeId(UUID4().value),
+                TradeId(f"T-{i:010d}"),
                 dt_to_unix_nanos(idx),
                 dt_to_unix_nanos(idx),
             )
-            for idx, row in df.iterrows()
+            for i, (idx, row) in enumerate(df.iterrows())
         ]
 
     @staticmethod

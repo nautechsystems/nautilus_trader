@@ -54,6 +54,7 @@ pub struct PoolSnapshot {
 
 impl PoolSnapshot {
     /// Creates a new `PoolSnapshot` with the specified parameters.
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         state: PoolState,
@@ -108,6 +109,7 @@ pub struct PoolState {
 
 impl PoolState {
     /// Creates a new `PoolState` with the specified parameters.
+    #[must_use]
     pub fn new(protocol_fees_token0: U256, protocol_fees_token1: U256, fee_protocol: u8) -> Self {
         Self {
             current_tick: 0,

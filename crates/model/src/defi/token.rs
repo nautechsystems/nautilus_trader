@@ -69,6 +69,7 @@ impl Token {
     ///
     /// Checks against common stablecoin symbols including USD-pegged tokens,
     /// Euro-pegged tokens, and other algorithmic/collateralized stablecoins.
+    #[must_use]
     pub fn is_stablecoin(&self) -> bool {
         matches!(
             self.symbol.as_str(),
@@ -100,6 +101,7 @@ impl Token {
     ///
     /// Identifies wrapped versions of native currencies like WETH (Wrapped ETH),
     /// WMATIC (Wrapped MATIC), WBNB (Wrapped BNB), etc.
+    #[must_use]
     pub fn is_native_currency(&self) -> bool {
         matches!(
             self.symbol.as_str(),
@@ -125,6 +127,7 @@ impl Token {
     /// - **1**: Stablecoins (USDC, USDT, DAI, etc.) - Highest priority to be quote
     /// - **2**: Native currencies (WETH, WMATIC, WBNB, etc.) - Medium priority
     /// - **3**: Other tokens - Lowest priority (typically become base tokens)
+    #[must_use]
     pub fn get_token_priority(&self) -> u8 {
         if self.is_stablecoin() {
             1

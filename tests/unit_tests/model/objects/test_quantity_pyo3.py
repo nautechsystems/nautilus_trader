@@ -412,6 +412,50 @@ class TestQuantity:
         # Assert
         assert result == Quantity(3.0, 1)
 
+    def test_checked_add_within_bounds(self) -> None:
+        # Arrange
+        a = Quantity(10.0, 2)
+        b = Quantity(5.0, 2)
+
+        # Act
+        result = a.checked_add(b)
+
+        # Assert
+        assert result == Quantity(15.0, 2)
+
+    def test_checked_add_above_max_returns_none(self) -> None:
+        # Arrange
+        near_max = Quantity(QUANTITY_MAX, 0)
+        one = Quantity(1.0, 0)
+
+        # Act
+        result = near_max.checked_add(one)
+
+        # Assert
+        assert result is None
+
+    def test_checked_sub_within_bounds(self) -> None:
+        # Arrange
+        a = Quantity(10.0, 2)
+        b = Quantity(3.0, 2)
+
+        # Act
+        result = a.checked_sub(b)
+
+        # Assert
+        assert result == Quantity(7.0, 2)
+
+    def test_checked_sub_underflow_returns_none(self) -> None:
+        # Arrange
+        a = Quantity(3.0, 2)
+        b = Quantity(10.0, 2)
+
+        # Act
+        result = a.checked_sub(b)
+
+        # Assert
+        assert result is None
+
     @pytest.mark.parametrize(
         ("value1", "value2", "expected_type", "expected_value"),
         [

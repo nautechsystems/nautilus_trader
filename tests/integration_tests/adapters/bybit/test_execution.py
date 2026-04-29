@@ -833,6 +833,126 @@ def test_parse_tp_sl_empty_params_returns_defaults():
     assert result == {"is_leverage": False}
 
 
+@pytest.mark.parametrize("idx", [0, 1, 2])
+def test_parse_tp_sl_position_idx_valid(idx):
+    result = _parse_bybit_tp_sl_params({"position_idx": idx})
+    assert result["position_idx"] == idx
+
+
+@pytest.mark.parametrize("idx", [3, -1, "1", True])
+def test_parse_tp_sl_position_idx_invalid(idx):
+    with pytest.raises(ValueError, match="position_idx"):
+        _parse_bybit_tp_sl_params({"position_idx": idx})
+
+
+@pytest.mark.parametrize(
+    ("side", "is_reduce_only", "expected"),
+    [
+        (OrderSide.BUY, False, nautilus_pyo3.BybitPositionIdx.BUY_HEDGE),
+        (OrderSide.SELL, False, nautilus_pyo3.BybitPositionIdx.SELL_HEDGE),
+        (OrderSide.SELL, True, nautilus_pyo3.BybitPositionIdx.BUY_HEDGE),
+        (OrderSide.BUY, True, nautilus_pyo3.BybitPositionIdx.SELL_HEDGE),
+    ],
+)
+def test_resolve_position_idx_hedge_mode(
+    exec_client_builder,
+    monkeypatch,
+    side,
+    is_reduce_only,
+    expected,
+):
+    instrument_id = InstrumentId(Symbol("LTCUSDT-LINEAR"), BYBIT_VENUE)
+    client, *_ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "position_mode": {
+                instrument_id.symbol.value: nautilus_pyo3.BybitPositionMode.BOTH_SIDES,
+            },
+        },
+    )
+
+    assert client._resolve_position_idx(instrument_id, side, is_reduce_only, None) == expected
+
+
+def test_resolve_position_idx_one_way_mode(exec_client_builder, monkeypatch):
+    instrument_id = InstrumentId(Symbol("LTCUSDT-LINEAR"), BYBIT_VENUE)
+    client, *_ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "position_mode": {
+                instrument_id.symbol.value: nautilus_pyo3.BybitPositionMode.MERGED_SINGLE,
+            },
+        },
+    )
+
+    assert (
+        client._resolve_position_idx(instrument_id, OrderSide.BUY, False, None)
+        == nautilus_pyo3.BybitPositionIdx.ONE_WAY
+    )
+
+
+def test_resolve_position_idx_manual_override_wins(exec_client_builder, monkeypatch):
+    instrument_id = InstrumentId(Symbol("LTCUSDT-LINEAR"), BYBIT_VENUE)
+    client, *_ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "position_mode": {
+                instrument_id.symbol.value: nautilus_pyo3.BybitPositionMode.BOTH_SIDES,
+            },
+        },
+    )
+
+    assert (
+        client._resolve_position_idx(instrument_id, OrderSide.BUY, False, 2)
+        == nautilus_pyo3.BybitPositionIdx.SELL_HEDGE
+    )
+
+
+def test_resolve_position_idx_returns_none_when_unconfigured(exec_client_builder, monkeypatch):
+    instrument_id = InstrumentId(Symbol("LTCUSDT-LINEAR"), BYBIT_VENUE)
+    client, *_ = exec_client_builder(monkeypatch)
+
+    assert client._resolve_position_idx(instrument_id, OrderSide.BUY, False, None) is None
+
+
+def test_resolve_position_idx_returns_none_when_symbol_not_in_map(
+    exec_client_builder,
+    monkeypatch,
+):
+    instrument_id = InstrumentId(Symbol("LTCUSDT-LINEAR"), BYBIT_VENUE)
+    client, *_ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "position_mode": {
+                "ETHUSDT-LINEAR": nautilus_pyo3.BybitPositionMode.BOTH_SIDES,
+            },
+        },
+    )
+
+    assert client._resolve_position_idx(instrument_id, OrderSide.BUY, False, None) is None
+
+
+@pytest.mark.parametrize("symbol", ["BTCUSDT-SPOT", "BTC-30JUN25-100000-C-OPTION"])
+def test_resolve_position_idx_returns_none_for_non_derivative_products(
+    exec_client_builder,
+    monkeypatch,
+    symbol,
+):
+    instrument_id = InstrumentId(Symbol(symbol), BYBIT_VENUE)
+    client, *_ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={
+            "position_mode": {
+                symbol: nautilus_pyo3.BybitPositionMode.MERGED_SINGLE,
+            },
+        },
+    )
+
+    # Manual override must also be ignored for non-derivative products.
+    assert client._resolve_position_idx(instrument_id, OrderSide.BUY, False, None) is None
+    assert client._resolve_position_idx(instrument_id, OrderSide.BUY, False, 1) is None
+
+
 @pytest.mark.asyncio
 async def test_submit_order_with_tp_sl_in_demo_mode_emits_order_denied(
     exec_client_builder,

@@ -17,7 +17,10 @@
 
 use pyo3::prelude::*;
 
-use crate::common::consts::{info_url, ws_url};
+use crate::common::{
+    consts::{info_url, ws_url},
+    enums::HyperliquidEnvironment,
+};
 
 /// Get the HTTP base URL for Hyperliquid API (info endpoint).
 ///
@@ -27,8 +30,8 @@ use crate::common::consts::{info_url, ws_url};
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.hyperliquid")]
 #[pyo3(name = "get_hyperliquid_http_base_url")]
-pub fn py_get_hyperliquid_http_base_url(is_testnet: bool) -> String {
-    info_url(is_testnet).to_string()
+pub fn py_get_hyperliquid_http_base_url(environment: HyperliquidEnvironment) -> String {
+    info_url(environment).to_string()
 }
 
 /// Get the WebSocket URL for Hyperliquid API.
@@ -39,6 +42,6 @@ pub fn py_get_hyperliquid_http_base_url(is_testnet: bool) -> String {
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.hyperliquid")]
 #[pyo3(name = "get_hyperliquid_ws_url")]
-pub fn py_get_hyperliquid_ws_url(is_testnet: bool) -> String {
-    ws_url(is_testnet).to_string()
+pub fn py_get_hyperliquid_ws_url(environment: HyperliquidEnvironment) -> String {
+    ws_url(environment).to_string()
 }

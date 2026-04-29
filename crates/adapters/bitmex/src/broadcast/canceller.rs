@@ -51,7 +51,10 @@ use nautilus_model::{
 };
 use tokio::{sync::RwLock, task::JoinHandle, time::interval};
 
-use crate::{common::consts::BITMEX_HTTP_TESTNET_URL, http::client::BitmexHttpClient};
+use crate::{
+    common::{consts::BITMEX_HTTP_TESTNET_URL, enums::BitmexEnvironment},
+    http::client::BitmexHttpClient,
+};
 
 const IDEMPOTENT_ALREADY_CANCELED: &str = "AlreadyCanceled";
 const IDEMPOTENT_ORDER_NOT_FOUND: &str = "orderID not found";
@@ -165,8 +168,8 @@ pub struct CancelBroadcasterConfig {
     pub api_secret: Option<String>,
     /// Base URL for BitMEX HTTP API.
     pub base_url: Option<String>,
-    /// If connecting to BitMEX testnet.
-    pub testnet: bool,
+    /// BitMEX environment (mainnet or testnet).
+    pub environment: BitmexEnvironment,
     /// Timeout in seconds for HTTP requests.
     pub timeout_secs: u64,
     /// Maximum number of retry attempts for failed requests.
@@ -204,7 +207,7 @@ impl Default for CancelBroadcasterConfig {
             api_key: None,
             api_secret: None,
             base_url: None,
-            testnet: false,
+            environment: BitmexEnvironment::Mainnet,
             timeout_secs: 60,
             max_retries: 3,
             retry_delay_ms: 1_000,
@@ -364,11 +367,11 @@ impl CancelBroadcaster {
     pub fn new(config: CancelBroadcasterConfig) -> anyhow::Result<Self> {
         let mut transports = Vec::with_capacity(config.pool_size);
 
-        // Synthesize base_url when testnet is true but base_url is None
-        let base_url = if config.testnet && config.base_url.is_none() {
-            Some(BITMEX_HTTP_TESTNET_URL.to_string())
-        } else {
-            config.base_url.clone()
+        let base_url = match config.environment {
+            BitmexEnvironment::Testnet if config.base_url.is_none() => {
+                Some(BITMEX_HTTP_TESTNET_URL.to_string())
+            }
+            _ => config.base_url.clone(),
         };
 
         for i in 0..config.pool_size {
@@ -628,6 +631,7 @@ impl CancelBroadcaster {
         }
 
         let mut handles = Vec::new();
+
         for transport in healthy_transports {
             let handle = get_runtime().spawn(async move {
                 let client_id = transport.client_id.clone();
@@ -726,6 +730,7 @@ impl CancelBroadcaster {
         }
 
         let mut handles = Vec::new();
+
         for transport in healthy_transports {
             let handle = get_runtime().spawn(async move {
                 let client_id = transport.client_id.clone();
@@ -867,7 +872,7 @@ mod tests {
 
     /// Mock executor for testing.
     #[derive(Clone)]
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     struct MockExecutor {
         handler: Arc<
             dyn Fn(
@@ -1297,8 +1302,8 @@ mod tests {
             pool_size: 1,
             api_key: Some("test_key".to_string()),
             api_secret: Some("test_secret".to_string()),
-            base_url: None, // Not specified
-            testnet: true,  // But testnet is true
+            base_url: None,
+            environment: BitmexEnvironment::Testnet,
             timeout_secs: 5,
             max_retries: 3,
             retry_delay_ms: 1_000,

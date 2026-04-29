@@ -38,6 +38,7 @@ pub struct CrossedTick {
 
 impl CrossedTick {
     /// Creates a new tick crossing snapshot.
+    #[must_use]
     pub fn new(tick: i32, zero_for_one: bool, fee_growth_0: U256, fee_growth_1: U256) -> Self {
         Self {
             tick,
@@ -81,7 +82,7 @@ pub struct PoolTick {
 
 impl PoolTick {
     /// Minimum valid tick value for Uniswap V3 pools.
-    pub const MIN_TICK: i32 = -887272;
+    pub const MIN_TICK: i32 = -887_272;
     /// Maximum valid tick value for Uniswap V3 pools.
     pub const MAX_TICK: i32 = -Self::MIN_TICK;
 
@@ -109,6 +110,7 @@ impl PoolTick {
     }
 
     /// Creates a tick with default values for a given tick value.
+    #[must_use]
     pub fn from_tick(tick: i32) -> Self {
         Self::new(tick, 0, 0, U256::ZERO, U256::ZERO, false, 0)
     }
@@ -151,12 +153,14 @@ impl PoolTick {
     }
 
     /// Gets maximum valid tick for given spacing.
+    #[must_use]
     pub fn get_max_tick(tick_spacing: i32) -> i32 {
         // Find the largest tick that is divisible by tick_spacing and <= MAX_TICK
         (Self::MAX_TICK / tick_spacing) * tick_spacing
     }
 
     /// Gets minimum valid tick for given spacing.
+    #[must_use]
     pub fn get_min_tick(tick_spacing: i32) -> i32 {
         // Find the smallest tick that is divisible by tick_spacing and >= MIN_TICK
         (Self::MIN_TICK / tick_spacing) * tick_spacing
@@ -223,23 +227,23 @@ mod tests {
 
         // Tick spacing 1 (0.01% fee tier)
         let max_tick_1 = PoolTick::get_max_tick(1);
-        assert_eq!(max_tick_1, 887272); // Should be exactly MAX_TICK since it's divisible by 1
+        assert_eq!(max_tick_1, 887_272); // Should be exactly MAX_TICK since it's divisible by 1
 
         // Tick spacing 10 (0.05% fee tier)
         let max_tick_10 = PoolTick::get_max_tick(10);
-        assert_eq!(max_tick_10, 887270); // 887272 / 10 * 10 = 887270
+        assert_eq!(max_tick_10, 887_270); // 887272 / 10 * 10 = 887270
         assert_eq!(max_tick_10 % 10, 0);
         assert!(max_tick_10 <= PoolTick::MAX_TICK);
 
         // Tick spacing 60 (0.3% fee tier)
         let max_tick_60 = PoolTick::get_max_tick(60);
-        assert_eq!(max_tick_60, 887220); // 887272 / 60 * 60 = 887220
+        assert_eq!(max_tick_60, 887_220); // 887272 / 60 * 60 = 887220
         assert_eq!(max_tick_60 % 60, 0);
         assert!(max_tick_60 <= PoolTick::MAX_TICK);
 
         // Tick spacing 200 (1% fee tier)
         let max_tick_200 = PoolTick::get_max_tick(200);
-        assert_eq!(max_tick_200, 887200); // 887272 / 200 * 200 = 887200
+        assert_eq!(max_tick_200, 887_200); // 887272 / 200 * 200 = 887200
         assert_eq!(max_tick_200 % 200, 0);
         assert!(max_tick_200 <= PoolTick::MAX_TICK);
     }
@@ -250,23 +254,23 @@ mod tests {
 
         // Tick spacing 1 (0.01% fee tier)
         let min_tick_1 = PoolTick::get_min_tick(1);
-        assert_eq!(min_tick_1, -887272); // Should be exactly MIN_TICK since it's divisible by 1
+        assert_eq!(min_tick_1, -887_272); // Should be exactly MIN_TICK since it's divisible by 1
 
         // Tick spacing 10 (0.05% fee tier)
         let min_tick_10 = PoolTick::get_min_tick(10);
-        assert_eq!(min_tick_10, -887270); // -887272 / 10 * 10 = -887270
+        assert_eq!(min_tick_10, -887_270); // -887272 / 10 * 10 = -887270
         assert_eq!(min_tick_10 % 10, 0);
         assert!(min_tick_10 >= PoolTick::MIN_TICK);
 
         // Tick spacing 60 (0.3% fee tier)
         let min_tick_60 = PoolTick::get_min_tick(60);
-        assert_eq!(min_tick_60, -887220); // -887272 / 60 * 60 = -887220
+        assert_eq!(min_tick_60, -887_220); // -887272 / 60 * 60 = -887220
         assert_eq!(min_tick_60 % 60, 0);
         assert!(min_tick_60 >= PoolTick::MIN_TICK);
 
         // Tick spacing 200 (1% fee tier)
         let min_tick_200 = PoolTick::get_min_tick(200);
-        assert_eq!(min_tick_200, -887200); // -887272 / 200 * 200 = -887200
+        assert_eq!(min_tick_200, -887_200); // -887272 / 200 * 200 = -887200
         assert_eq!(min_tick_200 % 200, 0);
         assert!(min_tick_200 >= PoolTick::MIN_TICK);
     }

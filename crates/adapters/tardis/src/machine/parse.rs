@@ -28,7 +28,6 @@ use nautilus_model::{
     identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
-use uuid::Uuid;
 
 use super::{
     message::{
@@ -37,7 +36,9 @@ use super::{
     types::TardisInstrumentMiniInfo,
 };
 use crate::{
-    common::parse::{normalize_amount, parse_aggressor_side, parse_bar_spec, parse_book_action},
+    common::parse::{
+        derive_trade_id, normalize_amount, parse_aggressor_side, parse_bar_spec, parse_book_action,
+    },
     config::BookSnapshotOutput,
 };
 
@@ -69,7 +70,7 @@ pub fn parse_tardis_ws_message(
                 }
             }
         }
-        WsMessage::BookSnapshot(msg) => match msg.bids.len() {
+        WsMessage::BookSnapshot(msg) => match msg.depth {
             1 => {
                 match parse_book_snapshot_msg_as_quote(
                     &msg,
@@ -117,7 +118,7 @@ pub fn parse_tardis_ws_message(
         },
         WsMessage::Trade(msg) => {
             match parse_trade_msg(
-                msg,
+                &msg,
                 info.price_precision,
                 info.size_precision,
                 info.instrument_id,
@@ -289,7 +290,7 @@ pub fn parse_book_snapshot_msg_as_depth10(
 }
 
 /// Parse raw book levels into order book deltas, returning error for invalid timestamps.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 /// Parse raw book levels into order book deltas.
 ///
 /// # Errors
@@ -381,7 +382,7 @@ pub fn parse_book_msg_as_deltas(
 /// # Errors
 ///
 /// Returns an error if a non-delete action has a zero size after normalization.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn parse_book_level(
     instrument_id: InstrumentId,
     price_precision: u8,
@@ -470,7 +471,7 @@ pub fn parse_book_snapshot_msg_as_quote(
 ///
 /// Returns an error if invalid trade size is encountered.
 pub fn parse_trade_msg(
-    msg: TradeMsg,
+    msg: &TradeMsg,
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
@@ -479,9 +480,18 @@ pub fn parse_trade_msg(
     let size = Quantity::non_zero_checked(msg.amount, size_precision)
         .with_context(|| format!("Invalid trade size in message: {msg:?}"))?;
     let aggressor_side = parse_aggressor_side(&msg.side);
-    let trade_id = TradeId::new(msg.id.unwrap_or_else(|| Uuid::new_v4().to_string()));
     let ts_event = UnixNanos::from(msg.timestamp);
     let ts_init = UnixNanos::from(msg.local_timestamp);
+    let trade_id = match msg.id.as_deref() {
+        Some(id) if !id.is_empty() => TradeId::new(id),
+        _ => derive_trade_id(
+            msg.symbol,
+            ts_event.as_u64(),
+            msg.price,
+            msg.amount,
+            &msg.side,
+        ),
+    };
 
     Ok(TradeTick::new(
         instrument_id,
@@ -817,7 +827,7 @@ mod tests {
         let price_precision = 0;
         let size_precision = 0;
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
-        let trade = parse_trade_msg(msg, price_precision, size_precision, instrument_id)
+        let trade = parse_trade_msg(&msg, price_precision, size_precision, instrument_id)
             .expect("Failed to parse trade message");
 
         assert_eq!(trade.instrument_id, instrument_id);
@@ -826,6 +836,41 @@ mod tests {
         assert_eq!(trade.aggressor_side, AggressorSide::Seller);
         assert_eq!(trade.ts_event, UnixNanos::from(1571826769669000000));
         assert_eq!(trade.ts_init, UnixNanos::from(1571826769740000000));
+    }
+
+    fn build_trade_msg_without_id() -> TradeMsg {
+        let json_data = load_test_json("trade.json");
+        let mut msg: TradeMsg = serde_json::from_str(&json_data).unwrap();
+        msg.id = None;
+        msg
+    }
+
+    #[rstest]
+    fn test_parse_trade_message_derives_trade_id_when_missing() {
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+
+        let first = parse_trade_msg(&build_trade_msg_without_id(), 0, 0, instrument_id).unwrap();
+        let second = parse_trade_msg(&build_trade_msg_without_id(), 0, 0, instrument_id).unwrap();
+
+        assert_eq!(first.trade_id, second.trade_id, "derivation must be stable");
+        assert_eq!(first.trade_id.as_str().len(), 16);
+
+        let mut altered = build_trade_msg_without_id();
+        altered.price = 7997.0;
+        let altered_trade = parse_trade_msg(&altered, 0, 0, instrument_id).unwrap();
+        assert_ne!(first.trade_id, altered_trade.trade_id);
+    }
+
+    #[rstest]
+    fn test_parse_trade_message_derives_trade_id_when_empty() {
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+
+        let mut msg = build_trade_msg_without_id();
+        msg.id = Some(String::new());
+
+        let trade = parse_trade_msg(&msg, 0, 0, instrument_id).unwrap();
+        let fallback = parse_trade_msg(&build_trade_msg_without_id(), 0, 0, instrument_id).unwrap();
+        assert_eq!(trade.trade_id, fallback.trade_id);
     }
 
     #[rstest]
@@ -864,6 +909,38 @@ mod tests {
             TardisExchange::Bitmex,
             1,
             0,
+        ));
+
+        let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);
+
+        assert!(result.is_some());
+        assert!(matches!(result.unwrap(), Data::Depth10(_)));
+    }
+
+    #[rstest]
+    fn test_parse_tardis_ws_message_sparse_book_snapshot_routes_to_depth10() {
+        let json_data = r#"{
+            "type": "book_snapshot",
+            "symbol": "ETC",
+            "exchange": "hyperliquid",
+            "name": "book_snapshot_20_10s",
+            "depth": 20,
+            "interval": 10000,
+            "bids": [{"price": 20.002, "amount": 5.81}],
+            "asks": [{"price": 20.003, "amount": 162.45}, {}],
+            "timestamp": "2025-03-03T10:48:10.000Z",
+            "localTimestamp": "2025-03-03T10:48:10.596818Z"
+        }"#;
+        let msg: BookSnapshotMsg = serde_json::from_str(json_data).unwrap();
+        let ws_msg = WsMessage::BookSnapshot(msg);
+
+        let instrument_id = InstrumentId::from("ETC.HYPERLIQUID");
+        let info = Arc::new(TardisInstrumentMiniInfo::new(
+            instrument_id,
+            None,
+            TardisExchange::Hyperliquid,
+            3,
+            2,
         ));
 
         let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);

@@ -17,7 +17,7 @@
 
 use pyo3::prelude::*;
 
-use crate::common::urls;
+use crate::common::{enums::OKXEnvironment, urls};
 
 /// Returns the OKX HTTP base URL.
 #[pyfunction]
@@ -29,22 +29,22 @@ pub fn get_okx_http_base_url() -> String {
 /// Returns the OKX WebSocket URL for public data (market data).
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.okx")]
-pub fn get_okx_ws_url_public(is_demo: bool) -> String {
-    urls::get_ws_base_url_public(is_demo).to_string()
+pub fn get_okx_ws_url_public(environment: OKXEnvironment) -> String {
+    urls::get_ws_base_url_public(environment).to_string()
 }
 
 /// Returns the OKX WebSocket URL for private data (account/order management).
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.okx")]
-pub fn get_okx_ws_url_private(is_demo: bool) -> String {
-    urls::get_ws_base_url_private(is_demo).to_string()
+pub fn get_okx_ws_url_private(environment: OKXEnvironment) -> String {
+    urls::get_ws_base_url_private(environment).to_string()
 }
 
 /// Returns the OKX WebSocket URL for business data (bars/candlesticks).
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.okx")]
-pub fn get_okx_ws_url_business(is_demo: bool) -> String {
-    urls::get_ws_base_url_business(is_demo).to_string()
+pub fn get_okx_ws_url_business(environment: OKXEnvironment) -> String {
+    urls::get_ws_base_url_business(environment).to_string()
 }
 
 /// Derives a WebSocket URL for a given channel from a base URL.

@@ -18,6 +18,7 @@
 use std::{fmt::Debug, sync::Arc};
 
 use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 
 use crate::{
     common::{enums::SignatureType, urls},
@@ -25,7 +26,7 @@ use crate::{
 };
 
 /// Configuration for the Polymarket data client.
-#[derive(bon::Builder)]
+#[derive(Debug, Clone, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -56,50 +57,22 @@ pub struct PolymarketDataClientConfig {
     /// Whether to subscribe to new market discovery events via WebSocket.
     #[builder(default)]
     pub subscribe_new_markets: bool,
+    /// Whether subscribe and request commands referencing an unknown instrument should
+    /// trigger an ad-hoc load via the instrument provider. Concurrent misses within
+    /// `auto_load_debounce_ms` are coalesced into a single batched request.
+    #[builder(default = true)]
+    pub auto_load_missing_instruments: bool,
+    /// The window (milliseconds) over which concurrent auto-load requests are batched.
+    #[builder(default = 100)]
+    pub auto_load_debounce_ms: u64,
     /// Instrument filters applied to all instruments during loading and discovery.
     #[builder(default)]
     pub filters: Vec<Arc<dyn InstrumentFilter>>,
     /// Optional filter applied to newly discovered markets before instrument emission.
     pub new_market_filter: Option<Arc<dyn InstrumentFilter>>,
-}
-
-impl Clone for PolymarketDataClientConfig {
-    fn clone(&self) -> Self {
-        Self {
-            base_url_http: self.base_url_http.clone(),
-            base_url_ws: self.base_url_ws.clone(),
-            base_url_gamma: self.base_url_gamma.clone(),
-            base_url_data_api: self.base_url_data_api.clone(),
-            http_timeout_secs: self.http_timeout_secs,
-            ws_timeout_secs: self.ws_timeout_secs,
-            ws_max_subscriptions: self.ws_max_subscriptions,
-            update_instruments_interval_mins: self.update_instruments_interval_mins,
-            subscribe_new_markets: self.subscribe_new_markets,
-            filters: self.filters.clone(),
-            new_market_filter: self.new_market_filter.clone(),
-        }
-    }
-}
-
-impl Debug for PolymarketDataClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(PolymarketDataClientConfig))
-            .field("base_url_http", &self.base_url_http)
-            .field("base_url_ws", &self.base_url_ws)
-            .field("base_url_gamma", &self.base_url_gamma)
-            .field("base_url_data_api", &self.base_url_data_api)
-            .field("http_timeout_secs", &self.http_timeout_secs)
-            .field("ws_timeout_secs", &self.ws_timeout_secs)
-            .field("ws_max_subscriptions", &self.ws_max_subscriptions)
-            .field(
-                "update_instruments_interval_mins",
-                &self.update_instruments_interval_mins,
-            )
-            .field("subscribe_new_markets", &self.subscribe_new_markets)
-            .field("filters", &self.filters)
-            .field("new_market_filter", &self.new_market_filter)
-            .finish()
-    }
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for PolymarketDataClientConfig {
@@ -144,7 +117,7 @@ impl PolymarketDataClientConfig {
 }
 
 /// Configuration for the Polymarket execution client.
-#[derive(bon::Builder)]
+#[derive(Clone, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -187,29 +160,9 @@ pub struct PolymarketExecClientConfig {
     /// Timeout waiting for WS order acknowledgment (seconds).
     #[builder(default = 5)]
     pub ack_timeout_secs: u64,
-}
-
-impl Clone for PolymarketExecClientConfig {
-    fn clone(&self) -> Self {
-        Self {
-            trader_id: self.trader_id,
-            account_id: self.account_id,
-            private_key: self.private_key.clone(),
-            api_key: self.api_key.clone(),
-            api_secret: self.api_secret.clone(),
-            passphrase: self.passphrase.clone(),
-            funder: self.funder.clone(),
-            signature_type: self.signature_type,
-            base_url_http: self.base_url_http.clone(),
-            base_url_ws: self.base_url_ws.clone(),
-            base_url_data_api: self.base_url_data_api.clone(),
-            http_timeout_secs: self.http_timeout_secs,
-            max_retries: self.max_retries,
-            retry_delay_initial_ms: self.retry_delay_initial_ms,
-            retry_delay_max_ms: self.retry_delay_max_ms,
-            ack_timeout_secs: self.ack_timeout_secs,
-        }
-    }
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Debug for PolymarketExecClientConfig {

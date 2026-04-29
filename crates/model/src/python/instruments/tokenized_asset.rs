@@ -40,7 +40,7 @@ impl TokenizedAsset {
     /// Covers tokenized equities, ETFs, commodities, and other asset classes where the
     /// underlying is represented as a base token traded against a quote currency.
     /// The `asset_class` field identifies the underlying asset type.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (instrument_id, raw_symbol, asset_class, base_currency, quote_currency, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, isin=None, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, info=None))]
     fn py_new(
@@ -274,6 +274,7 @@ impl TokenizedAsset {
     fn py_info(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         if let Some(ref info_map) = self.info {
             let py_dict = PyDict::new(py);
+
             for (key, value) in info_map {
                 let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
                 let py_value =
@@ -317,6 +318,7 @@ impl TokenizedAsset {
 
         if let Some(ref info_map) = self.info {
             let info_dict = PyDict::new(py);
+
             for (key, value) in info_map {
                 let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
                 let py_value =
@@ -333,26 +335,32 @@ impl TokenizedAsset {
             Some(value) => dict.set_item("lot_size", value.to_string())?,
             None => dict.set_item("lot_size", py.None())?,
         }
+
         match self.max_quantity {
             Some(value) => dict.set_item("max_quantity", value.to_string())?,
             None => dict.set_item("max_quantity", py.None())?,
         }
+
         match self.min_quantity {
             Some(value) => dict.set_item("min_quantity", value.to_string())?,
             None => dict.set_item("min_quantity", py.None())?,
         }
+
         match self.max_notional {
             Some(value) => dict.set_item("max_notional", value.to_string())?,
             None => dict.set_item("max_notional", py.None())?,
         }
+
         match self.min_notional {
             Some(value) => dict.set_item("min_notional", value.to_string())?,
             None => dict.set_item("min_notional", py.None())?,
         }
+
         match self.max_price {
             Some(value) => dict.set_item("max_price", value.to_string())?,
             None => dict.set_item("max_price", py.None())?,
         }
+
         match self.min_price {
             Some(value) => dict.set_item("min_price", value.to_string())?,
             None => dict.set_item("min_price", py.None())?,

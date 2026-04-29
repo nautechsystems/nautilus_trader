@@ -175,11 +175,12 @@ For persistent issues, drop cached state or flatten accounts before restarting.
 
 ### Reconciliation invariants
 
-The reconciliation system maintains three invariants:
+The reconciliation system maintains four invariants:
 
 1. **Position quantity**: the final quantity matches the venue within instrument precision.
 2. **Average entry price**: the position's average entry price matches the venue's reported price within tolerance (default 0.01%).
 3. **PnL integrity**: all generated fills, including synthetic fills, use calculated prices that preserve correct unrealized PnL.
+4. **ID determinism**: synthetic `trade_id` and `venue_order_id` values emitted during reconciliation are deterministic functions of the logical event. The same logical fill or position-adjustment order produces the same ID across restarts, so replayed reconciliation events dedupe against earlier runs instead of being treated as new.
 
 These hold even when:
 

@@ -17,7 +17,10 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     Params, UnixNanos,
-    correctness::{FAILED, check_equal_u8, check_valid_string_ascii_optional},
+    correctness::{
+        CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8,
+        check_valid_string_ascii_optional,
+    },
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -94,7 +97,7 @@ impl Equity {
     /// # Errors
     ///
     /// Returns an error if any input validation fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new_checked(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -114,7 +117,7 @@ impl Equity {
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> CorrectnessResult<Self> {
         check_valid_string_ascii_optional(isin.map(|u| u.as_str()), stringify!(isin))?;
         check_equal_u8(
             price_precision,
@@ -151,7 +154,8 @@ impl Equity {
     /// # Panics
     ///
     /// Panics if any parameter is invalid (see `new_checked`).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -192,7 +196,7 @@ impl Equity {
             ts_event,
             ts_init,
         )
-        .expect(FAILED)
+        .expect_display(FAILED)
     }
 }
 

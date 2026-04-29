@@ -34,6 +34,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.nautilus_pyo3 import DeribitEnvironment
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import TraderId
@@ -66,6 +67,7 @@ class OptionChainTester(Actor):
         # Filter out already-expired options
         now_ns = self.clock.timestamp_ns()
         options = []
+
         for inst in instruments:
             if str(inst.id.venue) != DERIBIT:
                 continue
@@ -184,8 +186,7 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         DERIBIT: DeribitDataClientConfig(
-            api_key=None,
-            api_secret=None,
+            environment=DeribitEnvironment.MAINNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },

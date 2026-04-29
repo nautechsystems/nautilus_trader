@@ -21,7 +21,7 @@
 //! • `chain`    – Blockchain networks supported by Nautilus (Ethereum, Arbitrum, …).
 //! • `token`    – ERC-20 and other fungible token metadata.
 //! • `dex`      – DEX protocol definitions (Uniswap V3, PancakeSwap, …).
-//! • `data`     – Domain events & state snapshots that flow through the system (Block, PoolSwap).
+//! • `data`     – Domain events & state snapshots that flow through the system (Block, `PoolSwap`).
 //! • `types`    – Numeric value types (Money, Quantity, Price) shared across the DeFi layer.
 //! • `rpc`      – Lightweight JSON-RPC helpers used by on-chain adapters.
 

@@ -29,6 +29,7 @@ use crate::{
         QuoteTick,
         greeks::{HasGreeks, OptionGreekValues},
     },
+    enums::GreeksConvention,
     identifiers::{InstrumentId, OptionSeriesId},
     types::Price,
 };
@@ -142,6 +143,8 @@ impl StrikeRange {
 pub struct OptionGreeks {
     /// The instrument ID these Greeks apply to.
     pub instrument_id: InstrumentId,
+    /// The numeraire convention these Greeks are expressed in.
+    pub convention: GreeksConvention,
     /// Core Greek sensitivity values.
     pub greeks: OptionGreekValues,
     /// Mark implied volatility.
@@ -183,6 +186,7 @@ impl Default for OptionGreeks {
     fn default() -> Self {
         Self {
             instrument_id: InstrumentId::from("NULL.NULL"),
+            convention: GreeksConvention::default(),
             greeks: OptionGreekValues::default(),
             mark_iv: None,
             bid_iv: None,
@@ -199,8 +203,14 @@ impl Display for OptionGreeks {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "OptionGreeks({}, delta={:.4}, gamma={:.4}, vega={:.4}, theta={:.4}, mark_iv={:?})",
-            self.instrument_id, self.delta, self.gamma, self.vega, self.theta, self.mark_iv
+            "OptionGreeks({}, {}, delta={:.4}, gamma={:.4}, vega={:.4}, theta={:.4}, mark_iv={:?})",
+            self.instrument_id,
+            self.convention,
+            self.delta,
+            self.gamma,
+            self.vega,
+            self.theta,
+            self.mark_iv
         )
     }
 }
@@ -420,6 +430,7 @@ mod tests {
     fn test_option_greeks_default_fields() {
         let greeks = OptionGreeks {
             instrument_id: InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
+            convention: GreeksConvention::BlackScholes,
             greeks: OptionGreekValues::default(),
             mark_iv: None,
             bid_iv: None,
@@ -434,12 +445,20 @@ mod tests {
         assert_eq!(greeks.vega, 0.0);
         assert_eq!(greeks.theta, 0.0);
         assert!(greeks.mark_iv.is_none());
+        assert_eq!(greeks.convention, GreeksConvention::BlackScholes);
+    }
+
+    #[rstest]
+    fn test_option_greeks_default_is_black_scholes() {
+        let greeks = OptionGreeks::default();
+        assert_eq!(greeks.convention, GreeksConvention::BlackScholes);
     }
 
     #[rstest]
     fn test_option_greeks_display() {
         let greeks = OptionGreeks {
             instrument_id: InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
+            convention: GreeksConvention::PriceAdjusted,
             greeks: OptionGreekValues {
                 delta: 0.55,
                 gamma: 0.001,
@@ -457,6 +476,7 @@ mod tests {
         };
         let display = format!("{greeks}");
         assert!(display.contains("OptionGreeks"));
+        assert!(display.contains("PRICE_ADJUSTED"));
         assert!(display.contains("0.55"));
     }
 

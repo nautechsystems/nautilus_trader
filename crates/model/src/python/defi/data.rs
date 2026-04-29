@@ -39,6 +39,31 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Block {
+    /// Represents an Ethereum-compatible blockchain block with essential metadata.
+    #[new]
+    #[expect(clippy::too_many_arguments)]
+    fn py_new(
+        chain: Blockchain,
+        hash: String,
+        parent_hash: String,
+        number: u64,
+        miner: String,
+        gas_limit: u64,
+        gas_used: u64,
+        timestamp: u64,
+    ) -> Self {
+        Self::new(
+            hash,
+            parent_hash,
+            number,
+            miner.into(),
+            gas_limit,
+            gas_used,
+            timestamp.into(),
+            Some(chain),
+        )
+    }
+
     /// Returns the blockchain for this block.
     #[getter]
     #[pyo3(name = "chain")]
@@ -148,7 +173,7 @@ impl PoolSwap {
     /// optionally includes computed market-oriented trade information. It serves as
     /// the primary data structure for tracking and analyzing DEX swap activity.
     #[new]
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         dex: Dex,
@@ -289,7 +314,7 @@ impl PoolSwap {
 impl PoolLiquidityUpdate {
     /// Represents a liquidity update event in a decentralized exchange (DEX) pool.
     #[new]
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         dex: Dex,
@@ -477,7 +502,7 @@ impl PoolLiquidityUpdate {
 impl PoolFeeCollect {
     /// Represents a fee collection event in a decentralized exchange (DEX) pool.
     #[new]
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         dex: Dex,
@@ -640,7 +665,7 @@ impl PoolFlash {
     /// within the same transaction. Fees are paid on the borrowed amount, which are added to
     /// the pool's fee growth accumulators.
     #[new]
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         dex: Dex,
@@ -804,7 +829,7 @@ impl PoolFlash {
 impl Transaction {
     /// Represents a transaction on an EVM based blockchain.
     #[new]
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         hash: String,

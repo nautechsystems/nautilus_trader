@@ -17,18 +17,28 @@ import pytest
 
 from nautilus_trader.common import Cache
 from nautilus_trader.common import FifoCache
+from nautilus_trader.core import UUID4
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import AggregationSource
 from nautilus_trader.model import BarType
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import Currency
 from nautilus_trader.model import ExecAlgorithmId
+from nautilus_trader.model import LiquiditySide
+from nautilus_trader.model import Money
+from nautilus_trader.model import OrderFilled
 from nautilus_trader.model import OrderListId
 from nautilus_trader.model import OrderSide
+from nautilus_trader.model import OrderType
+from nautilus_trader.model import Position
 from nautilus_trader.model import PositionId
 from nautilus_trader.model import PositionSide
+from nautilus_trader.model import Price
 from nautilus_trader.model import PriceType
+from nautilus_trader.model import Quantity
 from nautilus_trader.model import StrategyId
+from nautilus_trader.model import TradeId
+from nautilus_trader.model import TraderId
 from nautilus_trader.model import Venue
 from nautilus_trader.model import VenueOrderId
 from tests.providers import TestInstrumentProvider
@@ -135,6 +145,9 @@ CACHE_LIST_CASES = [
     ("position_ids", (VENUE, INSTRUMENT_ID, STRATEGY_ID, ACCOUNT_ID)),
     ("position_open_ids", ()),
     ("position_open_ids", (VENUE, INSTRUMENT_ID, STRATEGY_ID, ACCOUNT_ID)),
+    ("position_snapshots", ()),
+    ("position_snapshots", (POSITION_ID,)),
+    ("position_snapshots", (POSITION_ID, ACCOUNT_ID)),
     ("positions", ()),
     ("positions", (VENUE, INSTRUMENT_ID, STRATEGY_ID, ACCOUNT_ID, POSITION_SIDE)),
     ("positions_closed", ()),
@@ -261,3 +274,80 @@ def test_cache_add_get_reset_and_dispose():
     assert cache.get("key") is None
 
     cache.dispose()
+
+
+def _make_position(position_id: str = "P-SNAP-1", account_id: str = "SIM-000") -> Position:
+    fill = OrderFilled(
+        trader_id=TraderId("TESTER-001"),
+        strategy_id=StrategyId("S-001"),
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=ClientOrderId("O-SNAP-1"),
+        venue_order_id=VenueOrderId("VO-SNAP-1"),
+        account_id=AccountId(account_id),
+        trade_id=TradeId("T-SNAP-1"),
+        order_side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        last_qty=Quantity.from_int(100_000),
+        last_px=Price.from_str("1.00000"),
+        currency=AUDUSD_SIM.quote_currency,
+        liquidity_side=LiquiditySide.TAKER,
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+        reconciliation=False,
+        position_id=PositionId(position_id),
+        commission=Money.from_str("2.00 USD"),
+    )
+    return Position(instrument=AUDUSD_SIM, fill=fill)
+
+
+def test_cache_position_snapshots_round_trip():
+    cache = Cache()
+    position = _make_position()
+
+    cache.snapshot_position(position)
+    cache.snapshot_position(position)
+    cache.snapshot_position(position)
+
+    # Each call produces a distinct frame, not a concatenated blob
+    frames = cache.position_snapshot_bytes(position.id)
+    assert frames is not None
+    assert len(frames) == 3
+    for frame in frames:
+        assert isinstance(frame, bytes)
+        assert frame.startswith(b"{")
+        assert frame.endswith(b"}")
+
+    # All three snapshots deserialize back to Position objects
+    snapshots = cache.position_snapshots(position.id)
+    assert len(snapshots) == 3
+    source_account_id = position.to_dict()["account_id"]
+
+    for snapshot in snapshots:
+        assert isinstance(snapshot, Position)
+        assert snapshot.instrument_id == position.instrument_id
+        assert snapshot.to_dict()["account_id"] == source_account_id
+        # Snapshot IDs are derived from the source id with a UUID suffix
+        assert str(snapshot.id).startswith(f"{position.id}-")
+        assert snapshot.id != position.id
+
+    assert len({str(s.id) for s in snapshots}) == 3
+
+
+def test_cache_position_snapshots_account_filter():
+    cache = Cache()
+    sim_position = _make_position(position_id="P-SIM", account_id="SIM-000")
+    other_position = _make_position(position_id="P-OTHER", account_id="OTHER-000")
+
+    cache.snapshot_position(sim_position)
+    cache.snapshot_position(other_position)
+
+    all_snapshots = cache.position_snapshots()
+    assert len(all_snapshots) == 2
+
+    sim_only = cache.position_snapshots(None, AccountId("SIM-000"))
+    assert len(sim_only) == 1
+    assert sim_only[0].to_dict()["account_id"] == "SIM-000"
+
+    missing = cache.position_snapshots(None, AccountId("MISSING-000"))
+    assert missing == []

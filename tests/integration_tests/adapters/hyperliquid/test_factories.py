@@ -56,11 +56,11 @@ class TestHyperliquidDataClientConfig:
     def test_proxy_config(self):
         # Arrange & Act
         config = HyperliquidDataClientConfig(
-            http_proxy_url="http://proxy:8080",
+            proxy_url="http://proxy:8080",
         )
 
         # Assert
-        assert config.http_proxy_url == "http://proxy:8080"
+        assert config.proxy_url == "http://proxy:8080"
 
     def test_with_product_types(self):
         # Arrange & Act

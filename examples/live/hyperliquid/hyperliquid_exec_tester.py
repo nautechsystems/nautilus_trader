@@ -26,6 +26,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.core.nautilus_pyo3 import HyperliquidEnvironment
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
@@ -103,14 +104,18 @@ config_node = TradingNodeConfig(
     # ),
     data_clients={
         HYPERLIQUID: HyperliquidDataClientConfig(
+            environment=HyperliquidEnvironment.TESTNET
+            if testnet
+            else HyperliquidEnvironment.MAINNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             testnet=testnet,
         ),
     },
     exec_clients={
         HYPERLIQUID: HyperliquidExecClientConfig(
-            private_key=None,  # Loaded from env var based on testnet setting
-            vault_address=None,  # Optional, loaded from env var
+            environment=HyperliquidEnvironment.TESTNET
+            if testnet
+            else HyperliquidEnvironment.MAINNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             testnet=testnet,
             normalize_prices=True,  # Rounds prices to 5 significant figures (required for HL)

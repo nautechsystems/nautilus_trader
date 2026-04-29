@@ -21,16 +21,20 @@
 //! - For mainnet: `DERIBIT_API_KEY` and `DERIBIT_API_SECRET`
 //! - For testnet: `DERIBIT_TESTNET_API_KEY` and `DERIBIT_TESTNET_API_SECRET`
 
-use nautilus_deribit::http::client::DeribitHttpClient;
+use nautilus_deribit::{common::enums::DeribitEnvironment, http::client::DeribitHttpClient};
 use nautilus_model::identifiers::AccountId;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
-    let is_testnet = !std::env::args().any(|x| x == "--mainnet");
+    let environment = if std::env::args().any(|x| x == "--mainnet") {
+        DeribitEnvironment::Mainnet
+    } else {
+        DeribitEnvironment::Testnet
+    };
     let client =
-        DeribitHttpClient::new_with_env(None, None, None, is_testnet, 30, 3, 1000, 10_000, None)?;
+        DeribitHttpClient::new_with_env(None, None, None, environment, 30, 3, 1000, 10_000, None)?;
 
     let account_id = AccountId::from("DERIBIT-001");
 

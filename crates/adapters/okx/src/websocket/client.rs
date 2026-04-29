@@ -38,10 +38,10 @@ use dashmap::DashMap;
 use futures_util::Stream;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{
-    AtomicMap, AtomicSet,
+    AtomicMap,
     consts::NAUTILUS_USER_AGENT,
     env::{get_env_var, get_or_env_var},
-    string::REDACTED,
+    string::secret::REDACTED,
 };
 use nautilus_model::{
     data::BarType,
@@ -56,7 +56,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     websocket::{
         AUTHENTICATION_TIMEOUT_SECS, AuthTracker, PingHandler, SubscriptionState, TEXT_PING,
-        WebSocketClient, WebSocketConfig, channel_message_handler,
+        TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
 use serde_json::Value;
@@ -82,8 +82,9 @@ use crate::common::{
     },
     credential::Credential,
     enums::{
-        OKXInstrumentType, OKXOrderType, OKXPositionSide, OKXTargetCurrency, OKXTradeMode,
-        OKXTriggerType, OKXVipLevel, conditional_order_to_algo_type, is_conditional_order,
+        OKXGreeksType, OKXInstrumentType, OKXOrderType, OKXPositionSide, OKXTargetCurrency,
+        OKXTradeMode, OKXTriggerType, OKXVipLevel, conditional_order_to_algo_type,
+        is_conditional_order,
     },
     parse::{
         bar_spec_as_okx_channel, okx_instrument_type, okx_instrument_type_from_symbol,
@@ -185,13 +186,40 @@ pub struct OKXWebSocketClient {
     pub(crate) pending_orders: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_cancels: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_amends: Arc<DashMap<String, PendingOrderInfo>>,
-    option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
+    option_greeks_subs: Arc<AtomicMap<InstrumentId, AHashSet<OKXGreeksType>>>,
+    /// Per-base-pair refcount for the `index-tickers` channel. Multiple
+    /// instruments commonly share one base pair (e.g. `BTC-USDT-SWAP` and
+    /// `BTC-USDT-240628` both depend on `BTC-USDT`), so the venue
+    /// (un)subscribe must only fire on the 0↔1 transitions. Without this
+    /// refcount, a Python caller unsubscribing one instrument would tear
+    /// down the channel for every other subscriber on the same pair.
+    index_pair_subscribers: Arc<DashMap<Ustr, usize>>,
+    /// Serializes index-tickers transitions so a concurrent
+    /// subscribe/unsubscribe pair on the same base pair cannot interleave
+    /// the refcount check with the venue send and leave the channel
+    /// unsubscribed while the local count says it is live.
+    index_pair_transition: Arc<tokio::sync::Mutex<()>>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    transport_backend: TransportBackend,
+    /// Optional proxy URL for the WebSocket transport.
+    proxy_url: Option<String>,
     cancellation_token: CancellationToken,
 }
 
 impl Default for OKXWebSocketClient {
     fn default() -> Self {
-        Self::new(None, None, None, None, None, None, None).unwrap()
+        Self::new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            TransportBackend::default(),
+            None,
+        )
+        .unwrap()
     }
 }
 
@@ -211,6 +239,7 @@ impl OKXWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the request fails.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         url: Option<String>,
         api_key: Option<String>,
@@ -219,6 +248,8 @@ impl OKXWebSocketClient {
         account_id: Option<AccountId>,
         heartbeat: Option<u64>,
         auth_timeout_secs: Option<u64>,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let url = url.unwrap_or(OKX_WS_PUBLIC_URL.to_string());
         let account_id = account_id.unwrap_or(AccountId::from("OKX-master"));
@@ -270,7 +301,11 @@ impl OKXWebSocketClient {
             pending_orders: Arc::new(DashMap::new()),
             pending_cancels: Arc::new(DashMap::new()),
             pending_amends: Arc::new(DashMap::new()),
-            option_greeks_subs: Arc::new(AtomicSet::new()),
+            option_greeks_subs: Arc::new(AtomicMap::new()),
+            index_pair_subscribers: Arc::new(DashMap::new()),
+            index_pair_transition: Arc::new(tokio::sync::Mutex::new(())),
+            transport_backend,
+            proxy_url,
             cancellation_token: CancellationToken::new(),
         })
     }
@@ -281,6 +316,7 @@ impl OKXWebSocketClient {
     ///
     /// Returns an error if credential values cannot be loaded or if the
     /// client fails to initialize.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_credentials(
         url: Option<String>,
         api_key: Option<String>,
@@ -289,6 +325,8 @@ impl OKXWebSocketClient {
         account_id: Option<AccountId>,
         heartbeat: Option<u64>,
         auth_timeout_secs: Option<u64>,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let url = url.unwrap_or(OKX_WS_PUBLIC_URL.to_string());
         let api_key = get_or_env_var(api_key, "OKX_API_KEY")?;
@@ -303,6 +341,8 @@ impl OKXWebSocketClient {
             account_id,
             heartbeat,
             auth_timeout_secs,
+            transport_backend,
+            proxy_url,
         )
     }
 
@@ -325,6 +365,8 @@ impl OKXWebSocketClient {
             Some(api_passphrase),
             None,
             None,
+            None,
+            TransportBackend::default(),
             None,
         )
     }
@@ -454,9 +496,11 @@ impl OKXWebSocketClient {
             // Handler responds to pings internally via select! loop
         });
 
+        let headers = vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())];
+
         let config = WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
+            headers,
             heartbeat: self.heartbeat,
             heartbeat_msg: Some(TEXT_PING.to_string()),
             reconnect_timeout_ms: Some(5_000),
@@ -466,6 +510,8 @@ impl OKXWebSocketClient {
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
 
         let keyed_quotas = vec![
@@ -610,6 +656,7 @@ impl OKXWebSocketClient {
                             let confirmed_topics_vec: Vec<String> = {
                                 let confirmed = subscriptions_state.confirmed();
                                 let mut topics = Vec::new();
+
                                 for entry in confirmed.iter() {
                                     let channel = entry.key();
                                     for symbol in entry.value() {
@@ -865,6 +912,11 @@ impl OKXWebSocketClient {
             log::debug!("No stream handle to await");
         }
 
+        // Wipe per-base-pair refcounts so a subsequent reconnect can re-arm
+        // the index-tickers channel. Otherwise the stale count short-circuits
+        // every future `subscribe_index_prices` call and the feed stays dark.
+        self.index_pair_subscribers.clear();
+
         log::debug!("Close process completed");
 
         Ok(())
@@ -891,10 +943,6 @@ impl OKXWebSocketClient {
             .to_string()
     }
 
-    #[allow(
-        clippy::result_large_err,
-        reason = "OKXWsError contains large tungstenite::Error variant"
-    )]
     async fn subscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
         // Send the command first; only update local state on success
         self.cmd_tx
@@ -939,7 +987,7 @@ impl OKXWebSocketClient {
         Ok(())
     }
 
-    #[allow(clippy::collapsible_if)]
+    #[expect(clippy::collapsible_if)]
     async fn unsubscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
         // Send the command first; only update local state on success
         self.cmd_tx
@@ -1089,6 +1137,11 @@ impl OKXWebSocketClient {
         for chunk in all_args.chunks(BATCH_SIZE) {
             self.unsubscribe(chunk.to_vec()).await?;
         }
+
+        // The index-pair refcount mirrors live subscriptions; after a bulk
+        // unsubscribe the venue knows nothing, so any retained count would
+        // wedge the next `subscribe_index_prices`.
+        self.index_pair_subscribers.clear();
 
         Ok(())
     }
@@ -1363,13 +1416,49 @@ impl OKXWebSocketClient {
             .map_err(|e| OKXWsError::ClientError(e.to_string()))?;
         let base_pair = Ustr::from(&format!("{base}-{quote}"));
 
+        // Hold the transition lock across both the refcount update and the
+        // venue send so a concurrent `unsubscribe_index_prices` cannot
+        // observe a transient 0 state between our decrement and the venue
+        // unsubscribe, or vice versa. Without this, contract rolls can
+        // leave the venue unsubscribed while the local count says active.
+        let _guard = self.index_pair_transition.lock().await;
+
+        // Bump the per-base-pair refcount so a later unsubscribe can decide
+        // whether it is the last subscriber. Only the 0→1 transition fires
+        // a venue subscribe; subsequent callers piggy-back on the existing
+        // channel.
+        let is_first = {
+            let mut count = self.index_pair_subscribers.entry(base_pair).or_insert(0);
+            *count += 1;
+            *count == 1
+        };
+
+        if !is_first {
+            return Ok(());
+        }
+
         let arg = OKXSubscriptionArg {
             channel: OKXWsChannel::IndexTickers,
             inst_type: None,
             inst_family: None,
             inst_id: Some(base_pair),
         };
-        self.subscribe(vec![arg]).await
+
+        match self.subscribe(vec![arg]).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                // When the venue subscribe fails there is no live channel,
+                // even though other local callers may have piggy-backed on
+                // the in-flight attempt (they saw `!is_first` and returned
+                // `Ok`). Removing the entry entirely ensures the next
+                // caller re-enters the 0→1 branch and re-arms the venue
+                // subscription; a mere decrement would leave the map at 1+
+                // without a matching feed and every later subscribe would
+                // short-circuit into a silent no-op.
+                self.index_pair_subscribers.remove(&base_pair);
+                Err(e)
+            }
+        }
     }
 
     /// Subscribes to option summary data for an instrument family.
@@ -1394,14 +1483,34 @@ impl OKXWebSocketClient {
         self.subscribe(vec![arg]).await
     }
 
-    /// Returns a reference to the option greeks subscription set.
-    pub fn option_greeks_subs(&self) -> &Arc<AtomicSet<InstrumentId>> {
+    /// Returns a reference to the option greeks subscription map.
+    ///
+    /// The map stores the set of greeks conventions to emit for each subscribed instrument.
+    pub fn option_greeks_subs(&self) -> &Arc<AtomicMap<InstrumentId, AHashSet<OKXGreeksType>>> {
         &self.option_greeks_subs
     }
 
-    /// Adds an instrument to the option greeks subscription filter.
+    /// Adds an instrument to the option greeks subscription filter, emitting both
+    /// Black-Scholes and price-adjusted greeks.
     pub fn add_option_greeks_sub(&self, instrument_id: InstrumentId) {
-        self.option_greeks_subs.insert(instrument_id);
+        let both: AHashSet<OKXGreeksType> =
+            [OKXGreeksType::Bs, OKXGreeksType::Pa].into_iter().collect();
+        self.option_greeks_subs.insert(instrument_id, both);
+    }
+
+    /// Adds an instrument to the option greeks subscription filter with an explicit
+    /// set of greeks conventions to emit. An empty set is treated as "emit both".
+    pub fn add_option_greeks_sub_with_conventions(
+        &self,
+        instrument_id: InstrumentId,
+        conventions: AHashSet<OKXGreeksType>,
+    ) {
+        let set = if conventions.is_empty() {
+            [OKXGreeksType::Bs, OKXGreeksType::Pa].into_iter().collect()
+        } else {
+            conventions
+        };
+        self.option_greeks_subs.insert(instrument_id, set);
     }
 
     /// Removes an instrument from the option greeks subscription filter.
@@ -1564,18 +1673,54 @@ impl OKXWebSocketClient {
             .await
     }
 
-    /// Unsubscribe from index price data for an instrument.
+    /// Unsubscribe from index price data for the base pair derived from
+    /// `instrument_id`.
+    ///
+    /// Refcounting is handled internally so any caller (Rust data client,
+    /// Python wrapper, etc.) can pair every `subscribe_index_prices` with
+    /// exactly one `unsubscribe_index_prices`. The OKX `index-tickers`
+    /// channel is keyed by base pair (e.g. `BTC-USDT`), so the venue
+    /// unsubscribe only fires when the last subscriber for that pair drops.
     ///
     /// # Errors
     ///
-    /// Returns an error if the subscription request fails.
+    /// Returns an error if the unsubscription request fails.
     pub async fn unsubscribe_index_prices(
         &self,
-        _instrument_id: InstrumentId,
+        instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
-        // Don't send WS unsubscribe — other instruments may share the same
-        // base pair. Index ticker mapping is managed by the pyo3 wrapper layer.
-        Ok(())
+        let symbol = instrument_id.symbol.inner();
+        let (base, quote) = parse_base_quote_from_symbol(symbol.as_str())
+            .map_err(|e| OKXWsError::ClientError(e.to_string()))?;
+        let base_pair = Ustr::from(&format!("{base}-{quote}"));
+
+        // Serialize with any concurrent `subscribe_index_prices` on the same
+        // base pair. See the subscribe path for the race this prevents.
+        let _guard = self.index_pair_transition.lock().await;
+
+        let is_last = {
+            let Some(mut count) = self.index_pair_subscribers.get_mut(&base_pair) else {
+                // No matching subscriber recorded; nothing to do.
+                return Ok(());
+            };
+            *count = count.saturating_sub(1);
+            *count == 0
+        };
+
+        if !is_last {
+            return Ok(());
+        }
+
+        self.index_pair_subscribers
+            .remove_if(&base_pair, |_, count| *count == 0);
+
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::IndexTickers,
+            inst_type: None,
+            inst_family: None,
+            inst_id: Some(base_pair),
+        };
+        self.unsubscribe(vec![arg]).await
     }
 
     /// Unsubscribe from option summary data for an instrument family.
@@ -1946,7 +2091,7 @@ impl OKXWebSocketClient {
     ///
     /// - Regular orders: <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-place-order>
     /// - Algo orders: <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-place-algo-order>
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_order(
         &self,
         trader_id: TraderId,
@@ -2082,14 +2227,12 @@ impl OKXWebSocketClient {
                 Some(true) => {
                     builder.tgt_ccy(OKXTargetCurrency::QuoteCcy);
                 }
-                Some(false) => {
-                    if order_side == OrderSide::Buy {
-                        // For BUY orders, must explicitly set to base_ccy to override OKX default
-                        builder.tgt_ccy(OKXTargetCurrency::BaseCcy);
-                    }
-                    // For SELL orders with quote_quantity=false, omit tgtCcy (OKX defaults to base_ccy correctly)
+                // For BUY orders, must explicitly set to base_ccy to override OKX default
+                Some(false) if order_side == OrderSide::Buy => {
+                    builder.tgt_ccy(OKXTargetCurrency::BaseCcy);
                 }
-                None => {}
+                // For SELL orders with quote_quantity=false, omit tgtCcy (OKX defaults to base_ccy correctly)
+                Some(false) | None => {}
             }
         }
 
@@ -2214,7 +2357,7 @@ impl OKXWebSocketClient {
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-amend-order>.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn modify_order(
         &self,
         trader_id: TraderId,
@@ -2311,7 +2454,6 @@ impl OKXWebSocketClient {
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-cancel-order>.
-    #[allow(clippy::too_many_arguments)]
     pub async fn cancel_order(
         &self,
         trader_id: TraderId,
@@ -2460,8 +2602,7 @@ impl OKXWebSocketClient {
     ///
     /// Returns an error if any batch order parameters are invalid or if the
     /// batch request fails to send.
-    #[allow(clippy::type_complexity)]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::type_complexity)]
     pub async fn batch_submit_orders(
         &self,
         orders: Vec<(
@@ -2480,6 +2621,7 @@ impl OKXWebSocketClient {
         )>,
     ) -> Result<(), OKXWsError> {
         let mut args: Vec<Value> = Vec::with_capacity(orders.len());
+
         for (
             inst_type,
             inst_id,
@@ -2567,8 +2709,7 @@ impl OKXWebSocketClient {
     ///
     /// Returns an error if amend parameters are invalid or if the batch request
     /// fails to send.
-    #[allow(clippy::type_complexity)]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::type_complexity)]
     pub async fn batch_modify_orders(
         &self,
         orders: Vec<(
@@ -2627,7 +2768,6 @@ impl OKXWebSocketClient {
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-batch-cancel-orders>
-    #[allow(clippy::type_complexity)]
     pub async fn batch_cancel_orders(
         &self,
         orders: Vec<(InstrumentId, Option<ClientOrderId>, Option<VenueOrderId>)>,
@@ -2674,7 +2814,7 @@ impl OKXWebSocketClient {
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-place-algo-order>
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_algo_order(
         &self,
         _trader_id: TraderId,
@@ -2900,6 +3040,62 @@ mod tests {
     }
 
     #[rstest]
+    fn test_add_option_greeks_sub_defaults_to_both_conventions() {
+        let client = OKXWebSocketClient::default();
+        let instrument_id = InstrumentId::from("BTC-USD-250328-92000-C.OKX");
+
+        client.add_option_greeks_sub(instrument_id);
+
+        let subs = client.option_greeks_subs().load();
+        let stored = subs.get(&instrument_id).expect("instrument not registered");
+        assert_eq!(stored.len(), 2);
+        assert!(stored.contains(&OKXGreeksType::Bs));
+        assert!(stored.contains(&OKXGreeksType::Pa));
+    }
+
+    #[rstest]
+    #[case::bs_only(vec![OKXGreeksType::Bs])]
+    #[case::pa_only(vec![OKXGreeksType::Pa])]
+    #[case::both(vec![OKXGreeksType::Bs, OKXGreeksType::Pa])]
+    fn test_add_option_greeks_sub_with_conventions_stores_requested_set(
+        #[case] conventions: Vec<OKXGreeksType>,
+    ) {
+        let client = OKXWebSocketClient::default();
+        let instrument_id = InstrumentId::from("BTC-USD-250328-92000-C.OKX");
+        let set: AHashSet<OKXGreeksType> = conventions.iter().copied().collect();
+
+        client.add_option_greeks_sub_with_conventions(instrument_id, set.clone());
+
+        let subs = client.option_greeks_subs().load();
+        let stored = subs.get(&instrument_id).expect("instrument not registered");
+        assert_eq!(stored, &set);
+    }
+
+    #[rstest]
+    fn test_add_option_greeks_sub_with_empty_conventions_falls_back_to_both() {
+        let client = OKXWebSocketClient::default();
+        let instrument_id = InstrumentId::from("BTC-USD-250328-92000-C.OKX");
+
+        client.add_option_greeks_sub_with_conventions(instrument_id, AHashSet::new());
+
+        let subs = client.option_greeks_subs().load();
+        let stored = subs.get(&instrument_id).expect("instrument not registered");
+        assert_eq!(stored.len(), 2);
+    }
+
+    #[rstest]
+    fn test_remove_option_greeks_sub_clears_entry() {
+        let client = OKXWebSocketClient::default();
+        let instrument_id = InstrumentId::from("BTC-USD-250328-92000-C.OKX");
+
+        client.add_option_greeks_sub(instrument_id);
+        client.remove_option_greeks_sub(&instrument_id);
+
+        let subs = client.option_greeks_subs().load();
+        assert!(!subs.contains_key(&instrument_id));
+    }
+
+    #[rstest]
     fn test_new_with_credentials() {
         let client = OKXWebSocketClient::new(
             None,
@@ -2908,6 +3104,8 @@ mod tests {
             Some("test_passphrase".to_string()),
             None,
             None,
+            None,
+            TransportBackend::default(),
             None,
         )
         .unwrap();
@@ -2924,6 +3122,8 @@ mod tests {
             Some("test_passphrase".to_string()),
             None,
             None,
+            None,
+            TransportBackend::default(),
             None,
         );
         assert!(result.is_err());
@@ -2953,8 +3153,18 @@ mod tests {
         assert!(client.is_closed());
         assert!(!client.is_active());
 
-        let client_with_heartbeat =
-            OKXWebSocketClient::new(None, None, None, None, None, Some(30), None).unwrap();
+        let client_with_heartbeat = OKXWebSocketClient::new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(30),
+            None,
+            TransportBackend::default(),
+            None,
+        )
+        .unwrap();
 
         assert!(client_with_heartbeat.heartbeat.is_some());
         assert_eq!(client_with_heartbeat.heartbeat.unwrap(), 30);
@@ -2994,6 +3204,7 @@ mod tests {
             .request_id_counter
             .load(std::sync::atomic::Ordering::SeqCst);
         let mut ids = Vec::new();
+
         for _ in 0..10 {
             let id = client
                 .request_id_counter
@@ -3028,6 +3239,8 @@ mod tests {
             None,
             Some(30), // 30 second heartbeat
             None,
+            TransportBackend::default(),
+            None,
         )
         .unwrap();
 
@@ -3035,8 +3248,18 @@ mod tests {
         assert_eq!(client_with_heartbeat.heartbeat.unwrap(), 30);
 
         let account_id = AccountId::from("test-account-123");
-        let client_with_account =
-            OKXWebSocketClient::new(None, None, None, None, Some(account_id), None, None).unwrap();
+        let client_with_account = OKXWebSocketClient::new(
+            None,
+            None,
+            None,
+            None,
+            Some(account_id),
+            None,
+            None,
+            TransportBackend::default(),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(client_with_account.account_id, account_id);
     }
@@ -3134,6 +3357,8 @@ mod tests {
             Some("test_passphrase".to_string()),
             Some(AccountId::from("test-account")),
             None,
+            None,
+            TransportBackend::default(),
             None,
         )
         .unwrap();
@@ -3258,6 +3483,8 @@ mod tests {
             None,
             None,
             None,
+            TransportBackend::default(),
+            None,
         )
         .expect("Failed to create client");
 
@@ -3288,6 +3515,8 @@ mod tests {
             None,
             None,
             None,
+            TransportBackend::default(),
+            None,
         )
         .expect("Failed to create client");
 
@@ -3313,6 +3542,8 @@ mod tests {
             None,
             None,
             None,
+            TransportBackend::default(),
+            None,
         )
         .expect("Failed to create client");
 
@@ -3337,6 +3568,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            TransportBackend::default(),
             None,
         )
         .expect("Failed to create client");
@@ -3466,6 +3699,8 @@ mod tests {
             None,
             None,
             None,
+            TransportBackend::default(),
+            None,
         )
         .expect("Failed to create client");
 
@@ -3523,6 +3758,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            TransportBackend::default(),
             None,
         )
         .expect("Failed to create client");
@@ -3590,6 +3827,8 @@ mod tests {
             None,
             None,
             None,
+            TransportBackend::default(),
+            None,
         )
         .expect("Failed to create client");
 
@@ -3642,6 +3881,8 @@ mod tests {
             Some(AccountId::new("OKX-TEST")),
             None,
             None,
+            TransportBackend::default(),
+            None,
         )
         .expect("Failed to create client");
 
@@ -3682,6 +3923,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            TransportBackend::default(),
             None,
         )
         .expect("Failed to create client");

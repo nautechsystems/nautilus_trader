@@ -261,6 +261,7 @@ impl BybitWsFeedHandler {
                             return Some(BybitWsMessage::AccountPosition(msg));
                         }
                         BybitWsFrame::Reconnected => {
+                            self.auth_tracker.invalidate();
                             return Some(BybitWsMessage::Reconnected);
                         }
                         BybitWsFrame::Unknown(value) => {
@@ -331,6 +332,16 @@ impl BybitWsFeedHandler {
 
         match resp.op {
             Some(BybitWsOperation::Subscribe) => {
+                // Duplicate subscribe is harmless: the topic is active on the
+                // venue, so confirm it instead of looping retries every reconnect.
+                if is_already_subscribed_error(error_msg)
+                    && let Some(ref req_id) = resp.req_id
+                {
+                    self.subscriptions.confirm_subscribe(req_id);
+                    log::debug!("Subscription duplicate ignored: topic={topic}, error={error_msg}");
+                    return;
+                }
+
                 if let Some(ref req_id) = resp.req_id {
                     self.subscriptions.mark_failure(req_id);
                 } else {
@@ -369,6 +380,14 @@ impl BybitWsFeedHandler {
                     }
                 };
 
+                if value
+                    .get("op")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|op| op == BybitWsOperation::Pong.as_ref())
+                {
+                    return None;
+                }
+
                 Some(parse_bybit_ws_frame(value))
             }
             Message::Binary(msg) => {
@@ -384,9 +403,16 @@ impl BybitWsFeedHandler {
     }
 }
 
+fn is_already_subscribed_error(error_msg: &str) -> bool {
+    error_msg
+        .to_ascii_lowercase()
+        .contains("already subscribed")
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
     use crate::common::{consts::BYBIT_WS_TOPIC_DELIMITER, testing::load_test_json};
@@ -599,6 +625,19 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_raw_json_pong_message() {
+        let msg = Message::Text(
+            r#"{"args":["1777226678908"],"conn_id":"yzr7jz02gws1vh60mk5m-hxqdp","op":"pong"}"#
+                .into(),
+        );
+        let result = BybitWsFeedHandler::parse_raw_frame(msg);
+        assert!(
+            result.is_none(),
+            "Expected None for JSON pong, was {result:?}"
+        );
+    }
+
+    #[rstest]
     fn test_parse_raw_valid_json() {
         let json = load_test_json("ws_public_trade.json");
         let msg = Message::Text(json.into());
@@ -702,6 +741,32 @@ mod tests {
         // Topic should still be in pending (mark_failure moves confirmed -> pending)
         let pending = handler.subscriptions.pending_subscribe_topics();
         assert!(pending.contains(&"invalid.topic.BTCUSDT".to_string()));
+    }
+
+    #[rstest]
+    fn test_already_subscribed_error_confirms_topic() {
+        let handler = create_test_handler();
+        handler.subscriptions.mark_subscribe("tickers.ETHUSDT");
+
+        let resp = BybitWsResponse {
+            op: Some(BybitWsOperation::Subscribe),
+            topic: None,
+            success: Some(false),
+            conn_id: None,
+            req_id: Some("tickers.ETHUSDT".to_string()),
+            ret_code: Some(10001),
+            ret_msg: Some("error:already subscribed,topic:tickers.ETHUSDT".to_string()),
+        };
+
+        handler.handle_subscription_error(&resp);
+
+        let pending = handler.subscriptions.pending_subscribe_topics();
+        assert!(!pending.contains(&"tickers.ETHUSDT".to_string()));
+        let symbols = handler.subscriptions.confirmed();
+        let entry = symbols
+            .get(&Ustr::from("tickers"))
+            .expect("channel present");
+        assert!(entry.contains(&Ustr::from("ETHUSDT")));
     }
 
     #[rstest]

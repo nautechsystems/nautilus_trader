@@ -300,6 +300,7 @@ impl OptionChainAggregator {
                 OptionKind::Call => &mut self.call_buffer,
                 OptionKind::Put => &mut self.put_buffer,
             };
+
             match buffer.get_mut(&strike) {
                 Some(data) => data.quote = *quote,
                 None => {
@@ -342,6 +343,7 @@ impl OptionChainAggregator {
                 OptionKind::Call => &mut self.call_buffer,
                 OptionKind::Put => &mut self.put_buffer,
             };
+
             match buffer.get_mut(&strike) {
                 Some(data) => data.greeks = Some(*greeks),
                 None => {
@@ -378,12 +380,14 @@ impl OptionChainAggregator {
 
         // Build filtered snapshot (clone from buffers)
         let mut calls = BTreeMap::new();
+
         for (strike, data) in &self.call_buffer {
             if active_strikes.contains(strike) {
                 calls.insert(*strike, data.clone());
             }
         }
         let mut puts = BTreeMap::new();
+
         for (strike, data) in &self.put_buffer {
             if active_strikes.contains(strike) {
                 puts.insert(*strike, data.clone());
@@ -497,6 +501,7 @@ impl OptionChainAggregator {
         for id in &action.add {
             self.active_ids.insert(*id);
         }
+
         for id in &action.remove {
             self.active_ids.remove(id);
         }
@@ -712,6 +717,7 @@ mod tests {
     fn make_multi_strike_aggregator() -> OptionChainAggregator {
         let strikes = [45000, 47500, 50000, 52500, 55000];
         let mut instruments = HashMap::new();
+
         for s in &strikes {
             let strike = Price::from(&s.to_string());
             let call_id = InstrumentId::from(&format!("BTC-20240101-{s}-C.DERIBIT"));
@@ -922,6 +928,7 @@ mod tests {
     fn test_hysteresis_blocks_small_movement() {
         let strikes = [47500, 50000, 52500];
         let mut instruments = HashMap::new();
+
         for s in &strikes {
             let strike = Price::from(&s.to_string());
             let call_id = InstrumentId::from(&format!("BTC-20240101-{s}-C.DERIBIT"));
@@ -956,6 +963,7 @@ mod tests {
     fn test_hysteresis_allows_large_movement() {
         let strikes = [47500, 50000, 52500];
         let mut instruments = HashMap::new();
+
         for s in &strikes {
             let strike = Price::from(&s.to_string());
             let call_id = InstrumentId::from(&format!("BTC-20240101-{s}-C.DERIBIT"));
@@ -1127,6 +1135,7 @@ mod tests {
         // Setup: 3 strikes at 47500/50000/52500, AtmRelative +-1, hysteresis enabled
         let strikes = [47500, 50000, 52500];
         let mut instruments = HashMap::new();
+
         for s in &strikes {
             let strike = Price::from(&s.to_string());
             let call_id = InstrumentId::from(&format!("BTC-20240101-{s}-C.DERIBIT"));

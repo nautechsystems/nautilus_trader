@@ -74,7 +74,7 @@ pub struct PoolFlash {
 impl PoolFlash {
     /// Creates a new [`PoolFlash`] instance with the specified parameters.
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         chain: SharedChain,
         dex: SharedDex,

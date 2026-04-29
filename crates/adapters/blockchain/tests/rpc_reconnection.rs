@@ -136,7 +136,8 @@ fn test_rpc_basic_subscription() {
 
     sim.client("client", async move {
         let chain = Chain::new(Blockchain::Ethereum, 1);
-        let mut rpc_client = CoreBlockchainRpcClient::new(chain, "ws://rpc-node:8545".to_string());
+        let mut rpc_client =
+            CoreBlockchainRpcClient::new(chain, "ws://rpc-node:8545".to_string(), None);
 
         // Connect to RPC node
         rpc_client.connect().await.expect("Should connect");
@@ -291,7 +292,8 @@ fn test_rpc_reconnection_resubscribes() {
 
     sim.client("client", async move {
         let chain = Chain::new(Blockchain::Ethereum, 1);
-        let mut rpc_client = CoreBlockchainRpcClient::new(chain, "ws://rpc-node:8545".to_string());
+        let mut rpc_client =
+            CoreBlockchainRpcClient::new(chain, "ws://rpc-node:8545".to_string(), None);
 
         // Connect and subscribe
         rpc_client.connect().await.expect("Should connect");

@@ -28,11 +28,12 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::parse::{
-    build_maker_fill_report, parse_fill_report, parse_order_status_report, parse_timestamp,
+    build_maker_fill_report, instrument_taker_fee, parse_fill_report, parse_order_status_report,
+    parse_timestamp,
 };
 use crate::{
     common::{
-        consts::{DUST_SNAP_THRESHOLD, USDC_DECIMALS},
+        consts::{DUST_POSITION_THRESHOLD, USDC_DECIMALS},
         enums::PolymarketLiquiditySide,
     },
     http::{
@@ -48,7 +49,7 @@ pub(crate) struct FillContext<'a> {
     pub account_id: AccountId,
     pub user_address: &'a str,
     pub api_key: &'a str,
-    pub usdc: Currency,
+    pub pusd: Currency,
     pub clock: &'static AtomicTime,
 }
 
@@ -100,7 +101,7 @@ pub(crate) fn build_fill_reports_from_trades(
                     instrument_id,
                     price_prec,
                     size_prec,
-                    ctx.usdc,
+                    ctx.pusd,
                     LiquiditySide::Maker,
                     ts_event,
                     ts_init,
@@ -110,8 +111,13 @@ pub(crate) fn build_fill_reports_from_trades(
         } else {
             let token_id = Ustr::from(trade.asset_id.as_str());
             let instrument = instruments.get_cloned(&token_id);
-            let (instrument_id, price_prec, size_prec) = match instrument {
-                Some(i) => (i.id(), i.price_precision(), i.size_precision()),
+            let (instrument_id, price_prec, size_prec, taker_fee_rate) = match instrument {
+                Some(i) => (
+                    i.id(),
+                    i.price_precision(),
+                    i.size_precision(),
+                    instrument_taker_fee(&i),
+                ),
                 None => {
                     filtered += 1;
                     continue;
@@ -131,7 +137,8 @@ pub(crate) fn build_fill_reports_from_trades(
                 None,
                 price_prec,
                 size_prec,
-                ctx.usdc,
+                ctx.pusd,
+                taker_fee_rate,
                 ts_init,
             );
             reports.push(report);
@@ -214,7 +221,7 @@ pub(crate) fn build_position_reports(
     positions
         .iter()
         .filter(|p| {
-            if p.size > 0.0 && p.size < DUST_SNAP_THRESHOLD {
+            if p.size > 0.0 && p.size < DUST_POSITION_THRESHOLD {
                 log::debug!(
                     "Filtering dust position: {}-{}, size={}",
                     p.condition_id,
@@ -222,7 +229,7 @@ pub(crate) fn build_position_reports(
                     p.size
                 );
             }
-            p.size >= DUST_SNAP_THRESHOLD
+            p.size >= DUST_POSITION_THRESHOLD
         })
         .map(|p| {
             let instrument_id =

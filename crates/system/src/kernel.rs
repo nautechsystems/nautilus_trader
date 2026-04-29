@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    cell::{Ref, RefCell},
+    cell::{Cell, Ref, RefCell},
     rc::Rc,
     time::Duration,
 };
@@ -29,7 +29,11 @@ use nautilus_common::{
         logger::{LogGuard, LoggerConfig},
         writer::FileWriterConfig,
     },
-    msgbus::{MessageBus, get_message_bus, set_message_bus},
+    messages::system::ShutdownSystem,
+    msgbus::{
+        self, MessageBus, MessagingSwitchboard, ShareableMessageHandler, get_message_bus,
+        set_message_bus,
+    },
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
@@ -78,6 +82,7 @@ pub struct NautilusKernel {
     pub ts_started: Option<UnixNanos>,
     /// The UNIX timestamp (nanoseconds) when the kernel was last shutdown.
     pub ts_shutdown: Option<UnixNanos>,
+    shutdown_requested: Rc<Cell<bool>>,
 }
 
 impl NautilusKernel {
@@ -106,7 +111,7 @@ impl NautilusKernel {
             config.trader_id(),
             &machine_id,
             instance_id,
-            Ustr::from(stringify!(LiveNode)),
+            Ustr::from(&name),
         );
 
         log::info!("Building system kernel");
@@ -149,6 +154,9 @@ impl NautilusKernel {
         RiskEngine::register_msgbus_handlers(&risk_engine);
         ExecutionEngine::register_msgbus_handlers(&exec_engine);
 
+        let shutdown_requested = Rc::new(Cell::new(false));
+        Self::register_shutdown_handler(config.trader_id(), shutdown_requested.clone());
+
         let trader = Rc::new(RefCell::new(Trader::new(
             config.trader_id(),
             instance_id,
@@ -177,7 +185,27 @@ impl NautilusKernel {
             ts_created,
             ts_started: None,
             ts_shutdown: None,
+            shutdown_requested,
         })
+    }
+
+    fn register_shutdown_handler(trader_id: TraderId, shutdown_requested: Rc<Cell<bool>>) {
+        let handler = ShareableMessageHandler::from_typed(move |cmd: &ShutdownSystem| {
+            if cmd.trader_id != trader_id {
+                log::warn!("Received {cmd} not for this trader {trader_id}, ignoring",);
+                return;
+            }
+
+            if shutdown_requested.get() {
+                log::debug!("Shutdown already requested, ignoring {cmd}");
+                return;
+            }
+
+            log::info!("Received {cmd}, requesting shutdown");
+            shutdown_requested.set(true);
+        });
+        let topic = MessagingSwitchboard::shutdown_system_topic();
+        msgbus::subscribe_any(topic.into(), handler, None);
     }
 
     fn determine_machine_id() -> anyhow::Result<String> {
@@ -320,6 +348,27 @@ impl NautilusKernel {
     #[must_use]
     pub const fn ts_shutdown(&self) -> Option<UnixNanos> {
         self.ts_shutdown
+    }
+
+    /// Returns `true` if a `ShutdownSystem` command has been received.
+    #[must_use]
+    pub fn is_shutdown_requested(&self) -> bool {
+        self.shutdown_requested.get()
+    }
+
+    /// Clears the shutdown flag.
+    ///
+    /// Call this before starting a fresh run so a prior `ShutdownSystem`
+    /// command does not abort it.
+    pub fn reset_shutdown_flag(&self) {
+        self.shutdown_requested.set(false);
+    }
+
+    /// Returns a shared handle to the shutdown flag for async runtimes
+    /// that need to poll it outside the kernel's direct borrow.
+    #[must_use]
+    pub fn shutdown_flag(&self) -> Rc<Cell<bool>> {
+        self.shutdown_requested.clone()
     }
 
     /// Returns whether the kernel has been configured to load state.
@@ -555,7 +604,7 @@ impl NautilusKernel {
     ///
     /// Data clients are connected first so that instruments are published
     /// and can be drained into the cache before execution clients connect.
-    #[allow(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
+    #[expect(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
     pub async fn connect_data_clients(&mut self) {
         log::info!("Connecting data clients...");
         self.data_engine.borrow_mut().connect().await;
@@ -565,7 +614,7 @@ impl NautilusKernel {
     ///
     /// Must be called after data clients are connected and instrument events
     /// have been drained into the cache, so execution clients can load instruments.
-    #[allow(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
+    #[expect(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
     pub async fn connect_exec_clients(&mut self) {
         log::info!("Connecting execution clients...");
         self.exec_engine.borrow_mut().connect().await;
@@ -576,7 +625,7 @@ impl NautilusKernel {
     /// # Errors
     ///
     /// Returns an error if any client fails to disconnect.
-    #[allow(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
+    #[expect(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
     pub async fn disconnect_clients(&mut self) -> anyhow::Result<()> {
         log::info!("Disconnecting clients...");
         self.data_engine.borrow_mut().disconnect().await?;
@@ -607,5 +656,86 @@ impl NautilusKernel {
     #[must_use]
     pub fn exec_client_connection_status(&self) -> Vec<(ClientId, bool)> {
         self.exec_engine.borrow().client_connection_status()
+    }
+}
+
+#[cfg(all(test, feature = "python"))]
+mod tests {
+    use nautilus_common::messages::system::ShutdownSystem;
+    use nautilus_core::UUID4;
+    use rstest::*;
+    use ustr::Ustr;
+
+    use super::*;
+    use crate::builder::NautilusKernelBuilder;
+
+    #[rstest]
+    fn test_shutdown_system_sets_kernel_flag() {
+        let kernel = NautilusKernelBuilder::default().build().unwrap();
+        assert!(!kernel.is_shutdown_requested());
+
+        let command = ShutdownSystem::new(
+            kernel.trader_id(),
+            Ustr::from("TestComponent"),
+            Some("unit test".to_string()),
+            UUID4::new(),
+            kernel.generate_timestamp_ns(),
+        );
+
+        msgbus::publish_any(
+            MessagingSwitchboard::shutdown_system_topic(),
+            command.as_any(),
+        );
+        assert!(kernel.is_shutdown_requested());
+
+        kernel.reset_shutdown_flag();
+        assert!(!kernel.is_shutdown_requested());
+    }
+
+    #[rstest]
+    fn test_shutdown_system_idempotent() {
+        let kernel = NautilusKernelBuilder::default().build().unwrap();
+
+        let make_cmd = || {
+            ShutdownSystem::new(
+                kernel.trader_id(),
+                Ustr::from("TestComponent"),
+                None,
+                UUID4::new(),
+                kernel.generate_timestamp_ns(),
+            )
+        };
+
+        let topic = MessagingSwitchboard::shutdown_system_topic();
+        msgbus::publish_any(topic, make_cmd().as_any());
+        assert!(kernel.is_shutdown_requested());
+
+        msgbus::publish_any(topic, make_cmd().as_any());
+        assert!(kernel.is_shutdown_requested());
+
+        kernel.reset_shutdown_flag();
+        assert!(!kernel.is_shutdown_requested());
+
+        msgbus::publish_any(topic, make_cmd().as_any());
+        assert!(kernel.is_shutdown_requested());
+    }
+
+    #[rstest]
+    fn test_shutdown_system_ignores_other_trader() {
+        let kernel = NautilusKernelBuilder::default().build().unwrap();
+
+        let command = ShutdownSystem::new(
+            TraderId::from("OTHER-TRADER"),
+            Ustr::from("TestComponent"),
+            None,
+            UUID4::new(),
+            kernel.generate_timestamp_ns(),
+        );
+
+        msgbus::publish_any(
+            MessagingSwitchboard::shutdown_system_topic(),
+            command.as_any(),
+        );
+        assert!(!kernel.is_shutdown_requested());
     }
 }

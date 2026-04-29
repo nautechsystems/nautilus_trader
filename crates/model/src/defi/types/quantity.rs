@@ -100,6 +100,44 @@ mod tests {
     }
 
     #[rstest]
+    fn test_checked_arith_accepts_wei_precision() {
+        let a = Quantity::from_wei(U256::from(1_000_000_000_000_000_000_u128));
+        let b = Quantity::from_wei(U256::from(2_000_000_000_000_000_000_u128));
+        let sum = a
+            .checked_add(b)
+            .expect("checked_add must accept wei quantities");
+        assert_eq!(sum.as_decimal(), dec!(3));
+        let diff = b
+            .checked_sub(a)
+            .expect("checked_sub must accept wei quantities");
+        assert_eq!(diff.as_decimal(), dec!(1));
+    }
+
+    #[rstest]
+    fn test_checked_arith_rejects_mixed_scale() {
+        // Wei (precision 18, raw at 10^18 scale) and standard (precision 0, raw at
+        // FIXED_SCALAR scale) cannot be added with raw arithmetic without rescaling.
+        let wei = Quantity::from_wei(U256::from(1_000_000_000_000_000_000_u128));
+        let standard = Quantity::new(1.0, 0);
+        assert_eq!(wei.checked_add(standard), None);
+        assert_eq!(standard.checked_add(wei), None);
+        assert_eq!(wei.checked_sub(standard), None);
+        assert_eq!(standard.checked_sub(wei), None);
+    }
+
+    #[rstest]
+    fn test_checked_arith_rejects_mixed_defi_scales() {
+        // Both above FIXED_PRECISION but at different native scales:
+        // precision 17 stores raw at 10^17, precision 18 stores raw at 10^18.
+        let q17 = Quantity::from_raw(100_000_000_000_000_000_u128, 17);
+        let q18 = Quantity::from_wei(U256::from(1_000_000_000_000_000_000_u128));
+        assert_eq!(q17.checked_add(q18), None);
+        assert_eq!(q18.checked_add(q17), None);
+        assert_eq!(q17.checked_sub(q18), None);
+        assert_eq!(q18.checked_sub(q17), None);
+    }
+
+    #[rstest]
     fn test_from_wei_large_value() {
         // Test with a large but valid wei amount
         let large_wei = U256::from(1_000_000_000_000_000_000_000_u128); // 1000 tokens

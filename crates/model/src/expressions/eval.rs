@@ -407,6 +407,7 @@ impl<'a> Compiler<'a> {
 
     fn compile_unary(&mut self, op: UnaryOp, expr: &Expr) -> Result<ValueType> {
         let expr_type = self.compile_expr(expr)?;
+
         match op {
             UnaryOp::Neg => {
                 ensure_type(expr_type, ValueType::Number, "unary `-`")?;

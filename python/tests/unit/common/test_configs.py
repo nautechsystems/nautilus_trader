@@ -25,9 +25,86 @@ from nautilus_trader.common import MessageBusConfig
 from nautilus_trader.model import ActorId
 
 
+def test_cache_config_defaults():
+    config = CacheConfig(
+        None,
+        False,
+        None,
+        None,
+        True,
+        False,
+        False,
+        True,
+        10000,
+        10000,
+        True,
+        True,
+    )
+
+    assert str(config.encoding) == "SerializationEncoding.MSG_PACK"
+    assert config.timestamps_as_iso8601 is False
+    assert config.buffer_interval_ms is None
+    assert config.bulk_read_batch_size is None
+    assert config.use_trader_prefix is True
+    assert config.use_instance_id is False
+    assert config.flush_on_start is False
+    assert config.drop_instruments_on_reset is True
+    assert config.tick_capacity == 10000
+    assert config.bar_capacity == 10000
+    assert config.save_market_data is True
+    assert config.persist_account_events is True
+
+
+def test_cache_config_accepts_explicit_values():
+    # Get SerializationEncoding.JSON via the enum type
+    default = CacheConfig(
+        None,
+        False,
+        None,
+        None,
+        True,
+        False,
+        False,
+        True,
+        10000,
+        10000,
+        True,
+        True,
+    )
+    json_encoding = type(default.encoding).JSON
+
+    config = CacheConfig(
+        json_encoding,
+        True,
+        100,
+        500,
+        False,
+        True,
+        True,
+        False,
+        5000,
+        2000,
+        False,
+        False,
+    )
+
+    assert config.encoding == json_encoding
+    assert config.timestamps_as_iso8601 is True
+    assert config.buffer_interval_ms == 100
+    assert config.bulk_read_batch_size == 500
+    assert config.use_trader_prefix is False
+    assert config.use_instance_id is True
+    assert config.flush_on_start is True
+    assert config.drop_instruments_on_reset is False
+    assert config.tick_capacity == 5000
+    assert config.bar_capacity == 2000
+    assert config.save_market_data is False
+    assert config.persist_account_events is False
+
+
 def test_cache_config_rejects_public_string_encoding_argument():
     with pytest.raises(TypeError, match="SerializationEncoding"):
-        CacheConfig("msgpack", False, True, True, False, False, False, 1000, 1000, 100, 1000)
+        CacheConfig("msgpack", False, True, True, False, False, False, 1000, 1000, 100, 1000, True)
 
 
 def test_data_actor_config_accepts_explicit_kwargs():

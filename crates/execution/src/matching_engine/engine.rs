@@ -21,8 +21,8 @@ use std::{
     rc::Rc,
 };
 
-use ahash::AHashMap;
 use chrono::TimeDelta;
+use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -102,18 +102,18 @@ pub struct OrderMatchingEngine {
     last_bar_bid: Option<Bar>,
     last_bar_ask: Option<Bar>,
     fill_at_market: bool,
-    execution_bar_types: AHashMap<InstrumentId, BarType>,
-    execution_bar_deltas: AHashMap<BarType, TimeDelta>,
-    account_ids: AHashMap<TraderId, AccountId>,
-    cached_filled_qty: AHashMap<ClientOrderId, Quantity>,
+    execution_bar_types: IndexMap<InstrumentId, BarType>,
+    execution_bar_deltas: IndexMap<BarType, TimeDelta>,
+    account_ids: IndexMap<TraderId, AccountId>,
+    cached_filled_qty: IndexMap<ClientOrderId, Quantity>,
     ids_generator: IdsGenerator,
     last_trade_size: Option<Quantity>,
-    bid_consumption: AHashMap<PriceRaw, (QuantityRaw, QuantityRaw)>,
-    ask_consumption: AHashMap<PriceRaw, (QuantityRaw, QuantityRaw)>,
+    bid_consumption: IndexMap<PriceRaw, (QuantityRaw, QuantityRaw)>,
+    ask_consumption: IndexMap<PriceRaw, (QuantityRaw, QuantityRaw)>,
     trade_consumption: QuantityRaw,
-    queue_ahead: AHashMap<ClientOrderId, (PriceRaw, QuantityRaw)>,
-    queue_excess: AHashMap<ClientOrderId, QuantityRaw>,
-    queue_pending: AHashMap<ClientOrderId, PriceRaw>,
+    queue_ahead: IndexMap<ClientOrderId, (PriceRaw, QuantityRaw)>,
+    queue_excess: IndexMap<ClientOrderId, QuantityRaw>,
+    queue_pending: IndexMap<ClientOrderId, PriceRaw>,
     prev_bid_price_raw: PriceRaw,
     prev_bid_size_raw: QuantityRaw,
     prev_ask_price_raw: PriceRaw,
@@ -137,7 +137,7 @@ impl Debug for OrderMatchingEngine {
 
 impl OrderMatchingEngine {
     /// Creates a new [`OrderMatchingEngine`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         instrument: InstrumentAny,
         raw_id: u32,
@@ -184,18 +184,18 @@ impl OrderMatchingEngine {
             last_bar_bid: None,
             last_bar_ask: None,
             fill_at_market: true,
-            execution_bar_types: AHashMap::new(),
-            execution_bar_deltas: AHashMap::new(),
-            account_ids: AHashMap::new(),
-            cached_filled_qty: AHashMap::new(),
+            execution_bar_types: IndexMap::new(),
+            execution_bar_deltas: IndexMap::new(),
+            account_ids: IndexMap::new(),
+            cached_filled_qty: IndexMap::new(),
             ids_generator,
             last_trade_size: None,
-            bid_consumption: AHashMap::new(),
-            ask_consumption: AHashMap::new(),
+            bid_consumption: IndexMap::new(),
+            ask_consumption: IndexMap::new(),
             trade_consumption: 0,
-            queue_ahead: AHashMap::new(),
-            queue_excess: AHashMap::new(),
-            queue_pending: AHashMap::new(),
+            queue_ahead: IndexMap::new(),
+            queue_excess: IndexMap::new(),
+            queue_pending: IndexMap::new(),
             prev_bid_price_raw: 0,
             prev_bid_size_raw: 0,
             prev_ask_price_raw: 0,
@@ -420,8 +420,8 @@ impl OrderMatchingEngine {
         let client_order_id = order.client_order_id();
 
         // Clear stale entries from both maps (e.g. order modified to new price)
-        self.queue_pending.remove(&client_order_id);
-        self.queue_ahead.remove(&client_order_id);
+        self.queue_pending.shift_remove(&client_order_id);
+        self.queue_ahead.shift_remove(&client_order_id);
 
         // For L1 books, levels behind the BBO have no visible depth. Track
         // these orders separately so fills are blocked until the BBO reaches
@@ -496,7 +496,7 @@ impl OrderMatchingEngine {
         }
 
         for id in stale {
-            self.queue_ahead.remove(&id);
+            self.queue_ahead.shift_remove(&id);
         }
 
         // Sort by queue position (earliest first) for shared budget allocation
@@ -665,7 +665,7 @@ impl OrderMatchingEngine {
         }
 
         for id in stale {
-            self.queue_ahead.remove(&id);
+            self.queue_ahead.shift_remove(&id);
         }
     }
 
@@ -757,7 +757,7 @@ impl OrderMatchingEngine {
         }
 
         for id in stale {
-            self.queue_ahead.remove(&id);
+            self.queue_ahead.shift_remove(&id);
         }
 
         // Also resolve pending L1 orders affected by this price move
@@ -794,18 +794,18 @@ impl OrderMatchingEngine {
             };
 
             if crossed {
-                self.queue_pending.remove(&client_order_id);
+                self.queue_pending.shift_remove(&client_order_id);
                 self.queue_ahead
                     .insert(client_order_id, (order_price_raw, 0));
             } else if order_price_raw == new_price_raw {
-                self.queue_pending.remove(&client_order_id);
+                self.queue_pending.shift_remove(&client_order_id);
                 self.queue_ahead
                     .insert(client_order_id, (order_price_raw, new_size_raw));
             }
         }
 
         for id in pending_stale {
-            self.queue_pending.remove(&id);
+            self.queue_pending.shift_remove(&id);
         }
     }
 
@@ -847,14 +847,14 @@ impl OrderMatchingEngine {
             };
 
             if let Some(size) = matched_size {
-                self.queue_pending.remove(&client_order_id);
+                self.queue_pending.shift_remove(&client_order_id);
                 self.queue_ahead
                     .insert(client_order_id, (order_price_raw, size));
             }
         }
 
         for id in stale {
-            self.queue_pending.remove(&id);
+            self.queue_pending.shift_remove(&id);
         }
     }
 
@@ -890,14 +890,14 @@ impl OrderMatchingEngine {
             };
 
             if crossed {
-                self.queue_pending.remove(&client_order_id);
+                self.queue_pending.shift_remove(&client_order_id);
                 self.queue_ahead
                     .insert(client_order_id, (order_price_raw, 0));
             }
         }
 
         for id in stale {
-            self.queue_pending.remove(&id);
+            self.queue_pending.shift_remove(&id);
         }
     }
 
@@ -1098,6 +1098,7 @@ impl OrderMatchingEngine {
             self.check_price_precision(order.price.precision, "bid price")?;
             self.check_size_precision(order.size.precision, "bid size")?;
         }
+
         for order in &depth.asks {
             if order.side == OrderSide::NoOrderSide || !order.size.is_positive() {
                 continue;
@@ -1317,7 +1318,7 @@ impl OrderMatchingEngine {
             bar.open,
             size,
             aggressor_side,
-            self.ids_generator.generate_trade_id(),
+            self.ids_generator.generate_trade_id(bar.ts_init),
             bar.ts_init,
             bar.ts_init,
         );
@@ -1360,7 +1361,7 @@ impl OrderMatchingEngine {
             } else {
                 trade_tick.aggressor_side = AggressorSide::Seller;
             }
-            trade_tick.trade_id = self.ids_generator.generate_trade_id();
+            trade_tick.trade_id = self.ids_generator.generate_trade_id(trade_tick.ts_init);
 
             self.book.update_trade_tick(&trade_tick).unwrap();
             self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
@@ -1376,7 +1377,7 @@ impl OrderMatchingEngine {
             self.fill_at_market = false;
             trade_tick.price = bar.high;
             trade_tick.aggressor_side = AggressorSide::Buyer;
-            trade_tick.trade_id = self.ids_generator.generate_trade_id();
+            trade_tick.trade_id = self.ids_generator.generate_trade_id(trade_tick.ts_init);
 
             self.book.update_trade_tick(trade_tick).unwrap();
             self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
@@ -1390,7 +1391,7 @@ impl OrderMatchingEngine {
             self.fill_at_market = false;
             trade_tick.price = bar.low;
             trade_tick.aggressor_side = AggressorSide::Seller;
-            trade_tick.trade_id = self.ids_generator.generate_trade_id();
+            trade_tick.trade_id = self.ids_generator.generate_trade_id(trade_tick.ts_init);
 
             self.book.update_trade_tick(trade_tick).unwrap();
             self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
@@ -1788,7 +1789,6 @@ impl OrderMatchingEngine {
     /// # Panics
     ///
     /// Panics if an OTO child order references a missing or non-OTO parent.
-    #[allow(clippy::needless_return)]
     pub fn process_order(&mut self, order: &mut OrderAny, account_id: AccountId) {
         // Validate inside a cache borrow scope, collecting any rejection
         // reason rather than emitting events while the borrow is held.
@@ -1987,6 +1987,29 @@ impl OrderMatchingEngine {
             return;
         }
 
+        // Convert quote-denominated quantity to base quantity for non-inverse instruments.
+        // Mirrors live venue semantics where the quote notional is settled into a base
+        // quantity before the order enters normal fill and state handling. Without this
+        // conversion the book simulation would treat the quote notional as base size.
+        // Only applies to order types with a reliable reference price at submission;
+        // trigger-style market orders and trailing orders are left untouched so they
+        // convert at fill time from the actual (possibly-trailed) price.
+        if order.is_quote_quantity()
+            && !self.instrument.is_inverse()
+            && !matches!(
+                order.order_type(),
+                OrderType::TrailingStopLimit | OrderType::TrailingStopMarket,
+            )
+            && (order.price().is_some()
+                || matches!(
+                    order.order_type(),
+                    OrderType::Market | OrderType::MarketToLimit,
+                ))
+            && !self.convert_quote_to_base_quantity(order)
+        {
+            return;
+        }
+
         match order.order_type() {
             OrderType::Market => self.process_market_order(order),
             OrderType::Limit => self.process_limit_order(order),
@@ -1998,6 +2021,69 @@ impl OrderMatchingEngine {
             OrderType::TrailingStopMarket => self.process_trailing_stop_order(order),
             OrderType::TrailingStopLimit => self.process_trailing_stop_order(order),
         }
+    }
+
+    fn convert_quote_to_base_quantity(&self, order: &mut OrderAny) -> bool {
+        // Pick a reference price to convert the quote notional into a base quantity.
+        // Priced orders use their own price (worst-case execution); marketable orders
+        // use the best opposing book level.
+        let reference_price = if let Some(price) = order.price() {
+            Some(price)
+        } else {
+            match order.order_side() {
+                OrderSide::Buy => self.core.ask,
+                OrderSide::Sell => self.core.bid,
+                OrderSide::NoOrderSide => None,
+            }
+        };
+
+        let Some(reference_price) = reference_price else {
+            self.generate_order_rejected(
+                order,
+                format!(
+                    "No market for {} to convert quote quantity to base",
+                    order.instrument_id(),
+                )
+                .into(),
+            );
+            return false;
+        };
+
+        let base_quantity = self
+            .instrument
+            .calculate_base_quantity(order.quantity(), reference_price);
+
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let event = OrderEventAny::Updated(OrderUpdated::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            base_quantity,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            order.venue_order_id(),
+            order.account_id(),
+            None,
+            None,
+            None,
+            false,
+        ));
+
+        // Apply the update to the local order so subsequent dispatch uses the base
+        // quantity immediately (the event is also dispatched to the execution engine
+        // for cache reconciliation).
+        if let Err(e) = order.apply(event.clone()) {
+            log::error!(
+                "Failed to apply quote-to-base update for {}: {e}",
+                order.client_order_id(),
+            );
+            return false;
+        }
+        self.dispatch_order_event(event);
+        true
     }
 
     /// Processes an order modify command to update quantity, price, or trigger price.
@@ -2051,7 +2137,7 @@ impl OrderMatchingEngine {
                 && let Some(new_price) = order.price()
             {
                 self.snapshot_queue_position(&order, new_price);
-                self.queue_excess.remove(&order.client_order_id());
+                self.queue_excess.swap_remove(&order.client_order_id());
             }
         }
     }
@@ -2082,32 +2168,53 @@ impl OrderMatchingEngine {
             }
         };
 
-        if order.is_inflight() || order.is_open() {
-            self.cancel_order(&order, None);
+        if !order.is_inflight() && !order.is_open() {
+            self.purge_stale_core_entry(command.client_order_id);
+            return;
         }
+
+        self.cancel_order(&order, None);
     }
 
     /// Processes a cancel all orders command for an instrument.
     pub fn process_cancel_all(&mut self, command: &CancelAllOrders, _account_id: AccountId) {
         let instrument_id = command.instrument_id;
-        let open_orders = self
+        let order_side = if command.order_side == OrderSide::NoOrderSide {
+            None
+        } else {
+            Some(command.order_side)
+        };
+
+        let client_order_ids: Vec<ClientOrderId> = self
             .cache
             .borrow()
-            .orders_open(None, Some(&instrument_id), None, None, None)
-            .into_iter()
-            .cloned()
-            .collect::<Vec<OrderAny>>();
-        for order in open_orders {
-            if command.order_side != OrderSide::NoOrderSide
-                && command.order_side != order.order_side()
-            {
+            .orders_open(None, Some(&instrument_id), None, None, order_side)
+            .iter()
+            .map(|o| o.client_order_id())
+            .collect();
+
+        for client_order_id in client_order_ids {
+            let order = match self.cache.borrow().order(&client_order_id).cloned() {
+                Some(order) => order,
+                None => continue,
+            };
+
+            if !order.is_inflight() && !order.is_open() {
+                self.purge_stale_core_entry(client_order_id);
                 continue;
             }
 
-            if order.is_inflight() || order.is_open() {
-                self.cancel_order(&order, None);
-            }
+            self.cancel_order(&order, None);
         }
+    }
+
+    // Removes a closed order's stale entry from the matching core so the next
+    // `iterate_bids/asks` does not produce a spurious fill action.
+    fn purge_stale_core_entry(&mut self, client_order_id: ClientOrderId) {
+        if self.core.order_exists(client_order_id) {
+            let _ = self.core.delete_order(client_order_id);
+        }
+        self.cached_filled_qty.swap_remove(&client_order_id);
     }
 
     /// Processes a batch cancel orders command.
@@ -2595,6 +2702,7 @@ impl OrderMatchingEngine {
                 MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
             }
         }
+
         for action in self.core.iterate_asks() {
             match action {
                 MatchAction::FillLimit(id) => self.fill_limit_order(id),
@@ -2755,7 +2863,8 @@ impl OrderMatchingEngine {
                 .is_some_and(|expire_ns| timestamp_ns >= expire_ns)
             {
                 let _ = self.core.delete_order(match_info.client_order_id);
-                self.cached_filled_qty.remove(&match_info.client_order_id);
+                self.cached_filled_qty
+                    .swap_remove(&match_info.client_order_id);
                 self.expire_order(&order);
             }
         }
@@ -2789,7 +2898,8 @@ impl OrderMatchingEngine {
                     .is_some_and(|expire_timestamp_ns| timestamp_ns >= expire_timestamp_ns)
             {
                 let _ = self.core.delete_order(match_info.client_order_id);
-                self.cached_filled_qty.remove(&match_info.client_order_id);
+                self.cached_filled_qty
+                    .swap_remove(&match_info.client_order_id);
                 self.expire_order(&order);
                 continue;
             }
@@ -2986,6 +3096,7 @@ impl OrderMatchingEngine {
                             } else {
                                 order_price
                             };
+
                             for fill in &mut fills {
                                 let last_px = fill.0;
                                 if last_px < order_price {
@@ -3008,6 +3119,7 @@ impl OrderMatchingEngine {
                             } else {
                                 order_price
                             };
+
                             for fill in &mut fills {
                                 let last_px = fill.0;
                                 if last_px > order_price {
@@ -3149,6 +3261,16 @@ impl OrderMatchingEngine {
             }
         };
 
+        // Convert quote-denominated quantity at fill time for trigger-style market
+        // orders that skipped conversion at submission. Idempotent: orders already
+        // converted have `is_quote_quantity == false`.
+        if order.is_quote_quantity()
+            && !self.instrument.is_inverse()
+            && !self.convert_quote_to_base_quantity(&mut order)
+        {
+            return;
+        }
+
         if let Some(filled_qty) = self.cached_filled_qty.get(&order.client_order_id())
             && filled_qty >= &order.quantity()
         {
@@ -3257,13 +3379,23 @@ impl OrderMatchingEngine {
     ///
     /// Panics if the order has no price (design error).
     pub fn fill_limit_order(&mut self, client_order_id: ClientOrderId) {
-        let order = match self.cache.borrow().order(&client_order_id).cloned() {
+        let mut order = match self.cache.borrow().order(&client_order_id).cloned() {
             Some(order) => order,
             None => {
                 log::error!("Cannot fill limit order: order {client_order_id} not found in cache");
                 return;
             }
         };
+
+        // Convert quote-denominated quantity at fill time for orders that entered
+        // this path still carrying a quote notional (e.g. trailing-stop-limit with
+        // a late-assigned price). Idempotent for already-converted orders.
+        if order.is_quote_quantity()
+            && !self.instrument.is_inverse()
+            && !self.convert_quote_to_base_quantity(&mut order)
+        {
+            return;
+        }
 
         match order.price() {
             Some(order_price) => {
@@ -3598,7 +3730,7 @@ impl OrderMatchingEngine {
             // Only clear cached fills when the order status reflects closure,
             // callers like process_market_to_limit_order still need the entry
             if order.is_closed() {
-                self.cached_filled_qty.remove(&order.client_order_id());
+                self.cached_filled_qty.swap_remove(&order.client_order_id());
             }
         }
 
@@ -4070,7 +4202,7 @@ impl OrderMatchingEngine {
         if self.core.order_exists(order.client_order_id()) {
             let _ = self.core.delete_order(order.client_order_id());
         }
-        self.cached_filled_qty.remove(&order.client_order_id());
+        self.cached_filled_qty.swap_remove(&order.client_order_id());
 
         let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
         self.generate_order_canceled(order, venue_order_id);
@@ -4384,7 +4516,7 @@ impl OrderMatchingEngine {
         self.dispatch_order_event(event);
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn generate_order_modify_rejected(
         &self,
         trader_id: TraderId,
@@ -4412,7 +4544,7 @@ impl OrderMatchingEngine {
         self.dispatch_order_event(event);
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn generate_order_cancel_rejected(
         &self,
         trader_id: TraderId,
@@ -4521,7 +4653,7 @@ impl OrderMatchingEngine {
         self.dispatch_order_event(event);
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn generate_order_filled(
         &mut self,
         order: &OrderAny,
@@ -4551,7 +4683,7 @@ impl OrderMatchingEngine {
             order.client_order_id(),
             venue_order_id,
             account_id,
-            self.ids_generator.generate_trade_id(),
+            self.ids_generator.generate_trade_id(ts_now),
             order.order_side(),
             order.order_type(),
             last_qty,

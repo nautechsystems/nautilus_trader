@@ -15,7 +15,7 @@
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 
-#![allow(
+#![expect(
     clippy::missing_errors_doc,
     reason = "errors documented on underlying Rust methods"
 )]
@@ -31,19 +31,17 @@ pub mod factories;
 #[cfg(feature = "live")]
 pub mod live;
 
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 #[cfg(feature = "live")]
-use nautilus_system::{
-    factories::{ClientConfig, DataClientFactory},
-    get_global_pyo3_registry,
-};
+use nautilus_common::factories::{ClientConfig, DataClientFactory};
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 #[cfg(feature = "live")]
 use crate::factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig};
 
 #[cfg(feature = "live")]
-#[allow(clippy::needless_pass_by_value)]
+#[expect(clippy::needless_pass_by_value)]
 fn extract_databento_data_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -57,7 +55,7 @@ fn extract_databento_data_factory(
 }
 
 #[cfg(feature = "live")]
-#[allow(clippy::needless_pass_by_value)]
+#[expect(clippy::needless_pass_by_value)]
 fn extract_databento_data_config(
     py: Python<'_>,
     config: Py<PyAny>,

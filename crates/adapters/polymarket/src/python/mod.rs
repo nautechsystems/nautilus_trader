@@ -15,7 +15,7 @@
 
 //! Python bindings from `pyo3`.
 
-#![allow(
+#![expect(
     clippy::missing_errors_doc,
     reason = "errors documented on underlying Rust methods"
 )]
@@ -23,11 +23,9 @@
 pub mod config;
 pub mod factories;
 
+use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use nautilus_system::{
-    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
-    get_global_pyo3_registry,
-};
+use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
@@ -35,7 +33,7 @@ use crate::{
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
 };
 
-#[allow(clippy::needless_pass_by_value)]
+#[expect(clippy::needless_pass_by_value)]
 fn extract_polymarket_data_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -48,7 +46,7 @@ fn extract_polymarket_data_factory(
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
+#[expect(clippy::needless_pass_by_value)]
 fn extract_polymarket_exec_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -61,7 +59,7 @@ fn extract_polymarket_exec_factory(
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
+#[expect(clippy::needless_pass_by_value)]
 fn extract_polymarket_data_config(
     py: Python<'_>,
     config: Py<PyAny>,
@@ -74,7 +72,7 @@ fn extract_polymarket_data_config(
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
+#[expect(clippy::needless_pass_by_value)]
 fn extract_polymarket_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,

@@ -52,7 +52,7 @@ use crate::{
         messages::{MCM, RCM, StreamMessage, stream_decode},
         parse::{
             make_trade_tick, parse_betfair_starting_prices, parse_betfair_ticker,
-            parse_bsp_book_deltas, parse_instrument_closes, parse_instrument_status,
+            parse_bsp_book_deltas, parse_instrument_closes, parse_instrument_statuses,
             parse_race_progress, parse_race_runner_data, parse_runner_book_deltas,
         },
     },
@@ -237,35 +237,9 @@ impl BetfairDataLoader {
             let mut market_closed = false;
 
             if let Some(def) = &mc.market_definition {
-                if let Some(status) = &def.status {
-                    market_closed = *status == MarketStatus::Closed;
-                    let in_play = def.in_play.unwrap_or(false);
-
-                    for inst in self.instruments.values() {
-                        let prefix = format!("{}-", mc.id);
-
-                        if inst.id().symbol.as_str().starts_with(&prefix) {
-                            items.push(BetfairDataItem::Status(parse_instrument_status(
-                                inst.id(),
-                                *status,
-                                in_play,
-                                ts_event,
-                                ts_init,
-                            )));
-                        }
-                    }
-                }
-
-                for sp in parse_betfair_starting_prices(&mc.id, def, ts_event, ts_init) {
-                    items.push(BetfairDataItem::StartingPrice(sp));
-                }
-
-                if market_closed {
-                    for close in parse_instrument_closes(&mc.id, def, ts_event, ts_init) {
-                        items.push(BetfairDataItem::InstrumentClose(close));
-                    }
-                }
-
+                // Emit instruments first so sequential consumers (e.g. the backtest
+                // exchange) have the instrument in cache before any status or close
+                // event references it.
                 match parse_market_definition(
                     &mc.id,
                     def,
@@ -277,6 +251,7 @@ impl BetfairDataLoader {
                         for inst in &new_instruments {
                             self.instruments.insert(inst.id(), inst.clone());
                         }
+
                         for inst in new_instruments {
                             items.push(BetfairDataItem::Instrument(Box::new(inst)));
                         }
@@ -285,7 +260,30 @@ impl BetfairDataLoader {
                         log::warn!("Failed to parse market definition for {}: {e}", mc.id);
                     }
                 }
+
+                if let Some(status) = &def.status {
+                    market_closed = *status == MarketStatus::Closed;
+
+                    for event in parse_instrument_statuses(&mc.id, def, ts_event, ts_init) {
+                        items.push(BetfairDataItem::Status(event));
+                    }
+                }
+
+                for sp in parse_betfair_starting_prices(&mc.id, def, ts_event, ts_init) {
+                    items.push(BetfairDataItem::StartingPrice(sp));
+                }
+
+                for close in parse_instrument_closes(&mc.id, def, ts_event, ts_init) {
+                    items.push(BetfairDataItem::InstrumentClose(close));
+                }
             }
+
+            // Non-snapshot deltas and BSP deltas are buffered and flushed after
+            // trades/tickers to mirror the Python `market_change_to_updates`
+            // ordering (book deltas first, then BSP). Snapshots go inline per
+            // runner, also matching Python.
+            let mut buffered_deltas: Vec<OrderBookDeltas> = Vec::new();
+            let mut buffered_bsp_deltas: Vec<BetfairBspBookDelta> = Vec::new();
 
             if let Some(runner_changes) = &mc.rc {
                 for rc in runner_changes {
@@ -301,7 +299,11 @@ impl BetfairDataLoader {
                         ts_init,
                     ) {
                         Ok(Some(deltas)) => {
-                            items.push(BetfairDataItem::Deltas(deltas));
+                            if is_snapshot {
+                                items.push(BetfairDataItem::Deltas(deltas));
+                            } else {
+                                buffered_deltas.push(deltas);
+                            }
                         }
                         Ok(None) => {}
                         Err(e) => {
@@ -366,10 +368,21 @@ impl BetfairDataLoader {
                         items.push(BetfairDataItem::Ticker(ticker));
                     }
 
-                    for bsp_delta in parse_bsp_book_deltas(instrument_id, rc, ts_event, ts_init) {
-                        items.push(BetfairDataItem::BspBookDelta(bsp_delta));
-                    }
+                    buffered_bsp_deltas.extend(parse_bsp_book_deltas(
+                        instrument_id,
+                        rc,
+                        ts_event,
+                        ts_init,
+                    ));
                 }
+            }
+
+            for deltas in buffered_deltas {
+                items.push(BetfairDataItem::Deltas(deltas));
+            }
+
+            for bsp_delta in buffered_bsp_deltas {
+                items.push(BetfairDataItem::BspBookDelta(bsp_delta));
             }
 
             if market_closed {
@@ -736,5 +749,219 @@ mod tests {
                 .contains("75925986"),
             "winner should be runner 75925986"
         );
+    }
+
+    fn write_tmp(contents: &str, name: &str) -> PathBuf {
+        let tmp_dir = std::env::temp_dir().join("betfair_test");
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let tmp_file = tmp_dir.join(name);
+        std::fs::write(&tmp_file, contents).unwrap();
+        tmp_file
+    }
+
+    fn find_first(
+        items: &[BetfairDataItem],
+        pred: impl Fn(&BetfairDataItem) -> bool,
+    ) -> Option<usize> {
+        items.iter().position(pred)
+    }
+
+    fn find_last(
+        items: &[BetfairDataItem],
+        pred: impl Fn(&BetfairDataItem) -> bool,
+    ) -> Option<usize> {
+        items.iter().rposition(pred)
+    }
+
+    /// Split the loader output into per-MCM slices using `SequenceCompleted`
+    /// as the delimiter. Each MCM ends with one `SequenceCompleted` item.
+    fn partition_by_mcm(items: &[BetfairDataItem]) -> Vec<&[BetfairDataItem]> {
+        let mut partitions = Vec::new();
+        let mut start = 0;
+
+        for (i, item) in items.iter().enumerate() {
+            if matches!(item, BetfairDataItem::SequenceCompleted(_)) {
+                partitions.push(&items[start..=i]);
+                start = i + 1;
+            }
+        }
+
+        partitions
+    }
+
+    #[rstest]
+    fn test_load_emits_instrument_before_status_and_close() {
+        // The loader must emit `Instrument` events before any `InstrumentStatus`
+        // or `InstrumentClose` in the same MCM so downstream consumers (e.g. the
+        // backtest exchange) have the instrument cached before lifecycle events
+        // are processed.
+        let data = compact_json(&load_test_json("stream/mcm_UPDATE_md.json"));
+        let tmp_file = write_tmp(&data, "test_order_instrument_first.json");
+
+        let mut loader = BetfairDataLoader::new(Currency::GBP(), None);
+        let items = loader.load(&tmp_file).unwrap();
+
+        let instrument_idx =
+            find_first(&items, |i| matches!(i, BetfairDataItem::Instrument(_))).unwrap();
+        let status_idx = find_first(&items, |i| matches!(i, BetfairDataItem::Status(_))).unwrap();
+
+        assert!(
+            instrument_idx < status_idx,
+            "Instrument (idx {instrument_idx}) must precede Status (idx {status_idx})"
+        );
+
+        std::fs::remove_file(&tmp_file).ok();
+    }
+
+    #[rstest]
+    fn test_load_emits_instrument_before_close() {
+        // Synthetic fixture: market CLOSED with terminal runner statuses so that
+        // both Instrument and InstrumentClose are emitted within the same MCM.
+        // Instrument must appear first.
+        let mcm = r#"{"op":"mcm","id":1,"pt":1627617202953,"ct":"SUB_IMAGE","mc":[{"id":"1.1","marketDefinition":{"bspMarket":false,"turnInPlayEnabled":false,"persistenceEnabled":false,"marketBaseRate":5,"eventId":"1","eventTypeId":"1","numberOfWinners":1,"bettingType":"ODDS","marketType":"WIN","marketTime":"2021-07-30T03:55:00.000Z","bspReconciled":true,"complete":true,"inPlay":false,"crossMatching":false,"runnersVoidable":false,"numberOfActiveRunners":0,"betDelay":0,"status":"CLOSED","runners":[{"status":"WINNER","sortPriority":1,"id":101},{"status":"LOSER","sortPriority":2,"id":102}],"regulators":["MR_INT"],"discountAllowed":true,"timezone":"UTC","openDate":"2021-07-30T02:45:00.000Z","version":1,"priceLadderDefinition":{"type":"CLASSIC"}}}]}"#;
+        let tmp_file = write_tmp(mcm, "test_order_instrument_before_close.json");
+
+        let mut loader = BetfairDataLoader::new(Currency::GBP(), None);
+        let items = loader.load(&tmp_file).unwrap();
+
+        let instrument_idx =
+            find_first(&items, |i| matches!(i, BetfairDataItem::Instrument(_))).unwrap();
+        let close_idx =
+            find_first(&items, |i| matches!(i, BetfairDataItem::InstrumentClose(_))).unwrap();
+
+        assert!(
+            instrument_idx < close_idx,
+            "Instrument (idx {instrument_idx}) must precede InstrumentClose (idx {close_idx})"
+        );
+
+        std::fs::remove_file(&tmp_file).ok();
+    }
+
+    #[rstest]
+    fn test_load_non_snapshot_deltas_tail_after_trades() {
+        // Non-snapshot runner updates must emit book deltas AFTER any trades or
+        // tickers parsed from the same message, matching the Python
+        // `market_change_to_updates` ordering and keeping live/backtest in step.
+        let data = compact_json(&load_test_json("stream/mcm_live_UPDATE.json"));
+        let tmp_file = write_tmp(&data, "test_order_deltas_tail.json");
+
+        let mut loader = BetfairDataLoader::new(Currency::GBP(), None);
+        let items = loader.load(&tmp_file).unwrap();
+
+        // Fixture is a single non-snapshot MCM (img=None) with trd + atl on one rc
+        let last_trade_idx = find_last(&items, |i| matches!(i, BetfairDataItem::Trade(_))).unwrap();
+        let first_deltas_idx =
+            find_first(&items, |i| matches!(i, BetfairDataItem::Deltas(_))).unwrap();
+
+        assert!(
+            first_deltas_idx > last_trade_idx,
+            "Deltas (first idx {first_deltas_idx}) must tail after Trade (last idx {last_trade_idx}) on non-snapshot updates"
+        );
+
+        std::fs::remove_file(&tmp_file).ok();
+    }
+
+    #[rstest]
+    fn test_load_snapshot_deltas_emit_inline_before_trades() {
+        // Snapshot messages (mc.img=true) emit Clear+Add deltas inline per runner
+        // so consumers can apply the book state before any trades in the same
+        // MCM. This matches Python's inline-snapshot behaviour.
+        let data = compact_json(&load_test_json(
+            "stream/market_definition_runner_removed.json",
+        ));
+        let tmp_file = write_tmp(&data, "test_order_snapshot_inline.json");
+
+        let mut loader = BetfairDataLoader::new(Currency::GBP(), None);
+        let items = loader.load(&tmp_file).unwrap();
+
+        let first_deltas_idx =
+            find_first(&items, |i| matches!(i, BetfairDataItem::Deltas(_))).unwrap();
+        let first_trade_idx =
+            find_first(&items, |i| matches!(i, BetfairDataItem::Trade(_))).unwrap();
+
+        assert!(
+            first_deltas_idx < first_trade_idx,
+            "Snapshot Deltas (first idx {first_deltas_idx}) must emit before Trade (first idx {first_trade_idx})"
+        );
+
+        std::fs::remove_file(&tmp_file).ok();
+    }
+
+    #[rstest]
+    fn test_load_bsp_tails_after_book_deltas() {
+        // Within each MCM, BSP deltas must emit after all regular book deltas.
+        // Python flushes `book_updates` before `bsp_book_updates`; the Rust
+        // loader must do the same to preserve consumer ordering.
+        let raw = load_test_json("stream/mcm_BSP.json");
+        let messages: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+        let lines: Vec<String> = messages
+            .iter()
+            .map(|v| serde_json::to_string(v).unwrap())
+            .collect();
+        let tmp_file = write_tmp(&lines.join("\n"), "test_order_bsp_tail.json");
+
+        let mut loader = BetfairDataLoader::new(Currency::GBP(), None);
+        let items = loader.load(&tmp_file).unwrap();
+
+        let partitions = partition_by_mcm(&items);
+        assert!(
+            !partitions.is_empty(),
+            "expected at least one MCM partition"
+        );
+
+        let mut checked_any = false;
+
+        for partition in partitions {
+            let last_deltas_idx = find_last(partition, |i| matches!(i, BetfairDataItem::Deltas(_)));
+            let first_bsp_idx =
+                find_first(partition, |i| matches!(i, BetfairDataItem::BspBookDelta(_)));
+
+            if let (Some(last_deltas), Some(first_bsp)) = (last_deltas_idx, first_bsp_idx) {
+                assert!(
+                    last_deltas < first_bsp,
+                    "BspBookDelta (first idx {first_bsp}) must tail after Deltas (last idx {last_deltas}) within the same MCM"
+                );
+                checked_any = true;
+            }
+        }
+
+        assert!(
+            checked_any,
+            "expected at least one MCM to contain both Deltas and BspBookDelta"
+        );
+
+        std::fs::remove_file(&tmp_file).ok();
+    }
+
+    #[rstest]
+    fn test_load_emits_close_for_removed_runner_while_market_open() {
+        // Removed runners must fire InstrumentClose as soon as the market
+        // definition reports the Removed status, regardless of whether the
+        // market as a whole is still Open. This matches the Python parser.
+        let mcm = r#"{"op":"mcm","id":1,"pt":1627617202953,"ct":"SUB_IMAGE","mc":[{"id":"1.2","marketDefinition":{"bspMarket":false,"turnInPlayEnabled":false,"persistenceEnabled":false,"marketBaseRate":5,"eventId":"1","eventTypeId":"1","numberOfWinners":1,"bettingType":"ODDS","marketType":"WIN","marketTime":"2021-07-30T03:55:00.000Z","bspReconciled":false,"complete":true,"inPlay":false,"crossMatching":false,"runnersVoidable":false,"numberOfActiveRunners":1,"betDelay":0,"status":"OPEN","runners":[{"status":"ACTIVE","sortPriority":1,"id":201},{"status":"REMOVED","sortPriority":2,"id":202}],"regulators":["MR_INT"],"discountAllowed":true,"timezone":"UTC","openDate":"2021-07-30T02:45:00.000Z","version":1,"priceLadderDefinition":{"type":"CLASSIC"}}}]}"#;
+        let tmp_file = write_tmp(mcm, "test_order_close_for_removed.json");
+
+        let mut loader = BetfairDataLoader::new(Currency::GBP(), None);
+        let items = loader.load(&tmp_file).unwrap();
+
+        let closes: Vec<_> = items
+            .iter()
+            .filter_map(|i| match i {
+                BetfairDataItem::InstrumentClose(c) => Some(c),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            closes.len(),
+            1,
+            "Removed runner must produce exactly one InstrumentClose while market is Open"
+        );
+        assert!(
+            closes[0].instrument_id.symbol.as_str().contains("202"),
+            "close must target the removed runner (selection id 202)"
+        );
+
+        std::fs::remove_file(&tmp_file).ok();
     }
 }

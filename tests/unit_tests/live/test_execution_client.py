@@ -198,6 +198,7 @@ class TestLiveExecutionClient:
             return "done"
 
         tasks = []
+
         for i in range(5):
             task = self.client.create_task(short_task(), log_msg=f"short_{i}")
             tasks.append(task)

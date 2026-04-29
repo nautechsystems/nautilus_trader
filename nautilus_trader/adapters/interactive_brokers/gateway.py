@@ -127,10 +127,16 @@ class DockerizedIBGateway:
     def is_logged_in(container) -> bool:
         try:
             logs = container.logs()
-        except NoContainer:
+        except Exception:
             return False
 
-        return any(b"Forking :::" in line for line in logs.split(b"\n"))
+        logs_str = logs.decode("utf-8", errors="replace")
+        return (
+            "Login has completed" in logs_str
+            or "Configuration tasks completed" in logs_str
+            or "Logged in to" in logs_str
+            or "Login successful" in logs_str
+        )
 
     def start(self, wait: int | None = None) -> None:
         """
@@ -175,12 +181,12 @@ class DockerizedIBGateway:
             restart_policy={"Name": "always"},
             detach=True,
             ports=ports,
-            platform="amd64",
             environment={
                 "TWS_USERID": self.username,
                 "TWS_PASSWORD": self.password.get_value(),
                 "TRADING_MODE": self.trading_mode,
                 "READ_ONLY_API": {True: "yes", False: "no"}[self.read_only_api],
+                "EXISTING_SESSION_DETECTED_ACTION": "primary",
             },
         )
         self.log.info(f"Container `{self.container_name}` starting, waiting for ready")

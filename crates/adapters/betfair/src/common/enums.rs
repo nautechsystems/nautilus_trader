@@ -704,6 +704,77 @@ pub enum RollupModel {
     None,
 }
 
+/// Certificate-based login response status.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    Display,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum CertLoginStatus {
+    Success,
+    NoError,
+    Fail,
+    AccountAlreadyLocked,
+    AccountNowLocked,
+    AccountPendingPasswordChange,
+    ActionsRequired,
+    AgentClientMaster,
+    AgentClientMasterSuspended,
+    AuthorizedOnlyForDomainRo,
+    AuthorizedOnlyForDomainSe,
+    BettingRestrictedLocation,
+    CertAuthRequired,
+    ChangePasswordRequired,
+    Closed,
+    DanishAuthorizationRequired,
+    DenmarkMigrationRequired,
+    DuplicateCards,
+    EmailLoginNotAllowed,
+    InputValidationError,
+    InternalError,
+    InternationalTermsAcceptanceRequired,
+    InvalidConnectivityToRegulatorDk,
+    InvalidConnectivityToRegulatorIt,
+    InvalidUsernameOrPassword,
+    ItalianContractAcceptanceRequired,
+    ItalianProfilingAcceptanceRequired,
+    KycSuspend,
+    LoginRestricted,
+    MultipleUsersWithSameCredential,
+    NotAuthorizedByRegulatorDk,
+    NotAuthorizedByRegulatorIt,
+    PendingAuth,
+    PersonalMessageRequired,
+    #[serde(rename = "SECURITY_QUESTION_WRONG_3X")]
+    #[strum(serialize = "SECURITY_QUESTION_WRONG_3X")]
+    SecurityQuestionWrong3x,
+    SecurityRestrictedLocation,
+    SelfExcluded,
+    SpainMigrationRequired,
+    SpanishTermsAcceptanceRequired,
+    StrongAuthCodeRequired,
+    Suspended,
+    SwedenBankIdVerificationRequired,
+    SwedenNationalIdentifierRequired,
+    TelbetTermsConditionsNa,
+    TemporaryBanTooManyRequests,
+    TradingMaster,
+    TradingMasterSuspended,
+    #[serde(other)]
+    Other,
+}
+
 /// Streaming order side (shorthand: B=Back, L=Lay).
 #[derive(
     Clone,

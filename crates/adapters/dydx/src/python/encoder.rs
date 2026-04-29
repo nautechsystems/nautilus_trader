@@ -15,8 +15,6 @@
 
 //! Python bindings for dYdX ClientOrderId encoder.
 
-#![allow(clippy::missing_errors_doc)]
-
 use std::sync::Arc;
 
 use nautilus_core::python::to_pyruntime_err;

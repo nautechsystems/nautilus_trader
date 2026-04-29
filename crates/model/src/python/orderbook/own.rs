@@ -40,7 +40,7 @@ impl OwnBookOrder {
     /// depending on the value of the `status` field.
     #[pyo3(signature = (trader_id, client_order_id, side, price, size, order_type, time_in_force, status, ts_last, ts_accepted, ts_submitted, ts_init, venue_order_id=None))]
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         trader_id: TraderId,
         client_order_id: ClientOrderId,
@@ -237,18 +237,21 @@ impl OwnOrderBook {
 
     /// Returns the client order IDs currently on the bid side.
     #[pyo3(name = "bid_client_order_ids")]
+    #[must_use]
     pub fn py_bid_client_order_ids(&self) -> Vec<ClientOrderId> {
         self.bid_client_order_ids()
     }
 
     /// Returns the client order IDs currently on the ask side.
     #[pyo3(name = "ask_client_order_ids")]
+    #[must_use]
     pub fn py_ask_client_order_ids(&self) -> Vec<ClientOrderId> {
         self.ask_client_order_ids()
     }
 
     /// Return whether the given client order ID is in the own book.
     #[pyo3(name = "is_order_in_book")]
+    #[must_use]
     pub fn py_is_order_in_book(&self, client_order_id: &ClientOrderId) -> bool {
         self.is_order_in_book(client_order_id)
     }

@@ -35,7 +35,8 @@ use nautilus_model::{
 use nautilus_network::{
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, SubscriptionState, WebSocketClient, WebSocketConfig, channel_message_handler,
+        AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
+        channel_message_handler,
     },
 };
 use tokio_util::sync::CancellationToken;
@@ -87,6 +88,8 @@ pub struct KrakenSpotWebSocketClient {
     account_id: Arc<RwLock<Option<AccountId>>>,
     truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    transport_backend: TransportBackend,
+    proxy_url: Option<String>,
 }
 
 impl Clone for KrakenSpotWebSocketClient {
@@ -108,13 +111,19 @@ impl Clone for KrakenSpotWebSocketClient {
             account_id: Arc::clone(&self.account_id),
             truncated_id_map: Arc::clone(&self.truncated_id_map),
             instruments: Arc::clone(&self.instruments),
+            transport_backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         }
     }
 }
 
 impl KrakenSpotWebSocketClient {
     /// Creates a new client with the given configuration.
-    pub fn new(config: KrakenDataClientConfig, cancellation_token: CancellationToken) -> Self {
+    pub fn new(
+        mut config: KrakenDataClientConfig,
+        cancellation_token: CancellationToken,
+        proxy_url: Option<String>,
+    ) -> Self {
         // Prefer private URL if explicitly set (for authenticated endpoints)
         let url = if config.ws_private_url.is_some() {
             config.ws_private_url()
@@ -124,6 +133,13 @@ impl KrakenSpotWebSocketClient {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<SpotHandlerCommand>();
         let initial_mode = AtomicU8::new(ConnectionMode::Closed.as_u8());
         let connection_mode = Arc::new(ArcSwap::from_pointee(initial_mode));
+
+        let transport_backend = config.transport_backend;
+
+        // Keep the config's proxy_url in sync with the constructor argument so
+        // refresh_auth_token() (which reads config.proxy_url) goes through the
+        // same proxy as the WebSocket connection.
+        config.proxy_url = proxy_url.clone();
 
         Self {
             url,
@@ -142,6 +158,8 @@ impl KrakenSpotWebSocketClient {
             account_id: Arc::new(RwLock::new(None)),
             truncated_id_map: Arc::new(AtomicMap::new()),
             instruments: Arc::new(AtomicMap::new()),
+            transport_backend,
+            proxy_url,
         }
     }
 
@@ -171,6 +189,8 @@ impl KrakenSpotWebSocketClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
 
         let ws_client = WebSocketClient::connect(
@@ -205,6 +225,7 @@ impl KrakenSpotWebSocketClient {
         let subscription_payloads = self.subscription_payloads.clone();
         let config_for_reconnect = self.config.clone();
         let auth_token_for_reconnect = self.auth_token.clone();
+        let auth_tracker_for_reconnect = self.auth_tracker.clone();
         let cmd_tx_for_reconnect = cmd_tx.clone();
 
         let stream_handle = get_runtime().spawn(async move {
@@ -233,9 +254,13 @@ impl KrakenSpotWebSocketClient {
                             if had_auth && config_for_reconnect.has_api_credentials() {
                                 log::debug!("Re-authenticating after reconnect");
 
+                                auth_tracker_for_reconnect.invalidate();
+                                let _rx = auth_tracker_for_reconnect.begin();
+
                                 match refresh_auth_token(&config_for_reconnect).await {
                                     Ok(new_token) => {
                                         *auth_token_for_reconnect.write().await = Some(new_token);
+                                        auth_tracker_for_reconnect.succeed();
                                         log::debug!("Re-authentication successful");
                                     }
                                     Err(e) => {
@@ -243,6 +268,7 @@ impl KrakenSpotWebSocketClient {
                                             "Failed to re-authenticate after reconnect: {e}"
                                         );
                                         *auth_token_for_reconnect.write().await = None;
+                                        auth_tracker_for_reconnect.fail(e.to_string());
                                     }
                                 }
                             }
@@ -393,6 +419,27 @@ impl KrakenSpotWebSocketClient {
         Ok(())
     }
 
+    /// Returns true if the WebSocket is authenticated for private subscriptions.
+    #[must_use]
+    pub fn is_authenticated(&self) -> bool {
+        self.auth_tracker.is_authenticated()
+    }
+
+    /// Waits until the WebSocket is authenticated or the timeout elapses.
+    ///
+    /// Returns an error on timeout or explicit auth failure.
+    pub async fn wait_until_authenticated(&self, timeout_secs: f64) -> Result<(), KrakenWsError> {
+        let timeout = tokio::time::Duration::from_secs_f64(timeout_secs);
+
+        if self.auth_tracker.wait_for_authenticated(timeout).await {
+            Ok(())
+        } else {
+            Err(KrakenWsError::AuthenticationError(format!(
+                "Authentication not completed within {timeout_secs} seconds"
+            )))
+        }
+    }
+
     /// Authenticates with the Kraken API to enable private subscriptions.
     pub async fn authenticate(&self) -> Result<(), KrakenWsError> {
         if !self.config.has_api_credentials() {
@@ -401,48 +448,20 @@ impl KrakenSpotWebSocketClient {
             ));
         }
 
-        let api_key = self
-            .config
-            .api_key
-            .clone()
-            .ok_or_else(|| KrakenWsError::AuthenticationError("Missing API key".to_string()))?;
-        let api_secret =
-            self.config.api_secret.clone().ok_or_else(|| {
-                KrakenWsError::AuthenticationError("Missing API secret".to_string())
-            })?;
+        let _receiver = self.auth_tracker.begin();
 
-        let http_client = KrakenSpotHttpClient::with_credentials(
-            api_key,
-            api_secret,
-            self.config.environment,
-            Some(self.config.http_base_url()),
-            self.config.timeout_secs,
-            None,
-            None,
-            None,
-            self.config.http_proxy.clone(),
-            self.config
-                .max_requests_per_second
-                .unwrap_or(KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND),
-        )
-        .map_err(|e| {
-            KrakenWsError::AuthenticationError(format!("Failed to create HTTP client: {e}"))
-        })?;
-
-        let ws_token = http_client.get_websockets_token().await.map_err(|e| {
-            KrakenWsError::AuthenticationError(format!("Failed to get WebSocket token: {e}"))
-        })?;
-
-        log::debug!(
-            "WebSocket authentication token received: token_length={}, expires={}",
-            ws_token.token.len(),
-            ws_token.expires
-        );
-
-        let mut auth_token = self.auth_token.write().await;
-        *auth_token = Some(ws_token.token);
-
-        Ok(())
+        match refresh_auth_token(&self.config).await {
+            Ok(token) => {
+                *self.auth_token.write().await = Some(token);
+                self.auth_tracker.succeed();
+                Ok(())
+            }
+            Err(e) => {
+                *self.auth_token.write().await = None;
+                self.auth_tracker.fail(e.to_string());
+                Err(e)
+            }
+        }
     }
 
     /// Cancels all pending requests.
@@ -1036,7 +1055,7 @@ async fn refresh_auth_token(config: &KrakenDataClientConfig) -> Result<String, K
         None,
         None,
         None,
-        config.http_proxy.clone(),
+        config.proxy_url.clone(),
         config
             .max_requests_per_second
             .unwrap_or(KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND),
@@ -1124,5 +1143,71 @@ mod tests {
         let symbol = Ustr::from(input);
         let result = to_ws_v2_symbol(symbol);
         assert_eq!(result.as_str(), expected);
+    }
+
+    fn test_client_without_credentials() -> KrakenSpotWebSocketClient {
+        KrakenSpotWebSocketClient::new(
+            KrakenDataClientConfig::default(),
+            CancellationToken::new(),
+            None,
+        )
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_authenticate_without_credentials_errors() {
+        let client = test_client_without_credentials();
+
+        let err = client.authenticate().await.expect_err("should fail");
+        assert!(
+            matches!(err, KrakenWsError::AuthenticationError(ref msg) if msg.contains("API credentials required")),
+            "unexpected error: {err:?}"
+        );
+        assert!(!client.is_authenticated());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_wait_until_authenticated_times_out() {
+        let client = test_client_without_credentials();
+
+        let err = client
+            .wait_until_authenticated(0.05)
+            .await
+            .expect_err("should time out");
+        assert!(matches!(err, KrakenWsError::AuthenticationError(_)));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_wait_until_authenticated_resolves_after_succeed() {
+        let client = test_client_without_credentials();
+
+        let tracker = client.auth_tracker.clone();
+        let _rx = tracker.begin();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+            tracker.succeed();
+        });
+
+        client
+            .wait_until_authenticated(1.0)
+            .await
+            .expect("should resolve once tracker succeeds");
+        assert!(client.is_authenticated());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_is_authenticated_flips_on_fail() {
+        let client = test_client_without_credentials();
+
+        let _rx = client.auth_tracker.begin();
+        client.auth_tracker.succeed();
+        assert!(client.is_authenticated());
+
+        client.auth_tracker.fail("test failure");
+        assert!(!client.is_authenticated());
     }
 }

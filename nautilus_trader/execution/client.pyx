@@ -60,6 +60,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -160,6 +161,37 @@ cdef class ExecutionClient(Component):
 
         """
         return self._cache.account(self.account_id)
+
+    cpdef Money calculate_commission(
+        self,
+        Instrument instrument,
+        Quantity last_qty,
+        Price last_px,
+        LiquiditySide liquidity_side,
+    ):
+        """
+        Calculate the commission for a reconciliation fill.
+
+        Override this method to provide venue-specific commission logic
+        for inferred fills generated during reconciliation.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for the fill.
+        last_qty : Quantity
+            The fill quantity.
+        last_px : Price
+            The fill price.
+        liquidity_side : LiquiditySide {``NO_LIQUIDITY_SIDE``, ``MAKER``, ``TAKER``}
+            The liquidity side for the fill.
+
+        Returns
+        -------
+        Money or ``None``
+
+        """
+        return None
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 

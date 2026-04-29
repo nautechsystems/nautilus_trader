@@ -31,6 +31,7 @@ __all__ = [
     "BybitOrderSide",
     "BybitOrderStatus",
     "BybitOrderType",
+    "BybitPositionIdx",
     "BybitPositionMode",
     "BybitProductType",
     "BybitRawHttpClient",
@@ -50,6 +51,7 @@ __all__ = [
     "bybit_bar_spec_to_interval",
     "bybit_extract_raw_symbol",
     "bybit_product_type_from_symbol",
+    "bybit_resolve_position_idx",
     "get_bybit_http_base_url",
     "get_bybit_ws_url_private",
     "get_bybit_ws_url_public",
@@ -75,7 +77,7 @@ class BybitDataClientConfig:
         base_url_http: str | None = None,
         base_url_ws_public: str | None = None,
         base_url_ws_private: str | None = None,
-        http_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -102,7 +104,7 @@ class BybitExecClientConfig:
         base_url_http: str | None = None,
         base_url_ws_private: str | None = None,
         base_url_ws_trade: str | None = None,
-        http_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -131,11 +133,11 @@ class BybitHttpClient:
         base_url: str | None = None,
         demo: bool = False,
         testnet: bool = False,
-        timeout_secs: int | None = None,
-        max_retries: int | None = None,
-        retry_delay_ms: int | None = None,
-        retry_delay_max_ms: int | None = None,
-        recv_window_ms: int | None = None,
+        timeout_secs: int = 60,
+        max_retries: int = 3,
+        retry_delay_ms: int = 1000,
+        retry_delay_max_ms: int = 10000,
+        recv_window_ms: int = 5000,
         proxy_url: str | None = None,
     ) -> None: ...
     @property
@@ -163,7 +165,7 @@ class BybitHttpClient:
     def borrow_spot(self, coin: str, amount: model.Quantity) -> typing.Any: ...
     def repay_spot_borrow(self, coin: str, amount: model.Quantity | None = ...) -> typing.Any: ...
     def request_instruments(
-        self, product_type: BybitProductType, symbol: str | None = ...
+        self, product_type: BybitProductType, symbol: str | None = ..., base_coin: str | None = ...
     ) -> typing.Any: ...
     def request_instrument_statuses(self, product_type: BybitProductType) -> typing.Any: ...
     def request_tickers(self, params: BybitTickersParams) -> typing.Any: ...
@@ -183,6 +185,7 @@ class BybitHttpClient:
         reduce_only: bool,
         is_quote_quantity: bool,
         is_leverage: bool,
+        position_idx: BybitPositionIdx | None = ...,
     ) -> typing.Any: ...
     def modify_order(
         self,
@@ -352,11 +355,11 @@ class BybitRawHttpClient:
         base_url: str | None = None,
         demo: bool = False,
         testnet: bool = False,
-        timeout_secs: int | None = None,
-        max_retries: int | None = None,
-        retry_delay_ms: int | None = None,
-        retry_delay_max_ms: int | None = None,
-        recv_window_ms: int | None = None,
+        timeout_secs: int = 60,
+        max_retries: int = 3,
+        retry_delay_ms: int = 1000,
+        retry_delay_max_ms: int = 10000,
+        recv_window_ms: int = 5000,
         proxy_url: str | None = None,
     ) -> None: ...
     @property
@@ -404,7 +407,8 @@ class BybitWebSocketClient:
         product_type: BybitProductType,
         environment: BybitEnvironment,
         url: str | None = None,
-        heartbeat: int | None = None,
+        heartbeat: int = 20,
+        proxy_url: str | None = None,
     ) -> BybitWebSocketClient: ...
     @staticmethod
     def new_private(
@@ -412,7 +416,8 @@ class BybitWebSocketClient:
         api_key: str | None = None,
         api_secret: str | None = None,
         url: str | None = None,
-        heartbeat: int | None = None,
+        heartbeat: int = 20,
+        proxy_url: str | None = None,
     ) -> BybitWebSocketClient: ...
     @staticmethod
     def new_trade(
@@ -420,7 +425,8 @@ class BybitWebSocketClient:
         api_key: str | None = None,
         api_secret: str | None = None,
         url: str | None = None,
-        heartbeat: int | None = None,
+        heartbeat: int = 20,
+        proxy_url: str | None = None,
     ) -> BybitWebSocketClient: ...
     @property
     def api_key_masked(self) -> str | None: ...
@@ -472,9 +478,11 @@ class BybitWebSocketClient:
         time_in_force: model.TimeInForce | None,
         price: model.Price | None,
         trigger_price: model.Price | None,
+        trigger_type: model.TriggerType | None,
         post_only: bool | None,
         reduce_only: bool | None,
         is_leverage: bool,
+        position_idx: BybitPositionIdx | None = ...,
     ) -> typing.Any: ...
     def modify_order(
         self,
@@ -508,11 +516,13 @@ class BybitWebSocketClient:
         time_in_force: model.TimeInForce | None = None,
         price: model.Price | None = None,
         trigger_price: model.Price | None = None,
+        trigger_type: model.TriggerType | None = None,
         post_only: bool | None = None,
         reduce_only: bool | None = None,
         is_leverage: bool = False,
         take_profit: model.Price | None = None,
         stop_loss: model.Price | None = None,
+        position_idx: BybitPositionIdx | None = None,
     ) -> BybitWsPlaceOrderParams: ...
     def batch_cancel_orders(
         self,
@@ -599,29 +609,30 @@ class BybitWsPlaceOrderParams:
         side: str,
         order_type: str,
         qty: str,
-        is_leverage: int | None = ...,
-        market_unit: str | None = ...,
-        price: str | None = ...,
-        time_in_force: str | None = ...,
-        order_link_id: str | None = ...,
-        reduce_only: bool | None = ...,
-        close_on_trigger: bool | None = ...,
-        trigger_price: str | None = ...,
-        trigger_by: str | None = ...,
-        trigger_direction: int | None = ...,
-        tpsl_mode: str | None = ...,
-        take_profit: str | None = ...,
-        stop_loss: str | None = ...,
-        tp_trigger_by: str | None = ...,
-        sl_trigger_by: str | None = ...,
-        sl_trigger_price: str | None = ...,
-        tp_trigger_price: str | None = ...,
-        sl_order_type: str | None = ...,
-        tp_order_type: str | None = ...,
-        sl_limit_price: str | None = ...,
-        tp_limit_price: str | None = ...,
-        order_iv: str | None = ...,
-        mmp: bool | None = ...,
+        is_leverage: int | None = None,
+        market_unit: str | None = None,
+        price: str | None = None,
+        time_in_force: str | None = None,
+        order_link_id: str | None = None,
+        reduce_only: bool | None = None,
+        close_on_trigger: bool | None = None,
+        trigger_price: str | None = None,
+        trigger_by: str | None = None,
+        trigger_direction: int | None = None,
+        tpsl_mode: str | None = None,
+        take_profit: str | None = None,
+        stop_loss: str | None = None,
+        tp_trigger_by: str | None = None,
+        sl_trigger_by: str | None = None,
+        sl_trigger_price: str | None = None,
+        tp_trigger_price: str | None = None,
+        sl_order_type: str | None = None,
+        tp_order_type: str | None = None,
+        sl_limit_price: str | None = None,
+        tp_limit_price: str | None = None,
+        order_iv: str | None = None,
+        mmp: bool | None = None,
+        position_idx: BybitPositionIdx | None = None,
     ) -> None: ...
 
 @typing.final
@@ -752,6 +763,23 @@ class BybitOrderType(enum.Enum):
     Unknown = ...
 
 @typing.final
+class BybitPositionIdx(enum.Enum):
+    ONE_WAY = ...
+    BUY_HEDGE = ...
+    SELL_HEDGE = ...
+
+    def __init__(self, value: typing.Any) -> None: ...
+    def __hash__(self) -> int: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> int: ...
+    @staticmethod
+    def variants() -> list[str]: ...
+    @classmethod
+    def from_str(cls, data: typing.Any) -> BybitPositionIdx: ...
+
+@typing.final
 class BybitPositionMode(enum.Enum):
     MERGED_SINGLE = ...
     BOTH_SIDES = ...
@@ -829,6 +857,12 @@ class BybitTriggerType(enum.Enum):
 def bybit_bar_spec_to_interval(aggregation: int, step: int) -> str: ...
 def bybit_extract_raw_symbol(symbol: str) -> str: ...
 def bybit_product_type_from_symbol(symbol: str) -> BybitProductType: ...
+def bybit_resolve_position_idx(
+    position_mode: BybitPositionMode | None,
+    order_side: model.OrderSide,
+    is_reduce_only: bool,
+    manual_override: BybitPositionIdx | None = None,
+) -> BybitPositionIdx | None: ...
 def get_bybit_http_base_url(environment: BybitEnvironment) -> str: ...
 def get_bybit_ws_url_private(environment: BybitEnvironment) -> str: ...
 def get_bybit_ws_url_public(

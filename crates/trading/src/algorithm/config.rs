@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 
 /// Configuration for an execution algorithm.
 #[derive(Clone, Debug, Deserialize, Serialize, bon::Builder)]
+#[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)
@@ -47,7 +48,8 @@ impl Default for ExecutionAlgorithmConfig {
 }
 
 /// Configuration for creating execution algorithms from importable paths.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)

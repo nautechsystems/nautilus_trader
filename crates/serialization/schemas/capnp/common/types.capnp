@@ -1,5 +1,8 @@
 @0xa1b2c3d4e5f60718;
 # Cap'n Proto schema for Nautilus value types
+#
+# WARNING: This schema is not yet stable and may change without notice
+# between releases. Do not depend on wire compatibility across versions.
 
 using Identifiers = import "identifiers.capnp";
 using Enums = import "enums.capnp";

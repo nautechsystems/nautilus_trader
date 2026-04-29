@@ -84,6 +84,7 @@ def test_python_custom_data_roundtrip(tmp_path):
 
     # Result should be CustomData wrappers with RustTestCustomData in .data
     roundtripped = []
+
     for item in result:
         assert isinstance(item, CustomData), f"Expected CustomData, found {type(item)}"
         assert custom_data_backend_kind(item) == "native"
@@ -175,6 +176,7 @@ def test_macro_yield_curve_data_roundtrip(tmp_path):
     )
 
     roundtripped = []
+
     for item in result:
         assert isinstance(item, CustomData), f"Expected CustomData, found {type(item)}"
         inner = item.data
@@ -256,6 +258,7 @@ def test_rust_params_custom_data_roundtrip(tmp_path):
     )
 
     roundtripped = []
+
     for item in result:
         assert isinstance(item, CustomData), f"Expected CustomData, found {type(item)}"
         inner = item.data
@@ -339,6 +342,7 @@ def test_python_only_customdataclass_pyo3_roundtrip(tmp_path):
         True,
     )
     roundtripped = []
+
     for item in result:
         assert isinstance(item, CustomData), f"Expected CustomData, found {type(item)}"
         assert custom_data_backend_kind(item) == "python"
@@ -431,6 +435,7 @@ def test_python_only_customdataclass_pyo3_dict_roundtrip(tmp_path):
     )
 
     roundtripped = []
+
     for item in result:
         assert isinstance(item, CustomData), f"Expected CustomData, found {type(item)}"
         assert custom_data_backend_kind(item) == "python"

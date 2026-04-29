@@ -284,6 +284,7 @@ impl PolymarketClobHttpClient {
             params.next_cursor = Some(CURSOR_START.to_string());
         }
         let mut all = Vec::new();
+
         loop {
             let page: PaginatedResponse<PolymarketOpenOrder> =
                 self.send_get(PATH_ORDERS, Some(&params), true).await?;
@@ -321,6 +322,7 @@ impl PolymarketClobHttpClient {
             params.next_cursor = Some(CURSOR_START.to_string());
         }
         let mut all = Vec::new();
+
         loop {
             let page: PaginatedResponse<PolymarketTradeReport> =
                 self.send_get(PATH_TRADES, Some(&params), true).await?;

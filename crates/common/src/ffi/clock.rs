@@ -254,7 +254,6 @@ pub unsafe extern "C" fn test_clock_advance_time(
 /// # Panics
 ///
 /// Panics if `CVec` invariants are violated (corrupted metadata).
-#[allow(clippy::drop_non_drop)]
 #[unsafe(no_mangle)]
 pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
     let CVec { ptr, len, cap } = v;

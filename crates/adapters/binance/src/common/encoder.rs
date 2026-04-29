@@ -242,6 +242,7 @@ fn encode_base62<const N: usize>(mut value: u128) -> [u8; N] {
 
 fn decode_base62(encoded: &[u8]) -> u128 {
     let mut value: u128 = 0;
+
     for &byte in encoded {
         let digit = BASE62_DECODE[byte as usize & 0x7F];
 
@@ -256,6 +257,7 @@ fn decode_base62(encoded: &[u8]) -> u128 {
 
 fn parse_digits(bytes: &[u8]) -> Option<u32> {
     let mut n: u32 = 0;
+
     for &b in bytes {
         if !b.is_ascii_digit() {
             return None;
@@ -367,6 +369,7 @@ fn parse_uuid_hex(id_str: &str) -> Option<(u128, bool)> {
             return None;
         }
         let mut value: u128 = 0;
+
         for &byte in b {
             if byte == b'-' {
                 continue;
@@ -377,6 +380,7 @@ fn parse_uuid_hex(id_str: &str) -> Option<(u128, bool)> {
         Some((value, true))
     } else if b.len() == 32 {
         let mut value: u128 = 0;
+
         for &byte in b {
             let nibble = hex_digit(byte)?;
             value = (value << 4) | nibble as u128;
@@ -395,6 +399,7 @@ fn format_uuid(data: &str, has_hyphens: bool) -> String {
     if has_hyphens {
         let mut buf = [0u8; 36];
         let mut pos = 0;
+
         for (i, &b) in bytes.iter().enumerate() {
             if i == 4 || i == 6 || i == 8 || i == 10 {
                 buf[pos] = b'-';
@@ -755,6 +760,7 @@ mod tests {
         let iterations = 100_000;
 
         let start = std::time::Instant::now();
+
         for _ in 0..iterations {
             black_box(encode_broker_id(black_box(&o_coid), TEST_BROKER_ID));
         }
@@ -762,12 +768,14 @@ mod tests {
 
         let o_encoded = encode_broker_id(&o_coid, TEST_BROKER_ID);
         let start = std::time::Instant::now();
+
         for _ in 0..iterations {
             black_box(decode_broker_id(black_box(&o_encoded), TEST_BROKER_ID));
         }
         let decode_o = start.elapsed();
 
         let start = std::time::Instant::now();
+
         for _ in 0..iterations {
             black_box(encode_broker_id(black_box(&uuid_coid), TEST_BROKER_ID));
         }
@@ -775,12 +783,14 @@ mod tests {
 
         let uuid_encoded = encode_broker_id(&uuid_coid, TEST_BROKER_ID);
         let start = std::time::Instant::now();
+
         for _ in 0..iterations {
             black_box(decode_broker_id(black_box(&uuid_encoded), TEST_BROKER_ID));
         }
         let decode_uuid = start.elapsed();
 
         let start = std::time::Instant::now();
+
         for _ in 0..iterations {
             black_box(encode_broker_id(black_box(&raw_coid), TEST_BROKER_ID));
         }
@@ -788,6 +798,7 @@ mod tests {
 
         let raw_encoded = encode_broker_id(&raw_coid, TEST_BROKER_ID);
         let start = std::time::Instant::now();
+
         for _ in 0..iterations {
             black_box(decode_broker_id(black_box(&raw_encoded), TEST_BROKER_ID));
         }
@@ -795,6 +806,7 @@ mod tests {
 
         let passthrough = "O-20260305-120000-001-001-100";
         let start = std::time::Instant::now();
+
         for _ in 0..iterations {
             black_box(decode_broker_id(black_box(passthrough), TEST_BROKER_ID));
         }

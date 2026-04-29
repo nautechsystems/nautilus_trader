@@ -153,6 +153,7 @@ impl SyntheticInstrument {
     }
 
     /// Returns whether the given formula compiles against the provided components.
+    #[must_use]
     pub fn is_valid_formula_for_components(formula: &str, components: &[InstrumentId]) -> bool {
         let component_names = component_names_from_components(components);
         compile_formula(formula, &component_names).is_ok()
@@ -163,6 +164,7 @@ impl SyntheticInstrument {
     /// # Panics
     ///
     /// Panics if the provided formula is invalid and cannot be parsed.
+    #[must_use]
     pub fn new(
         symbol: Symbol,
         price_precision: u8,

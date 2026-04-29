@@ -15,7 +15,7 @@
 
 //! Example demonstrating live execution testing with the Kraken adapter.
 //!
-//! Run with: `cargo run -p nautilus-kraken --example kraken-exec-tester`
+//! Run with: `cargo run -p nautilus-kraken --example kraken-exec-tester --features examples`
 //!
 //! Environment variables (for Spot):
 //! - KRAKEN_SPOT_API_KEY: Your Kraken Spot API key
@@ -32,6 +32,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
@@ -84,6 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: Some(api_key.clone()),
         api_secret: Some(api_secret.clone()),
         product_type,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -93,6 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key,
         api_secret,
         product_type,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

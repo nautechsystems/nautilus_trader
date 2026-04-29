@@ -26,8 +26,8 @@ use crate::{
 impl PolymarketDataClientConfig {
     /// Configuration for the Polymarket data client.
     #[new]
-    #[pyo3(signature = (base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=None, subscribe_new_markets=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=None, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         base_url_http: Option<String>,
         base_url_ws: Option<String>,
@@ -38,6 +38,8 @@ impl PolymarketDataClientConfig {
         ws_max_subscriptions: Option<usize>,
         update_instruments_interval_mins: Option<u64>,
         subscribe_new_markets: Option<bool>,
+        auto_load_missing_instruments: Option<bool>,
+        auto_load_debounce_ms: Option<u64>,
     ) -> Self {
         let default = Self::default();
         Self {
@@ -51,8 +53,12 @@ impl PolymarketDataClientConfig {
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(default.update_instruments_interval_mins),
             subscribe_new_markets: subscribe_new_markets.unwrap_or(false),
+            auto_load_missing_instruments: auto_load_missing_instruments
+                .unwrap_or(default.auto_load_missing_instruments),
+            auto_load_debounce_ms: auto_load_debounce_ms.unwrap_or(default.auto_load_debounce_ms),
             filters: Vec::new(),
             new_market_filter: None,
+            transport_backend: default.transport_backend,
         }
     }
 
@@ -70,7 +76,7 @@ impl PolymarketDataClientConfig {
 impl PolymarketExecClientConfig {
     /// Configuration for the Polymarket execution client.
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[pyo3(signature = (trader_id=None, account_id=None, private_key=None, api_key=None, api_secret=None, passphrase=None, funder=None, signature_type=None, base_url_http=None, base_url_ws=None, base_url_data_api=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, ack_timeout_secs=None))]
     fn py_new(
         trader_id: Option<String>,
@@ -109,6 +115,7 @@ impl PolymarketExecClientConfig {
                 .unwrap_or(default.retry_delay_initial_ms),
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(default.retry_delay_max_ms),
             ack_timeout_secs: ack_timeout_secs.unwrap_or(default.ack_timeout_secs),
+            transport_backend: default.transport_backend,
         }
     }
 

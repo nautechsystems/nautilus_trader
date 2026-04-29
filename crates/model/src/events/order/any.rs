@@ -31,7 +31,10 @@ use crate::{
 };
 
 /// Wraps an `OrderEvent` allowing polymorphism.
-#[allow(clippy::large_enum_variant)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "lint fires only with high-precision feature"
+)]
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum OrderEventAny {
     Initialized(OrderInitialized),
@@ -328,7 +331,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "Invalid `OrderEventAny` not `OrderFilled`")]
     fn test_from_order_event_any_to_filled_panics_on_wrong_variant(order_accepted: OrderAccepted) {
         let event = OrderEventAny::Accepted(order_accepted);
         let _filled: OrderFilled = event.into();

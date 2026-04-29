@@ -29,6 +29,7 @@ ENV CXX="clang++"
 RUN apt-get update && apt-get install -y \
     curl \
     clang \
+    lld \
     git \
     pkg-config \
     make \

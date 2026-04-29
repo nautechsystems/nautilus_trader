@@ -36,6 +36,7 @@ use nautilus_common::{
         },
     },
 };
+use nautilus_core::string::urlencoding;
 use nautilus_model::{
     data::Data,
     identifiers::{ClientId, Venue},
@@ -441,6 +442,7 @@ impl DataClient for TardisDataClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping {}", self.client_id);
         self.cancellation_token.cancel();
+
         for handle in self.tasks.drain(..) {
             handle.abort();
         }
@@ -450,6 +452,7 @@ impl DataClient for TardisDataClient {
 
     fn reset(&mut self) -> anyhow::Result<()> {
         self.cancellation_token.cancel();
+
         for handle in self.tasks.drain(..) {
             handle.abort();
         }
@@ -470,17 +473,17 @@ impl DataClient for TardisDataClient {
         !self.is_connected()
     }
 
-    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
+    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
         log::info!("Subscribed mark prices for {}", cmd.instrument_id);
         Ok(())
     }
 
-    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         log::info!("Subscribed index prices for {}", cmd.instrument_id);
         Ok(())
     }
 
-    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
         log::info!("Subscribed funding rates for {}", cmd.instrument_id);
         Ok(())
     }
@@ -517,6 +520,7 @@ impl DataClient for TardisDataClient {
             None,
             None,
             self.config.normalize_symbols,
+            self.config.proxy_url.clone(),
         )?;
 
         let exchanges: AHashSet<_> = if is_stream_mode {
@@ -659,9 +663,9 @@ mod tests {
         };
 
         let client = TardisDataClient::new(ClientId::new("TARDIS"), config).unwrap();
-        let url = client.build_ws_url("ws://localhost:8001").unwrap();
+        let ws_url = client.build_ws_url("ws://localhost:8001").unwrap();
 
-        let decoded = urlencoding::decode(url.split("options=").nth(1).unwrap()).unwrap();
+        let decoded = urlencoding::decode(ws_url.split("options=").nth(1).unwrap()).unwrap();
         let count = decoded.matches("derivative_ticker").count();
         assert_eq!(count, 1, "derivative_ticker should appear exactly once");
     }

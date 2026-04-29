@@ -47,7 +47,7 @@ use crate::{
 ///
 /// # Prices
 ///
-/// - `spot_price`: Instantaneous pool price after the swap (from sqrt_price_x96)
+/// - `spot_price`: Instantaneous pool price after the swap (from `sqrt_price_x96`)
 /// - `execution_price`: Average realized price for this swap (from amount ratio)
 ///
 /// Both prices are in quote/base direction (e.g., USDC per WETH) and adjusted for token decimals.
@@ -135,7 +135,7 @@ impl SwapTradeInfo {
 /// # Precision Handling
 ///
 /// For tokens with more than 16 decimals, quantities and prices are automatically
-/// scaled down to MAX_FLOAT_PRECISION (16) to ensure safe f64 conversion while
+/// scaled down to `MAX_FLOAT_PRECISION` (16) to ensure safe f64 conversion while
 /// maintaining reasonable precision for practical trading purposes.
 #[derive(Debug)]
 pub struct SwapTradeInfoCalculator<'a> {
@@ -153,6 +153,7 @@ pub struct SwapTradeInfoCalculator<'a> {
 }
 
 impl<'a> SwapTradeInfoCalculator<'a> {
+    #[must_use]
     pub fn new(token0: &'a Token, token1: &'a Token, raw_swap_data: RawSwapData) -> Self {
         let is_inverted = token0.get_token_priority() < token1.get_token_priority();
         Self {
@@ -165,7 +166,8 @@ impl<'a> SwapTradeInfoCalculator<'a> {
 
     /// Determines swap direction from amount signs.
     ///
-    /// Returns `true` if swapping token0 for token1 (zero_for_one).
+    /// Returns `true` if swapping token0 for token1 (`zero_for_one`).
+    #[must_use]
     pub fn zero_for_one(&self) -> bool {
         self.raw_swap_data.amount0.is_positive()
     }
@@ -220,6 +222,7 @@ impl<'a> SwapTradeInfoCalculator<'a> {
     /// The order side depends on:
     /// 1. Which token is being bought/sold (from amount signs)
     /// 2. Which token is base vs quote (from priority determination)
+    #[must_use]
     pub fn order_side(&self) -> OrderSide {
         let zero_for_one = self.zero_for_one();
 
@@ -268,7 +271,7 @@ impl<'a> SwapTradeInfoCalculator<'a> {
             )
         };
 
-        Quantity::from_u256(amount, precision)
+        Quantity::from_u256(amount, precision).map_err(Into::into)
     }
 
     /// Returns the quantity of the quote token involved in the swap.
@@ -295,7 +298,7 @@ impl<'a> SwapTradeInfoCalculator<'a> {
             )
         };
 
-        Quantity::from_u256(amount, precision)
+        Quantity::from_u256(amount, precision).map_err(Into::into)
     }
 
     /// Returns the human-readable spot price in base/quote (market) convention.
@@ -307,8 +310,8 @@ impl<'a> SwapTradeInfoCalculator<'a> {
     /// Price adjusted for token decimals in quote/base direction (market convention).
     ///
     /// # Base/Quote Logic
-    /// - When is_inverted=false: token0=base, token1=quote → returns token1/token0 (quote/base)
-    /// - When is_inverted=true: token0=quote, token1=base → returns token0/token1 (quote/base)
+    /// - When `is_inverted=false`: token0=base, token1=quote → returns token1/token0 (quote/base)
+    /// - When `is_inverted=true`: token0=quote, token1=base → returns token0/token1 (quote/base)
     ///
     /// # Use Cases
     /// - Displaying current market price to users
@@ -341,14 +344,14 @@ impl<'a> SwapTradeInfoCalculator<'a> {
     ///       = (quote_amount * 10^base_decimals) / (base_amount * 10^quote_decimals)
     /// ```
     ///
-    /// To preserve precision in U256 arithmetic, we scale by 10^FIXED_PRECISION:
+    /// To preserve precision in U256 arithmetic, we scale by `10^FIXED_PRECISION`:
     /// ```text
     /// price_raw = (quote_amount * 10^base_decimals * 10^FIXED_PRECISION) / (base_amount * 10^quote_decimals)
     /// ```
     ///
     /// # Base/Quote Logic
-    /// - When is_inverted=false: quote=token1, base=token0 → price = amount1/amount0
-    /// - When is_inverted=true: quote=token0, base=token1 → price = amount0/amount1
+    /// - When `is_inverted=false`: quote=token1, base=token0 → price = amount1/amount0
+    /// - When `is_inverted=true`: quote=token0, base=token1 → price = amount0/amount1
     ///
     /// # Use Cases
     /// - Trade accounting and P&L calculation
@@ -373,9 +376,9 @@ impl<'a> SwapTradeInfoCalculator<'a> {
         };
 
         // Create decimal scalars
-        let base_decimals_scalar = U256::from(10u128.pow(base_decimals as u32));
-        let quote_decimals_scalar = U256::from(10u128.pow(quote_decimals as u32));
-        let fixed_scalar = U256::from(10u128.pow(FIXED_PRECISION as u32));
+        let base_decimals_scalar = U256::from(10u128.pow(u32::from(base_decimals)));
+        let quote_decimals_scalar = U256::from(10u128.pow(u32::from(quote_decimals)));
+        let fixed_scalar = U256::from(10u128.pow(u32::from(FIXED_PRECISION)));
 
         // Calculate: (quote_amount * 10^base_decimals * 10^FIXED_PRECISION) / (base_amount * 10^quote_decimals)
         // Use FullMath::mul_div to handle large intermediate values safely

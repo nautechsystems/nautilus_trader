@@ -23,7 +23,7 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     data::{
-        Bar, BarType, FundingRateUpdate, QuoteTick, TradeTick,
+        Bar, BarType, FundingRateUpdate, InstrumentStatus, QuoteTick, TradeTick,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType},
@@ -193,6 +193,16 @@ impl PyCache {
         self.0.borrow().funding_rate(&instrument_id).copied()
     }
 
+    #[pyo3(name = "instrument_status")]
+    fn py_instrument_status(&self, instrument_id: InstrumentId) -> Option<InstrumentStatus> {
+        self.0.borrow().instrument_status(&instrument_id).copied()
+    }
+
+    #[pyo3(name = "instrument_statuses")]
+    fn py_instrument_statuses(&self, instrument_id: InstrumentId) -> Option<Vec<InstrumentStatus>> {
+        self.0.borrow().instrument_statuses(&instrument_id)
+    }
+
     #[pyo3(name = "price")]
     fn py_price(&self, instrument_id: InstrumentId, price_type: PriceType) -> Option<Price> {
         self.0.borrow().price(&instrument_id, price_type)
@@ -293,6 +303,7 @@ impl PyCache {
     fn py_instruments(&self, py: Python, venue: Option<Venue>) -> PyResult<Vec<Py<PyAny>>> {
         let cache = self.0.borrow();
         let mut py_instruments = Vec::new();
+
         match venue {
             Some(venue) => {
                 for instrument in cache.instruments(&venue, None) {
@@ -548,7 +559,6 @@ impl PyCache {
     }
 
     #[pyo3(name = "orders", signature = (venue=None, instrument_id=None, strategy_id=None, account_id=None, side=None))]
-    #[allow(clippy::too_many_arguments)]
     fn py_orders(
         &self,
         py: Python,
@@ -573,7 +583,6 @@ impl PyCache {
     }
 
     #[pyo3(name = "orders_open", signature = (venue=None, instrument_id=None, strategy_id=None, account_id=None, side=None))]
-    #[allow(clippy::too_many_arguments)]
     fn py_orders_open(
         &self,
         py: Python,
@@ -598,7 +607,6 @@ impl PyCache {
     }
 
     #[pyo3(name = "orders_closed", signature = (venue=None, instrument_id=None, strategy_id=None, account_id=None, side=None))]
-    #[allow(clippy::too_many_arguments)]
     fn py_orders_closed(
         &self,
         py: Python,
@@ -623,7 +631,6 @@ impl PyCache {
     }
 
     #[pyo3(name = "orders_emulated", signature = (venue=None, instrument_id=None, strategy_id=None, account_id=None, side=None))]
-    #[allow(clippy::too_many_arguments)]
     fn py_orders_emulated(
         &self,
         py: Python,
@@ -648,7 +655,6 @@ impl PyCache {
     }
 
     #[pyo3(name = "orders_inflight", signature = (venue=None, instrument_id=None, strategy_id=None, account_id=None, side=None))]
-    #[allow(clippy::too_many_arguments)]
     fn py_orders_inflight(
         &self,
         py: Python,
@@ -845,7 +851,7 @@ impl PyCache {
     }
 
     #[pyo3(name = "orders_for_exec_algorithm", signature = (exec_algorithm_id, venue=None, instrument_id=None, strategy_id=None, account_id=None, side=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_orders_for_exec_algorithm(
         &self,
         py: Python,
@@ -946,7 +952,6 @@ impl PyCache {
     }
 
     #[pyo3(name = "positions", signature = (venue=None, instrument_id=None, strategy_id=None, account_id=None, side=None))]
-    #[allow(clippy::too_many_arguments)]
     fn py_positions(
         &self,
         py: Python,
@@ -971,7 +976,6 @@ impl PyCache {
     }
 
     #[pyo3(name = "positions_open", signature = (venue=None, instrument_id=None, strategy_id=None, account_id=None, side=None))]
-    #[allow(clippy::too_many_arguments)]
     fn py_positions_open(
         &self,
         py: Python,
@@ -996,7 +1000,6 @@ impl PyCache {
     }
 
     #[pyo3(name = "positions_closed", signature = (venue=None, instrument_id=None, strategy_id=None, account_id=None, side=None))]
-    #[allow(clippy::too_many_arguments)]
     fn py_positions_closed(
         &self,
         py: Python,
@@ -1106,8 +1109,33 @@ impl PyCache {
     }
 
     #[pyo3(name = "position_snapshot_bytes")]
-    fn py_position_snapshot_bytes(&self, position_id: PositionId) -> Option<Vec<u8>> {
+    fn py_position_snapshot_bytes(&self, position_id: PositionId) -> Option<Vec<Vec<u8>>> {
         self.0.borrow().position_snapshot_bytes(&position_id)
+    }
+
+    #[pyo3(name = "snapshot_position")]
+    #[expect(clippy::needless_pass_by_value)]
+    fn py_snapshot_position(&self, py: Python, position: Py<PyAny>) -> PyResult<()> {
+        let position_obj = position.extract::<Position>(py)?;
+        self.0
+            .borrow_mut()
+            .snapshot_position(&position_obj)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "position_snapshots", signature = (position_id=None, account_id=None))]
+    fn py_position_snapshots(
+        &self,
+        py: Python,
+        position_id: Option<PositionId>,
+        account_id: Option<AccountId>,
+    ) -> PyResult<Vec<Py<PyAny>>> {
+        let cache = self.0.borrow();
+        cache
+            .position_snapshots(position_id.as_ref(), account_id.as_ref())
+            .into_iter()
+            .map(|p| Ok(p.into_pyobject(py)?.into()))
+            .collect()
     }
 }
 
@@ -1137,7 +1165,21 @@ impl PyCache {
 impl CacheConfig {
     /// Configuration for `Cache` instances.
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        encoding=None,
+        timestamps_as_iso8601=None,
+        buffer_interval_ms=None,
+        bulk_read_batch_size=None,
+        use_trader_prefix=None,
+        use_instance_id=None,
+        flush_on_start=None,
+        drop_instruments_on_reset=None,
+        tick_capacity=None,
+        bar_capacity=None,
+        save_market_data=None,
+        persist_account_events=None,
+    ))]
     fn py_new(
         encoding: Option<SerializationEncoding>,
         timestamps_as_iso8601: Option<bool>,
@@ -1150,6 +1192,7 @@ impl CacheConfig {
         tick_capacity: Option<usize>,
         bar_capacity: Option<usize>,
         save_market_data: Option<bool>,
+        persist_account_events: Option<bool>,
     ) -> Self {
         Self::new(
             None, // database is None since we can't expose it to Python yet
@@ -1163,6 +1206,7 @@ impl CacheConfig {
             drop_instruments_on_reset.unwrap_or(true),
             tick_capacity.unwrap_or(10_000),
             bar_capacity.unwrap_or(10_000),
+            persist_account_events.unwrap_or(true),
             save_market_data.unwrap_or(false),
         )
     }
@@ -1226,6 +1270,11 @@ impl CacheConfig {
     }
 
     #[getter]
+    fn persist_account_events(&self) -> bool {
+        self.persist_account_events
+    }
+
+    #[getter]
     fn save_market_data(&self) -> bool {
         self.save_market_data
     }
@@ -1245,7 +1294,9 @@ impl Cache {
 
     /// Resets the cache.
     ///
-    /// All stateful fields are reset to their initial value.
+    /// All stateful fields are reset to their initial value. Instruments,
+    /// currencies and synthetics are retained when `drop_instruments_on_reset`
+    /// is `false` so that repeated backtest runs can reuse the same dataset.
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
         self.reset();
@@ -1496,7 +1547,7 @@ impl Cache {
 
     /// Adds the `position` to the cache.
     #[pyo3(name = "add_position")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_add_position(
         &mut self,
         py: Python,
@@ -1505,6 +1556,20 @@ impl Cache {
     ) -> PyResult<()> {
         let position_obj = position.extract::<Position>(py)?;
         self.add_position(&position_obj, oms_type)
+            .map_err(to_pyvalue_err)
+    }
+
+    /// Creates a snapshot of the `position` by cloning it, assigning a new ID,
+    /// serializing it, and storing it in the position snapshots.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serializing or storing the position snapshot fails.
+    #[pyo3(name = "snapshot_position")]
+    #[expect(clippy::needless_pass_by_value)]
+    fn py_snapshot_position(&mut self, py: Python, position: Py<PyAny>) -> PyResult<()> {
+        let position_obj = position.extract::<Position>(py)?;
+        self.snapshot_position(&position_obj)
             .map_err(to_pyvalue_err)
     }
 
@@ -1722,6 +1787,18 @@ impl Cache {
     #[pyo3(name = "funding_rate")]
     fn py_funding_rate(&self, instrument_id: InstrumentId) -> Option<FundingRateUpdate> {
         self.funding_rate(&instrument_id).copied()
+    }
+
+    /// Gets a reference to the latest instrument status update for the `instrument_id`.
+    #[pyo3(name = "instrument_status")]
+    fn py_instrument_status(&self, instrument_id: InstrumentId) -> Option<InstrumentStatus> {
+        self.instrument_status(&instrument_id).copied()
+    }
+
+    /// Gets all instrument status updates for the `instrument_id`.
+    #[pyo3(name = "instrument_statuses")]
+    fn py_instrument_statuses(&self, instrument_id: InstrumentId) -> Option<Vec<InstrumentStatus>> {
+        self.instrument_statuses(&instrument_id)
     }
 
     /// Gets a reference to the order book for the `instrument_id`.
@@ -1944,7 +2021,6 @@ impl Cache {
 
     /// Returns references to all orders matching the optional filter parameters.
     #[pyo3(name = "orders")]
-    #[allow(clippy::too_many_arguments)]
     fn py_orders(
         &self,
         py: Python,
@@ -1968,7 +2044,6 @@ impl Cache {
 
     /// Returns references to all open orders matching the optional filter parameters.
     #[pyo3(name = "orders_open")]
-    #[allow(clippy::too_many_arguments)]
     fn py_orders_open(
         &self,
         py: Python,
@@ -1992,7 +2067,6 @@ impl Cache {
 
     /// Returns references to all closed orders matching the optional filter parameters.
     #[pyo3(name = "orders_closed")]
-    #[allow(clippy::too_many_arguments)]
     fn py_orders_closed(
         &self,
         py: Python,
@@ -2016,7 +2090,6 @@ impl Cache {
 
     /// Returns references to all emulated orders matching the optional filter parameters.
     #[pyo3(name = "orders_emulated")]
-    #[allow(clippy::too_many_arguments)]
     fn py_orders_emulated(
         &self,
         py: Python,
@@ -2040,7 +2113,6 @@ impl Cache {
 
     /// Returns references to all in-flight orders matching the optional filter parameters.
     #[pyo3(name = "orders_inflight")]
-    #[allow(clippy::too_many_arguments)]
     fn py_orders_inflight(
         &self,
         py: Python,
@@ -2166,7 +2238,7 @@ impl Cache {
     /// Returns references to all orders associated with the `exec_algorithm_id` matching the
     /// optional filter parameters.
     #[pyo3(name = "orders_for_exec_algorithm")]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_orders_for_exec_algorithm(
         &self,
         py: Python,
@@ -2254,7 +2326,6 @@ impl Cache {
 
     /// Returns a reference to all positions matching the optional filter parameters.
     #[pyo3(name = "positions")]
-    #[allow(clippy::too_many_arguments)]
     fn py_positions(
         &self,
         py: Python,
@@ -2278,7 +2349,6 @@ impl Cache {
 
     /// Returns a reference to all open positions matching the optional filter parameters.
     #[pyo3(name = "positions_open")]
-    #[allow(clippy::too_many_arguments)]
     fn py_positions_open(
         &self,
         py: Python,
@@ -2302,7 +2372,6 @@ impl Cache {
 
     /// Returns a reference to all closed positions matching the optional filter parameters.
     #[pyo3(name = "positions_closed")]
-    #[allow(clippy::too_many_arguments)]
     fn py_positions_closed(
         &self,
         py: Python,
@@ -2336,10 +2405,31 @@ impl Cache {
         self.strategy_id_for_position(&position_id).copied()
     }
 
-    /// Gets position snapshot bytes for the `position_id`.
+    /// Gets the serialized position snapshot frames for the `position_id`.
+    ///
+    /// Each element in the returned vector is one JSON-encoded `Position` snapshot,
+    /// in the order they were taken.
     #[pyo3(name = "position_snapshot_bytes")]
-    fn py_position_snapshot_bytes(&self, position_id: PositionId) -> Option<Vec<u8>> {
+    fn py_position_snapshot_bytes(&self, position_id: PositionId) -> Option<Vec<Vec<u8>>> {
         self.position_snapshot_bytes(&position_id)
+    }
+
+    /// Returns all position snapshots with the given optional filters.
+    ///
+    /// When `position_id` is `Some`, only snapshots for that position are returned.
+    /// When `account_id` is `Some`, snapshots are filtered to that account.
+    /// Frames that fail to deserialize are skipped with a warning.
+    #[pyo3(name = "position_snapshots", signature = (position_id=None, account_id=None))]
+    fn py_position_snapshots(
+        &self,
+        py: Python,
+        position_id: Option<PositionId>,
+        account_id: Option<AccountId>,
+    ) -> PyResult<Vec<Py<PyAny>>> {
+        self.position_snapshots(position_id.as_ref(), account_id.as_ref())
+            .into_iter()
+            .map(|p| Ok(p.into_pyobject(py)?.into()))
+            .collect()
     }
 
     /// Returns a reference to the account for the `account_id` (if found).
@@ -2429,7 +2519,7 @@ impl Cache {
 
     /// Calculates the unrealized PnL for the given position.
     #[pyo3(name = "calculate_unrealized_pnl")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_calculate_unrealized_pnl(
         &self,
         py: Python,

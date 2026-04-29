@@ -1,0 +1,29 @@
+{
+  "channel": "market_trades",
+  "client_id": "",
+  "timestamp": "2026-04-07T14:30:02.789012Z",
+  "sequence_num": 5,
+  "events": [
+    {
+      "type": "update",
+      "trades": [
+        {
+          "trade_id": "995098700",
+          "product_id": "BTC-USD",
+          "price": "68900.50",
+          "size": "0.00150000",
+          "side": "BUY",
+          "time": "2026-04-07T14:30:02.789012Z"
+        },
+        {
+          "trade_id": "995098701",
+          "product_id": "BTC-USD",
+          "price": "68900.00",
+          "size": "0.05000000",
+          "side": "SELL",
+          "time": "2026-04-07T14:30:02.800000Z"
+        }
+      ]
+    }
+  ]
+}

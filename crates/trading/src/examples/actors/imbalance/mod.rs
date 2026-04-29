@@ -28,8 +28,10 @@
 //! to "lay" orders.
 
 pub mod actor;
+pub mod config;
 
 #[cfg(test)]
 mod tests;
 
 pub use actor::{BookImbalanceActor, ImbalanceState};
+pub use config::BookImbalanceActorConfig;

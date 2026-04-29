@@ -29,7 +29,7 @@ use crate::{
 impl OrderSubmitted {
     /// Represents an event where an order has been submitted by the system to the
     /// trading venue.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[new]
     fn py_new(
         trader_id: TraderId,

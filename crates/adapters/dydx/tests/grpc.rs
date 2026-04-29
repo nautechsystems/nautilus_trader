@@ -719,7 +719,7 @@ fn test_batch_cancel_partitioning_by_order_lifetime() {
         (0, 50),  // short-term, clob_pair_id=1
     ];
 
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     let (short_term, stateful): (Vec<&(u32, u32)>, Vec<&(u32, u32)>) = orders
         .iter()
         .partition(|(flags, _)| *flags == ORDER_FLAG_SHORT_TERM);

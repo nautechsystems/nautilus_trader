@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_testkit"
-crate-type = ["rlib", "staticlib"]
+crate-type = ["rlib"]
 
 [features]
 default = []
@@ -59,8 +59,9 @@ itchy = { workspace = true }
 log = { workspace = true }
 parquet = { workspace = true, features = ["zstd"] }
 rand = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
 rust_decimal = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 

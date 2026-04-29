@@ -25,13 +25,14 @@ use nautilus_indicators::{
 use nautilus_model::{
     data::QuoteTick,
     enums::{OrderSide, PriceType},
-    identifiers::{InstrumentId, StrategyId},
+    identifiers::InstrumentId,
     types::Quantity,
 };
 
+use super::config::EmaCrossConfig;
 use crate::{
     nautilus_strategy,
-    strategy::{Strategy, StrategyConfig, StrategyCore},
+    strategy::{Strategy, StrategyCore},
 };
 
 /// Dual-EMA crossover strategy.
@@ -48,6 +49,19 @@ pub struct EmaCross {
 }
 
 impl EmaCross {
+    /// Creates a new [`EmaCross`] instance from config.
+    #[must_use]
+    pub fn from_config(config: EmaCrossConfig) -> Self {
+        Self {
+            core: StrategyCore::new(config.base),
+            instrument_id: config.instrument_id,
+            trade_size: config.trade_size,
+            ema_fast: ExponentialMovingAverage::new(config.fast_period, Some(PriceType::Mid)),
+            ema_slow: ExponentialMovingAverage::new(config.slow_period, Some(PriceType::Mid)),
+            prev_fast_above: None,
+        }
+    }
+
     /// Creates a new [`EmaCross`] instance.
     #[must_use]
     pub fn new(
@@ -56,19 +70,12 @@ impl EmaCross {
         fast_period: usize,
         slow_period: usize,
     ) -> Self {
-        let config = StrategyConfig {
-            strategy_id: Some(StrategyId::from("EMA_CROSS-001")),
-            order_id_tag: Some("001".to_string()),
-            ..Default::default()
-        };
-        Self {
-            core: StrategyCore::new(config),
+        Self::from_config(EmaCrossConfig::new(
             instrument_id,
             trade_size,
-            ema_fast: ExponentialMovingAverage::new(fast_period, Some(PriceType::Mid)),
-            ema_slow: ExponentialMovingAverage::new(slow_period, Some(PriceType::Mid)),
-            prev_fast_above: None,
-        }
+            fast_period,
+            slow_period,
+        ))
     }
 
     fn enter(&mut self, side: OrderSide) -> anyhow::Result<()> {

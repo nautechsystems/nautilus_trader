@@ -67,8 +67,11 @@ pub use nautilus_core::serialization::{
 };
 use nautilus_model::{
     data::{bar::BarType, quote::QuoteTick},
-    enums::{AggregationSource, BarAggregation, OrderSide, OrderStatus, OrderType, TimeInForce},
-    identifiers::{ClientOrderId, InstrumentId, Symbol, TradeId, Venue},
+    enums::{
+        AggregationSource, BarAggregation, ContingencyType, OrderSide, OrderStatus, OrderType,
+        TimeInForce,
+    },
+    identifiers::{ClientOrderId, TradeId},
     orders::{Order, any::OrderAny},
     types::{AccountBalance, Currency, MarginBalance, Money},
 };
@@ -80,11 +83,12 @@ use crate::{
         HyperliquidOrderStatus, HyperliquidTpSl,
     },
     http::models::{
-        Cloid, CrossMarginSummary, HyperliquidExchangeResponse,
-        HyperliquidExecCancelByCloidRequest, HyperliquidExecCancelStatus,
+        ClearinghouseState, Cloid, HyperliquidExchangeResponse,
+        HyperliquidExecCancelByCloidRequest, HyperliquidExecCancelStatus, HyperliquidExecGrouping,
         HyperliquidExecLimitParams, HyperliquidExecModifyStatus, HyperliquidExecOrderKind,
         HyperliquidExecOrderStatus, HyperliquidExecPlaceOrderRequest, HyperliquidExecResponseData,
         HyperliquidExecTif, HyperliquidExecTpSl, HyperliquidExecTriggerParams, RESPONSE_STATUS_OK,
+        SpotClearinghouseState,
     },
     websocket::messages::TrailingOffsetType,
 };
@@ -110,22 +114,27 @@ pub fn make_fill_trade_id(
         h ^= b as u64;
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
+
     for b in oid.to_le_bytes() {
         h ^= b as u64;
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
+
     for &b in px.as_bytes() {
         h ^= b as u64;
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
+
     for &b in sz.as_bytes() {
         h ^= b as u64;
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
+
     for b in time.to_le_bytes() {
         h ^= b as u64;
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
+
     for &b in start_position.as_bytes() {
         h ^= b as u64;
         h = h.wrapping_mul(0x0100_0000_01b3);
@@ -348,12 +357,14 @@ pub fn bar_type_to_interval(bar_type: &BarType) -> anyhow::Result<HyperliquidBar
 ///
 /// This variant is used when the caller has already resolved the asset index
 /// from the instrument cache (e.g., for SPOT instruments where the index
-/// cannot be derived from the symbol alone).
+/// cannot be derived from the symbol alone). `slippage_bps` controls the
+/// buffer applied when deriving a limit from a stop trigger price.
 pub fn order_to_hyperliquid_request_with_asset(
     order: &OrderAny,
     asset: u32,
     price_decimals: u8,
     should_normalize_prices: bool,
+    slippage_bps: u32,
 ) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
     let is_buy = matches!(order.order_side(), OrderSide::Buy);
     let reduce_only = order.is_reduce_only();
@@ -379,7 +390,7 @@ pub fn order_to_hyperliquid_request_with_asset(
         match order.trigger_price() {
             Some(tp) => {
                 let base = tp.as_decimal().normalize();
-                let derived = derive_limit_from_trigger(base, is_buy);
+                let derived = derive_limit_from_trigger(base, is_buy, slippage_bps);
                 let sig_rounded = round_to_sig_figs(derived, 5);
                 clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize()
             }
@@ -499,31 +510,38 @@ pub fn order_to_hyperliquid_request_with_asset(
     })
 }
 
-/// Derives a market order limit price from a quote with 0.5% slippage.
-///
-/// Uses the ask price for buys and the bid price for sells, applies
-/// slippage, rounds to 5 significant figures, and clamps to the
-/// instrument's price precision.
-pub fn derive_market_order_price(quote: &QuoteTick, is_buy: bool, price_decimals: u8) -> Decimal {
+/// Default slippage buffer in basis points for MARKET orders.
+pub const DEFAULT_MARKET_SLIPPAGE_BPS: u32 = 50;
+
+/// Derives a market order limit price from a quote with a configurable
+/// slippage buffer in basis points, rounded to 5 significant figures and
+/// clamped to the instrument's price precision.
+pub fn derive_market_order_price(
+    quote: &QuoteTick,
+    is_buy: bool,
+    price_decimals: u8,
+    slippage_bps: u32,
+) -> Decimal {
     let base = if is_buy {
         quote.ask_price.as_decimal()
     } else {
         quote.bid_price.as_decimal()
     };
-    let derived = derive_limit_from_trigger(base, is_buy);
+    let derived = derive_limit_from_trigger(base, is_buy, slippage_bps);
     let sig_rounded = round_to_sig_figs(derived, 5);
     clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize()
 }
 
-/// Derives a limit price from a trigger price with slippage.
-///
-/// Hyperliquid requires that the limit price satisfies:
-/// - SELL stops: `limit_px <= trigger_px`
-/// - BUY stops: `limit_px >= trigger_px`
-///
-/// Applies 0.5% slippage in the appropriate direction.
-pub fn derive_limit_from_trigger(trigger_price: Decimal, is_buy: bool) -> Decimal {
-    let slippage = Decimal::new(5, 3); // 0.5%
+/// Derives a limit price from a trigger price with a configurable
+/// slippage buffer in basis points, widening the limit so BUY satisfies
+/// `limit_px >= trigger_px` and SELL satisfies `limit_px <= trigger_px`.
+pub fn derive_limit_from_trigger(
+    trigger_price: Decimal,
+    is_buy: bool,
+    slippage_bps: u32,
+) -> Decimal {
+    // bps -> Decimal: e.g. 50 bps -> 0.005
+    let slippage = Decimal::new(slippage_bps as i64, 4);
     let price = if is_buy {
         trigger_price * (Decimal::ONE + slippage)
     } else {
@@ -606,6 +624,7 @@ pub fn extract_inner_errors(response: &HyperliquidExchangeResponse) -> Vec<Optio
     let Ok(data) = serde_json::from_value::<HyperliquidExecResponseData>(response.clone()) else {
         return Vec::new();
     };
+
     match data {
         HyperliquidExecResponseData::Order { data } => data
             .statuses
@@ -613,6 +632,22 @@ pub fn extract_inner_errors(response: &HyperliquidExchangeResponse) -> Vec<Optio
             .map(|s| match s {
                 HyperliquidExecOrderStatus::Error { error } => Some(error),
                 _ => None,
+            })
+            .collect(),
+        HyperliquidExecResponseData::Cancel { data } => data
+            .statuses
+            .into_iter()
+            .map(|s| match s {
+                HyperliquidExecCancelStatus::Error { error } => Some(error),
+                HyperliquidExecCancelStatus::Success(_) => None,
+            })
+            .collect(),
+        HyperliquidExecResponseData::Modify { data } => data
+            .statuses
+            .into_iter()
+            .map(|s| match s {
+                HyperliquidExecModifyStatus::Error { error } => Some(error),
+                HyperliquidExecModifyStatus::Success(_) => None,
             })
             .collect(),
         _ => Vec::new(),
@@ -739,63 +774,164 @@ pub fn parse_trigger_price(trigger_px: &str) -> anyhow::Result<Decimal> {
 
 /// Parses Hyperliquid clearinghouse state into Nautilus account balances and margins.
 ///
+/// Uses the same field selection as the HTTP account-state path
+/// (`cross_margin_summary.total_raw_usd` for total, top-level `state.withdrawable`
+/// for free) so the execution adapter and the HTTP client emit consistent balances
+/// for the same clearinghouse snapshot.
+///
 /// # Errors
 ///
 /// Returns an error if the data cannot be parsed.
 pub fn parse_account_balances_and_margins(
-    cross_margin_summary: &CrossMarginSummary,
+    state: &ClearinghouseState,
 ) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>)> {
     let mut balances = Vec::new();
     let mut margins = Vec::new();
 
     let currency = Currency::USDC();
 
-    let mut total_value = cross_margin_summary
-        .account_value
-        .to_string()
-        .parse::<f64>()?
-        .max(0.0);
+    let cross_margin_summary = match &state.cross_margin_summary {
+        Some(summary) => summary,
+        None => return Ok((balances, margins)),
+    };
 
-    let free_value = cross_margin_summary
-        .withdrawable
-        .map(|w| w.to_string().parse::<f64>())
-        .transpose()?
-        .unwrap_or(total_value)
-        .max(0.0);
+    let mut total_value = cross_margin_summary.total_raw_usd.max(Decimal::ZERO);
+    let free_value = state.withdrawable.unwrap_or(total_value).max(Decimal::ZERO);
 
-    // Ensure total >= free to satisfy AccountBalance invariant
+    // Withdrawable may include spot balances that sit outside the margin account value;
+    // raise total so those funds are not silently clamped away. Mirrors the HTTP parser.
     if free_value > total_value {
         total_value = free_value;
     }
 
-    let locked_value = total_value - free_value;
+    balances.push(AccountBalance::from_total_and_free(
+        total_value,
+        free_value,
+        currency,
+    )?);
 
-    let total = Money::new(total_value, currency);
-    let locked = Money::new(locked_value, currency);
-    let free = Money::new(free_value, currency);
+    let margin_used = cross_margin_summary.total_margin_used;
 
-    let balance = AccountBalance::new(total, locked, free);
-    balances.push(balance);
-
-    let margin_used = cross_margin_summary
-        .total_margin_used
-        .to_string()
-        .parse::<f64>()?;
-
-    if margin_used > 0.0 {
-        let margin_instrument_id =
-            InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("HYPERLIQUID"));
-
-        let initial_margin = Money::new(margin_used, currency);
-        let maintenance_margin = Money::new(margin_used, currency);
-
-        let margin_balance =
-            MarginBalance::new(initial_margin, maintenance_margin, margin_instrument_id);
-
-        margins.push(margin_balance);
+    if margin_used > Decimal::ZERO {
+        // Hyperliquid perps use a single-collateral (USDC) cross-margin model, so the
+        // reserved margin is emitted as an account-wide entry keyed by USDC.
+        let initial_margin = Money::from_decimal(margin_used, currency)?;
+        let maintenance_margin = Money::from_decimal(margin_used, currency)?;
+        margins.push(MarginBalance::new(initial_margin, maintenance_margin, None));
     }
 
     Ok((balances, margins))
+}
+
+/// Merges perp clearinghouse balances with spot balances into a unified set.
+///
+/// The perp parser already reflects combined USDC (its `withdrawable` may include
+/// spot buckets). To avoid double-counting, this helper appends only non-USDC
+/// spot tokens onto the perp-derived balances. If the perp state has no margin
+/// summary, the full spot balance set is used verbatim.
+///
+/// # Errors
+///
+/// Returns an error if any balance conversion fails.
+pub fn parse_combined_account_balances_and_margins(
+    perp_state: &ClearinghouseState,
+    spot_state: &SpotClearinghouseState,
+) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>)> {
+    let (mut balances, margins) = parse_account_balances_and_margins(perp_state)?;
+
+    let has_perp_summary = perp_state.cross_margin_summary.is_some();
+    let spot_balances = parse_spot_account_balances(spot_state)?;
+
+    for balance in spot_balances {
+        let is_usdc = balance.currency.code.as_str() == "USDC";
+        if has_perp_summary && is_usdc {
+            continue;
+        }
+        balances.push(balance);
+    }
+
+    Ok((balances, margins))
+}
+
+/// Parses Hyperliquid spot clearinghouse state into Nautilus account balances.
+///
+/// Emits one [`AccountBalance`] per non-zero spot token, deriving free from
+/// `total - hold`. Tokens unknown to the global currency registry are registered
+/// on the fly with 8-decimal precision (matches Hyperliquid's `sz_decimals` cap).
+///
+/// # Errors
+///
+/// Returns an error if any balance cannot be converted to a Nautilus `Money`.
+pub fn parse_spot_account_balances(
+    state: &SpotClearinghouseState,
+) -> anyhow::Result<Vec<AccountBalance>> {
+    let mut balances = Vec::with_capacity(state.balances.len());
+
+    for balance in &state.balances {
+        if balance.total.is_zero() {
+            continue;
+        }
+
+        let currency = crate::http::parse::get_currency(balance.coin.as_str());
+
+        // Let `from_total_and_locked` do the clamping and derivation at currency
+        // precision so the `total == locked + free` invariant holds without
+        // bespoke rounding here.
+        balances.push(AccountBalance::from_total_and_locked(
+            balance.total,
+            balance.hold,
+            currency,
+        )?);
+    }
+
+    Ok(balances)
+}
+
+/// Determine the Hyperliquid grouping strategy for an order list.
+///
+/// Contingency type, reduce-only flags, structural shape, and parent/child
+/// linkage must all agree to avoid misclassifying generic contingent lists
+/// as Hyperliquid TP/SL groups.
+///
+/// - `NormalTpsl` (OTOCO bracket): entry order is OTO and not reduce-only,
+///   all child orders are OCO, reduce-only, and reference the entry as parent.
+/// - `PositionTpsl` (OCO pair): every order is OCO, reduce-only, and linked
+///   to the same sibling set.
+/// - `Na`: everything else (independent batch).
+pub(crate) fn determine_order_list_grouping(orders: &[OrderAny]) -> HyperliquidExecGrouping {
+    if orders.len() >= 2 {
+        let entry = &orders[0];
+        let children = &orders[1..];
+        let entry_id = entry.client_order_id();
+        let entry_is_oto =
+            entry.contingency_type() == Some(ContingencyType::Oto) && !entry.is_reduce_only();
+        let children_are_linked = children.iter().all(|o| {
+            o.contingency_type() == Some(ContingencyType::Oco)
+                && o.is_reduce_only()
+                && o.parent_order_id() == Some(entry_id)
+        });
+
+        if entry_is_oto && children_are_linked {
+            return HyperliquidExecGrouping::NormalTpsl;
+        }
+    }
+
+    let all_oco_linked = orders.len() >= 2
+        && orders
+            .iter()
+            .all(|o| o.contingency_type() == Some(ContingencyType::Oco) && o.is_reduce_only())
+        && orders.iter().all(|o| {
+            o.linked_order_ids().is_some_and(|ids| {
+                ids.iter()
+                    .all(|id| orders.iter().any(|other| other.client_order_id() == *id))
+            })
+        });
+
+    if all_oco_linked {
+        HyperliquidExecGrouping::PositionTpsl
+    } else {
+        HyperliquidExecGrouping::Na
+    }
 }
 
 #[cfg(test)]
@@ -1145,7 +1281,7 @@ mod tests {
         #[case] is_buy: bool,
         #[case] expected: Decimal,
     ) {
-        let result = derive_limit_from_trigger(trigger_price, is_buy);
+        let result = derive_limit_from_trigger(trigger_price, is_buy, DEFAULT_MARKET_SLIPPAGE_BPS);
         assert_eq!(result, expected);
 
         // Verify invariant: BUY limit >= trigger, SELL limit <= trigger
@@ -1236,8 +1372,14 @@ mod tests {
         #[case] price_decimals: u8,
     ) {
         let order = stop_market_order(side, trigger_str);
-        let request =
-            order_to_hyperliquid_request_with_asset(&order, 0, price_decimals, true).unwrap();
+        let request = order_to_hyperliquid_request_with_asset(
+            &order,
+            0,
+            price_decimals,
+            true,
+            DEFAULT_MARKET_SLIPPAGE_BPS,
+        )
+        .unwrap();
         let trigger = Decimal::from_str(trigger_str).unwrap();
         let is_buy = matches!(side, OrderSide::Buy);
 
@@ -1258,8 +1400,8 @@ mod tests {
             assert!(!request.is_buy);
         }
 
-        // Price must equal the full pipeline: derive → sig figs → clamp → normalize
-        let derived = derive_limit_from_trigger(trigger, is_buy);
+        // Price must equal the full pipeline: derive -> sig figs -> clamp -> normalize
+        let derived = derive_limit_from_trigger(trigger, is_buy, DEFAULT_MARKET_SLIPPAGE_BPS);
         let sig_rounded = round_to_sig_figs(derived, 5);
         let expected = clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize();
         assert_eq!(request.price, expected);
@@ -1436,13 +1578,49 @@ mod tests {
     }
 
     #[rstest]
-    fn test_extract_inner_errors_non_order_response() {
+    fn test_extract_inner_errors_cancel_success() {
         let response = ok_response(serde_json::json!({
             "type": "cancel",
             "data": {"statuses": ["success"]}
         }));
         let errors = extract_inner_errors(&response);
-        assert!(errors.is_empty());
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].is_none());
+    }
+
+    #[rstest]
+    fn test_extract_inner_errors_cancel_mixed() {
+        let response = ok_response(serde_json::json!({
+            "type": "cancel",
+            "data": {"statuses": [
+                "success",
+                {"error": "Order was never placed, already canceled, or filled."},
+                "success",
+            ]}
+        }));
+        let errors = extract_inner_errors(&response);
+        assert_eq!(errors.len(), 3);
+        assert_eq!(errors[0], None);
+        assert_eq!(
+            errors[1],
+            Some("Order was never placed, already canceled, or filled.".to_string())
+        );
+        assert_eq!(errors[2], None);
+    }
+
+    #[rstest]
+    fn test_extract_inner_errors_modify_mixed() {
+        let response = ok_response(serde_json::json!({
+            "type": "modify",
+            "data": {"statuses": [
+                "success",
+                {"error": "Order does not exist"},
+            ]}
+        }));
+        let errors = extract_inner_errors(&response);
+        assert_eq!(errors.len(), 2);
+        assert_eq!(errors[0], None);
+        assert_eq!(errors[1], Some("Order does not exist".to_string()));
     }
 
     #[rstest]
@@ -1518,7 +1696,8 @@ mod tests {
         #[case] expected: &str,
     ) {
         let quote = make_quote(bid, ask);
-        let result = derive_market_order_price(&quote, is_buy, price_decimals);
+        let result =
+            derive_market_order_price(&quote, is_buy, price_decimals, DEFAULT_MARKET_SLIPPAGE_BPS);
         let expected_dec = Decimal::from_str(expected).unwrap();
         assert_eq!(result, expected_dec);
 
@@ -1528,7 +1707,7 @@ mod tests {
         } else {
             quote.bid_price.as_decimal()
         };
-        let derived = derive_limit_from_trigger(base, is_buy);
+        let derived = derive_limit_from_trigger(base, is_buy, DEFAULT_MARKET_SLIPPAGE_BPS);
         let sig_rounded = round_to_sig_figs(derived, 5);
         let pipeline = clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize();
         assert_eq!(result, pipeline);
@@ -1549,5 +1728,211 @@ mod tests {
             actual_decimals <= price_decimals as usize,
             "Price {s} has {actual_decimals} decimals, max {price_decimals}",
         );
+    }
+
+    #[rstest]
+    #[case(50, dec!(1000), true, dec!(1005))] // default 0.5% BUY
+    #[case(50, dec!(1000), false, dec!(995))] // default 0.5% SELL
+    #[case(0, dec!(1000), true, dec!(1000))] // 0 bps: no adjustment
+    #[case(100, dec!(1000), true, dec!(1010))] // 1% BUY
+    #[case(100, dec!(1000), false, dec!(990))] // 1% SELL
+    #[case(800, dec!(1000), true, dec!(1080))] // 8% (Hyperliquid SDK default) BUY
+    #[case(800, dec!(1000), false, dec!(920))] // 8% SELL
+    fn test_derive_limit_from_trigger_respects_bps(
+        #[case] slippage_bps: u32,
+        #[case] trigger: Decimal,
+        #[case] is_buy: bool,
+        #[case] expected: Decimal,
+    ) {
+        let result = derive_limit_from_trigger(trigger, is_buy, slippage_bps);
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_derive_market_order_price_respects_slippage_override() {
+        let quote = make_quote("100.00", "100.10");
+        let tight = derive_market_order_price(&quote, true, 2, 50);
+        let wide = derive_market_order_price(&quote, true, 2, 800);
+        assert_eq!(tight, dec!(100.6));
+        assert_eq!(wide, dec!(108.11));
+        assert!(wide > tight);
+    }
+
+    // Locks in the field-selection invariant; diverging from it would silently
+    // disagree with the HTTP parser whenever `account_value != total_raw_usd`
+    // or the nested and top-level `withdrawable` values differ.
+    #[rstest]
+    fn test_parse_account_balances_uses_total_raw_usd_and_top_level_withdrawable() {
+        let json = r#"{
+            "assetPositions": [],
+            "crossMarginSummary": {
+                "accountValue": "150",
+                "totalNtlPos": "0",
+                "totalRawUsd": "100",
+                "totalMarginUsed": "20",
+                "withdrawable": "120"
+            },
+            "withdrawable": "80",
+            "time": 1700000000000
+        }"#;
+
+        let state: ClearinghouseState = serde_json::from_str(json).unwrap();
+        let (balances, margins) = parse_account_balances_and_margins(&state).unwrap();
+
+        assert_eq!(balances.len(), 1);
+        let balance = &balances[0];
+        // Total comes from total_raw_usd (100), not account_value (150); free comes
+        // from top-level state.withdrawable (80), not the nested summary.withdrawable (120).
+        assert_eq!(balance.total.as_decimal(), dec!(100));
+        assert_eq!(balance.free.as_decimal(), dec!(80));
+        assert_eq!(balance.locked.as_decimal(), dec!(20));
+
+        assert_eq!(margins.len(), 1);
+        assert_eq!(margins[0].initial.as_decimal(), dec!(20));
+    }
+
+    #[rstest]
+    fn test_parse_account_balances_bumps_total_when_withdrawable_exceeds() {
+        let json = r#"{
+            "assetPositions": [],
+            "crossMarginSummary": {
+                "accountValue": "100",
+                "totalNtlPos": "0",
+                "totalRawUsd": "100",
+                "totalMarginUsed": "0",
+                "withdrawable": "100"
+            },
+            "withdrawable": "150",
+            "time": 1700000000000
+        }"#;
+
+        let state: ClearinghouseState = serde_json::from_str(json).unwrap();
+        let (balances, _) = parse_account_balances_and_margins(&state).unwrap();
+
+        assert_eq!(balances.len(), 1);
+        let balance = &balances[0];
+        assert_eq!(balance.total.as_decimal(), dec!(150));
+        assert_eq!(balance.free.as_decimal(), dec!(150));
+        assert_eq!(balance.locked.as_decimal(), dec!(0));
+    }
+
+    #[rstest]
+    fn test_parse_account_balances_returns_empty_when_no_cross_margin_summary() {
+        let json = r#"{
+            "assetPositions": [],
+            "withdrawable": "100",
+            "time": 1700000000000
+        }"#;
+
+        let state: ClearinghouseState = serde_json::from_str(json).unwrap();
+        let (balances, margins) = parse_account_balances_and_margins(&state).unwrap();
+        assert!(balances.is_empty());
+        assert!(margins.is_empty());
+    }
+
+    #[rstest]
+    fn test_parse_spot_account_balances_emits_one_per_token() {
+        let json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "100.25", "hold": "10", "entryNtl": "0"},
+                {"coin": "PURR", "token": 1, "total": "50", "hold": "0", "entryNtl": "25"},
+                {"coin": "DUST", "token": 2, "total": "0", "hold": "0", "entryNtl": "0"}
+            ]
+        }"#;
+
+        let state: SpotClearinghouseState = serde_json::from_str(json).unwrap();
+        let balances = parse_spot_account_balances(&state).unwrap();
+
+        assert_eq!(balances.len(), 2);
+
+        let usdc = &balances[0];
+        assert_eq!(usdc.currency.code.as_str(), "USDC");
+        assert_eq!(usdc.total.as_decimal(), dec!(100.25));
+        assert_eq!(usdc.free.as_decimal(), dec!(90.25));
+        assert_eq!(usdc.locked.as_decimal(), dec!(10));
+
+        let purr = &balances[1];
+        assert_eq!(purr.currency.code.as_str(), "PURR");
+        assert_eq!(purr.total.as_decimal(), dec!(50));
+        assert_eq!(purr.free.as_decimal(), dec!(50));
+    }
+
+    #[rstest]
+    fn test_parse_spot_account_balances_clamps_hold_to_total() {
+        let json = r#"{
+            "balances": [
+                {"coin": "HYPE", "token": 5, "total": "5", "hold": "10", "entryNtl": "0"}
+            ]
+        }"#;
+
+        let state: SpotClearinghouseState = serde_json::from_str(json).unwrap();
+        let balances = parse_spot_account_balances(&state).unwrap();
+
+        assert_eq!(balances.len(), 1);
+        let hype = &balances[0];
+        assert_eq!(hype.total.as_decimal(), dec!(5));
+        assert_eq!(hype.free.as_decimal(), dec!(0));
+        assert_eq!(hype.locked.as_decimal(), dec!(5));
+    }
+
+    #[rstest]
+    fn test_parse_spot_account_balances_empty() {
+        let state = SpotClearinghouseState::default();
+        let balances = parse_spot_account_balances(&state).unwrap();
+        assert!(balances.is_empty());
+    }
+
+    #[rstest]
+    fn test_parse_combined_deduplicates_usdc_when_perp_summary_present() {
+        let perp_json = r#"{
+            "assetPositions": [],
+            "crossMarginSummary": {
+                "accountValue": "500",
+                "totalNtlPos": "0",
+                "totalRawUsd": "500",
+                "totalMarginUsed": "0",
+                "withdrawable": "500"
+            },
+            "withdrawable": "500"
+        }"#;
+        let perp_state: ClearinghouseState = serde_json::from_str(perp_json).unwrap();
+
+        let spot_json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "123", "hold": "0", "entryNtl": "0"},
+                {"coin": "PURR", "token": 1, "total": "10", "hold": "0", "entryNtl": "5"}
+            ]
+        }"#;
+        let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
+
+        let (balances, margins) =
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+
+        assert!(margins.is_empty());
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(500));
+        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].total.as_decimal(), dec!(10));
+    }
+
+    #[rstest]
+    fn test_parse_combined_uses_spot_usdc_when_perp_summary_missing() {
+        let perp_json = r#"{"assetPositions": []}"#;
+        let perp_state: ClearinghouseState = serde_json::from_str(perp_json).unwrap();
+
+        let spot_json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "50", "hold": "0", "entryNtl": "0"}
+            ]
+        }"#;
+        let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
+
+        let (balances, _) =
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+
+        assert_eq!(balances.len(), 1);
+        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(50));
     }
 }

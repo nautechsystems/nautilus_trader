@@ -53,6 +53,7 @@ fn bench_check_key_contended(c: &mut Criterion) {
                         for _ in 0..num_threads {
                             let limiter = &limiter;
                             let key = &key;
+
                             s.spawn(move || {
                                 for _ in 0..100 {
                                     let _ = black_box(limiter.check_key(key));

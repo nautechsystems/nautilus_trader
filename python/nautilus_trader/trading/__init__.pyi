@@ -119,9 +119,14 @@ class Strategy:
         quote_quantity: bool | None = None,
     ) -> None: ...
     def query_account(
-        self, account_id: model.AccountId, client_id: model.ClientId | None = None
+        self,
+        account_id: model.AccountId,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
-    def query_order(self, order: typing.Any, client_id: model.ClientId | None = None) -> None: ...
+    def query_order(
+        self, order: typing.Any, client_id: model.ClientId | None = None, params: dict | None = None
+    ) -> None: ...
     def on_start(self) -> None: ...
     def on_stop(self) -> None: ...
     def on_resume(self) -> None: ...
@@ -129,7 +134,8 @@ class Strategy:
     def on_dispose(self) -> None: ...
     def on_degrade(self) -> None: ...
     def on_fault(self) -> None: ...
-    def on_data(self, data: model.CustomData) -> None: ...
+    def on_time_event(self, event: common.TimeEvent) -> None: ...
+    def on_data(self, data: typing.Any) -> None: ...
     def on_signal(self, signal: common.Signal) -> None: ...
     def on_instrument(self, instrument: typing.Any) -> None: ...
     def on_quote(self, quote: model.QuoteTick) -> None: ...
@@ -142,6 +148,40 @@ class Strategy:
     def on_funding_rate(self, funding_rate: model.FundingRateUpdate) -> None: ...
     def on_instrument_status(self, status: model.InstrumentStatus) -> None: ...
     def on_instrument_close(self, close: model.InstrumentClose) -> None: ...
+    def on_option_greeks(self, greeks: model.OptionGreeks) -> None: ...
+    def on_option_chain(self, slice: model.OptionChainSlice) -> None: ...
+    def on_order_initialized(self, event: model.OrderInitialized) -> None: ...
+    def on_order_denied(self, event: model.OrderDenied) -> None: ...
+    def on_order_emulated(self, event: model.OrderEmulated) -> None: ...
+    def on_order_released(self, event: model.OrderReleased) -> None: ...
+    def on_order_submitted(self, event: model.OrderSubmitted) -> None: ...
+    def on_order_rejected(self, event: model.OrderRejected) -> None: ...
+    def on_order_accepted(self, event: model.OrderAccepted) -> None: ...
+    def on_order_expired(self, event: model.OrderExpired) -> None: ...
+    def on_order_triggered(self, event: model.OrderTriggered) -> None: ...
+    def on_order_pending_update(self, event: model.OrderPendingUpdate) -> None: ...
+    def on_order_pending_cancel(self, event: model.OrderPendingCancel) -> None: ...
+    def on_order_modify_rejected(self, event: model.OrderModifyRejected) -> None: ...
+    def on_order_cancel_rejected(self, event: model.OrderCancelRejected) -> None: ...
+    def on_order_updated(self, event: model.OrderUpdated) -> None: ...
+    def on_order_canceled(self, event: model.OrderCanceled) -> None: ...
+    def on_order_filled(self, event: model.OrderFilled) -> None: ...
+    def on_position_opened(self, event: model.PositionOpened) -> None: ...
+    def on_position_changed(self, event: model.PositionChanged) -> None: ...
+    def on_position_closed(self, event: model.PositionClosed) -> None: ...
+    def on_historical_data(self, data: typing.Any) -> None: ...
+    def on_historical_quotes(self, quotes: typing.Sequence[model.QuoteTick]) -> None: ...
+    def on_historical_trades(self, trades: typing.Sequence[model.TradeTick]) -> None: ...
+    def on_historical_funding_rates(
+        self, funding_rates: typing.Sequence[model.FundingRateUpdate]
+    ) -> None: ...
+    def on_historical_bars(self, bars: typing.Sequence[model.Bar]) -> None: ...
+    def on_historical_mark_prices(
+        self, mark_prices: typing.Sequence[model.MarkPriceUpdate]
+    ) -> None: ...
+    def on_historical_index_prices(
+        self, index_prices: typing.Sequence[model.IndexPriceUpdate]
+    ) -> None: ...
     def subscribe_data(
         self,
         data_type: model.DataType,
@@ -208,6 +248,18 @@ class Strategy:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
+    def subscribe_funding_rates(
+        self,
+        instrument_id: model.InstrumentId,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> None: ...
+    def subscribe_option_greeks(
+        self,
+        instrument_id: model.InstrumentId,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> None: ...
     def subscribe_instrument_status(
         self,
         instrument_id: model.InstrumentId,
@@ -220,65 +272,16 @@ class Strategy:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
-    def request_data(
+    def subscribe_option_chain(
         self,
-        data_type: model.DataType,
-        client_id: model.ClientId,
-        start: int | None = None,
-        end: int | None = None,
-        limit: int | None = None,
-        params: dict | None = None,
-    ) -> str: ...
-    def request_instrument(
-        self,
-        instrument_id: model.InstrumentId,
-        start: int | None = None,
-        end: int | None = None,
+        series_id: model.OptionSeriesId,
+        strike_range: model.StrikeRange,
+        snapshot_interval_ms: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
-    ) -> str: ...
-    def request_instruments(
-        self,
-        venue: model.Venue | None = None,
-        start: int | None = None,
-        end: int | None = None,
-        client_id: model.ClientId | None = None,
-        params: dict | None = None,
-    ) -> str: ...
-    def request_book_snapshot(
-        self,
-        instrument_id: model.InstrumentId,
-        depth: int | None = None,
-        client_id: model.ClientId | None = None,
-        params: dict | None = None,
-    ) -> str: ...
-    def request_quotes(
-        self,
-        instrument_id: model.InstrumentId,
-        start: int | None = None,
-        end: int | None = None,
-        limit: int | None = None,
-        client_id: model.ClientId | None = None,
-        params: dict | None = None,
-    ) -> str: ...
-    def request_trades(
-        self,
-        instrument_id: model.InstrumentId,
-        start: int | None = None,
-        end: int | None = None,
-        limit: int | None = None,
-        client_id: model.ClientId | None = None,
-        params: dict | None = None,
-    ) -> str: ...
-    def request_bars(
-        self,
-        bar_type: model.BarType,
-        start: int | None = None,
-        end: int | None = None,
-        limit: int | None = None,
-        client_id: model.ClientId | None = None,
-        params: dict | None = None,
-    ) -> str: ...
+    ) -> None: ...
+    def subscribe_order_fills(self, instrument_id: model.InstrumentId) -> None: ...
+    def subscribe_order_cancels(self, instrument_id: model.InstrumentId) -> None: ...
     def unsubscribe_data(
         self,
         data_type: model.DataType,
@@ -340,6 +343,18 @@ class Strategy:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
+    def unsubscribe_funding_rates(
+        self,
+        instrument_id: model.InstrumentId,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> None: ...
+    def unsubscribe_option_greeks(
+        self,
+        instrument_id: model.InstrumentId,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> None: ...
     def unsubscribe_instrument_status(
         self,
         instrument_id: model.InstrumentId,
@@ -352,6 +367,79 @@ class Strategy:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
+    def unsubscribe_option_chain(
+        self, series_id: model.OptionSeriesId, client_id: model.ClientId | None = None
+    ) -> None: ...
+    def unsubscribe_order_fills(self, instrument_id: model.InstrumentId) -> None: ...
+    def unsubscribe_order_cancels(self, instrument_id: model.InstrumentId) -> None: ...
+    def request_data(
+        self,
+        data_type: model.DataType,
+        client_id: model.ClientId,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+        params: dict | None = None,
+    ) -> str: ...
+    def request_instrument(
+        self,
+        instrument_id: model.InstrumentId,
+        start: int | None = None,
+        end: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> str: ...
+    def request_instruments(
+        self,
+        venue: model.Venue | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> str: ...
+    def request_book_snapshot(
+        self,
+        instrument_id: model.InstrumentId,
+        depth: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> str: ...
+    def request_quotes(
+        self,
+        instrument_id: model.InstrumentId,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> str: ...
+    def request_trades(
+        self,
+        instrument_id: model.InstrumentId,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> str: ...
+    def request_funding_rates(
+        self,
+        instrument_id: model.InstrumentId,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> str: ...
+    def request_bars(
+        self,
+        bar_type: model.BarType,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> str: ...
 
 @typing.final
 class StrategyConfig:

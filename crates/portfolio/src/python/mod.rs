@@ -15,15 +15,11 @@
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 
-#![allow(
-    clippy::missing_errors_doc,
-    reason = "errors documented on underlying Rust methods"
-)]
-
 use pyo3::pymethods;
 
 use crate::config::PortfolioConfig;
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PortfolioConfig {
     /// Configuration for `Portfolio` instances.

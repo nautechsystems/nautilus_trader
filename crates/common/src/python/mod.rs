@@ -15,7 +15,7 @@
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 
-#![allow(
+#![expect(
     clippy::missing_errors_doc,
     reason = "errors documented on underlying Rust methods"
 )]
@@ -47,6 +47,7 @@ use pyo3::prelude::*;
 pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::custom::CustomData>()?;
     m.add_class::<crate::signal::Signal>()?;
+    m.add_class::<crate::timer::TimeEvent>()?;
     m.add_class::<crate::cache::CacheConfig>()?;
     m.add_class::<crate::python::actor::PyDataActor>()?;
     m.add_class::<crate::python::cache::PyCache>()?;

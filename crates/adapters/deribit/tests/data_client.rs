@@ -49,7 +49,8 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_deribit::{
-    config::DeribitDataClientConfig, data::DeribitDataClient, http::models::DeribitProductType,
+    common::enums::DeribitEnvironment, config::DeribitDataClientConfig, data::DeribitDataClient,
+    http::models::DeribitProductType,
 };
 use nautilus_model::{
     data::Data,
@@ -183,6 +184,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 params.get("channels").and_then(|c| c.as_array())
                         {
                             let mut subscribed_channels = Vec::new();
+
                             for channel in channels {
                                 if let Some(channel_str) = channel.as_str() {
                                     state
@@ -247,6 +249,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 params.get("channels").and_then(|c| c.as_array())
                         {
                             let mut unsubscribed = Vec::new();
+
                             for channel in channels {
                                 if let Some(channel_str) = channel.as_str() {
                                     unsubscribed.push(channel_str.to_string());
@@ -395,13 +398,15 @@ fn create_test_config(addr: SocketAddr) -> DeribitDataClientConfig {
         product_types: vec![DeribitProductType::Future],
         base_url_http: Some(format!("http://{addr}/api/v2")),
         base_url_ws: Some(format!("ws://{addr}/ws/api/v2")),
-        use_testnet: true,
+        environment: DeribitEnvironment::Testnet,
         http_timeout_secs: 10,
         max_retries: 1,
         retry_delay_initial_ms: 100,
         retry_delay_max_ms: 1000,
         heartbeat_interval_secs: 30,
         update_instruments_interval_mins: 60,
+        proxy_url: None,
+        transport_backend: Default::default(),
     }
 }
 
@@ -446,6 +451,7 @@ async fn test_data_client_subscribe_trades() {
         Duration::from_secs(5),
     )
     .await;
+
     while rx.try_recv().is_ok() {}
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
@@ -458,7 +464,7 @@ async fn test_data_client_subscribe_trades() {
         None,
         None,
     );
-    client.subscribe_trades(&cmd).unwrap();
+    client.subscribe_trades(cmd).unwrap();
 
     wait_until_async(
         || async { !state.subscription_events.lock().await.is_empty() },
@@ -495,6 +501,7 @@ async fn test_data_client_subscribe_quotes() {
         Duration::from_secs(5),
     )
     .await;
+
     while rx.try_recv().is_ok() {}
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
@@ -507,7 +514,7 @@ async fn test_data_client_subscribe_quotes() {
         None,
         None,
     );
-    client.subscribe_quotes(&cmd).unwrap();
+    client.subscribe_quotes(cmd).unwrap();
 
     wait_until_async(
         || async {
@@ -551,6 +558,7 @@ async fn test_data_client_subscribe_book_deltas() {
         Duration::from_secs(5),
     )
     .await;
+
     while rx.try_recv().is_ok() {}
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
@@ -566,7 +574,7 @@ async fn test_data_client_subscribe_book_deltas() {
         None,
         None,
     );
-    client.subscribe_book_deltas(&cmd).unwrap();
+    client.subscribe_book_deltas(cmd).unwrap();
 
     wait_until_async(
         || async {

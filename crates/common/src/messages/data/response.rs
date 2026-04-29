@@ -40,7 +40,7 @@ pub struct CustomDataResponse {
 
 impl CustomDataResponse {
     /// Creates a new [`CustomDataResponse`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new<T: Any + Send + Sync>(
         correlation_id: UUID4,
         client_id: ClientId,
@@ -90,7 +90,7 @@ impl InstrumentResponse {
     }
 
     /// Creates a new [`InstrumentResponse`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
@@ -133,7 +133,7 @@ impl InstrumentsResponse {
     }
 
     /// Creates a new [`InstrumentsResponse`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
@@ -176,7 +176,7 @@ impl BookResponse {
     }
 
     /// Creates a new [`BookResponse`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
@@ -219,7 +219,7 @@ impl QuotesResponse {
     }
 
     /// Creates a new [`QuotesResponse`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
@@ -262,7 +262,7 @@ impl TradesResponse {
     }
 
     /// Creates a new [`TradesResponse`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
@@ -305,7 +305,7 @@ impl FundingRatesResponse {
     }
 
     /// Creates a new [`FundingRatesResponse`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
@@ -379,7 +379,7 @@ impl BarsResponse {
     }
 
     /// Creates a new [`BarsResponse`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,

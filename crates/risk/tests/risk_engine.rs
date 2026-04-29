@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(clippy::too_many_arguments)] // Test functions with many fixtures
+#![expect(clippy::too_many_arguments)] // Test functions with many fixtures
 
 use std::{cell::RefCell, rc::Rc, str::FromStr};
 
@@ -3705,7 +3705,7 @@ fn test_submit_order_with_gtd_expire_time_already_passed(
 }
 
 #[rstest]
-fn test_submit_order_with_quote_quantity_validates_correctly(
+fn test_submit_order_with_quote_quantity_skips_min_max_quantity_check(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
@@ -3827,7 +3827,7 @@ fn test_submit_order_with_quote_quantity_validates_correctly(
 }
 
 #[rstest]
-fn test_submit_order_with_quote_quantity_exceeds_max_after_conversion(
+fn test_submit_order_with_quote_quantity_does_not_deny_on_base_max_quantity(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
@@ -3837,7 +3837,8 @@ fn test_submit_order_with_quote_quantity_exceeds_max_after_conversion(
     _cash_account_state_million_usd: AccountState,
     mut simple_cache: Cache,
 ) {
-    // Create a BTCUSDT spot instrument with max_quantity = 0.5 BTC
+    // Base-quantity bounds do not apply to quote-denominated orders, so a
+    // converted base quantity that would exceed `max_quantity` must still pass.
     let btc_usdt = InstrumentAny::CurrencyPair(CurrencyPair::new(
         InstrumentId::from("BTCUSDT-SPOT.BYBIT"),
         Symbol::from("BTCUSDT"),
@@ -3866,9 +3867,8 @@ fn test_submit_order_with_quote_quantity_exceeds_max_after_conversion(
 
     simple_cache.add_instrument(btc_usdt.clone()).unwrap();
 
-    // Create a cash account with USDT balance (not USD) to match the instrument
     let usdt_account_state = AccountState::new(
-        AccountId::from("BYBIT-001"), // Match the venue from the instrument
+        AccountId::from("BYBIT-001"),
         AccountType::Cash,
         vec![AccountBalance::new(
             Money::from("1000000 USDT"),
@@ -3887,8 +3887,7 @@ fn test_submit_order_with_quote_quantity_exceeds_max_after_conversion(
         .add_account(AccountAny::Cash(cash_account(usdt_account_state)))
         .unwrap();
 
-    // Add a quote tick at $100,000 per BTC
-    // 100,000 USDT quote quantity = 1 BTC base quantity
+    // Quote at $100k/BTC: 100,000 USDT would convert to 1 BTC > max 0.5 BTC.
     let quote = QuoteTick::new(
         btc_usdt.id(),
         Price::from("100000.0"),
@@ -3903,12 +3902,10 @@ fn test_submit_order_with_quote_quantity_exceeds_max_after_conversion(
     let mut risk_engine =
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
 
-    // Create a market order with quote_quantity = 100,000 USDT
-    // This converts to 1 BTC which exceeds max_quantity of 0.5 BTC
     let order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(btc_usdt.id())
         .side(OrderSide::Buy)
-        .quantity(Quantity::from("100000")) // 100,000 USDT
+        .quantity(Quantity::from("100000"))
         .quote_quantity(true)
         .build();
 
@@ -3934,11 +3931,237 @@ fn test_submit_order_with_quote_quantity_exceeds_max_after_conversion(
 
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
-    // The order should be denied because effective_quantity (1 BTC) > max_quantity (0.5 BTC)
+    let saved_process_messages =
+        get_process_order_event_handler_messages(&process_order_event_handler);
+    assert_eq!(
+        saved_process_messages.len(),
+        0,
+        "Order should not be denied for quote-quantity base bounds"
+    );
+}
+
+#[rstest]
+fn test_submit_order_with_quote_quantity_does_not_deny_on_base_min_quantity(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    _client_order_id: ClientOrderId,
+    _venue_order_id: VenueOrderId,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    _cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    // Mirrors the Polymarket scenario from #3874: a quote-denominated order whose
+    // converted base quantity falls below a large `min_quantity` must still pass.
+    let btc_usdt = InstrumentAny::CurrencyPair(CurrencyPair::new(
+        InstrumentId::from("BTCUSDT-SPOT.BYBIT"),
+        Symbol::from("BTCUSDT"),
+        Currency::BTC(),
+        Currency::USDT(),
+        1,
+        6,
+        Price::from("0.1"),
+        Quantity::from("0.000001"),
+        Some(Quantity::from("1")),
+        Some(Quantity::from("0.000001")),
+        None,                      // max_quantity
+        Some(Quantity::from("5")), // min_quantity = 5 base units
+        None,                      // max_notional
+        Some(Money::from("1 USDT")),
+        None,
+        None,
+        Some(dec!(0.1)),
+        Some(dec!(0.1)),
+        Some(dec!(-0.00005)),
+        Some(dec!(0.00015)),
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    ));
+
+    simple_cache.add_instrument(btc_usdt.clone()).unwrap();
+
+    let usdt_account_state = AccountState::new(
+        AccountId::from("BYBIT-001"),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("1000000 USDT"),
+            Money::from("0 USDT"),
+            Money::from("1000000 USDT"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::from(0),
+        UnixNanos::from(0),
+        Some(Currency::USDT()),
+    );
+
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(usdt_account_state)))
+        .unwrap();
+
+    // Quote at $100k/BTC: 10 USDT -> 0.0001 BTC, well below min_quantity of 5.
+    let quote = QuoteTick::new(
+        btc_usdt.id(),
+        Price::from("100000.0"),
+        Price::from("99999.9"),
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::from(0),
+        UnixNanos::from(0),
+    );
+    simple_cache.add_quote(quote).unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(btc_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10"))
+        .quote_quantity(true)
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        btc_usdt.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let saved_process_messages =
+        get_process_order_event_handler_messages(&process_order_event_handler);
+    assert_eq!(
+        saved_process_messages.len(),
+        0,
+        "Order should not be denied for quote-quantity base bounds"
+    );
+}
+
+#[rstest]
+fn test_submit_order_with_quote_quantity_still_enforces_min_notional(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    _client_order_id: ClientOrderId,
+    _venue_order_id: VenueOrderId,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    _cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    // Base-quantity bounds are skipped for quote-denominated orders, but
+    // `min_notional` still applies and must deny sub-minimum notionals.
+    let btc_usdt = InstrumentAny::CurrencyPair(CurrencyPair::new(
+        InstrumentId::from("BTCUSDT-SPOT.BYBIT"),
+        Symbol::from("BTCUSDT"),
+        Currency::BTC(),
+        Currency::USDT(),
+        1,
+        6,
+        Price::from("0.1"),
+        Quantity::from("0.000001"),
+        Some(Quantity::from("1")),
+        Some(Quantity::from("0.000001")),
+        None, // max_quantity
+        None, // min_quantity
+        None, // max_notional
+        Some(Money::from("10 USDT")),
+        None,
+        None,
+        Some(dec!(0.1)),
+        Some(dec!(0.1)),
+        Some(dec!(-0.00005)),
+        Some(dec!(0.00015)),
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    ));
+
+    simple_cache.add_instrument(btc_usdt.clone()).unwrap();
+
+    let usdt_account_state = AccountState::new(
+        AccountId::from("BYBIT-001"),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("1000000 USDT"),
+            Money::from("0 USDT"),
+            Money::from("1000000 USDT"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::from(0),
+        UnixNanos::from(0),
+        Some(Currency::USDT()),
+    );
+
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(usdt_account_state)))
+        .unwrap();
+
+    let quote = QuoteTick::new(
+        btc_usdt.id(),
+        Price::from("100000.0"),
+        Price::from("99999.9"),
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::from(0),
+        UnixNanos::from(0),
+    );
+    simple_cache.add_quote(quote).unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+
+    // 1 USDT quote quantity, below the 10 USDT minimum notional.
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(btc_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1"))
+        .quote_quantity(true)
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        btc_usdt.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
     let saved_process_messages =
         get_process_order_event_handler_messages(&process_order_event_handler);
     assert_eq!(saved_process_messages.len(), 1);
-
     assert_eq!(
         saved_process_messages.first().unwrap().event_type(),
         OrderEventType::Denied
@@ -3949,7 +4172,7 @@ fn test_submit_order_with_quote_quantity_exceeds_max_after_conversion(
             .unwrap()
             .message()
             .unwrap()
-            .contains("QUANTITY_EXCEEDS_MAXIMUM")
+            .contains("NOTIONAL_LESS_THAN_MIN_FOR_INSTRUMENT")
     );
 }
 

@@ -23,6 +23,7 @@ const TOTAL: usize = 1_000_000;
 async fn main() {
     let client = InnerHttpClient::default();
     let mut reqs = Vec::new();
+
     for _ in 0..(TOTAL / CONCURRENCY) {
         for _ in 0..CONCURRENCY {
             reqs.push(client.send_request(

@@ -23,7 +23,8 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
+use indexmap::IndexMap;
 use nautilus_core::{
     UUID4, UnixNanos,
     correctness::{FAILED, check_equal, check_predicate_true},
@@ -93,7 +94,7 @@ pub struct Position {
     pub trade_ids: AHashSet<TradeId>,
     pub buy_qty: Quantity,
     pub sell_qty: Quantity,
-    pub commissions: AHashMap<Currency, Money>,
+    pub commissions: IndexMap<Currency, Money>,
 }
 
 impl Position {
@@ -105,6 +106,7 @@ impl Position {
     /// - The `instrument.id()` does not match the `fill.instrument_id`.
     /// - The `fill.order_side` is `NoOrderSide`.
     /// - The `fill.position_id` is `None`.
+    #[must_use]
     pub fn new(instrument: &InstrumentAny, fill: OrderFilled) -> Self {
         check_equal(
             &instrument.id(),
@@ -123,7 +125,7 @@ impl Position {
             trade_ids: AHashSet::<TradeId>::new(),
             buy_qty: Quantity::zero(instrument.size_precision()),
             sell_qty: Quantity::zero(instrument.size_precision()),
-            commissions: AHashMap::<Currency, Money>::new(),
+            commissions: IndexMap::<Currency, Money>::new(),
             trader_id: fill.trader_id,
             strategy_id: fill.strategy_id,
             instrument_id: fill.instrument_id,
@@ -379,6 +381,24 @@ impl Position {
         }
 
         self.ts_last = fill.ts_event;
+
+        debug_assert!(
+            match self.side {
+                PositionSide::Long => self.signed_qty > 0.0,
+                PositionSide::Short => self.signed_qty < 0.0,
+                PositionSide::Flat => self.signed_qty == 0.0,
+                PositionSide::NoPositionSide => false,
+            },
+            "Invariant: position side must match signed_qty sign (side={:?}, signed_qty={})",
+            self.side,
+            self.signed_qty,
+        );
+        debug_assert!(
+            self.peak_qty >= self.quantity,
+            "Invariant: peak_qty must not be less than current quantity (peak={}, quantity={})",
+            self.peak_qty,
+            self.quantity,
+        );
     }
 
     fn handle_buy_order_fill(&mut self, fill: &OrderFilled) {
@@ -540,6 +560,24 @@ impl Position {
 
         self.adjustments.push(adjustment);
         self.ts_last = adjustment.ts_event;
+
+        debug_assert!(
+            match self.side {
+                PositionSide::Long => self.signed_qty > 0.0,
+                PositionSide::Short => self.signed_qty < 0.0,
+                PositionSide::Flat => self.signed_qty == 0.0,
+                PositionSide::NoPositionSide => false,
+            },
+            "Invariant: position side must match signed_qty sign (side={:?}, signed_qty={})",
+            self.side,
+            self.signed_qty,
+        );
+        debug_assert!(
+            self.peak_qty >= self.quantity,
+            "Invariant: peak_qty must not be less than current quantity (peak={}, quantity={})",
+            self.peak_qty,
+            self.quantity,
+        );
     }
 
     /// Calculates the average price using f64 arithmetic.
@@ -557,7 +595,7 @@ impl Position {
     /// 2. **Single operation**: This is a single weighted average calculation, not a
     ///    chain of operations where errors would compound.
     ///
-    /// 3. **Overflow safety**: Raw integer arithmetic (price_raw * qty_raw) would risk
+    /// 3. **Overflow safety**: Raw integer arithmetic (`price_raw` * `qty_raw`) would risk
     ///    overflow even with i128 intermediates, since max values can exceed integer limits.
     ///
     /// 4. **f64 precision**: ~15 decimal digits is sufficient for typical financial
@@ -590,6 +628,14 @@ impl Position {
         last_px: f64,
         last_qty: f64,
     ) -> anyhow::Result<f64> {
+        // Prices can be negative for options and spreads, so only quantities
+        // are checked for non-negativity here.
+        debug_assert!(
+            qty >= 0.0 && last_qty >= 0.0,
+            "Invariant: average price calc requires non-negative quantities \
+             (qty={qty}, last_qty={last_qty})"
+        );
+
         if qty == 0.0 && last_qty == 0.0 {
             anyhow::bail!("Cannot calculate average price: both quantities are zero");
         }
@@ -937,7 +983,7 @@ mod tests {
 
     use crate::{
         enums::{LiquiditySide, OrderSide, OrderType, PositionAdjustmentType, PositionSide},
-        events::{OrderFilled, PositionAdjusted},
+        events::{OrderFilled, PositionAdjusted, order::spec::OrderFilledSpec},
         identifiers::{
             AccountId, ClientOrderId, PositionId, StrategyId, TradeId, VenueOrderId, stubs::uuid4,
         },
@@ -1000,6 +1046,51 @@ mod tests {
         );
         let mut position = Position::new(&audusd_sim, fill1.into());
         position.apply(&fill2.into());
+    }
+
+    #[rstest]
+    fn test_position_applies_fills_with_negative_prices(audusd_sim: CurrencyPair) {
+        // Options and spreads can trade at negative prices; position average
+        // price updates must not panic when the stored average or incoming
+        // fill price is below zero.
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+        let fill1 = TestOrderEventStubs::filled(
+            &order,
+            &audusd_sim,
+            Some(TradeId::new("1")),
+            None,
+            Some(Price::from("-5.00000")),
+            Some(Quantity::from(50_000)),
+            None,
+            None,
+            None,
+            None,
+        );
+        let fill2 = TestOrderEventStubs::filled(
+            &order,
+            &audusd_sim,
+            Some(TradeId::new("2")),
+            None,
+            Some(Price::from("-7.00000")),
+            Some(Quantity::from(50_000)),
+            None,
+            None,
+            None,
+            None,
+        );
+        let mut position = Position::new(&audusd_sim, fill1.into());
+        position.apply(&fill2.into());
+
+        assert_eq!(position.quantity, Quantity::from(100_000));
+        assert_eq!(position.signed_qty, 100_000.0);
+        assert_eq!(position.side, PositionSide::Long);
+        // Weighted avg_px_open: (50_000 * -5 + 50_000 * -7) / 100_000 = -6.0
+        assert_eq!(position.avg_px_open, -6.0);
     }
 
     #[rstest]
@@ -2329,10 +2420,9 @@ mod tests {
     #[rstest]
     fn test_position_with_commission_none(audusd_sim: CurrencyPair) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
-        let fill = OrderFilled {
-            position_id: Some(PositionId::from("1")),
-            ..Default::default()
-        };
+        let fill = OrderFilledSpec::builder()
+            .position_id(PositionId::from("1"))
+            .build();
 
         let position = Position::new(&audusd_sim, fill);
         assert_eq!(position.realized_pnl, Some(Money::from("0 USD")));
@@ -2341,11 +2431,10 @@ mod tests {
     #[rstest]
     fn test_position_with_commission_zero(audusd_sim: CurrencyPair) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
-        let fill = OrderFilled {
-            position_id: Some(PositionId::from("1")),
-            commission: Some(Money::from("0 USD")),
-            ..Default::default()
-        };
+        let fill = OrderFilledSpec::builder()
+            .position_id(PositionId::from("1"))
+            .commission(Money::from("0 USD"))
+            .build();
 
         let position = Position::new(&audusd_sim, fill);
         assert_eq!(position.realized_pnl, Some(Money::from("0 USD")));
@@ -2716,7 +2805,7 @@ mod tests {
         // Verify high-precision price is preserved in f64 (within tolerance)
         let avg_px = position.avg_px_open;
         assert!(
-            (avg_px - 2345.123456789).abs() < 1e-6,
+            (avg_px - 2_345.123_456_789).abs() < 1e-6,
             "High precision price should be preserved within f64 tolerance"
         );
 
@@ -2762,7 +2851,7 @@ mod tests {
 
         // Apply 99 more fills with varying prices
         for i in 2..=100 {
-            let price_offset = (i as f64) * 0.00001;
+            let price_offset = f64::from(i) * 0.00001;
             let fill = TestOrderEventStubs::filled(
                 &order,
                 &audusd_sim,
@@ -4015,5 +4104,86 @@ mod tests {
         assert_eq!(position.ts_opened, UnixNanos::from(2_000u64));
         assert_eq!(position.opening_order_id, order1.client_order_id());
         assert_eq!(position.events.len(), 2);
+    }
+
+    #[rstest]
+    fn test_position_commissions_multi_currency_insertion_order(audusd_sim: CurrencyPair) {
+        // Locks in IndexMap iteration order for Position::commissions:
+        // new currencies append to the end, existing currencies accumulate
+        // in place. PositionSnapshot.commissions builds its Vec from this
+        // iteration; the order must be deterministic across runs.
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+        let order_template = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        let fill_usd = TestOrderEventStubs::filled(
+            &order_template,
+            &audusd_sim,
+            Some(TradeId::new("t1")),
+            None,
+            Some(Price::from("1.00001")),
+            None,
+            None,
+            Some(Money::from("1.0 USD")),
+            None,
+            None,
+        );
+        let mut position = Position::new(&audusd_sim, fill_usd.into());
+
+        let fill_usdt = TestOrderEventStubs::filled(
+            &order_template,
+            &audusd_sim,
+            Some(TradeId::new("t2")),
+            None,
+            Some(Price::from("1.00001")),
+            None,
+            None,
+            Some(Money::from("2.0 USDT")),
+            None,
+            None,
+        );
+        position.apply(&fill_usdt.into());
+
+        let fill_usd_again = TestOrderEventStubs::filled(
+            &order_template,
+            &audusd_sim,
+            Some(TradeId::new("t3")),
+            None,
+            Some(Price::from("1.00001")),
+            None,
+            None,
+            Some(Money::from("0.5 USD")),
+            None,
+            None,
+        );
+        position.apply(&fill_usd_again.into());
+
+        let fill_btc = TestOrderEventStubs::filled(
+            &order_template,
+            &audusd_sim,
+            Some(TradeId::new("t4")),
+            None,
+            Some(Price::from("1.00001")),
+            None,
+            None,
+            Some(Money::from("0.0001 BTC")),
+            None,
+            None,
+        );
+        position.apply(&fill_btc.into());
+
+        // USD entered first and accumulates in place, USDT appends second,
+        // BTC appends third
+        assert_eq!(
+            position.commissions(),
+            vec![
+                Money::from("1.5 USD"),
+                Money::from("2.0 USDT"),
+                Money::from("0.0001 BTC"),
+            ]
+        );
     }
 }

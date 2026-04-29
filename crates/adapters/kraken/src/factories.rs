@@ -21,13 +21,13 @@ use nautilus_common::{
     cache::Cache,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::ClientId,
 };
-use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
 use crate::{
     common::{consts::KRAKEN_VENUE, enums::KrakenProductType},
@@ -87,6 +87,7 @@ impl DataClientFactory for KrakenDataClientFactory {
             .clone();
 
         let client_id = ClientId::from(name);
+
         match kraken_config.product_type {
             KrakenProductType::Spot => {
                 let client = KrakenSpotDataClient::new(client_id, kraken_config)?;
@@ -157,12 +158,11 @@ impl ExecutionClientFactory for KrakenExecutionClientFactory {
             })?
             .clone();
 
-        // Kraken Spot uses hedging, Futures uses netting
-        let oms_type = match kraken_config.product_type {
-            KrakenProductType::Spot => OmsType::Hedging,
-            KrakenProductType::Futures => OmsType::Netting,
+        let oms_type = OmsType::Netting;
+        let account_type = match kraken_config.product_type {
+            KrakenProductType::Spot => AccountType::Cash,
+            KrakenProductType::Futures => AccountType::Margin,
         };
-        let account_type = AccountType::Margin;
 
         let client_id = ClientId::from(name);
         let core = ExecutionClientCore::new(
@@ -202,9 +202,12 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{
-        cache::Cache, clock::TestClock, live::runner::set_data_event_sender, messages::DataEvent,
+        cache::Cache,
+        clock::TestClock,
+        factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+        live::runner::set_data_event_sender,
+        messages::DataEvent,
     };
-    use nautilus_system::factories::{ClientConfig, DataClientFactory};
     use rstest::rstest;
 
     use super::*;
@@ -261,5 +264,41 @@ mod tests {
 
         let client = result.unwrap();
         assert_eq!(client.client_id(), ClientId::from("KRAKEN-TEST"));
+    }
+
+    #[rstest]
+    fn test_kraken_execution_client_factory_creates_spot_client_with_netting_oms() {
+        let factory = KrakenExecutionClientFactory::new();
+        let config = KrakenExecClientConfig {
+            product_type: KrakenProductType::Spot,
+            ..Default::default()
+        };
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let result = factory.create("KRAKEN-TEST", &config, cache);
+        assert!(result.is_ok());
+
+        let client = result.unwrap();
+        assert_eq!(client.client_id(), ClientId::from("KRAKEN-TEST"));
+        assert_eq!(client.account_id(), config.account_id);
+        assert_eq!(client.oms_type(), OmsType::Netting);
+    }
+
+    #[rstest]
+    fn test_kraken_execution_client_factory_creates_futures_client_with_netting_oms() {
+        let factory = KrakenExecutionClientFactory::new();
+        let config = KrakenExecClientConfig {
+            product_type: KrakenProductType::Futures,
+            ..Default::default()
+        };
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let result = factory.create("KRAKEN-TEST", &config, cache);
+        assert!(result.is_ok());
+
+        let client = result.unwrap();
+        assert_eq!(client.client_id(), ClientId::from("KRAKEN-TEST"));
+        assert_eq!(client.account_id(), config.account_id);
+        assert_eq!(client.oms_type(), OmsType::Netting);
     }
 }

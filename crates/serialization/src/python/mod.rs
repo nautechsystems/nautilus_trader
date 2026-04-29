@@ -73,6 +73,14 @@ pub fn serialization(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             m
         )?)?;
         m.add_function(wrap_pyfunction!(
+            crate::python::arrow::py_instrument_status_to_arrow_record_batch_bytes,
+            m
+        )?)?;
+        m.add_function(wrap_pyfunction!(
+            crate::python::arrow::py_instrument_status_from_arrow_record_batch_bytes,
+            m
+        )?)?;
+        m.add_function(wrap_pyfunction!(
             crate::python::arrow::py_instrument_closes_to_arrow_record_batch_bytes,
             m
         )?)?;

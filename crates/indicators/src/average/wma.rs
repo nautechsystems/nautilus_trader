@@ -439,6 +439,7 @@ mod tests {
     #[rstest]
     fn single_period_returns_latest_input() {
         let mut wma = WeightedMovingAverage::new(1, vec![1.0], None);
+
         for i in 0..5 {
             let v = f64::from(i);
             wma.update_raw(v);

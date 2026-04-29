@@ -81,8 +81,7 @@ Inherits from `BaseContract` to use Multicall3 for efficient batch operations. F
 | `from_block`                    | `None`  | Optional starting block height for historical backfill. |
 | `pool_filters`                  | `DexPoolFilters()` | Filtering rules applied when selecting DEX pools to monitor. |
 | `postgres_cache_database_config`| `None`  | Optional `PostgresConnectOptions` enabling on‑disk caching of decoded pool state. |
-| `http_proxy_url`                | `None`  | Reserved for future use; not yet configurable via the constructor. |
-| `ws_proxy_url`                  | `None`  | Reserved for future use; not yet configurable via the constructor. |
+| `proxy_url`                     | `None`  | Optional proxy URL for HTTP and WebSocket transports. |
 
 ## Contributing
 

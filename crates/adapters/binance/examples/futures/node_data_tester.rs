@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Binance Futures USD-M adapter.
 //!
-//! Run with: `cargo run --example binance-futures-data-tester --package nautilus-binance`
+//! Run with: `cargo run --example binance-futures-data-tester --package nautilus-binance --features examples`
 //!
 //! Uses testnet by default for safety.
 
@@ -32,6 +32,7 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId},
     stubs::TestDefault,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 #[tokio::main]
@@ -51,6 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         environment: BinanceEnvironment::Testnet,
         api_key: None,
         api_secret: None,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

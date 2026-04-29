@@ -57,6 +57,7 @@ fn build_updown_slugs() -> Vec<String> {
     let period_start = (now / PERIOD_SECS) * PERIOD_SECS;
 
     let mut slugs = Vec::new();
+
     for i in 0..NUM_PERIODS {
         let timestamp = period_start + i * PERIOD_SECS;
         for asset in ASSETS {

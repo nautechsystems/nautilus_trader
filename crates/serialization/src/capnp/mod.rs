@@ -18,6 +18,9 @@
 //! This module provides Cap'n Proto serialization support for Nautilus domain types.
 //! The generated schema modules are available at the crate root for proper cross-referencing.
 //!
+//! **Warning:** The Cap'n Proto wire format is not yet stable and may change without notice
+//! between releases. Do not depend on wire compatibility across versions.
+//!
 //! # Generated Modules
 //!
 //! The following modules are generated from Cap'n Proto schemas:

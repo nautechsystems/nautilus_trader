@@ -39,10 +39,6 @@ use crate::common::credential::Credential;
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
-#[allow(
-    clippy::large_enum_variant,
-    reason = "Commands are ephemeral and immediately consumed"
-)]
 pub enum HandlerCommand {
     /// Set the WebSocketClient for the handler to use.
     SetClient(WebSocketClient),
@@ -77,7 +73,7 @@ pub(super) struct FeedHandler {
 }
 
 impl FeedHandler {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub(super) fn new(
         signal: Arc<AtomicBool>,
         channel: WsChannel,
@@ -175,6 +171,7 @@ impl FeedHandler {
             assets_ids: asset_ids.to_vec(),
             operation: "unsubscribe",
         };
+
         match serde_json::to_string(&req) {
             Ok(payload) => {
                 if let Err(e) = client.send_text(payload, None).await {

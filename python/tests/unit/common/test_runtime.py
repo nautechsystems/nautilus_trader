@@ -18,10 +18,13 @@ import asyncio
 import pytest
 
 from nautilus_trader.common import BusMessage
+from nautilus_trader.common import Cache
+from nautilus_trader.common import Clock
 from nautilus_trader.common import ComponentState
 from nautilus_trader.common import ComponentTrigger
 from nautilus_trader.common import CustomData
 from nautilus_trader.common import Environment
+from nautilus_trader.common import GreeksCalculator
 from nautilus_trader.common import LogColor
 from nautilus_trader.common import LogFormat
 from nautilus_trader.common import LogLevel
@@ -131,3 +134,11 @@ def test_message_bus_listener_stream_yields_bus_message():
         assert listener.is_closed() is True
 
     asyncio.run(run_test())
+
+
+def test_greeks_calculator_construction():
+    cache = Cache()
+    clock = Clock.new_test()
+    calc = GreeksCalculator(cache, clock)
+
+    assert isinstance(calc, GreeksCalculator)

@@ -129,6 +129,7 @@ def _print_no_updown_found(markets: list[dict]) -> None:
     print("\nRelated crypto price prediction markets found:")
 
     crypto_markets = []
+
     for market in markets:
         slug = market.get("slug", "").lower()
         question = market.get("question", "").lower()
@@ -159,6 +160,7 @@ def _print_updown_results(
     print(f"{'=' * 80}")
     print(f"BTC UPDOWN MARKETS ({len(btc_markets)} found)")
     print(f"{'=' * 80}")
+
     for market in btc_markets:
         print_market_info(market)
     print()
@@ -166,6 +168,7 @@ def _print_updown_results(
     print(f"{'=' * 80}")
     print(f"ETH UPDOWN MARKETS ({len(eth_markets)} found)")
     print(f"{'=' * 80}")
+
     for market in eth_markets:
         print_market_info(market)
     print()
@@ -174,6 +177,7 @@ def _print_updown_results(
         print(f"{'=' * 80}")
         print(f"OTHER UPDOWN MARKETS ({len(other_updown)} found)")
         print(f"{'=' * 80}")
+
         for market in other_updown:
             print_market_info(market)
 

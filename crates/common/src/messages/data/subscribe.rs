@@ -37,7 +37,6 @@ pub struct SubscribeCustomData {
 
 impl SubscribeCustomData {
     /// Creates a new [`SubscribeCustomData`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         client_id: Option<ClientId>,
         venue: Option<Venue>,
@@ -73,7 +72,6 @@ pub struct SubscribeInstrument {
 
 impl SubscribeInstrument {
     /// Creates a new [`SubscribeInstrument`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -143,7 +141,7 @@ pub struct SubscribeBookDeltas {
 
 impl SubscribeBookDeltas {
     /// Creates a new [`SubscribeBookDeltas`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -188,7 +186,7 @@ pub struct SubscribeBookDepth10 {
 
 impl SubscribeBookDepth10 {
     /// Creates a new [`SubscribeBookDepth10`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -233,7 +231,7 @@ pub struct SubscribeBookSnapshots {
 
 impl SubscribeBookSnapshots {
     /// Creates a new [`SubscribeBookSnapshots`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -275,7 +273,6 @@ pub struct SubscribeQuotes {
 
 impl SubscribeQuotes {
     /// Creates a new [`SubscribeQuotes`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -311,7 +308,6 @@ pub struct SubscribeTrades {
 
 impl SubscribeTrades {
     /// Creates a new [`SubscribeTrades`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -347,7 +343,6 @@ pub struct SubscribeBars {
 
 impl SubscribeBars {
     /// Creates a new [`SubscribeBars`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         bar_type: BarType,
         client_id: Option<ClientId>,
@@ -383,7 +378,6 @@ pub struct SubscribeMarkPrices {
 
 impl SubscribeMarkPrices {
     /// Creates a new [`SubscribeMarkPrices`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -419,7 +413,6 @@ pub struct SubscribeIndexPrices {
 
 impl SubscribeIndexPrices {
     /// Creates a new [`SubscribeIndexPrices`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -455,7 +448,6 @@ pub struct SubscribeFundingRates {
 
 impl SubscribeFundingRates {
     /// Creates a new [`SubscribeFundingRates`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -491,7 +483,6 @@ pub struct SubscribeInstrumentStatus {
 
 impl SubscribeInstrumentStatus {
     /// Creates a new [`SubscribeInstrumentStatus`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -527,7 +518,6 @@ pub struct SubscribeOptionGreeks {
 
 impl SubscribeOptionGreeks {
     /// Creates a new [`SubscribeOptionGreeks`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -563,7 +553,6 @@ pub struct SubscribeInstrumentClose {
 
 impl SubscribeInstrumentClose {
     /// Creates a new [`SubscribeInstrumentClose`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -595,6 +584,7 @@ pub struct SubscribeOptionChain {
     pub ts_init: UnixNanos,
     pub client_id: Option<ClientId>,
     pub venue: Option<Venue>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeOptionChain {
@@ -608,6 +598,7 @@ impl SubscribeOptionChain {
         ts_init: UnixNanos,
         client_id: Option<ClientId>,
         venue: Option<Venue>,
+        params: Option<Params>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -618,6 +609,7 @@ impl SubscribeOptionChain {
             ts_init,
             client_id,
             venue,
+            params,
         }
     }
 }

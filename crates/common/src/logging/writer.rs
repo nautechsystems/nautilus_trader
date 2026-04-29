@@ -131,6 +131,14 @@ pub struct FileRotateConfig {
     backup_files: VecDeque<PathBuf>,
 }
 
+impl PartialEq for FileRotateConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.max_file_size == other.max_file_size && self.max_backup_count == other.max_backup_count
+    }
+}
+
+impl Eq for FileRotateConfig {}
+
 impl Default for FileRotateConfig {
     fn default() -> Self {
         Self {
@@ -164,7 +172,7 @@ impl From<(u64, u32)> for FileRotateConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
 )]
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FileWriterConfig {
     pub directory: Option<String>,
     pub file_name: Option<String>,

@@ -19,8 +19,8 @@ use ustr::Ustr;
 
 use crate::{
     common::enums::{
-        BybitMarketUnit, BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce,
-        BybitTpSlMode, BybitTriggerType,
+        BybitMarketUnit, BybitOrderSide, BybitOrderType, BybitPositionIdx, BybitProductType,
+        BybitTimeInForce, BybitTpSlMode, BybitTriggerType,
     },
     websocket::{error::BybitWsError, messages},
 };
@@ -86,6 +86,8 @@ pub struct BybitWsPlaceOrderParams {
     pub order_iv: Option<String>,
     #[pyo3(get, set)]
     pub mmp: Option<bool>,
+    #[pyo3(get, set)]
+    pub position_idx: Option<BybitPositionIdx>,
 }
 
 #[pymethods]
@@ -93,7 +95,38 @@ pub struct BybitWsPlaceOrderParams {
 impl BybitWsPlaceOrderParams {
     /// Parameters for placing an order via WebSocket.
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        category,
+        symbol,
+        side,
+        order_type,
+        qty,
+        is_leverage=None,
+        market_unit=None,
+        price=None,
+        time_in_force=None,
+        order_link_id=None,
+        reduce_only=None,
+        close_on_trigger=None,
+        trigger_price=None,
+        trigger_by=None,
+        trigger_direction=None,
+        tpsl_mode=None,
+        take_profit=None,
+        stop_loss=None,
+        tp_trigger_by=None,
+        sl_trigger_by=None,
+        sl_trigger_price=None,
+        tp_trigger_price=None,
+        sl_order_type=None,
+        tp_order_type=None,
+        sl_limit_price=None,
+        tp_limit_price=None,
+        order_iv=None,
+        mmp=None,
+        position_idx=None,
+    ))]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         category: BybitProductType,
         symbol: String,
@@ -123,6 +156,7 @@ impl BybitWsPlaceOrderParams {
         tp_limit_price: Option<String>,
         order_iv: Option<String>,
         mmp: Option<bool>,
+        position_idx: Option<BybitPositionIdx>,
     ) -> Self {
         Self {
             category,
@@ -153,6 +187,7 @@ impl BybitWsPlaceOrderParams {
             tp_limit_price,
             order_iv,
             mmp,
+            position_idx,
         }
     }
 }
@@ -273,6 +308,7 @@ impl TryFrom<BybitWsPlaceOrderParams> for messages::BybitWsPlaceOrderParams {
             tp_limit_price: params.tp_limit_price,
             order_iv: params.order_iv,
             mmp: params.mmp,
+            position_idx: params.position_idx,
         })
     }
 }
@@ -366,6 +402,7 @@ impl From<messages::BybitWsPlaceOrderParams> for BybitWsPlaceOrderParams {
             tp_limit_price: params.tp_limit_price,
             order_iv: params.order_iv,
             mmp: params.mmp,
+            position_idx: params.position_idx,
         }
     }
 }
@@ -406,7 +443,7 @@ pub struct BybitWsAmendOrderParams {
 impl BybitWsAmendOrderParams {
     /// Parameters for amending an order via WebSocket.
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         category: BybitProductType,
         symbol: String,

@@ -65,6 +65,7 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -3211,6 +3212,26 @@ class TestSimulatedExchangeMarginAccount:
         prior_event = account.events[events_before - 1]
         prior_balance = prior_event.balances[0]
         assert prior_balance.total == initial_balance
+
+    def test_adjust_account_preserves_account_wide_margins(self) -> None:
+        # Arrange: stage an account-wide (cross margin) entry for the collateral currency.
+        account = self.exchange.exec_client.get_account()
+        account.update_margin(MarginBalance(Money(500, USD), Money(250, USD), None))
+        events_before = len(account.events)
+
+        # Act
+        self.exchange.adjust_account(Money(1000, USD))
+
+        # Assert: the generated AccountState carries the account-wide margin through.
+        emitted_event = account.events[events_before]
+        account_wide = [m for m in emitted_event.margins if m.instrument_id is None]
+        assert len(account_wide) == 1
+        assert account_wide[0].currency == USD
+        assert account_wide[0].initial == Money(500, USD)
+        assert account_wide[0].maintenance == Money(250, USD)
+        # And the account's live view still exposes it for strategies.
+        assert account.margin_init_for_currency(USD) == Money(500, USD)
+        assert account.margin_maint_for_currency(USD) == Money(250, USD)
 
     def test_adjust_account_when_account_frozen_does_not_change_balance(self) -> None:
         # Arrange

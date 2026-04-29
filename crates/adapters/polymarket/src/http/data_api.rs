@@ -25,7 +25,6 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::http::{HttpClient, HttpClientError, Method, USER_AGENT};
-use ustr::Ustr;
 
 use crate::http::{
     error::{Error, Result},
@@ -219,7 +218,7 @@ impl PolymarketDataApiHttpClient {
                 } else {
                     hash.as_str()
                 };
-                let trade_id = TradeId::new(Ustr::from(trade_id_str));
+                let trade_id = TradeId::new(trade_id_str);
                 // Data API timestamp is in epoch seconds
                 let ts_event = nautilus_core::UnixNanos::from(t.timestamp as u64 * 1_000_000_000);
 
@@ -292,7 +291,7 @@ mod tests {
         let reports = build_position_reports(&positions, account_id, ts_now);
 
         // 4 positions: 150.5, 0.0, 42.0, 0.005 (dust)
-        // Only 150.5 and 42.0 pass the DUST_SNAP_THRESHOLD (0.01)
+        // Only 150.5 and 42.0 pass the DUST_POSITION_THRESHOLD (0.01)
         assert_eq!(reports.len(), 2);
         assert!(reports[0].is_long());
         assert!(reports[1].is_long());
@@ -402,7 +401,7 @@ mod tests {
                 } else {
                     hash.as_str()
                 };
-                let trade_id = TradeId::new(Ustr::from(trade_id_str));
+                let trade_id = TradeId::new(trade_id_str);
                 let ts_event = nautilus_core::UnixNanos::from(t.timestamp as u64 * 1_000_000_000);
 
                 TradeTick::new(
@@ -446,7 +445,7 @@ mod tests {
                 } else {
                     hash.as_str()
                 };
-                let trade_id = TradeId::new(Ustr::from(trade_id_str));
+                let trade_id = TradeId::new(trade_id_str);
                 let ts_event = nautilus_core::UnixNanos::from(t.timestamp as u64 * 1_000_000_000);
 
                 TradeTick::new(

@@ -129,6 +129,7 @@ impl TardisMachineClient {
         } else {
             let mut instrument_map: AHashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>> =
                 AHashMap::new();
+
             for inst in instruments {
                 let key = inst.as_tardis_instrument_key();
                 instrument_map.insert(key, Arc::new(inst.clone()));
@@ -228,6 +229,7 @@ impl TardisMachineClient {
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut instrument_map: AHashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>> =
             AHashMap::new();
+
         for inst in instruments {
             let key = inst.as_tardis_instrument_key();
             instrument_map.insert(key, Arc::new(inst.clone()));

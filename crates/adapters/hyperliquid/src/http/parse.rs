@@ -29,12 +29,13 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::models::{AssetPosition, HyperliquidFill, PerpMeta, SpotMeta};
+use super::models::{AssetPosition, HyperliquidFill, PerpMeta, SpotBalance, SpotMeta};
 use crate::{
     common::{
         consts::HYPERLIQUID_VENUE,
         enums::{
-            HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidSide, HyperliquidTpSl,
+            HyperliquidFillDirection, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
+            HyperliquidSide, HyperliquidTpSl,
         },
         parse::make_fill_trade_id,
     },
@@ -92,6 +93,25 @@ pub struct HyperliquidInstrumentDef {
     pub raw_data: String,
 }
 
+// Replace wildcard bytes (`*`, `?`) in a venue-supplied symbol component with
+// `x` so the value is safe to embed in a Nautilus `InstrumentId`. HIP-3
+// perpetual names from Hyperliquid (e.g. `dex:STREAMABCD****-USD-PERP`)
+// collide with msgbus pattern syntax; the venue-official name is preserved on
+// `raw_symbol` for HTTP/WS wire calls, and orders use the numeric
+// `asset_index` so they do not see the substitution.
+#[must_use]
+fn sanitize_symbol(value: &str) -> std::borrow::Cow<'_, str> {
+    if value.bytes().any(|b| b == b'*' || b == b'?') {
+        let mut out = String::with_capacity(value.len());
+        for ch in value.chars() {
+            out.push(if ch == '*' || ch == '?' { 'x' } else { ch });
+        }
+        std::borrow::Cow::Owned(out)
+    } else {
+        std::borrow::Cow::Borrowed(value)
+    }
+}
+
 /// Parse perpetual instrument definitions from Hyperliquid `meta` response.
 ///
 /// Hyperliquid perps follow specific rules:
@@ -120,7 +140,7 @@ pub fn parse_perp_instruments(
         let tick_size = pow10_neg(price_decimals);
         let lot_size = pow10_neg(asset.sz_decimals);
 
-        let symbol = format!("{}-USD-PERP", asset.name);
+        let symbol = format!("{}-USD-PERP", sanitize_symbol(&asset.name));
 
         let raw_symbol: Ustr = asset.name.as_str().into();
 
@@ -182,7 +202,11 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
         let tick_size = pow10_neg(price_decimals);
         let lot_size = pow10_neg(base_token.sz_decimals);
 
-        let symbol = format!("{}-{}-SPOT", base_token.name, quote_token.name);
+        let symbol = format!(
+            "{}-{}-SPOT",
+            sanitize_symbol(&base_token.name),
+            sanitize_symbol(&quote_token.name),
+        );
 
         // Hyperliquid spot raw_symbol formats (per API docs):
         // - PURR uses slash format from pair.name (e.g., "PURR/USDC")
@@ -213,6 +237,16 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
 
         defs.push(def);
     }
+
+    // Canonical pairs must be cached first so the base-token alias (e.g.
+    // "PURR" -> PURR-USDC-SPOT) resolves to the canonical instrument when
+    // non-canonical pairs share the same base. Secondary key keeps the
+    // order stable within each bucket.
+    defs.sort_by(|a, b| {
+        b.active
+            .cmp(&a.active)
+            .then(a.asset_index.cmp(&b.asset_index))
+    });
 
     Ok(defs)
 }
@@ -496,6 +530,15 @@ pub fn parse_fill_report(
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(fill.oid.to_string());
 
+    if matches!(fill.dir, HyperliquidFillDirection::AutoDeleveraging) {
+        log::warn!(
+            "Auto-deleveraging fill: {instrument_id} oid={} px={} sz={}",
+            fill.oid,
+            fill.px,
+            fill.sz,
+        );
+    }
+
     let trade_id = make_fill_trade_id(
         &fill.hash,
         fill.oid,
@@ -609,6 +652,43 @@ pub fn parse_position_status_report(
         Some(report_id),
         None, // No venue_position_id for netting positions
         avg_px_open,
+    ))
+}
+
+/// Parse a spot token balance into a [`PositionStatusReport`] against the spot instrument.
+///
+/// Spot holdings are always Long (Hyperliquid spot has no short exposure). The average
+/// entry price is derived from `entry_ntl / total` when both are non-zero; otherwise it
+/// is omitted.
+///
+/// # Errors
+///
+/// Returns an error if the quantity cannot be constructed at the instrument's precision.
+pub fn parse_spot_position_status_report(
+    balance: &SpotBalance,
+    instrument: &dyn Instrument,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<PositionStatusReport> {
+    let (position_side, quantity_value) = if balance.total.is_zero() {
+        (PositionSideSpecified::Flat, Decimal::ZERO)
+    } else {
+        (PositionSideSpecified::Long, balance.total)
+    };
+
+    let quantity = Quantity::from_decimal_dp(quantity_value, instrument.size_precision())
+        .context("failed to create spot quantity from decimal")?;
+
+    Ok(PositionStatusReport::new(
+        account_id,
+        instrument.id(),
+        position_side,
+        quantity,
+        ts_init,
+        ts_init,
+        Some(UUID4::new()),
+        None,
+        balance.avg_entry_px(),
     ))
 }
 
@@ -818,6 +898,64 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_spot_instruments_sorts_canonical_before_non_canonical() {
+        // Non-canonical pair uses a lower pair index than the canonical one;
+        // the sort must still put canonical first so the base-token alias in
+        // cache_instrument resolves to the canonical instrument.
+        let tokens = vec![
+            SpotToken {
+                name: "USDC".to_string(),
+                sz_decimals: 6,
+                wei_decimals: 6,
+                index: 0,
+                token_id: "0x1".to_string(),
+                is_canonical: true,
+                evm_contract: None,
+                full_name: None,
+                deployer_trading_fee_share: None,
+            },
+            SpotToken {
+                name: "HYPE".to_string(),
+                sz_decimals: 2,
+                wei_decimals: 8,
+                index: 150,
+                token_id: "0x2".to_string(),
+                is_canonical: true,
+                evm_contract: None,
+                full_name: None,
+                deployer_trading_fee_share: None,
+            },
+        ];
+
+        let pairs = vec![
+            SpotPair {
+                name: "HYPE_OLD".to_string(),
+                tokens: [150, 0],
+                index: 3,
+                is_canonical: false,
+            },
+            SpotPair {
+                name: "HYPE".to_string(),
+                tokens: [150, 0],
+                index: 107,
+                is_canonical: true,
+            },
+        ];
+
+        let defs = parse_spot_instruments(&SpotMeta {
+            tokens,
+            universe: pairs,
+        })
+        .unwrap();
+
+        assert_eq!(defs.len(), 2);
+        assert!(defs[0].active, "canonical must sort first");
+        assert_eq!(defs[0].asset_index, 10000 + 107);
+        assert!(!defs[1].active);
+        assert_eq!(defs[1].asset_index, 10000 + 3);
+    }
+
+    #[rstest]
     fn test_price_decimals_clamping() {
         let meta = PerpMeta {
             universe: vec![PerpAsset {
@@ -873,5 +1011,87 @@ mod tests {
 
         assert_eq!(defs[1].symbol, "xyz:NVDA-USD-PERP");
         assert_eq!(defs[1].asset_index, 110_001);
+    }
+
+    #[rstest]
+    #[case("BTC", "BTC")]
+    #[case("kPEPE", "kPEPE")]
+    #[case("xyz:TSLA", "xyz:TSLA")]
+    #[case("dex:STREAMABCD****", "dex:STREAMABCDxxxx")]
+    #[case("ABC?", "ABCx")]
+    #[case("a*b?c", "axbxc")]
+    fn test_sanitize_symbol(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(sanitize_symbol(input), expected);
+    }
+
+    #[rstest]
+    fn test_parse_spot_instruments_sanitizes_wildcard_token_names() {
+        // Hypothetical spot token whose venue name contains `?`. Sanitization
+        // must apply to the constructed `symbol` while leaving `raw_symbol`
+        // and `base` carrying the venue-official name for wire I/O.
+        let tokens = vec![
+            SpotToken {
+                name: "USDC".to_string(),
+                sz_decimals: 6,
+                wei_decimals: 6,
+                index: 0,
+                token_id: "0x1".to_string(),
+                is_canonical: true,
+                evm_contract: None,
+                full_name: None,
+                deployer_trading_fee_share: None,
+            },
+            SpotToken {
+                name: "ABC?".to_string(),
+                sz_decimals: 4,
+                wei_decimals: 4,
+                index: 1,
+                token_id: "0x2".to_string(),
+                is_canonical: true,
+                evm_contract: None,
+                full_name: None,
+                deployer_trading_fee_share: None,
+            },
+        ];
+
+        let pairs = vec![SpotPair {
+            name: "ABC?/USDC".to_string(),
+            tokens: [1, 0],
+            index: 50,
+            is_canonical: true,
+        }];
+
+        let meta = SpotMeta {
+            tokens,
+            universe: pairs,
+        };
+
+        let defs = parse_spot_instruments(&meta).unwrap();
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].symbol, "ABCx-USDC-SPOT");
+        assert_eq!(defs[0].base, "ABC?");
+        assert_eq!(defs[0].quote, "USDC");
+    }
+
+    #[rstest]
+    fn test_parse_perp_instruments_sanitizes_hip3_wildcards() {
+        let meta = PerpMeta {
+            universe: vec![PerpAsset {
+                name: "dex:STREAMABCD****".to_string(),
+                sz_decimals: 3,
+                max_leverage: Some(10),
+                only_isolated: None,
+                is_delisted: None,
+                growth_mode: None,
+                margin_mode: None,
+            }],
+            margin_tables: vec![],
+        };
+
+        let defs = parse_perp_instruments(&meta, 110_000).unwrap();
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].symbol, "dex:STREAMABCDxxxx-USD-PERP");
+        assert_eq!(defs[0].raw_symbol.as_str(), "dex:STREAMABCD****");
+        assert_eq!(defs[0].base.as_str(), "dex:STREAMABCD****");
     }
 }

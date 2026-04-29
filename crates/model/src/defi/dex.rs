@@ -61,7 +61,7 @@ pub enum AmmType {
     CLAMM,
     /// Concentrated liquidity AMM **with hooks** (e.g. upcoming Uniswap v4).
     CLAMEnhanced,
-    /// Specialized Constant-Sum AMM for low-volatility assets (Curve-style “StableSwap”).
+    /// Specialized Constant-Sum AMM for low-volatility assets (Curve-style “`StableSwap`”).
     StableSwap,
     /// AMM with customizable token weights (e.g., Balancer style).
     WeightedPool,
@@ -119,6 +119,7 @@ pub enum DexType {
 
 impl DexType {
     /// Returns a reference to the `DexType` corresponding to the given dex name, or `None` if it is not found.
+    #[must_use]
     pub fn from_dex_name(dex_name: &str) -> Option<Self> {
         Self::from_str(dex_name).ok()
     }
@@ -171,7 +172,7 @@ impl Dex {
     ///
     /// Panics if the provided factory address is invalid.
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         chain: Chain,
         name: DexType,
@@ -214,6 +215,7 @@ impl Dex {
     }
 
     /// Returns a unique identifier for this DEX, combining chain and protocol name.
+    #[must_use]
     pub fn id(&self) -> String {
         format!("{}:{}", self.chain.name, self.name)
     }
@@ -243,8 +245,8 @@ impl From<Pool> for CurrencyPair {
         let size_precision = p.token0.decimals.min(FIXED_PRECISION);
         let price_precision = p.token1.decimals.min(FIXED_PRECISION);
 
-        let price_increment = Price::new(10f64.powi(-(price_precision as i32)), price_precision);
-        let size_increment = Quantity::new(10f64.powi(-(size_precision as i32)), size_precision);
+        let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision);
+        let size_increment = Quantity::new(10f64.powi(-i32::from(size_precision)), size_precision);
 
         Self::new(
             id,

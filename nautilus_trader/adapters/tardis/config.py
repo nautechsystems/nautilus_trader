@@ -32,6 +32,9 @@ class TardisDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws : str, optional
         The base url for the locally running Tardis Machine server.
         If ``None`` then will source the `TARDIS_MACHINE_WS_URL`.
+    proxy_url : str, optional
+        The proxy URL for the Tardis HTTP API client.
+        The Tardis Machine WebSocket transport does not yet support proxying.
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
     ws_connection_delay_secs : PositiveInt, default 5
@@ -46,5 +49,6 @@ class TardisDataClientConfig(LiveDataClientConfig, frozen=True):
     api_key: str | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    proxy_url: str | None = None
     update_instruments_interval_mins: PositiveInt | None = 60
     ws_connection_delay_secs: PositiveInt = 5

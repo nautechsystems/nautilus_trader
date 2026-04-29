@@ -298,7 +298,7 @@ impl BinanceRawSpotHttpClient {
                 query.push_str(&format!("&recvWindow={recv_window}"));
             }
 
-            let signature = cred.sign(&query);
+            let signature = Self::percent_encode(&cred.sign(&query));
             query.push_str(&format!("&signature={signature}"));
             headers.insert(
                 BINANCE_API_KEY_HEADER.to_string(),
@@ -748,7 +748,7 @@ impl BinanceRawSpotHttpClient {
             query.push_str(&format!("&recvWindow={recv_window}"));
         }
 
-        let signature = cred.sign(&query);
+        let signature = Self::percent_encode(&cred.sign(&query));
         query.push_str(&format!("&signature={signature}"));
 
         // Build SAPI URL (different from regular API path)
@@ -905,7 +905,7 @@ impl BinanceRawSpotHttpClient {
             query.push_str(&format!("&recvWindow={recv_window}"));
         }
 
-        let signature = cred.sign(&query);
+        let signature = Self::percent_encode(&cred.sign(&query));
         query.push_str(&format!("&signature={signature}"));
 
         let url = self.build_url(path, &query);
@@ -1067,7 +1067,7 @@ impl BinanceRawSpotHttpClient {
     /// # Errors
     ///
     /// Returns an error if the request fails or SBE decoding fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn new_order(
         &self,
         symbol: &str,
@@ -1110,7 +1110,7 @@ impl BinanceRawSpotHttpClient {
     /// # Errors
     ///
     /// Returns an error if the request fails or SBE decoding fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn new_order_full(
         &self,
         symbol: &str,
@@ -1151,7 +1151,7 @@ impl BinanceRawSpotHttpClient {
     /// # Errors
     ///
     /// Returns an error if the request fails or SBE decoding fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn cancel_replace_order(
         &self,
         symbol: &str,
@@ -1364,7 +1364,7 @@ impl BinanceSpotHttpClient {
     /// # Errors
     ///
     /// Returns an error if the underlying HTTP client cannot be created.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         environment: BinanceEnvironment,
         clock: &'static AtomicTime,
@@ -1654,7 +1654,6 @@ impl BinanceSpotHttpClient {
     ///
     /// Returns an error if the request fails, any order's instrument is not cached,
     /// or parsing fails.
-    #[allow(clippy::too_many_arguments)]
     pub async fn request_order_status_reports(
         &self,
         account_id: AccountId,
@@ -1708,7 +1707,6 @@ impl BinanceSpotHttpClient {
     ///
     /// Returns an error if the request fails, any trade's instrument is not cached,
     /// or parsing fails.
-    #[allow(clippy::too_many_arguments)]
     pub async fn request_fill_reports(
         &self,
         account_id: AccountId,
@@ -1761,7 +1759,7 @@ impl BinanceSpotHttpClient {
     /// - The order type or time-in-force is unsupported.
     /// - Stop orders are submitted without a trigger price.
     /// - The request fails or SBE decoding fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_order(
         &self,
         account_id: AccountId,
@@ -1886,7 +1884,7 @@ impl BinanceSpotHttpClient {
     /// - The instrument is not cached.
     /// - The order type or time-in-force is unsupported.
     /// - The request fails or SBE decoding fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn modify_order(
         &self,
         account_id: AccountId,

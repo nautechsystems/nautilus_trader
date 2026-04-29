@@ -95,8 +95,6 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         KRAKEN: KrakenDataClientConfig(
-            api_key=None,  # 'KRAKEN_API_KEY' env var
-            api_secret=None,  # 'KRAKEN_API_SECRET' env var
             environment=environment,
             product_types=product_types,
             instrument_provider=InstrumentProviderConfig(load_all=True),
@@ -104,8 +102,6 @@ config_node = TradingNodeConfig(
     },
     exec_clients={
         KRAKEN: KrakenExecClientConfig(
-            api_key=None,  # 'KRAKEN_API_KEY' env var
-            api_secret=None,  # 'KRAKEN_API_SECRET' env var
             environment=environment,
             product_types=product_types,
             instrument_provider=InstrumentProviderConfig(load_all=True),

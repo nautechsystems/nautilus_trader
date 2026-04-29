@@ -22,6 +22,7 @@ crate-type = ["rlib", "staticlib"]
 
 [features]
 default = []
+simulation = ["madsim"]
 extension-module = ["python", "pyo3/extension-module"]
 ffi = ["cbindgen"]
 python = ["pyo3", "pyo3-stub-gen", "strum"]
@@ -43,9 +44,11 @@ rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
 
+madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
@@ -103,6 +106,11 @@ path = "benches/concurrent_map.rs"
 harness = false
 
 [[bench]]
+name = "hash_map"
+path = "benches/hash_map.rs"
+harness = false
+
+[[bench]]
 name = "hex"
 path = "benches/hex.rs"
 harness = false
@@ -110,4 +118,9 @@ harness = false
 [[bench]]
 name = "to_snake_case"
 path = "benches/to_snake_case.rs"
+harness = false
+
+[[bench]]
+name = "urlencoding"
+path = "benches/urlencoding.rs"
 harness = false

@@ -13,8 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
+import hashlib
 import time
 from decimal import Decimal
+from typing import TYPE_CHECKING
 from typing import Any
 
 import pandas as pd
@@ -25,9 +29,7 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderStat
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderType
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
-from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
-from nautilus_trader.core.stats import basis_points_as_percentage
-from nautilus_trader.model.currencies import USDC_POS
+from nautilus_trader.model.currencies import pUSD
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -39,6 +41,59 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+
+
+if TYPE_CHECKING:
+    from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
+
+
+def determine_trade_id(
+    asset_id: str,
+    side: PolymarketOrderSide,
+    price: str,
+    size: str,
+    timestamp: str,
+) -> TradeId:
+    """
+    Derive a deterministic `TradeId` for a Polymarket market data trade.
+
+    Polymarket does not publish a trade ID with `last_trade_price` events, so we
+    derive one from the trade's identifying fields. Using blake2b with a 0x1f
+    delimiter prevents variable-length fields from colliding (e.g. "0.12" + "34"
+    vs "0.1" + "234").
+
+    Parameters
+    ----------
+    asset_id : str
+        The Polymarket asset (token) ID.
+    side : PolymarketOrderSide
+        The aggressor side of the trade.
+    price : str
+        The trade price as sent by the venue.
+    size : str
+        The trade size as sent by the venue.
+    timestamp : str
+        The trade timestamp as sent by the venue (milliseconds since epoch).
+
+    Returns
+    -------
+    TradeId
+
+    """
+    side_byte = b"B" if side == PolymarketOrderSide.BUY else b"S"
+    digest = hashlib.blake2b(digest_size=8)
+    digest.update(
+        b"\x1f".join(
+            (
+                asset_id.encode(),
+                side_byte,
+                price.encode(),
+                size.encode(),
+                timestamp.encode(),
+            ),
+        ),
+    )
+    return TradeId(digest.hexdigest())
 
 
 def make_composite_trade_id(trade_id: str, venue_order_id: VenueOrderId) -> TradeId:
@@ -160,9 +215,12 @@ def parse_polymarket_instrument(
     raw_symbol = Symbol(get_polymarket_token_id(instrument_id))
     description = market_info["question"]
     price_increment = Price.from_str(str(market_info["minimum_tick_size"]))
-    min_quantity = Quantity.from_int(int(market_info["minimum_order_size"]))
+    # Polymarket exposes `orderMinSize` (limit-order minimum shares) and a separate
+    # $1 market-order minimum amount; the instrument model can only carry one
+    # `min_quantity`, so leave it unset and let the venue reject out-of-bounds orders.
+    # The raw `orderMinSize` remains accessible via `instrument.info`.
     # size_increment can be 0.01 or 0.001 (precision 2 or 3). Need to determine a reliable solution
-    # trades are reported with USDC.e increments though - so we use that here
+    # trades are reported with 6-decimal collateral increments though - so we use that here
     size_increment = Quantity.from_str("0.000001")
     end_date_iso = market_info["end_date_iso"]
 
@@ -172,8 +230,7 @@ def parse_polymarket_instrument(
         # end_date_iso can be missing in some conditions that are part of an event that has it
         expiration_ns = (pd.Timestamp.now(tz="UTC") + pd.DateOffset(years=10)).value
 
-    maker_fee = basis_points_as_decimal(Decimal(str(market_info["maker_base_fee"])))
-    taker_fee = basis_points_as_decimal(Decimal(str(market_info["taker_base_fee"])))
+    maker_fee, taker_fee = extract_fee_rates(market_info)
 
     ts_init = ts_init if ts_init is not None else time.time_ns()
 
@@ -183,7 +240,7 @@ def parse_polymarket_instrument(
         outcome=outcome,
         description=description,
         asset_class=AssetClass.ALTERNATIVE,
-        currency=USDC_POS,
+        currency=pUSD,
         price_increment=price_increment,
         price_precision=price_increment.precision,
         size_increment=size_increment,
@@ -191,7 +248,7 @@ def parse_polymarket_instrument(
         activation_ns=0,  # TBD?
         expiration_ns=expiration_ns,
         max_quantity=None,
-        min_quantity=min_quantity,
+        min_quantity=None,
         maker_fee=maker_fee,
         taker_fee=taker_fee,
         ts_event=ts_init,
@@ -213,7 +270,7 @@ def update_instrument(
         outcome=instrument.outcome,
         description=instrument.description,
         asset_class=AssetClass.ALTERNATIVE,
-        currency=USDC_POS,
+        currency=pUSD,
         price_increment=price_increment,
         price_precision=price_increment.precision,
         size_increment=instrument.size_increment,
@@ -221,7 +278,7 @@ def update_instrument(
         activation_ns=instrument.activation_ns,
         expiration_ns=instrument.expiration_ns,
         max_quantity=None,
-        min_quantity=instrument.min_quantity,
+        min_quantity=None,
         maker_fee=instrument.maker_fee,
         taker_fee=instrument.taker_fee,
         ts_event=ts_init,
@@ -248,30 +305,91 @@ def basis_points_as_decimal(basis_points: Decimal) -> Decimal:
     return basis_points / Decimal(10_000)
 
 
+def extract_fee_rates(market_info: dict[str, Any]) -> tuple[Decimal, Decimal]:
+    """
+    Extract effective maker and taker fee rates from Polymarket market info.
+
+    Polymarket charges fees using the `feeSchedule.rate` from the Gamma market
+    data. Only takers pay fees, so the maker rate is always zero. When the
+    feeSchedule is not present (e.g. CLOB-only flow), both rates default to
+    zero since there is no reliable source for the effective rate.
+
+    The `maker_base_fee` and `taker_base_fee` fields represent the maximum
+    fee cap used when signing orders (`fee_rate_bps`), not the effective fee
+    charged at settlement. See Polymarket docs for details.
+
+    Parameters
+    ----------
+    market_info : dict[str, Any]
+        The Polymarket market info dictionary (CLOB or normalized Gamma format).
+
+    Returns
+    -------
+    tuple[Decimal, Decimal]
+        A tuple of (maker_fee, taker_fee) as decimal fractions.
+
+    References
+    ----------
+    https://docs.polymarket.com/trading/fees
+
+    """
+    fee_schedule = market_info.get("feeSchedule")
+    if fee_schedule is None:
+        gamma_original = market_info.get("_gamma_original") or {}
+        fee_schedule = gamma_original.get("feeSchedule")
+
+    if fee_schedule is None:
+        return Decimal(0), Decimal(0)
+
+    rate = fee_schedule.get("rate")
+    if rate is None:
+        return Decimal(0), Decimal(0)
+
+    taker_fee = Decimal(str(rate))
+    return Decimal(0), taker_fee
+
+
 def calculate_commission(
     quantity: Decimal,
     price: Decimal,
-    fee_rate_bps: Decimal,
+    fee_rate: Decimal,
+    liquidity_side: LiquiditySide,
 ) -> float:
     """
-    Calculate commission from trade parameters and fee rate.
+    Calculate the Polymarket commission for a fill.
 
-    Polymarket rounds fees to 4 decimal places (0.0001 USDC minimum).
+    Polymarket fees follow the formula `fee = C * feeRate * p * (1 - p)`,
+    where C is the number of shares, feeRate is the effective taker rate from
+    the market's feeSchedule, and p is the share price. Fees peak at p=0.5
+    and decrease symmetrically toward both extremes. Only takers pay fees;
+    makers are always charged zero.
+
+    Fees are rounded to 5 decimal places (the smallest charged fee is
+    0.00001 USDC).
 
     Parameters
     ----------
     quantity : Decimal
-        The fill quantity.
+        The fill quantity (shares).
     price : Decimal
         The fill price.
-    fee_rate_bps : Decimal
-        The fee rate in basis points.
+    fee_rate : Decimal
+        The effective fee rate as a decimal fraction (e.g., 0.03 for 3%).
+    liquidity_side : LiquiditySide
+        The liquidity side for this fill.
 
     Returns
     -------
     float
-        The commission amount rounded to 4 decimal places.
+        The commission amount in USDC rounded to 5 decimal places.
+
+    References
+    ----------
+    https://docs.polymarket.com/trading/fees
 
     """
-    commission = float(quantity * price) * basis_points_as_percentage(fee_rate_bps)
-    return round(commission, 4)
+    if liquidity_side != LiquiditySide.TAKER or fee_rate == 0:
+        return 0.0
+
+    commission = quantity * price * fee_rate * (Decimal(1) - price)
+    return round(float(commission), 5)

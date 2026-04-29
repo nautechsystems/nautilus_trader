@@ -38,11 +38,26 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
+//! - `node` (default): Enables the full live node, builder, config, and execution manager.
 //! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
-//! - `streaming`: Enables `persistence` dependency for streaming configuration.
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `streaming`).
+//! - `streaming`: Enables `persistence` dependency for streaming configuration (requires `node`).
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `node` and `streaming`).
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
 //! - `extension-module`: Builds the crate as a Python extension module.
+//!
+//! # Lean adapter builds
+//!
+//! Adapters and other consumers that only need the async event emitter, runner, and
+//! `ExecutionClientCore` re-export can opt out of the full kernel by disabling the
+//! `node` feature:
+//!
+//! ```toml
+//! nautilus-live = { workspace = true, default-features = false }
+//! ```
+//!
+//! With `node` disabled, this crate exposes only `emitter` and `runner`, and skips
+//! the transitive dependencies on `nautilus-system`, `nautilus-trading`,
+//! `nautilus-portfolio`, `nautilus-risk`, and `nautilus-data`.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -53,12 +68,17 @@
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
-pub mod builder;
-pub mod config;
 pub mod emitter;
-pub mod manager;
-pub mod node;
 pub mod runner;
+
+#[cfg(feature = "node")]
+pub mod builder;
+#[cfg(feature = "node")]
+pub mod config;
+#[cfg(feature = "node")]
+pub mod manager;
+#[cfg(feature = "node")]
+pub mod node;
 
 // Re-exports for adapters
 pub use emitter::ExecutionEventEmitter;

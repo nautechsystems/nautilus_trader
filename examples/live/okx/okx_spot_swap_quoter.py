@@ -28,6 +28,7 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType
+from nautilus_trader.core.nautilus_pyo3 import OKXEnvironment
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.live.config import LiveRiskEngineConfig
@@ -337,6 +338,7 @@ class SpotSwapQuoter(Strategy):
                 instrument_id=self.config.spot_instrument_id,
                 strategy_id=self.id,
             )
+
             for position in spot_positions:
                 if position.side == PositionSide.SHORT:
                     # SHORT positions require BUY to close
@@ -430,27 +432,19 @@ config_node = TradingNodeConfig(
     risk_engine=LiveRiskEngineConfig(bypass=True),  # Must bypass for spot for now
     data_clients={
         OKX: OKXDataClientConfig(
-            api_key=None,  # 'OKX_API_KEY' env var
-            api_secret=None,  # 'OKX_API_SECRET' env var
-            api_passphrase=None,  # 'OKX_API_PASSPHRASE' env var
-            base_url_http=None,  # Override with custom endpoint
+            environment=OKXEnvironment.LIVE,
             instrument_provider=InstrumentProviderConfig(
                 load_all=False,
                 load_ids=load_ids,
             ),
             instrument_types=instrument_types,
             contract_types=contract_types,
-            is_demo=False,  # If client uses the demo API
             http_timeout_secs=10,
         ),
     },
     exec_clients={
         OKX: OKXExecClientConfig(
-            api_key=None,  # 'OKX_API_KEY' env var
-            api_secret=None,  # 'OKX_API_SECRET' env var
-            api_passphrase=None,  # 'OKX_API_PASSPHRASE' env var
-            base_url_http=None,  # Override with custom endpoint
-            base_url_ws=None,  # Override with custom endpoint
+            environment=OKXEnvironment.LIVE,
             instrument_provider=InstrumentProviderConfig(
                 load_all=False,
                 load_ids=load_ids,
@@ -459,7 +453,6 @@ config_node = TradingNodeConfig(
             contract_types=contract_types,
             margin_mode=OKXMarginMode.CROSS,
             use_spot_margin=use_spot_margin,
-            is_demo=False,  # If client uses the demo API
             use_fills_channel=False,  # Set to True if VIP5+ to get separate fill reports
             http_timeout_secs=10,
         ),

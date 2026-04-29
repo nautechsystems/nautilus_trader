@@ -310,6 +310,22 @@ pub struct SpotAddOrderResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotBatchOrderResponse {
+    #[serde(default)]
+    pub descr: Option<AddOrderDescription>,
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub txid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotAddOrderBatchResponse {
+    #[serde(default)]
+    pub orders: Vec<SpotBatchOrderResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpotCancelOrderResponse {
     pub count: i32,
     #[serde(default)]

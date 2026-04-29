@@ -77,7 +77,7 @@ impl ArrowSchemaProvider for DatabentoImbalance {
 }
 
 impl EncodeToRecordBatch for DatabentoImbalance {
-    #[allow(clippy::unnecessary_cast)] // c_char is u8 on some targets
+    #[expect(clippy::unnecessary_cast)] // c_char is u8 on some targets
     fn encode_batch(
         metadata: &HashMap<String, String>,
         data: &[Self],
@@ -278,7 +278,7 @@ pub fn decode_imbalance_batch(
 /// # Errors
 ///
 /// Returns an error if `data` is empty or encoding fails.
-#[allow(clippy::missing_panics_doc)] // Guarded by empty check
+// Guarded by empty check
 pub fn imbalance_to_arrow_record_batch(
     data: &[DatabentoImbalance],
 ) -> Result<RecordBatch, EncodingError> {
@@ -533,6 +533,7 @@ mod tests {
         let buffer = cursor.into_inner();
         let reader = StreamReader::try_new(Cursor::new(buffer), None).unwrap();
         let mut decoded = Vec::new();
+
         for batch_result in reader {
             let batch = batch_result.unwrap();
             let metadata = batch.schema().metadata().clone();

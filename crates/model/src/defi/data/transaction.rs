@@ -57,7 +57,8 @@ pub struct Transaction {
 
 impl Transaction {
     /// Creates a new [`Transaction`] instance with the specified properties.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
     pub const fn new(
         chain: Chain,
         hash: String,
@@ -187,7 +188,7 @@ mod tests {
             tx.block_hash,
             "0xfdba50e306d1b0ebd1971ec0440799b324229841637d8c56afbd1d6950bb09f0"
         );
-        assert_eq!(tx.block_number, 22323670);
+        assert_eq!(tx.block_number, 22_323_670);
         assert_eq!(
             tx.from,
             "0xd6a8749e224ecdfcc79d473d3355b1b0eb51d423"
@@ -201,9 +202,9 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(tx.gas, U256::from(21000));
-        assert_eq!(tx.gas_price, U256::from(762999156));
+        assert_eq!(tx.gas_price, U256::from(762_999_156));
         assert_eq!(tx.transaction_index, 153);
-        assert_eq!(tx.value, U256::from(100000000));
+        assert_eq!(tx.value, U256::from(100_000_000));
     }
 
     #[rstest]
@@ -235,8 +236,8 @@ mod tests {
                 .parse::<Address>()
                 .unwrap()
         );
-        assert_eq!(tx.gas, U256::from(15000000));
-        assert_eq!(tx.gas_price, U256::from(1399572700));
+        assert_eq!(tx.gas, U256::from(15_000_000));
+        assert_eq!(tx.gas_price, U256::from(1_399_572_700));
         assert_eq!(tx.transaction_index, 74);
         assert_eq!(tx.value, U256::ZERO);
     }
@@ -270,7 +271,7 @@ mod tests {
         assert_eq!(tx.gas, U256::from(u64::MAX));
         assert_eq!(tx.gas_price, U256::from(1_000_000_000_000_000_000u64)); // 1 ETH in wei
         assert_eq!(tx.value, U256::from(1_000_000_000_000_000_000u64)); // 1 ETH in wei
-        assert_eq!(tx.block_number, 16777216); // 0x1000000
+        assert_eq!(tx.block_number, 16_777_216); // 0x1000000
     }
 
     #[rstest]
@@ -335,7 +336,7 @@ mod tests {
             chain,
             "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_string(),
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-            123456,
+            123_456,
             from_addr,
             to_addr,
             U256::from(21_000),

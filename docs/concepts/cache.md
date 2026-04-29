@@ -141,10 +141,11 @@ from nautilus_trader.config import DatabaseConfig
 
 config = CacheConfig(
     database=DatabaseConfig(
-        type="redis",      # Database type
-        host="localhost",  # Database host
-        port=6379,         # Database port
-        timeout=2,         # Connection timeout (seconds)
+        type="redis",            # Database type
+        host="localhost",        # Database host
+        port=6379,               # Database port
+        connection_timeout=2,    # Connection timeout (seconds)
+        response_timeout=2,      # Response timeout (seconds)
     ),
 )
 ```

@@ -25,8 +25,11 @@ use axum::{
 };
 use dashmap::DashMap;
 use nautilus_common::testing::wait_until_async;
-use nautilus_deribit::http::{
-    client::DeribitRawHttpClient, error::DeribitHttpError, query::GetAccountSummariesParams,
+use nautilus_deribit::{
+    common::enums::DeribitEnvironment,
+    http::{
+        client::DeribitRawHttpClient, error::DeribitHttpError, query::GetAccountSummariesParams,
+    },
 };
 use nautilus_network::http::{HttpClient, Method};
 use rust_decimal_macros::dec;
@@ -175,7 +178,7 @@ async fn test_get_account_summaries_success() {
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         Some(base_url),
-        false,
+        DeribitEnvironment::Mainnet,
         5,
         3,
         1000,
@@ -223,8 +226,16 @@ async fn test_get_account_summaries_success() {
 #[tokio::test]
 async fn test_get_account_summaries_missing_credentials() {
     let base_url = "http://127.0.0.1:0/api/v2".to_string();
-    let client =
-        DeribitRawHttpClient::new(Some(base_url), false, 5, 3, 1000, 10_000, None).unwrap();
+    let client = DeribitRawHttpClient::new(
+        Some(base_url),
+        DeribitEnvironment::Mainnet,
+        5,
+        3,
+        1000,
+        10_000,
+        None,
+    )
+    .unwrap();
 
     let params = GetAccountSummariesParams::default();
     let result = client.get_account_summaries(params).await;

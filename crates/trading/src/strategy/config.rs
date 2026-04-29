@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 
 /// The base model for all trading strategy configurations.
 #[derive(Clone, Debug, Deserialize, Serialize, bon::Builder)]
+#[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -119,7 +120,8 @@ const fn default_market_exit_time_in_force() -> TimeInForce {
 }
 
 /// Configuration for creating strategies from importable paths.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)

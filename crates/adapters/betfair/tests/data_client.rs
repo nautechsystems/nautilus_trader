@@ -31,7 +31,7 @@ use nautilus_common::{
 use nautilus_core::UUID4;
 use nautilus_model::{
     data::Data,
-    enums::BookType,
+    enums::{BookType, MarketStatusAction},
     identifiers::{ClientId, Venue},
     types::Currency,
 };
@@ -106,6 +106,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     client.connect().await.unwrap();
 
     let mut instrument_count = 0;
+
     while let Ok(event) = rx.try_recv() {
         if matches!(event, DataEvent::Instrument(_)) {
             instrument_count += 1;
@@ -166,7 +167,7 @@ async fn test_data_client_subscribe_sends_market_subscription() {
         None,
         None,
     );
-    client.subscribe_book_deltas(&cmd).unwrap();
+    client.subscribe_book_deltas(cmd).unwrap();
 
     wait_until_async(
         || {
@@ -254,8 +255,8 @@ async fn test_data_client_deduplicates_same_market_subscription() {
         None,
     );
 
-    client.subscribe_book_deltas(&first_cmd).unwrap();
-    client.subscribe_book_deltas(&second_cmd).unwrap();
+    client.subscribe_book_deltas(first_cmd).unwrap();
+    client.subscribe_book_deltas(second_cmd).unwrap();
 
     let (first_msg, saw_second_message) = server.await.unwrap();
     let json: Value = serde_json::from_str(&first_msg).unwrap();
@@ -276,6 +277,7 @@ async fn test_mcm_handler_emits_book_deltas() {
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
     let mcm_fixture = load_fixture("stream/mcm_UPDATE.json");
+
     let server = tokio::spawn(async move {
         let (_reader, mut write_half) = accept_and_auth(&listener).await;
 
@@ -319,6 +321,7 @@ async fn test_mcm_handler_emits_trades() {
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
     let mcm_fixture = load_fixture("stream/mcm_UPDATE_tv.json");
+
     let server = tokio::spawn(async move {
         let (_reader, mut write_half) = accept_and_auth(&listener).await;
 
@@ -340,6 +343,7 @@ async fn test_mcm_handler_emits_trades() {
     while rx.try_recv().is_ok() {}
 
     let mut found_trade = false;
+
     for _ in 0..10 {
         match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
             Ok(Some(DataEvent::Data(Data::Trade(_)))) => {
@@ -365,6 +369,7 @@ async fn test_data_client_handles_heartbeat_gracefully() {
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
     let heartbeat_fixture = load_fixture("stream/mcm_HEARTBEAT.json");
+
     let server = tokio::spawn(async move {
         let (_reader, mut write_half) = accept_and_auth(&listener).await;
 
@@ -382,6 +387,7 @@ async fn test_data_client_handles_heartbeat_gracefully() {
     });
 
     client.connect().await.unwrap();
+
     while rx.try_recv().is_ok() {}
 
     // Heartbeats should not produce data events
@@ -397,52 +403,80 @@ async fn test_data_client_handles_heartbeat_gracefully() {
 
 #[rstest]
 #[tokio::test]
-async fn test_data_client_emits_instrument_status_on_market_definition() {
+async fn test_data_client_emits_instrument_before_status_on_market_definition() {
+    // A single market-definition message must emit the `Instrument` event before
+    // any `InstrumentStatus` so downstream consumers (e.g. the DataEngine)
+    // cache the instrument before the status event references it. The status
+    // action must match the fixture's market-level state (SUSPENDED → Pause,
+    // with all-ACTIVE runners so the runner-level override does not fire).
     let (addr, _state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
     let md_fixture = load_fixture("stream/mcm_UPDATE_md.json");
+
     let server = tokio::spawn(async move {
         let (_reader, mut write_half) = accept_and_auth(&listener).await;
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        // First send populates the instruments map from the market definition
-        let msg = format!("{}\r\n", md_fixture.trim());
-        tokio::io::AsyncWriteExt::write_all(&mut write_half, msg.as_bytes())
-            .await
-            .unwrap();
-
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
-        // Second send finds instruments in the map and emits InstrumentStatus
-        tokio::io::AsyncWriteExt::write_all(&mut write_half, msg.as_bytes())
-            .await
-            .unwrap();
+        tokio::io::AsyncWriteExt::write_all(
+            &mut write_half,
+            format!("{}\r\n", md_fixture.trim()).as_bytes(),
+        )
+        .await
+        .unwrap();
 
         tokio::time::sleep(Duration::from_secs(2)).await;
         drop(write_half);
     });
 
     client.connect().await.unwrap();
+
     while rx.try_recv().is_ok() {}
 
-    let mut found_status = false;
-    for _ in 0..20 {
+    let mut instrument_arrival: Option<usize> = None;
+    let mut status_arrival: Option<usize> = None;
+    let mut status_action: Option<MarketStatusAction> = None;
+    let mut seen = 0;
+
+    for _ in 0..30 {
         match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
-            Ok(Some(DataEvent::InstrumentStatus(_))) => {
-                found_status = true;
-                break;
+            Ok(Some(DataEvent::Instrument(_))) => {
+                if instrument_arrival.is_none() {
+                    instrument_arrival = Some(seen);
+                }
+                seen += 1;
             }
-            Ok(Some(_)) => {}
+            Ok(Some(DataEvent::InstrumentStatus(event))) => {
+                if status_arrival.is_none() {
+                    status_arrival = Some(seen);
+                    status_action = Some(event.action);
+                }
+                seen += 1;
+            }
+            Ok(Some(_)) => {
+                seen += 1;
+            }
             _ => break,
+        }
+
+        if instrument_arrival.is_some() && status_arrival.is_some() {
+            break;
         }
     }
 
+    let instr_idx = instrument_arrival.expect("expected an Instrument event");
+    let status_idx = status_arrival.expect("expected an InstrumentStatus event");
+
     assert!(
-        found_status,
-        "Expected InstrumentStatus event from market definition with status"
+        instr_idx < status_idx,
+        "Instrument (arrival {instr_idx}) must precede InstrumentStatus (arrival {status_idx})"
+    );
+    assert_eq!(
+        status_action,
+        Some(MarketStatusAction::Pause),
+        "SUSPENDED market must map to Pause status action"
     );
 
     client.disconnect().await.unwrap();
@@ -457,6 +491,7 @@ async fn test_data_client_handles_sub_image_snapshot() {
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
     let sub_image_fixture = load_fixture("stream/mcm_SUB_IMAGE.json");
+
     let server = tokio::spawn(async move {
         let (_reader, mut write_half) = accept_and_auth(&listener).await;
 
@@ -474,10 +509,12 @@ async fn test_data_client_handles_sub_image_snapshot() {
     });
 
     client.connect().await.unwrap();
+
     while rx.try_recv().is_ok() {}
 
     let mut found_deltas = false;
     let mut found_instrument = false;
+
     for _ in 0..30 {
         match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
             Ok(Some(DataEvent::Data(Data::Deltas(_)))) => {

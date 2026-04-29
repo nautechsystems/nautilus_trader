@@ -22,7 +22,8 @@ use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        depth::DEPTH10_LEN,
     },
     enums::{
         AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType, RecordFlag,
@@ -38,8 +39,11 @@ use rust_decimal::{Decimal, prelude::FromPrimitive};
 use super::messages::{
     CandleData, WsActiveAssetCtxData, WsBboData, WsBookData, WsFillData, WsOrderData, WsTradeData,
 };
-use crate::common::parse::{
-    is_conditional_order_data, make_fill_trade_id, millis_to_nanos, parse_trigger_order_type,
+use crate::common::{
+    enums::HyperliquidFillDirection,
+    parse::{
+        is_conditional_order_data, make_fill_trade_id, millis_to_nanos, parse_trigger_order_type,
+    },
 };
 
 fn parse_price(
@@ -152,6 +156,74 @@ pub fn parse_ws_order_book_deltas(
     }
 
     Ok(OrderBookDeltas::new(instrument.id(), deltas))
+}
+
+/// Parses a WebSocket L2 order book snapshot into [`OrderBookDepth10`].
+///
+/// Hyperliquid's `l2Book` subscription emits snapshots of bid/ask levels.
+/// Fills any missing levels past the venue-provided depth with zero-size
+/// placeholder orders so the fixed-size `[BookOrder; 10]` arrays are
+/// always fully populated.
+pub fn parse_ws_order_book_depth10(
+    book: &WsBookData,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderBookDepth10> {
+    let ts_event = millis_to_nanos(book.time)?;
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+
+    let mut bids: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
+    let mut asks: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
+    let mut bid_counts: [u32; DEPTH10_LEN] = [0; DEPTH10_LEN];
+    let mut ask_counts: [u32; DEPTH10_LEN] = [0; DEPTH10_LEN];
+
+    let raw_bids = book.levels.first().map_or(&[][..], |v| v.as_slice());
+    let raw_asks = book.levels.get(1).map_or(&[][..], |v| v.as_slice());
+
+    for (i, level) in raw_bids.iter().take(DEPTH10_LEN).enumerate() {
+        let price = parse_price(&level.px, instrument, "book.bid.px")?;
+        let size = parse_quantity(&level.sz, instrument, "book.bid.sz")?;
+        bids[i] = BookOrder::new(OrderSide::Buy, price, size, 0);
+        bid_counts[i] = level.n;
+    }
+
+    for bid in bids.iter_mut().skip(raw_bids.len().min(DEPTH10_LEN)) {
+        *bid = BookOrder::new(
+            OrderSide::Buy,
+            Price::zero(price_precision),
+            Quantity::zero(size_precision),
+            0,
+        );
+    }
+
+    for (i, level) in raw_asks.iter().take(DEPTH10_LEN).enumerate() {
+        let price = parse_price(&level.px, instrument, "book.ask.px")?;
+        let size = parse_quantity(&level.sz, instrument, "book.ask.sz")?;
+        asks[i] = BookOrder::new(OrderSide::Sell, price, size, 0);
+        ask_counts[i] = level.n;
+    }
+
+    for ask in asks.iter_mut().skip(raw_asks.len().min(DEPTH10_LEN)) {
+        *ask = BookOrder::new(
+            OrderSide::Sell,
+            Price::zero(price_precision),
+            Quantity::zero(size_precision),
+            0,
+        );
+    }
+
+    Ok(OrderBookDepth10::new(
+        instrument.id(),
+        bids,
+        asks,
+        bid_counts,
+        ask_counts,
+        RecordFlag::F_SNAPSHOT as u8,
+        0,
+        ts_event,
+        ts_init,
+    ))
 }
 
 /// Parses a WebSocket BBO (best bid/offer) message into a [`QuoteTick`].
@@ -291,6 +363,28 @@ pub fn parse_ws_fill_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
+
+    if let Some(liquidation) = fill.liquidation.as_ref() {
+        log::warn!(
+            "Liquidation fill: {} oid={} method={:?} mark_px={} liquidated_user={}",
+            instrument_id,
+            fill.oid,
+            liquidation.method,
+            liquidation.mark_px,
+            liquidation
+                .liquidated_user
+                .as_deref()
+                .unwrap_or("<unknown>"),
+        );
+    } else if matches!(fill.dir, HyperliquidFillDirection::AutoDeleveraging) {
+        log::warn!(
+            "Auto-deleveraging fill: {instrument_id} oid={} px={} sz={}",
+            fill.oid,
+            fill.px,
+            fill.sz,
+        );
+    }
+
     let venue_order_id = VenueOrderId::new(fill.oid.to_string());
     let trade_id = make_fill_trade_id(
         &fill.hash,
@@ -436,11 +530,12 @@ mod tests {
     use super::*;
     use crate::{
         common::enums::{
-            HyperliquidFillDirection, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
-            HyperliquidSide,
+            HyperliquidFillDirection, HyperliquidLiquidationMethod,
+            HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidSide,
         },
         websocket::messages::{
-            PerpsAssetCtx, SharedAssetCtx, SpotAssetCtx, WsBasicOrderData, WsBookData, WsLevelData,
+            FillLiquidationData, PerpsAssetCtx, SharedAssetCtx, SpotAssetCtx, WsBasicOrderData,
+            WsBookData, WsLevelData,
         },
     };
 
@@ -547,6 +642,46 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_ws_fill_report_with_liquidation() {
+        let instrument = create_test_instrument();
+        let account_id = AccountId::new("HYPERLIQUID-001");
+        let ts_init = UnixNanos::default();
+
+        let fill_data = WsFillData {
+            coin: Ustr::from("BTC"),
+            px: "50000.0".to_string(),
+            sz: "0.1".to_string(),
+            side: HyperliquidSide::Sell,
+            time: 1704470400000,
+            start_position: "0.1".to_string(),
+            dir: HyperliquidFillDirection::CloseLong,
+            closed_pnl: "-25.0".to_string(),
+            hash: "0xdef456".to_string(),
+            oid: 54321,
+            crossed: true,
+            fee: "0.0".to_string(),
+            tid: 12345,
+            liquidation: Some(FillLiquidationData {
+                liquidated_user: Some("0xuser".to_string()),
+                mark_px: 50_000.0,
+                method: HyperliquidLiquidationMethod::Market,
+            }),
+            fee_token: Ustr::from("USDC"),
+            builder_fee: None,
+            cloid: None,
+            twap_id: None,
+        };
+
+        let report = parse_ws_fill_report(&fill_data, &instrument, account_id, ts_init).unwrap();
+
+        // The fill is still emitted through the standard path; the liquidation
+        // metadata is logged for observability rather than encoded on the report.
+        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(report.venue_order_id.to_string(), "54321");
+    }
+
+    #[rstest]
     fn test_parse_ws_order_book_deltas_snapshot_behavior() {
         let instrument = create_test_instrument();
         let ts_init = UnixNanos::default();
@@ -584,6 +719,123 @@ mod tests {
         assert_eq!(ask_delta.order.side, OrderSide::Sell);
         assert!(ask_delta.order.size.is_positive());
         assert_eq!(ask_delta.order.order_id, 0);
+    }
+
+    #[rstest]
+    fn test_parse_ws_order_book_depth10_pads_sparse_book() {
+        let instrument = create_test_instrument();
+        let ts_init = UnixNanos::default();
+
+        // 3 bids, 2 asks — Depth10 must pad the remaining 7/8 slots with zero orders
+        let book = WsBookData {
+            coin: Ustr::from("BTC"),
+            levels: [
+                vec![
+                    WsLevelData {
+                        px: "100.00".to_string(),
+                        sz: "1.0".to_string(),
+                        n: 2,
+                    },
+                    WsLevelData {
+                        px: "99.99".to_string(),
+                        sz: "2.0".to_string(),
+                        n: 3,
+                    },
+                    WsLevelData {
+                        px: "99.98".to_string(),
+                        sz: "3.0".to_string(),
+                        n: 1,
+                    },
+                ],
+                vec![
+                    WsLevelData {
+                        px: "100.01".to_string(),
+                        sz: "1.5".to_string(),
+                        n: 1,
+                    },
+                    WsLevelData {
+                        px: "100.02".to_string(),
+                        sz: "2.5".to_string(),
+                        n: 4,
+                    },
+                ],
+            ],
+            time: 1_704_470_400_000,
+        };
+
+        let depth = parse_ws_order_book_depth10(&book, &instrument, ts_init).unwrap();
+
+        assert_eq!(depth.instrument_id, instrument.id());
+        assert_eq!(depth.bids.len(), 10);
+        assert_eq!(depth.asks.len(), 10);
+
+        assert_eq!(depth.bids[0].price.as_f64(), 100.00);
+        assert_eq!(depth.bids[0].side, OrderSide::Buy);
+        assert_eq!(depth.bid_counts[0], 2);
+        assert_eq!(depth.bids[2].price.as_f64(), 99.98);
+        assert_eq!(depth.bid_counts[2], 1);
+
+        // Padded bid slots
+        for i in 3..10 {
+            assert_eq!(depth.bids[i].side, OrderSide::Buy);
+            assert!(depth.bids[i].size.is_zero());
+            assert_eq!(depth.bid_counts[i], 0);
+        }
+
+        assert_eq!(depth.asks[0].price.as_f64(), 100.01);
+        assert_eq!(depth.asks[0].side, OrderSide::Sell);
+        assert_eq!(depth.ask_counts[0], 1);
+        assert_eq!(depth.asks[1].price.as_f64(), 100.02);
+        assert_eq!(depth.ask_counts[1], 4);
+
+        for i in 2..10 {
+            assert_eq!(depth.asks[i].side, OrderSide::Sell);
+            assert!(depth.asks[i].size.is_zero());
+            assert_eq!(depth.ask_counts[i], 0);
+        }
+
+        // Snapshot flag set
+        assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(
+            depth.ts_event,
+            UnixNanos::from(1_704_470_400_000 * 1_000_000)
+        );
+    }
+
+    #[rstest]
+    fn test_parse_ws_order_book_depth10_truncates_beyond_10() {
+        let instrument = create_test_instrument();
+        let ts_init = UnixNanos::default();
+
+        let mk_levels = |base: f64, n: usize| -> Vec<WsLevelData> {
+            (0..n)
+                .map(|i| WsLevelData {
+                    px: format!("{:.2}", base - i as f64 * 0.01),
+                    sz: "1.0".to_string(),
+                    n: 1,
+                })
+                .collect()
+        };
+
+        let book = WsBookData {
+            coin: Ustr::from("BTC"),
+            levels: [mk_levels(100.00, 15), mk_levels(100.50, 12)],
+            time: 1_704_470_400_000,
+        };
+
+        let depth = parse_ws_order_book_depth10(&book, &instrument, ts_init).unwrap();
+
+        // Only first 10 on each side retained
+        for i in 0..10 {
+            assert!(
+                !depth.bids[i].size.is_zero(),
+                "bid slot {i} unexpectedly empty"
+            );
+            assert!(
+                !depth.asks[i].size.is_zero(),
+                "ask slot {i} unexpectedly empty"
+            );
+        }
     }
 
     #[rstest]

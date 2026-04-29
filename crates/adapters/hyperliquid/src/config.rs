@@ -15,7 +15,12 @@
 
 //! Configuration structures for the Hyperliquid adapter.
 
-use crate::common::consts::{info_url, ws_url};
+use nautilus_network::websocket::TransportBackend;
+
+use crate::common::{
+    consts::{info_url, ws_url},
+    enums::HyperliquidEnvironment,
+};
 
 /// Configuration for the Hyperliquid data client.
 #[derive(Clone, Debug, bon::Builder)]
@@ -37,16 +42,11 @@ pub struct HyperliquidDataClientConfig {
     pub base_url_ws: Option<String>,
     /// Override for the HTTP info URL.
     pub base_url_http: Option<String>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
-    /// When true the client will use Hyperliquid testnet endpoints.
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
+    /// The target environment (mainnet or testnet).
     #[builder(default)]
-    pub is_testnet: bool,
+    pub environment: HyperliquidEnvironment,
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -56,6 +56,9 @@ pub struct HyperliquidDataClientConfig {
     /// Interval for refreshing instruments in minutes.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for HyperliquidDataClientConfig {
@@ -79,20 +82,20 @@ impl HyperliquidDataClientConfig {
             .is_some_and(|s| !s.trim().is_empty())
     }
 
-    /// Returns the WebSocket URL, respecting the testnet flag and overrides.
+    /// Returns the WebSocket URL, respecting the environment and overrides.
     #[must_use]
     pub fn ws_url(&self) -> String {
         self.base_url_ws
             .clone()
-            .unwrap_or_else(|| ws_url(self.is_testnet).to_string())
+            .unwrap_or_else(|| ws_url(self.environment).to_string())
     }
 
-    /// Returns the HTTP info URL, respecting the testnet flag and overrides.
+    /// Returns the HTTP info URL, respecting the environment and overrides.
     #[must_use]
     pub fn http_url(&self) -> String {
         self.base_url_http
             .clone()
-            .unwrap_or_else(|| info_url(self.is_testnet).to_string())
+            .unwrap_or_else(|| info_url(self.environment).to_string())
     }
 }
 
@@ -128,16 +131,11 @@ pub struct HyperliquidExecClientConfig {
     pub base_url_http: Option<String>,
     /// Override for the exchange API URL.
     pub base_url_exchange: Option<String>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
-    /// When true the client will use Hyperliquid testnet endpoints.
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
+    /// The target environment (mainnet or testnet).
     #[builder(default)]
-    pub is_testnet: bool,
+    pub environment: HyperliquidEnvironment,
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -154,6 +152,14 @@ pub struct HyperliquidExecClientConfig {
     /// before submission (Hyperliquid requirement).
     #[builder(default = true)]
     pub normalize_prices: bool,
+    /// Slippage buffer in basis points applied to MARKET orders and
+    /// stop-to-limit trigger derivations. Can be overridden per-order via
+    /// `SubmitOrder.params["market_order_slippage_bps"]`.
+    #[builder(default = 50)]
+    pub market_order_slippage_bps: u32,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for HyperliquidExecClientConfig {
@@ -163,15 +169,6 @@ impl Default for HyperliquidExecClientConfig {
 }
 
 impl HyperliquidExecClientConfig {
-    /// Creates a new configuration with the provided private key.
-    #[must_use]
-    pub fn new(private_key: Option<String>) -> Self {
-        Self {
-            private_key,
-            ..Self::default()
-        }
-    }
-
     /// Returns `true` when private key is populated and non-empty.
     #[must_use]
     pub fn has_credentials(&self) -> bool {
@@ -180,20 +177,20 @@ impl HyperliquidExecClientConfig {
             .is_some_and(|s| !s.trim().is_empty())
     }
 
-    /// Returns the WebSocket URL, respecting the testnet flag and overrides.
+    /// Returns the WebSocket URL, respecting the environment and overrides.
     #[must_use]
     pub fn ws_url(&self) -> String {
         self.base_url_ws
             .clone()
-            .unwrap_or_else(|| ws_url(self.is_testnet).to_string())
+            .unwrap_or_else(|| ws_url(self.environment).to_string())
     }
 
-    /// Returns the HTTP info URL, respecting the testnet flag and overrides.
+    /// Returns the HTTP info URL, respecting the environment and overrides.
     #[must_use]
     pub fn http_url(&self) -> String {
         self.base_url_http
             .clone()
-            .unwrap_or_else(|| info_url(self.is_testnet).to_string())
+            .unwrap_or_else(|| info_url(self.environment).to_string())
     }
 }
 

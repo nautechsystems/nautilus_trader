@@ -58,6 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             None,
         )
         .await;
+
     match result {
         Ok(reports) => log::debug!("{reports:?}"),
         Err(e) => log::error!("{e:?}"),
@@ -68,6 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = client
         .request_position_status_reports(account_id, Some(instrument_type), None)
         .await;
+
     match result {
         Ok(reports) => log::debug!("{reports:?}"),
         Err(e) => log::error!("{e:?}"),

@@ -15,18 +15,22 @@
 
 //! Example demonstrating live data testing with the Hyperliquid adapter.
 //!
-//! Run with: `cargo run --example hyperliquid-data-tester --package nautilus-hyperliquid`
+//! Run with: `cargo run --example hyperliquid-data-tester --package nautilus-hyperliquid --features examples`
 
 use std::num::NonZeroUsize;
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
-use nautilus_hyperliquid::{HyperliquidDataClientConfig, HyperliquidDataClientFactory};
+use nautilus_hyperliquid::{
+    HyperliquidDataClientConfig, HyperliquidDataClientFactory,
+    common::enums::HyperliquidEnvironment,
+};
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId},
     stubs::TestDefault,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 #[tokio::main]
@@ -42,7 +46,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     let hyperliquid_config = HyperliquidDataClientConfig {
-        is_testnet: false, // Set to true for testnet
+        environment: HyperliquidEnvironment::Mainnet,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

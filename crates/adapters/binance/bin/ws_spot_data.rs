@@ -46,6 +46,7 @@ use nautilus_binance::{
     },
 };
 use nautilus_core::time::get_atomic_clock_realtime;
+use nautilus_network::websocket::TransportBackend;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -80,6 +81,7 @@ async fn main() -> anyhow::Result<()> {
         Some(api_key),
         Some(api_secret),
         None, // heartbeat
+        TransportBackend::default(),
     )?;
 
     ws_client.cache_instruments(&instruments);

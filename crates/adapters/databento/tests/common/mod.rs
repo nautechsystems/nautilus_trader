@@ -248,7 +248,7 @@ pub fn status_msg(instrument_id: u32) -> StatusMsg {
     }
 }
 
-#[allow(
+#[expect(
     clippy::field_reassign_with_default,
     reason = "conditional fields (options) prevent struct init syntax"
 )]
@@ -329,6 +329,7 @@ pub fn statistics_msg(instrument_id: u32) -> StatMsg {
 
 pub fn error_msg(message: &str) -> ErrorMsg {
     let mut err = [0 as c_char; 302];
+
     for (i, byte) in message.bytes().enumerate() {
         if i >= 301 {
             break;
@@ -345,6 +346,7 @@ pub fn error_msg(message: &str) -> ErrorMsg {
 
 pub fn system_msg(message: &str, code: u8) -> SystemMsg {
     let mut msg_bytes = [0 as c_char; 303];
+
     for (i, byte) in message.bytes().enumerate() {
         if i >= 302 {
             break;

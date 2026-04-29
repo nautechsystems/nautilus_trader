@@ -15,8 +15,6 @@
 
 //! Python bindings for dYdX gRPC client.
 
-#![allow(clippy::missing_errors_doc)]
-
 use std::sync::Arc;
 
 use nautilus_core::{

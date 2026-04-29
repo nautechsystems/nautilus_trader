@@ -514,6 +514,7 @@ mod tests {
             }
             other => panic!("Expected trade data, was {other:?}"),
         }
+
         match &data[1] {
             Data::Trade(trade) => assert_eq!(trade.aggressor_side, AggressorSide::Seller),
             other => panic!("Expected trade data, was {other:?}"),

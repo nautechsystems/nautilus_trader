@@ -55,7 +55,7 @@ pub struct ComponentStateChanged {
 
 impl ComponentStateChanged {
     /// Creates a new [`ComponentStateChanged`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         trader_id: TraderId,

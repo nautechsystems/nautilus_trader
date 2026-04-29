@@ -215,6 +215,10 @@ class InteractiveBrokersClient(
                     await asyncio.sleep(self._reconnect_delay)
 
                 await self._connect()
+                if not self._eclient.isConnected():
+                    raise ConnectionError(
+                        f"Failed to connect to Interactive Brokers at {self._host}:{self._port}",
+                    )
                 self._start_tws_incoming_msg_reader()
                 self._start_internal_msg_queue_processor()
                 self._eclient.startApi()
@@ -294,6 +298,7 @@ class InteractiveBrokersClient(
             self._internal_msg_queue_processor_task,
             self._msg_handler_processor_task,
         ]
+
         for task in tasks:
             if task and not task.cancelled():
                 task.cancel()

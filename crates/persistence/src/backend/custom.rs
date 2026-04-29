@@ -237,6 +237,7 @@ pub fn decode_custom_batches_to_data(
     let schema = batches.first().map(|b| b.schema()).ok_or_else(|| {
         anyhow::anyhow!("decode_custom_batches_to_data called with empty batches")
     })?;
+
     for mut batch in batches {
         if use_ts_event_for_ts_init {
             let column_names: Vec<String> =

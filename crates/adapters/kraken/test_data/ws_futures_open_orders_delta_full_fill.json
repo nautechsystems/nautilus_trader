@@ -1,0 +1,18 @@
+{
+  "feed": "open_orders",
+  "order": {
+    "instrument": "PF_XBTUSD",
+    "time": 1775831958755,
+    "last_update_time": 1775831973330,
+    "qty": 0.0,
+    "filled": 0.0001,
+    "limit_price": 73110.0,
+    "stop_price": 0.0,
+    "type": "limit",
+    "order_id": "a182cf4f-fd35-4ab1-b6b8-67ef5561bde5",
+    "direction": 0,
+    "reduce_only": false
+  },
+  "is_cancel": true,
+  "reason": "full_fill"
+}

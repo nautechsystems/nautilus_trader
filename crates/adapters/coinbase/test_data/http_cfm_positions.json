@@ -1,0 +1,22 @@
+{
+  "positions": [
+    {
+      "product_id": "BIP-20DEC30-CDE",
+      "expiration_time": "",
+      "side": "LONG",
+      "number_of_contracts": "2",
+      "current_price": {"value": "50000.00", "currency": "USD"},
+      "avg_entry_price": {"value": "49000.00", "currency": "USD"},
+      "unrealized_pnl": {"value": "20.00", "currency": "USD"},
+      "daily_realized_pnl": {"value": "0", "currency": "USD"},
+      "total_fees": {"value": "0.25", "currency": "USD"},
+      "contract_size": "0.01",
+      "entry_vwap": {"value": "49000.00", "currency": "USD"},
+      "liquidation_price": {"value": "40000.00", "currency": "USD"},
+      "leverage": "5",
+      "im_contribution": {"value": "100.00", "currency": "USD"},
+      "mm_contribution": {"value": "50.00", "currency": "USD"},
+      "position_notional": {"value": "1000.00", "currency": "USD"}
+    }
+  ]
+}

@@ -42,7 +42,7 @@ impl LongRatio {
     }
 
     #[pyo3(name = "calculate_from_positions")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_calculate_from_positions(
         &mut self,
         py: Python,
@@ -55,6 +55,7 @@ impl LongRatio {
         // Extract entry side from each Cython Position object
         // OrderSide.Buy has value 1 in both Cython and Rust
         let mut longs = 0;
+
         for position in &positions {
             let entry = position.getattr(py, "entry")?;
             let entry_value: u8 = entry.extract(py)?;

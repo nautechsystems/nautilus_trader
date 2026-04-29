@@ -21,13 +21,13 @@ use nautilus_common::{
     cache::Cache,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::ClientId,
 };
-use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
 use crate::{
     common::consts::{BETFAIR, BETFAIR_VENUE},
@@ -217,8 +217,12 @@ impl ExecutionClientFactory for BetfairExecutionClientFactory {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{cache::Cache, clock::TestClock, live::runner::set_data_event_sender};
-    use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
+    use nautilus_common::{
+        cache::Cache,
+        clock::TestClock,
+        factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+        live::runner::set_data_event_sender,
+    };
     use rstest::rstest;
 
     use super::*;

@@ -17,6 +17,7 @@ use nautilus_core::{
     UUID4,
     nanos::{DurationNanos, UnixNanos},
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     enums::{OrderSide, PositionSide},
@@ -28,7 +29,7 @@ use crate::{
 
 /// Represents an event where a position has been closed.
 #[repr(C)]
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
@@ -93,6 +94,7 @@ pub struct PositionClosed {
 }
 
 impl PositionClosed {
+    #[must_use]
     pub fn create(
         position: &Position,
         fill: &OrderFilled,

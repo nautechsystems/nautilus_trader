@@ -344,10 +344,12 @@ mod tests {
 
     #[rstest]
     fn test_balance_allowance_with_allowance() {
+        // The Polymarket API returns balances and allowances as integer
+        // micro-pUSD strings (e.g. `"1000000000"` == 1000 pUSD).
         let ba: BalanceAllowance = load("http_balance_allowance_collateral.json");
 
-        assert_eq!(ba.balance, dec!(1000.000000));
-        assert_eq!(ba.allowance, Some(dec!(999999999.000000)));
+        assert_eq!(ba.balance, dec!(1_000_000_000));
+        assert_eq!(ba.allowance, Some(dec!(999_999_999_000_000)));
     }
 
     #[rstest]

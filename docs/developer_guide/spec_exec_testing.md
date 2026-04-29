@@ -32,16 +32,27 @@ Before running execution tests:
 - Risk engine bypassed (`LiveRiskEngineConfig(bypass=True)`) to avoid interference.
 - Reconciliation enabled to verify state consistency.
 
-**Python node setup** (reference: `examples/live/{adapter}/{adapter}_exec_tester.py`):
+**Python node setup**:
+
+Legacy examples still use `nautilus_trader.live.node.TradingNode`, but new Rust-backed
+PyO3 adapters should prefer `nautilus_trader.live.LiveNode`. Use `LiveNode.builder(...)`
+when you need to register adapter client factories before the node is built.
 
 ```python
-from nautilus_trader.live.node import TradingNode
-from nautilus_trader.test_kit.strategies.tester_exec import ExecTester, ExecTesterConfig
+from nautilus_trader.common import Environment
+from nautilus_trader.live import LiveExecEngineConfig, LiveNode, LiveRiskEngineConfig
+from nautilus_trader.model import TraderId
 
-node = TradingNode(config=config_node)
-strategy = ExecTester(config=config_tester)
-node.trader.add_strategy(strategy)
-# Register adapter factories, build, and run
+node = (
+    LiveNode.builder("TESTER-001", TraderId("TESTER-001"), Environment.SANDBOX)
+    .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
+    .with_exec_engine_config(LiveExecEngineConfig(reconciliation=True))
+    .add_exec_client(None, adapter_exec_client_factory, exec_client_config)
+    .build()
+)
+
+node.add_strategy_from_config(importable_strategy_config)
+# Register remaining components, then start or run
 ```
 
 **Rust node setup** (reference: `crates/adapters/{adapter}/examples/node_exec_tester.rs`):

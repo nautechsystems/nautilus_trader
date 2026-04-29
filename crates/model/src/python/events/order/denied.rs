@@ -34,7 +34,7 @@ impl OrderDenied {
     ///
     /// This could be due an unsupported feature, a risk limit exceedance, or for
     /// any other reason that an otherwise valid order is not able to be submitted.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[new]
     fn py_new(
         trader_id: TraderId,

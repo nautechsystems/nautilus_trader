@@ -174,7 +174,6 @@ def _build_rust_libs() -> None:
             "nautilus-backtest",
             "nautilus-common",
             "nautilus-core",
-            "nautilus-infrastructure",
             "nautilus-model",
             "nautilus-persistence",
             "nautilus-pyo3",
@@ -518,6 +517,7 @@ def show_rustanalyzer_settings() -> None:
 
     # Set environment variables
     settings: dict[str, object] = {}
+
     for key in [
         "rust-analyzer.check.extraEnv",
         "rust-analyzer.runnables.extraEnv",

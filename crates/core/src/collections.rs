@@ -93,7 +93,7 @@ where
     }
 
     /// Inserts a key-value pair (clone-and-swap).
-    #[allow(
+    #[expect(
         clippy::needless_pass_by_value,
         reason = "by-value matches HashMap::insert; clone needed because rcu may retry"
     )]
@@ -201,7 +201,7 @@ where
     }
 
     /// Inserts a key (clone-and-swap).
-    #[allow(
+    #[expect(
         clippy::needless_pass_by_value,
         reason = "by-value matches HashSet::insert; clone needed because rcu may retry"
     )]
@@ -406,7 +406,7 @@ where
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unnecessary_to_owned,
     reason = "Required for trait bound satisfaction"
 )]
@@ -617,6 +617,7 @@ mod tests {
                 let barrier = Arc::clone(&barrier);
                 std::thread::spawn(move || {
                     barrier.wait();
+
                     for i in 0..100 {
                         assert!(set.contains(&i));
                     }
@@ -640,6 +641,7 @@ mod tests {
                 let barrier = Arc::clone(&barrier);
                 std::thread::spawn(move || {
                     barrier.wait();
+
                     for i in 0..25 {
                         set.insert(t * 25 + i);
                     }
@@ -671,6 +673,7 @@ mod tests {
             let barrier = Arc::clone(&barrier);
             std::thread::spawn(move || {
                 barrier.wait();
+
                 for i in 100u32..200 {
                     set.insert(i);
                 }
@@ -683,6 +686,7 @@ mod tests {
                 let barrier = Arc::clone(&barrier);
                 std::thread::spawn(move || {
                     barrier.wait();
+
                     for _ in 0..1000 {
                         let snapshot = set.load();
                         let len = snapshot.len();
@@ -690,6 +694,7 @@ mod tests {
                             (100..=200).contains(&len),
                             "snapshot len {len} outside expected range"
                         );
+
                         for i in 0u32..100 {
                             assert!(snapshot.contains(&i), "original key {i} missing");
                         }
@@ -716,6 +721,7 @@ mod tests {
             let barrier = Arc::clone(&barrier);
             std::thread::spawn(move || {
                 barrier.wait();
+
                 for batch in 0u32..50 {
                     let start = batch * 10;
                     let new_set: AHashSet<u32> = (start..start + 10).collect();
@@ -730,6 +736,7 @@ mod tests {
                 let barrier = Arc::clone(&barrier);
                 std::thread::spawn(move || {
                     barrier.wait();
+
                     for _ in 0..5000 {
                         let snapshot = set.load();
                         let items: Vec<u32> = snapshot.iter().copied().collect();
@@ -961,6 +968,7 @@ mod tests {
                 let barrier = Arc::clone(&barrier);
                 std::thread::spawn(move || {
                     barrier.wait();
+
                     for i in 0u32..100 {
                         assert_eq!(map.get_cloned(&i), Some(i * 10));
                     }
@@ -984,6 +992,7 @@ mod tests {
                 let barrier = Arc::clone(&barrier);
                 std::thread::spawn(move || {
                     barrier.wait();
+
                     for i in 0..25 {
                         let key = t * 25 + i;
                         map.insert(key, key * 10);
@@ -1016,6 +1025,7 @@ mod tests {
             let barrier = Arc::clone(&barrier);
             std::thread::spawn(move || {
                 barrier.wait();
+
                 for i in 100u32..200 {
                     map.insert(i, i);
                 }
@@ -1028,6 +1038,7 @@ mod tests {
                 let barrier = Arc::clone(&barrier);
                 std::thread::spawn(move || {
                     barrier.wait();
+
                     for _ in 0..1000 {
                         let snapshot = map.load();
                         let len = snapshot.len();
@@ -1035,6 +1046,7 @@ mod tests {
                             (100..=200).contains(&len),
                             "snapshot len {len} outside expected range"
                         );
+
                         for i in 0u32..100 {
                             assert_eq!(
                                 snapshot.get(&i).copied(),
@@ -1065,6 +1077,7 @@ mod tests {
             let barrier = Arc::clone(&barrier);
             std::thread::spawn(move || {
                 barrier.wait();
+
                 for batch in 0u32..50 {
                     let start = batch * 10;
                     let new_map: AHashMap<u32, u32> =
@@ -1080,6 +1093,7 @@ mod tests {
                 let barrier = Arc::clone(&barrier);
                 std::thread::spawn(move || {
                     barrier.wait();
+
                     for _ in 0..5000 {
                         let snapshot = map.load();
                         if snapshot.is_empty() {
@@ -1215,6 +1229,7 @@ mod tests {
                     for k in &to_add_clone {
                         s.insert(*k);
                     }
+
                     for k in &to_remove_clone {
                         s.remove(k);
                     }
@@ -1223,6 +1238,7 @@ mod tests {
                 for k in &to_add {
                     reference.insert(*k);
                 }
+
                 for k in &to_remove {
                     reference.remove(k);
                 }
@@ -1406,6 +1422,7 @@ mod tests {
                     for (k, v) in &to_add_clone {
                         m.insert(*k, *v);
                     }
+
                     for k in &to_remove_clone {
                         m.remove(k);
                     }
@@ -1414,6 +1431,7 @@ mod tests {
                 for (k, v) in &to_add {
                     reference.insert(*k, *v);
                 }
+
                 for k in &to_remove {
                     reference.remove(k);
                 }

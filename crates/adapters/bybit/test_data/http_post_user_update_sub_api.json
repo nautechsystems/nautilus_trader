@@ -1,0 +1,31 @@
+{
+  "retCode": 0,
+  "retMsg": "",
+  "result": {
+    "id": "16651472",
+    "note": "testxxx",
+    "apiKey": "xxxxxx",
+    "readOnly": 0,
+    "secret": "",
+    "permissions": {
+      "ContractTrade": [],
+      "Spot": [
+        "SpotTrade"
+      ],
+      "Wallet": [
+        "AccountTransfer"
+      ],
+      "Options": [],
+      "Derivatives": [],
+      "CopyTrading": [],
+      "BlockTrade": [],
+      "Exchange": [],
+      "NFT": []
+    },
+    "ips": [
+      "*"
+    ]
+  },
+  "retExtInfo": {},
+  "time": 1676431796263
+}

@@ -31,9 +31,10 @@ use std::{
     time::SystemTime,
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
 use config::ExecutionEngineConfig;
 use futures::future::join_all;
+use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
@@ -59,10 +60,14 @@ use nautilus_core::{
     datetime::{mins_to_nanos, mins_to_secs},
 };
 use nautilus_model::{
-    enums::{ContingencyType, OmsType, PositionSide},
+    enums::{
+        ContingencyType, OmsType, OrderStatus, OrderType, PositionSide, TimeInForce,
+        TrailingOffsetType,
+    },
     events::{
-        OrderDenied, OrderEvent, OrderEventAny, OrderFilled, OrderInitialized, PositionChanged,
-        PositionClosed, PositionEvent, PositionOpened,
+        OrderAccepted, OrderCanceled, OrderDenied, OrderEvent, OrderEventAny, OrderExpired,
+        OrderFilled, OrderInitialized, PositionChanged, PositionClosed, PositionEvent,
+        PositionOpened,
     },
     identifiers::{
         ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Venue, VenueOrderId,
@@ -79,8 +84,9 @@ use rust_decimal::Decimal;
 use crate::{
     client::ExecutionClientAdapter,
     reconciliation::{
-        check_position_reconciliation, generate_external_order_status_events,
-        generate_reconciliation_order_events, reconcile_fill_report as reconcile_fill,
+        check_position_reconciliation, create_incremental_inferred_fill,
+        generate_external_order_status_events, generate_reconciliation_order_events,
+        reconcile_fill_report as reconcile_fill,
     },
 };
 
@@ -97,7 +103,7 @@ const TIMER_PURGE_ACCOUNT_EVENTS: &str = "ExecEngine_PURGE_ACCOUNT_EVENTS";
 pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
-    clients: AHashMap<ClientId, ExecutionClientAdapter>,
+    clients: IndexMap<ClientId, ExecutionClientAdapter>,
     default_client: Option<ExecutionClientAdapter>,
     routing_map: HashMap<Venue, ClientId>,
     oms_overrides: HashMap<StrategyId, OmsType>,
@@ -126,7 +132,7 @@ impl ExecutionEngine {
         Self {
             clock: clock.clone(),
             cache,
-            clients: AHashMap::new(),
+            clients: IndexMap::new(),
             default_client: None,
             routing_map: HashMap::new(),
             oms_overrides: HashMap::new(),
@@ -151,7 +157,7 @@ impl ExecutionEngine {
             MessagingSwitchboard::exec_engine_execute(),
             TypedIntoHandler::from(move |cmd: TradingCommand| {
                 if let Some(rc) = weak1.upgrade() {
-                    rc.borrow().execute(&cmd);
+                    rc.borrow().execute(cmd);
                 }
             }),
         );
@@ -451,8 +457,8 @@ impl ExecutionEngine {
     /// This method first attempts to resolve each order's originating client from the cache,
     /// then falls back to venue routing for any orders without a cached client.
     pub fn get_clients_for_orders(&self, orders: &[OrderAny]) -> Vec<&dyn ExecutionClient> {
-        let mut client_ids: AHashSet<ClientId> = AHashSet::new();
-        let mut venues: AHashSet<Venue> = AHashSet::new();
+        let mut client_ids: IndexSet<ClientId> = IndexSet::new();
+        let mut venues: IndexSet<Venue> = IndexSet::new();
 
         // Collect client IDs from cache and venues for fallback
         for order in orders {
@@ -565,7 +571,7 @@ impl ExecutionEngine {
     ///
     /// Returns an error if no client is registered with the given ID.
     pub fn deregister_client(&mut self, client_id: ClientId) -> anyhow::Result<()> {
-        if self.clients.remove(&client_id).is_some() {
+        if self.clients.shift_remove(&client_id).is_some() {
             // Remove from routing map if present
             self.routing_map
                 .retain(|_, mapped_id| mapped_id != &client_id);
@@ -641,7 +647,7 @@ impl ExecutionEngine {
     }
 
     /// Starts the purge timers if configured.
-    #[allow(
+    #[expect(
         clippy::missing_panics_doc,
         reason = "timer registration is not expected to fail"
     )]
@@ -812,14 +818,14 @@ impl ExecutionEngine {
         }
     }
 
-    #[allow(clippy::await_holding_refcell_ref)]
+    #[expect(clippy::await_holding_refcell_ref)]
     /// Loads persistent state into cache and rebuilds indices.
     ///
     /// # Errors
     ///
     /// Returns an error if any cache operation fails.
     pub async fn load_cache(&mut self) -> anyhow::Result<()> {
-        let ts = SystemTime::now();
+        let ts = SystemTime::now(); // dst-ok: init-time log timing, not on DST state path
 
         {
             let mut cache = self.cache.borrow_mut();
@@ -844,7 +850,7 @@ impl ExecutionEngine {
 
         log::info!(
             "Loaded cache in {}ms",
-            SystemTime::now()
+            SystemTime::now() // dst-ok: init-time log timing, not on DST state path
                 .duration_since(ts)
                 .map_err(|e| anyhow::anyhow!("Failed to calculate duration: {e}"))?
                 .as_millis()
@@ -866,6 +872,9 @@ impl ExecutionEngine {
             }
             ExecutionReport::Fill(fill_report) => {
                 self.reconcile_fill_report(fill_report);
+            }
+            ExecutionReport::OrderWithFills(order_report, fills) => {
+                self.reconcile_order_with_fills(order_report, fills);
             }
             ExecutionReport::Position(position_report) => {
                 self.reconcile_position_report(position_report);
@@ -905,6 +914,7 @@ impl ExecutionEngine {
             let ts_now = self.clock.borrow().timestamp_ns();
             let events =
                 generate_reconciliation_order_events(&order, report, instrument.as_ref(), ts_now);
+
             for event in &events {
                 self.handle_event(event);
             }
@@ -927,11 +937,31 @@ impl ExecutionEngine {
             return;
         };
 
-        let strategy_id = self
-            .external_order_claims
-            .get(&report.instrument_id)
-            .copied()
-            .unwrap_or_else(|| StrategyId::from("EXTERNAL"));
+        let Some(order) = self.materialize_external_order_from_status(report) else {
+            return;
+        };
+
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let events = generate_external_order_status_events(
+            &order,
+            report,
+            &report.account_id,
+            instrument,
+            ts_now,
+        );
+
+        for event in &events {
+            self.handle_event(event);
+        }
+    }
+
+    /// Builds and registers an external order from an [`OrderStatusReport`] without
+    /// emitting status events. Returns the registered order.
+    fn materialize_external_order_from_status(
+        &self,
+        report: &OrderStatusReport,
+    ) -> Option<OrderAny> {
+        let strategy_id = self.resolve_external_strategy(&report.instrument_id);
 
         let client_order_id = report
             .client_order_id
@@ -976,11 +1006,109 @@ impl ExecutionEngine {
             None, // tags
         );
 
+        self.materialize_external_order(
+            initialized,
+            client_order_id,
+            report.venue_order_id,
+            report.instrument_id,
+            strategy_id,
+            ts_now,
+            Some(report.order_status),
+        )
+    }
+
+    /// Builds and registers an external order from a [`FillReport`] when no matching
+    /// order exists in cache. The order is created with `OrderType::Market` and a
+    /// quantity equal to the fill's `last_qty`, so the fill consumes the entire
+    /// order on application.
+    ///
+    /// This handles venue-initiated fills (most commonly Hyperliquid liquidations)
+    /// where the venue does not surface a user-level order on its order channel.
+    fn materialize_external_order_from_fill(&self, report: &FillReport) -> Option<OrderAny> {
+        let strategy_id = self.resolve_external_strategy(&report.instrument_id);
+
+        let client_order_id = report
+            .client_order_id
+            .unwrap_or_else(|| ClientOrderId::from(report.venue_order_id.as_str()));
+
+        let trader_id = get_message_bus().borrow().trader_id;
+        let ts_now = self.clock.borrow().timestamp_ns();
+
+        let initialized = OrderInitialized::new(
+            trader_id,
+            strategy_id,
+            report.instrument_id,
+            client_order_id,
+            report.order_side,
+            OrderType::Market,
+            report.last_qty,
+            TimeInForce::Ioc,
+            false, // post_only
+            true,  // reduce_only: venue-initiated closes always reduce
+            false, // quote_quantity
+            true,  // reconciliation
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            None, // price
+            None, // trigger_price
+            None, // trigger_type
+            None, // limit_offset
+            None, // trailing_offset
+            Some(TrailingOffsetType::NoTrailingOffset),
+            None, // expire_time
+            None, // display_qty
+            None, // emulation_trigger
+            None, // trigger_instrument_id
+            Some(ContingencyType::NoContingency),
+            None, // order_list_id
+            None, // linked_order_ids
+            None, // parent_order_id
+            None, // exec_algorithm_id
+            None, // exec_algorithm_params
+            None, // exec_spawn_id
+            None, // tags
+        );
+
+        self.materialize_external_order(
+            initialized,
+            client_order_id,
+            report.venue_order_id,
+            report.instrument_id,
+            strategy_id,
+            ts_now,
+            None,
+        )
+    }
+
+    fn resolve_external_strategy(&self, instrument_id: &InstrumentId) -> StrategyId {
+        self.external_order_claims
+            .get(instrument_id)
+            .copied()
+            .unwrap_or_else(|| StrategyId::from("EXTERNAL"))
+    }
+
+    /// Adds an external order to the cache and registers it for adapter routing.
+    /// Returns the registered order on success.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "external order materialisation threads several ids and a timestamp"
+    )]
+    fn materialize_external_order(
+        &self,
+        initialized: OrderInitialized,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        instrument_id: InstrumentId,
+        strategy_id: StrategyId,
+        ts_now: UnixNanos,
+        order_status: Option<OrderStatus>,
+    ) -> Option<OrderAny> {
         let order = match OrderAny::from_events(vec![OrderEventAny::Initialized(initialized)]) {
             Ok(order) => order,
             Err(e) => {
                 log::error!("Failed to create external order from report: {e}");
-                return;
+                return None;
             }
         };
 
@@ -988,50 +1116,41 @@ impl ExecutionEngine {
             let mut cache = self.cache.borrow_mut();
             if let Err(e) = cache.add_order(order.clone(), None, None, false) {
                 log::error!("Failed to add external order to cache: {e}");
-                return;
+                return None;
             }
 
-            if let Err(e) =
-                cache.add_venue_order_id(&client_order_id, &report.venue_order_id, false)
-            {
+            if let Err(e) = cache.add_venue_order_id(&client_order_id, &venue_order_id, false) {
                 log::warn!("Failed to add venue order ID index: {e}");
             }
         }
 
-        log::info!(
-            "Created external order {} ({}) for {} [{}]",
-            client_order_id,
-            report.venue_order_id,
-            report.instrument_id,
-            report.order_status
-        );
+        match order_status {
+            Some(status) => log::info!(
+                "Created external order {client_order_id} ({venue_order_id}) for {instrument_id} [{status}]",
+            ),
+            None => log::info!(
+                "Created external order {client_order_id} ({venue_order_id}) for {instrument_id}",
+            ),
+        }
 
         self.register_external_order(
             client_order_id,
-            report.venue_order_id,
-            report.instrument_id,
+            venue_order_id,
+            instrument_id,
             strategy_id,
             ts_now,
         );
 
-        let ts_now = self.clock.borrow().timestamp_ns();
-        let events = generate_external_order_status_events(
-            &order,
-            report,
-            &report.account_id,
-            instrument,
-            ts_now,
-        );
-
-        for event in &events {
-            self.handle_event(event);
-        }
+        Some(order)
     }
 
     /// Reconciles a fill report received at runtime.
     ///
     /// Finds the associated order, validates the fill, and generates an OrderFilled event
-    /// if the fill is not a duplicate and won't cause an overfill.
+    /// if the fill is not a duplicate and won't cause an overfill. When the order is not
+    /// in cache, an external order is bootstrapped from the fill so that venue-initiated
+    /// closures (e.g. Hyperliquid liquidations) that arrive without a companion order
+    /// status report still update the local position.
     pub fn reconcile_fill_report(&mut self, report: &FillReport) {
         let cache = self.cache.borrow();
 
@@ -1044,26 +1163,45 @@ impl ExecutionEngine {
                     .and_then(|cid| cache.order(cid).cloned())
             });
 
-        let Some(order) = order else {
-            log::warn!(
-                "Cannot reconcile fill report: order not found for venue_order_id={}, client_order_id={:?}",
-                report.venue_order_id,
-                report.client_order_id
-            );
-            return;
-        };
-
         let instrument = cache.instrument(&report.instrument_id).cloned();
 
         drop(cache);
 
         let Some(instrument) = instrument else {
             log::debug!(
-                "Cannot reconcile fill report for {}: instrument {} not found",
-                order.client_order_id(),
+                "Cannot reconcile fill report for venue_order_id={}: instrument {} not found",
+                report.venue_order_id,
                 report.instrument_id
             );
             return;
+        };
+
+        let order = match order {
+            Some(order) => order,
+            None => {
+                let Some(order) = self.materialize_external_order_from_fill(report) else {
+                    return;
+                };
+                let ts_now = self.clock.borrow().timestamp_ns();
+                let accepted = OrderAccepted::new(
+                    order.trader_id(),
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    order.client_order_id(),
+                    report.venue_order_id,
+                    report.account_id,
+                    UUID4::new(),
+                    report.ts_event,
+                    ts_now,
+                    true, // reconciliation
+                );
+                self.handle_event(&OrderEventAny::Accepted(accepted));
+                self.cache
+                    .borrow()
+                    .order(&order.client_order_id())
+                    .cloned()
+                    .unwrap_or(order)
+            }
         };
 
         let ts_now = self.clock.borrow().timestamp_ns();
@@ -1076,6 +1214,146 @@ impl ExecutionEngine {
             self.config.allow_overfills,
         ) {
             self.handle_event(&event);
+        }
+    }
+
+    /// Reconciles an [`OrderStatusReport`] paired with companion [`FillReport`]s
+    /// for the same venue event.
+    ///
+    /// Real fills supplied by the adapter are applied first so their `trade_id` and
+    /// `commission` are preserved; any residual quantity not covered by the fills is
+    /// then synthesised as an inferred fill from the status report's `avg_px`.
+    /// Adapters use this to emit ADL / liquidation / settlement events without
+    /// losing real fill metadata.
+    pub fn reconcile_order_with_fills(&mut self, report: &OrderStatusReport, fills: &[FillReport]) {
+        let cache = self.cache.borrow();
+        let order = report
+            .client_order_id
+            .and_then(|id| cache.order(&id).cloned())
+            .or_else(|| {
+                cache
+                    .client_order_id(&report.venue_order_id)
+                    .and_then(|cid| cache.order(cid).cloned())
+            });
+        let instrument = cache.instrument(&report.instrument_id).cloned();
+        drop(cache);
+
+        let Some(instrument) = instrument else {
+            log::debug!(
+                "Cannot reconcile bundled report for venue_order_id={}: instrument {} not found",
+                report.venue_order_id,
+                report.instrument_id,
+            );
+            return;
+        };
+
+        // Bootstrap the external order with only OrderAccepted; defer fill events to
+        // the per-fill loop so real fill metadata is preserved.
+        let mut order = match order {
+            Some(order) => order,
+            None => {
+                let Some(order) = self.materialize_external_order_from_status(report) else {
+                    return;
+                };
+                let ts_now = self.clock.borrow().timestamp_ns();
+                let accepted = OrderAccepted::new(
+                    order.trader_id(),
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    order.client_order_id(),
+                    report.venue_order_id,
+                    report.account_id,
+                    UUID4::new(),
+                    report.ts_accepted,
+                    ts_now,
+                    true, // reconciliation
+                );
+                self.handle_event(&OrderEventAny::Accepted(accepted));
+                order
+            }
+        };
+
+        let client_order_id = order.client_order_id();
+
+        for fill in fills {
+            let ts_now = self.clock.borrow().timestamp_ns();
+
+            if let Some(event) = reconcile_fill(
+                &order,
+                fill,
+                &instrument,
+                ts_now,
+                self.config.allow_overfills,
+            ) {
+                self.handle_event(&event);
+            }
+
+            // Refresh order after fill to keep filled_qty accurate for the next iteration.
+            if let Some(refreshed) = self.cache.borrow().order(&client_order_id).cloned() {
+                order = refreshed;
+            }
+        }
+
+        // Cover any quantity gap between the status report and the real fills with
+        // an inferred fill so the order reaches the venue-reported terminal state.
+        if matches!(
+            report.order_status,
+            OrderStatus::PartiallyFilled | OrderStatus::Filled,
+        ) && report.filled_qty > order.filled_qty()
+        {
+            let ts_now = self.clock.borrow().timestamp_ns();
+
+            if let Some(event) = create_incremental_inferred_fill(
+                &order,
+                report,
+                &report.account_id,
+                &instrument,
+                ts_now,
+                None,
+            ) {
+                self.handle_event(&event);
+
+                if let Some(refreshed) = self.cache.borrow().order(&client_order_id).cloned() {
+                    order = refreshed;
+                }
+            }
+        }
+
+        // Apply terminal events when the venue reports a non-fill closure.
+        match report.order_status {
+            OrderStatus::Canceled if !order.is_closed() => {
+                let ts_now = self.clock.borrow().timestamp_ns();
+                let canceled = OrderCanceled::new(
+                    order.trader_id(),
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    order.client_order_id(),
+                    UUID4::new(),
+                    report.ts_last,
+                    ts_now,
+                    true,
+                    Some(report.venue_order_id),
+                    Some(report.account_id),
+                );
+                self.handle_event(&OrderEventAny::Canceled(canceled));
+            }
+            OrderStatus::Expired if !order.is_closed() => {
+                let ts_now = self.clock.borrow().timestamp_ns();
+                let expired = OrderExpired::new(
+                    order.trader_id(),
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    order.client_order_id(),
+                    UUID4::new(),
+                    report.ts_last,
+                    ts_now,
+                    true,
+                    Some(report.venue_order_id),
+                    Some(report.account_id),
+                );
+                self.handle_event(&OrderEventAny::Expired(expired));
+            }
+            _ => {}
         }
     }
 
@@ -1232,7 +1510,7 @@ impl ExecutionEngine {
     }
 
     /// Executes a trading command by routing it to the appropriate execution client.
-    pub fn execute(&self, command: &TradingCommand) {
+    pub fn execute(&self, command: TradingCommand) {
         self.execute_command(command);
     }
 
@@ -1269,7 +1547,7 @@ impl ExecutionEngine {
         log::info!("Disposed");
     }
 
-    fn execute_command(&self, command: &TradingCommand) {
+    fn execute_command(&self, command: TradingCommand) {
         if self.config.debug {
             log::debug!("{RECV}{CMD} {command:?}");
         }
@@ -1320,7 +1598,8 @@ impl ExecutionEngine {
                     let orders: Vec<OrderAny> = self
                         .cache
                         .borrow()
-                        .orders_for_ids(&cmd.order_list.client_order_ids, cmd);
+                        .orders_for_ids(&cmd.order_list.client_order_ids, &cmd);
+
                     for order in &orders {
                         self.deny_order(order, &reason);
                     }
@@ -1343,7 +1622,7 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_submit_order(&self, client: &dyn ExecutionClient, cmd: &SubmitOrder) {
+    fn handle_submit_order(&self, client: &dyn ExecutionClient, cmd: SubmitOrder) {
         let client_order_id = cmd.client_order_id;
 
         let order = {
@@ -1395,11 +1674,11 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_submit_order_list(&self, client: &dyn ExecutionClient, cmd: &SubmitOrderList) {
+    fn handle_submit_order_list(&self, client: &dyn ExecutionClient, cmd: SubmitOrderList) {
         let orders: Vec<OrderAny> = self
             .cache
             .borrow()
-            .orders_for_ids(&cmd.order_list.client_order_ids, cmd);
+            .orders_for_ids(&cmd.order_list.client_order_ids, &cmd);
 
         if orders.len() != cmd.order_list.client_order_ids.len() {
             for order in &orders {
@@ -1442,6 +1721,7 @@ impl ExecutionEngine {
 
         if self.config.manage_own_order_books {
             let mut own_book = self.get_or_init_own_order_book(&cmd.instrument_id);
+
             for order in &orders {
                 if should_handle_own_book_order(order) {
                     own_book.add(order.to_own_book_order());
@@ -1460,37 +1740,37 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_modify_order(&self, client: &dyn ExecutionClient, cmd: &ModifyOrder) {
+    fn handle_modify_order(&self, client: &dyn ExecutionClient, cmd: ModifyOrder) {
         if let Err(e) = client.modify_order(cmd) {
             log::error!("Error modifying order: {e}");
         }
     }
 
-    fn handle_cancel_order(&self, client: &dyn ExecutionClient, cmd: &CancelOrder) {
+    fn handle_cancel_order(&self, client: &dyn ExecutionClient, cmd: CancelOrder) {
         if let Err(e) = client.cancel_order(cmd) {
             log::error!("Error canceling order: {e}");
         }
     }
 
-    fn handle_cancel_all_orders(&self, client: &dyn ExecutionClient, cmd: &CancelAllOrders) {
+    fn handle_cancel_all_orders(&self, client: &dyn ExecutionClient, cmd: CancelAllOrders) {
         if let Err(e) = client.cancel_all_orders(cmd) {
             log::error!("Error canceling all orders: {e}");
         }
     }
 
-    fn handle_batch_cancel_orders(&self, client: &dyn ExecutionClient, cmd: &BatchCancelOrders) {
+    fn handle_batch_cancel_orders(&self, client: &dyn ExecutionClient, cmd: BatchCancelOrders) {
         if let Err(e) = client.batch_cancel_orders(cmd) {
             log::error!("Error batch canceling orders: {e}");
         }
     }
 
-    fn handle_query_account(&self, client: &dyn ExecutionClient, cmd: &QueryAccount) {
+    fn handle_query_account(&self, client: &dyn ExecutionClient, cmd: QueryAccount) {
         if let Err(e) = client.query_account(cmd) {
             log::error!("Error querying account: {e}");
         }
     }
 
-    fn handle_query_order(&self, client: &dyn ExecutionClient, cmd: &QueryOrder) {
+    fn handle_query_order(&self, client: &dyn ExecutionClient, cmd: QueryOrder) {
         if let Err(e) = client.query_order(cmd) {
             log::error!("Error querying order: {e}");
         }
@@ -1577,9 +1857,7 @@ impl ExecutionEngine {
                 let position_id = self.determine_position_id(*fill, oms_type, Some(&order));
 
                 let mut fill = *fill;
-                if fill.position_id.is_none() {
-                    fill.position_id = Some(position_id);
-                }
+                fill.position_id = Some(position_id);
 
                 if self.apply_fill_to_order(&mut order, fill).is_ok() {
                     self.handle_order_fill(&order, fill, oms_type);
@@ -1617,11 +1895,89 @@ impl ExecutionEngine {
         oms_type: OmsType,
         order: Option<&OrderAny>,
     ) -> PositionId {
-        match oms_type {
+        let cache = self.cache.borrow();
+        let cached_position_id = cache.position_id(&fill.client_order_id()).copied();
+        drop(cache);
+
+        if self.config.debug {
+            log::debug!(
+                "Determining position ID for {}, position_id={:?}",
+                fill.client_order_id(),
+                cached_position_id,
+            );
+        }
+
+        if let Some(position_id) = cached_position_id {
+            if let Some(fill_position_id) = fill.position_id
+                && fill_position_id != position_id
+            {
+                log::warn!(
+                    "Incorrect position ID assigned to fill: \
+                     cached={position_id}, assigned={fill_position_id}; \
+                     re-assigning from cache",
+                );
+            }
+
+            if self.config.debug {
+                log::debug!("Assigned {position_id} to {}", fill.client_order_id());
+            }
+
+            return position_id;
+        }
+
+        let position_id = match oms_type {
             OmsType::Hedging => self.determine_hedging_position_id(fill, order),
             OmsType::Netting => self.determine_netting_position_id(fill),
-            _ => self.determine_netting_position_id(fill), // Default to netting
+            _ => self.determine_netting_position_id(fill),
+        };
+
+        let order = if let Some(o) = order {
+            o.clone()
+        } else {
+            let cache = self.cache.borrow();
+            cache
+                .order(&fill.client_order_id())
+                .cloned()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Order for {} not found to determine position ID",
+                        fill.client_order_id()
+                    )
+                })
+        };
+
+        if order.exec_algorithm_id().is_some()
+            && let Some(exec_spawn_id) = order.exec_spawn_id()
+        {
+            let cache = self.cache.borrow();
+            let primary = if let Some(p) = cache.order(&exec_spawn_id) {
+                p.clone()
+            } else {
+                log::warn!(
+                    "Primary exec spawn order {exec_spawn_id} not found, \
+                     skipping position ID propagation"
+                );
+                return position_id;
+            };
+            let primary_already_indexed = cache.position_id(&primary.client_order_id()).is_some();
+            drop(cache);
+
+            if primary.position_id().is_none() && !primary_already_indexed {
+                let mut cache = self.cache.borrow_mut();
+                if let Some(primary_mut) = cache.mut_order(&exec_spawn_id) {
+                    primary_mut.set_position_id(Some(position_id));
+                }
+                let _ = cache.add_position_id(
+                    &position_id,
+                    &primary.instrument_id().venue,
+                    &primary.client_order_id(),
+                    &primary.strategy_id(),
+                );
+                log::debug!("Assigned primary order {position_id}");
+            }
         }
+
+        position_id
     }
 
     fn determine_hedging_position_id(
@@ -1816,6 +2172,7 @@ impl ExecutionEngine {
                 && pos.is_open()
             {
                 let position_id = pos.id;
+
                 for client_order_id in order.linked_order_ids().unwrap_or_default() {
                     let mut cache = self.cache.borrow_mut();
                     let contingent_order = cache.mut_order(client_order_id);

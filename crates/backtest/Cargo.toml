@@ -45,9 +45,12 @@ ffi = [
 python = [
   "nautilus-common/python",
   "nautilus-core/python",
+  "nautilus-data/python",
   "nautilus-execution/python",
   "nautilus-model/python",
   "nautilus-persistence?/python",
+  "nautilus-portfolio/python",
+  "nautilus-risk/python",
   "nautilus-trading/python",
   "pyo3",
   "pyo3-stub-gen",
@@ -77,6 +80,7 @@ async-trait = { workspace = true }
 bon = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 ustr = { workspace = true }

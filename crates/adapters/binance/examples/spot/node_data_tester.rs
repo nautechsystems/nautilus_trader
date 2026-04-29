@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Binance Spot SBE adapter.
 //!
-//! Run with: `cargo run --example binance-spot-data-tester --package nautilus-binance`
+//! Run with: `cargo run --example binance-spot-data-tester --package nautilus-binance --features examples`
 //!
 //! Requires environment variables based on the configured environment
 //! (Ed25519 keys are auto-detected):
@@ -36,6 +36,7 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId},
     stubs::TestDefault,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 #[tokio::main]
@@ -55,6 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         environment: BinanceEnvironment::Mainnet,
         api_key: None,
         api_secret: None,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

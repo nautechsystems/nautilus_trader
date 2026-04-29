@@ -83,9 +83,13 @@ def _create_ws_mock():
     ws_client.subscribe_book = AsyncMock()
     ws_client.subscribe_quotes = AsyncMock()
     ws_client.subscribe_trades = AsyncMock()
+    ws_client.subscribe_mark_prices = AsyncMock()
+    ws_client.subscribe_index_prices = AsyncMock()
     ws_client.unsubscribe_book = AsyncMock()
     ws_client.unsubscribe_quotes = AsyncMock()
     ws_client.unsubscribe_trades = AsyncMock()
+    ws_client.unsubscribe_mark_prices = AsyncMock()
+    ws_client.unsubscribe_index_prices = AsyncMock()
     return ws_client
 
 

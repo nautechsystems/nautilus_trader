@@ -27,7 +27,11 @@ use nautilus_model::{
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
-use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
+use pyo3::{
+    conversion::IntoPyObjectExt,
+    prelude::*,
+    types::{PyDict, PyList},
+};
 use rust_decimal::Decimal;
 
 use crate::{
@@ -45,7 +49,7 @@ impl KrakenSpotHttpClient {
     /// into Nautilus domain objects.
     #[new]
     #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, timeout_secs=60, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, proxy_url=None, max_requests_per_second=5))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
         api_secret: Option<String>,
@@ -189,6 +193,39 @@ impl KrakenSpotHttpClient {
         })
     }
 
+    /// Requests the current market status for Kraken Spot instruments.
+    ///
+    /// Fetches both regular and tokenized asset pairs. The call returns an error if
+    /// either fetch fails so callers can avoid emitting partial snapshots that would
+    /// otherwise cause the missing tokenized symbols to be diffed as removed.
+    #[pyo3(name = "request_instrument_statuses")]
+    #[pyo3(signature = (pairs=None))]
+    fn py_request_instrument_statuses<'py>(
+        &self,
+        py: Python<'py>,
+        pairs: Option<Vec<String>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let statuses = client
+                .request_instrument_statuses(pairs)
+                .await
+                .map_err(to_pyruntime_err)?;
+
+            Python::attach(|py| {
+                let dict = PyDict::new(py);
+                for (instrument_id, action) in statuses {
+                    dict.set_item(
+                        instrument_id.into_bound_py_any(py)?,
+                        action.into_bound_py_any(py)?,
+                    )?;
+                }
+                Ok(dict.into_any().unbind())
+            })
+        })
+    }
+
     /// Requests historical trades for an instrument.
     #[pyo3(name = "request_trades")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
@@ -216,6 +253,27 @@ impl KrakenSpotHttpClient {
                 let pylist = PyList::new(py, py_trades?).unwrap().into_any().unbind();
                 Ok(pylist)
             })
+        })
+    }
+
+    /// Requests an order book snapshot for an instrument.
+    #[pyo3(name = "request_book_snapshot")]
+    #[pyo3(signature = (instrument_id, depth=None))]
+    fn py_request_book_snapshot<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        depth: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let book = client
+                .request_book_snapshot(instrument_id, depth)
+                .await
+                .map_err(to_pyruntime_err)?;
+
+            Python::attach(|py| book.into_py_any(py))
         })
     }
 
@@ -365,7 +423,7 @@ impl KrakenSpotHttpClient {
     /// Returns the venue order ID on success. WebSocket handles all execution events.
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (account_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, expire_time=None, price=None, trigger_price=None, trigger_type=None, trailing_offset=None, limit_offset=None, reduce_only=false, post_only=false, quote_quantity=false, display_qty=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
         &self,
         py: Python<'py>,
@@ -489,7 +547,7 @@ impl KrakenSpotHttpClient {
     /// keeping the same order ID and queue position.
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (instrument_id, client_order_id=None, venue_order_id=None, quantity=None, price=None, trigger_price=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
         &self,
         py: Python<'py>,
@@ -516,6 +574,83 @@ impl KrakenSpotHttpClient {
                 .map_err(to_pyruntime_err)?;
 
             Python::attach(|py| new_venue_order_id.into_pyobject(py).map(|o| o.unbind()))
+        })
+    }
+}
+
+// Separate block to avoid pyo3_stub_gen trait bound issues with batch-order tuples.
+// Stub is maintained manually in nautilus_pyo3.pyi.
+#[pymethods]
+impl KrakenSpotHttpClient {
+    /// Submits multiple orders to the Kraken Spot exchange.
+    ///
+    /// Automatically groups orders by pair and chunks batch requests at the venue
+    /// limit. Single-order groups fall back to `AddOrder`.
+    #[pyo3(name = "submit_orders_batch")]
+    #[expect(clippy::type_complexity)]
+    fn py_submit_orders_batch<'py>(
+        &self,
+        py: Python<'py>,
+        orders: Vec<(
+            InstrumentId,
+            ClientOrderId,
+            OrderSide,
+            OrderType,
+            Quantity,
+            TimeInForce,
+            Option<Price>,
+            Option<Price>,
+            Option<TriggerType>,
+            bool,
+            bool,
+            Option<Quantity>,
+        )>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let expanded_orders = orders
+            .into_iter()
+            .map(
+                |(
+                    instrument_id,
+                    client_order_id,
+                    order_side,
+                    order_type,
+                    quantity,
+                    time_in_force,
+                    price,
+                    trigger_price,
+                    trigger_type,
+                    post_only,
+                    quote_quantity,
+                    display_qty,
+                )| {
+                    (
+                        instrument_id,
+                        client_order_id,
+                        order_side,
+                        order_type,
+                        quantity,
+                        time_in_force,
+                        None,
+                        price,
+                        trigger_price,
+                        trigger_type,
+                        None,
+                        None,
+                        false,
+                        post_only,
+                        quote_quantity,
+                        display_qty,
+                    )
+                },
+            )
+            .collect();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .submit_orders_batch(expanded_orders)
+                .await
+                .map_err(to_pyruntime_err)
         })
     }
 }

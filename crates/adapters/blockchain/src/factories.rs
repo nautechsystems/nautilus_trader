@@ -21,15 +21,12 @@ use nautilus_common::{
     cache::Cache,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::ClientId,
-};
-use nautilus_system::{
-    ExecutionClientFactory,
-    factories::{ClientConfig, DataClientFactory},
 };
 
 use crate::{
@@ -80,7 +77,7 @@ impl Default for BlockchainDataClientFactory {
 impl DataClientFactory for BlockchainDataClientFactory {
     fn create(
         &self,
-        _name: &str,
+        name: &str,
         config: &dyn ClientConfig,
         _cache: Rc<RefCell<Cache>>,
         _clock: Rc<RefCell<dyn Clock>>,
@@ -94,7 +91,7 @@ impl DataClientFactory for BlockchainDataClientFactory {
                 )
             })?;
 
-        let client = BlockchainDataClient::new(blockchain_config.clone());
+        let client = BlockchainDataClient::new(ClientId::from(name), blockchain_config.clone());
 
         Ok(Box::new(client))
     }
@@ -149,7 +146,7 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
             .downcast_ref::<BlockchainExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for BlockchainDataClientFactory. Expected `BlockchainDataClientConfig`, was {config:?}"
+                    "Invalid config type for BlockchainExecutionClientFactory. Expected `BlockchainExecutionClientConfig`, was {config:?}"
                 )
             })?;
 
@@ -185,8 +182,8 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
 mod tests {
     use std::sync::Arc;
 
+    use nautilus_common::factories::DataClientFactory;
     use nautilus_model::defi::chain::{Blockchain, chains};
-    use nautilus_system::factories::DataClientFactory;
     use rstest::rstest;
 
     use crate::{config::BlockchainDataClientConfig, factories::BlockchainDataClientFactory};
@@ -194,18 +191,10 @@ mod tests {
     #[rstest]
     fn test_blockchain_data_client_config_creation() {
         let chain = Arc::new(chains::ETHEREUM.clone());
-        let config = BlockchainDataClientConfig::new(
-            chain,
-            vec![],
-            "https://eth-mainnet.example.com".to_string(),
-            None,
-            None,
-            None,
-            false,
-            None,
-            None,
-            None,
-        );
+        let config = BlockchainDataClientConfig::builder()
+            .chain(chain)
+            .http_rpc_url("https://eth-mainnet.example.com".to_string())
+            .build();
 
         assert_eq!(config.chain.name, Blockchain::Ethereum);
         assert_eq!(config.http_rpc_url, "https://eth-mainnet.example.com");

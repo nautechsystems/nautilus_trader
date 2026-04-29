@@ -413,6 +413,8 @@ impl From<bool> for HyperliquidLiquidityFlag {
 pub enum HyperliquidLiquidationMethod {
     Market,
     Backstop,
+    #[serde(other)]
+    Unknown,
 }
 
 /// Hyperliquid position type/mode.
@@ -642,6 +644,9 @@ pub enum HyperliquidOrderStatus {
     /// Order rejected due to minimum trade notional.
     #[serde(rename = "minTradeNtlRejected")]
     MinTradeNtlRejected,
+    /// Order rejected due to minimum spot trade notional.
+    #[serde(rename = "minTradeSpotNtlRejected")]
+    MinTradeSpotNtlRejected,
     /// Order rejected due to perp margin.
     #[serde(rename = "perpMarginRejected")]
     PerpMarginRejected,
@@ -704,6 +709,7 @@ impl From<HyperliquidOrderStatus> for OrderStatus {
             HyperliquidOrderStatus::Rejected
             | HyperliquidOrderStatus::TickRejected
             | HyperliquidOrderStatus::MinTradeNtlRejected
+            | HyperliquidOrderStatus::MinTradeSpotNtlRejected
             | HyperliquidOrderStatus::PerpMarginRejected
             | HyperliquidOrderStatus::ReduceOnlyRejected
             | HyperliquidOrderStatus::BadAloPxRejected
@@ -772,6 +778,10 @@ pub enum HyperliquidFillDirection {
     #[serde(rename = "Short > Long")]
     #[strum(serialize = "Short > Long")]
     ShortToLong,
+    /// Auto-deleveraging counterparty fill (perp ADL event).
+    #[serde(rename = "Auto-Deleveraging")]
+    #[strum(serialize = "Auto-Deleveraging")]
+    AutoDeleveraging,
     /// Buying an asset (spot only).
     Buy,
     /// Selling an asset (spot only).
@@ -830,8 +840,6 @@ pub enum HyperliquidInfoRequestType {
     CandleSnapshot,
     /// Get candle/bar data (WS post).
     Candle,
-    /// Get recent trades.
-    RecentTrades,
     /// Get historical orders.
     HistoricalOrders,
     /// Get funding history.
@@ -881,7 +889,6 @@ impl HyperliquidInfoRequestType {
             Self::ExchangeStatus => "exchangeStatus",
             Self::CandleSnapshot => "candleSnapshot",
             Self::Candle => "candle",
-            Self::RecentTrades => "recentTrades",
             Self::HistoricalOrders => "historicalOrders",
             Self::FundingHistory => "fundingHistory",
             Self::UserFunding => "userFunding",
@@ -963,6 +970,46 @@ impl HyperliquidProductType {
             anyhow::bail!("Invalid Hyperliquid symbol format: {symbol}")
         }
     }
+}
+
+/// Hyperliquid API environment.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(ascii_case_insensitive, serialize_all = "lowercase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.hyperliquid")
+)]
+pub enum HyperliquidEnvironment {
+    /// Mainnet trading environment.
+    #[default]
+    Mainnet,
+    /// Testnet environment.
+    Testnet,
 }
 
 #[cfg(test)]

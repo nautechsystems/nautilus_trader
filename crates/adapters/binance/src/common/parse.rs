@@ -315,6 +315,7 @@ fn sbe_mantissa_precision(mantissa: i64, exponent: i8) -> u8 {
     }
     let mut m = mantissa.abs();
     let mut trailing_zeros: i8 = 0;
+
     while m > 0 && m % 10 == 0 {
         m /= 10;
         trailing_zeros += 1;
@@ -574,7 +575,6 @@ pub const fn map_time_in_force_sbe(tif: SbeTimeInForce) -> TimeInForce {
 /// # Errors
 ///
 /// Returns an error if any field cannot be parsed.
-#[allow(clippy::too_many_arguments)]
 pub fn parse_order_status_report_sbe(
     order: &BinanceOrderResponse,
     account_id: AccountId,

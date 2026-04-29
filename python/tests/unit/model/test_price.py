@@ -676,6 +676,55 @@ def test_is_positive():
     assert not Price(0, 0).is_positive()
 
 
+def test_checked_add_within_bounds():
+    assert Price(10.0, 2).checked_add(Price(5.0, 2)) == Price(15.0, 2)
+    assert Price(10.0, 2).checked_add(Price(-3.0, 2)) == Price(7.0, 2)
+
+
+def test_checked_sub_within_bounds():
+    assert Price(10.0, 2).checked_sub(Price(3.0, 2)) == Price(7.0, 2)
+    assert Price(3.0, 2).checked_sub(Price(10.0, 2)) == Price(-7.0, 2)
+
+
+def test_checked_arith_uses_max_precision():
+    sum_ = Price(10.5, 1).checked_add(Price(5.25, 2))
+    assert sum_ is not None
+    assert sum_.precision == 2
+    assert float(sum_) == 15.75
+
+
+def test_checked_add_above_max_returns_none():
+    price_max = 17_014_118_346_046.0 if HIGH_PRECISION else 9_223_372_036.0
+    near_max = Price(price_max, 0)
+    assert near_max.checked_add(Price(1_000_000_000.0, 0)) is None
+
+
+def test_checked_sub_below_min_returns_none():
+    price_min = -17_014_118_346_046.0 if HIGH_PRECISION else -9_223_372_036.0
+    near_min = Price(price_min, 0)
+    assert near_min.checked_sub(Price(1_000_000_000.0, 0)) is None
+
+
+def test_checked_arith_rejects_undef_sentinel():
+    # PRICE_UNDEF == PriceRaw::MAX (i128 or i64 max depending on feature flag)
+    raw_undef = (1 << (PRECISION_BYTES * 8 - 1)) - 1
+    undef = Price.from_raw(raw_undef, 0)
+    one = Price(1.0, 0)
+    assert undef.checked_add(one) is None
+    assert one.checked_add(undef) is None
+    assert undef.checked_sub(one) is None
+    assert one.checked_sub(undef) is None
+
+
+def test_checked_arith_rejects_error_sentinel():
+    # PRICE_ERROR == PriceRaw::MIN (i128 or i64 min depending on feature flag)
+    raw_error = -(1 << (PRECISION_BYTES * 8 - 1))
+    error = Price.from_raw(raw_error, 0)
+    one = Price(1.0, 0)
+    assert error.checked_add(one) is None
+    assert one.checked_sub(error) is None
+
+
 def test_float():
     assert float(Price(1.5, 1)) == 1.5
     assert float(Price(0, 0)) == 0.0

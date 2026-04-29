@@ -47,12 +47,12 @@ pub struct PyGreeksCalculator(GreeksCalculator);
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyGreeksCalculator {
     #[new]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_new(cache: PyCache, clock: PyClock) -> Self {
         Self(GreeksCalculator::new(cache.cache_rc(), clock.clock_rc()))
     }
 
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     #[pyo3(
         name = "instrument_greeks",
         signature = (
@@ -113,7 +113,7 @@ impl PyGreeksCalculator {
             .map_err(to_pyvalue_err)
     }
 
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     #[pyo3(
         name = "modify_greeks",
         signature = (
@@ -162,7 +162,7 @@ impl PyGreeksCalculator {
         )
     }
 
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     #[pyo3(
         name = "portfolio_greeks",
         signature = (

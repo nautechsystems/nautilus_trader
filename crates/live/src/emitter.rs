@@ -37,7 +37,8 @@ use nautilus_core::{UUID4, UnixNanos, time::AtomicTime};
 use nautilus_model::{
     enums::{AccountType, LiquiditySide},
     events::{
-        AccountState, OrderCancelRejected, OrderEventAny, OrderModifyRejected, OrderRejected,
+        AccountState, OrderAcceptedBatch, OrderCancelRejected, OrderCanceledBatch, OrderEventAny,
+        OrderModifyRejected, OrderRejected, OrderSubmittedBatch,
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
@@ -208,7 +209,7 @@ impl ExecutionEventEmitter {
     }
 
     /// Generates and emits an order updated event.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn emit_order_updated(
         &self,
         order: &OrderAny,
@@ -272,7 +273,7 @@ impl ExecutionEventEmitter {
     }
 
     /// Generates and emits an order filled event.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn emit_order_filled(
         &self,
         order: &OrderAny,
@@ -303,7 +304,6 @@ impl ExecutionEventEmitter {
     }
 
     /// Constructs and emits an order rejected event from raw fields.
-    #[allow(clippy::too_many_arguments)]
     pub fn emit_order_rejected_event(
         &self,
         strategy_id: StrategyId,
@@ -330,7 +330,6 @@ impl ExecutionEventEmitter {
     }
 
     /// Constructs and emits an order modify rejected event from raw fields.
-    #[allow(clippy::too_many_arguments)]
     pub fn emit_order_modify_rejected_event(
         &self,
         strategy_id: StrategyId,
@@ -357,7 +356,6 @@ impl ExecutionEventEmitter {
     }
 
     /// Constructs and emits an order cancel rejected event from raw fields.
-    #[allow(clippy::too_many_arguments)]
     pub fn emit_order_cancel_rejected_event(
         &self,
         strategy_id: StrategyId,
@@ -394,6 +392,39 @@ impl ExecutionEventEmitter {
         }
     }
 
+    /// Emits a batch of order submitted events as a single channel message.
+    pub fn send_order_submitted_batch(&self, batch: OrderSubmittedBatch) {
+        if let Some(sender) = &self.sender {
+            if let Err(e) = sender.send(ExecutionEvent::OrderSubmittedBatch(batch)) {
+                log::warn!("Failed to send order submitted batch: {e}");
+            }
+        } else {
+            log::warn!("Cannot send order submitted batch: sender not initialized");
+        }
+    }
+
+    /// Emits a batch of order accepted events as a single channel message.
+    pub fn send_order_accepted_batch(&self, batch: OrderAcceptedBatch) {
+        if let Some(sender) = &self.sender {
+            if let Err(e) = sender.send(ExecutionEvent::OrderAcceptedBatch(batch)) {
+                log::warn!("Failed to send order accepted batch: {e}");
+            }
+        } else {
+            log::warn!("Cannot send order accepted batch: sender not initialized");
+        }
+    }
+
+    /// Emits a batch of order canceled events as a single channel message.
+    pub fn send_order_canceled_batch(&self, batch: OrderCanceledBatch) {
+        if let Some(sender) = &self.sender {
+            if let Err(e) = sender.send(ExecutionEvent::OrderCanceledBatch(batch)) {
+                log::warn!("Failed to send order canceled batch: {e}");
+            }
+        } else {
+            log::warn!("Cannot send order canceled batch: sender not initialized");
+        }
+    }
+
     /// Emits an account state event.
     pub fn send_account_state(&self, state: AccountState) {
         if let Some(sender) = &self.sender {
@@ -424,6 +455,11 @@ impl ExecutionEventEmitter {
     /// Emits a fill report.
     pub fn send_fill_report(&self, report: FillReport) {
         self.send_execution_report(ExecutionReport::Fill(Box::new(report)));
+    }
+
+    /// Emits an order status report bundled with the fills that produced it.
+    pub fn send_order_with_fills(&self, report: OrderStatusReport, fills: Vec<FillReport>) {
+        self.send_execution_report(ExecutionReport::OrderWithFills(Box::new(report), fills));
     }
 
     /// Emits a position status report.

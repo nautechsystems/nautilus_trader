@@ -137,7 +137,7 @@ impl Error {
     }
 
     /// Map reqwest errors to appropriate error types
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn from_reqwest(error: ReqwestError) -> Self {
         if error.is_timeout() {
             Self::Timeout
@@ -158,7 +158,7 @@ impl Error {
     }
 
     /// Map HTTP client errors to appropriate error types
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn from_http_client(error: HttpClientError) -> Self {
         Self::transport(format!("HTTP client error: {error}"))
     }

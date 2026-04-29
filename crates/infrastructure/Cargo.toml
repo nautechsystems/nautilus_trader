@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_infrastructure"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = ["redis"] # redis needed by `nautilus_trader` by default for now

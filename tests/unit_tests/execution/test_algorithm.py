@@ -268,6 +268,7 @@ class TestExecAlgorithm:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal(1)),
+            quote_quantity=True,
             exec_algorithm_id=ExecAlgorithmId("TWAP"),
             exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
         )
@@ -291,6 +292,9 @@ class TestExecAlgorithm:
         assert spawned_order.quantity == spawned_qty
         assert spawned_order.time_in_force == TimeInForce.FOK
         assert spawned_order.is_reduce_only
+        assert spawned_order.is_quote_quantity
+        assert primary_order.is_quote_quantity
+        assert spawned_order.exec_algorithm_params == primary_order.exec_algorithm_params
         assert spawned_order.tags == ["EXIT"]
 
     def test_exec_algorithm_spawn_limit_order(self) -> None:
@@ -314,6 +318,7 @@ class TestExecAlgorithm:
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal(1)),
             price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25")),
+            quote_quantity=True,
             exec_algorithm_id=ExecAlgorithmId("TWAP"),
             exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
         )
@@ -338,6 +343,9 @@ class TestExecAlgorithm:
         assert spawned_order.quantity == spawned_qty
         assert spawned_order.time_in_force == TimeInForce.DAY
         assert not spawned_order.is_reduce_only
+        assert spawned_order.is_quote_quantity
+        assert primary_order.is_quote_quantity
+        assert spawned_order.exec_algorithm_params == primary_order.exec_algorithm_params
         assert spawned_order.tags == ["ENTRY"]
         assert primary_order.is_primary
         assert not primary_order.is_spawned
@@ -408,6 +416,7 @@ class TestExecAlgorithm:
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal(1)),
             price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25")),
+            quote_quantity=True,
             exec_algorithm_id=ExecAlgorithmId("TWAP"),
             exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
         )
@@ -433,7 +442,129 @@ class TestExecAlgorithm:
         assert spawned_order.time_in_force == TimeInForce.GTD
         assert spawned_order.expire_time_ns == 3_600_000_000_000
         assert not spawned_order.is_reduce_only
+        assert spawned_order.is_quote_quantity
+        assert primary_order.is_quote_quantity
+        assert spawned_order.exec_algorithm_params == primary_order.exec_algorithm_params
         assert spawned_order.tags == ["ENTRY"]
+
+    def test_exec_algorithm_spawn_inherits_tags_from_primary(self) -> None:
+        """
+        Test that spawned orders fall back to the primary order's tags when none are
+        passed explicitly.
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal(1)),
+            price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25")),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+            exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
+            tags=["PRIMARY_TAG"],
+        )
+
+        # Act
+        spawned_qty = ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.5"))
+        spawned_market = exec_algorithm.spawn_market(
+            primary=primary_order,
+            quantity=spawned_qty,
+            reduce_primary=False,
+        )
+        spawned_limit = exec_algorithm.spawn_limit(
+            primary=primary_order,
+            quantity=spawned_qty,
+            price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25")),
+            reduce_primary=False,
+        )
+        spawned_mtl = exec_algorithm.spawn_market_to_limit(
+            primary=primary_order,
+            quantity=spawned_qty,
+            reduce_primary=False,
+        )
+
+        # Assert
+        assert spawned_market.tags == ["PRIMARY_TAG"]
+        assert spawned_limit.tags == ["PRIMARY_TAG"]
+        assert spawned_mtl.tags == ["PRIMARY_TAG"]
+
+    @pytest.mark.parametrize(
+        "spawn_method",
+        ["spawn_market", "spawn_limit", "spawn_market_to_limit"],
+    )
+    def test_exec_algorithm_spawn_clones_primary_containers(
+        self,
+        spawn_method: str,
+    ) -> None:
+        """
+        Test that spawned orders receive independent copies of the primary's mutable
+        metadata, so mutating the spawned order's containers does not leak back into the
+        primary order.
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal(1)),
+            price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25")),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+            exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
+            tags=["PRIMARY_TAG"],
+        )
+
+        spawned_qty = ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.5"))
+        spawn_price = ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25"))
+
+        if spawn_method == "spawn_market":
+            spawned_order = exec_algorithm.spawn_market(
+                primary=primary_order,
+                quantity=spawned_qty,
+                reduce_primary=False,
+            )
+        elif spawn_method == "spawn_limit":
+            spawned_order = exec_algorithm.spawn_limit(
+                primary=primary_order,
+                quantity=spawned_qty,
+                price=spawn_price,
+                reduce_primary=False,
+            )
+        else:
+            spawned_order = exec_algorithm.spawn_market_to_limit(
+                primary=primary_order,
+                quantity=spawned_qty,
+                reduce_primary=False,
+            )
+
+        # Act: mutate spawned order's containers
+        spawned_order.exec_algorithm_params["horizon_secs"] = 999
+        spawned_order.exec_algorithm_params["extra"] = "CHILD_ONLY"
+        spawned_order.tags.append("CHILD_TAG")
+
+        # Assert: primary order is unaffected
+        assert primary_order.exec_algorithm_params == {
+            "horizon_secs": 2,
+            "interval_secs": 1,
+        }
+        assert primary_order.tags == ["PRIMARY_TAG"]
 
     def test_exec_algorithm_modify_order_in_place(self) -> None:
         """
@@ -476,6 +607,40 @@ class TestExecAlgorithm:
         # Assert
         assert isinstance(primary_order.last_event, OrderUpdated)
         assert primary_order.price == new_price
+
+    def test_exec_algorithm_modify_order_in_place_preserves_quote_quantity(self) -> None:
+        """
+        Test that modify_order_in_place preserves the is_quote_quantity flag on the
+        target order when applying the OrderUpdated event.
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal(1)),
+            price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25")),
+            quote_quantity=True,
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+            exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
+        )
+
+        # Act
+        new_price = ETHUSDT_PERP_BINANCE.make_price(Decimal("5001.0"))
+        exec_algorithm.modify_order_in_place(primary_order, price=new_price)
+
+        # Assert
+        assert primary_order.price == new_price
+        assert primary_order.is_quote_quantity
 
     def test_exec_algorithm_modify_order(self) -> None:
         """
@@ -1146,6 +1311,70 @@ class TestExecAlgorithm:
 
         # Assert
         assert primary_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000"))
+
+    def test_spawned_order_denied_preserves_primary_quote_quantity(self) -> None:
+        """
+        Test that when a spawned order is denied, restoring the primary order quantity
+        does not strip its is_quote_quantity flag.
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000")),
+            quote_quantity=True,
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+        )
+        self.cache.add_order(primary_order)
+
+        submit_command = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=primary_order.strategy_id,
+            order=primary_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        exec_algorithm.execute(submit_command)
+
+        spawned_qty = ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.500"))
+        spawned_order = exec_algorithm.spawn_market(
+            primary=primary_order,
+            quantity=spawned_qty,
+            time_in_force=TimeInForce.FOK,
+        )
+        assert primary_order.is_quote_quantity
+        self.cache.add_order(spawned_order)
+
+        # Act
+        denied_event = OrderDenied(
+            trader_id=spawned_order.trader_id,
+            strategy_id=spawned_order.strategy_id,
+            instrument_id=spawned_order.instrument_id,
+            client_order_id=spawned_order.client_order_id,
+            reason="TEST_DENIAL",
+            event_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        spawned_order.apply(denied_event)
+        self.cache.update_order(spawned_order)
+        self.msgbus.publish(
+            topic=f"events.order.{spawned_order.strategy_id.value}",
+            msg=denied_event,
+        )
+
+        # Assert
+        assert primary_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000"))
+        assert primary_order.is_quote_quantity
 
     def test_spawned_order_with_reduce_primary_false_does_not_restore_on_denial(self) -> None:
         """

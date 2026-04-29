@@ -102,6 +102,7 @@ async fn test_replay_stream_receives_trade() {
     futures_util::pin_mut!(stream);
 
     let mut received = Vec::new();
+
     while let Some(result) = stream.next().await {
         match result {
             Ok(data) => received.push(data),
@@ -135,6 +136,7 @@ async fn test_disconnect_message_skipped() {
     futures_util::pin_mut!(stream);
 
     let mut received = Vec::new();
+
     while let Some(result) = stream.next().await {
         if let Ok(data) = result {
             received.push(data);
@@ -189,6 +191,7 @@ async fn test_replay_stream_receives_book_deltas() {
     futures_util::pin_mut!(stream);
 
     let mut received = Vec::new();
+
     while let Some(result) = stream.next().await {
         if let Ok(data) = result {
             received.push(data);
@@ -230,6 +233,7 @@ async fn test_replay_stream_receives_bar() {
     futures_util::pin_mut!(stream);
 
     let mut received = Vec::new();
+
     while let Some(result) = stream.next().await {
         if let Ok(data) = result {
             received.push(data);
@@ -274,6 +278,7 @@ async fn test_replay_stream_multiple_message_types() {
     futures_util::pin_mut!(stream);
 
     let mut received = Vec::new();
+
     while let Some(result) = stream.next().await {
         if let Ok(data) = result {
             received.push(data);
@@ -315,6 +320,7 @@ async fn test_replay_stream_malformed_message_continues() {
 
     let mut data_count = 0;
     let mut error_count = 0;
+
     while let Some(result) = stream.next().await {
         match result {
             Ok(_) => data_count += 1,

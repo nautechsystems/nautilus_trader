@@ -35,13 +35,18 @@ use nautilus_model::{
 use nautilus_network::{
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, SubscriptionState, WebSocketClient, WebSocketConfig, channel_message_handler,
+        AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
+        channel_message_handler,
     },
 };
 use ustr::Ustr;
 
 use crate::{
-    common::{enums::HyperliquidBarInterval, parse::bar_type_to_interval},
+    common::{
+        consts::ws_url,
+        enums::{HyperliquidBarInterval, HyperliquidEnvironment},
+        parse::bar_type_to_interval,
+    },
     websocket::{
         enums::HyperliquidWsChannel,
         handler::{FeedHandler, HandlerCommand},
@@ -89,6 +94,8 @@ pub struct HyperliquidWebSocketClient {
     cloid_cache: Arc<DashMap<Ustr, ClientOrderId>>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
     account_id: Option<AccountId>,
+    transport_backend: TransportBackend,
+    proxy_url: Option<String>,
 }
 
 impl Clone for HyperliquidWebSocketClient {
@@ -107,6 +114,8 @@ impl Clone for HyperliquidWebSocketClient {
             cloid_cache: Arc::clone(&self.cloid_cache),
             task_handle: None,
             account_id: self.account_id,
+            transport_backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         }
     }
 }
@@ -114,19 +123,19 @@ impl Clone for HyperliquidWebSocketClient {
 impl HyperliquidWebSocketClient {
     /// Creates a new Hyperliquid WebSocket client without connecting.
     ///
-    /// If `url` is `None`, the appropriate URL will be determined based on the `testnet` flag:
-    /// - `testnet=false`: `wss://api.hyperliquid.xyz/ws`
-    /// - `testnet=true`: `wss://api.hyperliquid-testnet.xyz/ws`
+    /// If `url` is `None`, the appropriate URL will be determined from the `environment`:
+    /// - `Mainnet`: `wss://api.hyperliquid.xyz/ws`
+    /// - `Testnet`: `wss://api.hyperliquid-testnet.xyz/ws`
     ///
     /// The connection will be established when `connect()` is called.
-    pub fn new(url: Option<String>, testnet: bool, account_id: Option<AccountId>) -> Self {
-        let url = url.unwrap_or_else(|| {
-            if testnet {
-                "wss://api.hyperliquid-testnet.xyz/ws".to_string()
-            } else {
-                "wss://api.hyperliquid.xyz/ws".to_string()
-            }
-        });
+    pub fn new(
+        url: Option<String>,
+        environment: HyperliquidEnvironment,
+        account_id: Option<AccountId>,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
+    ) -> Self {
+        let url = url.unwrap_or_else(|| ws_url(environment).to_string());
         let connection_mode = Arc::new(ArcSwap::new(Arc::new(AtomicU8::new(
             ConnectionMode::Closed as u8,
         ))));
@@ -148,6 +157,8 @@ impl HyperliquidWebSocketClient {
             out_rx: None,
             task_handle: None,
             account_id,
+            transport_backend,
+            proxy_url,
         }
     }
 
@@ -170,6 +181,8 @@ impl HyperliquidWebSocketClient {
             reconnect_jitter_ms: Some(200),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
         let client =
             WebSocketClient::connect(cfg, Some(message_handler), None, None, vec![], None).await?;
@@ -230,6 +243,7 @@ impl HyperliquidWebSocketClient {
                     "Resubscribing to {} active subscriptions after reconnection",
                     topics.len()
                 );
+
                 for topic in topics {
                     match subscription_from_topic(&topic) {
                         Ok(subscription) => {
@@ -247,6 +261,7 @@ impl HyperliquidWebSocketClient {
                     }
                 }
             };
+
             loop {
                 match handler.next().await {
                     Some(NautilusWsMessage::Reconnected) => {
@@ -352,6 +367,7 @@ impl HyperliquidWebSocketClient {
     /// - Spot uses @{pair_index} format (e.g., "@107") or slash format for PURR
     pub fn cache_instruments(&mut self, instruments: Vec<InstrumentAny>) {
         let mut map = AHashMap::new();
+
         for inst in instruments {
             let coin = inst.raw_symbol().inner();
             map.insert(coin, inst);
@@ -473,6 +489,18 @@ impl HyperliquidWebSocketClient {
 
     /// Subscribe to L2 order book for an instrument.
     pub async fn subscribe_book(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        self.subscribe_book_with_options(instrument_id, None, None)
+            .await
+    }
+
+    /// Subscribe to L2 order book with optional `nSigFigs` / `mantissa`
+    /// precision controls passed through to the venue's `l2Book` stream.
+    pub async fn subscribe_book_with_options(
+        &self,
+        instrument_id: InstrumentId,
+        n_sig_figs: Option<u32>,
+        mantissa: Option<u32>,
+    ) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
             .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
@@ -487,8 +515,8 @@ impl HyperliquidWebSocketClient {
 
         let subscription = SubscriptionRequest::L2Book {
             coin,
-            mantissa: None,
-            n_sig_figs: None,
+            mantissa,
+            n_sig_figs,
         };
 
         cmd_tx
@@ -496,6 +524,82 @@ impl HyperliquidWebSocketClient {
                 subscriptions: vec![subscription],
             })
             .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
+        Ok(())
+    }
+
+    /// Subscribe to order book depth-10 snapshots.
+    ///
+    /// Reuses the same `l2Book` WebSocket subscription as
+    /// [`Self::subscribe_book`] and flags the handler to additionally emit
+    /// `NautilusWsMessage::Depth10` for this coin.
+    pub async fn subscribe_book_depth10(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        self.subscribe_book_depth10_with_options(instrument_id, None, None)
+            .await
+    }
+
+    /// Subscribe to depth-10 snapshots with optional `nSigFigs` /
+    /// `mantissa` precision controls.
+    pub async fn subscribe_book_depth10_with_options(
+        &self,
+        instrument_id: InstrumentId,
+        n_sig_figs: Option<u32>,
+        mantissa: Option<u32>,
+    ) -> anyhow::Result<()> {
+        let instrument = self
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let coin = instrument.raw_symbol().inner();
+
+        let cmd_tx = self.cmd_tx.read().await;
+
+        cmd_tx
+            .send(HandlerCommand::UpdateInstrument(instrument.clone()))
+            .map_err(|e| anyhow::anyhow!("Failed to send UpdateInstrument command: {e}"))?;
+
+        cmd_tx
+            .send(HandlerCommand::SetDepth10Sub {
+                coin,
+                subscribed: true,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send SetDepth10Sub command: {e}"))?;
+
+        let subscription = SubscriptionRequest::L2Book {
+            coin,
+            mantissa,
+            n_sig_figs,
+        };
+
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                subscriptions: vec![subscription],
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
+        Ok(())
+    }
+
+    /// Unsubscribe from order book depth-10 snapshots.
+    ///
+    /// Clears the depth10 emission flag only; the underlying `l2Book`
+    /// stream stays open so active deltas subscribers keep receiving
+    /// updates. Call [`Self::unsubscribe_book`] separately to tear down
+    /// the stream entirely.
+    pub async fn unsubscribe_book_depth10(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<()> {
+        let instrument = self
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let coin = instrument.raw_symbol().inner();
+
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::SetDepth10Sub {
+                coin,
+                subscribed: false,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send SetDepth10Sub command: {e}"))?;
         Ok(())
     }
 

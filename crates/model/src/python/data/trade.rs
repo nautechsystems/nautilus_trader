@@ -291,7 +291,7 @@ impl TradeTick {
 
     #[staticmethod]
     #[pyo3(name = "from_raw")]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_from_raw(
         instrument_id: InstrumentId,
         price_raw: PriceRaw,
@@ -354,7 +354,7 @@ impl TradeTick {
         self.to_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
-    /// Return MsgPack encoded bytes representation of the object.
+    /// Return `MsgPack` encoded bytes representation of the object.
     #[pyo3(name = "to_msgpack_bytes")]
     fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
         self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)

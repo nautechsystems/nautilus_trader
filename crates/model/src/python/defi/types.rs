@@ -103,9 +103,9 @@ impl Chain {
     #[staticmethod]
     #[pyo3(name = "from_chain_name")]
     fn py_from_chain_name(chain_name: &str) -> PyResult<Self> {
-        Self::from_chain_name(chain_name).cloned().ok_or_else(|| {
-            to_pyvalue_err(format!("`chain_name` '{chain_name}' is not recognized",))
-        })
+        Self::from_chain_name(chain_name)
+            .cloned()
+            .ok_or_else(|| to_pyvalue_err(format!("`chain_name` '{chain_name}' is not recognized")))
     }
 
     /// Returns a reference to the `Chain` corresponding to the given `chain_id`, or `None` if it is not found.
@@ -127,7 +127,7 @@ impl Chain {
 impl Token {
     /// Represents a cryptocurrency token on a blockchain network.
     #[new]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         address: String,
@@ -198,7 +198,7 @@ impl Token {
 impl Dex {
     /// Represents a decentralized exchange (DEX) in a blockchain ecosystem.
     #[new]
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         name: String,
@@ -320,9 +320,9 @@ impl Pool {
     /// - `address` = pool contract address
     /// - `pool_identifier` = same as address (hex string)
     ///
-    /// **UniswapV4**: All pools share a singleton PoolManager contract. Pools are distinguished
+    /// **`UniswapV4`**: All pools share a singleton `PoolManager` contract. Pools are distinguished
     /// by a unique Pool ID (keccak256 hash of currencies, fee, tick spacing, and hooks).
-    /// - `address` = PoolManager contract address (shared by all pools)
+    /// - `address` = `PoolManager` contract address (shared by all pools)
     /// - `pool_identifier` = Pool ID (bytes32 as hex string)
     ///
     /// ## Instrument ID Format
@@ -335,7 +335,7 @@ impl Pool {
     ///
     /// Example: `0x11b815efB8f581194ae79006d24E0d814B7697F6.Ethereum:UniswapV3`
     #[new]
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         chain: Chain,
         dex: Dex,

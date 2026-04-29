@@ -38,6 +38,7 @@ use nautilus_binance::{
     futures::websocket::streams::client::BinanceFuturesWebSocketClient,
 };
 use nautilus_common::testing::wait_until_async;
+use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
 use serde_json::json;
 
@@ -273,6 +274,7 @@ fn create_test_client(addr: &SocketAddr) -> BinanceFuturesWebSocketClient {
         None,
         Some(ws_url),
         None,
+        TransportBackend::default(),
     )
     .unwrap()
 }
@@ -589,6 +591,7 @@ async fn test_connection_failure_invalid_url() {
         None,
         Some("ws://127.0.0.1:9999/invalid".to_string()),
         None,
+        TransportBackend::default(),
     );
 
     let mut client = result.unwrap();
@@ -607,6 +610,7 @@ async fn test_default_client_creation_usdm() {
         None,
         None,
         None,
+        TransportBackend::default(),
     )
     .unwrap();
 
@@ -625,6 +629,7 @@ async fn test_default_client_creation_coinm() {
         None,
         None,
         None,
+        TransportBackend::default(),
     )
     .unwrap();
 
@@ -643,6 +648,7 @@ async fn test_invalid_product_type_rejected() {
         None,
         None,
         None,
+        TransportBackend::default(),
     );
 
     assert!(result.is_err());

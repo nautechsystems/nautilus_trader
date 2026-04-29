@@ -20,6 +20,7 @@ from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
+from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -76,6 +77,10 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `funding_rates` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef list instrument_statuses(self, InstrumentId instrument_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `instrument_statuses` must be implemented in the subclass")  # pragma: no cover
+
     cpdef list bars(self, BarType bar_type):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `bars` must be implemented in the subclass")  # pragma: no cover
@@ -124,6 +129,10 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `funding_rate` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef InstrumentStatus instrument_status(self, InstrumentId instrument_id, int index=0):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `instrument_status` must be implemented in the subclass")  # pragma: no cover
+
     cpdef Bar bar(self, BarType bar_type, int index=0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `bar` must be implemented in the subclass")  # pragma: no cover
@@ -152,6 +161,10 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `funding_rate_count` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef int instrument_status_count(self, InstrumentId instrument_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `instrument_status_count` must be implemented in the subclass")  # pragma: no cover
+
     cpdef int bar_count(self, BarType bar_type):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `bar_count` must be implemented in the subclass")  # pragma: no cover
@@ -179,6 +192,10 @@ cdef class CacheFacade:
     cpdef bint has_funding_rates(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `has_funding_rates` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef bint has_instrument_statuses(self, InstrumentId instrument_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `has_instrument_statuses` must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint has_bars(self, BarType bar_type):
         """Abstract method (implement in subclass)."""

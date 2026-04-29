@@ -43,7 +43,7 @@ use nautilus_common::{
         },
     },
 };
-use nautilus_core::{AtomicMap, MUTEX_POISONED, string::REDACTED, time::AtomicTime};
+use nautilus_core::{AtomicMap, MUTEX_POISONED, string::secret::REDACTED, time::AtomicTime};
 use nautilus_model::{
     enums::BarAggregation,
     identifiers::{ClientId, Symbol, Venue},
@@ -74,10 +74,6 @@ pub struct DatabentoDataClientConfig {
     pub bars_timestamp_on_close: bool,
     /// Reconnection timeout in minutes (None for infinite retries).
     pub reconnect_timeout_mins: Option<u64>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    pub ws_proxy_url: Option<String>,
 }
 
 impl Debug for DatabentoDataClientConfig {
@@ -88,8 +84,6 @@ impl Debug for DatabentoDataClientConfig {
             .field("use_exchange_as_venue", &self.use_exchange_as_venue)
             .field("bars_timestamp_on_close", &self.bars_timestamp_on_close)
             .field("reconnect_timeout_mins", &self.reconnect_timeout_mins)
-            .field("http_proxy_url", &self.http_proxy_url)
-            .field("ws_proxy_url", &self.ws_proxy_url)
             .finish()
     }
 }
@@ -109,8 +103,6 @@ impl DatabentoDataClientConfig {
             use_exchange_as_venue,
             bars_timestamp_on_close,
             reconnect_timeout_mins: Some(10), // Default: 10 minutes
-            http_proxy_url: None,
-            ws_proxy_url: None,
         }
     }
 
@@ -294,6 +286,7 @@ impl DatabentoDataClient {
         // Spawn message processing task with cancellation support
         let msg_handle = get_runtime().spawn(async move {
             let mut msg_rx = msg_rx;
+
             loop {
                 tokio::select! {
                     msg = msg_rx.recv() => {
@@ -479,7 +472,7 @@ impl DataClient for DatabentoDataClient {
     /// # Errors
     ///
     /// Returns an error if the subscription request fails.
-    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
         log::debug!("Subscribe instrument: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
@@ -514,7 +507,7 @@ impl DataClient for DatabentoDataClient {
     /// # Errors
     ///
     /// Returns an error if the subscription request fails.
-    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
+    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         log::debug!("Subscribe quotes: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
@@ -549,7 +542,7 @@ impl DataClient for DatabentoDataClient {
     /// # Errors
     ///
     /// Returns an error if the subscription request fails.
-    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         log::debug!("Subscribe trades: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
@@ -584,7 +577,7 @@ impl DataClient for DatabentoDataClient {
     /// # Errors
     ///
     /// Returns an error if the subscription request fails.
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         log::debug!("Subscribe book deltas: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
@@ -621,7 +614,7 @@ impl DataClient for DatabentoDataClient {
     /// Returns an error if the subscription request fails.
     fn subscribe_instrument_status(
         &mut self,
-        cmd: &SubscribeInstrumentStatus,
+        cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         log::debug!("Subscribe instrument status: {cmd:?}");
 

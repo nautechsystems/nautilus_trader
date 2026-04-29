@@ -36,7 +36,7 @@ impl IndexInstrument {
     /// Represents a generic index instrument.
     ///
     /// An index is typically not directly tradable.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (instrument_id, raw_symbol, currency, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, info=None))]
     fn py_new(
@@ -150,6 +150,7 @@ impl IndexInstrument {
     fn py_info(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         if let Some(ref info_map) = self.info {
             let py_dict = PyDict::new(py);
+
             for (key, value) in info_map {
                 let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
                 let py_value =
@@ -184,6 +185,7 @@ impl IndexInstrument {
 
         if let Some(ref info_map) = self.info {
             let info_dict = PyDict::new(py);
+
             for (key, value) in info_map {
                 let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
                 let py_value =

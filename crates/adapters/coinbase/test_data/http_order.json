@@ -1,0 +1,46 @@
+{
+  "order": {
+    "order_id": "0000-000000-000000",
+    "product_id": "BTC-USD",
+    "user_id": "2222-000000-000000",
+    "order_configuration": {
+      "limit_limit_gtc": {
+        "base_size": "0.001",
+        "limit_price": "10000.00",
+        "post_only": false
+      }
+    },
+    "side": "BUY",
+    "client_order_id": "11111-000000-000000",
+    "status": "OPEN",
+    "time_in_force": "GOOD_UNTIL_CANCELLED",
+    "created_time": "2021-05-31T09:59:59Z",
+    "completion_percentage": "50",
+    "filled_size": "0.001",
+    "average_filled_price": "50",
+    "fee": "0.00",
+    "number_of_fills": "2",
+    "filled_value": "10000",
+    "pending_cancel": false,
+    "size_in_quote": false,
+    "total_fees": "5.00",
+    "size_inclusive_of_fees": false,
+    "total_value_after_fees": "10000",
+    "trigger_status": "INVALID_ORDER_TYPE",
+    "order_type": "LIMIT",
+    "reject_reason": "REJECT_REASON_UNSPECIFIED",
+    "settled": false,
+    "product_type": "SPOT",
+    "reject_message": "",
+    "cancel_message": "",
+    "order_placement_source": "RETAIL_ADVANCED",
+    "outstanding_hold_amount": "1.00",
+    "is_liquidation": false,
+    "last_fill_time": "2021-05-31T10:30:00Z",
+    "leverage": "",
+    "margin_type": "CROSS",
+    "retail_portfolio_id": "",
+    "originating_order_id": "",
+    "attached_order_id": ""
+  }
+}

@@ -209,7 +209,7 @@ impl DatabentoLiveClient {
 
     #[pyo3(name = "subscribe")]
     #[pyo3(signature = (schema, instrument_ids, start=None, snapshot=None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_subscribe(
         &mut self,
         schema: String,

@@ -152,6 +152,7 @@ impl FeedHandler {
     /// because we explicitly check that `msgs` is not empty before calling it.
     pub async fn run(&mut self) {
         log::debug!("WebSocket handler started");
+
         loop {
             // First drain any buffered messages
             if !self.message_buffer.is_empty() {
@@ -319,6 +320,7 @@ impl FeedHandler {
             "Handling feed message: {:?}",
             std::mem::discriminant(&feed_msg)
         );
+
         match feed_msg {
             DydxWsFeedMessage::Subaccounts(msg) => self.handle_subaccounts(msg),
             DydxWsFeedMessage::Orderbook(msg) => self.handle_orderbook(msg),
@@ -489,6 +491,7 @@ impl FeedHandler {
                 let topic =
                     self.topic_from_msg(&DydxWsChannel::BlockHeight, &Some(data.id.clone()));
                 self.subscriptions.confirm_subscribe(&topic);
+
                 match data.contents.height.parse::<u64>() {
                     Ok(height) => vec![DydxWsOutputMessage::BlockHeight {
                         height,
@@ -525,6 +528,7 @@ impl FeedHandler {
             log::error!("Missing id for trades channel");
             return vec![];
         };
+
         match serde_json::from_value::<DydxTradeContents>(data.contents.clone()) {
             Ok(contents) => vec![DydxWsOutputMessage::Trades { id, contents }],
             Err(e) => {
@@ -542,6 +546,7 @@ impl FeedHandler {
             log::error!("Missing id for orderbook snapshot");
             return vec![];
         };
+
         match serde_json::from_value::<DydxOrderbookSnapshotContents>(data.contents.clone()) {
             Ok(contents) => vec![DydxWsOutputMessage::OrderbookSnapshot { id, contents }],
             Err(e) => {
@@ -559,6 +564,7 @@ impl FeedHandler {
             log::error!("Missing id for orderbook update");
             return vec![];
         };
+
         match serde_json::from_value::<DydxOrderbookContents>(data.contents.clone()) {
             Ok(contents) => vec![DydxWsOutputMessage::OrderbookUpdate { id, contents }],
             Err(e) => {
@@ -576,6 +582,7 @@ impl FeedHandler {
             log::error!("Missing id for orderbook batch");
             return vec![];
         };
+
         match serde_json::from_value::<Vec<DydxOrderbookContents>>(data.contents.clone()) {
             Ok(updates) => vec![DydxWsOutputMessage::OrderbookBatch { id, updates }],
             Err(e) => {
@@ -590,6 +597,7 @@ impl FeedHandler {
             log::error!("Missing id for candles channel");
             return vec![];
         };
+
         match serde_json::from_value::<DydxCandle>(data.contents.clone()) {
             Ok(contents) => vec![DydxWsOutputMessage::Candles { id, contents }],
             Err(e) => {
@@ -720,7 +728,6 @@ impl FeedHandler {
     /// # Errors
     ///
     /// Returns an error if the message cannot be processed.
-    #[allow(clippy::result_large_err)]
     pub async fn handle_message(
         &mut self,
         msg: DydxWsMessage,

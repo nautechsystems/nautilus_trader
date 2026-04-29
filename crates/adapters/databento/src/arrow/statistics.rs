@@ -269,7 +269,7 @@ pub fn decode_statistics_batch(
 /// # Errors
 ///
 /// Returns an error if `data` is empty or encoding fails.
-#[allow(clippy::missing_panics_doc)] // Guarded by empty check
+// Guarded by empty check
 pub fn statistics_to_arrow_record_batch(
     data: &[DatabentoStatistics],
 ) -> Result<RecordBatch, EncodingError> {
@@ -695,6 +695,7 @@ mod tests {
         let buffer = cursor.into_inner();
         let reader = StreamReader::try_new(Cursor::new(buffer), None).unwrap();
         let mut decoded = Vec::new();
+
         for batch_result in reader {
             let batch = batch_result.unwrap();
             let metadata = batch.schema().metadata().clone();

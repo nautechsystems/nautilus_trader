@@ -11,9 +11,11 @@ members = [
   "crates/adapters/databento",
   "crates/adapters/deribit",
   "crates/adapters/dydx",
+  "crates/adapters/coinbase",
   "crates/adapters/hyperliquid",
   "crates/adapters/kraken",
   "crates/adapters/polymarket",
+  "crates/adapters/interactive_brokers",
   "crates/adapters/okx",
   "crates/adapters/sandbox",
   "crates/adapters/tardis",
@@ -42,9 +44,9 @@ members = [
 ]
 
 [workspace.package]
-version = "0.55.0"
+version = "0.56.0"
 edition = "2024"
-rust-version = "1.94.1"
+rust-version = "1.95.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
 readme = "README.md"
@@ -62,48 +64,50 @@ repository = "https://github.com/nautechsystems/nautilus_trader"
 homepage = "https://nautilustrader.io"
 
 [workspace.dependencies]
-nautilus-analysis = { path = "crates/analysis", version = "0.55.0" }
-nautilus-backtest = { path = "crates/backtest", version = "0.55.0" }
-nautilus-cli = { path = "crates/cli", version = "0.55.0" }
-nautilus-common = { path = "crates/common", version = "0.55.0" }
-nautilus-core = { path = "crates/core", version = "0.55.0" }
-nautilus-cryptography = { path = "crates/cryptography", version = "0.55.0" }
-nautilus-data = { path = "crates/data", version = "0.55.0" }
-nautilus-execution = { path = "crates/execution", version = "0.55.0" }
-nautilus-indicators = { path = "crates/indicators", version = "0.55.0" }
-nautilus-infrastructure = { path = "crates/infrastructure", version = "0.55.0" }
-nautilus-live = { path = "crates/live", version = "0.55.0" }
-nautilus-model = { path = "crates/model", version = "0.55.0" }
-nautilus-network = { path = "crates/network", version = "0.55.0" }
-nautilus-persistence = { path = "crates/persistence", version = "0.55.0" }
-nautilus-persistence-macros = { path = "crates/persistence/macros", version = "0.55.0" }
-nautilus-portfolio = { path = "crates/portfolio", version = "0.55.0" }
-nautilus-pyo3 = { path = "crates/pyo3", version = "0.55.0" }
-nautilus-risk = { path = "crates/risk", version = "0.55.0" }
-nautilus-serialization = { path = "crates/serialization", version = "0.55.0" }
-nautilus-system = { path = "crates/system", version = "0.55.0" }
-nautilus-testkit = { path = "crates/testkit", version = "0.55.0" }
-nautilus-trading = { path = "crates/trading", version = "0.55.0" }
+nautilus-analysis = { path = "crates/analysis", version = "0.56.0" }
+nautilus-backtest = { path = "crates/backtest", version = "0.56.0" }
+nautilus-cli = { path = "crates/cli", version = "0.56.0" }
+nautilus-common = { path = "crates/common", version = "0.56.0" }
+nautilus-core = { path = "crates/core", version = "0.56.0" }
+nautilus-cryptography = { path = "crates/cryptography", version = "0.56.0" }
+nautilus-data = { path = "crates/data", version = "0.56.0" }
+nautilus-execution = { path = "crates/execution", version = "0.56.0" }
+nautilus-indicators = { path = "crates/indicators", version = "0.56.0" }
+nautilus-infrastructure = { path = "crates/infrastructure", version = "0.56.0" }
+nautilus-live = { path = "crates/live", version = "0.56.0", default-features = false }
+nautilus-model = { path = "crates/model", version = "0.56.0" }
+nautilus-network = { path = "crates/network", version = "0.56.0" }
+nautilus-persistence = { path = "crates/persistence", version = "0.56.0" }
+nautilus-persistence-macros = { path = "crates/persistence/macros", version = "0.56.0" }
+nautilus-portfolio = { path = "crates/portfolio", version = "0.56.0" }
+nautilus-pyo3 = { path = "crates/pyo3", version = "0.56.0" }
+nautilus-risk = { path = "crates/risk", version = "0.56.0" }
+nautilus-serialization = { path = "crates/serialization", version = "0.56.0" }
+nautilus-system = { path = "crates/system", version = "0.56.0" }
+nautilus-testkit = { path = "crates/testkit", version = "0.56.0" }
+nautilus-trading = { path = "crates/trading", version = "0.56.0" }
 
 # -----------------------------------------------------------------------------
 # Adapters
 #
 # Note: default-features = false to control high-precision separately (not supported on Windows)
 # -----------------------------------------------------------------------------
-nautilus-architect-ax = { path = "crates/adapters/architect_ax", version = "0.55.0" }
-nautilus-binance = { path = "crates/adapters/binance", version = "0.55.0", default-features = false }
-nautilus-bitmex = { path = "crates/adapters/bitmex", version = "0.55.0", default-features = false }
-nautilus-blockchain = { path = "crates/adapters/blockchain", version = "0.55.0" }
-nautilus-bybit = { path = "crates/adapters/bybit", version = "0.55.0", default-features = false }
-nautilus-databento = { path = "crates/adapters/databento", version = "0.55.0", default-features = false }
-nautilus-deribit = { path = "crates/adapters/deribit", version = "0.55.0", default-features = false }
-nautilus-dydx = { path = "crates/adapters/dydx", version = "0.55.0", default-features = false }
-nautilus-hyperliquid = { path = "crates/adapters/hyperliquid", version = "0.55.0", default-features = false }
-nautilus-kraken = { path = "crates/adapters/kraken", version = "0.55.0", default-features = false }
-nautilus-okx = { path = "crates/adapters/okx", version = "0.55.0", default-features = false }
-nautilus-polymarket = { path = "crates/adapters/polymarket", version = "0.55.0", default-features = false }
-nautilus-sandbox = { path = "crates/adapters/sandbox", version = "0.55.0", default-features = false }
-nautilus-tardis = { path = "crates/adapters/tardis", version = "0.55.0", default-features = false }
+nautilus-architect-ax = { path = "crates/adapters/architect_ax", version = "0.56.0" }
+nautilus-binance = { path = "crates/adapters/binance", version = "0.56.0", default-features = false }
+nautilus-bitmex = { path = "crates/adapters/bitmex", version = "0.56.0", default-features = false }
+nautilus-blockchain = { path = "crates/adapters/blockchain", version = "0.56.0" }
+nautilus-bybit = { path = "crates/adapters/bybit", version = "0.56.0", default-features = false }
+nautilus-coinbase = { path = "crates/adapters/coinbase", version = "0.56.0", default-features = false }
+nautilus-databento = { path = "crates/adapters/databento", version = "0.56.0", default-features = false }
+nautilus-deribit = { path = "crates/adapters/deribit", version = "0.56.0", default-features = false }
+nautilus-dydx = { path = "crates/adapters/dydx", version = "0.56.0", default-features = false }
+nautilus-hyperliquid = { path = "crates/adapters/hyperliquid", version = "0.56.0", default-features = false }
+nautilus-interactive-brokers = { path = "crates/adapters/interactive_brokers", version = "0.56.0" }
+nautilus-kraken = { path = "crates/adapters/kraken", version = "0.56.0", default-features = false }
+nautilus-okx = { path = "crates/adapters/okx", version = "0.56.0", default-features = false }
+nautilus-polymarket = { path = "crates/adapters/polymarket", version = "0.56.0", default-features = false }
+nautilus-sandbox = { path = "crates/adapters/sandbox", version = "0.56.0", default-features = false }
+nautilus-tardis = { path = "crates/adapters/tardis", version = "0.56.0", default-features = false }
 
 # -----------------------------------------------------------------------------
 # Core dependencies
@@ -127,22 +131,22 @@ arrow = { version = "58.1.0", default-features = false, features = [
 arrow-row = "58.1.0"
 async-stream = "0.3.6"
 async-trait = "0.1.89"
-aws-lc-rs = { version = "1.16.2", default-features = false, features = [
+aws-lc-rs = { version = "1.16.3", default-features = false, features = [
   "non-fips", # FIPS 140-3 mode blocked: aws-lc-fips-sys requires Go toolchain
 ] }
 base64 = "0.22.1"
 bon = "3.9.1"
 bytes = { version = "1.11.1", features = ["serde"] }
-capnp = "0.25.3"
+capnp = "0.25.4"
 chrono = { version = "0.4.44", default-features = false, features = [
   "serde",
   "std",
   "clock",
 ] }
 chrono-tz = "0.10.4"
-clap = { version = "4.6.0", features = ["derive", "env"] }
+clap = { version = "4.6.1", features = ["derive", "env"] }
 dashmap = "6.1.0"
-datafusion = { version = "53.0.0", default-features = false, features = [
+datafusion = { version = "53.1.0", default-features = false, features = [
   "parquet",
   "regex_expressions",
   "unicode_expressions",
@@ -165,7 +169,7 @@ futures-util = { version = "0.3.32", default-features = false, features = [
 ] }
 http = "1.4.0"
 implied-vol = { version = "2.0.0" }
-indexmap = { version = "2.13.1", features = ["serde"] }
+indexmap = { version = "2.14.0", features = ["serde"] }
 itchy = "0.3"
 itertools = "0.14.0"
 log = { version = "0.4.29", features = [
@@ -174,7 +178,7 @@ log = { version = "0.4.29", features = [
   "serde",
   "release_max_level_debug",
 ] }
-memchr = "2.8.0"
+madsim = "0.2.34"
 object_store = { version = "0.13.2", default-features = false, features = [
   "fs",
 ] }
@@ -201,7 +205,7 @@ pyo3-async-runtimes = { version = "0.28.0", default-features = false, features =
 pyo3-stub-gen = { version = "=0.20.0", default-features = false, features = [
   "rust_decimal",
 ] }
-rand = { version = "0.10.0", default-features = false, features = [
+rand = { version = "0.10.1", default-features = false, features = [
   "std",
   "thread_rng",
 ] }
@@ -219,8 +223,7 @@ regex = { version = "1.12.3", default-features = false, features = [
   "perf",
   "unicode-perl",
 ] }
-reqwest = { version = "0.13.2", default-features = false, features = [
-  "blocking",
+reqwest = { version = "0.13.3", default-features = false, features = [
   "http2",
   "json",
   "query",
@@ -230,9 +233,11 @@ reqwest = { version = "0.13.2", default-features = false, features = [
 rmp-serde = "1.3.1"
 rust_decimal = { version = "1.41.0", features = ["serde-with-float"] }
 rust_decimal_macros = "1.40.0"
-rustls = { version = "0.23.37", default-features = false, features = [
+rustls = { version = "0.23.40", default-features = false, features = [
   "aws-lc-rs",
+  "logging",
   "std",
+  "tls12",
 ] }
 rustls-pemfile = "2.2.0"
 serde = { version = "1.0.228", default-features = false, features = [
@@ -245,6 +250,12 @@ serde_json = { version = "1.0.149", default-features = false, features = [
 ] }
 serde_urlencoded = "0.7.1"
 smallvec = "1.15.1"
+sockudo-ws = { version = "1.7.4", default-features = false, features = [
+  "simd",
+  "fastrand",
+  "tokio-runtime",
+  "rustls-webpki-roots",
+] }
 sqlx = { version = "0.8.6", default-features = false, features = [
   "postgres",
   "runtime-tokio",
@@ -261,7 +272,7 @@ tabled = { version = "0.20.0", default-features = false, features = [
   "derive",
 ] }
 thiserror = "2.0.18"
-tokio = { version = "1.51.0", default-features = false, features = [
+tokio = { version = "1.52.1", default-features = false, features = [
   "rt-multi-thread",
   "sync",
   "fs",
@@ -290,23 +301,27 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 unbounded-interval-tree = { version = "1.1.2", default-features = false }
 url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.23.0", features = ["v4", "serde"] }
-webpki-roots = "1.0.6"
+uuid = { version = "1.23.1", features = ["v4", "serde"] }
+webpki-roots = "1.0.7"
 
 # -----------------------------------------------------------------------------
 # Adapter dependencies
 # -----------------------------------------------------------------------------
-alloy = { version = "1.8.3", default-features = false, features = [
+alloy = { version = "2.0.1", default-features = false, features = [
   "sol-types",
   "contract",
   "signers",
   "signer-local",
 ] }
 arc-swap = "1.9.1"
+bollard = { version = "0.18.0", default-features = false, features = [
+  "http",
+  "pipe",
+] }
 bzip2 = "0.6.1"
 cosmrs = { version = "0.22.0", default-features = false, features = ["bip32"] }
 csv = "1.4.0"
-databento = { version = "0.45.0", default-features = false, features = [
+databento = { version = "0.48.0", default-features = false, features = [
   "historical",
   "live",
 ] }
@@ -314,7 +329,7 @@ dydx-proto = "0.4.0"
 fallible-streaming-iterator = "0.1.9"
 flate2 = "1.1.9"
 hypersync-client = { version = "1.1.4" }
-hypersync-schema = { version = "0.4.0" }
+ibapi = "2.11.2"
 itoa = "1.0.18"
 prost = { version = "0.13.5", default-features = false, features = ["std"] }
 ryu = "1.0.23"
@@ -331,13 +346,12 @@ tonic = { version = "0.13.1", default-features = false, features = [
   "tls-aws-lc",
   "tls-webpki-roots",
 ] }
-urlencoding = "2.1.3"
 zeroize = { version = "1.8.2", features = ["alloc", "zeroize_derive"] }
 
 # -----------------------------------------------------------------------------
 # Dev dependencies
 # -----------------------------------------------------------------------------
-axum = { version = "0.8.8", default-features = false, features = [
+axum = { version = "0.8.9", default-features = false, features = [
   "tokio",
   "http1",
   "json",
@@ -352,7 +366,8 @@ pretty_assertions = "1.4.1"
 proptest = { version = "1.11.0", default-features = false, features = ["std"] }
 rstest = "0.26.1"
 tempfile = "3.27.0"
-turmoil = "0.7.1"
+tracing-test = "0.2.6"
+turmoil = "0.7.2"
 
 # -----------------------------------------------------------------------------
 # Build dependencies
@@ -366,13 +381,13 @@ walkdir = "2.5.0"
 # -----------------------------------------------------------------------------
 [workspace.metadata.tools]
 cargo-audit = "0.22.1"
-cargo-deny = "0.19.0"
-cargo-edit = "0.13.9"
+cargo-deny = "0.19.4"
+cargo-edit = "0.13.10"
 cargo-llvm-cov = "0.8.5"
-cargo-machete = "0.9.1"
-cargo-nextest = "0.9.132"
+cargo-machete = "0.9.2"
+cargo-nextest = "0.9.133"
 cargo-vet = "0.10.2"
-lychee = "0.23.0"
+lychee = "0.24.1"
 
 # cargo-vet supply chain security configuration
 [workspace.metadata.vet]
@@ -385,11 +400,17 @@ store = { path = '.supply-chain' }
 opt-level = 0
 debug = false # Improves compile times
 debug-assertions = false # Fails Cython build if true
-overflow-checks = true
+overflow-checks = false # test profile keeps these on for catching overflow bugs
 strip = "debuginfo" # Improves compile times
 lto = false
 panic = "unwind"
 incremental = true
+
+# Compile third-party deps at opt-level=1 in dev/test profiles. Workspace
+# members keep opt-level=0 (fast iteration); deps recompile rarely so the
+# small one-off compile cost pays off in faster test/run loops.
+[profile.dev.package."*"]
+opt-level = 1
 
 [profile.debug-pyo3]
 inherits = "dev"
@@ -404,6 +425,9 @@ overflow-checks = true
 strip = false
 lto = false
 incremental = true
+
+[profile.test.package."*"]
+opt-level = 1
 
 [profile.nextest]
 inherits = "test"
@@ -587,8 +611,12 @@ single_match_else = "allow" # Match can be clearer than if-let-else for some pat
 manual_let_else = "allow" # Match can be clearer than let-else for some patterns
 or_fun_call = "allow" # Used consistently for display with map_or("None".to_string(), ...)
 option_if_let_else = "allow" # if-let can be clearer than map_or/map_or_else
+similar_names = "allow" # Domain terms like trade/trader and side/size are intentionally similar
 
 # TODO: Enable these incrementally (widespread usage in codebase)
 # unwrap_used = "warn"        # Forces explicit error handling instead of panics
 # expect_used = "warn"        # Forces explicit error handling instead of panics
 # indexing_slicing = "warn"   # Prevents panics from out-of-bounds access
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(madsim)'] }

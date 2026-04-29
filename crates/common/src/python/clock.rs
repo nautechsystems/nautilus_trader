@@ -152,7 +152,7 @@ impl PyClock {
             .map_err(to_pyvalue_err)
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[pyo3(
         name = "set_timer",
         signature = (name, interval, start_time=None, stop_time=None, callback=None, allow_past=None, fire_immediately=None)
@@ -190,7 +190,7 @@ impl PyClock {
             .map_err(to_pyvalue_err)
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[pyo3(
         name = "set_timer_ns",
         signature = (name, interval_ns, start_time_ns=None, stop_time_ns=None, callback=None, allow_past=None, fire_immediately=None)

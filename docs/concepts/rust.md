@@ -86,11 +86,11 @@ The Nautilus crates are published to
 
 ```toml
 [dependencies]
-nautilus-backtest = "0.54"
-nautilus-common = "0.54"
-nautilus-execution = "0.54"
-nautilus-model = { version = "0.54", features = ["stubs"] }
-nautilus-trading = { version = "0.54", features = ["examples"] }
+nautilus-backtest = "0.55"
+nautilus-common = "0.55"
+nautilus-execution = "0.55"
+nautilus-model = { version = "0.55", features = ["stubs"] }
+nautilus-trading = { version = "0.55", features = ["examples"] }
 
 anyhow = "1"
 log = "0.4"
@@ -100,8 +100,8 @@ For live trading, add the live crate and the adapter for your venue:
 
 ```toml
 [dependencies]
-nautilus-live = "0.54"
-nautilus-okx = "0.54"
+nautilus-live = "0.55"
+nautilus-okx = "0.55"
 ```
 
 To track the latest development branch, point all Nautilus dependencies at the
@@ -116,7 +116,7 @@ nautilus-model = { git = "https://github.com/nautechsystems/nautilus_trader.git"
 nautilus-trading = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop", features = ["examples"] }
 ```
 
-The minimum supported Rust version (MSRV) is **1.94.0**.
+The minimum supported Rust version (MSRV) is **1.95.0**.
 
 ### Feature flags
 
@@ -205,6 +205,72 @@ For complete examples, see
 [`EmaCross`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/trading/src/examples/strategies/ema_cross)
 and
 [`GridMarketMaker`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/trading/src/examples/strategies/grid_mm).
+
+### Running Rust components
+
+Rust strategies and actors can run through three paths. The examples
+below use strategies, but the same pattern applies to actors via
+`add_actor` (pure Rust) and `add_native_actor` (from Python).
+
+#### Pure Rust
+
+Write your strategy and `main` function in Rust, then build a standalone
+binary with `cargo build`. This path requires no Python runtime.
+
+```rust
+let strategy = GridMarketMaker::new(config);
+node.add_strategy(strategy)?;
+node.run().await?;
+```
+
+See [Run Live Trading (Rust)](../how_to/run_rust_live_trading.md) for a
+full walkthrough.
+
+#### Native config from Python
+
+Pass a config to `add_native_strategy` to register a built-in Rust
+strategy from Python. The Rust side constructs the strategy and
+registers it with the engine. Python provides the configuration;
+all execution happens in Rust.
+
+```python
+from nautilus_trader.core.nautilus_pyo3.trading import GridMarketMakerConfig
+
+config = GridMarketMakerConfig(
+    instrument_id=InstrumentId.from_str("BTC-USDT-SWAP.OKX"),
+    max_position=Quantity.from_str("10.0"),
+    trade_size=Quantity.from_str("0.1"),
+    num_levels=5,
+    grid_step_bps=15,
+)
+
+node.add_native_strategy(config)
+```
+
+Built-in strategy configs:
+
+| Config                  | Strategy              |
+|-------------------------|-----------------------|
+| `EmaCrossConfig`        | `EmaCross`            |
+| `GridMarketMakerConfig` | `GridMarketMaker`     |
+| `DeltaNeutralVolConfig` | `DeltaNeutralVol`     |
+
+Built-in actor configs (via `add_native_actor`):
+
+| Config                     | Actor                 |
+|----------------------------|-----------------------|
+| `BookImbalanceActorConfig` | `BookImbalanceActor`  |
+
+Users who compile from source can add their own components to this
+path. Add a `#[pyclass]` config and a dispatch arm in
+`add_native_strategy` or `add_native_actor`. The component then
+works from Python without PyO3 wrappers on the type itself.
+
+#### Plugin loading (planned)
+
+A future plugin system will load compiled shared libraries at runtime.
+Users compile strategies and actors as `cdylib` crates and the node
+loads them without recompilation. This path is not yet available.
 
 ## Backtesting
 

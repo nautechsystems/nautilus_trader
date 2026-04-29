@@ -201,7 +201,6 @@ fn build_trades_response(trades: &[(i64, i64, i64, i64, bool)]) -> Vec<u8> {
     buf
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_klines_response(klines: &[(i64, i64, i64, i64, i64, i64, i64)]) -> Vec<u8> {
     // Each tuple: (open_time, open, high, low, close, volume, close_time)
     let header = create_sbe_header(2, KLINES_TEMPLATE_ID);
@@ -427,7 +426,7 @@ fn build_orders_response(orders: &[(i64, &str, &str, i64, i64)]) -> Vec<u8> {
     buf
 }
 
-#[allow(clippy::type_complexity)]
+#[expect(clippy::type_complexity)]
 fn build_account_trades_response(
     trades: &[(i64, i64, &str, &str, i64, i64, i64, bool, bool)],
 ) -> Vec<u8> {

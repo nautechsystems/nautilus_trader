@@ -65,7 +65,7 @@ pub struct BinanceBar {
 
 impl BinanceBar {
     /// Creates a new [`BinanceBar`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         bar_type: BarType,

@@ -26,9 +26,9 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::models::GammaMarket;
+use super::models::{FeeSchedule, GammaMarket};
 use crate::common::{
-    consts::{MAX_PRICE, MIN_PRICE, POLYMARKET_VENUE, USDC},
+    consts::{MAX_PRICE, MIN_PRICE, POLYMARKET_VENUE, PUSD},
     enums::PolymarketOutcome,
 };
 
@@ -75,6 +75,10 @@ pub struct PolymarketInstrumentDef {
     pub market_slug: Option<String>,
     /// Whether the market uses the neg-risk CTF exchange contract.
     pub neg_risk: bool,
+    /// Fee schedule for this market.
+    pub fee_schedule: Option<FeeSchedule>,
+    /// Game ID for sport markets.
+    pub game_id: Option<u64>,
 }
 
 /// Parses a Gamma market response into instrument definitions.
@@ -82,6 +86,14 @@ pub struct PolymarketInstrumentDef {
 /// Each market produces two definitions: one for the Yes outcome
 /// and one for the No outcome.
 pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<PolymarketInstrumentDef>> {
+    let game_id = market.game_id.or_else(|| {
+        market
+            .events
+            .as_ref()?
+            .iter()
+            .find_map(|event| event.game_id)
+    });
+
     let token_ids: Vec<String> = serde_json::from_str(&market.clob_token_ids).map_err(|e| {
         anyhow::anyhow!(
             "Failed to parse clob_token_ids '{}': {e}",
@@ -108,10 +120,14 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
         .map_err(|e| anyhow::anyhow!("Failed to parse tick size '{tick_size_str}': {e}"))?;
     let price_precision = tick_size.scale() as u8;
 
-    // Gamma API fee fields are unreliable, actual fees come from
-    // the CLOB API at trade time (matches Python adapter behavior)
-    let maker_fee: Option<Decimal> = None;
-    let taker_fee: Option<Decimal> = None;
+    // Polymarket charges fees using `feeSchedule.rate` on the Gamma market.
+    // Only takers pay; makers are always zero.
+    // Reference: https://docs.polymarket.com/trading/fees
+    let maker_fee: Option<Decimal> = market.fee_schedule.as_ref().map(|_| Decimal::ZERO);
+    let taker_fee: Option<Decimal> = market
+        .fee_schedule
+        .as_ref()
+        .and_then(|fs| Decimal::try_from(fs.rate).ok());
 
     let min_size: Option<Decimal> = market
         .order_min_size
@@ -151,6 +167,8 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
             active,
             market_slug: market.market_slug.clone(),
             neg_risk,
+            fee_schedule: market.fee_schedule.clone(),
+            game_id,
         });
     }
 
@@ -166,7 +184,7 @@ pub fn create_instrument_from_def(
     let venue = *POLYMARKET_VENUE;
     let instrument_id = InstrumentId::new(symbol, venue);
     let raw_symbol = Symbol::new(def.token_id);
-    let currency = get_currency(USDC);
+    let currency = get_currency(PUSD);
 
     let price_increment = Price::from(def.tick_size.to_string());
     let size_increment = Quantity::from("0.000001");
@@ -184,7 +202,10 @@ pub fn create_instrument_from_def(
 
     let max_price = Some(Price::from(MAX_PRICE));
     let min_price = Some(Price::from(MIN_PRICE));
-    let min_quantity = def.min_size.map(|s| Quantity::from(s.to_string()));
+    // Polymarket exposes `orderMinSize` (limit-order minimum shares) and a separate
+    // $1 market-order minimum amount; the instrument model can only carry one
+    // `min_quantity`, so leave it unset and let the venue reject out-of-bounds orders.
+    let min_quantity: Option<Quantity> = None;
 
     let info: Params = serde_json::from_value(build_info_json(def))?;
 
@@ -196,7 +217,7 @@ pub fn create_instrument_from_def(
         activation_ns,
         expiration_ns,
         def.price_precision,
-        6, // size_precision: USDC.e increments
+        6, // size_precision: 6-decimal collateral increments
         price_increment,
         size_increment,
         Some(def.outcome.inner()),
@@ -268,7 +289,7 @@ pub fn rebuild_instrument_with_tick_size(
         bo.outcome,
         bo.description,
         bo.max_quantity,
-        bo.min_quantity,
+        None, // min_quantity: see `create_instrument_from_def`
         bo.max_notional,
         bo.min_notional,
         bo.max_price,
@@ -318,6 +339,16 @@ fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
         "neg_risk".to_string(),
         serde_json::Value::Bool(def.neg_risk),
     );
+
+    if let Some(fee_schedule) = &def.fee_schedule
+        && let Ok(value) = serde_json::to_value(fee_schedule)
+    {
+        map.insert("fee_schedule".to_string(), value);
+    }
+
+    if let Some(game_id) = def.game_id {
+        map.insert("game_id".to_string(), serde_json::Value::from(game_id));
+    }
 
     serde_json::Value::Object(map)
 }
@@ -392,6 +423,26 @@ mod tests {
             yes_def.market_slug.as_deref(),
             Some("btc-updown-5m-1773307200")
         );
+        assert_eq!(yes_def.game_id, None);
+    }
+
+    #[rstest]
+    fn test_parse_gamma_market_sports_game_id_and_fee_schedule() {
+        let money_line = load_gamma_market("gamma_market_sports_market_money_line.json");
+        let map_handicap = load_gamma_market("gamma_market_sports_market_map_handicap.json");
+
+        let money_line_defs = parse_gamma_market(&money_line).unwrap();
+        let map_handicap_defs = parse_gamma_market(&map_handicap).unwrap();
+
+        assert_eq!(money_line_defs[0].game_id, Some(1_427_074));
+        assert_eq!(map_handicap_defs[0].game_id, Some(1_427_074));
+        assert_eq!(money_line_defs[0].fee_schedule, money_line.fee_schedule);
+        assert_eq!(map_handicap_defs[0].fee_schedule, map_handicap.fee_schedule);
+
+        // Maker fee is always zero for feeSchedule-backed markets
+        assert_eq!(money_line_defs[0].maker_fee, Some(Decimal::ZERO));
+        // Taker fee comes from feeSchedule.rate (sports rate = 0.03)
+        assert_eq!(money_line_defs[0].taker_fee, Some(dec!(0.03)));
     }
 
     #[rstest]
@@ -489,7 +540,7 @@ mod tests {
         );
         assert_eq!(binary.outcome, Some(Ustr::from("Up")));
         assert_eq!(binary.asset_class, AssetClass::Alternative);
-        assert_eq!(binary.currency.code.as_str(), "USDC");
+        assert_eq!(binary.currency.code.as_str(), "pUSD");
         assert_eq!(binary.price_precision, 2);
         assert_eq!(binary.size_precision, 6);
         assert_eq!(binary.price_increment(), Price::from("0.01"));
@@ -527,6 +578,26 @@ mod tests {
             info.get_str("market_slug"),
             Some("btc-updown-5m-1773307200")
         );
+        assert_eq!(info.get_u64("game_id"), None);
+        assert_eq!(info.get("fee_schedule"), None);
+    }
+
+    #[rstest]
+    fn test_create_instrument_info_params_includes_game_id_and_fee_schedule() {
+        let market = load_gamma_market("gamma_market_sports_market_money_line.json");
+        let defs = parse_gamma_market(&market).unwrap();
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
+
+        let binary = match &instrument {
+            InstrumentAny::BinaryOption(b) => b,
+            other => panic!("Expected BinaryOption, was {other:?}"),
+        };
+
+        let info = binary.info.as_ref().expect("info should be Some");
+        assert_eq!(info.get_u64("game_id"), Some(1_427_074));
+        assert!(info.get("fee_schedule").is_some());
     }
 
     #[rstest]

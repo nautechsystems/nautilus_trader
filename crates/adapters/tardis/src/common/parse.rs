@@ -17,14 +17,17 @@ use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_MICROSECOND};
 use nautilus_model::{
     data::BarSpecification,
     enums::{AggressorSide, BarAggregation, BookAction, OptionKind, OrderSide, PriceType},
-    identifiers::{InstrumentId, Symbol},
+    identifiers::{InstrumentId, Symbol, TradeId},
     types::{PRICE_MAX, PRICE_MIN, Price},
 };
 use serde::{Deserialize, Deserializer};
 use ustr::Ustr;
-use uuid::Uuid;
 
 use super::enums::{TardisExchange, TardisInstrumentType, TardisOptionType};
+
+// FNV-1a 64-bit constants (see http://www.isthe.com/chongo/tech/comp/fnv/).
+const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0100_0000_01b3;
 
 /// Deserialize a string and convert to uppercase `Ustr`.
 ///
@@ -38,22 +41,40 @@ where
     String::deserialize(deserializer).map(|s| Ustr::from(&s.to_uppercase()))
 }
 
-/// Deserialize a trade ID or generate a new UUID if empty.
+/// Derives a deterministic [`TradeId`] from trade fields.
 ///
-/// # Errors
-///
-/// Returns a deserialization error if the input cannot be deserialized as a string.
-pub fn deserialize_trade_id<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
+/// Tardis records do not always carry a venue-provided trade ID (some venues
+/// publish empty strings or omit the field entirely). This hash combines the
+/// symbol, timestamp, price, amount and side so replayed data yields the same
+/// identifier across runs. FNV-1a is stable across architectures and crate
+/// versions; the 0x1f delimiter keeps variable-length fields from colliding.
+#[must_use]
+pub fn derive_trade_id(
+    symbol: Ustr,
+    ts_event_ns: u64,
+    price: f64,
+    amount: f64,
+    side: &str,
+) -> TradeId {
+    let mut hash: u64 = FNV_OFFSET_BASIS;
 
-    if s.is_empty() {
-        return Ok(Uuid::new_v4().to_string());
+    for bytes in [
+        symbol.as_str().as_bytes(),
+        b"\x1f",
+        &ts_event_ns.to_le_bytes(),
+        b"\x1f",
+        &price.to_bits().to_le_bytes(),
+        b"\x1f",
+        &amount.to_bits().to_le_bytes(),
+        b"\x1f",
+        side.as_bytes(),
+    ] {
+        for &byte in bytes {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
     }
-
-    Ok(s)
+    TradeId::new(format!("{hash:016x}"))
 }
 
 #[must_use]
@@ -474,5 +495,33 @@ mod tests {
             bar_spec_to_tardis_trade_bar_string(&bar_spec).unwrap(),
             expected
         );
+    }
+
+    #[rstest]
+    fn test_derive_trade_id_is_deterministic_and_16_hex_chars() {
+        let first = derive_trade_id(Ustr::from("XBTUSD"), 1_700_000_000, 7996.0, 50.0, "sell");
+        let second = derive_trade_id(Ustr::from("XBTUSD"), 1_700_000_000, 7996.0, 50.0, "sell");
+        assert_eq!(first, second);
+        assert_eq!(first.as_str().len(), 16);
+    }
+
+    #[rstest]
+    #[case::symbol_changed(derive_trade_id(Ustr::from("ETHUSD"), 1, 1.0, 1.0, "buy"))]
+    #[case::ts_changed(derive_trade_id(Ustr::from("XBTUSD"), 2, 1.0, 1.0, "buy"))]
+    #[case::price_changed(derive_trade_id(Ustr::from("XBTUSD"), 1, 2.0, 1.0, "buy"))]
+    #[case::amount_changed(derive_trade_id(Ustr::from("XBTUSD"), 1, 1.0, 2.0, "buy"))]
+    #[case::side_changed(derive_trade_id(Ustr::from("XBTUSD"), 1, 1.0, 1.0, "sell"))]
+    fn test_derive_trade_id_each_field_affects_output(#[case] altered: TradeId) {
+        let baseline = derive_trade_id(Ustr::from("XBTUSD"), 1, 1.0, 1.0, "buy");
+        assert_ne!(baseline, altered);
+    }
+
+    #[rstest]
+    fn test_derive_trade_id_field_delimiter_prevents_collision() {
+        // Without the 0x1f delimiter, concatenated bytes for these two inputs
+        // would collapse into the same stream.
+        let a = derive_trade_id(Ustr::from("A"), 1, 0.0, 0.0, "buy");
+        let b = derive_trade_id(Ustr::from("A\x00"), 256, 0.0, 0.0, "buy");
+        assert_ne!(a, b);
     }
 }

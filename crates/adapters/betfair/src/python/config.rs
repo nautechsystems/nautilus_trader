@@ -56,7 +56,7 @@ impl BetfairDataConfig {
         subscription_delay_secs = None,
         subscribe_race_data = false,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         account_currency: Option<String>,
         username: Option<String>,
@@ -148,7 +148,7 @@ impl BetfairExecConfig {
         reconcile_market_ids = None,
         use_market_version = false,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         trader_id: Option<TraderId>,
         account_id: Option<AccountId>,

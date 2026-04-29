@@ -81,6 +81,7 @@ impl HttpClient {
 
         // Build default headers
         let mut header_map = HeaderMap::new();
+
         for (key, value) in headers {
             let header_name = HeaderName::from_str(&key)
                 .map_err(|e| HttpClientError::Error(format!("Invalid header name '{key}': {e}")))?;
@@ -148,7 +149,7 @@ impl HttpClient {
     /// # Examples
     ///
     /// If requesting `/foo/bar`, pass rate-limit keys `["foo/bar", "foo"]`.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn request(
         &self,
         method: Method,
@@ -169,12 +170,12 @@ impl HttpClient {
     ///
     /// This method accepts any type implementing `Serialize` for query parameters,
     /// which will be automatically encoded into the URL query string using reqwest's
-    /// `.query()` method, avoiding unnecessary HashMap allocations.
+    /// `.query()` method, avoiding unnecessary `HashMap` allocations.
     ///
     /// # Errors
     ///
     /// Returns an error if unable to send request or times out.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn request_with_params<P: serde::Serialize>(
         &self,
         method: Method,
@@ -199,7 +200,7 @@ impl HttpClient {
     /// # Errors
     ///
     /// Returns an error if unable to send the request or the request times out.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn request_with_ustr_keys(
         &self,
         method: Method,
@@ -350,7 +351,7 @@ impl InnerHttpClient {
     /// Sends an HTTP request with query parameters using reqwest's `.query()` method.
     ///
     /// This method accepts any type implementing `Serialize` for query parameters,
-    /// avoiding HashMap conversion overhead.
+    /// avoiding `HashMap` conversion overhead.
     ///
     /// # Errors
     ///

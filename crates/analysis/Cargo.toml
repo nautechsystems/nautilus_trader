@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_analysis"
-crate-type = ["rlib", "staticlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = []
@@ -45,6 +45,7 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+indexmap = { workspace = true }
 rust_decimal = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }

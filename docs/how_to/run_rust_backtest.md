@@ -17,11 +17,11 @@ Add the following to your `Cargo.toml`. The `streaming` and
 
 ```toml
 [dependencies]
-nautilus-backtest = { version = "0.54", features = ["streaming"] }
-nautilus-execution = "0.54"
-nautilus-model = { version = "0.54", features = ["stubs"] }
-nautilus-persistence = "0.54"
-nautilus-trading = { version = "0.54", features = ["examples"] }
+nautilus-backtest = { version = "0.55", features = ["streaming"] }
+nautilus-execution = "0.55"
+nautilus-model = { version = "0.55", features = ["stubs"] }
+nautilus-persistence = "0.55"
+nautilus-trading = { version = "0.55", features = ["examples"] }
 
 ahash = "0.8"
 anyhow = "1"
@@ -47,9 +47,11 @@ let mut engine = BacktestEngine::new(BacktestEngineConfig::default())?;
 
 ### 2. Add a venue
 
+`SimulatedVenueConfig` uses a `bon::Builder`: only required fields must be set,
+every other setting falls back to a documented default.
+
 ```rust
-use ahash::AHashMap;
-use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny};
+use nautilus_backtest::config::SimulatedVenueConfig;
 use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
     identifiers::Venue,
@@ -57,39 +59,18 @@ use nautilus_model::{
 };
 
 engine.add_venue(
-    Venue::from("SIM"),
-    OmsType::Hedging,
-    AccountType::Margin,
-    BookType::L1_MBP,
-    vec![Money::from("1_000_000 USD")],
-    None,            // base_currency
-    None,            // default_leverage
-    AHashMap::new(), // per-instrument leverages
-    None,            // margin_model
-    vec![],          // simulation modules
-    FillModelAny::default(),
-    FeeModelAny::default(),
-    None, // latency_model
-    None, // routing
-    None, // reject_stop_orders
-    None, // support_gtd_orders
-    None, // support_contingent_orders
-    None, // use_position_ids
-    None, // use_random_ids
-    None, // use_reduce_only
-    None, // use_message_queue
-    None, // use_market_order_acks
-    None, // bar_execution
-    None, // bar_adaptive_high_low_ordering
-    None, // trade_execution
-    None, // liquidity_consumption
-    None, // allow_cash_borrowing
-    None, // frozen_account
-    None, // queue_position
-    None, // oto_full_trigger
-    None, // price_protection_points
+    SimulatedVenueConfig::builder()
+        .venue(Venue::from("SIM"))
+        .oms_type(OmsType::Hedging)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("1_000_000 USD")])
+        .build(),
 )?;
 ```
+
+Override any default by chaining setters, e.g. `.reject_stop_orders(false)` or
+`.allow_cash_borrowing(true)`.
 
 ### 3. Add instruments and data
 
@@ -103,7 +84,7 @@ let instrument_id = instrument.id();
 engine.add_instrument(&instrument)?;
 
 let quotes = generate_quotes(instrument_id); // Your data loading function
-engine.add_data(quotes, None, true, true);
+engine.add_data(quotes, None, true, true)?;
 ```
 
 ### 4. Register a strategy and run

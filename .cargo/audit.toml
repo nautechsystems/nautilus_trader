@@ -7,6 +7,10 @@
 ignore = [
   # capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix
   "RUSTSEC-2025-0143",
+  # paste unmaintained, transitive via alloy
+  "RUSTSEC-2024-0436",
+  # rand 0.8.5 unsoundness, transitive build-time only via pyo3-stub-gen
+  "RUSTSEC-2026-0097",
   # rsa Marvin Attack, transitive via sqlx-mysql, no fix available
   "RUSTSEC-2023-0071",
 ]

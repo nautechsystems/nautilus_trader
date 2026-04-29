@@ -17,8 +17,9 @@
 
 use std::{any::Any, collections::HashMap};
 
+use nautilus_common::factories::ClientConfig;
 use nautilus_model::identifiers::{AccountId, TraderId};
-use nautilus_system::factories::ClientConfig;
+use nautilus_network::websocket::TransportBackend;
 use rust_decimal::Decimal;
 
 use crate::common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProductType};
@@ -45,6 +46,9 @@ pub struct BinanceDataClientConfig {
     /// Optional base URL override for HTTP API.
     pub base_url_http: Option<String>,
     /// Optional base URL override for WebSocket.
+    ///
+    /// Live USD-M Futures data overrides are normalized onto the matching
+    /// `/market/ws` and `/public/ws` routes.
     pub base_url_ws: Option<String>,
     /// API key (Ed25519).
     pub api_key: Option<String>,
@@ -54,6 +58,9 @@ pub struct BinanceDataClientConfig {
     /// changes (e.g. Trading -> Halt). Set to 0 to disable. Defaults to 3600 (60 minutes).
     #[builder(default = 3600)]
     pub instrument_status_poll_secs: u64,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for BinanceDataClientConfig {
@@ -98,6 +105,8 @@ pub struct BinanceExecClientConfig {
     /// Optional base URL override for HTTP API.
     pub base_url_http: Option<String>,
     /// Optional base URL override for WebSocket user data stream.
+    ///
+    /// Live USD-M Futures stream overrides are normalized onto the `/private/ws` route.
     pub base_url_ws: Option<String>,
     /// Optional base URL override for WebSocket trading API (Spot and USD-M Futures).
     pub base_url_ws_trading: Option<String>,
@@ -133,6 +142,14 @@ pub struct BinanceExecClientConfig {
     /// and time-in-force combination.
     #[builder(default = false)]
     pub treat_expired_as_canceled: bool,
+    /// If true, drive fills from the lower-latency `TRADE_LITE` user data event
+    /// and dedup the matching fill portion of `ORDER_TRADE_UPDATE`. If false,
+    /// `TRADE_LITE` events are ignored and fills come from `ORDER_TRADE_UPDATE`.
+    #[builder(default = false)]
+    pub use_trade_lite: bool,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for BinanceExecClientConfig {

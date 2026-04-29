@@ -18,9 +18,10 @@ import traceback
 from typing import Any
 
 import msgspec
-from py_clob_client.client import ClobClient
+from py_clob_client_v2.client import ClobClient
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
+from nautilus_trader.adapters.polymarket.common.gamma_markets import fetch_fee_schedules
 from nautilus_trader.adapters.polymarket.common.gamma_markets import list_markets
 from nautilus_trader.adapters.polymarket.common.gamma_markets import (
     normalize_gamma_market_to_clob_format,
@@ -157,6 +158,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
 
     def _load_instruments_from_event(self, event: dict[str, Any]) -> int:
         count = 0
+
         for market in event.get("markets", []):
             condition_id = market.get("conditionId")
             if not condition_id:
@@ -291,6 +293,8 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         response = await asyncio.to_thread(self._client.get_market, condition_id)
         response = check_clob_response(response)
 
+        await self._enrich_with_gamma_fee_schedules([response])
+
         for token_info in response["tokens"]:
             if token_id != token_info["token_id"]:
                 continue
@@ -309,13 +313,18 @@ class PolymarketInstrumentProvider(InstrumentProvider):
     ) -> None:
         filter_is_active = filters.get("is_active", False) if filters else False
 
+        responses: list[tuple[InstrumentId, dict[str, Any]]] = []
         for instrument_id in instrument_ids:
             response: dict[str, Any] | str = await asyncio.to_thread(
                 self._client.get_market,
                 condition_id=get_polymarket_condition_id(instrument_id),
             )
             response = check_clob_response(response)
+            responses.append((instrument_id, response))
 
+        await self._enrich_with_gamma_fee_schedules([r for _, r in responses])
+
+        for instrument_id, response in responses:
             try:
                 active = response["active"]
                 closed = response["closed"]
@@ -362,6 +371,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
 
         markets_visited = 0
         next_cursor = filters.get("next_cursor", "MA==")
+
         while next_cursor != "LTE=":
             self._log.info(f"Cursor = '{next_cursor}', markets visited = {markets_visited}")
             response: dict[str, Any] | str = await asyncio.to_thread(
@@ -370,34 +380,56 @@ class PolymarketInstrumentProvider(InstrumentProvider):
             )
             response = check_clob_response(response)
 
-            for market_info in response["data"]:
-                try:
-                    active = market_info["active"]
-                    closed = market_info["closed"]
+            page_markets = self._filter_page_markets(response["data"], condition_ids)
+            await self._enrich_with_gamma_fee_schedules(page_markets)
+            self._load_page_instruments(page_markets, filter_is_active)
 
-                    if filter_is_active and (not active or closed):
-                        continue
-
-                    condition_id = market_info["condition_id"]
-                    if not condition_id:
-                        continue  # Archived
-
-                    if condition_ids and condition_id not in condition_ids:
-                        continue  # Filtering
-
-                    for token_info in market_info["tokens"]:
-                        token_id = token_info["token_id"]
-                        if not token_id:
-                            self._log.warning(f"Market {condition_id} had an empty token")
-                            continue
-
-                        outcome = token_info["outcome"]
-                        self._load_instrument(market_info, token_id, outcome)
-                except ValueError as e:
-                    self._log.error(f"Unable to parse market: {e}, {market_info}")
-                    continue
             next_cursor = response["next_cursor"]
             markets_visited += len(response["data"])
+
+    @staticmethod
+    def _filter_page_markets(
+        markets: list[dict[str, Any]],
+        condition_ids: list[str],
+    ) -> list[dict[str, Any]]:
+        page_markets: list[dict[str, Any]] = []
+
+        for market_info in markets:
+            condition_id = market_info.get("condition_id")
+            if not condition_id:
+                continue  # Archived
+            if condition_ids and condition_id not in condition_ids:
+                continue  # Filtering
+            page_markets.append(market_info)
+
+        return page_markets
+
+    def _load_page_instruments(
+        self,
+        page_markets: list[dict[str, Any]],
+        filter_is_active: bool,
+    ) -> None:
+        for market_info in page_markets:
+            try:
+                active = market_info["active"]
+                closed = market_info["closed"]
+
+                if filter_is_active and (not active or closed):
+                    continue
+
+                condition_id = market_info["condition_id"]
+
+                for token_info in market_info["tokens"]:
+                    token_id = token_info["token_id"]
+                    if not token_id:
+                        self._log.warning(f"Market {condition_id} had an empty token")
+                        continue
+
+                    outcome = token_info["outcome"]
+                    self._load_instrument(market_info, token_id, outcome)
+            except ValueError as e:
+                self._log.error(f"Unable to parse market: {e}, {market_info}")
+                continue
 
     def _load_instrument(
         self,
@@ -425,4 +457,61 @@ class PolymarketInstrumentProvider(InstrumentProvider):
             self._log.warning(
                 f"Filters {unsupported} are ignored by CLOB API; "
                 "set use_gamma_markets=True to enable server-side filtering",
+            )
+
+    async def _enrich_with_gamma_fee_schedules(
+        self,
+        market_infos: list[dict[str, Any]],
+    ) -> None:
+        """
+        Attach Gamma `feeSchedule` entries onto CLOB market payloads in place.
+
+        The CLOB API omits `feeSchedule` (the effective fee rate source), so on
+        the CLOB load path we bulk-query Gamma for the schedules and stitch them
+        back onto each market. This keeps taker commissions accurate in the
+        default configuration; failures are logged and leave fees at zero.
+
+        References
+        ----------
+        https://docs.polymarket.com/trading/fees
+
+        """
+        if not market_infos:
+            return
+
+        condition_ids = [m["condition_id"] for m in market_infos if m.get("condition_id")]
+        if not condition_ids:
+            return
+
+        try:
+            fee_schedules = await fetch_fee_schedules(
+                http_client=self._http_client,
+                condition_ids=condition_ids,
+            )
+        except Exception as e:
+            self._log.warning(
+                f"Failed to fetch Gamma feeSchedule for {len(condition_ids)} markets; "
+                f"taker commissions will default to zero: {e}",
+            )
+            return
+
+        missing_condition_ids: list[str] = []
+
+        for market_info in market_infos:
+            condition_id = market_info.get("condition_id")
+            if not condition_id:
+                continue
+            fee_schedule = fee_schedules.get(condition_id)
+            if fee_schedule is not None:
+                market_info["feeSchedule"] = fee_schedule
+            else:
+                missing_condition_ids.append(condition_id)
+
+        if missing_condition_ids and self._log_warnings:
+            sample = ", ".join(missing_condition_ids[:5])
+            suffix = "..." if len(missing_condition_ids) > 5 else ""
+            self._log.warning(
+                f"Gamma feeSchedule missing for {len(missing_condition_ids)} "
+                f"of {len(condition_ids)} markets ({sample}{suffix}); "
+                "taker commissions will default to zero for those markets",
             )

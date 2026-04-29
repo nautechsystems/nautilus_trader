@@ -46,8 +46,11 @@ use nautilus_kraken::{
 };
 use nautilus_model::{
     data::BarType,
-    identifiers::{InstrumentId, Symbol},
-    instruments::{CryptoPerpetual, InstrumentAny},
+    enums::{
+        MarketStatusAction, OrderSide as ModelOrderSide, OrderType as ModelOrderType, TimeInForce,
+    },
+    identifiers::{ClientOrderId, InstrumentId, Symbol, VenueOrderId},
+    instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
@@ -60,6 +63,8 @@ struct TestServerState {
     rate_limit_after: Arc<AtomicUsize>,
     last_trades_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     last_ohlc_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
+    add_order_calls: Arc<AtomicUsize>,
+    add_order_batch_calls: Arc<AtomicUsize>,
 }
 
 impl Default for TestServerState {
@@ -69,6 +74,8 @@ impl Default for TestServerState {
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)), // No rate limit
             last_trades_query: Arc::new(tokio::sync::Mutex::new(None)),
             last_ohlc_query: Arc::new(tokio::sync::Mutex::new(None)),
+            add_order_calls: Arc::new(AtomicUsize::new(0)),
+            add_order_batch_calls: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
@@ -447,7 +454,7 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
             "/derivatives/api/v3/sendorder" => mock_send_order_futures().await,
             "/derivatives/api/v3/cancelorder" => mock_cancel_order_futures().await,
             "/derivatives/api/v3/editorder" => mock_cancel_order_futures().await,
-            "/derivatives/api/v3/batchorder" => mock_send_order_futures().await,
+            "/derivatives/api/v3/batchorder" => mock_batch_order_futures().await,
             "/derivatives/api/v3/cancelallorders" => mock_cancel_order_futures().await,
             "/derivatives/api/v3/orderbook" => mock_futures_orderbook().await,
             "/derivatives/api/v4/historicalfundingrates" => {
@@ -502,7 +509,14 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
         "/0/private/OpenOrders" => mock_open_orders(state.clone()).await,
         "/0/private/ClosedOrders" => mock_closed_orders().await,
         "/0/private/TradesHistory" => mock_trades_history().await,
-        "/0/private/AddOrder" => mock_add_order_spot().await,
+        "/0/private/AddOrder" => {
+            state.add_order_calls.fetch_add(1, Ordering::Relaxed);
+            mock_add_order_spot().await
+        }
+        "/0/private/AddOrderBatch" => {
+            state.add_order_batch_calls.fetch_add(1, Ordering::Relaxed);
+            mock_add_order_batch_spot().await
+        }
         "/0/private/CancelOrder" => mock_cancel_order_spot().await,
         "/0/private/CancelAll" => mock_cancel_order_spot().await,
         "/0/private/EditOrder" => mock_add_order_spot().await,
@@ -512,6 +526,41 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
             .body(Body::from("Not found"))
             .unwrap(),
     }
+}
+
+async fn mock_batch_order_futures() -> Response {
+    let response = r#"{
+        "result": "success",
+        "serverTime": "2024-01-01T00:00:00.000Z",
+        "batchStatus": [
+            {"status": "edited", "order_id": "batch-edit-1"},
+            {"status": "insufficientAvailableFunds", "order_id": "batch-edit-2"}
+        ]
+    }"#;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(response))
+        .unwrap()
+}
+
+async fn mock_add_order_batch_spot() -> Response {
+    let response = r#"{
+        "error": [],
+        "result": {
+            "orders": [
+                {"txid": "batch-spot-1"},
+                {"error": "EOrder:Post only order"}
+            ]
+        }
+    }"#;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(response))
+        .unwrap()
 }
 
 fn create_router(state: Arc<TestServerState>) -> Router {
@@ -709,6 +758,45 @@ async fn test_spot_domain_request_instruments() {
 
 #[rstest]
 #[tokio::test]
+async fn test_spot_domain_request_instrument_statuses() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::new(
+        KrakenEnvironment::Mainnet,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let statuses = client.request_instrument_statuses(None).await.unwrap();
+
+    assert_eq!(
+        statuses.get(&InstrumentId::from("BTC/USDT.KRAKEN")),
+        Some(&MarketStatusAction::Trading),
+    );
+    assert_eq!(
+        statuses.get(&InstrumentId::from("AAPLx/USD.KRAKEN")),
+        Some(&MarketStatusAction::Trading),
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_spot_raw_get_ticker() {
     let state = Arc::new(TestServerState::default());
     let app = create_router(state);
@@ -734,7 +822,7 @@ async fn test_spot_raw_get_ticker() {
     )
     .unwrap();
 
-    let result = client.get_ticker(vec!["XBTUSDT".to_string()]).await;
+    let result = client.get_ticker(vec!["XBTUSDT".to_string()], None).await;
     assert!(result.is_ok(), "Failed to get ticker: {result:?}");
 
     let ticker = result.unwrap();
@@ -768,7 +856,7 @@ async fn test_spot_raw_get_book_depth() {
     )
     .unwrap();
 
-    let result = client.get_book_depth("XBTUSDT", None).await;
+    let result = client.get_book_depth("XBTUSDT", None, None).await;
     assert!(result.is_ok(), "Failed to get book depth: {result:?}");
 
     let book = result.unwrap();
@@ -802,7 +890,7 @@ async fn test_spot_raw_get_trades() {
     )
     .unwrap();
 
-    let result = client.get_trades("XBTUSDT", None).await;
+    let result = client.get_trades("XBTUSDT", None, None).await;
     assert!(result.is_ok(), "Failed to get trades: {result:?}");
 
     let response = result.unwrap();
@@ -836,7 +924,7 @@ async fn test_spot_raw_get_ohlc() {
     )
     .unwrap();
 
-    let result = client.get_ohlc("XBTUSDT", Some(60), None).await;
+    let result = client.get_ohlc("XBTUSDT", Some(60), None, None).await;
     assert!(result.is_ok(), "Failed to get OHLC: {result:?}");
 
     let response = result.unwrap();
@@ -871,7 +959,9 @@ async fn test_spot_raw_get_trades_with_since() {
     .unwrap();
 
     let since = "1234567890".to_string();
-    let result = client.get_trades("XBTUSDT", Some(since.clone())).await;
+    let result = client
+        .get_trades("XBTUSDT", Some(since.clone()), None)
+        .await;
     assert!(
         result.is_ok(),
         "Failed to get trades with since: {result:?}"
@@ -910,7 +1000,7 @@ async fn test_spot_raw_get_ohlc_with_interval() {
     )
     .unwrap();
 
-    let result = client.get_ohlc("XBTUSDT", Some(60), None).await;
+    let result = client.get_ohlc("XBTUSDT", Some(60), None, None).await;
     assert!(
         result.is_ok(),
         "Failed to get OHLC with interval: {result:?}"
@@ -1117,6 +1207,41 @@ async fn test_futures_raw_get_instruments() {
     assert_eq!(response.instruments[0].symbol, "PI_XBTUSD");
     assert_eq!(response.instruments[0].base, "BTC");
     assert_eq!(response.instruments[0].quote, "USD");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_instrument_statuses() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesHttpClient::new(
+        KrakenEnvironment::Mainnet,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let statuses = client.request_instrument_statuses().await.unwrap();
+
+    assert_eq!(
+        statuses.get(&InstrumentId::from("PI_XBTUSD.KRAKEN")),
+        Some(&MarketStatusAction::Trading),
+    );
 }
 
 #[rstest]
@@ -1947,6 +2072,51 @@ async fn test_futures_domain_request_trades() {
 
 #[rstest]
 #[tokio::test]
+async fn test_futures_domain_request_instruments_includes_tokenized_contract() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesHttpClient::new(
+        KrakenEnvironment::Mainnet,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments().await.unwrap();
+
+    let tokenized_future = instruments
+        .iter()
+        .find(|instrument| instrument.raw_symbol().as_str() == "PF_AAPLxUSD")
+        .expect("Expected tokenized futures instrument");
+
+    match tokenized_future {
+        InstrumentAny::CryptoPerpetual(perp) => {
+            assert_eq!(perp.id.symbol.as_str(), "PF_AAPLxUSD");
+            assert_eq!(perp.base_currency.code.as_str(), "AAPLx");
+            assert_eq!(perp.quote_currency.code.as_str(), "USD");
+            assert_eq!(perp.size_increment.as_f64(), 0.01);
+        }
+        _ => panic!("Expected CryptoPerpetual"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_futures_domain_request_bars() {
     let state = Arc::new(TestServerState::default());
     let app = create_router(state);
@@ -2024,6 +2194,9 @@ async fn test_spot_domain_request_book_snapshot() {
     let book = result.unwrap();
     assert!(book.best_bid_price().is_some());
     assert!(book.best_ask_price().is_some());
+    // HTTP snapshot must not advance the book's high-water sequence; the WS
+    // subscription owns sequencing once it starts streaming deltas.
+    assert_eq!(book.sequence, 0);
 }
 
 #[rstest]
@@ -2066,6 +2239,9 @@ async fn test_futures_domain_request_book_snapshot() {
     let book = result.unwrap();
     assert_eq!(book.best_bid_price(), Some(Price::from("105900.0")));
     assert_eq!(book.best_ask_price(), Some(Price::from("105950.0")));
+    // HTTP snapshot must not advance the book's high-water sequence; the WS
+    // subscription owns sequencing once it starts streaming deltas.
+    assert_eq!(book.sequence, 0);
 }
 
 #[rstest]
@@ -2114,4 +2290,278 @@ async fn test_futures_domain_request_funding_rates() {
     // Rates are returned in ascending chronological order (oldest first)
     assert!(rates[0].ts_event < rates[1].ts_event);
     assert!(rates[1].ts_event < rates[2].ts_event);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_domain_submit_orders_batch_preserves_status_order() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Mainnet,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
+    client.cache_instrument(InstrumentAny::CurrencyPair(CurrencyPair::new(
+        instrument_id,
+        Symbol::new("XBTUSD"),
+        Currency::BTC(),
+        Currency::USD(),
+        1,
+        8,
+        Price::from("0.1"),
+        Quantity::from("0.00000001"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        0.into(),
+        0.into(),
+    )));
+
+    let statuses = client
+        .submit_orders_batch(vec![
+            (
+                InstrumentId::from("ETH/USD.KRAKEN"),
+                ClientOrderId::new("missing-cache"),
+                ModelOrderSide::Buy,
+                ModelOrderType::Limit,
+                Quantity::from("0.01"),
+                TimeInForce::Gtc,
+                None,
+                Some(Price::from("50000")),
+                None,
+                None,
+                None,
+                None,
+                false,
+                false,
+                false,
+                None,
+            ),
+            (
+                instrument_id,
+                ClientOrderId::new("batch-ok-1"),
+                ModelOrderSide::Buy,
+                ModelOrderType::Limit,
+                Quantity::from("0.02"),
+                TimeInForce::Gtc,
+                None,
+                Some(Price::from("50010")),
+                None,
+                None,
+                None,
+                None,
+                false,
+                false,
+                false,
+                None,
+            ),
+            (
+                instrument_id,
+                ClientOrderId::new("batch-ok-2"),
+                ModelOrderSide::Sell,
+                ModelOrderType::Limit,
+                Quantity::from("0.03"),
+                TimeInForce::Gtc,
+                None,
+                Some(Price::from("50020")),
+                None,
+                None,
+                None,
+                None,
+                false,
+                true,
+                false,
+                None,
+            ),
+        ])
+        .await
+        .unwrap();
+
+    assert_eq!(statuses.len(), 3);
+    assert!(statuses[0].starts_with("validation_error:"));
+    assert_eq!(statuses[1], "placed");
+    assert_eq!(statuses[2], "EOrder:Post only order");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_domain_submit_orders_batch_singleton_falls_back_to_add_order() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Mainnet,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
+    client.cache_instrument(InstrumentAny::CurrencyPair(CurrencyPair::new(
+        instrument_id,
+        Symbol::new("XBTUSD"),
+        Currency::BTC(),
+        Currency::USD(),
+        1,
+        8,
+        Price::from("0.1"),
+        Quantity::from("0.00000001"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        0.into(),
+        0.into(),
+    )));
+
+    let statuses = client
+        .submit_orders_batch(vec![(
+            instrument_id,
+            ClientOrderId::new("batch-singleton"),
+            ModelOrderSide::Buy,
+            ModelOrderType::Limit,
+            Quantity::from("0.01"),
+            TimeInForce::Gtc,
+            None,
+            Some(Price::from("50000")),
+            None,
+            None,
+            None,
+            None,
+            false,
+            false,
+            false,
+            None,
+        )])
+        .await
+        .unwrap();
+
+    assert_eq!(statuses, vec!["placed".to_string()]);
+    assert_eq!(state.add_order_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.add_order_batch_calls.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_edit_orders_batch_preserves_status_order() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Mainnet,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instrument = create_test_futures_instrument();
+    client.cache_instrument(instrument);
+
+    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
+    let statuses = client
+        .edit_orders_batch(vec![
+            (
+                instrument_id,
+                None,
+                None,
+                Some(Quantity::from("10")),
+                Some(Price::from("45000")),
+                None,
+            ),
+            (
+                instrument_id,
+                Some(ClientOrderId::new("edit-order-1")),
+                None,
+                Some(Quantity::from("20")),
+                Some(Price::from("45100")),
+                None,
+            ),
+            (
+                instrument_id,
+                None,
+                Some(VenueOrderId::new("venue-order-2")),
+                None,
+                Some(Price::from("45200")),
+                Some(Price::from("44900")),
+            ),
+        ])
+        .await
+        .unwrap();
+
+    assert_eq!(statuses.len(), 3);
+    assert!(statuses[0].starts_with("validation_error:"));
+    assert_eq!(statuses[1], "edited");
+    assert_eq!(statuses[2], "insufficientAvailableFunds");
 }

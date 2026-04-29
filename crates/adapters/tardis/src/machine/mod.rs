@@ -31,6 +31,7 @@ use async_stream::stream;
 use futures_util::{SinkExt, Stream, StreamExt, stream::SplitSink};
 use message::WsMessage;
 use nautilus_common::live::get_runtime;
+use nautilus_core::string::urlencoding;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async,
@@ -207,7 +208,6 @@ async fn stream_from_websocket(
     })
 }
 
-#[allow(clippy::result_large_err)]
 fn handle_connection_response(
     ws_resp: &tungstenite::http::Response<Option<Vec<u8>>>,
 ) -> Result<()> {

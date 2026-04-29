@@ -273,6 +273,7 @@ mod tests {
             (110.04, 109.96),
             (110.02, 109.90),
         ];
+
         for &(h, l) in &inputs {
             aroon.update_raw(h, l);
         }
@@ -345,6 +346,7 @@ mod tests {
             (14.0, 9.3),
             (15.0, 9.4),
         ];
+
         for &(h, l) in &inputs {
             aroon.update_raw(h, l);
         }

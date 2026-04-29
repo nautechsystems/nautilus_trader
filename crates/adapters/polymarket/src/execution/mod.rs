@@ -23,7 +23,10 @@ pub(crate) mod submitter;
 pub(crate) mod types;
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -48,7 +51,7 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, CurrencyType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{OrderEventAny, OrderUpdated},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
@@ -56,25 +59,29 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, MarginBalance, Price, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::retry::RetryConfig;
+use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 use ustr::Ustr;
 
 use self::{
     order_builder::PolymarketOrderBuilder,
     order_fill_tracker::OrderFillTrackerMap,
-    parse::{parse_balance_allowance, parse_order_status_report},
+    parse::{
+        compute_commission, instrument_fee_exponent, instrument_taker_fee, parse_balance_allowance,
+        parse_order_status_report,
+    },
     reconciliation::{
         FillContext, apply_fill_filters, build_fill_reports_from_trades, build_position_reports,
     },
-    submitter::OrderSubmitter,
-    types::CancelOutcome,
+    submitter::{MarketBuyFeeContext, OrderSubmitter},
+    types::{BatchLimitOrderContext, CancelOutcome, LimitOrderSubmitRequest},
 };
 use crate::{
     common::{
-        consts::{POLYMARKET_VENUE, USDC},
+        consts::{BATCH_ORDER_LIMIT, POLYMARKET_VENUE},
         credential::Secrets,
         enums::SignatureType,
     },
@@ -104,7 +111,8 @@ pub struct PolymarketExecutionClient {
     submitter: OrderSubmitter,
     ws_client: PolymarketWebSocketClient,
     secrets: Secrets,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    pending_tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    stopping: Arc<AtomicBool>,
     ws_stream_handle: Mutex<Option<JoinHandle<()>>>,
     shared_token_instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
     neg_risk_index: Arc<AtomicMap<InstrumentId, bool>>,
@@ -120,7 +128,6 @@ impl PolymarketExecutionClient {
     /// # Errors
     ///
     /// Returns an error if credentials cannot be resolved or clients fail to construct.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         core: ExecutionClientCore,
         config: PolymarketExecClientConfig,
@@ -178,16 +185,17 @@ impl PolymarketExecutionClient {
         let ws_client = PolymarketWebSocketClient::new_user(
             config.base_url_ws.clone(),
             secrets.credential.clone(),
+            config.transport_backend,
         );
 
         let clock = get_atomic_clock_realtime();
-        let usdc = get_usdc_currency();
+        let pusd = get_pusd_currency();
         let emitter = ExecutionEventEmitter::new(
             clock,
             core.trader_id,
             core.account_id,
             AccountType::Cash,
-            Some(usdc),
+            Some(pusd),
         );
 
         Ok(Self {
@@ -200,7 +208,8 @@ impl PolymarketExecutionClient {
             submitter,
             ws_client,
             secrets,
-            pending_tasks: Mutex::new(Vec::new()),
+            pending_tasks: Arc::new(Mutex::new(Vec::new())),
+            stopping: Arc::new(AtomicBool::new(false)),
             ws_stream_handle: Mutex::new(None),
             shared_token_instruments: Arc::new(AtomicMap::new()),
             neg_risk_index: Arc::new(AtomicMap::new()),
@@ -327,6 +336,7 @@ impl PolymarketExecutionClient {
                         {
                             let http = http_client.clone();
                             let emit = emitter.clone();
+
                             get_runtime().spawn(async move {
                                 match fetch_and_emit_account_state(
                                     &http, &emit, clock, signature_type,
@@ -498,7 +508,25 @@ impl PolymarketExecutionClient {
         let amount = order.quantity();
         let is_quote_qty = order.is_quote_quantity();
 
+        // Quote-quantity BUYs are sized in pUSD; the venue computes taker
+        // fees against `amount + fees`, so we shrink the spend to fit the
+        // user's collateral balance before signing. SELL orders are sized
+        // in shares and skip this step.
+        let needs_fee_adjustment = side == OrderSide::Buy && is_quote_qty;
+        let fee_rate = if needs_fee_adjustment {
+            instrument_taker_fee(&instrument)
+        } else {
+            Decimal::ZERO
+        };
+        let fee_exponent = if needs_fee_adjustment {
+            instrument_fee_exponent(&instrument)
+        } else {
+            1.0
+        };
+
         let submitter = self.submitter.clone();
+        let http_client = self.http_client.clone();
+        let signature_type = self.config.signature_type;
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let fill_tracker = self.fill_tracker.clone();
@@ -510,8 +538,37 @@ impl PolymarketExecutionClient {
         let price_precision = instrument.price_precision();
 
         self.spawn_task("submit_market_order", async move {
+            let fee_context = if needs_fee_adjustment {
+                match fetch_collateral_balance_pusd(&http_client, signature_type).await {
+                    Ok(balance) => Some(MarketBuyFeeContext {
+                        user_pusd_balance: balance,
+                        fee_rate,
+                        fee_exponent,
+                        builder_taker_fee_rate: Decimal::ZERO,
+                    }),
+                    Err(e) => {
+                        emitter.emit_order_rejected(
+                            &order,
+                            &format!("Failed to fetch pUSD balance for fee adjustment: {e}"),
+                            clock.get_time_ns(),
+                            false,
+                        );
+                        return Ok(());
+                    }
+                }
+            } else {
+                None
+            };
+
             match submitter
-                .submit_market_order(&token_id, side, amount, neg_risk, tick_decimals)
+                .submit_market_order(
+                    &token_id,
+                    side,
+                    amount,
+                    neg_risk,
+                    tick_decimals,
+                    fee_context,
+                )
                 .await
             {
                 Ok((response, expected_base_qty)) => {
@@ -528,7 +585,7 @@ impl PolymarketExecutionClient {
                     {
                         log::info!(
                             "Converted {} quote quantity {} to base quantity {} \
-                             (expected from book walk)",
+                             (from signed taker_amount)",
                             order.instrument_id(),
                             amount,
                             base_qty,
@@ -622,6 +679,7 @@ impl PolymarketExecutionClient {
             .cache()
             .instrument(&order.instrument_id())
             .cloned();
+
         match instrument {
             Some(i) => Some(i),
             None => {
@@ -644,7 +702,7 @@ impl PolymarketExecutionClient {
             account_id: self.core.account_id,
             user_address,
             api_key: self.secrets.credential.api_key().as_str(),
-            usdc: get_usdc_currency(),
+            pusd: get_pusd_currency(),
             clock: self.clock,
         }
     }
@@ -693,6 +751,7 @@ impl ExecutionClient for PolymarketExecutionClient {
             return Ok(());
         }
 
+        self.stopping.store(false, Ordering::Release);
         let sender = get_exec_event_sender();
         self.emitter.set_sender(sender);
         self.core.set_started();
@@ -713,6 +772,9 @@ impl ExecutionClient for PolymarketExecutionClient {
 
         log::info!("Stopping Polymarket execution client");
 
+        // Block new background work from being spawned before we drain.
+        self.stopping.store(true, Ordering::Release);
+
         if let Some(handle) = self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() {
             handle.abort();
         }
@@ -727,7 +789,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         let order = self
             .core
             .cache()
@@ -758,33 +820,205 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
-        for (i, order_init) in cmd.order_inits.iter().enumerate() {
-            let submit = SubmitOrder::new(
-                cmd.trader_id,
-                cmd.client_id,
-                cmd.strategy_id,
-                cmd.instrument_id,
-                order_init.client_order_id,
-                cmd.order_inits[i].clone(),
-                cmd.exec_algorithm_id,
-                cmd.position_id,
-                cmd.params.clone(),
-                UUID4::new(),
-                self.clock.get_time_ns(),
-            );
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
+        let mut batch_orders = Vec::with_capacity(cmd.order_inits.len());
 
-            if let Err(e) = self.submit_order(&submit) {
+        for order_init in &cmd.order_inits {
+            let Some(order) = self
+                .core
+                .cache()
+                .order(&order_init.client_order_id)
+                .cloned()
+            else {
                 log::warn!(
-                    "Failed to submit order {} from list: {e}",
+                    "Order not found in cache for {}",
                     order_init.client_order_id
                 );
+                continue;
+            };
+
+            if order.is_closed() {
+                log::warn!("Cannot submit closed order {}", order.client_order_id());
+                continue;
             }
+
+            // Market orders cannot go through the /orders batch endpoint; route them
+            // through the single-order path which synthesizes a crossing limit order.
+            match order.order_type() {
+                OrderType::Limit => {}
+                OrderType::Market => {
+                    self.submit_market_order(order);
+                    continue;
+                }
+                other => {
+                    self.emitter.emit_order_denied(
+                        &order,
+                        &format!("Unsupported order type for Polymarket: {other:?}"),
+                    );
+                    continue;
+                }
+            }
+
+            if let Err(reason) = PolymarketOrderBuilder::validate_limit_order(&order) {
+                self.emitter.emit_order_denied(&order, &reason);
+                continue;
+            }
+
+            let instrument = match self.resolve_instrument(&order) {
+                Some(i) => i,
+                None => continue,
+            };
+
+            let price = order
+                .price()
+                .expect("validated limit order must have a price");
+            batch_orders.push(BatchLimitOrderContext {
+                request: LimitOrderSubmitRequest {
+                    token_id: instrument.raw_symbol().to_string(),
+                    side: order.order_side(),
+                    price,
+                    quantity: order.quantity(),
+                    time_in_force: order.time_in_force(),
+                    post_only: order.is_post_only(),
+                    neg_risk: self.get_neg_risk(&order.instrument_id()),
+                    expire_time: order.expire_time(),
+                    tick_decimals: instrument.price_precision() as u32,
+                },
+                size_precision: instrument.size_precision(),
+                price_precision: instrument.price_precision(),
+                order,
+            });
         }
+
+        if batch_orders.is_empty() {
+            return Ok(());
+        }
+
+        if batch_orders.len() == 1 {
+            // Route through the single-order path to preserve retry semantics;
+            // the batch endpoint deliberately disables retry due to missing idempotency keys.
+            let batch_order = batch_orders.pop().expect("len checked");
+            self.submit_limit_order(batch_order.order);
+            return Ok(());
+        }
+
+        let submitter = self.submitter.clone();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+        let fill_tracker = self.fill_tracker.clone();
+        let pending_fills = self.pending_fills.clone();
+        let pending_order_reports = self.pending_order_reports.clone();
+        let pending_cancels = self.pending_cancels.clone();
+        let pending_tasks = self.pending_tasks.clone();
+        let stopping = self.stopping.clone();
+        let account_id = self.core.account_id;
+
+        self.spawn_task("submit_order_list", async move {
+            for batch_order in &batch_orders {
+                emitter.emit_order_submitted(&batch_order.order);
+            }
+
+            let requests: Vec<LimitOrderSubmitRequest> =
+                batch_orders.iter().map(|bo| bo.request.clone()).collect();
+            let prepare_results = submitter.prepare_limit_order_submissions(&requests).await;
+
+            let mut prepared_orders = Vec::with_capacity(batch_orders.len());
+            let mut submissions = Vec::with_capacity(batch_orders.len());
+
+            for (batch_order, result) in batch_orders.into_iter().zip(prepare_results) {
+                match result {
+                    Ok(submission) => {
+                        prepared_orders.push(batch_order);
+                        submissions.push(submission);
+                    }
+                    Err(e) => {
+                        reject_submit_order(
+                            &batch_order.order,
+                            &format!("{e}"),
+                            &emitter,
+                            clock,
+                            &pending_cancels,
+                        );
+                    }
+                }
+            }
+
+            if submissions.is_empty() {
+                return Ok(());
+            }
+
+            // Chunk into venue-sized batches; POST /orders caps at BATCH_ORDER_LIMIT orders.
+            // A remainder chunk of size 1 goes through the single-order path so it keeps
+            // the same retry semantics as a list of length 1.
+            let total = submissions.len();
+            let mut offset = 0;
+            while offset < total {
+                let end = (offset + BATCH_ORDER_LIMIT).min(total);
+                let mut submissions_chunk = submissions[offset..end].to_vec();
+                let mut orders_chunk = prepared_orders[offset..end].to_vec();
+
+                if submissions_chunk.len() == 1 {
+                    let submission = submissions_chunk.pop().expect("len 1");
+                    let batch_order = orders_chunk.pop().expect("len 1");
+                    handle_single_order_response(
+                        submitter.post_limit_order_submission(submission).await,
+                        batch_order,
+                        &submitter,
+                        &emitter,
+                        clock,
+                        &fill_tracker,
+                        &pending_fills,
+                        &pending_order_reports,
+                        &pending_cancels,
+                        account_id,
+                    )
+                    .await;
+                } else {
+                    match submitter
+                        .post_limit_order_submissions(submissions_chunk)
+                        .await
+                    {
+                        Ok(responses) => {
+                            handle_batch_order_responses(
+                                responses,
+                                orders_chunk,
+                                &submitter,
+                                &emitter,
+                                clock,
+                                &fill_tracker,
+                                &pending_fills,
+                                &pending_order_reports,
+                                &pending_cancels,
+                                &pending_tasks,
+                                &stopping,
+                                account_id,
+                            )
+                            .await;
+                        }
+                        Err(e) => {
+                            for batch_order in orders_chunk {
+                                reject_submit_order(
+                                    &batch_order.order,
+                                    &format!("{e}"),
+                                    &emitter,
+                                    clock,
+                                    &pending_cancels,
+                                );
+                            }
+                        }
+                    }
+                }
+
+                offset = end;
+            }
+
+            Ok(())
+        });
+
         Ok(())
     }
 
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         let order = self.core.cache().order(&cmd.client_order_id).cloned();
         if let Some(order) = order {
             let venue_order_id = order.venue_order_id();
@@ -799,7 +1033,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
         let order = self.core.cache().order(&cmd.client_order_id).cloned();
         let order_ref = match &order {
             Some(o) => o,
@@ -887,7 +1121,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let cache = self.core.cache();
         let open_orders = cache.orders_open(
             Some(&self.core.venue),
@@ -938,12 +1172,13 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
         if cmd.cancels.is_empty() {
             return Ok(());
         }
 
         let mut venue_to_order: Vec<(String, OrderAny)> = Vec::new();
+
         for c in &cmd.cancels {
             if let Some(order) = self.core.cache().order(&c.client_order_id)
                 && let Some(vid) = order.venue_order_id()
@@ -981,7 +1216,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -993,7 +1228,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
         log::debug!("Querying order: client_order_id={}", cmd.client_order_id);
 
         let venue_order_id = match &cmd.venue_order_id {
@@ -1068,12 +1303,32 @@ impl ExecutionClient for PolymarketExecutionClient {
         self.shared_token_instruments.insert(token_id, instrument);
     }
 
+    fn calculate_commission(
+        &self,
+        instrument: &InstrumentAny,
+        last_qty: Quantity,
+        last_px: Price,
+        liquidity_side: LiquiditySide,
+    ) -> Option<Money> {
+        let fee_rate = instrument_taker_fee(instrument);
+        let commission = compute_commission(
+            fee_rate,
+            last_qty.as_decimal(),
+            last_px.as_decimal(),
+            liquidity_side,
+        );
+
+        Some(Money::new(commission, instrument.quote_currency()))
+    }
+
     async fn connect(&mut self) -> anyhow::Result<()> {
         if self.core.is_connected() {
             return Ok(());
         }
 
         log::info!("Connecting Polymarket execution client");
+
+        self.stopping.store(false, Ordering::Release);
 
         // Read instruments from global cache (populated by data client)
         self.load_instruments_from_cache();
@@ -1089,6 +1344,7 @@ impl ExecutionClient for PolymarketExecutionClient {
 
         if let Err(e) = post_ws.await {
             log::warn!("Connect failed after WS started, tearing down: {e}");
+            self.stopping.store(true, Ordering::Release);
             let _ = self.ws_client.disconnect().await;
             self.abort_pending_tasks();
             return Err(e);
@@ -1106,6 +1362,9 @@ impl ExecutionClient for PolymarketExecutionClient {
         }
 
         log::info!("Disconnecting Polymarket execution client");
+
+        // Block new background work from being spawned before we drain.
+        self.stopping.store(true, Ordering::Release);
 
         self.ws_client.disconnect().await?;
 
@@ -1294,7 +1553,167 @@ fn process_cancel_result(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
+async fn handle_batch_order_responses(
+    responses: Vec<OrderResponse>,
+    batch_orders: Vec<BatchLimitOrderContext>,
+    submitter: &OrderSubmitter,
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+    fill_tracker: &Arc<OrderFillTrackerMap>,
+    pending_fills: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>,
+    pending_order_reports: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>>,
+    pending_cancels: &Arc<Mutex<AHashSet<ClientOrderId>>>,
+    pending_tasks: &Arc<Mutex<Vec<JoinHandle<()>>>>,
+    stopping: &Arc<AtomicBool>,
+    account_id: AccountId,
+) {
+    let response_len = responses.len();
+    let order_len = batch_orders.len();
+
+    if response_len != order_len {
+        log::warn!(
+            "Batch submit response length ({response_len}) does not match order count ({order_len})"
+        );
+    }
+
+    // Polymarket batch responses do not include a client-side correlation key.
+    // We map entries by submission order and rely on the API preserving array order.
+    // Reference: https://docs.polymarket.com/#create-and-place-multiple-orders
+    let mut deferred = Vec::new();
+
+    for (batch_order, response) in batch_orders.iter().zip(responses) {
+        if let Some((order_id_str, venue_order_id)) = handle_order_response(
+            Ok(response),
+            &batch_order.order,
+            emitter,
+            clock,
+            fill_tracker,
+            pending_fills,
+            pending_order_reports,
+            pending_cancels,
+            account_id,
+            batch_order.size_precision,
+            batch_order.price_precision,
+        ) {
+            deferred.push((batch_order.order.clone(), order_id_str, venue_order_id));
+        }
+    }
+
+    if order_len > response_len {
+        for batch_order in batch_orders.iter().skip(response_len) {
+            reject_submit_order(
+                &batch_order.order,
+                "Order not included in API response",
+                emitter,
+                clock,
+                pending_cancels,
+            );
+        }
+    }
+
+    // Spawn deferred cancels as independent tasks so retrying cancels cannot stall
+    // terminal-event emission or delay posting subsequent chunks. Handles are tracked
+    // in pending_tasks so client shutdown aborts them like any other background work.
+    // Holding the pending_tasks lock across the spawn loop (and the stopping check)
+    // closes the race with stop(): abort_pending_tasks() blocks on the same lock,
+    // so either all new handles are enqueued before the drain runs, or stopping has
+    // already been observed and no new handles are spawned.
+    if !deferred.is_empty() {
+        let mut tasks = pending_tasks.lock().expect(MUTEX_POISONED);
+
+        if stopping.load(Ordering::Acquire) {
+            return;
+        }
+        tasks.retain(|handle| !handle.is_finished());
+
+        for (order, order_id_str, venue_order_id) in deferred {
+            let submitter = submitter.clone();
+            let emitter = emitter.clone();
+
+            let handle = get_runtime().spawn(async move {
+                execute_deferred_cancel(
+                    &submitter,
+                    &order,
+                    &order_id_str,
+                    venue_order_id,
+                    &emitter,
+                    clock,
+                )
+                .await;
+            });
+            tasks.push(handle);
+        }
+    }
+}
+
+fn reject_submit_order(
+    order: &OrderAny,
+    reason: &str,
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+    pending_cancels: &Arc<Mutex<AHashSet<ClientOrderId>>>,
+) {
+    let ts_now = clock.get_time_ns();
+    emitter.emit_order_rejected(order, reason, ts_now, false);
+    pending_cancels
+        .lock()
+        .expect(MUTEX_POISONED)
+        .remove(&order.client_order_id());
+}
+
+#[expect(clippy::too_many_arguments)]
+async fn handle_single_order_response(
+    result: anyhow::Result<OrderResponse>,
+    batch_order: BatchLimitOrderContext,
+    submitter: &OrderSubmitter,
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+    fill_tracker: &Arc<OrderFillTrackerMap>,
+    pending_fills: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>,
+    pending_order_reports: &Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>>,
+    pending_cancels: &Arc<Mutex<AHashSet<ClientOrderId>>>,
+    account_id: AccountId,
+) {
+    match result {
+        Ok(response) => {
+            if let Some((order_id_str, venue_order_id)) = handle_order_response(
+                Ok(response),
+                &batch_order.order,
+                emitter,
+                clock,
+                fill_tracker,
+                pending_fills,
+                pending_order_reports,
+                pending_cancels,
+                account_id,
+                batch_order.size_precision,
+                batch_order.price_precision,
+            ) {
+                execute_deferred_cancel(
+                    submitter,
+                    &batch_order.order,
+                    &order_id_str,
+                    venue_order_id,
+                    emitter,
+                    clock,
+                )
+                .await;
+            }
+        }
+        Err(e) => {
+            reject_submit_order(
+                &batch_order.order,
+                &format!("{e}"),
+                emitter,
+                clock,
+                pending_cancels,
+            );
+        }
+    }
+}
+
+#[expect(clippy::too_many_arguments)]
 fn handle_order_response(
     result: crate::http::error::Result<OrderResponse>,
     order: &OrderAny,
@@ -1353,6 +1772,7 @@ fn handle_order_response(
                         .remove(&venue_order_id)
                     {
                         let mut has_filled = false;
+
                         for report in &buffered {
                             if report.order_status == OrderStatus::Filled {
                                 has_filled = true;
@@ -1387,7 +1807,7 @@ fn handle_order_response(
                                 account_id,
                                 &order_id,
                                 fallback_px,
-                                get_usdc_currency(),
+                                get_pusd_currency(),
                                 ts_now,
                                 ts_now,
                             ) {
@@ -1476,7 +1896,7 @@ async fn execute_deferred_cancel(
 /// If the order has reached a terminal state that the WS stream missed
 /// (e.g. UNMATCHED for an unfilled FOK), emits an order status report
 /// so the engine can reconcile it.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 async fn check_fok_status(
     submitter: &OrderSubmitter,
     order_id: &str,
@@ -1566,9 +1986,8 @@ async fn check_fok_status(
     emitter.send_order_status_report(report);
 }
 
-pub fn get_usdc_currency() -> Currency {
-    Currency::try_from_str(USDC)
-        .unwrap_or_else(|| Currency::new(USDC, 6, 0, USDC, CurrencyType::Crypto))
+pub fn get_pusd_currency() -> Currency {
+    Currency::pUSD()
 }
 
 async fn fetch_and_emit_account_state(
@@ -1590,15 +2009,40 @@ async fn fetch_and_emit_account_state(
         .await
         .context("failed to fetch balance allowance")?;
 
-    let usdc = get_usdc_currency();
-    let account_balance = parse_balance_allowance(balance_allowance.balance, usdc)
+    let pusd = get_pusd_currency();
+    let account_balance = parse_balance_allowance(balance_allowance.balance, pusd)
         .context("failed to parse balance allowance")?;
 
     let ts_event = clock.get_time_ns();
     log::info!(
-        "Account state updated: balance={} USDC",
+        "Account state updated: balance={} pUSD",
         account_balance.total
     );
     emitter.emit_account_state(vec![account_balance], vec![], true, ts_event);
     Ok(())
+}
+
+/// Fetches the user's pUSD collateral balance as a `Decimal`. Mirrors
+/// [`fetch_and_emit_account_state`] but returns the value directly so the
+/// market-BUY fee-adjustment path can size against a fresh balance.
+async fn fetch_collateral_balance_pusd(
+    http_client: &PolymarketClobHttpClient,
+    signature_type: SignatureType,
+) -> anyhow::Result<Decimal> {
+    use anyhow::Context;
+
+    let params = GetBalanceAllowanceParams {
+        asset_type: Some(crate::http::query::AssetType::Collateral),
+        signature_type: Some(signature_type),
+        ..Default::default()
+    };
+
+    let balance_allowance = http_client
+        .get_balance_allowance(params)
+        .await
+        .context("failed to fetch balance allowance")?;
+
+    // The API returns balances as integer micro-pUSD (e.g. `20000000` = 20 pUSD).
+    let usdc_scale = Decimal::from(1_000_000u32);
+    Ok(balance_allowance.balance / usdc_scale)
 }

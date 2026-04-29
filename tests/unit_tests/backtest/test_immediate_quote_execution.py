@@ -138,6 +138,7 @@ class TestImmediateQuoteExecution:
     def _make_quotes(self, n=2):
         quotes = []
         base_ts = 1_000_000_000_000_000_000
+
         for i in range(n):
             bid_price = 0.70000 + (i * 0.00001)
             ask_price = bid_price + 0.00002
@@ -285,6 +286,7 @@ class TestBarSameTimestampExecution:
         bar_type = BarType.from_str(f"{self.instrument.id.value}-1-MINUTE-LAST-EXTERNAL")
         bars = []
         base_ts = 1_000_000_000_000_000_000
+
         for i in range(n):
             bar = Bar(
                 bar_type=bar_type,

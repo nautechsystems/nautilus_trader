@@ -12,8 +12,10 @@ __all__ = [
     "OKXDataClientConfig",
     "OKXDataClientFactory",
     "OKXEndpointType",
+    "OKXEnvironment",
     "OKXExecClientConfig",
     "OKXExecutionClientFactory",
+    "OKXGreeksType",
     "OKXHttpClient",
     "OKXInstrumentType",
     "OKXMarginMode",
@@ -45,14 +47,14 @@ class OKXDataClientConfig:
     def __init__(
         self,
         instrument_types: typing.Sequence[OKXInstrumentType] | None = None,
-        is_demo: bool | None = None,
+        environment: OKXEnvironment | None = None,
         api_key: str | None = None,
         api_secret: str | None = None,
         api_passphrase: str | None = None,
         base_url_http: str | None = None,
         base_url_ws_public: str | None = None,
         base_url_ws_business: str | None = None,
-        http_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -73,14 +75,14 @@ class OKXExecClientConfig:
         trader_id: model.TraderId,
         account_id: model.AccountId,
         instrument_types: typing.Sequence[OKXInstrumentType] | None = None,
-        is_demo: bool | None = None,
+        environment: OKXEnvironment | None = None,
         api_key: str | None = None,
         api_secret: str | None = None,
         api_passphrase: str | None = None,
         base_url_http: str | None = None,
         base_url_ws_private: str | None = None,
         base_url_ws_business: str | None = None,
-        http_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -105,7 +107,7 @@ class OKXHttpClient:
         max_retries: int = 3,
         retry_delay_ms: int = 1000,
         retry_delay_max_ms: int = 10000,
-        is_demo: bool = False,
+        environment: OKXEnvironment = ...,
         proxy_url: str | None = None,
     ) -> None: ...
     @staticmethod
@@ -268,6 +270,7 @@ class OKXWebSocketClient:
         account_id: model.AccountId | None = None,
         heartbeat: int | None = None,
         auth_timeout_secs: int | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
     @staticmethod
     def with_credentials(
@@ -278,6 +281,7 @@ class OKXWebSocketClient:
         account_id: model.AccountId | None = None,
         heartbeat: int | None = None,
         auth_timeout_secs: int | None = None,
+        proxy_url: str | None = None,
     ) -> OKXWebSocketClient: ...
     @staticmethod
     def from_env() -> OKXWebSocketClient: ...
@@ -329,6 +333,9 @@ class OKXWebSocketClient:
     def subscribe_index_prices(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def unsubscribe_index_prices(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def add_option_greeks_sub(self, instrument_id: model.InstrumentId) -> None: ...
+    def add_option_greeks_sub_with_conventions(
+        self, instrument_id: model.InstrumentId, conventions: typing.Sequence[OKXGreeksType]
+    ) -> None: ...
     def remove_option_greeks_sub(self, instrument_id: model.InstrumentId) -> None: ...
     def subscribe_option_summary(self, inst_family: str) -> typing.Any: ...
     def unsubscribe_option_summary(self, inst_family: str) -> typing.Any: ...
@@ -418,6 +425,27 @@ class OKXEndpointType(enum.Enum):
     Public = ...
     Private = ...
     Business = ...
+
+@typing.final
+class OKXEnvironment(enum.Enum):
+    LIVE = ...
+    DEMO = ...
+
+    def __init__(self, value: typing.Any) -> None: ...
+    def __hash__(self) -> int: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> int: ...
+    @classmethod
+    def variants(cls) -> list[str]: ...
+    @classmethod
+    def from_str(cls, data: typing.Any) -> OKXEnvironment: ...
+
+@typing.final
+class OKXGreeksType(enum.Enum):
+    BS = ...
+    PA = ...
 
 @typing.final
 class OKXInstrumentType(enum.Enum):
@@ -537,7 +565,7 @@ class OKXVipLevel(enum.Enum):
 
 def derive_okx_ws_url(base_url: str, channel: str) -> str: ...
 def get_okx_http_base_url() -> str: ...
-def get_okx_ws_url_business(is_demo: bool) -> str: ...
-def get_okx_ws_url_private(is_demo: bool) -> str: ...
-def get_okx_ws_url_public(is_demo: bool) -> str: ...
+def get_okx_ws_url_business(environment: OKXEnvironment) -> str: ...
+def get_okx_ws_url_private(environment: OKXEnvironment) -> str: ...
+def get_okx_ws_url_public(environment: OKXEnvironment) -> str: ...
 def okx_requires_authentication(endpoint_type: OKXEndpointType) -> bool: ...

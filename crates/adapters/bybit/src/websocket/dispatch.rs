@@ -34,6 +34,7 @@ use nautilus_model::{
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
+    orders::TRIGGERABLE_ORDER_TYPES,
     types::{Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
@@ -153,7 +154,6 @@ impl WsDispatchState {
 /// proper order events (OrderAccepted, OrderCanceled, OrderFilled, etc.).
 /// For untracked orders (external or pre-existing), falls back to execution
 /// reports for downstream reconciliation.
-#[allow(clippy::too_many_arguments)]
 pub fn dispatch_ws_message(
     message: &BybitWsMessage,
     emitter: &ExecutionEventEmitter,
@@ -165,6 +165,7 @@ pub fn dispatch_ws_message(
     match message {
         BybitWsMessage::AccountOrder(msg) => {
             let ts_init = clock.get_time_ns();
+
             for order in &msg.data {
                 let symbol = make_bybit_symbol(order.symbol, order.category);
                 let Some(instrument) = instruments.get(&symbol) else {
@@ -176,6 +177,7 @@ pub fn dispatch_ws_message(
         }
         BybitWsMessage::AccountExecution(msg) => {
             let ts_init = clock.get_time_ns();
+
             for exec in &msg.data {
                 let symbol = make_bybit_symbol(exec.symbol, exec.category);
                 let Some(instrument) = instruments.get(&symbol) else {
@@ -192,6 +194,7 @@ pub fn dispatch_ws_message(
                     log::warn!("Failed to parse wallet creation_time, using ts_init: {e}");
                     ts_init
                 });
+
             for wallet in &msg.data {
                 match parse_ws_account_state(wallet, account_id, ts_event, ts_init) {
                     Ok(state) => emitter.send_account_state(state),
@@ -201,12 +204,14 @@ pub fn dispatch_ws_message(
         }
         BybitWsMessage::AccountPosition(msg) => {
             let ts_init = clock.get_time_ns();
+
             for position in &msg.data {
                 let symbol = make_bybit_symbol(position.symbol, position.category);
                 let Some(instrument) = instruments.get(&symbol) else {
                     log::warn!("No instrument for position update: {symbol}");
                     continue;
                 };
+
                 match parse_ws_position_status_report(position, account_id, instrument, ts_init) {
                     Ok(report) => emitter.send_position_report(report),
                     Err(e) => log::error!("Failed to parse position status report: {e}"),
@@ -319,6 +324,15 @@ fn dispatch_order_update(
                     log::debug!("Skipping stale Triggered for {client_order_id} (already filled)");
                     return;
                 }
+
+                if !TRIGGERABLE_ORDER_TYPES.contains(&identity.order_type) {
+                    log::debug!(
+                        "Skipping OrderTriggered for {} order {client_order_id}: market-style stops have no TRIGGERED state",
+                        identity.order_type,
+                    );
+                    return;
+                }
+
                 ensure_accepted_emitted(
                     client_order_id,
                     account_id,
@@ -499,6 +513,19 @@ fn dispatch_execution_fill(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
+    if exec.exec_type.is_exchange_generated() {
+        log::warn!(
+            "Exchange-generated execution: exec_type={:?}, symbol={}, order_id={}, order_link_id={}, side={:?}, qty={}, price={}",
+            exec.exec_type,
+            exec.symbol,
+            exec.order_id,
+            exec.order_link_id,
+            exec.side,
+            exec.exec_qty,
+            exec.exec_price,
+        );
+    }
+
     let client_order_id = if exec.order_link_id.is_empty() {
         None
     } else {
@@ -768,7 +795,7 @@ fn dispatch_order_response(
 }
 
 /// Emits the appropriate rejection event based on the pending operation type.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn emit_rejection_for_op(
     pending_op: &PendingOperation,
     client_order_id: ClientOrderId,

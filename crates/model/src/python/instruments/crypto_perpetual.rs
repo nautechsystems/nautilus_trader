@@ -28,6 +28,7 @@ use rust_decimal::Decimal;
 use crate::{
     identifiers::{InstrumentId, Symbol},
     instruments::CryptoPerpetual,
+    python::instruments::register_crypto_currencies_from_dict,
     types::{Currency, Money, Price, Quantity},
 };
 
@@ -35,7 +36,7 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CryptoPerpetual {
     /// Represents a crypto perpetual futures contract instrument (a.k.a. perpetual swap).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (instrument_id, raw_symbol, base_currency, quote_currency, settlement_currency, is_inverse, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, info=None))]
     fn py_new(
@@ -271,6 +272,7 @@ impl CryptoPerpetual {
         // Convert HashMap<String, serde_json::Value> back to Python dict
         if let Some(ref info_map) = self.info {
             let py_dict = PyDict::new(py);
+
             for (key, value) in info_map {
                 // Convert serde_json::Value back to Python object via JSON
                 let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
@@ -287,6 +289,7 @@ impl CryptoPerpetual {
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
+        register_crypto_currencies_from_dict(py, &values, &["base_currency"]);
         from_dict_pyo3(py, values)
     }
 
@@ -314,6 +317,7 @@ impl CryptoPerpetual {
         // Serialize info dict
         if let Some(ref info_map) = self.info {
             let info_dict = PyDict::new(py);
+
             for (key, value) in info_map {
                 let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
                 let py_value =
@@ -332,26 +336,88 @@ impl CryptoPerpetual {
             Some(value) => dict.set_item("max_quantity", value.to_string())?,
             None => dict.set_item("max_quantity", py.None())?,
         }
+
         match self.min_quantity {
             Some(value) => dict.set_item("min_quantity", value.to_string())?,
             None => dict.set_item("min_quantity", py.None())?,
         }
+
         match self.max_notional {
             Some(value) => dict.set_item("max_notional", value.to_string())?,
             None => dict.set_item("max_notional", py.None())?,
         }
+
         match self.min_notional {
             Some(value) => dict.set_item("min_notional", value.to_string())?,
             None => dict.set_item("min_notional", py.None())?,
         }
+
         match self.max_price {
             Some(value) => dict.set_item("max_price", value.to_string())?,
             None => dict.set_item("max_price", py.None())?,
         }
+
         match self.min_price {
             Some(value) => dict.set_item("min_price", value.to_string())?,
             None => dict.set_item("min_price", py.None())?,
         }
         Ok(dict.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pyo3::{prelude::*, types::PyDict};
+    use rstest::rstest;
+
+    use crate::{enums::CurrencyType, instruments::CryptoPerpetual, types::Currency};
+
+    #[rstest]
+    fn test_from_dict_unknown_base_currency_registers_as_crypto() {
+        // Regression: newly listed base assets (e.g. Binance `0GUSDT-PERP`) must not
+        // fail `from_dict` just because the code is absent from the built-in map.
+        Python::initialize();
+        Python::attach(|py| {
+            let dict = PyDict::new(py);
+            dict.set_item("type", "CryptoPerpetual").unwrap();
+            dict.set_item("id", "0GUSDT-PERP.BINANCE").unwrap();
+            dict.set_item("raw_symbol", "0GUSDT").unwrap();
+            dict.set_item("base_currency", "0G").unwrap();
+            dict.set_item("quote_currency", "USDT").unwrap();
+            dict.set_item("settlement_currency", "USDT").unwrap();
+            dict.set_item("is_inverse", false).unwrap();
+            dict.set_item("price_precision", 4).unwrap();
+            dict.set_item("size_precision", 0).unwrap();
+            dict.set_item("price_increment", "0.0001").unwrap();
+            dict.set_item("size_increment", "1").unwrap();
+            dict.set_item("multiplier", "1").unwrap();
+            dict.set_item("lot_size", "1").unwrap();
+            dict.set_item("max_quantity", py.None()).unwrap();
+            dict.set_item("min_quantity", "1").unwrap();
+            dict.set_item("max_notional", py.None()).unwrap();
+            dict.set_item("min_notional", py.None()).unwrap();
+            dict.set_item("max_price", py.None()).unwrap();
+            dict.set_item("min_price", py.None()).unwrap();
+            dict.set_item("margin_init", "0").unwrap();
+            dict.set_item("margin_maint", "0").unwrap();
+            dict.set_item("maker_fee", "0.0002").unwrap();
+            dict.set_item("taker_fee", "0.0004").unwrap();
+            dict.set_item("ts_event", 1_758_067_200_000_000_000u64)
+                .unwrap();
+            dict.set_item("ts_init", 1_758_067_200_000_000_000u64)
+                .unwrap();
+
+            let values: Py<PyDict> = dict.unbind();
+            let perp = CryptoPerpetual::py_from_dict(py, values).unwrap();
+
+            assert_eq!(perp.base_currency.code.as_str(), "0G");
+            assert_eq!(perp.base_currency.precision, 8);
+            assert_eq!(perp.base_currency.currency_type, CurrencyType::Crypto);
+            assert_eq!(perp.quote_currency.code.as_str(), "USDT");
+            assert_eq!(perp.settlement_currency.code.as_str(), "USDT");
+
+            // Side effect: the unknown code is now in the registry for subsequent strict lookups
+            assert!(Currency::try_from_str("0G").is_some());
+        });
     }
 }

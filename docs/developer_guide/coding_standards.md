@@ -122,7 +122,7 @@ uv pip install gitlint
 To enable gitlint as an automatic commit-msg hook:
 
 ```bash
-pre-commit install --hook-type commit-msg
+prek install --hook-type commit-msg
 ```
 
 **Manual usage**: Check your last commit message:

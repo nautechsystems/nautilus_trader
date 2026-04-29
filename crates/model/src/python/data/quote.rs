@@ -283,7 +283,7 @@ impl QuoteTick {
 
     #[staticmethod]
     #[pyo3(name = "from_raw")]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_from_raw(
         instrument_id: InstrumentId,
         bid_price_raw: PriceRaw,
@@ -360,7 +360,7 @@ impl QuoteTick {
         self.to_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
-    /// Return MsgPack encoded bytes representation of the object.
+    /// Return `MsgPack` encoded bytes representation of the object.
     #[pyo3(name = "to_msgpack_bytes")]
     fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
         self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
@@ -396,16 +396,16 @@ mod tests {
 
     #[rstest]
     #[case(
-    Price::new(0.010000, 6),
-    Price::new(0.0100010, 7), // Mismatched precision
-    Quantity::new(0.001000, 6),
-    Quantity::new(0.001000, 6),
+    Price::new(0.010_000, 6),
+    Price::new(0.010_001_0, 7), // Mismatched precision
+    Quantity::new(0.001_000, 6),
+    Quantity::new(0.001_000, 6),
 )]
     #[case(
-    Price::new(0.010000, 6),
-    Price::new(0.010001, 6),
-    Quantity::new(0.001000, 6),
-    Quantity::new(0.0010000, 7), // Mismatched precision
+    Price::new(0.010_000, 6),
+    Price::new(0.010_001, 6),
+    Quantity::new(0.001_000, 6),
+    Quantity::new(0.001_000_0, 7), // Mismatched precision
 )]
     fn test_quote_tick_py_new_invalid_precisions(
         #[case] bid_price: Price,

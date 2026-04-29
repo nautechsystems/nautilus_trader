@@ -265,6 +265,7 @@ impl DatabaseQueries {
                 order.client_order_id()
             );
         }
+
         match order.last_event().clone() {
             OrderEventAny::Accepted(event) => {
                 Self::add_order_event(pool, Box::new(event), client_id).await
@@ -1127,6 +1128,7 @@ impl DatabaseQueries {
         .fetch_all(pool)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to load account ids: {e}"))?;
+
         for id in result {
             map.insert(id.client_order_id, id.client_id);
         }

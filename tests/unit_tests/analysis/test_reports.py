@@ -85,6 +85,29 @@ class TestReportProvider:
         # Assert
         assert len(report) == 1
 
+    def test_generate_accounts_report_with_only_empty_states_returns_empty_dataframe(self):
+        # Arrange
+        state = AccountState(
+            account_id=AccountId("BITMEX-1513111"),
+            account_type=AccountType.MARGIN,
+            base_currency=BTC,
+            reported=True,
+            balances=[],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        account = MarginAccount(state)
+
+        # Act
+        report = ReportProvider.generate_account_report(account)
+
+        # Assert
+        assert report.empty
+
     def test_generate_orders_report_with_no_order_returns_empty_dataframe(self):
         # Arrange, Act
         report = ReportProvider.generate_orders_report([])

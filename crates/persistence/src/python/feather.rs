@@ -29,10 +29,18 @@ use nautilus_common::{
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
-        Bar, Data, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick,
-        TradeTick, close::InstrumentClose,
+        Bar, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
+        OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose,
+    },
+    events::{
+        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEmulated, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
+        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSnapshot,
+        OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged,
+        PositionClosed, PositionOpened, PositionSnapshot,
     },
     python::instruments::pyobject_to_instrument_any,
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 use object_store::ObjectStoreExt;
 use pyo3::{exceptions::PyIOError, prelude::*};
@@ -92,7 +100,7 @@ impl PyStreamingFeatherWriter {
         flush_interval_ms=None,
         replace=false
     ))]
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn new(
         path: String,
         cache: PyCache,
@@ -137,11 +145,13 @@ impl PyStreamingFeatherWriter {
                         object_store::path::Path::from(path.trim_start_matches('/').to_string());
                     let mut stream = store_ref.list(Some(&prefix));
                     let mut to_delete = Vec::new();
+
                     while let Some(result) = futures::StreamExt::next(&mut stream).await {
                         if let Ok(meta) = result {
                             to_delete.push(meta.location);
                         }
                     }
+
                     for path in to_delete {
                         let _ = store_ref.delete(&path).await;
                     }
@@ -247,9 +257,22 @@ impl PyStreamingFeatherWriter {
     ///
     /// - `data`: The data object to write (must be a Nautilus data type from pyo3).
     ///
-    /// FundingRateUpdate is intentionally not supported and will return an error.
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn write(&self, py: Python, data: Py<PyAny>) -> PyResult<()> {
+        macro_rules! try_write {
+            ($type:ty, $name:literal) => {
+                if let Ok(value) = data.extract::<$type>(py) {
+                    let mut writer = self.writer.borrow_mut();
+                    let runtime = get_runtime();
+                    return runtime
+                        .block_on(async { writer.write(value).await })
+                        .map_err(|e| {
+                            PyIOError::new_err(format!("Failed to write {}: {e}", $name))
+                        });
+                }
+            };
+        }
+
         // Try to convert from common pyo3 data types
         if let Ok(quote) = data.extract::<QuoteTick>(py) {
             let mut writer = self.writer.borrow_mut();
@@ -314,6 +337,37 @@ impl PyStreamingFeatherWriter {
                 .block_on(async { writer.write_data(Data::InstrumentClose(close)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write InstrumentClose: {e}")));
         }
+
+        try_write!(FundingRateUpdate, "FundingRateUpdate");
+        try_write!(InstrumentStatus, "InstrumentStatus");
+        try_write!(AccountState, "AccountState");
+        try_write!(OrderInitialized, "OrderInitialized");
+        try_write!(OrderDenied, "OrderDenied");
+        try_write!(OrderEmulated, "OrderEmulated");
+        try_write!(OrderSubmitted, "OrderSubmitted");
+        try_write!(OrderAccepted, "OrderAccepted");
+        try_write!(OrderRejected, "OrderRejected");
+        try_write!(OrderPendingCancel, "OrderPendingCancel");
+        try_write!(OrderCanceled, "OrderCanceled");
+        try_write!(OrderCancelRejected, "OrderCancelRejected");
+        try_write!(OrderExpired, "OrderExpired");
+        try_write!(OrderTriggered, "OrderTriggered");
+        try_write!(OrderPendingUpdate, "OrderPendingUpdate");
+        try_write!(OrderReleased, "OrderReleased");
+        try_write!(OrderModifyRejected, "OrderModifyRejected");
+        try_write!(OrderUpdated, "OrderUpdated");
+        try_write!(OrderFilled, "OrderFilled");
+        try_write!(PositionOpened, "PositionOpened");
+        try_write!(PositionChanged, "PositionChanged");
+        try_write!(PositionClosed, "PositionClosed");
+        try_write!(PositionAdjusted, "PositionAdjusted");
+        try_write!(OrderSnapshot, "OrderSnapshot");
+        try_write!(PositionSnapshot, "PositionSnapshot");
+        try_write!(OrderStatusReport, "OrderStatusReport");
+        try_write!(FillReport, "FillReport");
+        try_write!(PositionStatusReport, "PositionStatusReport");
+        try_write!(ExecutionMassStatus, "ExecutionMassStatus");
+
         // Try instrument types (uses type_str attribute for dispatch)
         if let Ok(instrument) = pyobject_to_instrument_any(py, data.clone_ref(py)) {
             let mut writer = self.writer.borrow_mut();

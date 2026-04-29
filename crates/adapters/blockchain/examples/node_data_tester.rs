@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Blockchain adapter.
 //!
-//! Run with: `cargo run --example blockchain-data-tester --package nautilus-blockchain`
+//! Run with: `cargo run --example blockchain-data-tester --package nautilus-blockchain --features hypersync`
 
 use std::{sync::Arc, time::Duration};
 
@@ -59,35 +59,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wss_rpc_url = get_env_var("RPC_WSS_URL")?;
     let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
 
-    let dex_pool_filter = DexPoolFilters::new(Some(true));
+    let dex_pool_filter = DexPoolFilters::builder()
+        .remove_pools_with_empty_erc20fields(true)
+        .build();
 
     let client_factory = BlockchainDataClientFactory::new();
-    let client_config = BlockchainDataClientConfig::new(
-        Arc::new(chain.clone()),
-        vec![DexType::UniswapV3],
-        http_rpc_url,
-        None, // RPC requests per second
-        None, // Multicall calls per RPC request
-        Some(wss_rpc_url),
-        true, // Use HyperSync for live data
-        None,
-        Some(dex_pool_filter),
-        Some(PostgresConnectOptions::default()),
-    );
+    let client_config = BlockchainDataClientConfig::builder()
+        .chain(Arc::new(chain.clone()))
+        .dex_ids(vec![DexType::UniswapV3])
+        .http_rpc_url(http_rpc_url)
+        .wss_rpc_url(wss_rpc_url)
+        .use_hypersync_for_live_data(true)
+        .pool_filters(dex_pool_filter)
+        .postgres_cache_database_config(PostgresConnectOptions::default())
+        .build();
+
+    let client_id = ClientId::new(format!("BLOCKCHAIN-{}", chain.name));
 
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name(node_name)
         .with_load_state(false)
         .with_save_state(false)
         .add_data_client(
-            None, // Use factory name
+            Some(client_id.to_string()),
             Box::new(client_factory),
             Box::new(client_config),
         )?
         .build()?;
-
-    // Create and register a blockchain subscriber actor
-    let client_id = ClientId::new(format!("BLOCKCHAIN-{}", chain.name));
 
     let pools = vec![InstrumentId::from(
         "0x4CEf551255EC96d89feC975446301b5C4e164C59.Arbitrum:UniswapV3",

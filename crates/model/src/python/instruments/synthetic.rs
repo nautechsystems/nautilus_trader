@@ -126,7 +126,7 @@ impl SyntheticInstrument {
     /// Returns an error if the input length does not match, any input is non-finite, or formula
     /// evaluation fails.
     #[pyo3(name = "calculate")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_calculate(&mut self, inputs: Vec<f64>) -> PyResult<Price> {
         self.calculate(&inputs).map_err(to_pyvalue_err)
     }

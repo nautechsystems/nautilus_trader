@@ -5,7 +5,9 @@ import typing
 from nautilus_trader import common
 from nautilus_trader import core
 from nautilus_trader import model
+from nautilus_trader import portfolio
 from nautilus_trader import trading
+from nautilus_trader.portfolio import PortfolioConfig
 
 __all__ = [
     "InstrumentProviderConfig",
@@ -17,6 +19,7 @@ __all__ = [
     "LiveNodeBuilder",
     "LiveNodeConfig",
     "LiveRiskEngineConfig",
+    "PortfolioConfig",
     "RoutingConfig",
 ]
 
@@ -25,14 +28,20 @@ class InstrumentProviderConfig:
     @property
     def load_all(self) -> bool: ...
     @property
-    def load_ids(self) -> bool: ...
+    def load_ids(self) -> list[str] | None: ...
     @property
-    def filters(self) -> dict[str, str]: ...
+    def filters(self) -> typing.Any: ...
+    @property
+    def filter_callable(self) -> str | None: ...
+    @property
+    def log_warnings(self) -> bool: ...
     def __new__(
         cls,
         load_all: bool | None = None,
-        load_ids: bool | None = None,
-        filters: typing.Mapping[str, str] | None = None,
+        load_ids: typing.Sequence[str] | None = None,
+        filters: typing.Mapping[str, typing.Any] | None = None,
+        filter_callable: str | None = None,
+        log_warnings: bool | None = None,
     ) -> InstrumentProviderConfig: ...
 
 @typing.final
@@ -52,9 +61,22 @@ class LiveDataClientConfig:
 
 @typing.final
 class LiveDataEngineConfig:
-    @property
-    def qsize(self) -> int: ...
-    def __new__(cls, qsize: int | None = None) -> LiveDataEngineConfig: ...
+    def __new__(
+        cls,
+        time_bars_build_with_no_updates: bool | None = None,
+        time_bars_timestamp_on_close: bool | None = None,
+        time_bars_skip_first_non_full_bar: bool | None = None,
+        time_bars_interval_type: typing.Any | None = None,
+        time_bars_build_delay: int | None = None,
+        time_bars_origins: typing.Mapping[str, int] | None = None,
+        validate_data_sequence: bool | None = None,
+        buffer_deltas: bool | None = None,
+        emit_quotes_from_book: bool | None = None,
+        emit_quotes_from_book_depths: bool | None = None,
+        external_clients: typing.Sequence[model.ClientId] | None = None,
+        debug: bool | None = None,
+        graceful_shutdown_on_error: bool | None = None,
+    ) -> LiveDataEngineConfig: ...
 
 @typing.final
 class LiveExecClientConfig:
@@ -72,6 +94,11 @@ class LiveExecClientConfig:
 class LiveExecEngineConfig:
     def __new__(
         cls,
+        load_cache: bool | None = None,
+        manage_own_order_books: bool | None = None,
+        snapshot_positions_interval_secs: float | None = None,
+        external_clients: typing.Sequence[model.ClientId] | None = None,
+        allow_overfills: bool | None = None,
         reconciliation: bool | None = None,
         reconciliation_startup_delay_secs: float | None = None,
         reconciliation_lookback_mins: int | None = None,
@@ -100,10 +127,8 @@ class LiveExecEngineConfig:
         purge_closed_positions_buffer_mins: int | None = None,
         purge_account_events_interval_mins: int | None = None,
         purge_account_events_lookback_mins: int | None = None,
-        purge_from_database: bool | None = None,
         own_books_audit_interval_secs: float | None = None,
-        graceful_shutdown_on_error: bool | None = None,
-        qsize: int | None = None,
+        debug: bool | None = None,
     ) -> LiveExecEngineConfig: ...
 
 @typing.final
@@ -117,6 +142,8 @@ class LiveNode:
     @property
     def is_running(self) -> bool: ...
     @staticmethod
+    def build(name: str, config: LiveNodeConfig | None = None) -> LiveNode: ...
+    @staticmethod
     def builder(
         name: str, trader_id: model.TraderId, environment: common.Environment
     ) -> LiveNodeBuilder: ...
@@ -125,6 +152,8 @@ class LiveNode:
     def stop(self) -> None: ...
     def add_actor_from_config(self, config: common.ImportableActorConfig) -> None: ...
     def add_strategy_from_config(self, config: trading.ImportableStrategyConfig) -> None: ...
+    def add_native_strategy(self, config: typing.Any) -> None: ...
+    def add_native_actor(self, config: typing.Any) -> None: ...
     def add_exec_algorithm_from_config(
         self, config: trading.ImportableExecAlgorithmConfig
     ) -> None: ...
@@ -142,6 +171,11 @@ class LiveNodeBuilder:
     def with_delay_shutdown_secs(self, delay_secs: int) -> LiveNodeBuilder: ...
     def with_reconciliation(self, reconciliation: bool) -> LiveNodeBuilder: ...
     def with_reconciliation_lookback_mins(self, mins: int) -> LiveNodeBuilder: ...
+    def with_cache_config(self, config: common.CacheConfig) -> LiveNodeBuilder: ...
+    def with_portfolio_config(self, config: portfolio.PortfolioConfig) -> LiveNodeBuilder: ...
+    def with_data_engine_config(self, config: LiveDataEngineConfig) -> LiveNodeBuilder: ...
+    def with_risk_engine_config(self, config: LiveRiskEngineConfig) -> LiveNodeBuilder: ...
+    def with_exec_engine_config(self, config: LiveExecEngineConfig) -> LiveNodeBuilder: ...
     def with_logging(self, logging: common.LoggerConfig) -> LiveNodeBuilder: ...
     def add_data_client(
         self, name: str | None, factory: typing.Any, config: typing.Any
@@ -152,13 +186,61 @@ class LiveNodeBuilder:
     def build(self) -> LiveNode: ...
 
 @typing.final
-class LiveNodeConfig: ...
+class LiveNodeConfig:
+    @property
+    def environment(self) -> common.Environment: ...
+    @property
+    def trader_id(self) -> model.TraderId: ...
+    @property
+    def load_state(self) -> bool: ...
+    @property
+    def save_state(self) -> bool: ...
+    @property
+    def timeout_connection_secs(self) -> float: ...
+    @property
+    def timeout_reconciliation_secs(self) -> float: ...
+    @property
+    def timeout_portfolio_secs(self) -> float: ...
+    @property
+    def timeout_disconnection_secs(self) -> float: ...
+    @property
+    def delay_post_stop_secs(self) -> float: ...
+    @property
+    def timeout_shutdown_secs(self) -> float: ...
+    def __new__(
+        cls,
+        environment: common.Environment | None = None,
+        trader_id: model.TraderId | None = None,
+        load_state: bool | None = None,
+        save_state: bool | None = None,
+        logging: common.LoggerConfig | None = None,
+        instance_id: core.UUID4 | None = None,
+        timeout_connection_secs: float | None = None,
+        timeout_reconciliation_secs: float | None = None,
+        timeout_portfolio_secs: float | None = None,
+        timeout_disconnection_secs: float | None = None,
+        delay_post_stop_secs: float | None = None,
+        timeout_shutdown_secs: float | None = None,
+        cache: common.CacheConfig | None = None,
+        msgbus: common.MessageBusConfig | None = None,
+        portfolio: portfolio.PortfolioConfig | None = None,
+        loop_debug: bool | None = None,
+        data_engine: LiveDataEngineConfig | None = None,
+        risk_engine: LiveRiskEngineConfig | None = None,
+        exec_engine: LiveExecEngineConfig | None = None,
+    ) -> LiveNodeConfig: ...
 
 @typing.final
 class LiveRiskEngineConfig:
-    @property
-    def qsize(self) -> int: ...
-    def __new__(cls, qsize: int | None = None) -> LiveRiskEngineConfig: ...
+    def __new__(
+        cls,
+        bypass: bool | None = None,
+        max_order_submit_rate: str | None = None,
+        max_order_modify_rate: str | None = None,
+        max_notional_per_order: typing.Mapping[str, typing.Any] | None = None,
+        debug: bool | None = None,
+        graceful_shutdown_on_error: bool | None = None,
+    ) -> LiveRiskEngineConfig: ...
 
 @typing.final
 class RoutingConfig:

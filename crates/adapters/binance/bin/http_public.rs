@@ -67,6 +67,7 @@ async fn main() -> anyhow::Result<()> {
     // Test 2: Server Time
     // Note: SBE returns microsecond timestamps
     log::info!("=== Test 2: Server Time ===");
+
     match client.server_time().await {
         Ok(timestamp_us) => {
             let timestamp_ms = timestamp_us / 1000;

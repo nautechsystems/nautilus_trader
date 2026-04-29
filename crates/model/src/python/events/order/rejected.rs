@@ -30,7 +30,7 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderRejected {
     /// Represents an event where an order has been rejected by the trading venue.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[new]
     fn py_new(
         trader_id: TraderId,

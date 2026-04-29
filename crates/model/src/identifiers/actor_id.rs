@@ -20,7 +20,9 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{FAILED, check_valid_string_ascii};
+use nautilus_core::correctness::{
+    CorrectnessResult, CorrectnessResultExt, FAILED, check_valid_string_ascii,
+};
 use ustr::Ustr;
 
 /// Represents a valid component ID.
@@ -46,7 +48,7 @@ impl ActorId {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+    pub fn new_checked<T: AsRef<str>>(value: T) -> CorrectnessResult<Self> {
         let value = value.as_ref();
         check_valid_string_ascii(value, stringify!(value))?;
         Ok(Self(Ustr::from(value)))
@@ -58,7 +60,7 @@ impl ActorId {
     ///
     /// Panics if `value` is not a valid string.
     pub fn new<T: AsRef<str>>(value: T) -> Self {
-        Self::new_checked(value).expect(FAILED)
+        Self::new_checked(value).expect_display(FAILED)
     }
 
     /// Sets the inner identifier value.
@@ -103,5 +105,11 @@ mod tests {
         let actor_id = ActorId::from("MyActor");
         assert_eq!(actor_id.as_str(), "MyActor");
         assert_eq!(format!("{actor_id}"), "MyActor");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Condition failed: invalid string for 'value', was empty")]
+    fn test_new_with_empty_string_panics_with_display_format() {
+        let _ = ActorId::new("");
     }
 }

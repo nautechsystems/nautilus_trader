@@ -22,7 +22,7 @@ Third-party services, exchanges, and data providers are excluded.
 This allows private disclosure and coordination before public release. You'll
 receive credit in the security advisory and release notes.
 
-**Alternative:** Email <info@nautechsystems.io>
+**Alternative:** Email <security@nautechsystems.io>
 
 For sensitive reports via email, you may request our PGP key for encrypted communication.
 
@@ -68,14 +68,14 @@ do our best to properly recognize and credit your contributions.
 NautilusTrader employs multiple layers of security to protect against supply
 chain attacks and vulnerabilities:
 
-- **Dependency auditing**: Automated security scanning via cargo-deny, cargo-vet, and OSV Scanner (Rust) and Dependabot alerts (Python).
-- **Dependency cooldown**: Python dependency resolution excludes packages published within the last 3 days (`exclude-newer` in `pyproject.toml`), giving the community time to detect and quarantine compromised releases before they enter the lockfile.
+- **Dependency auditing**: Automated security scanning via cargo-audit, cargo-deny, cargo-vet, and OSV Scanner (Rust) and pip-audit (Python).
+- **Dependency and tool cooldown**: Python dependency resolution excludes packages published within the last 3 days via `exclude-newer` in `pyproject.toml`. Development tools are pinned to explicit versions across `tools.toml`, `Cargo.toml`, and related manifests, and version bumps are reviewed during security audits. Rust crate updates are reviewed through our cargo-vet audit process and policy. The cooldown gives the community time to detect and quarantine compromised releases.
 - **Toolchain pinning**: The uv package manager version is pinned via `required-version` in `pyproject.toml` and enforced across CI, Docker, and local development.
 - **Code scanning**: CodeQL static analysis for Python and Rust code.
 - **Pre-commit security**: Gitleaks credential screening, private key detection, Zizmor GitHub Actions auditing, and Unicode control character detection.
 - **CODEOWNERS**: Critical infrastructure files require Core team review before merge.
 - **Branch protection**: Develop branch requires PR reviews and passing CI checks.
-- **Build integrity**: SLSA build provenance attestations, immutable GitHub Actions pinned to commit SHAs, container digest pinning, and hardened CI runners with network egress monitoring.
+- **Build integrity**: SLSA build provenance attestations, immutable GitHub Actions pinned to commit SHAs, container digest pinning, Docker image signing via Sigstore cosign, SPDX SBOM generation for container images, and hardened CI runners with network egress monitoring.
 - **License compliance**: Automated checks ensuring LGPL-3.0 compatibility.
 - **Source restrictions**: Rust packages sourced exclusively from crates.io; git dependencies and unknown registries are prohibited.
 - **Cryptography**: All TLS and cryptographic operations use [aws-lc-rs](https://github.com/aws/aws-lc-rs),

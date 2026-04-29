@@ -28,7 +28,9 @@ from nautilus_trader.core.nautilus_pyo3 import KrakenProductType
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.messages import RequestInstrument
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -275,6 +277,214 @@ async def test_unsubscribe_order_book_deltas(data_client_builder, monkeypatch):
         ws_client.unsubscribe_book.assert_awaited_once()
     finally:
         await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_instrument_status_emits_cached_status(data_client_builder, monkeypatch):
+    client, _, _, _ = data_client_builder(
+        monkeypatch,
+        config_kwargs={"update_instruments_interval_mins": 1},
+    )
+    instrument_id = InstrumentId(Symbol("XBT/USDT"), KRAKEN_VENUE)
+    client._status_cache[instrument_id] = MarketStatusAction.TRADING
+    client._handle_data = MagicMock()
+
+    await client._subscribe_instrument_status(SimpleNamespace(instrument_id=instrument_id))
+
+    assert instrument_id in client._instrument_status_subs
+    client._handle_data.assert_called_once()
+
+    status = client._handle_data.call_args.args[0]
+    assert isinstance(status, InstrumentStatus)
+    assert status.instrument_id == instrument_id
+    assert status.action == MarketStatusAction.TRADING
+    assert status.is_trading is True
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_instrument_status_stops_future_emissions(
+    data_client_builder,
+    monkeypatch,
+):
+    client, _, _, _ = data_client_builder(monkeypatch)
+    instrument_id = InstrumentId(Symbol("XBT/USDT"), KRAKEN_VENUE)
+    client._instrument_status_subs.add(instrument_id)
+    client._status_cache[instrument_id] = MarketStatusAction.TRADING
+    client._handle_data = MagicMock()
+
+    await client._unsubscribe_instrument_status(SimpleNamespace(instrument_id=instrument_id))
+    client._diff_and_emit_statuses({}, {KrakenProductType.SPOT})
+
+    assert instrument_id not in client._instrument_status_subs
+    client._handle_data.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_request_all_instrument_statuses_merges_spot_and_futures(
+    data_client_builder,
+    monkeypatch,
+):
+    client, _, http_client, _ = data_client_builder(monkeypatch)
+    spot_instrument_id = InstrumentId(Symbol("XBT/USDT"), KRAKEN_VENUE)
+    futures_instrument_id = InstrumentId(Symbol("PF_XBTUSD"), KRAKEN_VENUE)
+
+    http_client.request_instrument_statuses = AsyncMock(
+        return_value={spot_instrument_id: MarketStatusAction.TRADING},
+    )
+
+    futures_http_client = MagicMock(spec=nautilus_pyo3.KrakenFuturesHttpClient)
+    futures_http_client.request_instrument_statuses = AsyncMock(
+        return_value={futures_instrument_id: MarketStatusAction.NOT_AVAILABLE_FOR_TRADING},
+    )
+    client._http_client_futures = futures_http_client
+
+    statuses, successful = await client._request_all_instrument_statuses()
+
+    assert statuses == {
+        spot_instrument_id: MarketStatusAction.TRADING,
+        futures_instrument_id: MarketStatusAction.NOT_AVAILABLE_FOR_TRADING,
+    }
+    assert successful == {KrakenProductType.SPOT, KrakenProductType.FUTURES}
+
+
+@pytest.mark.asyncio
+async def test_request_all_instrument_statuses_isolates_spot_failure(
+    data_client_builder,
+    monkeypatch,
+):
+    client, _, http_client, _ = data_client_builder(monkeypatch)
+    futures_instrument_id = InstrumentId(Symbol("PF_XBTUSD"), KRAKEN_VENUE)
+
+    http_client.request_instrument_statuses = AsyncMock(side_effect=RuntimeError("boom"))
+
+    futures_http_client = MagicMock(spec=nautilus_pyo3.KrakenFuturesHttpClient)
+    futures_http_client.request_instrument_statuses = AsyncMock(
+        return_value={futures_instrument_id: MarketStatusAction.TRADING},
+    )
+    client._http_client_futures = futures_http_client
+
+    statuses, successful = await client._request_all_instrument_statuses()
+
+    assert statuses == {futures_instrument_id: MarketStatusAction.TRADING}
+    assert successful == {KrakenProductType.FUTURES}
+
+
+@pytest.mark.asyncio
+async def test_request_all_instrument_statuses_isolates_futures_failure(
+    data_client_builder,
+    monkeypatch,
+):
+    client, _, http_client, _ = data_client_builder(monkeypatch)
+    spot_instrument_id = InstrumentId(Symbol("XBT/USDT"), KRAKEN_VENUE)
+
+    http_client.request_instrument_statuses = AsyncMock(
+        return_value={spot_instrument_id: MarketStatusAction.TRADING},
+    )
+
+    futures_http_client = MagicMock(spec=nautilus_pyo3.KrakenFuturesHttpClient)
+    futures_http_client.request_instrument_statuses = AsyncMock(
+        side_effect=RuntimeError("boom"),
+    )
+    client._http_client_futures = futures_http_client
+
+    statuses, successful = await client._request_all_instrument_statuses()
+
+    assert statuses == {spot_instrument_id: MarketStatusAction.TRADING}
+    assert successful == {KrakenProductType.SPOT}
+
+
+@pytest.mark.asyncio
+async def test_seed_instrument_status_cache_stores_requested_statuses(
+    data_client_builder,
+    monkeypatch,
+):
+    client, _, _, _ = data_client_builder(monkeypatch)
+    instrument_id = InstrumentId(Symbol("XBT/USDT"), KRAKEN_VENUE)
+    expected = {instrument_id: MarketStatusAction.TRADING}
+    client._request_all_instrument_statuses = AsyncMock(
+        return_value=(expected, {KrakenProductType.SPOT}),
+    )
+
+    await client._seed_instrument_status_cache()
+
+    assert client._status_cache == expected
+
+
+@pytest.mark.asyncio
+async def test_poll_instrument_statuses_emits_changed_and_removed_statuses(
+    data_client_builder,
+    monkeypatch,
+):
+    client, _, _, _ = data_client_builder(monkeypatch)
+    changed_instrument_id = InstrumentId(Symbol("XBT/USDT"), KRAKEN_VENUE)
+    removed_instrument_id = InstrumentId(Symbol("ETH/USDT"), KRAKEN_VENUE)
+    unsubscribed_instrument_id = InstrumentId(Symbol("SOL/USDT"), KRAKEN_VENUE)
+
+    client._instrument_status_subs.update({changed_instrument_id, removed_instrument_id})
+    client._status_cache = {
+        changed_instrument_id: MarketStatusAction.TRADING,
+        removed_instrument_id: MarketStatusAction.TRADING,
+        unsubscribed_instrument_id: MarketStatusAction.TRADING,
+    }
+    client._request_all_instrument_statuses = AsyncMock(
+        return_value=(
+            {
+                changed_instrument_id: MarketStatusAction.NOT_AVAILABLE_FOR_TRADING,
+                unsubscribed_instrument_id: MarketStatusAction.NOT_AVAILABLE_FOR_TRADING,
+            },
+            {KrakenProductType.SPOT},
+        ),
+    )
+    client._handle_data = MagicMock()
+
+    await client._poll_instrument_statuses()
+
+    emitted_statuses = [call.args[0] for call in client._handle_data.call_args_list]
+    assert len(emitted_statuses) == 2
+    assert {status.instrument_id for status in emitted_statuses} == {
+        changed_instrument_id,
+        removed_instrument_id,
+    }
+    assert {status.action for status in emitted_statuses} == {
+        MarketStatusAction.NOT_AVAILABLE_FOR_TRADING,
+    }
+    assert client._status_cache == {
+        changed_instrument_id: MarketStatusAction.NOT_AVAILABLE_FOR_TRADING,
+        unsubscribed_instrument_id: MarketStatusAction.NOT_AVAILABLE_FOR_TRADING,
+    }
+
+
+@pytest.mark.asyncio
+async def test_poll_instrument_statuses_preserves_failed_endpoint_cache(
+    data_client_builder,
+    monkeypatch,
+):
+    client, _, _, _ = data_client_builder(monkeypatch)
+    spot_instrument_id = InstrumentId(Symbol("XBT/USDT"), KRAKEN_VENUE)
+    futures_instrument_id = InstrumentId(Symbol("PF_XBTUSD"), KRAKEN_VENUE)
+
+    client._instrument_status_subs.update({spot_instrument_id, futures_instrument_id})
+    client._status_cache = {
+        spot_instrument_id: MarketStatusAction.TRADING,
+        futures_instrument_id: MarketStatusAction.TRADING,
+    }
+    # Spot fetch fails so only futures statuses come back; the cached spot
+    # entry must survive without a NOT_AVAILABLE_FOR_TRADING emission
+    client._request_all_instrument_statuses = AsyncMock(
+        return_value=(
+            {futures_instrument_id: MarketStatusAction.TRADING},
+            {KrakenProductType.FUTURES},
+        ),
+    )
+    client._handle_data = MagicMock()
+
+    await client._poll_instrument_statuses()
+
+    client._handle_data.assert_not_called()
+    assert client._status_cache == {
+        spot_instrument_id: MarketStatusAction.TRADING,
+        futures_instrument_id: MarketStatusAction.TRADING,
+    }
 
 
 @pytest.mark.asyncio

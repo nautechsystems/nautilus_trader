@@ -156,6 +156,7 @@ fn bench_concurrent_reads(c: &mut Criterion) {
                             let bar = Arc::clone(&barrier);
                             s.spawn(move || {
                                 bar.wait();
+
                                 for i in 0..READS_PER_THREAD {
                                     let key = &ks[(t * READS_PER_THREAD + i) % ks.len()];
                                     black_box(map.get(key).map(|r| *r.value()));
@@ -181,6 +182,7 @@ fn bench_concurrent_reads(c: &mut Criterion) {
                                 let bar = Arc::clone(&barrier);
                                 s.spawn(move || {
                                     bar.wait();
+
                                     for i in 0..READS_PER_THREAD {
                                         let key = &ks[(t * READS_PER_THREAD + i) % ks.len()];
                                         let guard = map.read().unwrap();
@@ -206,6 +208,7 @@ fn bench_concurrent_reads(c: &mut Criterion) {
                             let bar = Arc::clone(&barrier);
                             s.spawn(move || {
                                 bar.wait();
+
                                 for i in 0..READS_PER_THREAD {
                                     let key = &ks[(t * READS_PER_THREAD + i) % ks.len()];
                                     let guard = map.load();
@@ -249,9 +252,11 @@ fn bench_read_heavy_mixed(c: &mut Criterion) {
                         let bar = Arc::clone(&barrier);
                         s.spawn(move || {
                             bar.wait();
+
                             for (i, key) in wk.iter().enumerate() {
                                 map.insert(key.clone(), (size + i) as u64);
                             }
+
                             for key in wk.iter() {
                                 map.remove(key);
                             }
@@ -263,6 +268,7 @@ fn bench_read_heavy_mixed(c: &mut Criterion) {
                             let bar = Arc::clone(&barrier);
                             s.spawn(move || {
                                 bar.wait();
+
                                 for i in 0..READS_PER_THREAD {
                                     let key = &ks[(t * READS_PER_THREAD + i) % ks.len()];
                                     black_box(map.get(key).map(|r| *r.value()));
@@ -288,11 +294,13 @@ fn bench_read_heavy_mixed(c: &mut Criterion) {
                             let bar = Arc::clone(&barrier);
                             s.spawn(move || {
                                 bar.wait();
+
                                 for (i, key) in wk.iter().enumerate() {
                                     let mut guard = map.write().unwrap();
                                     guard.insert(key.clone(), (size + i) as u64);
                                     drop(guard);
                                 }
+
                                 for key in wk.iter() {
                                     let mut guard = map.write().unwrap();
                                     guard.remove(key);
@@ -306,6 +314,7 @@ fn bench_read_heavy_mixed(c: &mut Criterion) {
                                 let bar = Arc::clone(&barrier);
                                 s.spawn(move || {
                                     bar.wait();
+
                                     for i in 0..READS_PER_THREAD {
                                         let key = &ks[(t * READS_PER_THREAD + i) % ks.len()];
                                         let guard = map.read().unwrap();
@@ -349,6 +358,7 @@ fn bench_read_heavy_mixed(c: &mut Criterion) {
                             let bar = Arc::clone(&barrier);
                             s.spawn(move || {
                                 bar.wait();
+
                                 for i in 0..READS_PER_THREAD {
                                     let key = &ks[(t * READS_PER_THREAD + i) % ks.len()];
                                     let guard = map.load();
@@ -385,6 +395,7 @@ fn bench_write_once_read_many(c: &mut Criterion) {
                             let bar = Arc::clone(&barrier);
                             s.spawn(move || {
                                 bar.wait();
+
                                 for i in 0..READS_PER_THREAD {
                                     let key = &ks[(t * READS_PER_THREAD + i) % ks.len()];
                                     black_box(map.get(key).map(|r| *r.value()));
@@ -410,6 +421,7 @@ fn bench_write_once_read_many(c: &mut Criterion) {
                                 let bar = Arc::clone(&barrier);
                                 s.spawn(move || {
                                     bar.wait();
+
                                     for i in 0..READS_PER_THREAD {
                                         let key = &ks[(t * READS_PER_THREAD + i) % ks.len()];
                                         let guard = map.read().unwrap();
@@ -435,6 +447,7 @@ fn bench_write_once_read_many(c: &mut Criterion) {
                             let bar = Arc::clone(&barrier);
                             s.spawn(move || {
                                 bar.wait();
+
                                 for i in 0..READS_PER_THREAD {
                                     let key = &ks[(t * READS_PER_THREAD + i) % ks.len()];
                                     let guard = map.load();

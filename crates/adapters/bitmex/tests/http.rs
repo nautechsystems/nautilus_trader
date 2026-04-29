@@ -25,7 +25,7 @@ use axum::{
     routing::get,
 };
 use nautilus_bitmex::{
-    common::enums::{BitmexOrderType, BitmexPegPriceType, BitmexSide},
+    common::enums::{BitmexEnvironment, BitmexOrderType, BitmexPegPriceType, BitmexSide},
     http::{
         client::{BitmexHttpClient, BitmexRawHttpClient},
         query::{
@@ -348,7 +348,7 @@ async fn test_request_instrument() {
         Some(base_url),
         None,
         None,
-        false,
+        BitmexEnvironment::Mainnet,
         60,
         3,
         1_000,
@@ -769,7 +769,7 @@ async fn test_submit_order_pegged_via_high_level_client() {
         Some(base_url),
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
-        false,
+        BitmexEnvironment::Mainnet,
         60,
         3,
         1_000,
@@ -829,7 +829,7 @@ async fn test_submit_order_pegged_rejects_non_limit() {
         Some(base_url),
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
-        false,
+        BitmexEnvironment::Mainnet,
         60,
         3,
         1_000,
@@ -890,7 +890,7 @@ async fn test_submit_order_pegged_rejects_offset_without_type() {
         Some(base_url),
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
-        false,
+        BitmexEnvironment::Mainnet,
         60,
         3,
         1_000,
@@ -1003,7 +1003,7 @@ async fn test_cancel_all_after_high_level() {
         Some(base_url),
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
-        false,
+        BitmexEnvironment::Mainnet,
         60,
         3,
         1_000,

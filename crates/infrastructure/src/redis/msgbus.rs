@@ -467,12 +467,14 @@ pub async fn stream_messages(
 
         let result: Result<RedisStreamBulk, _> =
             con.xread_options(&[&stream_keys], &[&id_refs], &opts).await;
+
         match result {
             Ok(stream_bulk) => {
                 if stream_bulk.is_empty() {
                     // Timeout occurred: no messages received
                     continue;
                 }
+
                 for entry in &stream_bulk {
                     for (stream_key, stream_msgs) in entry {
                         for stream_msg in stream_msgs {

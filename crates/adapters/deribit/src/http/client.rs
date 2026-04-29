@@ -70,7 +70,8 @@ use crate::{
             DERIBIT_HTTP_ACCOUNT_QUOTA, DERIBIT_HTTP_ORDER_QUOTA, DERIBIT_HTTP_REST_QUOTA,
             DERIBIT_ORDER_RATE_KEY, JSONRPC_VERSION, should_retry_error_code,
         },
-        credential::Credential,
+        credential::{Credential, credential_env_vars},
+        enums::DeribitEnvironment,
         parse::{
             extract_server_timestamp, parse_account_state, parse_bars,
             parse_deribit_instrument_any, parse_order_book, parse_trade_tick,
@@ -186,10 +187,9 @@ impl DeribitRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be created.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         base_url: Option<String>,
-        is_testnet: bool,
+        environment: DeribitEnvironment,
         timeout_secs: u64,
         max_retries: u32,
         retry_delay_ms: u64,
@@ -197,7 +197,7 @@ impl DeribitRawHttpClient {
         proxy_url: Option<String>,
     ) -> Result<Self, DeribitHttpError> {
         let base_url = base_url
-            .unwrap_or_else(|| format!("{}{}", get_http_base_url(is_testnet), DERIBIT_API_PATH));
+            .unwrap_or_else(|| format!("{}{}", get_http_base_url(environment), DERIBIT_API_PATH));
         let retry_config = RetryConfig {
             max_retries,
             initial_delay_ms: retry_delay_ms,
@@ -237,7 +237,7 @@ impl DeribitRawHttpClient {
     /// Returns whether this client is connected to testnet.
     #[must_use]
     pub fn is_testnet(&self) -> bool {
-        self.base_url.contains("test")
+        self.base_url.contains("test.")
     }
 
     /// Returns the rate limiter quotas for the HTTP client.
@@ -319,12 +319,12 @@ impl DeribitRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be created.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
         base_url: Option<String>,
-        is_testnet: bool,
+        environment: DeribitEnvironment,
         timeout_secs: u64,
         max_retries: u32,
         retry_delay_ms: u64,
@@ -332,7 +332,7 @@ impl DeribitRawHttpClient {
         proxy_url: Option<String>,
     ) -> Result<Self, DeribitHttpError> {
         let base_url = base_url
-            .unwrap_or_else(|| format!("{}{}", get_http_base_url(is_testnet), DERIBIT_API_PATH));
+            .unwrap_or_else(|| format!("{}{}", get_http_base_url(environment), DERIBIT_API_PATH));
         let retry_config = RetryConfig {
             max_retries,
             initial_delay_ms: retry_delay_ms,
@@ -376,12 +376,12 @@ impl DeribitRawHttpClient {
     /// Returns an error if:
     /// - The HTTP client cannot be created
     /// - Credentials are not provided and environment variables are not set
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new_with_env(
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url: Option<String>,
-        is_testnet: bool,
+        environment: DeribitEnvironment,
         timeout_secs: u64,
         max_retries: u32,
         retry_delay_ms: u64,
@@ -389,11 +389,7 @@ impl DeribitRawHttpClient {
         proxy_url: Option<String>,
     ) -> Result<Self, DeribitHttpError> {
         // Determine environment variable names based on environment
-        let (key_env, secret_env) = if is_testnet {
-            ("DERIBIT_TESTNET_API_KEY", "DERIBIT_TESTNET_API_SECRET")
-        } else {
-            ("DERIBIT_API_KEY", "DERIBIT_API_SECRET")
-        };
+        let (key_env, secret_env) = credential_env_vars(environment);
 
         // Resolve credentials from explicit params or environment
         let api_key = nautilus_core::env::get_or_env_var_opt(api_key, key_env);
@@ -405,7 +401,7 @@ impl DeribitRawHttpClient {
                 key,
                 secret,
                 base_url,
-                is_testnet,
+                environment,
                 timeout_secs,
                 max_retries,
                 retry_delay_ms,
@@ -416,7 +412,7 @@ impl DeribitRawHttpClient {
             // No credentials - create unauthenticated client
             Self::new(
                 base_url,
-                is_testnet,
+                environment,
                 timeout_secs,
                 max_retries,
                 retry_delay_ms,
@@ -883,15 +879,14 @@ impl DeribitHttpClient {
     ///
     /// # Parameters
     /// - `base_url`: Optional custom base URL (for testing)
-    /// - `is_testnet`: Whether to use the testnet environment
+    /// - `environment`: The Deribit environment to connect to
     ///
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be created.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         base_url: Option<String>,
-        is_testnet: bool,
+        environment: DeribitEnvironment,
         timeout_secs: u64,
         max_retries: u32,
         retry_delay_ms: u64,
@@ -900,7 +895,7 @@ impl DeribitHttpClient {
     ) -> anyhow::Result<Self> {
         let raw_client = Arc::new(DeribitRawHttpClient::new(
             base_url,
-            is_testnet,
+            environment,
             timeout_secs,
             max_retries,
             retry_delay_ms,
@@ -927,12 +922,12 @@ impl DeribitHttpClient {
     /// Returns an error if:
     /// - The HTTP client cannot be created
     /// - Credentials are not provided and environment variables are not set
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new_with_env(
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url: Option<String>,
-        is_testnet: bool,
+        environment: DeribitEnvironment,
         timeout_secs: u64,
         max_retries: u32,
         retry_delay_ms: u64,
@@ -943,7 +938,7 @@ impl DeribitHttpClient {
             api_key,
             api_secret,
             base_url,
-            is_testnet,
+            environment,
             timeout_secs,
             max_retries,
             retry_delay_ms,

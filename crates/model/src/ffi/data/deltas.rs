@@ -95,7 +95,6 @@ pub extern "C" fn orderbook_deltas_ts_init(deltas: &OrderBookDeltas_API) -> Unix
 /// # Panics
 ///
 /// Panics if `CVec` invariants are violated (corrupted metadata).
-#[allow(clippy::drop_non_drop)]
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_deltas_vec_drop(v: CVec) {
     let CVec { ptr, len, cap } = v;

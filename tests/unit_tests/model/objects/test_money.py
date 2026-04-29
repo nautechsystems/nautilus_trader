@@ -816,3 +816,45 @@ class TestMarginBalance:
             repr(margin)
             == "MarginBalance(initial=5_000.00 USD, maintenance=25_000.00 USD, instrument_id=None)"
         )
+
+    def test_to_dict_and_from_dict_with_instrument_id(self):
+        # Arrange
+        margin = MarginBalance(
+            initial=Money(5_000, USD),
+            maintenance=Money(25_000, USD),
+            instrument_id=InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO")),
+        )
+
+        # Act
+        result = margin.to_dict()
+        roundtrip = MarginBalance.from_dict(result)
+
+        # Assert
+        assert result["type"] == "MarginBalance"
+        assert result["initial"] == "5000.00"
+        assert result["maintenance"] == "25000.00"
+        assert result["currency"] == "USD"
+        assert result["instrument_id"] == "AUD/USD.IDEALPRO"
+        assert roundtrip == margin
+        assert roundtrip.instrument_id == InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
+
+    def test_to_dict_and_from_dict_without_instrument_id(self):
+        # Arrange: account-wide (cross-margin) entry, keyed by currency only.
+        margin = MarginBalance(
+            initial=Money(1_500, USD),
+            maintenance=Money(750, USD),
+        )
+
+        # Act
+        result = margin.to_dict()
+        roundtrip = MarginBalance.from_dict(result)
+
+        # Assert
+        assert result["type"] == "MarginBalance"
+        assert result["initial"] == "1500.00"
+        assert result["maintenance"] == "750.00"
+        assert result["currency"] == "USD"
+        assert result["instrument_id"] is None
+        assert roundtrip == margin
+        assert roundtrip.instrument_id is None
+        assert roundtrip.currency == USD

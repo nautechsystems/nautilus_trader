@@ -15,7 +15,10 @@
 
 use std::env;
 
-use nautilus_deribit::http::{client::DeribitHttpClient, models::DeribitCurrency};
+use nautilus_deribit::{
+    common::enums::DeribitEnvironment,
+    http::{client::DeribitHttpClient, models::DeribitCurrency},
+};
 use nautilus_model::identifiers::InstrumentId;
 
 #[tokio::main]
@@ -23,10 +26,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
     let args: Vec<String> = env::args().collect();
-    let is_testnet = args.iter().any(|a| a == "--testnet");
+    let environment = if args.iter().any(|a| a == "--testnet") {
+        DeribitEnvironment::Testnet
+    } else {
+        DeribitEnvironment::Mainnet
+    };
 
     // Create HTTP client
-    let client = DeribitHttpClient::new(None, is_testnet, 10, 3, 1000, 10_000, None)?;
+    let client = DeribitHttpClient::new(None, environment, 10, 3, 1000, 10_000, None)?;
 
     // Fetch BTC-PERPETUAL instrument
     log::info!("Fetching BTC-PERPETUAL instrument...");

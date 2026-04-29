@@ -55,10 +55,8 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws_futures : str, optional
         The base URL for Kraken Futures WebSocket API.
         If ``None`` then will use the default URL based on environment.
-    http_proxy_url : str, optional
-        Optional HTTP proxy URL.
-    ws_proxy_url : str, optional
-        Optional WebSocket proxy URL.
+    proxy_url : str, optional
+        Optional proxy URL for HTTP and WebSocket transports.
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
     max_retries : PositiveInt, optional
@@ -85,8 +83,7 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http_futures: str | None = None
     base_url_ws_spot: str | None = None
     base_url_ws_futures: str | None = None
-    http_proxy_url: str | None = None
-    ws_proxy_url: str | None = None
+    proxy_url: str | None = None
     update_instruments_interval_mins: PositiveInt | None = 60
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None
@@ -132,10 +129,8 @@ class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws_futures : str, optional
         The base URL for Kraken Futures WebSocket API.
         If ``None`` then will use the default URL based on environment.
-    http_proxy_url : str, optional
-        Optional HTTP proxy URL.
-    ws_proxy_url : str, optional
-        Optional WebSocket proxy URL.
+    proxy_url : str, optional
+        Optional proxy URL for HTTP and WebSocket transports.
     max_retries : PositiveInt, optional
         The maximum number of times an HTTP request will be retried.
     retry_delay_initial_ms : PositiveInt, optional
@@ -169,8 +164,7 @@ class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_http_futures: str | None = None
     base_url_ws_spot: str | None = None
     base_url_ws_futures: str | None = None
-    http_proxy_url: str | None = None
-    ws_proxy_url: str | None = None
+    proxy_url: str | None = None
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None

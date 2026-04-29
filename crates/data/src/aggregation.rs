@@ -35,7 +35,10 @@ use nautilus_common::{
 use nautilus_core::{
     UnixNanos,
     correctness::{self, FAILED},
-    datetime::{add_n_months, add_n_months_nanos, add_n_years, add_n_years_nanos},
+    datetime::{
+        add_n_months, add_n_months_nanos, add_n_years, add_n_years_nanos, subtract_n_months_nanos,
+        subtract_n_years_nanos,
+    },
 };
 use nautilus_model::{
     data::{
@@ -1548,6 +1551,7 @@ pub struct TimeBarAggregator {
     timer_name: String,
     interval_ns: UnixNanos,
     next_close_ns: UnixNanos,
+    first_close_ns: UnixNanos,
     bar_build_delay: u64,
     time_bars_origin_offset: Option<TimeDelta>,
     skip_first_non_full_bar: bool,
@@ -1578,7 +1582,7 @@ impl TimeBarAggregator {
     /// # Panics
     ///
     /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new<H: FnMut(Bar) + 'static>(
         bar_type: BarType,
         price_precision: u8,
@@ -1611,9 +1615,10 @@ impl TimeBarAggregator {
             timestamp_on_close,
             is_left_open,
             stored_open_ns: UnixNanos::default(),
-            timer_name: bar_type.to_string(),
+            timer_name: format!("TIME_BAR_{bar_type}"),
             interval_ns: get_bar_interval_ns(&bar_type),
             next_close_ns: UnixNanos::default(),
+            first_close_ns: UnixNanos::default(),
             bar_build_delay,
             time_bars_origin_offset,
             skip_first_non_full_bar,
@@ -1670,10 +1675,9 @@ impl TimeBarAggregator {
         // Closing a partial bar at the transition from historical to backtest data
         let fire_immediately = start_time == now;
 
-        self.skip_first_non_full_bar = self.skip_first_non_full_bar && now > start_time;
-
         let spec = &self.bar_type().spec();
         let start_time_ns = UnixNanos::from(start_time);
+        let step = spec.step.get() as u32;
 
         if spec.aggregation != BarAggregation::Month && spec.aggregation != BarAggregation::Year {
             self.clock
@@ -1701,14 +1705,10 @@ impl TimeBarAggregator {
             // The monthly/yearly alert time is defined iteratively at each alert time as there is no regular interval
             let alert_time = if fire_immediately {
                 start_time
+            } else if spec.aggregation == BarAggregation::Month {
+                add_n_months(start_time, step).expect(FAILED)
             } else {
-                let step = spec.step.get() as u32;
-                if spec.aggregation == BarAggregation::Month {
-                    add_n_months(start_time, step).expect(FAILED)
-                } else {
-                    // Year aggregation
-                    add_n_years(start_time, step).expect(FAILED)
-                }
+                add_n_years(start_time, step).expect(FAILED)
             };
 
             self.clock
@@ -1722,7 +1722,21 @@ impl TimeBarAggregator {
                 .expect(FAILED);
 
             self.next_close_ns = UnixNanos::from(alert_time);
-            self.stored_open_ns = UnixNanos::from(start_time);
+            // Mirror Cython: stored_open = close_time - step, so when fire_immediately the
+            // current (partial) bar started `step` periods before start_time.
+            self.stored_open_ns = if fire_immediately {
+                if spec.aggregation == BarAggregation::Month {
+                    subtract_n_months_nanos(start_time_ns, step).expect(FAILED)
+                } else {
+                    subtract_n_years_nanos(start_time_ns, step).expect(FAILED)
+                }
+            } else {
+                start_time_ns
+            };
+        }
+
+        if self.skip_first_non_full_bar {
+            self.first_close_ns = self.next_close_ns;
         }
 
         log::debug!(
@@ -1742,10 +1756,12 @@ impl TimeBarAggregator {
     }
 
     fn build_and_send(&mut self, ts_event: UnixNanos, ts_init: UnixNanos) {
-        if self.skip_first_non_full_bar {
+        if self.skip_first_non_full_bar && ts_init <= self.first_close_ns {
             self.core.builder.reset();
-            self.skip_first_non_full_bar = false;
         } else {
+            // Clear for the transition from historical to live data; subsequent
+            // bars always emit regardless of timestamp.
+            self.skip_first_non_full_bar = false;
             self.core.build_and_send(ts_event, ts_init);
         }
     }
@@ -1910,7 +1926,7 @@ impl BarAggregator for TimeBarAggregator {
         // Delegate to the implementation method
         // We use the struct name here to disambiguate from the trait method
         {
-            #[allow(clippy::use_self)]
+            #[expect(clippy::use_self)]
             TimeBarAggregator::build_bar(self, event);
         }
     }
@@ -2072,7 +2088,7 @@ impl SpreadQuoteAggregator {
     /// # Panics
     ///
     /// Panics if `legs` has fewer than 2 entries or any ratio is zero.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         spread_instrument_id: InstrumentId,
         legs: &[(InstrumentId, i64)],
@@ -2094,7 +2110,7 @@ impl SpreadQuoteAggregator {
         for &r in &ratios {
             assert!(r != 0, "Ratio cannot be zero");
         }
-        let timer_name = format!("spread_quote_{spread_instrument_id}");
+        let timer_name = format!("SPREAD_QUOTE_{spread_instrument_id}");
         Self {
             spread_instrument_id,
             leg_ids,
@@ -2304,6 +2320,7 @@ impl SpreadQuoteAggregator {
                 .expect("Expected TestClock in historical mode");
             test_clock.advance_time(ts_init, true)
         };
+
         for event in events {
             if event.ts_event == ts_init {
                 self.historical_event_at_ts_init = Some(event);
@@ -2318,6 +2335,7 @@ impl SpreadQuoteAggregator {
         if !self.has_update {
             return;
         }
+
         for (idx, &leg_id) in self.leg_ids.iter().enumerate() {
             let Some(tick) = self.last_quotes.get(&leg_id) else {
                 log::error!(
@@ -2401,6 +2419,7 @@ impl SpreadQuoteAggregator {
     fn create_futures_spread_prices(&self) -> (f64, f64) {
         let mut raw_ask = 0.0_f64;
         let mut raw_bid = 0.0_f64;
+
         for i in 0..self.n_legs {
             let r = self.ratios[i] as f64;
             if self.ratios[i] >= 0 {
@@ -2745,6 +2764,162 @@ mod tests {
     }
 
     #[rstest]
+    fn test_bar_builder_update_bar_initializes_then_accumulates(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+        );
+
+        let bar_one = Bar::new(
+            bar_type,
+            Price::from("100.00"),
+            Price::from("102.00"),
+            Price::from("99.00"),
+            Price::from("101.00"),
+            Quantity::from(10),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+        );
+        let bar_two = Bar::new(
+            bar_type,
+            Price::from("101.00"),
+            Price::from("103.00"),
+            Price::from("98.00"),
+            Price::from("102.00"),
+            Quantity::from(5),
+            UnixNanos::from(2_000),
+            UnixNanos::from(2_000),
+        );
+
+        builder.update_bar(bar_one, bar_one.volume, bar_one.ts_init);
+        builder.update_bar(bar_two, bar_two.volume, bar_two.ts_init);
+        let bar = builder.build_now();
+
+        assert_eq!(bar.open, Price::from("100.00"));
+        assert_eq!(bar.high, Price::from("103.00"));
+        assert_eq!(bar.low, Price::from("98.00"));
+        assert_eq!(bar.close, Price::from("102.00"));
+        assert_eq!(bar.volume, Quantity::from(15));
+        assert_eq!(builder.count, 0);
+    }
+
+    #[rstest]
+    fn test_bar_builder_update_bar_ignores_earlier_timestamp(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+        );
+
+        let bar_later = Bar::new(
+            bar_type,
+            Price::from("100.00"),
+            Price::from("101.00"),
+            Price::from("99.00"),
+            Price::from("100.50"),
+            Quantity::from(10),
+            UnixNanos::from(2_000),
+            UnixNanos::from(2_000),
+        );
+        let bar_earlier = Bar::new(
+            bar_type,
+            Price::from("200.00"),
+            Price::from("210.00"),
+            Price::from("190.00"),
+            Price::from("205.00"),
+            Quantity::from(50),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+        );
+
+        builder.update_bar(bar_later, bar_later.volume, bar_later.ts_init);
+        builder.update_bar(bar_earlier, bar_earlier.volume, bar_earlier.ts_init);
+
+        assert_eq!(builder.ts_last, 2_000);
+        assert_eq!(builder.count, 1);
+        assert_eq!(builder.volume, Quantity::from(10));
+    }
+
+    #[rstest]
+    fn test_bar_builder_build_promotes_close_above_high_from_previous_close(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(bar_type, 2, 0);
+
+        builder.update(
+            Price::from("110.00"),
+            Quantity::from(1),
+            UnixNanos::from(100),
+        );
+        builder.build_now();
+
+        builder.update(
+            Price::from("100.00"),
+            Quantity::from(1),
+            UnixNanos::from(200),
+        );
+        builder.update(
+            Price::from("101.00"),
+            Quantity::from(1),
+            UnixNanos::from(300),
+        );
+        builder.update(
+            Price::from("200.00"),
+            Quantity::from(1),
+            UnixNanos::from(400),
+        );
+
+        let bar = builder.build_now();
+        assert_eq!(bar.open, Price::from("100.00"));
+        assert_eq!(bar.high, Price::from("200.00"));
+        assert_eq!(bar.low, Price::from("100.00"));
+        assert_eq!(bar.close, Price::from("200.00"));
+    }
+
+    #[rstest]
+    fn test_bar_builder_build_clamps_low_to_close(equity_aapl: Equity) {
+        // Rust BarBuilder mirrors Cython: on `build`, if `close < low` the low is pulled down to close.
+        // Reaching this branch requires bypassing `update`'s low tracking (e.g. via bar updates where
+        // a later bar's close is below the accumulated low). We simulate by direct field assignment.
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(bar_type, 2, 0);
+
+        builder.update(
+            Price::from("100.00"),
+            Quantity::from(1),
+            UnixNanos::from(100),
+        );
+        builder.close = Some(Price::from("50.00"));
+
+        let bar = builder.build_now();
+        assert_eq!(bar.low, Price::from("50.00"));
+        assert_eq!(bar.close, Price::from("50.00"));
+        assert!(bar.low <= bar.open);
+    }
+
+    #[rstest]
     fn test_tick_bar_aggregator_handle_trade_when_step_count_below_threshold(equity_aapl: Equity) {
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_spec = BarSpecification::new(3, BarAggregation::Tick, PriceType::Last);
@@ -3064,6 +3239,98 @@ mod tests {
     }
 
     #[rstest]
+    fn test_volume_bar_aggregator_zero_size_update_is_noop(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Volume, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = VolumeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        aggregator.update(
+            Price::from("100.00"),
+            Quantity::from(0),
+            UnixNanos::default(),
+        );
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 0);
+    }
+
+    #[rstest]
+    fn test_volume_bar_aggregator_exact_threshold_emits_single_bar(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Volume, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = VolumeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        aggregator.update(
+            Price::from("100.00"),
+            Quantity::from(7),
+            UnixNanos::from(1_000),
+        );
+        aggregator.update(
+            Price::from("101.00"),
+            Quantity::from(3),
+            UnixNanos::from(2_000),
+        );
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 1);
+        assert_eq!(handler_guard[0].volume, Quantity::from(10));
+        assert_eq!(handler_guard[0].close, Price::from("101.00"));
+    }
+
+    #[rstest]
+    fn test_volume_bar_aggregator_step_of_one_emits_per_unit(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Volume, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = VolumeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        aggregator.update(
+            Price::from("100.00"),
+            Quantity::from(1),
+            UnixNanos::default(),
+        );
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 1);
+        assert_eq!(handler_guard[0].volume, Quantity::from(1));
+    }
+
+    #[rstest]
     fn test_volume_runs_bar_aggregator_side_change_resets(equity_aapl: Equity) {
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_spec = BarSpecification::new(2, BarAggregation::VolumeRuns, PriceType::Last);
@@ -3311,6 +3578,76 @@ mod tests {
 
         // Cumulative value should remain zero
         assert_eq!(aggregator.get_cumulative_value(), 0.0);
+    }
+
+    #[rstest]
+    fn test_value_bar_aggregator_exact_threshold_emits_one_bar(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1000, BarAggregation::Value, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = ValueBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        aggregator.update(
+            Price::from("100.00"),
+            Quantity::from(5),
+            UnixNanos::from(1_000),
+        );
+        aggregator.update(
+            Price::from("100.00"),
+            Quantity::from(5),
+            UnixNanos::from(2_000),
+        );
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 1);
+        assert_eq!(handler_guard[0].volume, Quantity::from(10));
+        assert_eq!(aggregator.get_cumulative_value(), 0.0);
+    }
+
+    #[rstest]
+    fn test_value_bar_aggregator_precision_boundary_min_size_clamp(equity_aapl: Equity) {
+        // step=100, price=100 per-unit value=100 with size_precision=0 lands the divided
+        // size_chunk at the precision floor. Verifies the min-size clamp branch in update()
+        // emits one bar per unit rather than looping on zero-volume chunks.
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(100, BarAggregation::Value, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = ValueBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        // 4 units at $100 = $400 value, with step $100 gives 4 bars exactly.
+        aggregator.update(
+            Price::from("100.00"),
+            Quantity::from(4),
+            UnixNanos::default(),
+        );
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 4);
+        for bar in handler_guard.iter() {
+            assert_eq!(bar.volume, Quantity::from(1));
+        }
     }
 
     #[rstest]
@@ -3608,6 +3945,41 @@ mod tests {
         let bar = handler_guard.first().unwrap();
         assert_eq!(bar.ts_event, UnixNanos::default());
         assert_eq!(bar.ts_init, next_sec);
+    }
+
+    #[rstest]
+    fn test_time_bar_aggregator_stop_clears_timer_and_allows_restart(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let timer_name = format!("TIME_BAR_{bar_type}");
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let aggregator = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock.clone(),
+            |_bar: Bar| {},
+            true,
+            false,
+            BarIntervalType::LeftOpen,
+            None,
+            15,
+            false,
+        );
+
+        let boxed: Box<dyn BarAggregator> = Box::new(aggregator);
+        let rc = Rc::new(RefCell::new(boxed));
+
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+        assert_eq!(clock.borrow().timer_names(), vec![timer_name.as_str()]);
+
+        rc.borrow_mut().stop();
+        assert!(clock.borrow().timer_names().is_empty());
+
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+        assert_eq!(clock.borrow().timer_names(), vec![timer_name.as_str()]);
     }
 
     #[rstest]
@@ -5325,7 +5697,7 @@ mod tests {
             Box::new(move |q: QuoteTick| {
                 handler_clone.lock().expect(MUTEX_POISONED).push(q);
             }),
-            #[allow(clippy::redundant_clone)] // need clock for set_clock after
+            // need clock for set_clock after
             clock.clone(),
             true,
             Some(1),
@@ -5399,7 +5771,7 @@ mod tests {
             Box::new(move |q: QuoteTick| {
                 handler_clone.lock().expect(MUTEX_POISONED).push(q);
             }),
-            #[allow(clippy::redundant_clone)] // need clock for set_clock after
+            // need clock for set_clock after
             clock.clone(),
             true,
             Some(1),
@@ -5618,7 +5990,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_time_bar_skip_first_non_full_bar_on_boundary(equity_aapl: Equity) {
+    #[case(BarIntervalType::LeftOpen)]
+    #[case(BarIntervalType::RightOpen)]
+    fn test_time_bar_skip_first_non_full_bar_noop_on_boundary(
+        equity_aapl: Equity,
+        #[case] interval_type: BarIntervalType,
+    ) {
+        // When the clock sits on a bar boundary, fire_immediately=true and
+        // first_close_ns equals that boundary. Every subsequent bar closes
+        // strictly after first_close_ns, so skip_first_non_full_bar never
+        // triggers and both bars emit.
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
@@ -5626,8 +6007,9 @@ mod tests {
         let handler_clone = Arc::clone(&handler);
         let clock = Rc::new(RefCell::new(TestClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(1_000_000_000));
+        let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
-        let mut aggregator = TimeBarAggregator::new(
+        let aggregator = TimeBarAggregator::new(
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
@@ -5638,45 +6020,55 @@ mod tests {
             },
             false,
             false,
-            BarIntervalType::LeftOpen,
+            interval_type,
             None,
             0,
-            true,
+            true, // skip_first_non_full_bar
         );
-        aggregator.update(
+
+        let boxed: Box<dyn BarAggregator> = Box::new(aggregator);
+        let rc = Rc::new(RefCell::new(boxed));
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+
+        rc.borrow_mut().update(
             Price::from("100.00"),
             Quantity::from(1),
             UnixNanos::from(1_000_000_000),
         );
-        aggregator.build_bar(&TimeEvent::new(
-            Ustr::from("1-SECOND-LAST"),
+        rc.borrow_mut().build_bar(&TimeEvent::new(
+            event_name,
             UUID4::new(),
             UnixNanos::from(2_000_000_000),
             UnixNanos::from(2_000_000_000),
         ));
-        aggregator.update(
-            Price::from("100.00"),
+        rc.borrow_mut().update(
+            Price::from("101.00"),
             Quantity::from(1),
             UnixNanos::from(2_500_000_000),
         );
-        aggregator.build_bar(&TimeEvent::new(
-            Ustr::from("1-SECOND-LAST"),
+        rc.borrow_mut().build_bar(&TimeEvent::new(
+            event_name,
             UUID4::new(),
             UnixNanos::from(3_000_000_000),
             UnixNanos::from(3_000_000_000),
         ));
 
         let bars = handler.lock().expect(MUTEX_POISONED);
-        assert_eq!(
-            bars.len(),
-            1,
-            "first bar skipped (skip_first_non_full_bar), second bar emitted"
-        );
+        assert_eq!(bars.len(), 2);
         assert_eq!(bars[0].close, Price::from("100.00"));
+        assert_eq!(bars[1].close, Price::from("101.00"));
     }
 
     #[rstest]
-    fn test_time_bar_skip_first_non_full_bar_near_boundary(equity_aapl: Equity) {
+    #[case(BarIntervalType::LeftOpen)]
+    #[case(BarIntervalType::RightOpen)]
+    fn test_time_bar_skip_first_non_full_bar_drops_partial_bar(
+        equity_aapl: Equity,
+        #[case] interval_type: BarIntervalType,
+    ) {
+        // When the clock starts past a boundary (mid-interval), first_close_ns
+        // is the upcoming boundary. The bar closing at first_close_ns is partial,
+        // so skip_first_non_full_bar drops it; subsequent full bars emit.
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
@@ -5684,8 +6076,74 @@ mod tests {
         let handler_clone = Arc::clone(&handler);
         let clock = Rc::new(RefCell::new(TestClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(1_500_000_000));
+        let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
-        let mut aggregator = TimeBarAggregator::new(
+        let aggregator = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock,
+            move |bar: Bar| {
+                let mut h = handler_clone.lock().expect(MUTEX_POISONED);
+                h.push(bar);
+            },
+            false,
+            false,
+            interval_type,
+            None,
+            0,
+            true, // skip_first_non_full_bar
+        );
+
+        let boxed: Box<dyn BarAggregator> = Box::new(aggregator);
+        let rc = Rc::new(RefCell::new(boxed));
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+
+        rc.borrow_mut().update(
+            Price::from("100.00"),
+            Quantity::from(1),
+            UnixNanos::from(1_500_000_000),
+        );
+        rc.borrow_mut().build_bar(&TimeEvent::new(
+            event_name,
+            UUID4::new(),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(2_000_000_000),
+        ));
+        rc.borrow_mut().update(
+            Price::from("101.00"),
+            Quantity::from(1),
+            UnixNanos::from(2_500_000_000),
+        );
+        rc.borrow_mut().build_bar(&TimeEvent::new(
+            event_name,
+            UUID4::new(),
+            UnixNanos::from(3_000_000_000),
+            UnixNanos::from(3_000_000_000),
+        ));
+
+        let bars = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].close, Price::from("101.00"));
+    }
+
+    #[rstest]
+    fn test_time_bar_skip_first_non_full_bar_skips_every_call_before_first_close(
+        equity_aapl: Equity,
+    ) {
+        // The flag must remain set across every build_and_send call whose
+        // ts_init <= first_close_ns, and only flip once a bar actually emits.
+        // Catches a mutation that flips skip_first_non_full_bar early.
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Second, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        clock.borrow_mut().set_time(UnixNanos::from(5_000_000_000));
+        let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
+
+        let aggregator = TimeBarAggregator::new(
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
@@ -5699,36 +6157,186 @@ mod tests {
             BarIntervalType::LeftOpen,
             None,
             0,
-            true,
+            true, // skip_first_non_full_bar
         );
-        aggregator.update(
-            Price::from("100.00"),
+
+        let boxed: Box<dyn BarAggregator> = Box::new(aggregator);
+        let rc = Rc::new(RefCell::new(boxed));
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+
+        // first_close_ns is 10_000_000_000 (first 10s boundary after start).
+        // Drive three build_bar calls at ts <= first_close_ns, each preceded by a
+        // distinct update. Every one of them must be skipped.
+        for (price, update_ts, event_ts) in [
+            ("100.00", 5_500_000_000_u64, 7_000_000_000_u64),
+            ("101.00", 7_500_000_000_u64, 8_000_000_000_u64),
+            ("102.00", 9_000_000_000_u64, 10_000_000_000_u64),
+        ] {
+            rc.borrow_mut().update(
+                Price::from(price),
+                Quantity::from(1),
+                UnixNanos::from(update_ts),
+            );
+            rc.borrow_mut().build_bar(&TimeEvent::new(
+                event_name,
+                UUID4::new(),
+                UnixNanos::from(event_ts),
+                UnixNanos::from(event_ts),
+            ));
+        }
+
+        // Final update + build past first_close_ns emits for the first time.
+        rc.borrow_mut().update(
+            Price::from("103.00"),
             Quantity::from(1),
-            UnixNanos::from(1_500_000_000),
+            UnixNanos::from(10_500_000_000),
         );
-        aggregator.build_bar(&TimeEvent::new(
-            Ustr::from("1-SECOND-LAST"),
+        rc.borrow_mut().build_bar(&TimeEvent::new(
+            event_name,
             UUID4::new(),
-            UnixNanos::from(2_000_000_000),
-            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(11_000_000_000),
+            UnixNanos::from(11_000_000_000),
         ));
-        aggregator.update(
+
+        let bars = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].close, Price::from("103.00"));
+    }
+
+    #[rstest]
+    fn test_time_bar_skip_first_non_full_bar_skips_when_build_delay_shifts_start(
+        equity_aapl: Equity,
+    ) {
+        // Cython parity: when bar_build_delay > 0 pushes start_time past a
+        // boundary (even if `now` is on a boundary), first_close_ns is set and
+        // the first bar is skipped. The previous Rust `now > start_time` guard
+        // incorrectly kept this first bar.
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        clock.borrow_mut().set_time(UnixNanos::from(2_000_000_000));
+        let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
+
+        let aggregator = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock,
+            move |bar: Bar| {
+                let mut h = handler_clone.lock().expect(MUTEX_POISONED);
+                h.push(bar);
+            },
+            false,
+            false,
+            BarIntervalType::LeftOpen,
+            None,
+            100,  // bar_build_delay (microseconds)
+            true, // skip_first_non_full_bar
+        );
+
+        let boxed: Box<dyn BarAggregator> = Box::new(aggregator);
+        let rc = Rc::new(RefCell::new(boxed));
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+
+        // start_time = 2s + 100us = 2_000_100_000 ns; first_close_ns = 3_000_100_000 ns.
+        rc.borrow_mut().update(
             Price::from("100.00"),
             Quantity::from(1),
             UnixNanos::from(2_500_000_000),
         );
-        aggregator.build_bar(&TimeEvent::new(
-            Ustr::from("1-SECOND-LAST"),
+        rc.borrow_mut().build_bar(&TimeEvent::new(
+            event_name,
             UUID4::new(),
-            UnixNanos::from(3_000_000_000),
-            UnixNanos::from(3_000_000_000),
+            UnixNanos::from(3_000_100_000),
+            UnixNanos::from(3_000_100_000),
+        ));
+        rc.borrow_mut().update(
+            Price::from("101.00"),
+            Quantity::from(1),
+            UnixNanos::from(3_500_000_000),
+        );
+        rc.borrow_mut().build_bar(&TimeEvent::new(
+            event_name,
+            UUID4::new(),
+            UnixNanos::from(4_000_100_000),
+            UnixNanos::from(4_000_100_000),
         ));
 
         let bars = handler.lock().expect(MUTEX_POISONED);
-        assert!(
-            !bars.is_empty(),
-            "first bar skipped (skip_first_non_full_bar), later bar emitted"
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].close, Price::from("101.00"));
+    }
+
+    #[rstest]
+    #[case(
+        BarAggregation::Month,
+        1_735_689_600_000_000_000_u64,
+        1_733_011_200_000_000_000_u64
+    )]
+    #[case(
+        BarAggregation::Year,
+        1_735_689_600_000_000_000_u64,
+        1_704_067_200_000_000_000_u64
+    )]
+    fn test_time_bar_fire_immediately_month_year_stored_open_points_to_previous_period(
+        equity_aapl: Equity,
+        #[case] aggregation: BarAggregation,
+        #[case] start_ns: u64,
+        #[case] expected_stored_open_ns: u64,
+    ) {
+        // When the clock is exactly on a month/year boundary, fire_immediately=true.
+        // stored_open_ns must resolve to one step before start_time (mirrors Cython
+        // close_time - step arithmetic) so the first bar's open timestamp marks
+        // the true start of the in-progress interval.
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, aggregation, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        clock.borrow_mut().set_time(UnixNanos::from(start_ns));
+        let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
+
+        let aggregator = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock,
+            move |bar: Bar| {
+                let mut h = handler_clone.lock().expect(MUTEX_POISONED);
+                h.push(bar);
+            },
+            false,
+            false,
+            BarIntervalType::RightOpen, // ts_event = stored_open_ns
+            None,
+            0,
+            false, // skip_first_non_full_bar
         );
+
+        let boxed: Box<dyn BarAggregator> = Box::new(aggregator);
+        let rc = Rc::new(RefCell::new(boxed));
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+
+        rc.borrow_mut().update(
+            Price::from("100.00"),
+            Quantity::from(1),
+            UnixNanos::from(start_ns),
+        );
+        rc.borrow_mut().build_bar(&TimeEvent::new(
+            event_name,
+            UUID4::new(),
+            UnixNanos::from(start_ns),
+            UnixNanos::from(start_ns),
+        ));
+
+        let bars = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].ts_event, UnixNanos::from(expected_stored_open_ns));
+        assert_eq!(bars[0].ts_init, UnixNanos::from(start_ns));
     }
 
     #[rstest]
@@ -5776,5 +6384,353 @@ mod tests {
             "advancing time from ts1 to ts2 should produce at least one bar"
         );
         assert_eq!(bars[0].close, Price::from("100.00"));
+    }
+}
+
+#[cfg(test)]
+mod property_tests {
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        sync::{Arc, Mutex},
+    };
+
+    use nautilus_common::{clock::TestClock, timer::TimeEvent};
+    use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos};
+    use nautilus_model::{
+        data::{Bar, BarSpecification, BarType, bar::get_bar_interval_ns},
+        enums::{AggregationSource, BarAggregation, BarIntervalType, PriceType},
+        instruments::{Instrument, InstrumentAny, stubs::equity_aapl},
+        types::{Price, Quantity},
+    };
+    use proptest::prelude::*;
+    use rstest::rstest;
+    use ustr::Ustr;
+
+    use super::*;
+
+    fn aggregation_strategy() -> impl Strategy<Value = BarAggregation> {
+        prop_oneof![
+            Just(BarAggregation::Second),
+            Just(BarAggregation::Minute),
+            Just(BarAggregation::Hour),
+        ]
+    }
+
+    fn interval_type_strategy() -> impl Strategy<Value = BarIntervalType> {
+        prop_oneof![
+            Just(BarIntervalType::LeftOpen),
+            Just(BarIntervalType::RightOpen),
+        ]
+    }
+
+    proptest! {
+        #[rstest]
+        fn prop_skip_first_drops_partial_then_emits(
+            aggregation in aggregation_strategy(),
+            step in 1usize..=5,
+            interval_type in interval_type_strategy(),
+            skip_first in any::<bool>(),
+        ) {
+            let instrument = InstrumentAny::Equity(equity_aapl());
+            let bar_spec = BarSpecification::new(step, aggregation, PriceType::Last);
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+            let interval_ns = get_bar_interval_ns(&bar_type).as_u64();
+
+            // Anchor the clock one full interval past epoch plus a half-interval offset
+            // so start_time lands mid-interval and fire_immediately is false.
+            let now_ns = interval_ns + interval_ns / 2;
+
+            let handler = Arc::new(Mutex::new(Vec::<Bar>::new()));
+            let handler_clone = Arc::clone(&handler);
+            let clock = Rc::new(RefCell::new(TestClock::new()));
+            clock.borrow_mut().set_time(UnixNanos::from(now_ns));
+            let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
+
+            let aggregator = TimeBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                clock,
+                move |bar: Bar| {
+                    let mut h = handler_clone.lock().expect(MUTEX_POISONED);
+                    h.push(bar);
+                },
+                false,
+                false,
+                interval_type,
+                None,
+                0,
+                skip_first,
+            );
+
+            let boxed: Box<dyn BarAggregator> = Box::new(aggregator);
+            let rc = Rc::new(RefCell::new(boxed));
+            rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+
+            // First tick + first close event. start_time = 1 * interval, first_close
+            // = 2 * interval. ts_init == first_close_ns: partial bar.
+            rc.borrow_mut().update(
+                Price::from("100.00"),
+                Quantity::from(1),
+                UnixNanos::from(now_ns),
+            );
+            let first_close = 2 * interval_ns;
+            rc.borrow_mut().build_bar(&TimeEvent::new(
+                event_name,
+                UUID4::new(),
+                UnixNanos::from(first_close),
+                UnixNanos::from(first_close),
+            ));
+
+            // Second tick + later close; emits unconditionally.
+            rc.borrow_mut().update(
+                Price::from("101.00"),
+                Quantity::from(1),
+                UnixNanos::from(first_close + interval_ns / 2),
+            );
+            let second_close = first_close + interval_ns;
+            rc.borrow_mut().build_bar(&TimeEvent::new(
+                event_name,
+                UUID4::new(),
+                UnixNanos::from(second_close),
+                UnixNanos::from(second_close),
+            ));
+
+            let bars = handler.lock().expect(MUTEX_POISONED);
+            let expected = if skip_first { 1 } else { 2 };
+            prop_assert_eq!(bars.len(), expected);
+            prop_assert_eq!(bars.last().unwrap().close, Price::from("101.00"));
+            for bar in bars.iter() {
+                prop_assert!(bar.high >= bar.open);
+                prop_assert!(bar.high >= bar.close);
+                prop_assert!(bar.low <= bar.open);
+                prop_assert!(bar.low <= bar.close);
+            }
+        }
+
+        #[rstest]
+        fn prop_skip_first_noop_on_exact_boundary(
+            aggregation in aggregation_strategy(),
+            step in 1usize..=5,
+            interval_type in interval_type_strategy(),
+        ) {
+            let instrument = InstrumentAny::Equity(equity_aapl());
+            let bar_spec = BarSpecification::new(step, aggregation, PriceType::Last);
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+            let interval_ns = get_bar_interval_ns(&bar_type).as_u64();
+
+            // Clock exactly on a bar boundary: fire_immediately=true, so the first
+            // bar that reaches build_and_send must emit regardless of skip_first.
+            let now_ns = interval_ns;
+            let handler = Arc::new(Mutex::new(Vec::<Bar>::new()));
+            let handler_clone = Arc::clone(&handler);
+            let clock = Rc::new(RefCell::new(TestClock::new()));
+            clock.borrow_mut().set_time(UnixNanos::from(now_ns));
+            let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
+
+            let aggregator = TimeBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                clock,
+                move |bar: Bar| {
+                    let mut h = handler_clone.lock().expect(MUTEX_POISONED);
+                    h.push(bar);
+                },
+                false,
+                false,
+                interval_type,
+                None,
+                0,
+                true, // skip_first_non_full_bar
+            );
+
+            let boxed: Box<dyn BarAggregator> = Box::new(aggregator);
+            let rc = Rc::new(RefCell::new(boxed));
+            rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+
+            rc.borrow_mut().update(
+                Price::from("100.00"),
+                Quantity::from(1),
+                UnixNanos::from(now_ns),
+            );
+            let next_close = now_ns + interval_ns;
+            rc.borrow_mut().build_bar(&TimeEvent::new(
+                event_name,
+                UUID4::new(),
+                UnixNanos::from(next_close),
+                UnixNanos::from(next_close),
+            ));
+
+            let bars = handler.lock().expect(MUTEX_POISONED);
+            prop_assert_eq!(bars.len(), 1);
+            prop_assert_eq!(bars[0].close, Price::from("100.00"));
+        }
+
+        #[rstest]
+        fn prop_bar_builder_ohlc_invariants(
+            updates in prop::collection::vec((1i64..=100_000i64, 1u64..=1_000u64), 1..=50),
+        ) {
+            let instrument = InstrumentAny::Equity(equity_aapl());
+            let bar_spec = BarSpecification::new(1, BarAggregation::Tick, PriceType::Last);
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+            let mut builder = BarBuilder::new(bar_type, 2, 0);
+
+            let mut total_volume: u64 = 0;
+
+            for (i, (price_cents, size)) in updates.iter().enumerate() {
+                let price = Price::new((*price_cents as f64) / 100.0, 2);
+                let qty = Quantity::new(*size as f64, 0);
+                let ts = UnixNanos::from((i as u64 + 1) * 1_000);
+                total_volume += *size;
+                builder.update(price, qty, ts);
+            }
+
+            let bar = builder.build_now();
+            prop_assert!(bar.low <= bar.open);
+            prop_assert!(bar.low <= bar.close);
+            prop_assert!(bar.high >= bar.open);
+            prop_assert!(bar.high >= bar.close);
+            prop_assert!(bar.low <= bar.high);
+            prop_assert_eq!(bar.volume.as_f64(), total_volume as f64);
+        }
+
+        #[rstest]
+        fn prop_tick_bar_aggregator_volume_conservation(
+            ticks in prop::collection::vec((1i64..=1_000i64, 1u64..=100u64), 3..=60),
+            step in 1usize..=5,
+        ) {
+            let instrument = InstrumentAny::Equity(equity_aapl());
+            let bar_spec = BarSpecification::new(step, BarAggregation::Tick, PriceType::Last);
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+            let handler = Arc::new(Mutex::new(Vec::<Bar>::new()));
+            let handler_clone = Arc::clone(&handler);
+
+            let mut aggregator = TickBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                move |bar: Bar| {
+                    handler_clone.lock().expect(MUTEX_POISONED).push(bar);
+                },
+            );
+
+            let mut total_input: u64 = 0;
+
+            for (i, (price_cents, size)) in ticks.iter().enumerate() {
+                let price = Price::new((*price_cents as f64) / 100.0, 2);
+                let qty = Quantity::new(*size as f64, 0);
+                aggregator.update(price, qty, UnixNanos::from((i as u64 + 1) * 1_000));
+                total_input += *size;
+            }
+
+            let bars = handler.lock().expect(MUTEX_POISONED);
+            let emitted_count = bars.len();
+            prop_assert_eq!(emitted_count, ticks.len() / step);
+
+            let mut sum_emitted: f64 = 0.0;
+
+            for bar in bars.iter() {
+                prop_assert!(bar.low <= bar.open);
+                prop_assert!(bar.low <= bar.close);
+                prop_assert!(bar.high >= bar.open);
+                prop_assert!(bar.high >= bar.close);
+                sum_emitted += bar.volume.as_f64();
+            }
+
+            // Unemitted pending size remains in the builder for the remainder `ticks.len() % step` ticks.
+            let pending_size: u64 = ticks.iter()
+                .skip(emitted_count * step)
+                .map(|(_, s)| *s)
+                .sum();
+            prop_assert!((sum_emitted + pending_size as f64 - total_input as f64).abs() < 1e-6);
+        }
+
+        #[rstest]
+        fn prop_volume_bar_aggregator_conservation(
+            sizes in prop::collection::vec(1u64..=50u64, 3..=40),
+            step in 2u64..=10u64,
+        ) {
+            let instrument = InstrumentAny::Equity(equity_aapl());
+            let bar_spec = BarSpecification::new(step as usize, BarAggregation::Volume, PriceType::Last);
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+            let handler = Arc::new(Mutex::new(Vec::<Bar>::new()));
+            let handler_clone = Arc::clone(&handler);
+
+            let mut aggregator = VolumeBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                move |bar: Bar| {
+                    handler_clone.lock().expect(MUTEX_POISONED).push(bar);
+                },
+            );
+
+            let mut total_input: u64 = 0;
+
+            for (i, size) in sizes.iter().enumerate() {
+                aggregator.update(
+                    Price::from("100.00"),
+                    Quantity::new(*size as f64, 0),
+                    UnixNanos::from((i as u64 + 1) * 1_000),
+                );
+                total_input += *size;
+            }
+
+            let bars = handler.lock().expect(MUTEX_POISONED);
+
+            // Every emitted bar has exactly `step` volume and OHLC ordering holds.
+            for bar in bars.iter() {
+                prop_assert_eq!(bar.volume, Quantity::from(step));
+                prop_assert!(bar.low <= bar.open);
+                prop_assert!(bar.low <= bar.close);
+                prop_assert!(bar.high >= bar.open);
+                prop_assert!(bar.high >= bar.close);
+            }
+
+            // Conservation: total emitted + pending builder volume equals total input.
+            let emitted_total: u64 = bars.len() as u64 * step;
+            let pending = aggregator.core.builder.volume.as_f64();
+            prop_assert!((emitted_total as f64 + pending - total_input as f64).abs() < 1e-6);
+        }
+
+        #[rstest]
+        fn prop_value_bar_aggregator_ohlc_invariants(
+            ticks in prop::collection::vec((50i64..=500i64, 1u64..=20u64), 2..=30),
+            step in 100u64..=2_000u64,
+        ) {
+            let instrument = InstrumentAny::Equity(equity_aapl());
+            let bar_spec = BarSpecification::new(step as usize, BarAggregation::Value, PriceType::Last);
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+            let handler = Arc::new(Mutex::new(Vec::<Bar>::new()));
+            let handler_clone = Arc::clone(&handler);
+
+            let mut aggregator = ValueBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                move |bar: Bar| {
+                    handler_clone.lock().expect(MUTEX_POISONED).push(bar);
+                },
+            );
+
+            for (i, (price_cents, size)) in ticks.iter().enumerate() {
+                aggregator.update(
+                    Price::new((*price_cents as f64) / 100.0, 2),
+                    Quantity::new(*size as f64, 0),
+                    UnixNanos::from((i as u64 + 1) * 1_000),
+                );
+            }
+
+            let bars = handler.lock().expect(MUTEX_POISONED);
+            for bar in bars.iter() {
+                prop_assert!(bar.low <= bar.open);
+                prop_assert!(bar.low <= bar.close);
+                prop_assert!(bar.high >= bar.open);
+                prop_assert!(bar.high >= bar.close);
+                prop_assert!(bar.volume.as_f64() > 0.0);
+            }
+        }
     }
 }

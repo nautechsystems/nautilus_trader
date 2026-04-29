@@ -45,6 +45,7 @@ use crate::{decode::decode_instrument_def_msg, symbology::MetadataCache};
 /// GLBX.MDP3 covers CME Globex exchange MICs; OPRA.PILLAR covers OPRA option venues.
 fn apply_default_venue_dataset_mappings(venue_dataset_map: &mut IndexMap<Venue, Dataset>) {
     let glbx = Dataset::from("GLBX.MDP3");
+
     for venue in [
         Venue::CBCM(),
         Venue::GLBX(),
@@ -341,6 +342,7 @@ impl DatabentoDataLoader {
                     Ok(None)
                 }
             })();
+
             match result {
                 Ok(Some(v)) => Some(Ok(v)),
                 Ok(None) => None,
@@ -365,6 +367,7 @@ impl DatabentoDataLoader {
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         if skip_on_error {
             let mut instruments = Vec::new();
+
             for result in self.read_definition_records(filepath, use_exchange_as_venue)? {
                 match result {
                     Ok(instrument) => instruments.push(instrument),
@@ -667,6 +670,7 @@ impl DatabentoDataLoader {
             if let Err(e) = dbn_stream.advance() {
                 return Some(Err(e.into()));
             }
+
             match dbn_stream.get() {
                 Some(rec) => {
                     let record = dbn::RecordRef::from(rec);
@@ -724,6 +728,7 @@ impl DatabentoDataLoader {
             if let Err(e) = dbn_stream.advance() {
                 return Some(Err(e.into()));
             }
+
             match dbn_stream.get() {
                 Some(rec) => {
                     let record = dbn::RecordRef::from(rec);
@@ -781,6 +786,7 @@ impl DatabentoDataLoader {
             if let Err(e) = dbn_stream.advance() {
                 return Some(Err(e.into()));
             }
+
             match dbn_stream.get() {
                 Some(rec) => {
                     let record = dbn::RecordRef::from(rec);

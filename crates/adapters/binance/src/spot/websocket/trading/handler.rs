@@ -628,6 +628,7 @@ impl BinanceSpotWsTradingHandler {
                         "Received SBE OutboundAccountPositionEvent ({} bytes)",
                         data.len()
                     );
+
                     match super::decode_sbe::decode_account_position(data) {
                         Ok(msg) => {
                             log::debug!("SBE account position: {} balance(s)", msg.balances.len());

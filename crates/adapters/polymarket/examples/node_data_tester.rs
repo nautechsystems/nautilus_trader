@@ -22,15 +22,19 @@
 //! # Usage
 //!
 //! ```sh
-//! cargo run --example polymarket-data-tester --package nautilus-polymarket
+//! cargo run --example polymarket-data-tester --package nautilus-polymarket --features examples
 //! ```
+
+use std::sync::Arc;
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_live::node::LiveNode;
 use nautilus_model::identifiers::{ClientId, InstrumentId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 use nautilus_polymarket::{
     config::PolymarketDataClientConfig, factories::PolymarketDataClientFactory,
+    filters::EventSlugFilter,
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
@@ -42,21 +46,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let trader_id = TraderId::from("TESTER-001");
     let node_name = "POLYMARKET-DATA-TESTER-001".to_string();
 
-    // Presidential Election Winner 2028 — JD Vance (Yes/No)
+    // GTA VI Released Before June 2026 (Yes/No)
+    // https://polymarket.com/event/gta-vi-released-before-june-2026
     // These instrument IDs are discovered via the Gamma API; in practice you'd
     // use an InstrumentProvider to resolve slugs into IDs dynamically.
     let instrument_ids = vec![
-        // JD Vance Yes
+        // Yes
         InstrumentId::from(
-            "0x7ad403c3508f8e3912940fd1a913f227591145ca0614074208e0b962d5fcc422-16040015440196279900485035793550429453516625694844857319147506590755961451627.POLYMARKET",
+            "0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902-8441400852834915183759801017793514978104486628517653995211751018945988243154.POLYMARKET",
         ),
-        // JD Vance No
+        // No
         InstrumentId::from(
-            "0x7ad403c3508f8e3912940fd1a913f227591145ca0614074208e0b962d5fcc422-81694916552422830064199102811909459806011700139178165530145523694780063771756.POLYMARKET",
+            "0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902-109289569086508934142323222102974769075074494425163878721602922903101062859033.POLYMARKET",
         ),
     ];
 
-    let polymarket_config = PolymarketDataClientConfig::default();
+    // Use EventSlugFilter so bootstrap loads only this event's instruments
+    // instead of walking the full Gamma catalog.
+    let event_slugs = vec!["gta-vi-released-before-june-2026".to_string()];
+    let data_filter = EventSlugFilter::from_slugs(event_slugs);
+
+    let polymarket_config = PolymarketDataClientConfig {
+        filters: vec![Arc::new(data_filter)],
+        transport_backend: TransportBackend::Sockudo,
+        ..Default::default()
+    };
     let client_factory = PolymarketDataClientFactory;
     let client_id = ClientId::new("POLYMARKET");
 

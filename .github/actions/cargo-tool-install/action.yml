@@ -31,14 +31,14 @@ runs:
 
     # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1.15.2
+      uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
       with:
         toolchain: ${{ env.TOOLCHAIN }}
         override: true
 
     # https://github.com/actions/cache
     - name: Cache tool binary
-      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: ${{ runner.tool_cache }}/${{ inputs.tool-name }}
         key: ${{ inputs.tool-name }}-bin-${{ env.TOOL_VERSION }}-${{ runner.os }}-${{ env.TOOLCHAIN }}

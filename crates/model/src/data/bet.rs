@@ -39,6 +39,7 @@ pub struct Bet {
 
 impl Bet {
     /// Creates a new [`Bet`] instance.
+    #[must_use]
     pub fn new(price: Decimal, stake: Decimal, side: BetSide) -> Self {
         Self { price, stake, side }
     }
@@ -63,8 +64,9 @@ impl Bet {
 
     /// Creates a bet from a stake or liability depending on the bet side.
     ///
-    /// For `BetSide::Back` this calls [Self::from_stake] and for
-    /// `BetSide::Lay` it calls [Self::from_liability].
+    /// For `BetSide::Back` this calls [`Self::from_stake`] and for
+    /// `BetSide::Lay` it calls [`Self::from_liability`].
+    #[must_use]
     pub fn from_stake_or_liability(price: Decimal, volume: Decimal, side: BetSide) -> Self {
         match side {
             BetSide::Back => Self::from_stake(price, volume, side),
@@ -73,6 +75,7 @@ impl Bet {
     }
 
     /// Creates a bet from a given stake.
+    #[must_use]
     pub fn from_stake(price: Decimal, stake: Decimal, side: BetSide) -> Self {
         Self::new(price, stake, side)
     }
@@ -81,7 +84,8 @@ impl Bet {
     ///
     /// # Panics
     ///
-    /// Panics if the side is not [BetSide::Lay].
+    /// Panics if the side is not [`BetSide::Lay`].
+    #[must_use]
     pub fn from_liability(price: Decimal, liability: Decimal, side: BetSide) -> Self {
         assert!(
             side == BetSide::Lay,
@@ -98,6 +102,7 @@ impl Bet {
     /// Returns the bet's exposure.
     ///
     /// For BACK bets, exposure is positive; for LAY bets, it is negative.
+    #[must_use]
     pub fn exposure(&self) -> Decimal {
         match self.side {
             BetSide::Back => self.price * self.stake,
@@ -109,6 +114,7 @@ impl Bet {
     ///
     /// For BACK bets, liability equals the stake; for LAY bets, it is
     /// stake multiplied by (price - 1).
+    #[must_use]
     pub fn liability(&self) -> Decimal {
         match self.side {
             BetSide::Back => self.stake,
@@ -119,6 +125,7 @@ impl Bet {
     /// Returns the bet's profit.
     ///
     /// For BACK bets, profit is stake * (price - 1); for LAY bets it equals the stake.
+    #[must_use]
     pub fn profit(&self) -> Decimal {
         match self.side {
             BetSide::Back => self.stake * (self.price - Decimal::ONE),
@@ -129,6 +136,7 @@ impl Bet {
     /// Returns the outcome win payoff.
     ///
     /// For BACK bets this is the profit; for LAY bets it is the negative liability.
+    #[must_use]
     pub fn outcome_win_payoff(&self) -> Decimal {
         match self.side {
             BetSide::Back => self.profit(),
@@ -139,6 +147,7 @@ impl Bet {
     /// Returns the outcome lose payoff.
     ///
     /// For BACK bets this is the negative liability; for LAY bets it is the profit.
+    #[must_use]
     pub fn outcome_lose_payoff(&self) -> Decimal {
         match self.side {
             BetSide::Back => -self.liability(),
@@ -147,6 +156,7 @@ impl Bet {
     }
 
     /// Returns the hedging stake given a new price.
+    #[must_use]
     pub fn hedging_stake(&self, price: Decimal) -> Decimal {
         match self.side {
             BetSide::Back => (self.price / price) * self.stake,
@@ -228,6 +238,7 @@ impl BetPosition {
     /// Returns the overall side of the position.
     ///
     /// If exposure is positive the side is BACK; if negative, LAY; if zero, None.
+    #[must_use]
     pub fn side(&self) -> Option<BetSide> {
         match self.exposure.cmp(&Decimal::ZERO) {
             std::cmp::Ordering::Less => Some(BetSide::Lay),
@@ -237,6 +248,7 @@ impl BetPosition {
     }
 
     /// Converts the current position into a single bet, if possible.
+    #[must_use]
     pub fn as_bet(&self) -> Option<Bet> {
         self.side().map(|side| {
             let stake = match side {
@@ -308,6 +320,7 @@ impl BetPosition {
     }
 
     /// Calculates the unrealized profit and loss given a current price.
+    #[must_use]
     pub fn unrealized_pnl(&self, price: Decimal) -> Decimal {
         if self.side().is_none() {
             Decimal::ZERO
@@ -323,11 +336,13 @@ impl BetPosition {
     }
 
     /// Returns the total profit and loss (realized plus unrealized) given a current price.
+    #[must_use]
     pub fn total_pnl(&self, price: Decimal) -> Decimal {
         self.realized_pnl + self.unrealized_pnl(price)
     }
 
     /// Creates a bet that would flatten (neutralize) the current position.
+    #[must_use]
     pub fn flattening_bet(&self, price: Decimal) -> Option<Bet> {
         self.side().map(|side| {
             let stake = match side {
@@ -358,6 +373,7 @@ impl Display for BetPosition {
 }
 
 /// Calculates the combined profit and loss for a slice of bets.
+#[must_use]
 pub fn calc_bets_pnl(bets: &[Bet]) -> Decimal {
     bets.iter()
         .fold(Decimal::ZERO, |acc, bet| acc + bet.outcome_win_payoff())

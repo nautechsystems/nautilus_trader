@@ -811,6 +811,7 @@ class BetfairDataProvider:
     @staticmethod
     def mcm_to_instruments(mcm: MCM, currency="GBP") -> list[BettingInstrument]:
         instruments: list[BettingInstrument] = []
+
         for mc in mcm.mc:
             if mc.market_definition:
                 market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
@@ -831,6 +832,7 @@ class BetfairDataProvider:
 
         instruments: list[BettingInstrument] = []
         data = []
+
         for mcm in BetfairDataProvider.read_mcm(f"{market_id}.bz2"):
             if not instruments:
                 instruments = BetfairDataProvider.mcm_to_instruments(mcm)

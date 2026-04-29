@@ -346,6 +346,7 @@ impl DataClient for DydxDataClient {
             .context("failed to subscribe to markets channel")?;
 
         let seen_tickers: Arc<AtomicSet<Ustr>> = Arc::new(AtomicSet::new());
+
         for instrument in self.instrument_cache.all_instruments() {
             let id = instrument.id();
             let ticker = extract_raw_symbol(id.symbol.as_str());
@@ -416,14 +417,14 @@ impl DataClient for DydxDataClient {
         !self.is_connected()
     }
 
-    fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
+    fn subscribe_instruments(&mut self, _cmd: SubscribeInstruments) -> anyhow::Result<()> {
         log::debug!(
             "subscribe_instruments: dYdX instruments discovered via global v4_markets channel"
         );
         Ok(())
     }
 
-    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
         if let Some(instrument) = self.instrument_cache.get(&cmd.instrument_id) {
             log::debug!("Sending cached instrument for {}", cmd.instrument_id);
             if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
@@ -439,7 +440,7 @@ impl DataClient for DydxDataClient {
         Ok(())
     }
 
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!(
                 "dYdX only supports L2_MBP order book deltas, received {:?}",
@@ -465,7 +466,7 @@ impl DataClient for DydxDataClient {
         Ok(())
     }
 
-    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
+    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         log::debug!(
             "Subscribe_quotes for {}: subscribing to orderbook WS channel for quote synthesis",
             cmd.instrument_id
@@ -488,7 +489,7 @@ impl DataClient for DydxDataClient {
         Ok(())
     }
 
-    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         let ws = self.ws_client.clone();
         let instrument_id = cmd.instrument_id;
 
@@ -506,21 +507,21 @@ impl DataClient for DydxDataClient {
         Ok(())
     }
 
-    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
+    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.active_mark_price_subs.insert(instrument_id);
         log::info!("Subscribed to mark prices for {instrument_id} (via v4_markets channel)");
         Ok(())
     }
 
-    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.active_index_price_subs.insert(instrument_id);
         log::info!("Subscribed to index prices for {instrument_id} (via v4_markets channel)");
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
         let ws = self.ws_client.clone();
         let instrument_id = cmd.bar_type.instrument_id();
         let spec = cmd.bar_type.spec();
@@ -546,7 +547,7 @@ impl DataClient for DydxDataClient {
         Ok(())
     }
 
-    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.active_funding_rate_subs.insert(instrument_id);
         log::info!("Subscribed to funding rates for {instrument_id} (via v4_markets channel)");
@@ -555,7 +556,7 @@ impl DataClient for DydxDataClient {
 
     fn subscribe_instrument_status(
         &mut self,
-        cmd: &SubscribeInstrumentStatus,
+        cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.active_instrument_status_subs.insert(instrument_id);
@@ -1529,6 +1530,16 @@ impl DydxDataClient {
         let ts_init = venue_deltas.ts_init;
         let mut all_deltas = venue_deltas.deltas.clone();
 
+        // If the input batch is a snapshot, every synthetic and terminator delta must
+        // carry F_SNAPSHOT as well so consumers apply the whole batch as one
+        // replacement image rather than a snapshot followed by standalone updates.
+        let snapshot_flag = RecordFlag::F_SNAPSHOT as u8;
+        let is_snapshot_batch = venue_deltas
+            .deltas
+            .iter()
+            .any(|d| d.flags & snapshot_flag != 0);
+        let synthetic_flags = if is_snapshot_batch { snapshot_flag } else { 0 };
+
         // Apply the original venue deltas first
         book.apply_deltas(venue_deltas)?;
 
@@ -1571,15 +1582,15 @@ impl DydxDataClient {
 
             if bid_size > ask_size {
                 // Remove ask level, reduce bid level
-                let new_bid_size = Quantity::new(
-                    bid_size.as_f64() - ask_size.as_f64(),
+                let new_bid_size = Quantity::from_decimal_dp(
+                    bid_size.as_decimal() - ask_size.as_decimal(),
                     instrument.size_precision(),
-                );
+                )?;
                 temp_deltas.push(OrderBookDelta::new(
                     instrument_id,
                     BookAction::Update,
                     BookOrder::new(OrderSide::Buy, bid_price, new_bid_size, 0),
-                    0,
+                    synthetic_flags,
                     0,
                     ts_init,
                     ts_init,
@@ -1590,25 +1601,25 @@ impl DydxDataClient {
                     BookOrder::new(
                         OrderSide::Sell,
                         ask_price,
-                        Quantity::new(0.0, instrument.size_precision()),
+                        Quantity::zero(instrument.size_precision()),
                         0,
                     ),
-                    0,
+                    synthetic_flags,
                     0,
                     ts_init,
                     ts_init,
                 ));
             } else if bid_size < ask_size {
                 // Remove bid level, reduce ask level
-                let new_ask_size = Quantity::new(
-                    ask_size.as_f64() - bid_size.as_f64(),
+                let new_ask_size = Quantity::from_decimal_dp(
+                    ask_size.as_decimal() - bid_size.as_decimal(),
                     instrument.size_precision(),
-                );
+                )?;
                 temp_deltas.push(OrderBookDelta::new(
                     instrument_id,
                     BookAction::Update,
                     BookOrder::new(OrderSide::Sell, ask_price, new_ask_size, 0),
-                    0,
+                    synthetic_flags,
                     0,
                     ts_init,
                     ts_init,
@@ -1619,10 +1630,10 @@ impl DydxDataClient {
                     BookOrder::new(
                         OrderSide::Buy,
                         bid_price,
-                        Quantity::new(0.0, instrument.size_precision()),
+                        Quantity::zero(instrument.size_precision()),
                         0,
                     ),
-                    0,
+                    synthetic_flags,
                     0,
                     ts_init,
                     ts_init,
@@ -1635,10 +1646,10 @@ impl DydxDataClient {
                     BookOrder::new(
                         OrderSide::Buy,
                         bid_price,
-                        Quantity::new(0.0, instrument.size_precision()),
+                        Quantity::zero(instrument.size_precision()),
                         0,
                     ),
-                    0,
+                    synthetic_flags,
                     0,
                     ts_init,
                     ts_init,
@@ -1649,10 +1660,10 @@ impl DydxDataClient {
                     BookOrder::new(
                         OrderSide::Sell,
                         ask_price,
-                        Quantity::new(0.0, instrument.size_precision()),
+                        Quantity::zero(instrument.size_precision()),
                         0,
                     ),
-                    0,
+                    synthetic_flags,
                     0,
                     ts_init,
                     ts_init,
@@ -1674,9 +1685,10 @@ impl DydxDataClient {
             };
         }
 
-        // Set F_LAST flag on the final delta
+        // Set F_LAST on the final delta, preserving F_SNAPSHOT when the batch is a
+        // snapshot so consumers close the replacement image correctly.
         if let Some(last_delta) = all_deltas.last_mut() {
-            last_delta.flags = RecordFlag::F_LAST as u8;
+            last_delta.flags = synthetic_flags | RecordFlag::F_LAST as u8;
         }
 
         Ok(OrderBookDeltas::new(instrument_id, all_deltas))
@@ -1785,5 +1797,270 @@ impl DydxDataClient {
                 log::error!("Failed to emit order book deltas event: {e}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        data::{BookOrder, OrderBookDelta, OrderBookDeltas},
+        enums::{BookAction, BookType, OrderSide, RecordFlag},
+        identifiers::{InstrumentId, Symbol, Venue},
+        instruments::{CryptoPerpetual, InstrumentAny},
+        orderbook::OrderBook,
+        types::{Currency, Price, Quantity},
+    };
+    use rstest::rstest;
+    use rust_decimal_macros::dec;
+
+    use super::*;
+
+    fn test_instrument() -> InstrumentAny {
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
+            instrument_id,
+            instrument_id.symbol,
+            Currency::BTC(),
+            Currency::USD(),
+            Currency::USD(),
+            false,
+            2,                   // price_precision
+            8,                   // size_precision (wide enough to reveal f64 rounding)
+            Price::new(0.01, 2), // price_increment
+            Quantity::new(0.00000001, 8),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+    }
+
+    fn seed_book_with_levels(
+        instrument_id: InstrumentId,
+        bids: &[(f64, f64)],
+        asks: &[(f64, f64)],
+    ) -> OrderBook {
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        let ts = UnixNanos::default();
+
+        let mut deltas: Vec<OrderBookDelta> = Vec::new();
+        deltas.push(OrderBookDelta::clear(instrument_id, 0, ts, ts));
+        for (price, size) in bids {
+            deltas.push(OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                BookOrder::new(
+                    OrderSide::Buy,
+                    Price::new(*price, 2),
+                    Quantity::new(*size, 8),
+                    0,
+                ),
+                0,
+                0,
+                ts,
+                ts,
+            ));
+        }
+
+        for (price, size) in asks {
+            deltas.push(OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                BookOrder::new(
+                    OrderSide::Sell,
+                    Price::new(*price, 2),
+                    Quantity::new(*size, 8),
+                    0,
+                ),
+                0,
+                0,
+                ts,
+                ts,
+            ));
+        }
+
+        if let Some(last) = deltas.last_mut() {
+            last.flags = RecordFlag::F_LAST as u8;
+        }
+
+        book.apply_deltas(&OrderBookDeltas::new(instrument_id, deltas))
+            .expect("failed to apply seed deltas");
+        book
+    }
+
+    fn crossing_bid_deltas(
+        instrument_id: InstrumentId,
+        bid_price: f64,
+        bid_size: f64,
+    ) -> OrderBookDeltas {
+        let ts = UnixNanos::default();
+        let delta = OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::new(bid_price, 2),
+                Quantity::new(bid_size, 8),
+                0,
+            ),
+            RecordFlag::F_LAST as u8,
+            0,
+            ts,
+            ts,
+        );
+        OrderBookDeltas::new(instrument_id, vec![delta])
+    }
+
+    #[rstest]
+    fn test_resolve_crossed_order_book_preserves_decimal_precision() {
+        // Book seeded uncrossed: bid at 99.00 / ask at 100.05 size=0.50000000.
+        // Venue delta adds a crossing bid at 100.10 size=1.00000001.
+        // The reducing side (Buy) must end up at size = 0.50000001 exactly --
+        // f64 subtraction of 1.00000001 - 0.5 would round this to 0.50000000 at 8 dp.
+        let instrument = test_instrument();
+        let instrument_id = instrument.id();
+        let mut book = seed_book_with_levels(
+            instrument_id,
+            &[(99.00, 1.00000000)],
+            &[(100.05, 0.50000000)],
+        );
+
+        let venue_deltas = crossing_bid_deltas(instrument_id, 100.10, 1.00000001);
+
+        let resolved =
+            DydxDataClient::resolve_crossed_order_book(&mut book, &venue_deltas, &instrument)
+                .expect("resolution should succeed");
+
+        // An Update on the Buy side at the crossing price must carry the exact
+        // Decimal-subtracted remainder (0.50000001), not the f64-rounded 0.50000000.
+        let update = resolved
+            .deltas
+            .iter()
+            .find(|d| {
+                d.action == BookAction::Update
+                    && d.order.side == OrderSide::Buy
+                    && d.order.price.as_decimal() == dec!(100.10)
+            })
+            .expect("expected a Buy Update delta from crossed-book resolution");
+        assert_eq!(update.order.size.as_decimal(), dec!(0.50000001));
+
+        // The terminal delta must carry F_LAST so downstream buffering flushes.
+        assert_eq!(
+            resolved.deltas.last().unwrap().flags,
+            RecordFlag::F_LAST as u8,
+        );
+
+        // Book is no longer crossed.
+        if let (Some(bid), Some(ask)) = (book.best_bid_price(), book.best_ask_price()) {
+            assert!(bid < ask, "book still crossed: bid={bid:?} ask={ask:?}");
+        }
+    }
+
+    fn crossing_snapshot_batch(
+        instrument_id: InstrumentId,
+        bid_price: f64,
+        bid_size: f64,
+    ) -> OrderBookDeltas {
+        let ts = UnixNanos::default();
+        let snapshot = RecordFlag::F_SNAPSHOT as u8;
+        let last = RecordFlag::F_LAST as u8;
+        // Mimic an inbound snapshot: every delta carries F_SNAPSHOT; terminator also
+        // carries F_LAST.
+        let deltas = vec![OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::new(bid_price, 2),
+                Quantity::new(bid_size, 8),
+                0,
+            ),
+            snapshot | last,
+            0,
+            ts,
+            ts,
+        )];
+        OrderBookDeltas::new(instrument_id, deltas)
+    }
+
+    /// A crossed snapshot must exit `resolve_crossed_order_book` still flagged as a
+    /// snapshot: every delta keeps `F_SNAPSHOT` and the terminator carries
+    /// `F_SNAPSHOT | F_LAST`, so downstream consumers treat the emitted batch as a
+    /// complete replacement image.
+    #[rstest]
+    fn test_resolve_crossed_order_book_preserves_snapshot_flags() {
+        let instrument = test_instrument();
+        let instrument_id = instrument.id();
+        let mut book = seed_book_with_levels(
+            instrument_id,
+            &[(99.00, 1.00000000)],
+            &[(100.05, 0.50000000)],
+        );
+
+        let venue_deltas = crossing_snapshot_batch(instrument_id, 100.10, 1.00000001);
+
+        let resolved =
+            DydxDataClient::resolve_crossed_order_book(&mut book, &venue_deltas, &instrument)
+                .expect("resolution should succeed");
+
+        let snapshot = RecordFlag::F_SNAPSHOT as u8;
+        let last = RecordFlag::F_LAST as u8;
+
+        // Every delta must still carry F_SNAPSHOT; the terminator carries both.
+        for (idx, delta) in resolved.deltas.iter().enumerate() {
+            assert!(
+                delta.flags & snapshot != 0,
+                "delta at index {idx} lost F_SNAPSHOT: flags={:#010b}",
+                delta.flags,
+            );
+        }
+        assert_eq!(
+            resolved.deltas.last().unwrap().flags,
+            snapshot | last,
+            "snapshot terminator must be F_SNAPSHOT | F_LAST",
+        );
+    }
+
+    #[rstest]
+    fn test_resolve_crossed_order_book_equal_sizes_removes_both_levels() {
+        // Seed bid at 99.00 / ask at 100.05 size=1.0, then add a crossing bid at
+        // 100.10 size=1.0 -- both top-of-book sides match in size and must be deleted.
+        let instrument = test_instrument();
+        let instrument_id = instrument.id();
+        let mut book = seed_book_with_levels(
+            instrument_id,
+            &[(99.00, 1.00000000)],
+            &[(100.05, 1.00000000)],
+        );
+
+        let venue_deltas = crossing_bid_deltas(instrument_id, 100.10, 1.00000000);
+
+        let resolved =
+            DydxDataClient::resolve_crossed_order_book(&mut book, &venue_deltas, &instrument)
+                .expect("resolution should succeed");
+
+        // Equal-size branch must emit two Deletes (one per side) at top-of-book.
+        let deletes_count = resolved
+            .deltas
+            .iter()
+            .filter(|d| {
+                d.action == BookAction::Delete
+                    && (d.order.price.as_decimal() == dec!(100.10)
+                        || d.order.price.as_decimal() == dec!(100.05))
+            })
+            .count();
+        assert_eq!(deletes_count, 2);
     }
 }

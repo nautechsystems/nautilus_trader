@@ -187,39 +187,65 @@ pub fn make_trade_tick(
     )
 }
 
-/// Converts a Betfair [`MarketStatus`] and `in_play` flag into a Nautilus [`InstrumentStatus`].
+/// Produces per-runner [`InstrumentStatus`] events from a market definition.
 ///
-/// The `in_play` flag distinguishes pre-open (Open + not in play) from active
-/// trading (Open + in play), matching Betfair's market lifecycle.
+/// Iterates `def.runners` and maps each runner's lifecycle to a Nautilus status.
+/// Scratched runners (`Removed`, `RemovedVacant`) close immediately regardless
+/// of market-level state. The `in_play` flag distinguishes pre-open (Open + not
+/// in play) from active trading (Open + in play).
+///
+/// Returns an empty vector when `def.status` or `def.runners` is missing.
 #[must_use]
-pub fn parse_instrument_status(
-    instrument_id: InstrumentId,
-    status: MarketStatus,
-    in_play: bool,
+pub fn parse_instrument_statuses(
+    market_id: &str,
+    def: &MarketDefinition,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> InstrumentStatus {
-    let action = match (status, in_play) {
-        (MarketStatus::Inactive, _) => MarketStatusAction::Close,
-        (MarketStatus::Open, false) => MarketStatusAction::PreOpen,
-        (MarketStatus::Open, true) => MarketStatusAction::Trading,
-        (MarketStatus::Suspended, _) => MarketStatusAction::Pause,
-        (MarketStatus::Closed, _) => MarketStatusAction::Close,
+) -> Vec<InstrumentStatus> {
+    let Some(status) = def.status else {
+        return Vec::new();
     };
+    let Some(runners) = &def.runners else {
+        return Vec::new();
+    };
+    let in_play = def.in_play.unwrap_or(false);
 
-    let is_trading = matches!(status, MarketStatus::Open) && in_play;
-
-    InstrumentStatus::new(
-        instrument_id,
-        action,
-        ts_event,
-        ts_init,
-        None,
-        None,
-        Some(is_trading),
-        None,
-        None,
-    )
+    runners
+        .iter()
+        .map(|rd| {
+            let handicap = rd.hc.unwrap_or(Decimal::ZERO);
+            let instrument_id = make_instrument_id(market_id, rd.id, handicap);
+            let action = match rd.status {
+                Some(RunnerStatus::Removed | RunnerStatus::RemovedVacant) => {
+                    MarketStatusAction::Close
+                }
+                _ => match (status, in_play) {
+                    (MarketStatus::Inactive, _) => MarketStatusAction::Close,
+                    (MarketStatus::Open, false) => MarketStatusAction::PreOpen,
+                    (MarketStatus::Open, true) => MarketStatusAction::Trading,
+                    (MarketStatus::Suspended, _) => MarketStatusAction::Pause,
+                    (MarketStatus::Closed, _) => MarketStatusAction::Close,
+                },
+            };
+            let is_trading = matches!(status, MarketStatus::Open)
+                && in_play
+                && !matches!(
+                    rd.status,
+                    Some(RunnerStatus::Removed | RunnerStatus::RemovedVacant)
+                );
+            InstrumentStatus::new(
+                instrument_id,
+                action,
+                ts_event,
+                ts_init,
+                None,
+                None,
+                Some(is_trading),
+                None,
+                None,
+            )
+        })
+        .collect()
 }
 
 /// Generates a deterministic [`TradeId`] for a Betfair fill.
@@ -255,7 +281,7 @@ impl FillTracker {
     ///
     /// Returns `None` if no new fill occurred (size matched unchanged,
     /// duplicate trade ID, or overfill detected).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn maybe_fill_report(
         &mut self,
         uo: &UnmatchedOrder,
@@ -562,7 +588,7 @@ fn uses_liability_based_stream_quantity(uo: &UnmatchedOrder) -> bool {
 /// Betfair charges commission on net winnings, not per-fill, so commission
 /// is set to zero. The `liquidity_side` is unknown from the stream.
 #[must_use]
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn make_fill_report(
     account_id: AccountId,
     instrument_id: InstrumentId,
@@ -835,7 +861,7 @@ mod tests {
             enums::{StreamingOrderType, StreamingPersistenceType, StreamingSide},
             testing::load_test_json,
         },
-        stream::messages::{PV, StreamMessage, stream_decode},
+        stream::messages::{PV, RunnerDefinition, StreamMessage, stream_decode},
     };
 
     #[rstest]
@@ -1017,6 +1043,64 @@ mod tests {
         assert_eq!(tick.aggressor_side, AggressorSide::NoAggressor);
     }
 
+    fn make_status_def(
+        status: MarketStatus,
+        in_play: bool,
+        runner_status: RunnerStatus,
+    ) -> MarketDefinition {
+        MarketDefinition {
+            runners: Some(vec![RunnerDefinition {
+                id: 456,
+                hc: None,
+                sort_priority: None,
+                name: None,
+                status: Some(runner_status),
+                adjustment_factor: None,
+                bsp: None,
+                removal_date: None,
+            }]),
+            bet_delay: None,
+            betting_type: None,
+            bsp_market: None,
+            bsp_reconciled: None,
+            competition_id: None,
+            competition_name: None,
+            complete: None,
+            country_code: None,
+            cross_matching: None,
+            discount_allowed: None,
+            each_way_divisor: None,
+            event_id: None,
+            event_name: None,
+            event_type_id: None,
+            event_type_name: None,
+            in_play: Some(in_play),
+            line_interval: None,
+            line_max_unit: None,
+            line_min_unit: None,
+            market_base_rate: None,
+            market_id: None,
+            market_name: None,
+            market_time: None,
+            market_type: None,
+            number_of_active_runners: None,
+            number_of_winners: None,
+            open_date: None,
+            persistence_enabled: None,
+            price_ladder_definition: None,
+            race_type: None,
+            regulators: None,
+            runners_voidable: None,
+            settled_time: None,
+            status: Some(status),
+            suspend_time: None,
+            timezone: None,
+            turn_in_play_enabled: None,
+            venue: None,
+            version: None,
+        }
+    }
+
     #[rstest]
     #[case(MarketStatus::Open, false, MarketStatusAction::PreOpen, false)]
     #[case(MarketStatus::Open, true, MarketStatusAction::Trading, true)]
@@ -1025,23 +1109,109 @@ mod tests {
     #[case(MarketStatus::Suspended, false, MarketStatusAction::Pause, false)]
     #[case(MarketStatus::Suspended, true, MarketStatusAction::Pause, false)]
     #[case(MarketStatus::Inactive, false, MarketStatusAction::Close, false)]
-    fn test_parse_instrument_status(
+    fn test_parse_instrument_statuses_market_state(
         #[case] status: MarketStatus,
         #[case] in_play: bool,
         #[case] expected_action: MarketStatusAction,
         #[case] expected_is_trading: bool,
     ) {
-        let instrument_id = make_instrument_id("1.123", 456, Decimal::ZERO);
-        let result = parse_instrument_status(
-            instrument_id,
-            status,
-            in_play,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let def = make_status_def(status, in_play, RunnerStatus::Active);
+        let results =
+            parse_instrument_statuses("1.123", &def, UnixNanos::default(), UnixNanos::default());
 
-        assert_eq!(result.action, expected_action);
-        assert_eq!(result.is_trading, Some(expected_is_trading));
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].action, expected_action);
+        assert_eq!(results[0].is_trading, Some(expected_is_trading));
+    }
+
+    #[rstest]
+    #[case(RunnerStatus::Removed)]
+    #[case(RunnerStatus::RemovedVacant)]
+    fn test_parse_instrument_statuses_scratched_runner_closes(#[case] runner_status: RunnerStatus) {
+        // Even with Open + in_play the runner must close when scratched
+        let def = make_status_def(MarketStatus::Open, true, runner_status);
+        let results =
+            parse_instrument_statuses("1.123", &def, UnixNanos::default(), UnixNanos::default());
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].action, MarketStatusAction::Close);
+        assert_eq!(results[0].is_trading, Some(false));
+    }
+
+    #[rstest]
+    #[case::missing_runners("runners")]
+    #[case::missing_status("status")]
+    fn test_parse_instrument_statuses_returns_empty(#[case] drop_field: &str) {
+        let mut def = make_status_def(MarketStatus::Open, true, RunnerStatus::Active);
+        match drop_field {
+            "runners" => def.runners = None,
+            "status" => def.status = None,
+            _ => unreachable!(),
+        }
+
+        let results =
+            parse_instrument_statuses("1.123", &def, UnixNanos::default(), UnixNanos::default());
+
+        assert!(results.is_empty());
+    }
+
+    #[rstest]
+    fn test_parse_instrument_statuses_mixed_runners() {
+        // Three runners in one market definition: an Active runner should follow the
+        // market-level mapping while Removed/RemovedVacant override to Close. Verify
+        // that selection id and handicap propagate into the emitted instrument id.
+        let mut def = make_status_def(MarketStatus::Open, true, RunnerStatus::Active);
+        def.runners = Some(vec![
+            RunnerDefinition {
+                id: 101,
+                hc: None,
+                sort_priority: Some(1),
+                name: None,
+                status: Some(RunnerStatus::Active),
+                adjustment_factor: None,
+                bsp: None,
+                removal_date: None,
+            },
+            RunnerDefinition {
+                id: 202,
+                hc: Some(Decimal::new(25, 1)), // 2.5 handicap
+                sort_priority: Some(2),
+                name: None,
+                status: Some(RunnerStatus::Removed),
+                adjustment_factor: None,
+                bsp: None,
+                removal_date: None,
+            },
+            RunnerDefinition {
+                id: 303,
+                hc: None,
+                sort_priority: Some(3),
+                name: None,
+                status: Some(RunnerStatus::RemovedVacant),
+                adjustment_factor: None,
+                bsp: None,
+                removal_date: None,
+            },
+        ]);
+
+        let results =
+            parse_instrument_statuses("1.999", &def, UnixNanos::default(), UnixNanos::default());
+
+        assert_eq!(results.len(), 3);
+
+        assert_eq!(results[0].action, MarketStatusAction::Trading);
+        assert_eq!(results[0].is_trading, Some(true));
+
+        assert_eq!(results[1].action, MarketStatusAction::Close);
+        assert_eq!(results[1].is_trading, Some(false));
+
+        assert_eq!(results[2].action, MarketStatusAction::Close);
+        assert_eq!(results[2].is_trading, Some(false));
+
+        // Each runner produces a distinct instrument id (selection id + handicap)
+        assert_ne!(results[0].instrument_id, results[1].instrument_id);
+        assert_ne!(results[1].instrument_id, results[2].instrument_id);
+        assert_ne!(results[0].instrument_id, results[2].instrument_id);
     }
 
     #[rstest]

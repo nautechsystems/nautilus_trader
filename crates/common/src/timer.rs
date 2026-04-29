@@ -35,7 +35,7 @@ use ustr::Ustr;
 ///
 /// Coerces zero to one to ensure a valid `NonZeroU64`.
 #[must_use]
-#[allow(clippy::missing_panics_doc)] // Value is coerced to >= 1
+#[expect(clippy::missing_panics_doc)] // Value is coerced to >= 1
 pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
     NonZeroU64::new(std::cmp::max(interval_ns, 1)).expect("`interval_ns` must be positive")
 }
@@ -654,7 +654,7 @@ mod tests {
 
         let later_name = TimeEventHandler::new(
             TimeEvent::new(
-                Ustr::from("time_bar_ESM4-2-MINUTE-ASK-INTERNAL"),
+                Ustr::from("TIME_BAR_ESM4-2-MINUTE-ASK-INTERNAL"),
                 UUID4::from("00000000-0000-4000-8000-000000000003"),
                 100.into(),
                 100.into(),
@@ -663,7 +663,7 @@ mod tests {
         );
         let earlier_name = TimeEventHandler::new(
             TimeEvent::new(
-                Ustr::from("spread_quote_ESM4"),
+                Ustr::from("SPREAD_QUOTE_ESM4"),
                 UUID4::from("00000000-0000-4000-8000-000000000002"),
                 100.into(),
                 100.into(),
@@ -672,7 +672,7 @@ mod tests {
         );
         let later_init = TimeEventHandler::new(
             TimeEvent::new(
-                Ustr::from("spread_quote_ESM4"),
+                Ustr::from("SPREAD_QUOTE_ESM4"),
                 UUID4::from("00000000-0000-4000-8000-000000000004"),
                 100.into(),
                 101.into(),
@@ -681,7 +681,7 @@ mod tests {
         );
         let later_id = TimeEventHandler::new(
             TimeEvent::new(
-                Ustr::from("spread_quote_ESM4"),
+                Ustr::from("SPREAD_QUOTE_ESM4"),
                 UUID4::from("00000000-0000-4000-8000-000000000005"),
                 100.into(),
                 100.into(),
@@ -731,7 +731,7 @@ mod tests {
         )
     }
 
-    #[allow(clippy::needless_collect)] // Collect needed for indexing and .is_empty()
+    #[expect(clippy::needless_collect)] // Collect needed for indexing and .is_empty()
     fn test_timer_with_operations(
         operations: Vec<TimerOperation>,
         (interval_ns, start_time_ns, stop_time_ns, fire_immediately): (u64, u64, Option<u64>, bool),

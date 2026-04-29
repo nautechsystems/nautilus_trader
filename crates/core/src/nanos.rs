@@ -28,7 +28,7 @@
 //! - Flexible parsing and serialization.
 //!
 //! # Parsing and Serialization
-#![allow(
+#![expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     clippy::cast_precision_loss,
@@ -390,7 +390,7 @@ impl From<SystemTime> for UnixNanos {
 
         let nanos = duration.as_nanos();
         assert!(
-            nanos <= u64::MAX as u128,
+            nanos <= u128::from(u64::MAX),
             "SystemTime overflowed u64 nanoseconds"
         );
 
@@ -1106,6 +1106,10 @@ mod tests {
 
     proptest! {
         #[rstest]
+        #[expect(
+            clippy::float_cmp,
+            reason = "roundtrip: both sides go through the same u64->f64 cast"
+        )]
         fn prop_unix_nanos_construction_roundtrip(nanos in unix_nanos_strategy()) {
             let value = nanos.as_u64();
             prop_assert_eq!(UnixNanos::from(value).as_u64(), value);

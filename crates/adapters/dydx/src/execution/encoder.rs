@@ -120,8 +120,13 @@ pub struct ClientOrderIdEncoder {
     next_id: AtomicU32,
 
     /// Client IDs seen during reconciliation from previous sessions.
-    /// Used to detect collisions when a new O-format encoding produces
-    /// a client_id that was already used by a prior session's order.
+    ///
+    /// Used to detect collisions when a new O-format encoding or sequential
+    /// allocation produces a client_id that was already used by a prior session's
+    /// order. The set is intentionally unbounded: each entry is a `u32` and the
+    /// set only needs to grow as long as those IDs are still live on the venue;
+    /// bounding it would let old IDs silently become reusable and reintroduce
+    /// the venue-UUID collision this guard was added to prevent.
     known_client_ids: DashSet<u32>,
 }
 
@@ -687,9 +692,9 @@ mod tests {
 
         // Numeric - should work without encode
         let numeric_id = ClientOrderId::from("12345");
-        let got = encoder.get(&numeric_id);
+        let actual = encoder.get(&numeric_id);
         assert_eq!(
-            got,
+            actual,
             Some(EncodedClientOrderId {
                 client_id: 12345,
                 client_metadata: DEFAULT_RUST_CLIENT_METADATA
@@ -698,13 +703,13 @@ mod tests {
 
         // O-format - should work without encode
         let o_id = ClientOrderId::from("O-20260131-174827-001-001-1");
-        let got = encoder.get(&o_id);
-        assert!(got.is_some());
+        let actual = encoder.get(&o_id);
+        assert!(actual.is_some());
 
         // Non-standard - requires encode first
         let custom_id = ClientOrderId::from("custom");
-        let got = encoder.get(&custom_id);
-        assert!(got.is_none());
+        let actual = encoder.get(&custom_id);
+        assert!(actual.is_none());
     }
 
     #[rstest]

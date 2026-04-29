@@ -17,11 +17,11 @@
 
 use std::any::Any;
 
+use nautilus_common::factories::ClientConfig;
 use nautilus_model::{
     identifiers::{AccountId, TraderId},
     types::{Currency, Money},
 };
-use nautilus_system::factories::ClientConfig;
 
 use crate::{
     common::{

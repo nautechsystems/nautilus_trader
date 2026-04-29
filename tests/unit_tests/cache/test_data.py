@@ -30,8 +30,10 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
@@ -598,6 +600,79 @@ class TestCache:
 
         # Assert
         assert self.cache.funding_rate(instrument_id) is None
+
+    def test_instrument_status_when_empty(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
+
+        # Act, Assert
+        assert self.cache.instrument_status(instrument_id) is None
+        assert self.cache.instrument_statuses(instrument_id) == []
+        assert self.cache.instrument_status_count(instrument_id) == 0
+        assert self.cache.has_instrument_statuses(instrument_id) is False
+
+    def test_add_instrument_status(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
+        status = InstrumentStatus(
+            instrument_id=instrument_id,
+            action=MarketStatusAction.TRADING,
+            ts_event=5,
+            ts_init=10,
+        )
+
+        # Act
+        self.cache.add_instrument_status(status)
+
+        # Assert
+        assert self.cache.instrument_status(instrument_id) == status
+        assert self.cache.instrument_statuses(instrument_id) == [status]
+        assert self.cache.instrument_status_count(instrument_id) == 1
+        assert self.cache.has_instrument_statuses(instrument_id) is True
+
+    def test_add_instrument_status_keeps_time_series(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
+        status1 = InstrumentStatus(
+            instrument_id=instrument_id,
+            action=MarketStatusAction.PRE_OPEN,
+            ts_event=5,
+            ts_init=10,
+        )
+        status2 = InstrumentStatus(
+            instrument_id=instrument_id,
+            action=MarketStatusAction.TRADING,
+            ts_event=15,
+            ts_init=20,
+        )
+
+        # Act
+        self.cache.add_instrument_status(status1)
+        self.cache.add_instrument_status(status2)
+
+        # Assert: latest first (appendleft semantics)
+        assert self.cache.instrument_status(instrument_id) == status2
+        assert self.cache.instrument_status(instrument_id, index=1) == status1
+        assert self.cache.instrument_statuses(instrument_id) == [status2, status1]
+        assert self.cache.instrument_status_count(instrument_id) == 2
+
+    def test_reset_clears_instrument_statuses(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
+        status = InstrumentStatus(
+            instrument_id=instrument_id,
+            action=MarketStatusAction.TRADING,
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument_status(status)
+
+        # Act
+        self.cache.reset()
+
+        # Assert
+        assert self.cache.instrument_status(instrument_id) is None
+        assert self.cache.has_instrument_statuses(instrument_id) is False
 
     def test_quote_ticks_when_one_tick_returns_expected_list(self):
         # Arrange

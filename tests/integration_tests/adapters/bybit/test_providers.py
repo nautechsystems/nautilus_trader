@@ -51,9 +51,35 @@ async def test_load_all_async_populates_provider(monkeypatch, instrument):
     mock_http_client.request_instruments.assert_awaited_once_with(
         nautilus_pyo3.BybitProductType.LINEAR,
         None,
+        None,
     )
     assert provider.instruments_pyo3() == pyo3_instruments
     assert provider.get_all().get(instrument.id) is instrument
+
+
+@pytest.mark.asyncio
+async def test_load_all_async_forwards_base_coin_filter(monkeypatch, instrument):
+    mock_http_client = MagicMock()
+    pyo3_instruments = [MagicMock(name="py_inst")]
+    mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
+
+    provider = BybitInstrumentProvider(
+        client=mock_http_client,
+        product_types=(nautilus_pyo3.BybitProductType.OPTION,),
+    )
+
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bybit.providers.instruments_from_pyo3",
+        lambda _values: [instrument],
+    )
+
+    await provider.load_all_async(filters={"base_coin": "ETH"})
+
+    mock_http_client.request_instruments.assert_awaited_once_with(
+        nautilus_pyo3.BybitProductType.OPTION,
+        None,
+        "ETH",
+    )
 
 
 @pytest.mark.asyncio
@@ -95,6 +121,7 @@ async def test_load_ids_async_filters_results(monkeypatch, instrument):
     mock_http_client.request_instruments.assert_awaited_once_with(
         nautilus_pyo3.BybitProductType.SPOT,
         "BTCUSDT",
+        None,
     )
     assert provider.get_all().get(instrument.id) is instrument
     assert provider.get_all().get(other_instrument.id) is None
@@ -194,5 +221,6 @@ async def test_load_ids_async_handles_option_without_suffix(monkeypatch):
     mock_http_client.request_instruments.assert_awaited_once_with(
         nautilus_pyo3.BybitProductType.OPTION,
         "BTC-280325-100000-C",
+        None,
     )
     assert provider.get_all().get(option_instrument.id) is option_instrument

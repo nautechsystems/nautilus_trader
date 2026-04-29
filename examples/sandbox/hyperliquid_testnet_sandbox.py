@@ -29,6 +29,7 @@ import uuid
 
 from nautilus_trader.core.nautilus_pyo3 import UUID4
 from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
+from nautilus_trader.core.nautilus_pyo3 import HyperliquidEnvironment
 from nautilus_trader.core.nautilus_pyo3 import HyperliquidHttpClient
 from nautilus_trader.core.nautilus_pyo3 import LimitOrder
 from nautilus_trader.core.nautilus_pyo3 import OrderSide
@@ -52,7 +53,7 @@ async def main():
         http_client = HyperliquidHttpClient(
             private_key=private_key,
             vault_address=None,
-            is_testnet=True,
+            environment=HyperliquidEnvironment.TESTNET,
             timeout_secs=None,
         )
 

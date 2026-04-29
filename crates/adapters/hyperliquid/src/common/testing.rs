@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 /// Loads and deserializes a JSON test fixture from the `test_data/` directory.
-#[allow(clippy::missing_panics_doc, reason = "test-only helper")]
+#[expect(clippy::missing_panics_doc, reason = "test-only helper")]
 pub fn load_test_data<T>(filename: &str) -> T
 where
     T: serde::de::DeserializeOwned,

@@ -30,6 +30,7 @@ from nautilus_trader.common.secure import mask_api_key
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.nautilus_pyo3 import DeribitCurrency
+from nautilus_trader.core.nautilus_pyo3 import DeribitEnvironment
 from nautilus_trader.core.nautilus_pyo3 import DeribitUpdateInterval
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestForwardPrices
@@ -131,11 +132,16 @@ class DeribitDataClient(LiveMarketDataClient):
         self._instrument_provider: DeribitInstrumentProvider = instrument_provider
 
         product_types = [k.name for k in config.product_types] if config.product_types else None
+        environment = (
+            config.environment
+            if config.environment is not None
+            else (DeribitEnvironment.TESTNET if config.is_testnet else DeribitEnvironment.MAINNET)
+        )
 
         # Configuration
         self._config = config
         self._log.info(f"config.product_types={product_types}", LogColor.BLUE)
-        self._log.info(f"{config.is_testnet=}", LogColor.BLUE)
+        self._log.info(f"config.environment={environment}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
@@ -150,13 +156,14 @@ class DeribitDataClient(LiveMarketDataClient):
             self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
         # WebSocket API
-        ws_url = config.base_url_ws or nautilus_pyo3.get_deribit_ws_url(config.is_testnet)
+        ws_url = config.base_url_ws or nautilus_pyo3.get_deribit_ws_url(environment)
         self._ws_client = nautilus_pyo3.DeribitWebSocketClient(
             url=ws_url,
             api_key=config.api_key,
             api_secret=config.api_secret,
             heartbeat_interval=DERIBIT_WS_HEARTBEAT_SECS,
-            is_testnet=config.is_testnet,
+            environment=environment,
+            proxy_url=config.proxy_url,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
 
@@ -310,12 +317,12 @@ class DeribitDataClient(LiveMarketDataClient):
     async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         interval = self._get_interval(command.params)
-        await self._ws_client.subscribe_ticker(pyo3_instrument_id, interval)
+        await self._ws_client.subscribe_mark_prices(pyo3_instrument_id, interval)
 
     async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         interval = self._get_interval(command.params)
-        await self._ws_client.subscribe_ticker(pyo3_instrument_id, interval)
+        await self._ws_client.subscribe_index_prices(pyo3_instrument_id, interval)
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
@@ -342,12 +349,12 @@ class DeribitDataClient(LiveMarketDataClient):
     async def _subscribe_option_greeks(self, command: SubscribeOptionGreeks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         interval = self._get_interval(command.params)
-        await self._ws_client.subscribe_option_greeks(pyo3_instrument_id, interval)  # type: ignore[attr-defined]
+        await self._ws_client.subscribe_option_greeks(pyo3_instrument_id, interval)
 
     async def _unsubscribe_option_greeks(self, command: UnsubscribeOptionGreeks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         interval = self._get_interval(command.params)
-        await self._ws_client.unsubscribe_option_greeks(pyo3_instrument_id, interval)  # type: ignore[attr-defined]
+        await self._ws_client.unsubscribe_option_greeks(pyo3_instrument_id, interval)
 
     async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
         kind = "any"
@@ -402,7 +409,7 @@ class DeribitDataClient(LiveMarketDataClient):
             f"Unsubscribing from mark prices for {command.instrument_id} "
             f"(via ticker channel, interval: {interval_display})",
         )
-        await self._ws_client.unsubscribe_ticker(pyo3_instrument_id, interval)
+        await self._ws_client.unsubscribe_mark_prices(pyo3_instrument_id, interval)
 
     async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -412,7 +419,7 @@ class DeribitDataClient(LiveMarketDataClient):
             f"Unsubscribing from index prices for {command.instrument_id} "
             f"(via ticker channel, interval: {interval_display})",
         )
-        await self._ws_client.unsubscribe_ticker(pyo3_instrument_id, interval)
+        await self._ws_client.unsubscribe_index_prices(pyo3_instrument_id, interval)
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
@@ -477,6 +484,7 @@ class DeribitDataClient(LiveMarketDataClient):
         try:
             pyo3_instruments = await self._http_client.request_instruments(currency, product_type)
             instruments = []
+
             for pyo3_instrument in pyo3_instruments:
                 self._cache_instrument(pyo3_instrument)
                 instrument = transform_instrument_from_pyo3(pyo3_instrument)
@@ -688,7 +696,6 @@ class DeribitDataClient(LiveMarketDataClient):
             )
         except Exception as e:
             self._log.error(f"Failed to request forward prices for {request.underlying}: {e}")
-            # Send empty response so engine can fall back
             self._handle_forward_prices([], request.id, request.params or {})
             return
 

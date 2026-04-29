@@ -89,6 +89,7 @@ pub struct PositionSnapshot {
 }
 
 impl PositionSnapshot {
+    #[must_use]
     pub fn from(position: &Position, unrealized_pnl: Option<Money>) -> Self {
         Self {
             trader_id: position.trader_id,

@@ -9,11 +9,13 @@ __all__ = [
     "BestPriceFillModel",
     "CompetitionAwareFillModel",
     "DefaultFillModel",
+    "ExecutionEngineConfig",
     "FixedFeeModel",
     "LimitOrderPartialFillModel",
     "MakerTakerFeeModel",
     "MarketHoursFillModel",
     "OneTickSlippageFillModel",
+    "OrderEmulatorConfig",
     "PerContractFeeModel",
     "ProbabilisticFillModel",
     "SizeAwareFillModel",
@@ -23,6 +25,8 @@ __all__ = [
     "VolumeSensitiveFillModel",
     "adjust_fills_for_partial_window",
     "calculate_reconciliation_price",
+    "create_inferred_reconciliation_trade_id",
+    "create_position_reconciliation_venue_order_id",
 ]
 
 @typing.final
@@ -46,6 +50,43 @@ class DefaultFillModel:
     def __init__(
         self, prob_fill_on_limit: float, prob_slippage: float, random_seed: int | None = ...
     ) -> None: ...
+
+@typing.final
+class ExecutionEngineConfig:
+    def __init__(
+        self,
+        load_cache: bool | None = None,
+        manage_own_order_books: bool | None = None,
+        snapshot_orders: bool | None = None,
+        snapshot_positions: bool | None = None,
+        snapshot_positions_interval_secs: float | None = None,
+        allow_overfills: bool | None = None,
+        external_clients: typing.Sequence[model.ClientId] | None = None,
+        purge_closed_orders_interval_mins: int | None = None,
+        purge_closed_orders_buffer_mins: int | None = None,
+        purge_closed_positions_interval_mins: int | None = None,
+        purge_closed_positions_buffer_mins: int | None = None,
+        purge_account_events_interval_mins: int | None = None,
+        purge_account_events_lookback_mins: int | None = None,
+        purge_from_database: bool | None = None,
+        debug: bool | None = None,
+    ) -> None: ...
+    @property
+    def load_cache(self) -> bool: ...
+    @property
+    def manage_own_order_books(self) -> bool: ...
+    @property
+    def snapshot_orders(self) -> bool: ...
+    @property
+    def snapshot_positions(self) -> bool: ...
+    @property
+    def snapshot_positions_interval_secs(self) -> float | None: ...
+    @property
+    def allow_overfills(self) -> bool: ...
+    @property
+    def purge_from_database(self) -> bool: ...
+    @property
+    def debug(self) -> bool: ...
 
 @typing.final
 class FixedFeeModel:
@@ -74,6 +115,12 @@ class OneTickSlippageFillModel:
     def __init__(
         self, prob_fill_on_limit: float, prob_slippage: float, random_seed: int | None = ...
     ) -> None: ...
+
+@typing.final
+class OrderEmulatorConfig:
+    def __init__(self, debug: bool | None = None) -> None: ...
+    @property
+    def debug(self) -> bool: ...
 
 @typing.final
 class PerContractFeeModel:
@@ -128,3 +175,27 @@ def calculate_reconciliation_price(
     target_position_qty: decimal.Decimal,
     target_position_avg_px: decimal.Decimal | None = ...,
 ) -> decimal.Decimal | None: ...
+def create_inferred_reconciliation_trade_id(
+    account_id: model.AccountId,
+    instrument_id: model.InstrumentId,
+    client_order_id: model.ClientOrderId,
+    venue_order_id: model.VenueOrderId | None,
+    order_side: model.OrderSide,
+    order_type: model.OrderType,
+    filled_qty: model.Quantity,
+    last_qty: model.Quantity,
+    last_px: model.Price,
+    position_id: model.PositionId,
+    ts_last: int,
+) -> model.TradeId: ...
+def create_position_reconciliation_venue_order_id(
+    account_id: model.AccountId,
+    instrument_id: model.InstrumentId,
+    order_side: model.OrderSide,
+    order_type: model.OrderType,
+    quantity: model.Quantity,
+    price: model.Price | None = None,
+    venue_position_id: model.PositionId | None = None,
+    ts_last: int = 0,
+    tag: str | None = None,
+) -> model.VenueOrderId: ...

@@ -744,6 +744,7 @@ async def test_cancel_all_orders_uses_batch_cancel_by_default(
 
     # Create 5 open orders
     orders = []
+
     for i in range(5):
         order = LimitOrder(
             trader_id=TestIdStubs.trader_id(),
@@ -811,6 +812,7 @@ async def test_cancel_all_orders_batches_in_chunks_of_20(
 
     # Create 45 open orders and add to cache
     orders = []
+
     for i in range(45):
         order = LimitOrder(
             trader_id=TestIdStubs.trader_id(),
@@ -889,6 +891,7 @@ async def test_cancel_all_orders_handles_mixed_regular_and_algo_orders(
 
     # Create 3 regular orders
     regular_orders = []
+
     for i in range(3):
         order = LimitOrder(
             trader_id=TestIdStubs.trader_id(),
@@ -913,6 +916,7 @@ async def test_cancel_all_orders_handles_mixed_regular_and_algo_orders(
 
     # Create 2 algo orders and register them in _algo_order_ids
     algo_client_ids = []
+
     for i in range(2):
         client_id = ClientOrderId(f"O-algo-{i}")
         algo_client_ids.append(client_id)

@@ -91,7 +91,7 @@ impl Default for WsDispatchState {
     }
 }
 
-#[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+#[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
 impl WsDispatchState {
     pub fn has_emitted_accepted(&self, cid: &ClientOrderId) -> bool {
         self.emitted_accepted

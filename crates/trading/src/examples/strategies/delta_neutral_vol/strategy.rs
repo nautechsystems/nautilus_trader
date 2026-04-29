@@ -127,6 +127,7 @@ impl DeltaNeutralVol {
     #[must_use]
     pub fn has_working_entry_orders(&self) -> bool {
         let cache = self.cache();
+
         for id in [self.call_instrument_id, self.put_instrument_id]
             .into_iter()
             .flatten()

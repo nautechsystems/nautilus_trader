@@ -73,7 +73,13 @@ pub const BINANCE_FUTURES_COIN_DEMO_HTTP_URL: &str = "https://testnet.binancefut
 pub const BINANCE_SPOT_WS_URL: &str = "wss://stream.binance.com:9443/ws";
 
 /// Binance USD-M Futures WebSocket base URL (mainnet).
-pub const BINANCE_FUTURES_USD_WS_URL: &str = "wss://fstream.binance.com/ws";
+pub const BINANCE_FUTURES_USD_WS_URL: &str = "wss://fstream.binance.com/market/ws";
+
+/// Binance USD-M Futures WebSocket public stream URL (mainnet, high-frequency book data).
+pub const BINANCE_FUTURES_USD_WS_PUBLIC_URL: &str = "wss://fstream.binance.com/public/ws";
+
+/// Binance USD-M Futures WebSocket private stream URL (mainnet).
+pub const BINANCE_FUTURES_USD_WS_PRIVATE_URL: &str = "wss://fstream.binance.com/private/ws";
 
 /// Binance COIN-M Futures WebSocket base URL (mainnet).
 pub const BINANCE_FUTURES_COIN_WS_URL: &str = "wss://dstream.binance.com/ws";

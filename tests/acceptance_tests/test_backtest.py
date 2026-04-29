@@ -1626,6 +1626,7 @@ class TestBacktestCommandSettling:
 
         timestamps = pd.date_range(start="2020-01-01", periods=3, freq="1min")
         quotes = []
+
         for i, ts in enumerate(timestamps):
             bid = 0.70000 + (i * 0.00001)
             quote = QuoteTick(
@@ -1737,6 +1738,7 @@ class TestBacktestCommandSettling:
 
         timestamps = pd.date_range(start="2020-01-01", periods=3, freq="1min")
         quotes = []
+
         for i, ts in enumerate(timestamps):
             bid = 0.70000 + (i * 0.00001)
             quote = QuoteTick(
@@ -1841,6 +1843,7 @@ class TestBacktestCommandSettling:
         # Data spans timer time so the timer fires between data points
         timestamps = pd.date_range(start="2020-01-01", periods=3, freq="1min")
         quotes = []
+
         for ts in timestamps:
             quote = QuoteTick(
                 instrument_id=instrument.id,
@@ -1864,6 +1867,7 @@ class TestBacktestCommandSettling:
         assert len(strategy.orders_submitted) == 2
 
         timer_ts = pd.Timestamp("2020-01-01 00:00:30", tz="UTC").value
+
         for order in strategy.orders_submitted:
             cached = engine.cache.order(order.client_order_id)
             assert cached.is_closed
@@ -1910,17 +1914,19 @@ class TestBacktestNodeWithBacktestDataIterator:
 
         # Assert
         expected_order_filled_messages = [
-            "Order filled: ESM4 P5230.XCME, qty=10, price=97.25, trade_id=XCME-1-001",
-            "Order filled: ESM4 P5250.XCME, qty=10, price=108.50, trade_id=XCME-2-001",
-            "Order filled: ESM4.XCME, qty=1, price=5199.75, trade_id=XCME-3-002",
+            "Order filled: ESM4 P5230.XCME, qty=10, price=97.25, trade_id=T-d47be5ca9f6901ab-001",
+            "Order filled: ESM4 P5250.XCME, qty=10, price=108.50, trade_id=T-7f8e274f85bbdd3e-001",
+            "Order filled: ESM4.XCME, qty=1, price=5199.75, trade_id=T-75d12aa71a6bb07d-004",
             "Order filled: ((1))ESM4 P5230___(1)ESM4 P5250.XCME, qty=5, price=10.75, "
-            "trade_id=XCME-5-001",
-            "Order filled: ESM4 P5230.XCME, qty=5, price=97.62, trade_id=XCME-5-001-0",
-            "Order filled: ESM4 P5250.XCME, qty=5, price=108.38, trade_id=XCME-5-001-1",
-            "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=2, price=12930.50, trade_id=XCME-6-001",
-            "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=3, price=12930.75, trade_id=XCME-6-002",
-            "Order filled: ESM4.XCME, qty=2, price=5199.62, trade_id=XCME-6-002-0",
-            "Order filled: NQM4.XCME, qty=2, price=18130.12, trade_id=XCME-6-002-1",
+            "trade_id=T-75c4107db8ae4ad7-001",
+            "Order filled: ESM4 P5230.XCME, qty=5, price=97.62, trade_id=T-75c4107db8ae4ad7-001-0",
+            "Order filled: ESM4 P5250.XCME, qty=5, price=108.38, trade_id=T-75c4107db8ae4ad7-001-1",
+            "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=2, price=12930.50, "
+            "trade_id=T-8ba53c03fcdf19ba-001",
+            "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=3, price=12930.75, "
+            "trade_id=T-8ba53c03fcdf19ba-002",
+            "Order filled: ESM4.XCME, qty=2, price=5199.62, trade_id=T-8ba53c03fcdf19ba-002-0",
+            "Order filled: NQM4.XCME, qty=2, price=18130.12, trade_id=T-8ba53c03fcdf19ba-002-1",
         ]
         assert order_filled_messages == expected_order_filled_messages
 
@@ -2093,6 +2099,7 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
 
     # Create and write custom data to catalog (every minute between 10:00 and 10:05)
     custom_data_list = []
+
     for minute in range(6):  # 0, 1, 2, 3, 4, 5 (10:00 to 10:05)
         timestamp_str = f"2024-05-09T10:0{minute}:00"
         ts_nanos = dt_to_unix_nanos(time_object_to_dt(timestamp_str))

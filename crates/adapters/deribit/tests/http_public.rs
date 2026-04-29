@@ -25,13 +25,16 @@ use axum::{
 };
 use dashmap::DashMap;
 use nautilus_common::testing::wait_until_async;
-use nautilus_deribit::http::{
-    client::DeribitRawHttpClient,
-    error::DeribitHttpError,
-    models::{DeribitCurrency, DeribitProductType},
-    query::{
-        GetInstrumentParams, GetInstrumentsParams, GetLastTradesByInstrumentAndTimeParams,
-        GetOrderBookParams, GetTradingViewChartDataParams,
+use nautilus_deribit::{
+    common::enums::DeribitEnvironment,
+    http::{
+        client::DeribitRawHttpClient,
+        error::DeribitHttpError,
+        models::{DeribitCurrency, DeribitProductType},
+        query::{
+            GetInstrumentParams, GetInstrumentsParams, GetLastTradesByInstrumentAndTimeParams,
+            GetOrderBookParams, GetTradingViewChartDataParams,
+        },
     },
 };
 use nautilus_network::http::HttpClient;
@@ -406,8 +409,16 @@ async fn test_get_instrument_success() {
     wait_for_server(addr).await;
 
     let base_url = format!("http://{addr}/api/v2");
-    let client =
-        DeribitRawHttpClient::new(Some(base_url), false, 5, 3, 1000, 10_000, None).unwrap();
+    let client = DeribitRawHttpClient::new(
+        Some(base_url),
+        DeribitEnvironment::Mainnet,
+        5,
+        3,
+        1000,
+        10_000,
+        None,
+    )
+    .unwrap();
     let params = GetInstrumentParams {
         instrument_name: "BTC-PERPETUAL".to_string(),
     };
@@ -445,12 +456,12 @@ async fn test_get_instrument_invalid_params() {
     let base_url = format!("http://{addr}/api/v2");
     let client = DeribitRawHttpClient::new(
         Some(base_url),
-        false,  // is_testnet
-        5,      // timeout_secs
-        3,      // max_retries
-        1000,   // retry_delay_ms
-        10_000, // retry_delay_max_ms
-        None,   // proxy_url
+        DeribitEnvironment::Mainnet, // environment
+        5,                           // timeout_secs
+        3,                           // max_retries
+        1000,                        // retry_delay_ms
+        10_000,                      // retry_delay_max_ms
+        None,                        // proxy_url
     )
     .unwrap();
 
@@ -480,12 +491,12 @@ async fn test_get_instrument_not_found() {
     let base_url = format!("http://{addr}/api/v2");
     let client = DeribitRawHttpClient::new(
         Some(base_url),
-        false,  // is_testnet
-        5,      // timeout_secs
-        3,      // max_retries
-        1000,   // retry_delay_ms
-        10_000, // retry_delay_max_ms
-        None,   // proxy_url
+        DeribitEnvironment::Mainnet, // environment
+        5,                           // timeout_secs
+        3,                           // max_retries
+        1000,                        // retry_delay_ms
+        10_000,                      // retry_delay_max_ms
+        None,                        // proxy_url
     )
     .unwrap();
 
@@ -518,12 +529,12 @@ async fn test_get_instruments_success() {
     let base_url = format!("http://{addr}/api/v2");
     let client = DeribitRawHttpClient::new(
         Some(base_url),
-        false,  // is_testnet
-        5,      // timeout_secs
-        3,      // max_retries
-        1000,   // retry_delay_ms
-        10_000, // retry_delay_max_ms
-        None,   // proxy_url
+        DeribitEnvironment::Mainnet, // environment
+        5,                           // timeout_secs
+        3,                           // max_retries
+        1000,                        // retry_delay_ms
+        10_000,                      // retry_delay_max_ms
+        None,                        // proxy_url
     )
     .unwrap();
 
@@ -574,12 +585,12 @@ async fn test_get_instruments_with_kind_filter() {
     let base_url = format!("http://{addr}/api/v2");
     let client = DeribitRawHttpClient::new(
         Some(base_url),
-        false,  // is_testnet
-        5,      // timeout_secs
-        3,      // max_retries
-        1000,   // retry_delay_ms
-        10_000, // retry_delay_max_ms
-        None,   // proxy_url
+        DeribitEnvironment::Mainnet, // environment
+        5,                           // timeout_secs
+        3,                           // max_retries
+        1000,                        // retry_delay_ms
+        10_000,                      // retry_delay_max_ms
+        None,                        // proxy_url
     )
     .unwrap();
 
@@ -606,12 +617,12 @@ async fn test_get_instruments_empty_result() {
     let base_url = format!("http://{addr}/api/v2");
     let client = DeribitRawHttpClient::new(
         Some(base_url),
-        false,  // is_testnet
-        5,      // timeout_secs
-        3,      // max_retries
-        1000,   // retry_delay_ms
-        10_000, // retry_delay_max_ms
-        None,   // proxy_url
+        DeribitEnvironment::Mainnet, // environment
+        5,                           // timeout_secs
+        3,                           // max_retries
+        1000,                        // retry_delay_ms
+        10_000,                      // retry_delay_max_ms
+        None,                        // proxy_url
     )
     .unwrap();
 
@@ -633,12 +644,12 @@ async fn test_get_last_trades_success() {
     let base_url = format!("http://{addr}/api/v2");
     let client = DeribitRawHttpClient::new(
         Some(base_url),
-        false,  // is_testnet
-        5,      // timeout_secs
-        3,      // max_retries
-        1000,   // retry_delay_ms
-        10_000, // retry_delay_max_ms
-        None,   // proxy_url
+        DeribitEnvironment::Mainnet, // environment
+        5,                           // timeout_secs
+        3,                           // max_retries
+        1000,                        // retry_delay_ms
+        10_000,                      // retry_delay_max_ms
+        None,                        // proxy_url
     )
     .unwrap();
 
@@ -713,12 +724,12 @@ async fn test_get_last_trades_invalid_params() {
     let base_url = format!("http://{addr}/api/v2");
     let client = DeribitRawHttpClient::new(
         Some(base_url),
-        false,  // is_testnet
-        5,      // timeout_secs
-        3,      // max_retries
-        1000,   // retry_delay_ms
-        10_000, // retry_delay_max_ms
-        None,   // proxy_url
+        DeribitEnvironment::Mainnet, // environment
+        5,                           // timeout_secs
+        3,                           // max_retries
+        1000,                        // retry_delay_ms
+        10_000,                      // retry_delay_max_ms
+        None,                        // proxy_url
     )
     .unwrap();
 
@@ -752,12 +763,12 @@ async fn test_get_last_trades_instrument_not_found() {
     let base_url = format!("http://{addr}/api/v2");
     let client = DeribitRawHttpClient::new(
         Some(base_url),
-        false,  // is_testnet
-        5,      // timeout_secs
-        3,      // max_retries
-        1000,   // retry_delay_ms
-        10_000, // retry_delay_max_ms
-        None,   // proxy_url
+        DeribitEnvironment::Mainnet, // environment
+        5,                           // timeout_secs
+        3,                           // max_retries
+        1000,                        // retry_delay_ms
+        10_000,                      // retry_delay_max_ms
+        None,                        // proxy_url
     )
     .unwrap();
 
@@ -794,12 +805,12 @@ async fn test_get_tradingview_chart_data_success() {
     let base_url = format!("http://{addr}/api/v2");
     let client = DeribitRawHttpClient::new(
         Some(base_url),
-        false,  // is_testnet
-        5,      // timeout_secs
-        3,      // max_retries
-        1000,   // retry_delay_ms
-        10_000, // retry_delay_max_ms
-        None,   // proxy_url
+        DeribitEnvironment::Mainnet, // environment
+        5,                           // timeout_secs
+        3,                           // max_retries
+        1000,                        // retry_delay_ms
+        10_000,                      // retry_delay_max_ms
+        None,                        // proxy_url
     )
     .unwrap();
 
@@ -880,12 +891,12 @@ async fn test_get_tradingview_chart_data_instrument_not_found() {
     let base_url = format!("http://{addr}/api/v2");
     let client = DeribitRawHttpClient::new(
         Some(base_url),
-        false,  // is_testnet
-        5,      // timeout_secs
-        3,      // max_retries
-        1000,   // retry_delay_ms
-        10_000, // retry_delay_max_ms
-        None,   // proxy_url
+        DeribitEnvironment::Mainnet, // environment
+        5,                           // timeout_secs
+        3,                           // max_retries
+        1000,                        // retry_delay_ms
+        10_000,                      // retry_delay_max_ms
+        None,                        // proxy_url
     )
     .unwrap();
 
@@ -921,12 +932,12 @@ async fn test_get_order_book_success() {
     let base_url = format!("http://{addr}/api/v2");
     let client = DeribitRawHttpClient::new(
         Some(base_url),
-        false,  // is_testnet
-        5,      // timeout_secs
-        3,      // max_retries
-        1000,   // retry_delay_ms
-        10_000, // retry_delay_max_ms
-        None,   // proxy_url
+        DeribitEnvironment::Mainnet, // environment
+        5,                           // timeout_secs
+        3,                           // max_retries
+        1000,                        // retry_delay_ms
+        10_000,                      // retry_delay_max_ms
+        None,                        // proxy_url
     )
     .unwrap();
 
@@ -991,12 +1002,12 @@ async fn test_get_order_book_instrument_not_found() {
     let base_url = format!("http://{addr}/api/v2");
     let client = DeribitRawHttpClient::new(
         Some(base_url),
-        false,  // is_testnet
-        5,      // timeout_secs
-        3,      // max_retries
-        1000,   // retry_delay_ms
-        10_000, // retry_delay_max_ms
-        None,   // proxy_url
+        DeribitEnvironment::Mainnet, // environment
+        5,                           // timeout_secs
+        3,                           // max_retries
+        1000,                        // retry_delay_ms
+        10_000,                      // retry_delay_max_ms
+        None,                        // proxy_url
     )
     .unwrap();
 

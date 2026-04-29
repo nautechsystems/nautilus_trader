@@ -28,18 +28,20 @@ use nautilus_core::{
 use serde::Deserialize;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::http::error::{Error, Result};
+use crate::{
+    common::enums::HyperliquidEnvironment,
+    http::error::{Error, Result},
+};
 
 /// Returns the environment variable names for credentials,
-/// based on network.
+/// based on environment.
 ///
 /// Returns `(private_key_var, vault_address_var)`.
 #[must_use]
-pub fn credential_env_vars(is_testnet: bool) -> (&'static str, &'static str) {
-    if is_testnet {
-        ("HYPERLIQUID_TESTNET_PK", "HYPERLIQUID_TESTNET_VAULT")
-    } else {
-        ("HYPERLIQUID_PK", "HYPERLIQUID_VAULT")
+pub fn credential_env_vars(environment: HyperliquidEnvironment) -> (&'static str, &'static str) {
+    match environment {
+        HyperliquidEnvironment::Testnet => ("HYPERLIQUID_TESTNET_PK", "HYPERLIQUID_TESTNET_VAULT"),
+        HyperliquidEnvironment::Mainnet => ("HYPERLIQUID_PK", "HYPERLIQUID_VAULT"),
     }
 }
 
@@ -157,7 +159,15 @@ impl Display for VaultAddress {
 pub struct Secrets {
     pub private_key: EvmPrivateKey,
     pub vault_address: Option<VaultAddress>,
-    pub is_testnet: bool,
+    pub environment: HyperliquidEnvironment,
+}
+
+impl Secrets {
+    /// Returns whether this secrets configuration targets the testnet environment.
+    #[must_use]
+    pub fn is_testnet(&self) -> bool {
+        self.environment == HyperliquidEnvironment::Testnet
+    }
 }
 
 impl Debug for Secrets {
@@ -165,28 +175,28 @@ impl Debug for Secrets {
         f.debug_struct(stringify!(Secrets))
             .field("private_key", &self.private_key)
             .field("vault_address", &self.vault_address)
-            .field("is_testnet", &self.is_testnet)
+            .field("environment", &self.environment)
             .finish()
     }
 }
 
 impl Secrets {
-    /// Returns the environment variable names for the specified network.
+    /// Returns the environment variable names for the specified environment.
     #[must_use]
-    pub fn env_vars(is_testnet: bool) -> (&'static str, &'static str) {
-        credential_env_vars(is_testnet)
+    pub fn env_vars(environment: HyperliquidEnvironment) -> (&'static str, &'static str) {
+        credential_env_vars(environment)
     }
 
     /// Resolves secrets from provided values or environment variables.
     ///
     /// If `private_key` is provided, uses it directly. Otherwise falls back
-    /// to environment variables based on the network.
+    /// to environment variables based on the environment.
     pub fn resolve(
         private_key: Option<&str>,
         vault_address: Option<&str>,
-        is_testnet: bool,
+        environment: HyperliquidEnvironment,
     ) -> Result<Self> {
-        let (pk_env_var, vault_env_var) = credential_env_vars(is_testnet);
+        let (pk_env_var, vault_env_var) = credential_env_vars(environment);
 
         let pk_str = get_or_env_var(
             private_key
@@ -213,22 +223,22 @@ impl Secrets {
         Ok(Self {
             private_key,
             vault_address,
-            is_testnet,
+            environment,
         })
     }
 
-    /// Load secrets from environment variables for the specified network.
+    /// Loads secrets from environment variables for the specified environment.
     ///
     /// Expected environment variables:
-    /// - `HYPERLIQUID_PK`: EVM private key for mainnet (required when `is_testnet=false`)
-    /// - `HYPERLIQUID_TESTNET_PK`: EVM private key for testnet (required when `is_testnet=true`)
+    /// - `HYPERLIQUID_PK`: EVM private key for mainnet
+    /// - `HYPERLIQUID_TESTNET_PK`: EVM private key for testnet
     /// - `HYPERLIQUID_VAULT`: Vault address for mainnet (optional)
     /// - `HYPERLIQUID_TESTNET_VAULT`: Vault address for testnet (optional)
-    pub fn from_env(is_testnet: bool) -> Result<Self> {
-        Self::resolve(None, None, is_testnet)
+    pub fn from_env(environment: HyperliquidEnvironment) -> Result<Self> {
+        Self::resolve(None, None, environment)
     }
 
-    /// Create secrets from explicit private key and vault address.
+    /// Creates secrets from explicit private key and vault address.
     ///
     /// # Errors
     ///
@@ -236,7 +246,7 @@ impl Secrets {
     pub fn from_private_key(
         private_key_str: &str,
         vault_address_str: Option<&str>,
-        is_testnet: bool,
+        environment: HyperliquidEnvironment,
     ) -> Result<Self> {
         let private_key = EvmPrivateKey::new(private_key_str)?;
 
@@ -248,7 +258,7 @@ impl Secrets {
         Ok(Self {
             private_key,
             vault_address,
-            is_testnet,
+            environment,
         })
     }
 
@@ -295,12 +305,16 @@ impl Secrets {
             None => None,
         };
 
-        let is_testnet = matches!(raw.network.as_deref(), Some("testnet" | "test"));
+        let environment = if matches!(raw.network.as_deref(), Some("testnet" | "test")) {
+            HyperliquidEnvironment::Testnet
+        } else {
+            HyperliquidEnvironment::Mainnet
+        };
 
         Ok(Self {
             private_key,
             vault_address,
-            is_testnet,
+            environment,
         })
     }
 }
@@ -409,7 +423,7 @@ mod tests {
         assert_eq!(secrets.private_key.as_hex(), TEST_PRIVATE_KEY);
         assert!(secrets.vault_address.is_some());
         assert_eq!(secrets.vault_address.unwrap().to_hex(), TEST_VAULT_ADDRESS);
-        assert!(secrets.is_testnet);
+        assert_eq!(secrets.environment, HyperliquidEnvironment::Testnet);
     }
 
     #[rstest]
@@ -423,7 +437,7 @@ mod tests {
         let secrets = Secrets::from_json(&json).unwrap();
         assert_eq!(secrets.private_key.as_hex(), TEST_PRIVATE_KEY);
         assert!(secrets.vault_address.is_none());
-        assert!(!secrets.is_testnet);
+        assert_eq!(secrets.environment, HyperliquidEnvironment::Mainnet);
     }
 
     #[rstest]

@@ -46,7 +46,7 @@ from nautilus_trader.common.component import register_component_clock
 from nautilus_trader.common.component import set_backtest_force_stop
 from nautilus_trader.common.component import set_logging_pyo3
 from nautilus_trader.common.config import InvalidConfiguration
-from nautilus_trader.common.config import msgspec_encoding_hook
+from nautilus_trader.common.config import pyo3_config_json
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
@@ -291,7 +291,7 @@ class NautilusKernel:
             self._msgbus_db = nautilus_pyo3.RedisMessageBusDatabase(
                 trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
                 instance_id=nautilus_pyo3.UUID4.from_str(self._instance_id.value),
-                config_json=msgspec.json.encode(config.message_bus, enc_hook=msgspec_encoding_hook),
+                config_json=pyo3_config_json(config.message_bus),
             )
         else:
             raise ValueError(
@@ -509,6 +509,7 @@ class NautilusKernel:
 
         if config.catalogs:
             catalog_name_index = 0
+
             for catalog_config in config.catalogs:
                 catalog = catalog_config.as_catalog()
                 used_catalog_name = catalog_config.name
@@ -622,14 +623,16 @@ class NautilusKernel:
 
         self._log.info(f"Received {command!r}, shutting down...", LogColor.BLUE)
 
+        # Set FORCE_STOP before teardown so the backtest loop bails out even
+        # if stop() / stop_async() raises partway through
+        if self._environment == Environment.BACKTEST:
+            set_backtest_force_stop(True)
+            self._log.debug("Set backtest FORCE_STOP")
+
         if self._loop:
             self._loop.create_task(self.stop_async())
         else:
             self.stop()
-
-        if self._environment == Environment.BACKTEST:
-            set_backtest_force_stop(True)
-            self._log.debug("Set backtest FORCE_STOP")
 
     @property
     def environment(self) -> Environment:
@@ -1393,6 +1396,7 @@ class NautilusKernel:
     async def _check_engines_disconnected(self) -> bool:
         seconds = self._config.timeout_disconnection
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
+
         while True:
             await asyncio.sleep(0)
 
@@ -1415,6 +1419,7 @@ class NautilusKernel:
         # Thus any delay here will be due to blocking network I/O.
         seconds = self._config.timeout_portfolio
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
+
         while True:
             await asyncio.sleep(0)
 

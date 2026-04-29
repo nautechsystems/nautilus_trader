@@ -87,7 +87,7 @@ use crate::{
 impl KrakenSpotWebSocketClient {
     /// WebSocket client for the Kraken Spot v2 streaming API.
     #[new]
-    #[pyo3(signature = (environment=None, private=false, base_url=None, heartbeat_secs=None, api_key=None, api_secret=None))]
+    #[pyo3(signature = (environment=None, private=false, base_url=None, heartbeat_secs=None, api_key=None, api_secret=None, proxy_url=None))]
     fn py_new(
         environment: Option<KrakenEnvironment>,
         private: bool,
@@ -95,6 +95,7 @@ impl KrakenSpotWebSocketClient {
         heartbeat_secs: Option<u64>,
         api_key: Option<String>,
         api_secret: Option<String>,
+        proxy_url: Option<String>,
     ) -> Self {
         let env = environment.unwrap_or(KrakenEnvironment::Mainnet);
 
@@ -121,12 +122,13 @@ impl KrakenSpotWebSocketClient {
                 .unwrap_or(KrakenDataClientConfig::default().heartbeat_interval_secs),
             api_key: resolved_api_key,
             api_secret: resolved_api_secret,
+            proxy_url: proxy_url.clone(),
             ..Default::default()
         };
 
         let token = CancellationToken::new();
 
-        Self::new(config, token)
+        Self::new(config, token, proxy_url)
     }
 
     /// Returns the WebSocket URL.
@@ -169,7 +171,7 @@ impl KrakenSpotWebSocketClient {
 
     /// Connects to the WebSocket server.
     #[pyo3(name = "connect")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
@@ -180,6 +182,7 @@ impl KrakenSpotWebSocketClient {
         let call_soon: Py<PyAny> = loop_.getattr(py, "call_soon_threadsafe")?;
 
         let instruments_map = Arc::new(AtomicMap::<InstrumentId, InstrumentAny>::new());
+
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
             instruments_map.insert(inst_any.id(), inst_any);
@@ -449,6 +452,32 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Returns true if the WebSocket is authenticated for private subscriptions.
+    #[pyo3(name = "is_authenticated")]
+    fn py_is_authenticated(&self) -> bool {
+        self.is_authenticated()
+    }
+
+    /// Waits until the WebSocket is authenticated or the timeout elapses.
+    ///
+    /// Returns an error on timeout or explicit auth failure.
+    #[pyo3(name = "wait_until_authenticated")]
+    fn py_wait_until_authenticated<'py>(
+        &self,
+        py: Python<'py>,
+        timeout_secs: f64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .wait_until_authenticated(timeout_secs)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
     /// Disconnects from the WebSocket server.
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -490,7 +519,6 @@ impl KrakenSpotWebSocketClient {
 
     /// Caches an instrument for execution report parsing.
     #[pyo3(name = "cache_instrument")]
-    #[allow(clippy::needless_pass_by_value)]
     fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
         self.cache_instrument(inst_any);

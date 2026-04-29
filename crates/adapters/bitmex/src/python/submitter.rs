@@ -26,7 +26,7 @@ use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyDict};
 
 use crate::{
     broadcast::submitter::{SubmitBroadcaster, SubmitBroadcasterConfig},
-    common::enums::BitmexPegPriceType,
+    common::enums::{BitmexEnvironment, BitmexPegPriceType},
 };
 
 #[pymethods]
@@ -43,7 +43,7 @@ impl SubmitBroadcaster {
         api_key=None,
         api_secret=None,
         base_url=None,
-        testnet=false,
+        environment=BitmexEnvironment::Mainnet,
         timeout_secs=60,
         max_retries=3,
         retry_delay_ms=1_000,
@@ -53,15 +53,16 @@ impl SubmitBroadcaster {
         max_requests_per_minute=120,
         health_check_interval_secs=30,
         health_check_timeout_secs=5,
-        expected_reject_patterns=None
+        expected_reject_patterns=None,
+        proxy_urls=None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         pool_size: usize,
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url: Option<String>,
-        testnet: bool,
+        environment: BitmexEnvironment,
         timeout_secs: u64,
         max_retries: u32,
         retry_delay_ms: u64,
@@ -72,13 +73,14 @@ impl SubmitBroadcaster {
         health_check_interval_secs: u64,
         health_check_timeout_secs: u64,
         expected_reject_patterns: Option<Vec<String>>,
+        proxy_urls: Option<Vec<Option<String>>>,
     ) -> PyResult<Self> {
         let config = SubmitBroadcasterConfig {
             pool_size,
             api_key,
             api_secret,
             base_url,
-            testnet,
+            environment,
             timeout_secs,
             max_retries,
             retry_delay_ms,
@@ -90,7 +92,7 @@ impl SubmitBroadcaster {
             health_check_timeout_secs,
             expected_reject_patterns: expected_reject_patterns
                 .unwrap_or_else(|| SubmitBroadcasterConfig::default().expected_reject_patterns),
-            proxy_urls: vec![], // TODO: Add proxy_urls parameter to Python API when needed
+            proxy_urls: proxy_urls.unwrap_or_default(),
         };
 
         Self::new(config).map_err(to_pyvalue_err)
@@ -147,7 +149,7 @@ impl SubmitBroadcaster {
         peg_price_type=None,
         peg_offset_value=None
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_broadcast_submit<'py>(
         &self,
         py: Python<'py>,

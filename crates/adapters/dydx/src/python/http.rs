@@ -15,8 +15,6 @@
 
 //! Python bindings for dYdX HTTP client.
 
-#![allow(clippy::missing_errors_doc)]
-
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
@@ -33,7 +31,7 @@ use pyo3::{
 };
 use rust_decimal::Decimal;
 
-use crate::http::client::DydxHttpClient;
+use crate::{common::enums::DydxNetwork, http::client::DydxHttpClient};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -54,13 +52,15 @@ impl DydxHttpClient {
     /// - Provides standard cache methods: `cache_instruments()`, `cache_instrument()`, `get_instrument()`.
     /// - Tracks cache initialization state for optimizations.
     #[new]
-    #[pyo3(signature = (base_url=None, is_testnet=false))]
-    fn py_new(base_url: Option<String>, is_testnet: bool) -> PyResult<Self> {
-        // Mirror the Rust client's constructor signature with sensible defaults
+    #[pyo3(signature = (base_url=None, network=DydxNetwork::Mainnet, proxy_url=None))]
+    fn py_new(
+        base_url: Option<String>,
+        network: DydxNetwork,
+        proxy_url: Option<String>,
+    ) -> PyResult<Self> {
         Self::new(
-            base_url, 60,   // timeout_secs
-            None, // proxy_url
-            is_testnet, None, // retry_config
+            base_url, 60, // timeout_secs
+            proxy_url, network, None, // retry_config
         )
         .map_err(to_pyvalue_err)
     }

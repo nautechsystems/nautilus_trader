@@ -23,7 +23,7 @@
 //! 5. Uses the BTC index price as the ATM source
 //! 6. Logs received `OptionChainSlice` snapshots in the `on_option_chain` handler
 //!
-//! Run with: `cargo run --example deribit-option-chain-tester --package nautilus-deribit`
+//! Run with: `cargo run --example deribit-option-chain-tester --package nautilus-deribit --features examples`
 
 use std::fmt::Debug;
 
@@ -34,8 +34,8 @@ use nautilus_common::{
     timer::TimeEvent,
 };
 use nautilus_deribit::{
-    config::DeribitDataClientConfig, factories::DeribitDataClientFactory,
-    http::models::DeribitProductType,
+    common::enums::DeribitEnvironment, config::DeribitDataClientConfig,
+    factories::DeribitDataClientFactory, http::models::DeribitProductType,
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
@@ -44,6 +44,7 @@ use nautilus_model::{
     instruments::{Instrument, any::InstrumentAny},
     stubs::TestDefault,
 };
+use nautilus_network::websocket::TransportBackend;
 use ustr::Ustr;
 
 // ---------------------------------------------------------------------------
@@ -163,6 +164,7 @@ impl DataActor for OptionChainTester {
             strike_range,
             snapshot_interval_ms,
             Some(client_id),
+            None,
         );
 
         self.series_id = Some(series_id);
@@ -255,7 +257,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: None,    // Will use 'DERIBIT_API_KEY' env var
         api_secret: None, // Will use 'DERIBIT_API_SECRET' env var
         product_types: vec![DeribitProductType::Option, DeribitProductType::Future],
-        use_testnet: false,
+        environment: DeribitEnvironment::Mainnet,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

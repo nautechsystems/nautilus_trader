@@ -1,0 +1,67 @@
+name: dst
+
+# Deterministic simulation testing (DST) smoke gate.
+#
+# Builds the in-scope crates under `--cfg madsim --features simulation` and
+# runs the test subset known to work under simulation (all of nautilus-common
+# plus the cross-crate seam pinning tests in nautilus-network and
+# nautilus-core). Triggered on pushes to release-track branches (master,
+# nightly) and on manual dispatch. PRs and develop pushes do not gate on
+# this workflow. See docs/concepts/dst.md for the contract and scope.
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  push:
+    branches: [master, nightly, test-ci]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  EGRESS_POLICY: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+
+jobs:
+  dst-smoke:
+    name: dst smoke (cfg madsim)
+    runs-on: [self-hosted, Linux, X64, build]
+    env:
+      RUST_BACKTRACE: 1
+      # Persistent target dir outside the workspace so it survives
+      # actions/checkout's git clean -ffdx between runs.
+      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/dst
+      # Cross-seed exploration: each `#[madsim::test]` runs MADSIM_TEST_NUM
+      # times with consecutive seeds (MADSIM_TEST_SEED, +1, +2, ...). The
+      # base seed is computed in the run step as `run_number * MADSIM_TEST_NUM`
+      # so each nightly run covers a fresh, non-overlapping seed window.
+      # A failure here is replayable locally with:
+      #   MADSIM_TEST_SEED=<n> MADSIM_TEST_NUM=5 make cargo-test-sim
+      MADSIM_TEST_NUM: "5"
+    steps:
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }} ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          free-disk-space: "true"
+          rust-cache-enabled: "false"
+
+      - name: Run DST simulation smoke tests
+        run: |
+          export MADSIM_TEST_SEED=$((GITHUB_RUN_NUMBER * MADSIM_TEST_NUM))
+          echo "MADSIM_TEST_SEED=$MADSIM_TEST_SEED MADSIM_TEST_NUM=$MADSIM_TEST_NUM"
+          make cargo-test-sim NEXTEST_PROFILE=ci

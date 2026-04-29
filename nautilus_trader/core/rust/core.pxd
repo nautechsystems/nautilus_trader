@@ -94,6 +94,12 @@ cdef extern from "../includes/core.h":
     uint64_t secs_to_nanos(double secs);
 
     # Converts seconds to milliseconds (ms).
+    #
+    # # Panics
+    #
+    # Panics if [`crate::datetime::secs_to_millis`] returns an error for `secs`.
+    # The panic is caught by [`abort_on_panic`] and converted into a process abort
+    # across the FFI boundary.
     uint64_t secs_to_millis(double secs);
 
     # Converts milliseconds (ms) to nanoseconds (ns).

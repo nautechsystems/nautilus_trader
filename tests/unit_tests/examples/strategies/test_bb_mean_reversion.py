@@ -195,6 +195,7 @@ class TestBBMeanReversion:
 
     def _warm_up_and_start(self, strategy: BBMeanReversion) -> None:
         strategy.start()
+
         for i, (o, h, l, c) in enumerate(_WARMUP_BARS):
             self._process_bar(self._make_bar(o, h, l, c, ts=i * 60_000_000_000))
 
@@ -266,6 +267,7 @@ class TestBBMeanReversion:
             (110.7, 111.5, 110.6, 111.4),
             (111.0, 112.0, 109.0, 112.0),
         ]
+
         for i, (o, h, l, c) in enumerate(bars):
             self._process_bar(self._make_bar(o, h, l, c, ts=i * 60_000_000_000))
 

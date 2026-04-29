@@ -18,7 +18,7 @@
 use std::num::NonZeroU32;
 
 use nautilus_model::identifiers::{AccountId, TraderId};
-use nautilus_network::ratelimiter::quota::Quota;
+use nautilus_network::{ratelimiter::quota::Quota, websocket::TransportBackend};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -27,23 +27,28 @@ use crate::{
 };
 
 /// Configuration for the dYdX adapter.
+///
+/// URL fields (`base_url`, `ws_url`, `grpc_url`, `grpc_urls`) default to mainnet in the
+/// builder. Use [`DydxAdapterConfig::for_network`] to build a config whose URLs and chain
+/// ID match the target network, or override each URL explicitly.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(deny_unknown_fields)]
 pub struct DydxAdapterConfig {
     /// Network environment (mainnet or testnet).
     #[serde(default)]
     #[builder(default)]
     pub network: DydxNetwork,
     /// Base URL for the HTTP API.
-    #[builder(default = urls::http_base_url(false).to_string())]
+    #[builder(default = urls::http_base_url(DydxNetwork::Mainnet).to_string())]
     pub base_url: String,
     /// Base URL for the WebSocket API.
-    #[builder(default = urls::ws_url(false).to_string())]
+    #[builder(default = urls::ws_url(DydxNetwork::Mainnet).to_string())]
     pub ws_url: String,
     /// Base URL for the gRPC API (Cosmos SDK transactions).
     ///
     /// For backwards compatibility, a single URL can be provided.
     /// Consider using `grpc_urls` for fallback support.
-    #[builder(default = urls::grpc_urls(false)[0].to_string())]
+    #[builder(default = urls::grpc_urls(DydxNetwork::Mainnet)[0].to_string())]
     pub grpc_url: String,
     /// List of gRPC URLs with fallback support.
     ///
@@ -51,7 +56,7 @@ pub struct DydxAdapterConfig {
     /// until a successful connection is established. This is recommended for
     /// production use in DEX environments where nodes can fail.
     #[serde(default)]
-    #[builder(default = urls::grpc_urls(false).iter().map(|&s| s.to_string()).collect())]
+    #[builder(default = urls::grpc_urls(DydxNetwork::Mainnet).iter().map(|&s| s.to_string()).collect())]
     pub grpc_urls: Vec<String>,
     /// Chain ID (e.g., "dydx-mainnet-1" for mainnet, "dydx-testnet-4" for testnet).
     #[builder(default = DYDX_CHAIN_ID.to_string())]
@@ -72,15 +77,6 @@ pub struct DydxAdapterConfig {
     #[serde(default)]
     #[builder(default)]
     pub subaccount: u32,
-    /// Whether this is a testnet configuration.
-    ///
-    /// Precedence: `network` is canonical. If both `network` and `is_testnet`
-    /// are provided and conflict, `network` takes precedence internally.
-    /// This flag exists for backwards compatibility and may be derived from
-    /// `network` in future versions.
-    #[serde(default)]
-    #[builder(default)]
-    pub is_testnet: bool,
     /// Private key (hex) for wallet signing.
     ///
     /// If not provided, falls back to environment variable:
@@ -125,6 +121,13 @@ pub struct DydxAdapterConfig {
     /// When `None`, rate limiting is disabled.
     #[serde(default = "default_grpc_rate_limit_per_second")]
     pub grpc_rate_limit_per_second: Option<u32>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    #[serde(default)]
+    pub proxy_url: Option<String>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[serde(default)]
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 fn default_max_retries() -> u32 {
@@ -139,7 +142,7 @@ fn default_retry_delay_max_ms() -> u64 {
     10000
 }
 
-#[allow(
+#[expect(
     clippy::unnecessary_wraps,
     reason = "serde default must match field type Option<u32>"
 )]
@@ -147,7 +150,7 @@ fn default_grpc_rate_limit_per_second() -> Option<u32> {
     Some(4)
 }
 
-fn default_http_timeout_secs() -> u64 {
+fn default_data_http_timeout_secs() -> u64 {
     60
 }
 
@@ -164,6 +167,31 @@ fn default_data_retry_delay_max_ms() -> u64 {
 }
 
 impl DydxAdapterConfig {
+    /// Creates a config with URLs and chain ID resolved for the given network.
+    ///
+    /// Use this instead of `Default::default()` when constructing a testnet config
+    /// without explicit URL overrides. Retains the non-URL defaults from
+    /// [`Default::default`] (retries, timeouts, gRPC rate limit).
+    #[must_use]
+    pub fn for_network(network: DydxNetwork) -> Self {
+        let chain_id = match network {
+            DydxNetwork::Mainnet => crate::common::consts::DYDX_CHAIN_ID,
+            DydxNetwork::Testnet => crate::common::consts::DYDX_TESTNET_CHAIN_ID,
+        };
+        Self {
+            network,
+            base_url: urls::http_base_url(network).to_string(),
+            ws_url: urls::ws_url(network).to_string(),
+            grpc_url: urls::grpc_urls(network)[0].to_string(),
+            grpc_urls: urls::grpc_urls(network)
+                .iter()
+                .map(|&s| s.to_string())
+                .collect(),
+            chain_id: chain_id.to_string(),
+            ..Self::default()
+        }
+    }
+
     /// Get the list of gRPC URLs to use for connection with fallback support.
     ///
     /// Returns `grpc_urls` if non-empty, otherwise falls back to a single-element
@@ -185,12 +213,9 @@ impl DydxAdapterConfig {
         self.network.chain_id()
     }
 
-    /// Convenience: compute `is_testnet` from `network`.
-    ///
-    /// Prefer `network` as the source of truth; this method is provided to
-    /// avoid ambiguity when legacy configs include `is_testnet`.
+    /// Returns whether this is a testnet configuration.
     #[must_use]
-    pub const fn compute_is_testnet(&self) -> bool {
+    pub const fn is_testnet(&self) -> bool {
         matches!(self.network, DydxNetwork::Testnet)
     }
 
@@ -214,6 +239,7 @@ impl Default for DydxAdapterConfig {
 
 /// Configuration for the dYdX data client.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
@@ -228,7 +254,7 @@ pub struct DydxDataClientConfig {
     /// Base URL for the WebSocket API.
     pub base_url_ws: Option<String>,
     /// HTTP request timeout in seconds.
-    #[serde(default = "default_http_timeout_secs")]
+    #[serde(default = "default_data_http_timeout_secs")]
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
     /// Maximum number of retry attempts for failed HTTP requests.
@@ -243,13 +269,24 @@ pub struct DydxDataClientConfig {
     #[serde(default = "default_data_retry_delay_max_ms")]
     #[builder(default = 5000)]
     pub retry_delay_max_ms: u64,
-    /// Whether this is a testnet configuration.
+    /// Network environment (mainnet or testnet).
+    #[serde(default)]
     #[builder(default)]
-    pub is_testnet: bool,
-    /// HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// WebSocket proxy URL.
-    pub ws_proxy_url: Option<String>,
+    pub network: DydxNetwork,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[serde(default)]
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
+}
+
+impl DydxDataClientConfig {
+    /// Returns whether this is a testnet configuration.
+    #[must_use]
+    pub const fn is_testnet(&self) -> bool {
+        matches!(self.network, DydxNetwork::Testnet)
+    }
 }
 
 impl Default for DydxDataClientConfig {
@@ -260,6 +297,7 @@ impl Default for DydxDataClientConfig {
 
 /// Configuration for the dYdX execution client.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
@@ -321,6 +359,12 @@ pub struct DydxExecClientConfig {
     /// When `None`, rate limiting is disabled.
     #[serde(default = "default_grpc_rate_limit_per_second")]
     pub grpc_rate_limit_per_second: Option<u32>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[serde(default)]
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for DydxExecClientConfig {
@@ -346,8 +390,7 @@ impl DydxExecClientConfig {
         if let Some(ref endpoint) = self.grpc_endpoint {
             return vec![endpoint.clone()];
         }
-        let is_testnet = matches!(self.network, DydxNetwork::Testnet);
-        urls::grpc_urls(is_testnet)
+        urls::grpc_urls(self.network)
             .iter()
             .map(|&s| s.to_string())
             .collect()
@@ -356,19 +399,17 @@ impl DydxExecClientConfig {
     /// Returns the WebSocket URL for the configured network.
     #[must_use]
     pub fn get_ws_url(&self) -> String {
-        self.ws_endpoint.clone().unwrap_or_else(|| {
-            let is_testnet = matches!(self.network, DydxNetwork::Testnet);
-            urls::ws_url(is_testnet).to_string()
-        })
+        self.ws_endpoint
+            .clone()
+            .unwrap_or_else(|| urls::ws_url(self.network).to_string())
     }
 
     /// Returns the HTTP URL for the configured network.
     #[must_use]
     pub fn get_http_url(&self) -> String {
-        self.http_endpoint.clone().unwrap_or_else(|| {
-            let is_testnet = matches!(self.network, DydxNetwork::Testnet);
-            urls::http_base_url(is_testnet).to_string()
-        })
+        self.http_endpoint
+            .clone()
+            .unwrap_or_else(|| urls::http_base_url(self.network).to_string())
     }
 
     /// Returns the chain ID for the configured network.
@@ -417,43 +458,31 @@ mod tests {
     }
 
     #[rstest]
-    fn test_config_compute_is_testnet() {
+    fn test_config_is_testnet() {
         let mainnet_config = DydxAdapterConfig {
             network: DydxNetwork::Mainnet,
             ..Default::default()
         };
-        assert!(!mainnet_config.compute_is_testnet());
+        assert!(!mainnet_config.is_testnet());
 
         let testnet_config = DydxAdapterConfig {
             network: DydxNetwork::Testnet,
             ..Default::default()
         };
-        assert!(testnet_config.compute_is_testnet());
+        assert!(testnet_config.is_testnet());
     }
 
     #[rstest]
     fn test_config_default_uses_mainnet() {
         let config = DydxAdapterConfig::default();
         assert_eq!(config.network, DydxNetwork::Mainnet);
-        assert!(!config.is_testnet);
-    }
-
-    #[rstest]
-    fn test_config_network_canonical_over_is_testnet() {
-        // When network=mainnet but is_testnet=true, get_chain_id uses network
-        let config = DydxAdapterConfig {
-            network: DydxNetwork::Mainnet,
-            is_testnet: true, // Conflicting value
-            ..Default::default()
-        };
-        assert_eq!(config.get_chain_id(), ChainId::Mainnet1); // network wins
-        assert!(!config.compute_is_testnet()); // compute_is_testnet derives from network
+        assert!(!config.is_testnet());
     }
 
     #[rstest]
     fn test_config_serde_backwards_compat() {
         // Test that configs missing network field can deserialize with default
-        let json = r#"{"base_url":"https://indexer.dydx.trade","ws_url":"wss://indexer.dydx.trade/v4/ws","grpc_url":"https://dydx-ops-grpc.kingnodes.com:443","grpc_urls":[],"chain_id":"dydx-mainnet-1","timeout_secs":30,"subaccount":0,"is_testnet":false,"max_retries":3,"retry_delay_initial_ms":1000,"retry_delay_max_ms":10000}"#;
+        let json = r#"{"base_url":"https://indexer.dydx.trade","ws_url":"wss://indexer.dydx.trade/v4/ws","grpc_url":"https://dydx-ops-grpc.kingnodes.com:443","grpc_urls":[],"chain_id":"dydx-mainnet-1","timeout_secs":30,"subaccount":0,"max_retries":3,"retry_delay_initial_ms":1000,"retry_delay_max_ms":10000}"#;
 
         let config: Result<DydxAdapterConfig, _> = serde_json::from_str(json);
         assert!(config.is_ok());
@@ -490,5 +519,54 @@ mod tests {
         assert_eq!(urls.len(), 2);
         assert_eq!(urls[0], "https://fallback1.example.com");
         assert_eq!(urls[1], "https://fallback2.example.com");
+    }
+
+    #[rstest]
+    fn test_for_network_mainnet_resolves_urls_and_chain_id() {
+        let config = DydxAdapterConfig::for_network(DydxNetwork::Mainnet);
+
+        assert_eq!(config.network, DydxNetwork::Mainnet);
+        assert_eq!(config.base_url, urls::http_base_url(DydxNetwork::Mainnet));
+        assert_eq!(config.ws_url, urls::ws_url(DydxNetwork::Mainnet));
+        assert_eq!(config.grpc_url, urls::grpc_urls(DydxNetwork::Mainnet)[0]);
+        let expected_grpc: Vec<String> = urls::grpc_urls(DydxNetwork::Mainnet)
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        assert_eq!(config.grpc_urls, expected_grpc);
+        assert_eq!(config.chain_id, crate::common::consts::DYDX_CHAIN_ID);
+        assert_eq!(config.get_chain_id(), ChainId::Mainnet1);
+    }
+
+    #[rstest]
+    fn test_for_network_testnet_resolves_urls_and_chain_id() {
+        let config = DydxAdapterConfig::for_network(DydxNetwork::Testnet);
+
+        assert_eq!(config.network, DydxNetwork::Testnet);
+        assert_eq!(config.base_url, urls::http_base_url(DydxNetwork::Testnet));
+        assert_eq!(config.ws_url, urls::ws_url(DydxNetwork::Testnet));
+        assert_eq!(config.grpc_url, urls::grpc_urls(DydxNetwork::Testnet)[0]);
+        let expected_grpc: Vec<String> = urls::grpc_urls(DydxNetwork::Testnet)
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        assert_eq!(config.grpc_urls, expected_grpc);
+        assert_eq!(
+            config.chain_id,
+            crate::common::consts::DYDX_TESTNET_CHAIN_ID,
+        );
+        assert_eq!(config.get_chain_id(), ChainId::Testnet4);
+    }
+
+    #[rstest]
+    #[case(DydxNetwork::Mainnet)]
+    #[case(DydxNetwork::Testnet)]
+    fn test_for_network_preserves_grpc_rate_limit_default(#[case] network: DydxNetwork) {
+        // Regression guard: earlier implementations spread `..Self::builder().build()`,
+        // which returned `None` and silently disabled gRPC throttling. The helper must
+        // retain the `Some(4)` default from `Default::default()`.
+        let config = DydxAdapterConfig::for_network(network);
+        assert_eq!(config.grpc_rate_limit_per_second, Some(4));
+        assert!(config.grpc_quota().is_some());
     }
 }

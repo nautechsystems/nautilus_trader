@@ -50,6 +50,7 @@ impl Cloid {
         }
 
         let mut bytes = [0u8; 16];
+
         for i in 0..16 {
             let byte_str = &without_prefix[i * 2..i * 2 + 2];
             bytes[i] = u8::from_str_radix(byte_str, 16)
@@ -366,6 +367,21 @@ pub struct HyperliquidCandle {
     pub num_trades: Option<u64>,
 }
 
+/// Represents a single funding history entry from the `fundingHistory` info endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HyperliquidFundingHistoryEntry {
+    /// Coin symbol (raw Hyperliquid name, e.g. `"BTC"`).
+    pub coin: Ustr,
+    /// Funding rate applied at the interval end, as a decimal string.
+    #[serde(rename = "fundingRate")]
+    pub funding_rate: String,
+    /// Premium at the time of funding, as a decimal string.
+    #[serde(default)]
+    pub premium: Option<String>,
+    /// Timestamp in milliseconds marking the end of the funding interval.
+    pub time: u64,
+}
+
 /// Represents an individual fill from user fills.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HyperliquidFill {
@@ -400,11 +416,26 @@ pub struct HyperliquidFill {
     pub fee_token: Ustr,
 }
 
-/// Represents order status response from `POST /info`.
+/// Represents order status response from `POST /info` with `type: "orderStatus"`.
+///
+/// The API returns `{"status": "order", "order": {...}}` when the order is known,
+/// or `{"status": "unknownOid"}` when the oid is not found.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HyperliquidOrderStatus {
-    #[serde(default)]
-    pub statuses: Vec<HyperliquidOrderStatusEntry>,
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum HyperliquidOrderStatus {
+    Order { order: HyperliquidOrderStatusEntry },
+    UnknownOid,
+}
+
+impl HyperliquidOrderStatus {
+    /// Consumes the response and returns the inner entry if the order was found.
+    #[must_use]
+    pub fn into_order(self) -> Option<HyperliquidOrderStatusEntry> {
+        match self {
+            Self::Order { order } => Some(order),
+            Self::UnknownOid => None,
+        }
+    }
 }
 
 /// Represents an individual order status entry.
@@ -438,6 +469,9 @@ pub struct HyperliquidOrderInfo {
     /// Original order size.
     #[serde(rename = "origSz")]
     pub orig_sz: String,
+    /// Optional client order ID (hex representation of the keccak256 cloid).
+    #[serde(default)]
+    pub cloid: Option<String>,
 }
 
 /// ECC signature components for Hyperliquid exchange requests.
@@ -452,7 +486,21 @@ pub struct HyperliquidSignature {
 }
 
 impl HyperliquidSignature {
-    /// Parse a hex signature string (0x + 64 hex r + 64 hex s + 2 hex v) into components.
+    /// Creates a new [`HyperliquidSignature`] from pre-formatted components.
+    #[must_use]
+    pub fn new(r: String, s: String, v: u64) -> Self {
+        Self { r, s, v }
+    }
+
+    /// Formats as Ethereum hex signature: `0x` + r(64) + s(64) + v(2).
+    #[must_use]
+    pub fn to_hex(&self) -> String {
+        let r = self.r.strip_prefix("0x").unwrap_or(&self.r);
+        let s = self.s.strip_prefix("0x").unwrap_or(&self.s);
+        format!("0x{r}{s}{:02x}", self.v)
+    }
+
+    /// Parses a hex signature string (0x + 64 hex r + 64 hex s + 2 hex v) into components.
     pub fn from_hex(sig_hex: &str) -> Result<Self, String> {
         let sig_hex = sig_hex.strip_prefix("0x").unwrap_or(sig_hex);
 
@@ -496,31 +544,33 @@ impl<T> HyperliquidExchangeRequest<T>
 where
     T: Serialize,
 {
-    /// Create a new exchange request with the given action.
-    pub fn new(action: T, nonce: u64, signature: &str) -> Result<Self, String> {
-        Ok(Self {
+    /// Creates a new exchange request with the given action.
+    #[must_use]
+    pub fn new(action: T, nonce: u64, signature: HyperliquidSignature) -> Self {
+        Self {
             action,
             nonce,
-            signature: HyperliquidSignature::from_hex(signature)?,
+            signature,
             vault_address: None,
             expires_after: None,
-        })
+        }
     }
 
-    /// Create a new exchange request with vault address for sub-account trading.
+    /// Creates a new exchange request with vault address for sub-account trading.
+    #[must_use]
     pub fn with_vault(
         action: T,
         nonce: u64,
-        signature: &str,
+        signature: HyperliquidSignature,
         vault_address: String,
-    ) -> Result<Self, String> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             action,
             nonce,
-            signature: HyperliquidSignature::from_hex(signature)?,
+            signature,
             vault_address: Some(vault_address),
             expires_after: None,
-        })
+        }
     }
 
     /// Convert to JSON value for signing purposes.
@@ -574,6 +624,39 @@ mod tests {
     }
 
     #[rstest]
+    fn test_funding_history_entry_with_premium() {
+        let json = r#"{
+            "coin": "BTC",
+            "fundingRate": "0.0000125",
+            "premium": "0.00029005",
+            "time": 1769908800000
+        }"#;
+
+        let entry: HyperliquidFundingHistoryEntry = serde_json::from_str(json).unwrap();
+
+        assert_eq!(entry.coin.as_str(), "BTC");
+        assert_eq!(entry.funding_rate, "0.0000125");
+        assert_eq!(entry.premium.as_deref(), Some("0.00029005"));
+        assert_eq!(entry.time, 1769908800000);
+    }
+
+    #[rstest]
+    fn test_funding_history_entry_without_premium() {
+        // `premium` is optional in the venue response; it must deserialize
+        // to `None` when absent rather than fail.
+        let json = r#"{
+            "coin": "BTC",
+            "fundingRate": "0.0000033",
+            "time": 1769916000000
+        }"#;
+
+        let entry: HyperliquidFundingHistoryEntry = serde_json::from_str(json).unwrap();
+
+        assert!(entry.premium.is_none());
+        assert_eq!(entry.funding_rate, "0.0000033");
+    }
+
+    #[rstest]
     fn test_perp_asset_hip3_fields() {
         let json = r#"{
             "name": "xyz:TSLA",
@@ -621,6 +704,51 @@ mod tests {
 
         let response: HyperliquidExchangeResponse = serde_json::from_str(json).unwrap();
         assert!(response.is_ok());
+    }
+
+    #[rstest]
+    fn test_spot_clearinghouse_state_deserialization() {
+        let json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "14.625485", "hold": "0.0", "entryNtl": "0.0"},
+                {"coin": "PURR", "token": 1, "total": "2000", "hold": "100", "entryNtl": "1234.56"}
+            ]
+        }"#;
+
+        let state: SpotClearinghouseState = serde_json::from_str(json).unwrap();
+
+        assert_eq!(state.balances.len(), 2);
+        let usdc = &state.balances[0];
+        assert_eq!(usdc.coin.as_str(), "USDC");
+        assert_eq!(usdc.token, 0);
+        assert_eq!(usdc.total.to_string(), "14.625485");
+        assert_eq!(usdc.hold, rust_decimal::Decimal::ZERO);
+        assert_eq!(usdc.free().to_string(), "14.625485");
+        assert_eq!(usdc.avg_entry_px(), None);
+
+        let purr = &state.balances[1];
+        assert_eq!(purr.coin.as_str(), "PURR");
+        assert_eq!(purr.token, 1);
+        assert_eq!(purr.free().to_string(), "1900");
+        assert_eq!(
+            purr.avg_entry_px().unwrap(),
+            rust_decimal_macros::dec!(0.61728)
+        );
+    }
+
+    #[rstest]
+    fn test_spot_clearinghouse_state_empty() {
+        let json = r#"{"balances": []}"#;
+        let state: SpotClearinghouseState = serde_json::from_str(json).unwrap();
+        assert!(state.balances.is_empty());
+    }
+
+    #[rstest]
+    fn test_spot_balance_handles_missing_entry_ntl() {
+        let json = r#"{"coin": "HYPE", "token": 150, "total": "5", "hold": "0"}"#;
+        let balance: SpotBalance = serde_json::from_str(json).unwrap();
+        assert_eq!(balance.entry_ntl, None);
+        assert_eq!(balance.avg_entry_px(), None);
     }
 
     #[rstest]
@@ -1274,6 +1402,68 @@ pub struct PositionData {
         deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
     )]
     pub unrealized_pnl: Decimal,
+}
+
+/// Complete spot clearinghouse state response from `POST /info`
+/// with `{ "type": "spotClearinghouseState", "user": "address" }`.
+///
+/// Provides per-token spot balances for the queried address. Under unified or
+/// portfolio margin accounts this is the source of truth for spot holdings.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpotClearinghouseState {
+    /// Per-token spot balances.
+    #[serde(default)]
+    pub balances: Vec<SpotBalance>,
+}
+
+/// A single token balance entry from `spotClearinghouseState.balances`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpotBalance {
+    /// Token name (e.g., "USDC", "PURR").
+    pub coin: Ustr,
+    /// Token index matching `spotMeta.tokens[*].index`.
+    pub token: u32,
+    /// Total token balance (on-hold plus available).
+    #[serde(
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub total: Decimal,
+    /// Portion currently reserved for resting orders.
+    #[serde(
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub hold: Decimal,
+    /// Entry notional value (position cost basis in USDC).
+    #[serde(
+        default,
+        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
+    )]
+    pub entry_ntl: Option<Decimal>,
+}
+
+impl SpotBalance {
+    /// Returns the balance freely available to trade or withdraw (`total - hold`).
+    #[must_use]
+    pub fn free(&self) -> Decimal {
+        (self.total - self.hold).max(Decimal::ZERO)
+    }
+
+    /// Returns the average entry price derived from `entry_ntl / total`, if both are non-zero.
+    #[must_use]
+    pub fn avg_entry_px(&self) -> Option<Decimal> {
+        let entry_ntl = self.entry_ntl?;
+
+        if entry_ntl.is_zero() || self.total.is_zero() {
+            return None;
+        }
+
+        Some(entry_ntl / self.total)
+    }
 }
 
 /// Cross margin summary information.

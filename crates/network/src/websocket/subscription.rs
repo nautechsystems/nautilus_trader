@@ -21,7 +21,7 @@
 //!
 //! # Key Features
 //!
-//! - **Three-state tracking**: confirmed, pending_subscribe, pending_unsubscribe.
+//! - **Three-state tracking**: confirmed, `pending_subscribe`, `pending_unsubscribe`.
 //! - **Reference counting**: Prevents duplicate subscribe/unsubscribe messages.
 //! - **Reconnection support**: `all_topics()` returns topics to resubscribe after reconnect.
 //! - **Configurable delimiter**: Supports different topic formats (`.` or `:` etc.).
@@ -81,6 +81,7 @@ pub struct SubscriptionState {
 
 impl SubscriptionState {
     /// Creates a new subscription state tracker with the specified topic delimiter.
+    #[must_use]
     pub fn new(delimiter: char) -> Self {
         Self {
             confirmed: Arc::new(DashMap::new()),
@@ -92,21 +93,25 @@ impl SubscriptionState {
     }
 
     /// Returns the delimiter character used for topic splitting.
+    #[must_use]
     pub fn delimiter(&self) -> char {
         self.delimiter
     }
 
     /// Returns a clone of the confirmed subscriptions map.
+    #[must_use]
     pub fn confirmed(&self) -> Arc<DashMap<Ustr, AHashSet<Ustr>>> {
         Arc::clone(&self.confirmed)
     }
 
     /// Returns a clone of the pending subscribe map.
+    #[must_use]
     pub fn pending_subscribe(&self) -> Arc<DashMap<Ustr, AHashSet<Ustr>>> {
         Arc::clone(&self.pending_subscribe)
     }
 
     /// Returns a clone of the pending unsubscribe map.
+    #[must_use]
     pub fn pending_unsubscribe(&self) -> Arc<DashMap<Ustr, AHashSet<Ustr>>> {
         Arc::clone(&self.pending_unsubscribe)
     }
@@ -114,11 +119,13 @@ impl SubscriptionState {
     /// Returns the number of confirmed subscriptions.
     ///
     /// Counts both channel-level and symbol-level subscriptions.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.confirmed.iter().map(|entry| entry.value().len()).sum()
     }
 
     /// Returns true if there are no subscriptions (confirmed or pending).
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.confirmed.is_empty()
             && self.pending_subscribe.is_empty()
@@ -126,6 +133,7 @@ impl SubscriptionState {
     }
 
     /// Returns true if a channel:symbol pair is subscribed (confirmed or pending subscribe).
+    #[must_use]
     pub fn is_subscribed(&self, channel: &Ustr, symbol: &Ustr) -> bool {
         if let Some(symbols) = self.confirmed.get(channel)
             && symbols.contains(symbol)
@@ -191,8 +199,8 @@ impl SubscriptionState {
 
     /// Marks a topic as pending unsubscription.
     ///
-    /// This removes the topic from both confirmed and pending_subscribe,
-    /// then adds it to pending_unsubscribe. This handles the case where
+    /// This removes the topic from both confirmed and `pending_subscribe`,
+    /// then adds it to `pending_unsubscribe`. This handles the case where
     /// a user unsubscribes before the initial subscription is confirmed.
     pub fn mark_unsubscribe(&self, topic: &str) {
         let (channel, symbol) = split_topic(topic, self.delimiter);
@@ -221,12 +229,12 @@ impl SubscriptionState {
     /// Confirms an unsubscription by removing it from pending and confirmed state.
     ///
     /// This should be called when the server acknowledges an unsubscribe request.
-    /// Removes the topic from pending_unsubscribe and confirmed.
-    /// Does NOT clear pending_subscribe to support immediate re-subscribe patterns
-    /// (e.g., user calls subscribe() before unsubscribe ack arrives).
+    /// Removes the topic from `pending_unsubscribe` and confirmed.
+    /// Does NOT clear `pending_subscribe` to support immediate re-subscribe patterns
+    /// (e.g., user calls `subscribe()` before unsubscribe ack arrives).
     ///
     /// **Stale ACK handling**: Ignores unsubscribe ACKs if the topic is no longer
-    /// in pending_unsubscribe (meaning user has already re-subscribed). This prevents
+    /// in `pending_unsubscribe` (meaning user has already re-subscribed). This prevents
     /// stale ACKs from removing topics that were re-confirmed after the re-subscribe.
     pub fn confirm_unsubscribe(&self, topic: &str) {
         let (channel, symbol) = split_topic(topic, self.delimiter);
@@ -259,21 +267,24 @@ impl SubscriptionState {
     }
 
     /// Returns all pending subscribe topics as strings.
+    #[must_use]
     pub fn pending_subscribe_topics(&self) -> Vec<String> {
         self.topics_from_map(&self.pending_subscribe)
     }
 
     /// Returns all pending unsubscribe topics as strings.
+    #[must_use]
     pub fn pending_unsubscribe_topics(&self) -> Vec<String> {
         self.topics_from_map(&self.pending_unsubscribe)
     }
 
-    /// Returns all topics that should be active (confirmed + pending_subscribe).
+    /// Returns all topics that should be active (confirmed + `pending_subscribe`).
     ///
     /// This is the key method for reconnection: it returns all topics that should
     /// be resubscribed after a connection is re-established.
     ///
-    /// Note: Does NOT include pending_unsubscribe topics, as those are being removed.
+    /// Note: Does NOT include `pending_unsubscribe` topics, as those are being removed.
+    #[must_use]
     pub fn all_topics(&self) -> Vec<String> {
         let mut topics = Vec::new();
         topics.extend(self.topics_from_map(&self.confirmed));
@@ -319,6 +330,10 @@ impl SubscriptionState {
     /// # Panics
     ///
     /// Panics if the reference count exceeds `usize::MAX` subscriptions for a single topic.
+    #[allow(
+        clippy::must_use_candidate,
+        reason = "callers use this for side effects"
+    )]
     pub fn add_reference(&self, topic: &str) -> bool {
         let mut should_subscribe = false;
         let topic_ustr = Ustr::from(topic);
@@ -345,6 +360,10 @@ impl SubscriptionState {
     ///
     /// Panics if the internal reference count state becomes inconsistent (should never happen
     /// if the API is used correctly).
+    #[allow(
+        clippy::must_use_candidate,
+        reason = "callers use this for side effects"
+    )]
     pub fn remove_reference(&self, topic: &str) -> bool {
         let topic_ustr = Ustr::from(topic);
 
@@ -370,6 +389,7 @@ impl SubscriptionState {
     /// Returns the current reference count for a topic.
     ///
     /// Returns 0 if the topic has no references.
+    #[must_use]
     pub fn get_reference_count(&self, topic: &str) -> usize {
         let topic_ustr = Ustr::from(topic);
         self.reference_counts
@@ -389,6 +409,7 @@ impl SubscriptionState {
 }
 
 /// Splits a topic into channel and optional symbol using the specified delimiter.
+#[must_use]
 pub fn split_topic(topic: &str, delimiter: char) -> (&str, Option<&str>) {
     topic
         .split_once(delimiter)
@@ -879,6 +900,7 @@ mod tests {
         // This ensures deterministic behavior - we know exactly what the final state should be
         for i in 0..20 {
             let state_clone = Arc::clone(&state);
+
             let handle = tokio::spawn(async move {
                 let topic = format!("tickers.SYMBOL{i}");
                 // Add 2 references
@@ -918,6 +940,7 @@ mod tests {
         // Spawn 10 tasks all adding 10 references to the same topic
         for _ in 0..10 {
             let state_clone = Arc::clone(&state);
+
             let handle = tokio::spawn(async move {
                 for _ in 0..10 {
                     state_clone.add_reference(topic);
@@ -1089,6 +1112,7 @@ mod tests {
         assert_eq!(state.len(), special_topics.len());
 
         let all_topics = state.all_topics();
+
         for topic in &special_topics {
             assert!(
                 all_topics.contains(&(*topic).to_string()),
@@ -1265,6 +1289,7 @@ mod tests {
         // Spawn 50 tasks doing random interleaved operations
         for i in 0..50 {
             let state_clone = Arc::clone(&state);
+
             let handle = tokio::spawn(async move {
                 let topic1 = format!("channel.SYMBOL{i}");
                 let topic2 = format!("channel.SYMBOL{}", i + 100);
@@ -1426,10 +1451,10 @@ mod tests {
     /// # Invariants
     ///
     /// 1. **Mutual exclusivity**: A topic cannot exist in multiple states simultaneously
-    ///    (one of: confirmed, pending_subscribe, pending_unsubscribe, or none).
-    /// 2. **all_topics consistency**: `all_topics()` must equal `confirmed ∪ pending_subscribe`
+    ///    (one of: confirmed, `pending_subscribe`, `pending_unsubscribe`, or none).
+    /// 2. **`all_topics` consistency**: `all_topics()` must equal `confirmed ∪ pending_subscribe`
     /// 3. **len consistency**: `len()` must equal total count of symbols in confirmed map
-    /// 4. **is_empty consistency**: `is_empty()` true iff all maps are empty
+    /// 4. **`is_empty` consistency**: `is_empty()` true iff all maps are empty
     /// 5. **Reference count non-negative**: All reference counts >= 0
     fn check_invariants(state: &SubscriptionState, label: &str) {
         // Collect all topics from each state
@@ -1764,6 +1789,7 @@ mod tests {
 
         for i in 0..100 {
             let state_clone = Arc::clone(&state);
+
             let handle = tokio::spawn(async move {
                 let topic = format!("rapid.SYMBOL{}", i % 10); // 10 unique topics, lots of contention
 
@@ -1800,6 +1826,7 @@ mod tests {
 
         for i in 0..30 {
             let state_clone = Arc::clone(&state);
+
             let handle = tokio::spawn(async move {
                 let topic = format!("failure.SYMBOL{i}"); // Unique topic per task
 

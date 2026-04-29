@@ -126,6 +126,7 @@ impl BinanceSpotDataClient {
             creds.as_ref().map(|(k, _)| k.clone()),
             creds.as_ref().map(|(_, s)| s.clone()),
             Some(20), // Heartbeat interval
+            config.transport_backend,
         )?;
         let data_sender = get_data_event_sender();
 
@@ -349,6 +350,7 @@ impl DataClient for BinanceSpotDataClient {
 
         let handle = get_runtime().spawn(async move {
             pin_mut!(stream);
+
             loop {
                 tokio::select! {
                     Some(message) = stream.next() => {
@@ -461,17 +463,17 @@ impl DataClient for BinanceSpotDataClient {
         !self.is_connected()
     }
 
-    fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
+    fn subscribe_instruments(&mut self, _cmd: SubscribeInstruments) -> anyhow::Result<()> {
         log::debug!("subscribe_instruments: Binance instruments are fetched via HTTP on connect");
         Ok(())
     }
 
-    fn subscribe_instrument(&mut self, _cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+    fn subscribe_instrument(&mut self, _cmd: SubscribeInstrument) -> anyhow::Result<()> {
         log::debug!("subscribe_instrument: Binance instruments are fetched via HTTP on connect");
         Ok(())
     }
 
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!("Binance SBE only supports L2_MBP order book deltas");
         }
@@ -504,7 +506,7 @@ impl DataClient for BinanceSpotDataClient {
         Ok(())
     }
 
-    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
+    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let ws = self.ws_client.clone();
 
@@ -524,7 +526,7 @@ impl DataClient for BinanceSpotDataClient {
         Ok(())
     }
 
-    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let ws = self.ws_client.clone();
 
@@ -541,7 +543,7 @@ impl DataClient for BinanceSpotDataClient {
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
         let bar_type = cmd.bar_type;
         let ws = self.ws_client.clone();
         let interval = bar_spec_to_binance_interval(bar_type.spec())?;
@@ -565,7 +567,7 @@ impl DataClient for BinanceSpotDataClient {
 
     fn subscribe_instrument_status(
         &mut self,
-        cmd: &SubscribeInstrumentStatus,
+        cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         log::debug!(
             "subscribe_instrument_status: {id} (status changes detected via periodic exchange info polling)",

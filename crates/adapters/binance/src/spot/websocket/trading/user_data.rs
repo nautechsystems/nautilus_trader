@@ -18,6 +18,8 @@
 //! Pure venue types with no Nautilus model imports. These structs map directly
 //! to the JSON payloads from the Binance Spot user data stream WebSocket.
 
+use nautilus_core::serialization::deserialize_decimal_from_str;
+use rust_decimal::Decimal;
 use serde::Deserialize;
 use ustr::Ustr;
 
@@ -162,11 +164,11 @@ pub struct BinanceSpotBalanceEntry {
     #[serde(rename = "a")]
     pub asset: Ustr,
     /// Free balance.
-    #[serde(rename = "f")]
-    pub free: String,
+    #[serde(rename = "f", deserialize_with = "deserialize_decimal_from_str")]
+    pub free: Decimal,
     /// Locked balance.
-    #[serde(rename = "l")]
-    pub locked: String,
+    #[serde(rename = "l", deserialize_with = "deserialize_decimal_from_str")]
+    pub locked: Decimal,
 }
 
 /// Balance update event (`balanceUpdate`).

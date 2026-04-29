@@ -188,6 +188,7 @@ fn load_deltas_from_parquet(filepath: &Path, limit: Option<usize>) -> Vec<OrderB
     let reader = builder.build().unwrap();
 
     let mut deltas = Vec::new();
+
     for batch_result in reader {
         let batch = batch_result.unwrap();
         let batch_deltas = OrderBookDelta::decode_batch(&metadata, batch).unwrap();

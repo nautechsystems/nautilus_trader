@@ -102,13 +102,17 @@ impl KrakenSpotDataClient {
             None,
             None,
             None,
-            config.http_proxy.clone(),
+            config.proxy_url.clone(),
             config
                 .max_requests_per_second
                 .unwrap_or(KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND),
         )?;
 
-        let ws = KrakenSpotWebSocketClient::new(config.clone(), cancellation_token.clone());
+        let ws = KrakenSpotWebSocketClient::new(
+            config.clone(),
+            cancellation_token.clone(),
+            config.proxy_url.clone(),
+        );
 
         Ok(Self {
             clock: get_atomic_clock_realtime(),
@@ -259,6 +263,7 @@ impl KrakenSpotDataClient {
                         log::warn!("No instrument for symbol: {}", ticker.symbol);
                         continue;
                     };
+
                     match parse_quote_tick(ticker, &instrument, ts_init) {
                         Ok(quote) => {
                             if let Err(e) = sender.send(DataEvent::Data(Data::Quote(quote))) {
@@ -277,6 +282,7 @@ impl KrakenSpotDataClient {
                         log::warn!("No instrument for symbol: {}", trade.symbol);
                         continue;
                     };
+
                     match parse_trade_tick(trade, &instrument, ts_init) {
                         Ok(tick) => {
                             if let Err(e) = sender.send(DataEvent::Data(Data::Trade(tick))) {
@@ -320,6 +326,7 @@ impl KrakenSpotDataClient {
                     log::error!("OHLC buffer lock poisoned");
                     return;
                 };
+
                 for ohlc in &ohlc_data {
                     let Some(instrument) =
                         Self::lookup_instrument(instruments, ohlc.symbol.as_str())
@@ -327,6 +334,7 @@ impl KrakenSpotDataClient {
                         log::warn!("No instrument for symbol: {}", ohlc.symbol);
                         continue;
                     };
+
                     match parse_ws_bar(ohlc, &instrument, ts_init) {
                         Ok(new_bar) => {
                             let key: (Ustr, u32) = (ohlc.symbol, ohlc.interval);
@@ -465,17 +473,17 @@ impl DataClient for KrakenSpotDataClient {
         Ok(())
     }
 
-    fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
+    fn subscribe_instruments(&mut self, _cmd: SubscribeInstruments) -> anyhow::Result<()> {
         log::debug!("subscribe_instruments: Kraken instruments are fetched via HTTP on connect");
         Ok(())
     }
 
-    fn subscribe_instrument(&mut self, _cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+    fn subscribe_instrument(&mut self, _cmd: SubscribeInstrument) -> anyhow::Result<()> {
         log::debug!("subscribe_instrument: Kraken instruments are fetched via HTTP on connect");
         Ok(())
     }
 
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let depth = cmd.depth;
 
@@ -509,7 +517,7 @@ impl DataClient for KrakenSpotDataClient {
         Ok(())
     }
 
-    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
+    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let ws = self.ws.clone();
 
@@ -526,7 +534,7 @@ impl DataClient for KrakenSpotDataClient {
         Ok(())
     }
 
-    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let ws = self.ws.clone();
 
@@ -543,7 +551,7 @@ impl DataClient for KrakenSpotDataClient {
         Ok(())
     }
 
-    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
+    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
         log::warn!(
             "Mark price subscription not supported for Spot instrument {}",
             cmd.instrument_id
@@ -551,7 +559,7 @@ impl DataClient for KrakenSpotDataClient {
         Ok(())
     }
 
-    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         log::warn!(
             "Index price subscription not supported for Spot instrument {}",
             cmd.instrument_id
@@ -559,7 +567,7 @@ impl DataClient for KrakenSpotDataClient {
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
         let bar_type = cmd.bar_type;
 
         if bar_type.aggregation_source() != AggregationSource::External {
@@ -588,7 +596,7 @@ impl DataClient for KrakenSpotDataClient {
 
     fn subscribe_instrument_status(
         &mut self,
-        cmd: &SubscribeInstrumentStatus,
+        cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         log::info!(
             "subscribe_instrument_status: {} (status changes detected via periodic instrument polling)",

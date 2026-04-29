@@ -704,6 +704,7 @@ mod tests {
     /// Apply operations and return final cache state
     fn apply_ops<const N: usize>(ops: &[Op]) -> FifoCache<u8, N> {
         let mut cache = FifoCache::<u8, N>::new();
+
         for op in ops {
             match op {
                 Op::Add(id) => cache.add(*id),

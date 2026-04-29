@@ -369,6 +369,32 @@ See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API 
 | Order status updates | ✓         | Real‑time order state changes via WebSocket. |
 | Trade history        | ✓         | Execution and fill reports.                  |
 
+### Liquidation and ADL handling
+
+BitMEX surfaces forced-close fills through the `execType` field on the
+`execution` channel:
+
+| `execType`    | Meaning                                                      |
+|---------------|--------------------------------------------------------------|
+| `Trade`       | Normal execution (user or taker‑initiated).                  |
+| `Liquidation` | Position was force‑closed by the liquidation engine. BitMEX uses this code for both auto‑deleveraging and counterparty liquidation fills. |
+| `Bankruptcy`  | Account bankruptcy; position closed against the insurance fund. |
+| `Settlement`  | Scheduled contract settlement.                               |
+| `Funding`     | Funding settlement on open positions.                        |
+
+The adapter routes `Liquidation` and `Bankruptcy` through the standard
+`FillReport` path and logs a warning on bankruptcy executions. BitMEX's public
+API does **not** distinguish auto-deleveraging from counterparty liquidation
+in `execType`; both appear as `Liquidation`. An ADL-closed position can
+usually be identified by zero commission and the absence of a matching order
+in the local cache (the engine creates an external order for it).
+
+Upstream references:
+
+- [`/execution` field definitions](https://support.bitmex.com/hc/en-gb/articles/6205689858077--execution-field-definitions)
+- [Auto-Deleveraging overview](https://support.bitmex.com/hc/en-gb/articles/18589621443357-What-is-Auto-Deleveraging)
+- [Liquidation overview](https://support.bitmex.com/hc/en-gb/articles/360003188434-Liquidations)
+
 ## Market data
 
 - Order book deltas: `L2_MBP` only; `depth` 0 (full book) or 25.
@@ -383,6 +409,15 @@ See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API 
 BitMEX caps each REST response at 1,000 rows and requires manual pagination via `start`/`startTime`. The current adapter returns only the
 first page; wider pagination support is scheduled for a future update.
 :::
+
+### Trade ID derivation
+
+Trade ticks and fills use the venue-provided `trdMatchID` (UUID) as the
+`TradeId`. When the venue omits `trdMatchID` (bucketed trades or certain
+execution types), the execution path falls back to the venue's `execID`; market
+data parsers fall back to a deterministic FNV-1a hash of the symbol,
+`ts_event`, price, size, and side. The same venue event yields the same trade
+ID across replays, keeping downstream dedup intact.
 
 ## Connection management
 
@@ -765,8 +800,7 @@ The BitMEX data client provides the following configuration options:
 | `update_instruments_interval_mins`| `60`     | Interval (minutes) between instrument catalogue refreshes. |
 | `max_requests_per_second`         | `10`     | Burst rate limit enforced by the adapter for REST calls. |
 | `max_requests_per_minute`         | `120`    | Rolling minute rate limit enforced by the adapter for REST calls. |
-| `http_proxy_url`                  | `None`   | Optional HTTP proxy URL. |
-| `ws_proxy_url`                    | `None`   | Optional WebSocket proxy URL. *Not yet implemented; reserved for future use.* |
+| `proxy_url`                       | `None`   | Optional proxy URL for HTTP and WebSocket transports. |
 
 ### Execution client configuration options
 
@@ -789,8 +823,7 @@ The BitMEX execution client provides the following configuration options:
 | `deadmans_switch_timeout_secs` | `None`   | Timeout in seconds for the dead man's switch. `None` disables. See [Dead man's switch](#dead-mans-switch). |
 | `canceller_pool_size`    | `None`   | Number of HTTP clients in the cancel broadcaster pool. `None` resolves to 1. See [Cancel broadcaster](#cancel-broadcaster). |
 | `submitter_pool_size`    | `None`   | Number of HTTP clients in the submit broadcaster pool. `None` resolves to 1. See [Submit broadcaster](#submit-broadcaster). |
-| `http_proxy_url`         | `None`   | Optional HTTP proxy URL. |
-| `ws_proxy_url`           | `None`   | Optional WebSocket proxy URL. *Not yet implemented; reserved for future use.* |
+| `proxy_url`              | `None`   | Optional proxy URL for HTTP and WebSocket transports. |
 | `submitter_proxy_urls`   | `None`   | Optional list of proxy URLs for submit broadcaster path diversity. *Not yet wired through Python integration.* |
 | `canceller_proxy_urls`   | `None`   | Optional list of proxy URLs for cancel broadcaster path diversity. *Not yet wired through Python integration.* |
 

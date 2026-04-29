@@ -11,6 +11,8 @@ rustflags = [
 [target.'cfg(target_os = "linux")']
 rustflags = [
   "-C",
+  "link-arg=-fuse-ld=lld",
+  "-C",
   "link-arg=-Wl,--gc-sections",
   "-C",
   "link-arg=-Wl,--as-needed",

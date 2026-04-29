@@ -46,7 +46,7 @@ use nautilus_model::{
         PriceType, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, Symbol, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, VenueOrderId},
     instruments::{Instrument as InstrumentTrait, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{MarginBalance, Money, Price, Quantity},
@@ -77,15 +77,13 @@ use super::{
 };
 use crate::{
     common::{
-        consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL, BITMEX_VENUE},
+        consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL},
         credential::{Credential, credential_env_vars},
         enums::{
-            BitmexContingencyType, BitmexExecInstruction, BitmexOrderStatus, BitmexOrderType,
-            BitmexPegPriceType, BitmexSide, BitmexTimeInForce,
+            BitmexContingencyType, BitmexEnvironment, BitmexExecInstruction, BitmexOrderStatus,
+            BitmexOrderType, BitmexPegPriceType, BitmexSide, BitmexTimeInForce,
         },
-        parse::{
-            bitmex_currency_divisor, map_bitmex_currency, parse_account_balance, quantity_to_u32,
-        },
+        parse::{bitmex_currency_divisor, parse_account_balance, quantity_to_u32},
     },
     http::{
         parse::{
@@ -179,7 +177,7 @@ impl BitmexRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the retry manager cannot be created.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         base_url: Option<String>,
         timeout_secs: u64,
@@ -230,7 +228,7 @@ impl BitmexRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the retry manager cannot be created.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
@@ -832,7 +830,7 @@ impl Default for BitmexHttpClient {
             None,
             None,
             None,
-            false,
+            BitmexEnvironment::Mainnet,
             60,
             3,
             1_000,
@@ -852,12 +850,12 @@ impl BitmexHttpClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be created.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         base_url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
-        testnet: bool,
+        environment: BitmexEnvironment,
         timeout_secs: u64,
         max_retries: u32,
         retry_delay_ms: u64,
@@ -868,15 +866,12 @@ impl BitmexHttpClient {
         proxy_url: Option<String>,
     ) -> Result<Self, BitmexHttpError> {
         // Determine the base URL
-        let url = base_url.unwrap_or_else(|| {
-            if testnet {
-                BITMEX_HTTP_TESTNET_URL.to_string()
-            } else {
-                BITMEX_HTTP_URL.to_string()
-            }
+        let url = base_url.unwrap_or_else(|| match environment {
+            BitmexEnvironment::Testnet => BITMEX_HTTP_TESTNET_URL.to_string(),
+            BitmexEnvironment::Mainnet => BITMEX_HTTP_URL.to_string(),
         });
 
-        let (key_var, secret_var) = credential_env_vars(testnet);
+        let (key_var, secret_var) = credential_env_vars(environment);
         let api_key = get_or_env_var_opt(api_key, key_var);
         let api_secret = get_or_env_var_opt(api_secret, secret_var);
 
@@ -943,7 +938,7 @@ impl BitmexHttpClient {
     /// # Errors
     ///
     /// Returns an error if one credential is provided without the other.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: Option<String>,
         api_secret: Option<String>,
@@ -957,10 +952,14 @@ impl BitmexHttpClient {
         max_requests_per_minute: u32,
         proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
-        // Determine testnet from URL first to select correct environment variables
-        let testnet = base_url.as_ref().is_some_and(|url| url.contains("testnet"));
+        // Determine environment from URL to select correct environment variables
+        let environment = if base_url.as_ref().is_some_and(|url| url.contains("testnet")) {
+            BitmexEnvironment::Testnet
+        } else {
+            BitmexEnvironment::Mainnet
+        };
 
-        let (key_var, secret_var) = credential_env_vars(testnet);
+        let (key_var, secret_var) = credential_env_vars(environment);
 
         let api_key = get_or_env_var_opt(api_key, key_var);
         let api_secret = get_or_env_var_opt(api_secret, secret_var);
@@ -978,7 +977,7 @@ impl BitmexHttpClient {
             base_url,
             api_key,
             api_secret,
-            testnet,
+            environment,
             timeout_secs,
             max_retries,
             retry_delay_ms,
@@ -1515,17 +1514,13 @@ impl BitmexHttpClient {
 
             if !initial_dec.is_zero() || !maintenance_dec.is_zero() {
                 let currency = balance.total.currency;
-                let currency_str = map_bitmex_currency(margin_msg.currency.as_str());
-                let margin_instrument_id = InstrumentId::new(
-                    Symbol::from_str_unchecked(format!("ACCOUNT-{currency_str}")),
-                    *BITMEX_VENUE,
-                );
+                // BitMEX reports cross-margin aggregates per collateral currency.
                 margins_vec.push(MarginBalance::new(
                     Money::from_decimal(initial_dec, currency)
                         .unwrap_or_else(|_| Money::zero(currency)),
                     Money::from_decimal(maintenance_dec, currency)
                         .unwrap_or_else(|_| Money::zero(currency)),
-                    margin_instrument_id,
+                    None,
                 ));
             }
 
@@ -1564,7 +1559,7 @@ impl BitmexHttpClient {
     ///
     /// Returns an error if credentials are missing, the request fails, order validation fails,
     /// the order is rejected, or the API returns an error.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn submit_order(
         &self,
         instrument_id: InstrumentId,

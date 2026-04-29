@@ -64,11 +64,7 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         POLYMARKET: PolymarketDataClientConfig(
-            private_key=None,  # 'POLYMARKET_PK' env var
-            api_key=None,  # 'POLYMARKET_API_KEY' env var
-            api_secret=None,  # 'POLYMARKET_API_SECRET' env var
-            passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
-            # signature_type=2,  # Uncomment if you're using the proxy wallet (Polymarket UI)
+            signature_type=2,  # Browser wallet proxy (Polymarket UI); requires funder address
             instrument_config=instrument_provider_config,
             compute_effective_deltas=True,
         ),

@@ -506,7 +506,9 @@ pub enum KrakenFuturesOrderType {
 pub enum KrakenFuturesOrderEventType {
     /// Order was placed.
     Place,
-    /// Order was executed (filled).
+    /// Legacy history endpoint fill event.
+    Fill,
+    /// Send-order execution event.
     Execution,
     /// Order was rejected.
     Reject,
@@ -514,6 +516,10 @@ pub enum KrakenFuturesOrderEventType {
     Cancel,
     /// Order was edited.
     Edit,
+    /// Order expired.
+    #[serde(alias = "EXPIRED")]
+    #[strum(serialize = "EXPIRED")]
+    Expire,
 }
 
 /// Kraken futures order status.
@@ -588,7 +594,18 @@ pub enum KrakenTriggerSignal {
     Last,
     #[serde(rename = "mark", alias = "mark_price")]
     Mark,
-    #[serde(rename = "index", alias = "index_price")]
+    #[serde(
+        rename = "spot",
+        alias = "spot_price",
+        alias = "index",
+        alias = "index_price"
+    )]
+    #[strum(
+        serialize = "spot",
+        serialize = "spot_price",
+        serialize = "index",
+        serialize = "index_price"
+    )]
     Index,
 }
 
@@ -775,6 +792,14 @@ pub enum KrakenSendStatus {
     Edited,
     /// Order not found.
     NotFound,
+    /// No orders matched the cancel-all request.
+    ///
+    /// Returned by the Kraken Futures `cancelallorders` endpoint as the
+    /// `cancelStatus.status` field. The accompanying `cancelledOrders` array
+    /// may still be populated for orders that were canceled in the same call,
+    /// so callers must inspect that array rather than treating this status
+    /// as an error.
+    NoOrdersToCancel,
     /// Insufficient available funds.
     InsufficientAvailableFunds,
     /// Invalid order type.
@@ -974,5 +999,62 @@ mod tests {
         #[case] expected: OrderType,
     ) {
         assert_eq!(OrderType::from(input), expected);
+    }
+
+    #[rstest]
+    #[case("\"placed\"", KrakenSendStatus::Placed)]
+    #[case("\"cancelled\"", KrakenSendStatus::Cancelled)]
+    #[case("\"edited\"", KrakenSendStatus::Edited)]
+    #[case("\"notFound\"", KrakenSendStatus::NotFound)]
+    #[case("\"noOrdersToCancel\"", KrakenSendStatus::NoOrdersToCancel)]
+    #[case(
+        "\"insufficientAvailableFunds\"",
+        KrakenSendStatus::InsufficientAvailableFunds
+    )]
+    #[case("\"invalidOrderType\"", KrakenSendStatus::InvalidOrderType)]
+    #[case("\"invalidSize\"", KrakenSendStatus::InvalidSize)]
+    #[case("\"wouldCauseLiquidation\"", KrakenSendStatus::WouldCauseLiquidation)]
+    #[case("\"postWouldExecute\"", KrakenSendStatus::PostWouldExecute)]
+    #[case(
+        "\"reduceOnlyWouldIncreasePosition\"",
+        KrakenSendStatus::ReduceOnlyWouldIncreasePosition
+    )]
+    fn test_send_status_deserialization(#[case] raw: &str, #[case] expected: KrakenSendStatus) {
+        let parsed: KrakenSendStatus = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed, expected);
+    }
+
+    #[rstest]
+    #[case("\"last\"", KrakenTriggerSignal::Last)]
+    #[case("\"last_price\"", KrakenTriggerSignal::Last)]
+    #[case("\"mark\"", KrakenTriggerSignal::Mark)]
+    #[case("\"mark_price\"", KrakenTriggerSignal::Mark)]
+    #[case("\"spot\"", KrakenTriggerSignal::Index)]
+    #[case("\"spot_price\"", KrakenTriggerSignal::Index)]
+    #[case("\"index\"", KrakenTriggerSignal::Index)]
+    #[case("\"index_price\"", KrakenTriggerSignal::Index)]
+    fn test_trigger_signal_deserialization(
+        #[case] raw: &str,
+        #[case] expected: KrakenTriggerSignal,
+    ) {
+        let parsed: KrakenTriggerSignal = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed, expected);
+    }
+
+    #[rstest]
+    #[case("\"PLACE\"", KrakenFuturesOrderEventType::Place)]
+    #[case("\"FILL\"", KrakenFuturesOrderEventType::Fill)]
+    #[case("\"EXECUTION\"", KrakenFuturesOrderEventType::Execution)]
+    #[case("\"REJECT\"", KrakenFuturesOrderEventType::Reject)]
+    #[case("\"CANCEL\"", KrakenFuturesOrderEventType::Cancel)]
+    #[case("\"EDIT\"", KrakenFuturesOrderEventType::Edit)]
+    #[case("\"EXPIRE\"", KrakenFuturesOrderEventType::Expire)]
+    #[case("\"EXPIRED\"", KrakenFuturesOrderEventType::Expire)]
+    fn test_futures_order_event_type_deserialization(
+        #[case] raw: &str,
+        #[case] expected: KrakenFuturesOrderEventType,
+    ) {
+        let parsed: KrakenFuturesOrderEventType = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed, expected);
     }
 }

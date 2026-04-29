@@ -88,7 +88,7 @@ impl SwapQuote {
 
     /// Determines swap direction from amount signs.
     ///
-    /// Returns `true` if swapping token0 for token1 (zero_for_one).
+    /// Returns `true` if swapping token0 for token1 (`zero_for_one`).
     #[pyo3(name = "zero_for_one")]
     fn py_zero_for_one(&self) -> bool {
         self.zero_for_one()

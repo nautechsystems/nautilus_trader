@@ -93,7 +93,7 @@ def main() -> None:
     )
 
     builder = LiveNode.builder(node_name, trader_id, environment)
-    builder.add_data_client(None, client_factory, client_config)
+    builder.add_data_client("BLOCKCHAIN-Arbitrum", client_factory, client_config)
     node = builder.build()
 
     actor_config = ImportableActorConfig(

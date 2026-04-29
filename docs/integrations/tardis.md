@@ -211,14 +211,15 @@ Next, ensure you have a configuration JSON file available.
 
 **Configuration JSON format**
 
-| Field                   | Type              | Description                                                                         | Default                                                                                               |
-|:------------------------|:------------------|:------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------|
-| `tardis_ws_url`         | string (optional) | The Tardis Machine WebSocket URL.                                                   | If `null` then will use the `TARDIS_MACHINE_WS_URL` env var.                                          |
-| `normalize_symbols`     | bool (optional)   | If Nautilus [symbol normalization](#symbology-and-normalization) should be applied. | If `null` then will default to `true`.                                                                |
-| `output_path`           | string (optional) | The output directory path to write Nautilus Parquet data to.                        | If `null` then will use the `NAUTILUS_PATH` env var, otherwise the current working directory. |
-| `book_snapshot_output`  | string (optional) | Output format for `book_snapshot_*` data: `"deltas"` or `"depth10"`. See [book snapshot output](#book-snapshot-output). | If `null` then will default to `"deltas"`.                                                           |
-| `ws_proxy_url`          | string (optional) | Optional WebSocket proxy URL.                                                       | If `null` then no proxy is used.                                                                      |
-| `options`               | JSON[]            | An array of [ReplayNormalizedRequestOptions](https://docs.tardis.dev/api/tardis-machine#replay-normalized-options) objects.                                                                 |
+| Field                  | Type              | Description                                                                         | Default                                                        |
+|:-----------------------|:------------------|:------------------------------------------------------------------------------------|:---------------------------------------------------------------|
+| `tardis_ws_url`        | string (optional) | The Tardis Machine WebSocket URL.                                                   | Uses `TARDIS_MACHINE_WS_URL` when `null`.                      |
+| `normalize_symbols`    | bool (optional)   | If Nautilus [symbol normalization](#symbology-and-normalization) should be applied. | Defaults to `true` when `null`.                                |
+| `output_path`          | string (optional) | The output directory path to write Nautilus Parquet data to.                        | Uses `NAUTILUS_PATH` when set, otherwise current working dir.   |
+| `book_snapshot_output` | string (optional) | Output format for `book_snapshot_*` data: `"deltas"` or `"depth10"`.                | Defaults to `"deltas"` when `null`.                            |
+| `compression`          | string (optional) | Compression for written data files: `"zstd"`, `"snappy"`, or `"uncompressed"`.      | Defaults to `"zstd"` level 3 when `null`.                      |
+| `proxy_url`            | string (optional) | Optional proxy URL for the Tardis HTTP API client.                                  | No proxy when `null`.                                          |
+| `options`              | JSON[]            | Replay normalized request option objects.                                           | Required.                                                      |
 
 An example configuration file, `example_config.json`, is available [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_config.json):
 
@@ -680,6 +681,15 @@ If you anticipate frequent subscription and unsubscription of data, it is recomm
 `ws_connection_delay_secs` to zero. This will create a new client for each initial subscription,
 allowing them to be later closed individually upon unsubscription.
 :::
+
+## Trade ID derivation
+
+Trade ticks use the venue-provided trade ID from the Tardis message or CSV row
+as the `TradeId`. When the venue omits the trade ID (empty string or null on
+some exchanges), both the WebSocket parser and CSV parser fall back to a
+deterministic FNV-1a hash of the symbol, timestamp, price, amount, and side.
+The same venue event yields the same trade ID across replays, keeping
+downstream dedup intact.
 
 ## Limitations and considerations
 

@@ -16,6 +16,7 @@
 from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
+from nautilus_trader.core.nautilus_pyo3 import DeribitEnvironment
 from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 
 
@@ -36,14 +37,21 @@ class DeribitDataClientConfig(LiveDataClientConfig, frozen=True):
     product_types : tuple[DeribitProductType, ...], optional
         The Deribit product types to load.
         If None, defaults to Future.
+    environment : DeribitEnvironment, optional
+        The Deribit environment for the client (MAINNET or TESTNET).
+        If ``None`` then defaults to MAINNET.
+        Takes precedence over ``is_testnet`` if set.
     base_url_http : str, optional
         The base URL for Deribit's HTTP API.
         If ``None`` then will use default based on `is_testnet`.
     base_url_ws : str, optional
         The base URL for Deribit's WebSocket API.
         If ``None`` then will use default based on `is_testnet`.
+    proxy_url : str, optional
+        The proxy URL for HTTP and WebSocket transports.
     is_testnet : bool, default False
         If the client is connecting to the Deribit testnet API.
+        Deprecated: use ``environment=DeribitEnvironment.TESTNET`` instead.
     http_timeout_secs : PositiveInt, optional
         The timeout (seconds) for HTTP requests.
     max_retries : PositiveInt, default 3
@@ -60,8 +68,10 @@ class DeribitDataClientConfig(LiveDataClientConfig, frozen=True):
     api_key: str | None = None
     api_secret: str | None = None
     product_types: tuple[DeribitProductType, ...] | None = None
+    environment: DeribitEnvironment | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    proxy_url: str | None = None
     is_testnet: bool = False
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
@@ -87,14 +97,21 @@ class DeribitExecClientConfig(LiveExecClientConfig, frozen=True):
     product_types : tuple[DeribitProductType, ...], optional
         The Deribit product types to load.
         If None, defaults to Future.
+    environment : DeribitEnvironment, optional
+        The Deribit environment for the client (MAINNET or TESTNET).
+        If ``None`` then defaults to MAINNET.
+        Takes precedence over ``is_testnet`` if set.
     base_url_http : str, optional
         The base URL for Deribit's HTTP API.
         If ``None`` then will use default based on `is_testnet`.
     base_url_ws : str, optional
         The base URL for Deribit's WebSocket API.
         If ``None`` then will use default based on `is_testnet`.
+    proxy_url : str, optional
+        The proxy URL for HTTP and WebSocket transports.
     is_testnet : bool, default False
         If the client is connecting to the Deribit testnet API.
+        Deprecated: use ``environment=DeribitEnvironment.TESTNET`` instead.
     http_timeout_secs : PositiveInt, optional
         The timeout (seconds) for HTTP requests.
     max_retries : PositiveInt, default 3
@@ -109,8 +126,10 @@ class DeribitExecClientConfig(LiveExecClientConfig, frozen=True):
     api_key: str | None = None
     api_secret: str | None = None
     product_types: tuple[DeribitProductType, ...] | None = None
+    environment: DeribitEnvironment | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    proxy_url: str | None = None
     is_testnet: bool = False
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3

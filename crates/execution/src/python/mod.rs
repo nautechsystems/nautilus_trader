@@ -15,11 +15,7 @@
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 
-#![allow(
-    clippy::missing_errors_doc,
-    reason = "errors documented on underlying Rust methods"
-)]
-
+pub mod config;
 pub mod fee;
 pub mod fill;
 pub mod latency;
@@ -42,6 +38,16 @@ pub fn execution(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         reconciliation::py_calculate_reconciliation_price,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        reconciliation::py_create_inferred_reconciliation_trade_id,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        reconciliation::py_create_position_reconciliation_venue_order_id,
+        m
+    )?)?;
+    m.add_class::<crate::engine::config::ExecutionEngineConfig>()?;
+    m.add_class::<crate::order_emulator::config::OrderEmulatorConfig>()?;
     m.add_class::<crate::models::fee::FixedFeeModel>()?;
     m.add_class::<crate::models::fee::MakerTakerFeeModel>()?;
     m.add_class::<crate::models::fee::PerContractFeeModel>()?;

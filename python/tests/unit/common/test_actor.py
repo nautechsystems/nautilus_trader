@@ -22,10 +22,13 @@ from nautilus_trader.common import ComponentState
 from nautilus_trader.common import CustomData
 from nautilus_trader.common import DataActor
 from nautilus_trader.common import Signal
+from nautilus_trader.common import TimeEvent
+from nautilus_trader.core import UUID4
 from nautilus_trader.model import ActorId
 from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
+from nautilus_trader.model import Block
 from nautilus_trader.model import Blockchain
 from nautilus_trader.model import BookAction
 from nautilus_trader.model import BookOrder
@@ -86,6 +89,7 @@ HOOK_METHODS = [
 ]
 
 TYPED_CALLBACKS = [
+    ("on_time_event", "time_event"),
     ("on_data", "custom_data"),
     ("on_signal", "signal"),
     ("on_instrument", "instrument"),
@@ -101,6 +105,7 @@ TYPED_CALLBACKS = [
     ("on_instrument_close", "instrument_close"),
     ("on_option_greeks", "option_greeks"),
     ("on_option_chain", "option_chain"),
+    ("on_block", "block"),
     ("on_pool", "pool"),
     ("on_pool_swap", "pool_swap"),
     ("on_pool_liquidity_update", "pool_liquidity_update"),
@@ -112,6 +117,7 @@ HISTORICAL_CALLBACKS = [
     ("on_historical_data", "historical_data"),
     ("on_historical_quotes", "historical_quotes"),
     ("on_historical_trades", "historical_trades"),
+    ("on_historical_funding_rates", "historical_funding_rates"),
     ("on_historical_bars", "historical_bars"),
     ("on_historical_mark_prices", "historical_mark_prices"),
     ("on_historical_index_prices", "historical_index_prices"),
@@ -142,6 +148,13 @@ BOOK_INTERVAL_UNSUBSCRIBE_PARAMETERS = ("instrument_id", "interval_ms", "client_
 BAR_SUBSCRIPTION_PARAMETERS = ("bar_type", "client_id", "params")
 ORDER_SUBSCRIPTION_PARAMETERS = ("instrument_id",)
 BLOCK_SUBSCRIPTION_PARAMETERS = ("chain", "client_id", "params")
+OPTION_CHAIN_SUBSCRIPTION_PARAMETERS = (
+    "series_id",
+    "strike_range",
+    "snapshot_interval_ms",
+    "client_id",
+    "params",
+)
 INSTRUMENT_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "client_id", "params")
 BOOK_SNAPSHOT_REQUEST_PARAMETERS = ("instrument_id", "depth", "client_id", "params")
 INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
@@ -153,11 +166,10 @@ INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
     "params",
 )
 BAR_REQUEST_PARAMETERS = ("bar_type", "start", "end", "limit", "client_id", "params")
+OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS = ("series_id", "client_id")
 
 REGISTRATION_REQUIRED_SIGNATURES = [
     ("subscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
-    ("request_data", DATA_REQUEST_PARAMETERS),
-    ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
@@ -168,8 +180,10 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("subscribe_mark_prices", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_index_prices", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_funding_rates", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_option_greeks", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument_status", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument_close", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_option_chain", OPTION_CHAIN_SUBSCRIPTION_PARAMETERS),
     ("subscribe_order_fills", ORDER_SUBSCRIPTION_PARAMETERS),
     ("subscribe_order_cancels", ORDER_SUBSCRIPTION_PARAMETERS),
     ("subscribe_blocks", BLOCK_SUBSCRIPTION_PARAMETERS),
@@ -178,12 +192,7 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("subscribe_pool_liquidity_updates", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_pool_fee_collects", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_pool_flash_events", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
-    ("request_instrument", INSTRUMENT_REQUEST_PARAMETERS),
-    ("request_instruments", VENUE_REQUEST_PARAMETERS),
-    ("request_book_snapshot", BOOK_SNAPSHOT_REQUEST_PARAMETERS),
-    ("request_quotes", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
-    ("request_trades", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
-    ("request_bars", BAR_REQUEST_PARAMETERS),
+    ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_deltas", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -193,8 +202,11 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("unsubscribe_bars", BAR_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_mark_prices", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_index_prices", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_funding_rates", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_option_greeks", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument_status", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument_close", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_option_chain", OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS),
     ("unsubscribe_order_fills", ORDER_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_order_cancels", ORDER_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_blocks", BLOCK_SUBSCRIPTION_PARAMETERS),
@@ -203,7 +215,37 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("unsubscribe_pool_liquidity_updates", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_pool_fee_collects", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_pool_flash_events", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("request_data", DATA_REQUEST_PARAMETERS),
+    ("request_instrument", INSTRUMENT_REQUEST_PARAMETERS),
+    ("request_instruments", VENUE_REQUEST_PARAMETERS),
+    ("request_book_snapshot", BOOK_SNAPSHOT_REQUEST_PARAMETERS),
+    ("request_quotes", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
+    ("request_trades", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
+    ("request_funding_rates", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
+    ("request_bars", BAR_REQUEST_PARAMETERS),
 ]
+
+
+def _make_recording_method(method_name):
+    def method(self, *args):
+        self.calls.append((method_name, args))
+
+    return method
+
+
+def _create_recording_actor_type():
+    attrs = {}
+
+    for method_name in HOOK_METHODS:
+        attrs[method_name] = _make_recording_method(method_name)
+
+    for method_name, _sample_name in TYPED_CALLBACKS + HISTORICAL_CALLBACKS:
+        attrs[method_name] = _make_recording_method(method_name)
+
+    return type("RecordingActor", (TestActor,), attrs)
+
+
+RecordingActor = _create_recording_actor_type()
 
 
 def test_data_actor_pre_registration_surface(actor):
@@ -237,6 +279,13 @@ def test_data_actor_lifecycle_hooks_are_callable(actor, method_name):
     assert getattr(actor, method_name)() is None
 
 
+@pytest.mark.parametrize("method_name", HOOK_METHODS)
+def test_data_actor_overridden_lifecycle_hooks_are_called(recording_actor, method_name):
+    assert getattr(recording_actor, method_name)() is None
+
+    assert recording_actor.calls[-1] == (method_name, ())
+
+
 @pytest.mark.parametrize(("method_name", "sample_name"), TYPED_CALLBACKS)
 def test_data_actor_typed_callbacks_accept_runtime_objects(
     actor,
@@ -245,6 +294,23 @@ def test_data_actor_typed_callbacks_accept_runtime_objects(
     sample_name,
 ):
     assert getattr(actor, method_name)(sample_objects[sample_name]) is None
+
+
+@pytest.mark.parametrize(("method_name", "sample_name"), TYPED_CALLBACKS)
+def test_data_actor_overridden_typed_callbacks_receive_runtime_objects(
+    recording_actor,
+    sample_objects,
+    method_name,
+    sample_name,
+):
+    payload = sample_objects[sample_name]
+
+    assert getattr(recording_actor, method_name)(payload) is None
+
+    call_name, call_args = recording_actor.calls[-1]
+    assert call_name == method_name
+    assert call_args == (payload,)
+    assert call_args[0] is payload
 
 
 @pytest.mark.parametrize(("method_name", "sample_name"), HISTORICAL_CALLBACKS)
@@ -257,20 +323,21 @@ def test_data_actor_historical_callbacks_accept_runtime_objects(
     assert getattr(actor, method_name)(sample_objects[sample_name]) is None
 
 
-@pytest.mark.parametrize(
-    ("method_name", "pattern"),
-    [
-        ("on_time_event", "TimeEvent"),
-        ("on_block", "Block"),
-    ],
-)
-def test_data_actor_runtime_only_callbacks_reject_unavailable_public_types(
-    actor,
+@pytest.mark.parametrize(("method_name", "sample_name"), HISTORICAL_CALLBACKS)
+def test_data_actor_overridden_historical_callbacks_receive_runtime_objects(
+    recording_actor,
+    sample_objects,
     method_name,
-    pattern,
+    sample_name,
 ):
-    with pytest.raises(TypeError, match=pattern):
-        getattr(actor, method_name)(object())
+    payload = sample_objects[sample_name]
+
+    assert getattr(recording_actor, method_name)(payload) is None
+
+    call_name, call_args = recording_actor.calls[-1]
+    assert call_name == method_name
+    assert call_args == (payload,)
+    assert call_args[0] is payload
 
 
 def test_data_actor_shutdown_system_signature_exposes_optional_reason(actor):
@@ -303,6 +370,18 @@ def actor():
 
 
 @pytest.fixture
+def recording_actor():
+    config = TestActorConfig(
+        actor_id=ActorId("ACTOR-001"),
+        log_events=False,
+        log_commands=False,
+    )
+    actor = RecordingActor(config)
+    actor.calls = []
+    return actor
+
+
+@pytest.fixture
 def sample_objects():
     instrument = TestInstrumentProvider.audusd_sim()
     quote = _make_quote(instrument.id)
@@ -311,10 +390,17 @@ def sample_objects():
     book_deltas = _make_book_deltas(instrument.id)
     option_greeks = _make_option_greeks()
     option_chain = _make_option_chain()
+    time_event = TimeEvent("timer", UUID4(), 5, 6)
+    block = _make_block()
     pool = _make_pool()
+    custom_data = CustomData(DataType("X"), [1, 2], 3, 4)
+    mark_price = MarkPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
+    index_price = IndexPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
+    funding_rate = FundingRateUpdate(instrument.id, Decimal("0.0001"), 1, 2, interval=480)
 
     return {
-        "custom_data": CustomData(DataType("X"), [1, 2], 3, 4),
+        "time_event": time_event,
+        "custom_data": custom_data,
         "signal": Signal("sig", "value", 1, 2),
         "instrument": instrument,
         "quote": quote,
@@ -322,9 +408,9 @@ def sample_objects():
         "bar": bar,
         "book_deltas": book_deltas,
         "book": OrderBook(instrument.id, BookType.L2_MBP),
-        "mark_price": MarkPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2),
-        "index_price": IndexPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2),
-        "funding_rate": FundingRateUpdate(instrument.id, Decimal("0.0001"), 1, 2, interval=480),
+        "mark_price": mark_price,
+        "index_price": index_price,
+        "funding_rate": funding_rate,
         "instrument_status": InstrumentStatus(instrument.id, MarketStatusAction.TRADING, 1, 2),
         "instrument_close": InstrumentClose(
             instrument.id,
@@ -335,19 +421,19 @@ def sample_objects():
         ),
         "option_greeks": option_greeks,
         "option_chain": option_chain,
+        "block": block,
         "pool": pool,
         "pool_swap": _make_pool_swap(pool),
         "pool_liquidity_update": _make_pool_liquidity_update(pool),
         "pool_fee_collect": _make_pool_fee_collect(pool),
         "pool_flash": _make_pool_flash(pool),
-        "historical_data": [CustomData(DataType("X"), [1, 2], 3, 4)],
+        "historical_data": [custom_data],
         "historical_quotes": [quote],
         "historical_trades": [trade],
+        "historical_funding_rates": [funding_rate],
         "historical_bars": [bar],
-        "historical_mark_prices": [MarkPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)],
-        "historical_index_prices": [
-            IndexPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2),
-        ],
+        "historical_mark_prices": [mark_price],
+        "historical_index_prices": [index_price],
     }
 
 
@@ -419,6 +505,19 @@ def _make_option_greeks():
 def _make_option_chain():
     series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2024-03-29")
     return OptionChainSlice(series_id, Price.from_str("50000.0"), 5, 6)
+
+
+def _make_block():
+    return Block(
+        Blockchain.BASE,
+        "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        1,
+        "0x0000000000000000000000000000000000000001",
+        30_000_000,
+        15_000_000,
+        7,
+    )
 
 
 def _make_pool():

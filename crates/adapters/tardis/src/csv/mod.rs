@@ -47,8 +47,8 @@ use super::csv::record::{
     TardisBookUpdateRecord, TardisDerivativeTickerRecord, TardisQuoteRecord, TardisTradeRecord,
 };
 use crate::common::parse::{
-    parse_aggressor_side, parse_book_action, parse_instrument_id, parse_order_side, parse_price,
-    parse_timestamp,
+    derive_trade_id, parse_aggressor_side, parse_book_action, parse_instrument_id,
+    parse_order_side, parse_price, parse_timestamp,
 };
 
 fn infer_precision(value: f64) -> u8 {
@@ -273,9 +273,19 @@ fn parse_trade_record(
 
     let price = parse_price(data.price, price_precision);
     let aggressor_side = parse_aggressor_side(&data.side);
-    let trade_id = TradeId::new(&data.id);
     let ts_event = parse_timestamp(data.timestamp);
     let ts_init = parse_timestamp(data.local_timestamp);
+    let trade_id = if data.id.is_empty() {
+        derive_trade_id(
+            data.symbol,
+            ts_event.as_u64(),
+            data.price,
+            data.amount,
+            &data.side,
+        )
+    } else {
+        TradeId::new(&data.id)
+    };
 
     TradeTick::new(
         instrument_id,

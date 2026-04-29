@@ -15,7 +15,7 @@
 
 //! Example demonstrating live execution testing with the Binance Futures USD-M adapter.
 //!
-//! Run with: `cargo run --example binance-futures-exec-tester --package nautilus-binance`
+//! Run with: `cargo run --example binance-futures-exec-tester --package nautilus-binance --features examples`
 //!
 //! Requires environment variables (Ed25519 keys are auto-detected):
 //! - Demo: `BINANCE_DEMO_API_KEY` / `BINANCE_DEMO_API_SECRET`
@@ -33,6 +33,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
@@ -52,6 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         environment: BinanceEnvironment::Demo,
         api_key: None,
         api_secret: None,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -59,7 +61,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         account_id,
         product_types: vec![BinanceProductType::UsdM],
-        environment: BinanceEnvironment::Demo,
+        environment: BinanceEnvironment::Testnet,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

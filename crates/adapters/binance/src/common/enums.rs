@@ -664,6 +664,9 @@ pub enum BinanceWsEventType {
     /// Order/trade update event.
     #[serde(rename = "ORDER_TRADE_UPDATE")]
     OrderTradeUpdate,
+    /// Trade Lite event (low-latency fill notification).
+    #[serde(rename = "TRADE_LITE")]
+    TradeLite,
     /// Algo order update event (Binance Futures Algo Service).
     #[serde(rename = "ALGO_UPDATE")]
     AlgoUpdate,
@@ -698,6 +701,7 @@ impl BinanceWsEventType {
             Self::MiniTicker24Hr => "24hrMiniTicker",
             Self::AccountUpdate => "ACCOUNT_UPDATE",
             Self::OrderTradeUpdate => "ORDER_TRADE_UPDATE",
+            Self::TradeLite => "TRADE_LITE",
             Self::AlgoUpdate => "ALGO_UPDATE",
             Self::MarginCall => "MARGIN_CALL",
             Self::AccountConfigUpdate => "ACCOUNT_CONFIG_UPDATE",

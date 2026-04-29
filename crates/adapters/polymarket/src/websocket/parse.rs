@@ -15,19 +15,20 @@
 
 //! Parse functions for converting Polymarket WebSocket messages to Nautilus data types.
 
-use std::hash::{Hash, Hasher};
-
-use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
+use nautilus_core::{
+    UnixNanos,
+    correctness::{CorrectnessError, CorrectnessResult},
+    datetime::NANOSECONDS_IN_MILLISECOND,
+};
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{AggressorSide, BookAction, OrderSide, RecordFlag},
-    identifiers::{InstrumentId, TradeId},
+    identifiers::InstrumentId,
     types::{Price, Quantity},
 };
-use ustr::Ustr;
 
 use super::messages::{PolymarketBookSnapshot, PolymarketQuote, PolymarketQuotes, PolymarketTrade};
-use crate::common::enums::PolymarketOrderSide;
+use crate::common::{enums::PolymarketOrderSide, parse::determine_trade_id};
 
 /// Parses a millisecond epoch timestamp string into [`UnixNanos`].
 pub fn parse_timestamp_ms(ts: &str) -> anyhow::Result<UnixNanos> {
@@ -40,17 +41,21 @@ pub fn parse_timestamp_ms(ts: &str) -> anyhow::Result<UnixNanos> {
     Ok(UnixNanos::from(ns))
 }
 
-pub(crate) fn parse_price(s: &str, precision: u8) -> anyhow::Result<Price> {
+pub(crate) fn parse_price(s: &str, precision: u8) -> CorrectnessResult<Price> {
     let value: f64 = s
         .parse()
-        .map_err(|e| anyhow::anyhow!("Invalid price '{s}': {e}"))?;
+        .map_err(|e| CorrectnessError::PredicateViolation {
+            message: format!("Invalid price '{s}': {e}"),
+        })?;
     Price::new_checked(value, precision)
 }
 
-pub(crate) fn parse_quantity(s: &str, precision: u8) -> anyhow::Result<Quantity> {
+pub(crate) fn parse_quantity(s: &str, precision: u8) -> CorrectnessResult<Quantity> {
     let value: f64 = s
         .parse()
-        .map_err(|e| anyhow::anyhow!("Invalid quantity '{s}': {e}"))?;
+        .map_err(|e| CorrectnessError::PredicateViolation {
+            message: format!("Invalid quantity '{s}': {e}"),
+        })?;
     Quantity::new_checked(value, precision)
 }
 
@@ -74,6 +79,10 @@ pub fn parse_book_snapshot(
     let total = bids_len + asks_len;
     let mut deltas = Vec::with_capacity(total + 1);
 
+    // Every snapshot delta (including the opening CLEAR) carries F_SNAPSHOT so
+    // downstream consumers can recognise the rebuild; F_LAST closes the batch
+    // on the final delta. `OrderBookDelta::clear` already sets F_SNAPSHOT.
+    let snapshot_flag = RecordFlag::F_SNAPSHOT as u8;
     deltas.push(OrderBookDelta::clear(instrument_id, 0, ts_event, ts_init));
 
     let mut count = 0;
@@ -83,11 +92,12 @@ pub fn parse_book_snapshot(
         let price = parse_price(&level.price, price_precision)?;
         let size = parse_quantity(&level.size, size_precision)?;
         let order = BookOrder::new(OrderSide::Buy, price, size, 0);
-        let flags = if count == total {
-            RecordFlag::F_LAST as u8 | RecordFlag::F_SNAPSHOT as u8
-        } else {
-            0
-        };
+
+        let mut flags = snapshot_flag;
+        if count == total {
+            flags |= RecordFlag::F_LAST as u8;
+        }
+
         deltas.push(OrderBookDelta::new_checked(
             instrument_id,
             BookAction::Add,
@@ -104,11 +114,12 @@ pub fn parse_book_snapshot(
         let price = parse_price(&level.price, price_precision)?;
         let size = parse_quantity(&level.size, size_precision)?;
         let order = BookOrder::new(OrderSide::Sell, price, size, 0);
-        let flags = if count == total {
-            RecordFlag::F_LAST as u8 | RecordFlag::F_SNAPSHOT as u8
-        } else {
-            0
-        };
+
+        let mut flags = snapshot_flag;
+        if count == total {
+            flags |= RecordFlag::F_LAST as u8;
+        }
+
         deltas.push(OrderBookDelta::new_checked(
             instrument_id,
             BookAction::Add,
@@ -133,9 +144,10 @@ pub fn parse_book_deltas(
 ) -> anyhow::Result<OrderBookDeltas> {
     let ts_event = parse_timestamp_ms(&quotes.timestamp)?;
 
-    let mut deltas = Vec::with_capacity(quotes.price_changes.len());
+    let total = quotes.price_changes.len();
+    let mut deltas = Vec::with_capacity(total);
 
-    for change in &quotes.price_changes {
+    for (idx, change) in quotes.price_changes.iter().enumerate() {
         let price = parse_price(&change.price, price_precision)?;
         let size = parse_quantity(&change.size, size_precision)?;
         let side = match change.side {
@@ -150,7 +162,11 @@ pub fn parse_book_deltas(
         };
 
         let order = BookOrder::new(side, price, order_size, 0);
-        let flags = RecordFlag::F_LAST as u8;
+        let flags = if idx == total - 1 {
+            RecordFlag::F_LAST as u8
+        } else {
+            0
+        };
 
         deltas.push(OrderBookDelta::new_checked(
             instrument_id,
@@ -182,13 +198,13 @@ pub fn parse_trade_tick(
     };
     let ts_event = parse_timestamp_ms(&trade.timestamp)?;
 
-    // Deterministic trade ID from a hash of message fields (max 36 chars)
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    trade.asset_id.hash(&mut hasher);
-    trade.price.hash(&mut hasher);
-    trade.size.hash(&mut hasher);
-    trade.timestamp.hash(&mut hasher);
-    let trade_id = TradeId::new(Ustr::from(&format!("{:016x}", hasher.finish())));
+    let trade_id = determine_trade_id(
+        &trade.asset_id,
+        trade.side,
+        &trade.price,
+        &trade.size,
+        &trade.timestamp,
+    );
 
     TradeTick::new_checked(
         instrument_id,
@@ -355,10 +371,22 @@ mod tests {
         assert_eq!(deltas.deltas[4].action, BookAction::Add);
         assert_eq!(deltas.deltas[4].order.side, OrderSide::Sell);
 
-        // Last delta should have F_LAST | F_SNAPSHOT flags
-        let last = deltas.deltas.last().unwrap();
-        assert_ne!(last.flags & RecordFlag::F_LAST as u8, 0);
-        assert_ne!(last.flags & RecordFlag::F_SNAPSHOT as u8, 0);
+        // Every snapshot delta carries F_SNAPSHOT
+        for delta in &deltas.deltas {
+            assert_ne!(delta.flags & RecordFlag::F_SNAPSHOT as u8, 0);
+        }
+
+        // Exactly one delta carries F_LAST, and it must be the last one
+        let f_last_count = deltas
+            .deltas
+            .iter()
+            .filter(|d| d.flags & RecordFlag::F_LAST as u8 != 0)
+            .count();
+        assert_eq!(f_last_count, 1);
+        assert_ne!(
+            deltas.deltas.last().unwrap().flags & RecordFlag::F_LAST as u8,
+            0
+        );
     }
 
     #[rstest]
@@ -378,9 +406,17 @@ mod tests {
 
         assert_eq!(deltas.deltas.len(), 2);
 
-        for delta in &deltas.deltas {
-            assert_ne!(delta.flags & RecordFlag::F_LAST as u8, 0);
-        }
+        // Exactly one delta carries F_LAST, and it must be the last one
+        let f_last_count = deltas
+            .deltas
+            .iter()
+            .filter(|d| d.flags & RecordFlag::F_LAST as u8 != 0)
+            .count();
+        assert_eq!(f_last_count, 1);
+        assert_ne!(
+            deltas.deltas.last().unwrap().flags & RecordFlag::F_LAST as u8,
+            0
+        );
     }
 
     #[rstest]

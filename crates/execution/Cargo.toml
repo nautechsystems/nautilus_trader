@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_execution"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = []
@@ -37,6 +37,8 @@ python = [
   "pyo3",
   "pyo3-stub-gen",
 ]
+simulation = ["dep:madsim", "nautilus-core/simulation"]
+high-precision = ["nautilus-model/high-precision"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -52,8 +54,8 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
 chrono = { workspace = true }
-criterion = { workspace = true }
 futures = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }
@@ -63,5 +65,9 @@ serde = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
 
+madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

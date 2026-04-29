@@ -15,11 +15,6 @@
 
 //! Python bindings from `pyo3`.
 
-#![allow(
-    clippy::missing_errors_doc,
-    reason = "errors documented on underlying Rust methods"
-)]
-
 pub mod canceller;
 pub mod config;
 pub mod enums;
@@ -29,11 +24,9 @@ pub mod submitter;
 pub mod urls;
 pub mod websocket;
 
+use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use nautilus_system::{
-    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
-    get_global_pyo3_registry,
-};
+use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
@@ -41,7 +34,7 @@ use crate::{
     factories::{BitmexDataClientFactory, BitmexExecFactoryConfig, BitmexExecutionClientFactory},
 };
 
-#[allow(clippy::needless_pass_by_value)]
+#[expect(clippy::needless_pass_by_value)]
 fn extract_bitmex_data_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -54,7 +47,7 @@ fn extract_bitmex_data_factory(
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
+#[expect(clippy::needless_pass_by_value)]
 fn extract_bitmex_exec_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -67,7 +60,7 @@ fn extract_bitmex_exec_factory(
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
+#[expect(clippy::needless_pass_by_value)]
 fn extract_bitmex_data_config(
     py: Python<'_>,
     config: Py<PyAny>,
@@ -80,7 +73,7 @@ fn extract_bitmex_data_config(
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
+#[expect(clippy::needless_pass_by_value)]
 fn extract_bitmex_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
@@ -102,6 +95,7 @@ fn extract_bitmex_exec_config(
 pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("BITMEX_HTTP_URL", crate::common::consts::BITMEX_HTTP_URL)?;
     m.add("BITMEX_WS_URL", crate::common::consts::BITMEX_WS_URL)?;
+    m.add_class::<crate::common::enums::BitmexEnvironment>()?;
     m.add_class::<crate::http::client::BitmexHttpClient>()?;
     m.add_class::<crate::broadcast::canceller::CancelBroadcaster>()?;
     m.add_class::<crate::broadcast::submitter::SubmitBroadcaster>()?;

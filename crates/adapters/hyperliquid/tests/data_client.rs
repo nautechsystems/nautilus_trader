@@ -41,14 +41,15 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            RequestBookSnapshot, RequestInstrument, RequestInstruments, SubscribeBookDeltas,
-            SubscribeQuotes, SubscribeTrades,
+            RequestBookSnapshot, RequestFundingRates, RequestInstrument, RequestInstruments,
+            RequestTrades, SubscribeBookDeltas, SubscribeQuotes, SubscribeTrades,
         },
     },
     testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_hyperliquid::{
+    common::enums::HyperliquidEnvironment,
     config::HyperliquidDataClientConfig,
     data::HyperliquidDataClient,
     http::{
@@ -80,6 +81,21 @@ fn load_json(filename: &str) -> Value {
     let content = std::fs::read_to_string(data_path().join(filename))
         .unwrap_or_else(|_| panic!("failed to read {filename}"));
     serde_json::from_str(&content).expect("invalid json")
+}
+
+// Minimal spot meta fixture: one canonical USDC token + one canonical
+// PURR token, quoted pair PURR/USDC, so the instrument provider
+// bootstraps a `PURR-USDC-SPOT` CurrencyPair instrument.
+fn spot_meta_fixture() -> Value {
+    json!({
+        "tokens": [
+            {"name": "USDC", "szDecimals": 6, "weiDecimals": 6, "index": 0, "tokenId": "0x1", "isCanonical": true},
+            {"name": "PURR", "szDecimals": 0, "weiDecimals": 5, "index": 1, "tokenId": "0x2", "isCanonical": true},
+        ],
+        "universe": [
+            {"name": "PURR/USDC", "tokens": [1, 0], "index": 0, "isCanonical": true},
+        ]
+    })
 }
 
 async fn wait_for_server(addr: SocketAddr, path: &str) {
@@ -136,8 +152,9 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             let meta = load_json("http_meta_perp_sample.json");
             Json(json!([meta, []])).into_response()
         }
-        "spotMeta" => Json(json!({"universe": [], "tokens": []})).into_response(),
-        "spotMetaAndAssetCtxs" => Json(json!([{"universe": [], "tokens": []}, []])).into_response(),
+        "spotMeta" => Json(spot_meta_fixture()).into_response(),
+        "spotMetaAndAssetCtxs" => Json(json!([spot_meta_fixture(), []])).into_response(),
+        "fundingHistory" => Json(load_json("http_funding_history.json")).into_response(),
         "l2Book" => {
             let book = load_json("http_l2_book_btc.json");
             Json(book).into_response()
@@ -461,6 +478,8 @@ async fn handle_ws_socket(mut socket: WebSocket) {
                     }
                 }
             }
+            // Inner if consumes `data`, cannot hoist into a match guard
+            #[expect(clippy::collapsible_match)]
             Message::Ping(data) => {
                 if socket.send(Message::Pong(data)).await.is_err() {
                     break;
@@ -476,7 +495,7 @@ fn create_data_client_config(addr: SocketAddr) -> HyperliquidDataClientConfig {
     HyperliquidDataClientConfig {
         base_url_http: Some(format!("http://{addr}/info")),
         base_url_ws: Some(format!("ws://{addr}/ws")),
-        is_testnet: false,
+        environment: HyperliquidEnvironment::Mainnet,
         ..HyperliquidDataClientConfig::default()
     }
 }
@@ -513,6 +532,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     client.connect().await.unwrap();
 
     let mut instrument_count = 0;
+
     while let Ok(event) = rx.try_recv() {
         if matches!(event, DataEvent::Instrument(_)) {
             instrument_count += 1;
@@ -539,23 +559,28 @@ async fn test_data_client_emits_hip3_instruments() {
     let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
     client.connect().await.unwrap();
 
-    let mut standard_symbols = Vec::new();
+    let mut standard_perp_symbols = Vec::new();
     let mut hip3_symbols = Vec::new();
+    let mut spot_symbols = Vec::new();
 
     while let Ok(event) = rx.try_recv() {
         if let DataEvent::Instrument(instrument) = event {
             let symbol = instrument.id().symbol.to_string();
             if symbol.contains(':') {
                 hip3_symbols.push(symbol);
+            } else if symbol.ends_with("-SPOT") {
+                spot_symbols.push(symbol);
             } else {
-                standard_symbols.push(symbol);
+                standard_perp_symbols.push(symbol);
             }
         }
     }
 
-    // Mock returns 3 standard perps (BTC, ETH, ATOM) and 2 HIP-3 (xyz:TSLA, xyz:NVDA)
-    assert_eq!(standard_symbols.len(), 3);
+    // Mock returns 3 standard perps (BTC, ETH, ATOM), 2 HIP-3 (xyz:TSLA, xyz:NVDA),
+    // and 1 spot (PURR-USDC-SPOT).
+    assert_eq!(standard_perp_symbols.len(), 3);
     assert_eq!(hip3_symbols.len(), 2);
+    assert_eq!(spot_symbols.len(), 1);
     assert!(hip3_symbols.contains(&"xyz:TSLA-USD-PERP".to_string()));
     assert!(hip3_symbols.contains(&"xyz:NVDA-USD-PERP".to_string()));
 
@@ -587,7 +612,7 @@ async fn test_data_client_subscribe_trades() {
         None,
         None,
     );
-    client.subscribe_trades(&cmd).unwrap();
+    client.subscribe_trades(cmd).unwrap();
 
     // Drain until we get a trade (subscription is async via get_runtime)
     wait_until_async(
@@ -631,7 +656,7 @@ async fn test_data_client_subscribe_quotes() {
         None,
         None,
     );
-    client.subscribe_quotes(&cmd).unwrap();
+    client.subscribe_quotes(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
@@ -673,7 +698,7 @@ async fn test_data_client_subscribe_book_deltas() {
         None,
         None,
     );
-    client.subscribe_book_deltas(&cmd).unwrap();
+    client.subscribe_book_deltas(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
@@ -723,6 +748,7 @@ async fn test_data_client_request_instruments() {
 
     // Drain instrument events from connect
     tokio::time::sleep(Duration::from_millis(500)).await;
+
     while rx.try_recv().is_ok() {}
 
     let request = RequestInstruments::new(
@@ -763,6 +789,7 @@ async fn test_data_client_request_instrument() {
 
     // Drain instrument events from connect
     tokio::time::sleep(Duration::from_millis(500)).await;
+
     while rx.try_recv().is_ok() {}
 
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
@@ -804,6 +831,7 @@ async fn test_data_client_request_book_snapshot() {
 
     // Drain instrument events from connect
     tokio::time::sleep(Duration::from_millis(500)).await;
+
     while rx.try_recv().is_ok() {}
 
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
@@ -849,6 +877,7 @@ async fn test_data_client_request_book_snapshot_with_depth() {
 
     // Drain instrument events from connect
     tokio::time::sleep(Duration::from_millis(500)).await;
+
     while rx.try_recv().is_ok() {}
 
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
@@ -877,6 +906,134 @@ async fn test_data_client_request_book_snapshot_with_depth() {
             assert_eq!(ask_count, 2, "should have 2 ask levels with depth=2");
         }
         other => panic!("Expected Book response, was: {other:?}"),
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trades_returns_not_supported_error() {
+    // Hyperliquid has no public trade-tape REST endpoint; `request_trades`
+    // must bail explicitly so callers see an unambiguous error rather than
+    // a silent empty response.
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+
+    let cmd = RequestTrades::new(
+        InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
+        None,
+        None,
+        None,
+        Some(ClientId::new("HYPERLIQUID")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let result = client.request_trades(cmd);
+    let err = result.expect_err("request_trades should bail");
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("not supported"),
+        "error should explain why: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_funding_rates_non_perp_bails() {
+    // Spot instruments do not have funding rates. The guard inside
+    // `request_funding_rates` must reject them before any HTTP round-trip.
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    client.connect().await.unwrap();
+
+    let spot_id = InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID");
+    let cmd = RequestFundingRates::new(
+        spot_id,
+        None,
+        None,
+        None,
+        Some(ClientId::new("HYPERLIQUID")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let result = client.request_funding_rates(cmd);
+    let err = result.expect_err("non-perpetual instrument must bail");
+    assert!(
+        err.to_string().to_lowercase().contains("perpetual"),
+        "error should explain why: {err}",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_request_funding_rates_emits_data_response_from_mock() {
+    // End-to-end: mock serves the on-disk `http_funding_history.json` fixture
+    // (3 entries for BTC), the exec path parses it, and emits
+    // `DataResponse::FundingRates` with 3 `FundingRateUpdate`s back on the
+    // data event channel.
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    client.connect().await.unwrap();
+
+    // Drain instrument events emitted on connect.
+    while rx.try_recv().is_ok() {}
+
+    let perp_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let cmd = RequestFundingRates::new(
+        perp_id,
+        None,
+        None,
+        None,
+        Some(ClientId::new("HYPERLIQUID")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.request_funding_rates(cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for funding rates response")
+        .expect("channel closed");
+
+    match event {
+        DataEvent::Response(DataResponse::FundingRates(response)) => {
+            assert_eq!(response.instrument_id, perp_id);
+            assert_eq!(response.data.len(), 3, "fixture carries three entries");
+
+            let rates: Vec<_> = response.data.iter().map(|u| u.rate.to_string()).collect();
+            assert!(rates.contains(&"0.0000125".to_string()));
+            assert!(rates.contains(&"-0.0000081".to_string()));
+            assert!(rates.contains(&"0.0000033".to_string()));
+
+            for update in &response.data {
+                assert_eq!(update.interval, Some(60), "Hyperliquid funds hourly");
+                assert!(update.next_funding_ns.is_none());
+            }
+        }
+        other => panic!("expected FundingRates response, was: {other:?}"),
     }
 
     client.disconnect().await.unwrap();

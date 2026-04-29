@@ -114,15 +114,15 @@ impl ArcherMovingAveragesTrends {
     ) -> Self {
         assert!(
             fast_period > 0,
-            "fast_period must be positive (got {fast_period})"
+            "fast_period must be positive (received {fast_period})"
         );
         assert!(
             slow_period > 0,
-            "slow_period must be positive (got {slow_period})"
+            "slow_period must be positive (received {slow_period})"
         );
         assert!(
             signal_period > 0,
-            "signal_period must be positive (got {signal_period})"
+            "signal_period must be positive (received {signal_period})"
         );
         assert!(
             slow_period > fast_period,

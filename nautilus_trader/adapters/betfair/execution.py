@@ -858,6 +858,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.error(
                 f"Cannot submit order list: no instrument found for {command.instrument_id}",
             )
+
             for order in orders:
                 self._try_mark_terminal_order(order.client_order_id)
                 self.generate_order_denied(
@@ -875,6 +876,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     f"Cannot submit order list: order {order.client_order_id} "
                     f"has unsupported quote quantity",
                 )
+
                 for o in orders:
                     self._try_mark_terminal_order(o.client_order_id)
                     self.generate_order_denied(
@@ -1394,6 +1396,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         # Reject cancels without venue_order_id (e.g. cancel before acceptance)
         valid_cancels = []
+
         for cancel in cancels:
             if cancel.venue_order_id is None:
                 self._log.warning(
@@ -2143,6 +2146,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             for cid, ts in self._cache_filled_completed_ns.items()
             if (ts_now - ts) > BETFAIR_FILL_CACHE_TTL_NS
         ]
+
         for cid in expired:
             self._evict_fill_cache(cid)
 

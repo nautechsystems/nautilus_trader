@@ -54,16 +54,15 @@ use ustr::Ustr;
 use super::{
     error::AxHttpError,
     models::{
-        AuthenticateApiKeyRequest, AxAuthenticateResponse, AxBalancesResponse,
-        AxBatchCancelOrdersResponse, AxBookResponse, AxCancelAllOrdersResponse,
-        AxCancelOrderResponse, AxCandle, AxCandleResponse, AxCandlesResponse, AxFillsResponse,
-        AxFundingRatesResponse, AxInitialMarginRequirementResponse, AxInstrument,
-        AxInstrumentsResponse, AxOpenOrdersResponse, AxOrderStatusQueryResponse, AxOrdersResponse,
-        AxPlaceOrderResponse, AxPositionsResponse, AxPreviewAggressiveLimitOrderResponse,
-        AxReplaceOrderResponse, AxRiskSnapshotResponse, AxTicker, AxTickersResponse,
-        AxTradesResponse, AxTransactionsResponse, AxWhoAmI, BatchCancelOrdersRequest,
-        CancelAllOrdersRequest, CancelOrderRequest, PlaceOrderRequest,
-        PreviewAggressiveLimitOrderRequest, ReplaceOrderRequest,
+        AuthenticateApiKeyRequest, AxAuthenticateResponse, AxBalancesResponse, AxBookResponse,
+        AxCancelAllOrdersResponse, AxCancelOrderResponse, AxCandle, AxCandleResponse,
+        AxCandlesResponse, AxFillsResponse, AxFundingRatesResponse,
+        AxInitialMarginRequirementResponse, AxInstrument, AxInstrumentsResponse,
+        AxOpenOrdersResponse, AxOrderStatusQueryResponse, AxOrdersResponse, AxPlaceOrderResponse,
+        AxPositionsResponse, AxPreviewAggressiveLimitOrderResponse, AxReplaceOrderResponse,
+        AxRiskSnapshotResponse, AxTicker, AxTickersResponse, AxTradesResponse,
+        AxTransactionsResponse, AxWhoAmI, CancelAllOrdersRequest, CancelOrderRequest,
+        PlaceOrderRequest, PreviewAggressiveLimitOrderRequest, ReplaceOrderRequest,
     },
     parse::{
         parse_account_state, parse_bar, parse_fill_report, parse_funding_rate,
@@ -178,7 +177,6 @@ impl AxRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the retry manager cannot be created.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         base_url: Option<String>,
         orders_base_url: Option<String>,
@@ -225,7 +223,7 @@ impl AxRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be created.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
@@ -701,31 +699,6 @@ impl AxRawHttpClient {
         .await
     }
 
-    /// Cancels multiple orders by their IDs in a single batch request.
-    ///
-    /// # Endpoint
-    /// `POST /batch_cancel_orders` (orders base URL)
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the request fails or the response cannot be parsed.
-    pub async fn batch_cancel_orders(
-        &self,
-        request: &BatchCancelOrdersRequest,
-    ) -> Result<AxBatchCancelOrdersResponse, AxHttpError> {
-        let body = serde_json::to_vec(request)
-            .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
-        self.send_request_to_url::<AxBatchCancelOrdersResponse, ()>(
-            &self.orders_base_url,
-            Method::POST,
-            "/batch_cancel_orders",
-            None,
-            Some(body),
-            true,
-        )
-        .await
-    }
-
     /// Fetches all open orders.
     ///
     /// # Endpoint
@@ -1113,7 +1086,6 @@ impl AxHttpClient {
     /// # Errors
     ///
     /// Returns an error if the retry manager cannot be created.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         base_url: Option<String>,
         orders_base_url: Option<String>,
@@ -1144,7 +1116,7 @@ impl AxHttpClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be created.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
@@ -1599,7 +1571,7 @@ impl AxHttpClient {
     /// Returns an error if:
     /// - Neither `venue_order_id` nor `client_order_id` is provided.
     /// - The HTTP request fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn request_order_status(
         &self,
         account_id: AccountId,
@@ -1786,5 +1758,16 @@ impl AxHttpClient {
         }
 
         Ok(reports)
+    }
+
+    /// Cancels all open orders for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn cancel_all_orders(&self, instrument_id: InstrumentId) -> Result<(), AxHttpError> {
+        let request = CancelAllOrdersRequest::new().with_symbol(instrument_id.symbol.inner());
+        self.inner.cancel_all_orders(&request).await?;
+        Ok(())
     }
 }

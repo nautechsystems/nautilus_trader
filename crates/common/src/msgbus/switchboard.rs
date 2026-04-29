@@ -42,6 +42,7 @@ static RISK_QUEUE_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static RISK_PROCESS_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static ORDER_EMULATOR_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static PORTFOLIO_ACCOUNT_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static SHUTDOWN_SYSTEM_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
 
 macro_rules! define_switchboard {
     ($(
@@ -57,6 +58,8 @@ macro_rules! define_switchboard {
                 $field: AHashMap<$key_ty, MStr<Topic>>,
             )*
             instruments_patterns: AHashMap<Venue, MStr<Pattern>>,
+            signal_topics: AHashMap<String, MStr<Topic>>,
+            signal_patterns: AHashMap<String, MStr<Pattern>>,
             #[cfg(feature = "defi")]
             pub(crate) defi: crate::defi::switchboard::DefiSwitchboard,
         }
@@ -69,6 +72,8 @@ macro_rules! define_switchboard {
                         $field: AHashMap::new(),
                     )*
                     instruments_patterns: AHashMap::new(),
+                    signal_topics: AHashMap::new(),
+                    signal_patterns: AHashMap::new(),
                     #[cfg(feature = "defi")]
                     defi: crate::defi::switchboard::DefiSwitchboard::default(),
                 }
@@ -172,12 +177,63 @@ macro_rules! define_switchboard {
                 *PORTFOLIO_ACCOUNT_ENDPOINT.get_or_init(|| "Portfolio.update_account".into())
             }
 
+            /// Pub/sub topic carrying `ShutdownSystem` commands published by
+            /// actors, engines, and strategies.
+            ///
+            /// Matches the Python topic. The kernel subscribes to validate the
+            /// command and signal graceful shutdown; additional components may
+            /// subscribe to react to the same signal.
+            #[inline]
+            #[must_use]
+            pub fn shutdown_system_topic() -> MStr<Topic> {
+                *SHUTDOWN_SYSTEM_TOPIC.get_or_init(|| "commands.system.shutdown".into())
+            }
+
             /// Returns a wildcard pattern for matching all instrument topics for a venue.
             #[must_use]
             pub fn instruments_pattern(&mut self, venue: Venue) -> MStr<Pattern> {
                 *self.instruments_patterns
                     .entry(venue)
                     .or_insert_with(|| format!("data.instrument.{venue}.*").into())
+            }
+
+            /// Returns the exact signal publish topic for `name`
+            /// (`data.Signal<TitleName>`).
+            ///
+            /// The title-cased encoding mirrors the v1 Python convention so
+            /// subscribers keyed on either a specific name or the global
+            /// `data.Signal*` wildcard receive published signals.
+            #[must_use]
+            pub fn signal_topic(&mut self, name: &str) -> MStr<Topic> {
+                *self
+                    .signal_topics
+                    .entry(name.to_string())
+                    .or_insert_with(|| {
+                        format!(
+                            "data.Signal{}",
+                            nautilus_core::string::conversions::title_case(name)
+                        )
+                        .into()
+                    })
+            }
+
+            /// Returns the subscription pattern for `name`
+            /// (`data.Signal<TitleName>*`).
+            ///
+            /// An empty `name` yields the wildcard `data.Signal*` that matches
+            /// every signal topic.
+            #[must_use]
+            pub fn signal_pattern(&mut self, name: &str) -> MStr<Pattern> {
+                *self
+                    .signal_patterns
+                    .entry(name.to_string())
+                    .or_insert_with(|| {
+                        format!(
+                            "data.Signal{}*",
+                            nautilus_core::string::conversions::title_case(name)
+                        )
+                        .into()
+                    })
             }
 
             // Dynamic topics
@@ -340,6 +396,26 @@ pub fn get_instruments_pattern(venue: Venue) -> MStr<Pattern> {
         .borrow_mut()
         .switchboard
         .instruments_pattern(venue)
+}
+
+/// Returns the exact signal publish topic for `name` (`data.Signal<TitleName>`).
+#[must_use]
+pub fn get_signal_topic(name: &str) -> MStr<Topic> {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .signal_topic(name)
+}
+
+/// Returns the signal subscription pattern for `name` (`data.Signal<TitleName>*`).
+///
+/// An empty `name` yields the wildcard `data.Signal*` matching every signal topic.
+#[must_use]
+pub fn get_signal_pattern(name: &str) -> MStr<Pattern> {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .signal_pattern(name)
 }
 
 #[cfg(test)]

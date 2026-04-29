@@ -32,6 +32,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -870,6 +871,7 @@ class LiveExecutionEngine(ExecutionEngine):
         # Build mapping: instrument_id -> venue report
         venue_positions: dict[InstrumentId, PositionStatusReport] = {}
         failed_venues: set[Venue | None] = set()
+
         for client, reports_or_exception in zip(clients, position_reports_all, strict=True):
             if isinstance(reports_or_exception, Exception):
                 failed_venues.add(client.venue)
@@ -1191,6 +1193,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         venue_fills: list[FillReport] = []
         had_fill_query_errors = False
+
         for fills_or_exception in fill_reports_all:
             if isinstance(fills_or_exception, Exception):
                 had_fill_query_errors = True
@@ -1203,6 +1206,7 @@ class LiveExecutionEngine(ExecutionEngine):
             venue_fills.extend(fills)
 
         cached_fill_trade_ids: set[TradeId] = set()
+
         for order in self._cache.orders(instrument_id=instrument_id):
             for event in order.events:
                 if isinstance(event, OrderFilled):
@@ -1257,6 +1261,7 @@ class LiveExecutionEngine(ExecutionEngine):
             for trade_id, ts_cached in self._recent_fills_cache.items()
             if ts_now - ts_cached > ttl_ns
         ]
+
         for trade_id in expired_trade_ids:
             self._recent_fills_cache.pop(trade_id, None)
 
@@ -1755,6 +1760,7 @@ class LiveExecutionEngine(ExecutionEngine):
                     self._log.info(f"Awaiting {len(report_tasks)} position reports for {client_id}")
 
                     position_results: list[bool] = []
+
                     for task_result_or_exception in await asyncio.gather(
                         *report_tasks,
                         return_exceptions=True,
@@ -1935,6 +1941,7 @@ class LiveExecutionEngine(ExecutionEngine):
         final_fills = dict(mass_status._fill_reports)
 
         reconciliation_instruments: list[Instrument] = []
+
         for instrument_id, position_reports in mass_status.position_reports.items():
             # Skip hedge mode instruments (have venue_position_id) as partial-window
             # adjustment assumes a single net position per instrument
@@ -2632,7 +2639,17 @@ class LiveExecutionEngine(ExecutionEngine):
                 close_report = OrderStatusReport(
                     instrument_id=report.instrument_id,
                     account_id=report.account_id,
-                    venue_order_id=VenueOrderId(str(UUID4())),
+                    venue_order_id=self._create_synthetic_reconciliation_venue_order_id(
+                        account_id=report.account_id,
+                        instrument_id=report.instrument_id,
+                        order_side=close_side,
+                        order_type=OrderType.LIMIT,
+                        quantity=close_quantity,
+                        price=close_price,
+                        venue_position_id=report.venue_position_id,
+                        ts_last=report.ts_last,
+                        tag="CLOSE",
+                    ),
                     venue_position_id=report.venue_position_id,
                     order_side=close_side,
                     order_type=OrderType.LIMIT,
@@ -2725,7 +2742,17 @@ class LiveExecutionEngine(ExecutionEngine):
                 open_report = OrderStatusReport(
                     instrument_id=report.instrument_id,
                     account_id=report.account_id,
-                    venue_order_id=VenueOrderId(str(UUID4())),
+                    venue_order_id=self._create_synthetic_reconciliation_venue_order_id(
+                        account_id=report.account_id,
+                        instrument_id=report.instrument_id,
+                        order_side=open_side,
+                        order_type=OrderType.LIMIT,
+                        quantity=open_quantity,
+                        price=open_price,
+                        venue_position_id=report.venue_position_id,
+                        ts_last=report.ts_last,
+                        tag="OPEN",
+                    ),
                     venue_position_id=report.venue_position_id,
                     order_side=open_side,
                     order_type=OrderType.LIMIT,
@@ -2840,7 +2867,16 @@ class LiveExecutionEngine(ExecutionEngine):
                 return OrderStatusReport(
                     instrument_id=report.instrument_id,
                     account_id=report.account_id,
-                    venue_order_id=VenueOrderId(str(UUID4())),
+                    venue_order_id=self._create_synthetic_reconciliation_venue_order_id(
+                        account_id=report.account_id,
+                        instrument_id=report.instrument_id,
+                        order_side=order_side,
+                        order_type=OrderType.LIMIT,
+                        quantity=diff_quantity,
+                        price=reconciliation_price,
+                        venue_position_id=report.venue_position_id,
+                        ts_last=report.ts_last,
+                    ),
                     venue_position_id=report.venue_position_id,
                     order_side=order_side,
                     order_type=OrderType.LIMIT,
@@ -2897,7 +2933,16 @@ class LiveExecutionEngine(ExecutionEngine):
                 return OrderStatusReport(
                     instrument_id=report.instrument_id,
                     account_id=report.account_id,
-                    venue_order_id=VenueOrderId(str(UUID4())),
+                    venue_order_id=self._create_synthetic_reconciliation_venue_order_id(
+                        account_id=report.account_id,
+                        instrument_id=report.instrument_id,
+                        order_side=order_side,
+                        order_type=OrderType.MARKET,
+                        quantity=diff_quantity,
+                        price=None,
+                        venue_position_id=report.venue_position_id,
+                        ts_last=report.ts_last,
+                    ),
                     venue_position_id=report.venue_position_id,
                     order_side=order_side,
                     order_type=OrderType.MARKET,
@@ -2911,6 +2956,31 @@ class LiveExecutionEngine(ExecutionEngine):
                     ts_last=now,
                     ts_init=now,
                 )
+
+    def _create_synthetic_reconciliation_venue_order_id(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        price: Price | None,
+        venue_position_id: PositionId | None,
+        ts_last: int,
+        tag: str | None = None,
+    ) -> VenueOrderId:
+        pyo3_venue_order_id = nautilus_pyo3.create_position_reconciliation_venue_order_id(
+            nautilus_pyo3.AccountId(account_id.value),
+            nautilus_pyo3.InstrumentId.from_str(instrument_id.value),
+            nautilus_pyo3.OrderSide(order_side.name),
+            nautilus_pyo3.OrderType(order_type.name),
+            nautilus_pyo3.Quantity.from_str(str(quantity)),
+            nautilus_pyo3.Price.from_str(str(price)) if price else None,
+            nautilus_pyo3.PositionId(venue_position_id.value) if venue_position_id else None,
+            ts_last,
+            tag,
+        )
+        return VenueOrderId(pyo3_venue_order_id.value)
 
     def _reconcile_order_report(
         self,
@@ -3360,11 +3430,20 @@ class LiveExecutionEngine(ExecutionEngine):
         report: OrderStatusReport,
         instrument: Instrument,
     ) -> OrderFilled:
+        client = None
+        client_id = self._cache.client_id(order.client_order_id)
+        if client_id is not None:
+            client = self._clients.get(client_id)
+
+        if client is None:
+            client = self._routing_map.get(instrument.id.venue, self._default_client)
+
         filled = create_inferred_order_filled_event(
             order=order,
             ts_now=self._clock.timestamp_ns(),
             report=report,
             instrument=instrument,
+            client=client,
         )
         self._log.info(f"Generated inferred {filled}", LogColor.BLUE)
 
@@ -3505,6 +3584,17 @@ class LiveExecutionEngine(ExecutionEngine):
         self._handle_event_with_tracking(accepted)
 
     def _generate_order_triggered(self, order: Order, report: OrderStatusReport) -> None:
+        if order.order_type not in (
+            OrderType.STOP_LIMIT,
+            OrderType.TRAILING_STOP_LIMIT,
+            OrderType.LIMIT_IF_TOUCHED,
+        ):
+            self._log.debug(
+                f"Skipping OrderTriggered for {order.type_string()} order "
+                f"{order.client_order_id!r}: market-style stops have no TRIGGERED state",
+            )
+            return
+
         triggered = create_order_triggered_event(
             trader_id=self.trader_id,
             order=order,

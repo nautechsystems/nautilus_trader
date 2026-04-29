@@ -19,9 +19,19 @@ use nautilus_model::{
     enums::{BarAggregation, BarIntervalType},
     identifiers::ClientId,
 };
+use serde::{Deserialize, Serialize};
 
 /// Configuration for `DataEngine` instances.
-#[derive(Clone, Debug, bon::Builder)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.data", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.data")
+)]
+#[derive(Clone, Debug, Deserialize, Serialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 pub struct DataEngineConfig {
     /// If time bar aggregators will build and emit bars with no new market updates.
     #[builder(default = true)]
@@ -50,42 +60,18 @@ pub struct DataEngineConfig {
     /// If order book deltas should be buffered until the `F_LAST` flag is set for a delta.
     #[builder(default)]
     pub buffer_deltas: bool,
+    /// If quotes should be emitted on order book updates.
+    #[builder(default)]
+    pub emit_quotes_from_book: bool,
+    /// If quotes should be emitted on order book depth updates.
+    #[builder(default)]
+    pub emit_quotes_from_book_depths: bool,
     /// The client IDs declared for external stream processing.
     /// The data engine will not attempt to send data commands to these client IDs.
     pub external_clients: Option<Vec<ClientId>>,
     /// If debug mode is active (will provide extra debug logging).
     #[builder(default)]
     pub debug: bool,
-}
-
-impl DataEngineConfig {
-    #[allow(clippy::too_many_arguments)]
-    #[must_use]
-    pub const fn new(
-        time_bars_build_with_no_updates: bool,
-        time_bars_timestamp_on_close: bool,
-        time_bars_interval_type: BarIntervalType,
-        time_bars_skip_first_non_full_bar: bool,
-        time_bars_build_delay: u64,
-        time_bars_origins: HashMap<BarAggregation, Duration>,
-        validate_data_sequence: bool,
-        buffer_deltas: bool,
-        external_clients: Option<Vec<ClientId>>,
-        debug: bool,
-    ) -> Self {
-        Self {
-            time_bars_build_with_no_updates,
-            time_bars_timestamp_on_close,
-            time_bars_skip_first_non_full_bar,
-            time_bars_interval_type,
-            time_bars_build_delay,
-            time_bars_origins,
-            validate_data_sequence,
-            buffer_deltas,
-            external_clients,
-            debug,
-        }
-    }
 }
 
 impl Default for DataEngineConfig {

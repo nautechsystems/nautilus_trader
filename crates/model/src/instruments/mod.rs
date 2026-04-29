@@ -43,8 +43,10 @@ use std::{fmt::Display, str::FromStr};
 use enum_dispatch::enum_dispatch;
 use nautilus_core::{
     UnixNanos,
-    correctness::{check_equal_u8, check_positive_decimal, check_predicate_true},
-    parsing::min_increment_precision_from_str,
+    correctness::{
+        CorrectnessResult, check_equal_u8, check_positive_decimal, check_predicate_true,
+    },
+    string::parsing::min_increment_precision_from_str,
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
@@ -80,7 +82,7 @@ use crate::{
     },
 };
 
-#[allow(clippy::missing_errors_doc, clippy::too_many_arguments)]
+#[expect(clippy::missing_errors_doc, clippy::too_many_arguments)]
 pub fn validate_instrument_common(
     price_precision: u8,
     size_precision: u8,
@@ -96,7 +98,7 @@ pub fn validate_instrument_common(
     min_notional: Option<Money>,
     max_price: Option<Price>,
     min_price: Option<Price>,
-) -> anyhow::Result<()> {
+) -> CorrectnessResult<()> {
     check_positive_quantity(size_increment, "size_increment")?;
     check_equal_u8(
         size_increment.precision,
@@ -255,12 +257,12 @@ pub trait Instrument: 'static + Send {
     fn ts_event(&self) -> UnixNanos;
     fn ts_init(&self) -> UnixNanos;
 
-    fn _min_price_increment_precision(&self) -> u8 {
+    fn min_price_increment_precision(&self) -> u8 {
         // TODO: Optimize by storing min price increment precision (without trailing zeros)
         min_increment_precision_from_str(&self.price_increment().to_string())
     }
 
-    fn _min_size_increment_precision(&self) -> u8 {
+    fn min_size_increment_precision(&self) -> u8 {
         // TODO: Optimize by storing min size increment precision (without trailing zeros)
         min_increment_precision_from_str(&self.size_increment().to_string())
     }
@@ -272,10 +274,10 @@ pub trait Instrument: 'static + Send {
     fn try_make_price(&self, value: f64) -> anyhow::Result<Price> {
         let dec_value = Decimal::from_str(&value.to_string())
             .map_err(|_| anyhow::anyhow!("non-finite value passed to make_price"))?;
-        let precision = self._min_price_increment_precision() as u32;
+        let precision = u32::from(self.min_price_increment_precision());
         let rounded_decimal =
             dec_value.round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
-        Price::from_decimal_dp(rounded_decimal, self.price_precision())
+        Price::from_decimal_dp(rounded_decimal, self.price_precision()).map_err(Into::into)
     }
 
     fn make_price(&self, value: f64) -> Price {
@@ -289,7 +291,7 @@ pub trait Instrument: 'static + Send {
     fn try_make_qty(&self, value: f64, round_down: Option<bool>) -> anyhow::Result<Quantity> {
         let dec_value = Decimal::from_str(&value.to_string())
             .map_err(|_| anyhow::anyhow!("non-finite value passed to make_qty"))?;
-        let precision = self._min_size_increment_precision() as u32;
+        let precision = u32::from(self.min_size_increment_precision());
         let strategy = if round_down.unwrap_or(false) {
             RoundingStrategy::ToZero
         } else {
@@ -299,7 +301,7 @@ pub trait Instrument: 'static + Send {
         if dec_value > Decimal::ZERO && rounded.is_zero() {
             anyhow::bail!("value rounded to zero for quantity");
         }
-        Quantity::from_decimal_dp(rounded, self.size_precision())
+        Quantity::from_decimal_dp(rounded, self.size_precision()).map_err(Into::into)
     }
 
     fn make_qty(&self, value: f64, round_down: Option<bool>) -> Quantity {
@@ -314,10 +316,10 @@ pub trait Instrument: 'static + Send {
         quantity: Quantity,
         last_price: Price,
     ) -> anyhow::Result<Quantity> {
-        let precision = self._min_size_increment_precision() as u32;
+        let precision = u32::from(self.min_size_increment_precision());
         let value = (quantity.as_decimal() / last_price.as_decimal())
             .round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
-        Quantity::from_decimal_dp(value, self.size_precision())
+        Quantity::from_decimal_dp(value, self.size_precision()).map_err(Into::into)
     }
 
     fn calculate_base_quantity(&self, quantity: Quantity, last_price: Price) -> Quantity {
@@ -462,6 +464,7 @@ price_increment={}, size_increment={}, multiplier={}, margin_init={}, margin_mai
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::correctness::{CorrectnessResultExt, FAILED};
     use proptest::prelude::*;
     use rstest::rstest;
     use rust_decimal::{Decimal, prelude::*};
@@ -470,7 +473,7 @@ mod tests {
     use crate::{instruments::stubs::*, types::Money};
 
     pub fn default_price_increment(precision: u8) -> Price {
-        let step = 10f64.powi(-(precision as i32));
+        let step = 10f64.powi(-i32::from(precision));
         Price::new(step, precision)
     }
 
@@ -493,7 +496,7 @@ mod tests {
     #[case(Price::new(0.001, 3), 3)] // 0.001 -> precision 3
     fn test_min_increment_precision(#[case] price: Price, #[case] expected: u8) {
         assert_eq!(
-            nautilus_core::parsing::min_increment_precision_from_str(&price.to_string()),
+            nautilus_core::string::parsing::min_increment_precision_from_str(&price.to_string()),
             expected
         );
     }
@@ -501,9 +504,9 @@ mod tests {
     #[rstest]
     #[case(1.5, "1.500000")]
     #[case(2.5, "2.500000")]
-    #[case(1.2345678, "1.234568")]
-    #[case(0.000123, "0.000123")]
-    #[case(99999.999999, "99999.999999")]
+    #[case(1.234_567_8, "1.234568")]
+    #[case(0.000_123, "0.000123")]
+    #[case(99_999.999_999, "99999.999999")]
     fn make_qty_rounding(
         currency_pair_btcusdt: CurrencyPair,
         #[case] input: f64,
@@ -516,10 +519,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case(1.2345678, "1.234567")]
-    #[case(1.9999999, "1.999999")]
-    #[case(0.00012345, "0.000123")]
-    #[case(10.9999999, "10.999999")]
+    #[case(1.234_567_8, "1.234567")]
+    #[case(1.999_999_9, "1.999999")]
+    #[case(0.000_123_45, "0.000123")]
+    #[case(10.999_999_9, "10.999999")]
     fn make_qty_round_down(
         currency_pair_btcusdt: CurrencyPair,
         #[case] input: f64,
@@ -534,8 +537,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(1.2345678, "1.23457")]
-    #[case(2.3456781, "2.34568")]
+    #[case(1.234_567_8, "1.23457")]
+    #[case(2.345_678_1, "2.34568")]
     #[case(0.00001, "0.00001")]
     fn make_qty_precision(
         currency_pair_ethusdt: CurrencyPair,
@@ -549,8 +552,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(1.2345675, "1.234568")]
-    #[case(1.2345665, "1.234566")]
+    #[case(1.234_567_5, "1.234568")]
+    #[case(1.234_566_5, "1.234566")]
     fn make_qty_half_even(
         currency_pair_btcusdt: CurrencyPair,
         #[case] input: f64,
@@ -563,7 +566,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "value rounded to zero")]
     fn make_qty_rounds_to_zero(currency_pair_btcusdt: CurrencyPair) {
         currency_pair_btcusdt.make_qty(1e-12, None);
     }
@@ -589,7 +592,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_negative_margin_init() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
@@ -610,11 +613,11 @@ mod tests {
             None,           // max_price
             None,           // min_price
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "'margin_maint' not positive")]
     fn validate_negative_margin_maint() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
@@ -635,11 +638,11 @@ mod tests {
             None,           // max_price
             None,           // min_price
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_negative_max_qty() {
         let quantity = Quantity::new(0.0, 0);
         validate_instrument_common(
@@ -658,7 +661,7 @@ mod tests {
             None,
             None,
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
@@ -696,7 +699,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_price_increment_precision_mismatch() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
@@ -717,11 +720,11 @@ mod tests {
             None,
             None,
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_min_price_exceeds_max_price() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
@@ -743,7 +746,7 @@ mod tests {
             Some(max_price),
             Some(min_price),
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
@@ -768,7 +771,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "not in range")]
     fn validate_multiple_errors() {
         validate_instrument_common(
             2,
@@ -786,7 +789,7 @@ mod tests {
             None,
             None,
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
@@ -819,9 +822,9 @@ mod tests {
     fn make_price_half_even_parity(currency_pair_btcusdt: CurrencyPair) {
         let rounding_precision = std::cmp::min(
             currency_pair_btcusdt.price_precision(),
-            currency_pair_btcusdt._min_price_increment_precision(),
+            currency_pair_btcusdt.min_price_increment_precision(),
         );
-        let step = 10f64.powi(-(rounding_precision as i32));
+        let step = 10f64.powi(-i32::from(rounding_precision));
         let base_even_multiple = 42.0;
         let base_value = step * base_even_multiple;
         let delta = step / 2000.0;
@@ -871,7 +874,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_non_positive_max_price() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
@@ -892,11 +895,11 @@ mod tests {
             Some(max_price),
             None,
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_non_positive_max_notional(currency_pair_btcusdt: CurrencyPair) {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
@@ -917,11 +920,11 @@ mod tests {
             None,
             None,
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_price_increment_min_price_precision_mismatch() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
@@ -943,11 +946,11 @@ mod tests {
             None,
             Some(min_price),
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_negative_min_notional(currency_pair_btcusdt: CurrencyPair) {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
@@ -969,7 +972,7 @@ mod tests {
             None,
             None,
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
@@ -1142,14 +1145,14 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "NotPositive")]
     fn check_positive_money_zero(currency_pair_btcusdt: CurrencyPair) {
         let money = Money::new(0.0, currency_pair_btcusdt.quote_currency());
         check_positive_money(money, "money").unwrap();
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "NotPositive")]
     fn check_positive_money_negative(currency_pair_btcusdt: CurrencyPair) {
         let money = Money::new(-0.01, currency_pair_btcusdt.quote_currency());
         check_positive_money(money, "money").unwrap();
@@ -1186,7 +1189,7 @@ mod tests {
         );
 
         // Verify min_increment_precision is 1 (ignoring trailing zero)
-        assert_eq!(instrument._min_price_increment_precision(), 1);
+        assert_eq!(instrument.min_price_increment_precision(), 1);
 
         // Test that make_price rounds to min_increment_precision (1)
         // 1.234 should round to 1.2 (not 1.23)
@@ -1235,7 +1238,7 @@ mod tests {
         );
 
         // Verify min_increment_precision is 1 (ignoring trailing zero)
-        assert_eq!(instrument._min_size_increment_precision(), 1);
+        assert_eq!(instrument.min_size_increment_precision(), 1);
 
         // Test that make_qty rounds to min_increment_precision (1)
         // 1.234 should round to 1.2 (not 1.23)

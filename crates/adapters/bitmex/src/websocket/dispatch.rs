@@ -206,7 +206,7 @@ impl WsDispatchState {
 }
 
 /// Top-level dispatch for all BitMEX WebSocket messages on the execution stream.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn dispatch_ws_message(
     ts_init: UnixNanos,
     message: BitmexWsMessage,
@@ -265,6 +265,7 @@ pub fn dispatch_ws_message(
             }
             BitmexTableMessage::Margin { data, .. } => {
                 state.margin_subscribed.store(true, Ordering::Relaxed);
+
                 for margin_msg in data {
                     let acct_state = parse_margin_account_state(&margin_msg, ts_init);
                     emitter.send_account_state(acct_state);
@@ -322,7 +323,7 @@ pub fn dispatch_ws_message(
 
 /// Dispatches order messages, routing tracked orders to events and untracked
 /// orders to reports.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn dispatch_order_messages(
     data: Vec<OrderData>,
     emitter: &ExecutionEventEmitter,
@@ -605,7 +606,7 @@ fn dispatch_execution_messages(
 ///
 /// Guarantees the `Submitted -> Accepted -> ...` lifecycle by synthesizing
 /// `OrderAccepted` before any other event when one has not yet been emitted.
-#[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+#[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
 fn dispatch_parsed_order_event(
     event: ParsedOrderEvent,
     client_order_id: ClientOrderId,

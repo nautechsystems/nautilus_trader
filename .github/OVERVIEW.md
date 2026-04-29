@@ -9,7 +9,7 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 ## Composite actions (`.github/actions`)
 
 - **cargo-tool-install**: installs cargo tools (cargo-deny, cargo-vet) with caching.
-- **common-setup**: prepares the environment (OS packages, Rust toolchain, Rust cache, Python, pre-commit, swap space).
+- **common-setup**: prepares the environment (OS packages, Rust toolchain, Rust cache, Python, prek, swap space).
 - **common-test-data**: caches large test data under `tests/test_data/large`.
 - **common-wheel-build**: builds and installs Python wheels across Linux, macOS, and Windows for multiple Python versions.
 - **install-capnp**: installs the Cap'n Proto compiler with caching across Linux, macOS, and Windows.
@@ -24,11 +24,11 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
 - **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs and via cron.
 - **copilot-setup-steps.yml**: environment setup for GitHub Copilot coding agent.
-- **coverage.yml**: coverage report generation for the `nightly` branch.
+- **coverage.yml**: coverage report generation, currently paused and runs only on `workflow_dispatch`.
 - **docker.yml**: builds and pushes multi-platform Docker images (`nautilus_trader`, `jupyterlab`) using Buildx and native ARM runners.
 - **nightly-docs-features-check.yml**: nightly docs.rs build checks and crate feature compatibility verification.
 - **nightly-merge.yml**: auto-merges `develop` into `nightly` when CI succeeds.
-- **nightly-tests.yml**: extended test suites (turmoil network tests) that are too slow for PR builds.
+- **nightly-tests.yml**: extended test suites too slow for PR builds - turmoil network tests plus macOS, Windows, and Linux ARM build-and-test jobs that run daily at 12:00 UTC to give early visibility on develop before `nightly-merge` at 14:00 UTC.
 - **performance.yml**: Rust/Python benchmarks on `nightly`, reporting to CodSpeed.
 - **security-audit.yml**: nightly supply chain security checks (cargo-audit, cargo-deny, cargo-vet, osv-scanner).
 - **trigger-reindexing.yml**: triggers documentation reindexing for search.
@@ -45,7 +45,7 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 ### Dependency security
 
 - **cargo-deny**: Rust dependency auditing for security advisories (RUSTSEC/GHSA), license compliance, banned crates, and supply chain integrity. Configuration in `deny.toml`.
-- **Dependency pinning**: Key tools (pre-commit, Python versions, Rust toolchain, cargo-nextest, uv) are locked to fixed versions or SHAs. The uv version is pinned via `required-version` in `pyproject.toml` and extracted by `scripts/uv-version.sh` for CI, Docker, and local builds.
+- **Dependency pinning**: Key tools (prek, Python versions, Rust toolchain, cargo-nextest, uv) are locked to fixed versions or SHAs. The uv version is pinned via `required-version` in `pyproject.toml` and extracted by `scripts/uv-version.sh` for CI, Docker, and local builds.
 - **Dependency cooldown**: Python dependency resolution excludes packages published within the last 3 days (`exclude-newer = "3 days"` in `[tool.uv]`). This gives the community time to detect and quarantine compromised releases before they enter the lockfile.
 - **Code scanning**: CodeQL is enabled for continuous security analysis of Python and Rust code on all PRs and weekly via cron.
 
@@ -54,7 +54,7 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **Build attestations**: All published artifacts include cryptographic SLSA build provenance attestations, linking each artifact to a specific commit SHA. Verify via `gh attestation verify`.
 - **Immutable action pinning**: All third-party GitHub Actions are pinned to specific commit SHAs.
 - **Docker image pinning**: Base images in Dockerfiles and service containers in workflows are pinned to SHA256 digests to prevent supply-chain attacks via tag mutation.
-- **Caching**: Rust target directory cache (`Swatinem/rust-cache`), pip/site-packages, pre-commit, and test data caches speed up workflows while preserving hermetic (reproducible) builds. Rust cache saves are restricted to push events to prevent PR cache pollution.
+- **Caching**: Rust target directory cache (`Swatinem/rust-cache`), prek hook environments, and test data caches speed up workflows while preserving hermetic (reproducible) builds. Rust cache saves are restricted to push events to prevent PR cache pollution.
 - **Concurrency**: PR CI runs are cancelled when a new push arrives to the same PR. Push events to mainline branches are never cancelled.
 - **Runners**: Linux and Windows builds use Depot 8-core runners (32 GB RAM, 150 GB SSD). macOS builds use GitHub free runners. Lightweight jobs (plan, cargo-deny, cargo-vet, publish) use GitHub free runners. Custom runner labels are declared in `.github/actionlint.yaml`.
 

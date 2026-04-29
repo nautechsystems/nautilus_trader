@@ -93,6 +93,10 @@ mod encryption {
             },
         };
 
+        #[expect(
+            clippy::unused_async,
+            reason = "signature mirrors the rustls variant which is genuinely async"
+        )]
         pub async fn wrap_stream<S>(socket: S, mode: Mode) -> Result<MaybeTlsStream<S>, Error>
         where
             S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
@@ -133,7 +137,6 @@ where
 /// # Errors
 ///
 /// Returns an error if the request URI has no host component.
-#[allow(clippy::result_large_err)]
 fn domain(request: &Request) -> Result<String, Error> {
     match request.uri().host() {
         // rustls expects IPv6 addresses without the surrounding [] brackets
@@ -190,6 +193,7 @@ pub fn create_tls_config_from_certs_dir(
         && !all_certs.is_empty()
     {
         let mut matched = None;
+
         for i in 0..all_certs.len() {
             let test_config = rustls::ClientConfig::builder()
                 .with_root_certificates(rustls::RootCertStore::empty())

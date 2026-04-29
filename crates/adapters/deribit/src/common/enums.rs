@@ -238,6 +238,46 @@ impl TryFrom<TimeInForce> for DeribitTimeInForce {
     }
 }
 
+/// Deribit API environment.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    StrumDisplay,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(ascii_case_insensitive, serialize_all = "lowercase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        module = "nautilus_trader.core.nautilus_pyo3.deribit",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.deribit")
+)]
+pub enum DeribitEnvironment {
+    /// Live trading environment.
+    #[default]
+    Mainnet,
+    /// Testnet environment.
+    Testnet,
+}
+
 /// Resolves an optional Nautilus trigger type to a Deribit trigger string.
 pub fn resolve_trigger_type(trigger_type: Option<TriggerType>) -> Option<String> {
     trigger_type.and_then(|tt| match tt {

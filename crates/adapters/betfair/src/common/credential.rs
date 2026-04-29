@@ -17,7 +17,7 @@
 
 use std::fmt::Debug;
 
-use nautilus_core::string::REDACTED;
+use nautilus_core::string::secret::REDACTED;
 use thiserror::Error;
 use zeroize::ZeroizeOnDrop;
 

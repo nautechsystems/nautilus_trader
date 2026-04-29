@@ -57,7 +57,7 @@ impl SortinoRatio {
     }
 
     #[pyo3(name = "calculate_from_returns")]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_calculate_from_returns(&mut self, raw_returns: BTreeMap<u64, f64>) -> Option<f64> {
         self.calculate_from_returns(&transform_returns(&raw_returns))
     }

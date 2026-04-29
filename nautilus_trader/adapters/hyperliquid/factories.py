@@ -30,6 +30,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.nautilus_pyo3 import HyperliquidEnvironment
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
@@ -38,13 +39,22 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 
+def _resolve_environment(
+    environment: HyperliquidEnvironment | None,
+    testnet: bool,
+) -> HyperliquidEnvironment:
+    if environment is not None:
+        return environment
+    return HyperliquidEnvironment.TESTNET if testnet else HyperliquidEnvironment.MAINNET
+
+
 @lru_cache(1)
 def get_cached_hyperliquid_http_client(
     private_key: str | None = None,
     vault_address: str | None = None,
     account_address: str | None = None,
     timeout_secs: int | None = None,
-    testnet: bool = False,
+    environment: HyperliquidEnvironment = HyperliquidEnvironment.MAINNET,
     proxy_url: str | None = None,
     normalize_prices: bool = True,
 ) -> nautilus_pyo3.HyperliquidHttpClient:
@@ -58,20 +68,20 @@ def get_cached_hyperliquid_http_client(
     private_key : str, optional
         The EVM private key for the client.
         If ``None`` then will source the `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK`
-        environment variable (depending on the `testnet` setting).
+        environment variable (depending on the environment setting).
         Note: The PyO3 client handles credentials internally.
     vault_address : str, optional
         The vault address for vault trading.
         If ``None`` then will source the `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT`
-        environment variable (depending on the `testnet` setting).
+        environment variable (depending on the environment setting).
         Note: The PyO3 client handles credentials internally.
     account_address : str, optional
         The main account address when using an agent wallet (API sub-key).
         If ``None`` then will source the `HYPERLIQUID_ACCOUNT_ADDRESS` env var.
     timeout_secs : int, optional
         The timeout (seconds) for HTTP requests to Hyperliquid.
-    testnet : bool, default False
-        If the client is connecting to the testnet API.
+    environment : HyperliquidEnvironment, default MAINNET
+        The Hyperliquid environment (MAINNET or TESTNET).
     proxy_url : str, optional
         Optional HTTP proxy URL.
     normalize_prices : bool, default True
@@ -87,7 +97,7 @@ def get_cached_hyperliquid_http_client(
         "private_key": private_key,
         "vault_address": vault_address,
         "account_address": account_address,
-        "is_testnet": testnet,
+        "environment": environment,
         "proxy_url": proxy_url,
         "normalize_prices": normalize_prices,
     }
@@ -176,10 +186,11 @@ class HyperliquidLiveDataClientFactory(LiveDataClientFactory):
         HyperliquidDataClient
 
         """
+        environment = _resolve_environment(config.environment, config.testnet)
         client = get_cached_hyperliquid_http_client(
             timeout_secs=config.http_timeout_secs,
-            testnet=config.testnet,
-            proxy_url=config.http_proxy_url,
+            environment=environment,
+            proxy_url=config.proxy_url,
         )
         provider = get_cached_hyperliquid_instrument_provider(
             client=client,
@@ -235,13 +246,14 @@ class HyperliquidLiveExecClientFactory(LiveExecClientFactory):
         HyperliquidExecutionClient
 
         """
+        environment = _resolve_environment(config.environment, config.testnet)
         client = get_cached_hyperliquid_http_client(
             private_key=config.private_key,
             vault_address=config.vault_address,
             account_address=config.account_address,
             timeout_secs=config.http_timeout_secs,
-            testnet=config.testnet,
-            proxy_url=config.http_proxy_url,
+            environment=environment,
+            proxy_url=config.proxy_url,
             normalize_prices=config.normalize_prices,
         )
         provider = get_cached_hyperliquid_instrument_provider(

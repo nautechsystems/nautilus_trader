@@ -14,6 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
+import sys
+
+import pytest
 
 from nautilus_trader.common import Cache
 from nautilus_trader.common import Clock
@@ -401,3 +404,118 @@ def test_streaming_feather_writer_flush_interval(tmp_path):
     )
 
     assert writer is not None
+
+
+def _make_stream_signal_class():
+    """
+    Build a minimal custom data class for streaming tests.
+    """
+    import json
+    from dataclasses import dataclass
+
+    import pyarrow as pa
+
+    @dataclass
+    class StreamSignal:
+        ts_event: int = 0
+        ts_init: int = 0
+        label: str = ""
+        value: float = 0.0
+
+        @classmethod
+        def type_name_static(cls) -> str:
+            return "StreamSignal"
+
+        def to_dict(self):
+            return {
+                "type": "StreamSignal",
+                "label": self.label,
+                "value": self.value,
+                "ts_event": self.ts_event,
+                "ts_init": self.ts_init,
+            }
+
+        @classmethod
+        def from_dict(cls, data):
+            data = dict(data)
+            data.pop("type", None)
+            data.pop("data_type", None)
+            return cls(**data)
+
+        def to_json(self):
+            return json.dumps(self.to_dict())
+
+        @classmethod
+        def from_json(cls, data):
+            return cls.from_dict(data)
+
+        def to_arrow(self):
+            return pa.RecordBatch.from_pylist(
+                [self.to_dict()],
+                schema=StreamSignal._schema,
+            )
+
+        def encode_record_batch_py(self, items):
+            dicts = [x.to_dict() for x in items]
+            return pa.RecordBatch.from_pylist(dicts, schema=StreamSignal._schema)
+
+        @classmethod
+        def decode_record_batch_py(cls, metadata, batch):
+            return [cls.from_dict(d) for d in batch.to_pylist()]
+
+    StreamSignal._schema = pa.schema(
+        {
+            "label": pa.string(),
+            "value": pa.float64(),
+            "type": pa.string(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        },
+    )
+    return StreamSignal
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="SIGALRM not available on Windows")
+def test_backend_session_streams_custom_data_without_deadlock(tmp_path):
+    """Regression test for GH-3847: streaming custom data deadlocked."""
+    import glob
+    import signal
+
+    from nautilus_trader.model import CustomData
+    from nautilus_trader.model import DataType
+    from nautilus_trader.model import register_custom_data_class
+
+    StreamSignal = _make_stream_signal_class()
+    register_custom_data_class(StreamSignal)
+
+    catalog_path = tmp_path / "catalog"
+    catalog_path.mkdir()
+    catalog = ParquetDataCatalog(str(catalog_path))
+    metadata = {"source": "test"}
+    data_type = DataType("StreamSignal", metadata, None)
+    items = [StreamSignal(i, i, "sig", float(i)) for i in range(1, 101)]
+    wrapped = [CustomData(data_type, item) for item in items]
+    catalog.write_custom_data(wrapped)
+
+    session = DataBackendSession(chunk_size=50)
+    parquet_files = glob.glob(str(tmp_path / "catalog" / "**" / "*.parquet"), recursive=True)
+    assert len(parquet_files) > 0
+
+    for f in parquet_files:
+        session.add_custom_file("StreamSignal", "stream_signal", f)
+
+    def timeout_handler(signum, frame):
+        raise TimeoutError("DataBackendSession.to_query_result() deadlocked (GH-3847)")
+
+    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(10)
+
+    try:
+        result = session.to_query_result()
+        chunks = list(result)
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
+
+    total = sum(len(chunk) for chunk in chunks)
+    assert total == 100

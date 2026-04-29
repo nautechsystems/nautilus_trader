@@ -37,7 +37,7 @@ use crate::enums::SerializationEncoding;
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
 )]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct DatabaseConfig {
     /// The database type.
     #[serde(alias = "type")]
@@ -116,7 +116,7 @@ impl Default for DatabaseConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
 )]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct MessageBusConfig {
     /// The configuration for the message bus backing database.
     pub database: Option<DatabaseConfig>,
@@ -240,6 +240,17 @@ mod tests {
         assert_eq!(config.exponent_base, 2);
         assert_eq!(config.max_delay, 10);
         assert_eq!(config.factor, 2);
+    }
+
+    #[rstest]
+    fn test_deserialize_database_config_rejects_unknown_field() {
+        let config_json = json!({
+            "type": "redis",
+            "unexpected": true,
+        });
+
+        let error = serde_json::from_value::<DatabaseConfig>(config_json).unwrap_err();
+        assert!(error.to_string().contains("unknown field `unexpected`"));
     }
 
     #[rstest]
