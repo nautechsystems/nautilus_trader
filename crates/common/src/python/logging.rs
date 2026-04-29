@@ -35,6 +35,44 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LoggerConfig {
+    #[new]
+    #[pyo3(signature = (
+        stdout_level=None,
+        fileout_level=None,
+        component_levels=None,
+        is_colored=None,
+        print_config=None,
+        bypass_logging=None,
+        log_components_only=None,
+        file_config=None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_new(
+        stdout_level: Option<LogLevel>,
+        fileout_level: Option<LogLevel>,
+        component_levels: Option<std::collections::HashMap<String, String>>,
+        is_colored: Option<bool>,
+        print_config: Option<bool>,
+        bypass_logging: Option<bool>,
+        log_components_only: Option<bool>,
+        file_config: Option<FileWriterConfig>,
+    ) -> PyResult<Self> {
+        let component_levels = parse_component_levels(component_levels).map_err(to_pyvalue_err)?;
+        Ok(Self::new(
+            stdout_level.map_or(LevelFilter::Info, map_log_level_to_filter),
+            fileout_level.map_or(LevelFilter::Off, map_log_level_to_filter),
+            component_levels,
+            AHashMap::new(),
+            log_components_only.unwrap_or(false),
+            is_colored.unwrap_or(true),
+            print_config.unwrap_or(false),
+            false,
+            bypass_logging.unwrap_or(false),
+            file_config,
+            false,
+        ))
+    }
+
     /// Parses a configuration from a spec string.
     ///
     /// # Format
