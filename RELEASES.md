@@ -1,6 +1,6 @@
 # NautilusTrader 1.226.0 Beta
 
-Released on TBD (UTC).
+Released on 29th April 2026 (UTC).
 
 ### Enhancements
 - Added `Portfolio::mark_values`, `equity`, and `missing_price_instruments` queries for Rust and Python
@@ -84,12 +84,20 @@ Released on TBD (UTC).
 - Changed prefixed remote catalogs (`s3://bucket/base/path`, etc.) to read and write under their declared URI prefix; data previously written to the bucket root by the prior buggy behavior will not be discovered after upgrading and must be moved into the prefix (#3930)
 
 ### Security
+- Hardened Binance Ed25519 credential detection so base64 HMAC secrets no longer pass as Ed25519 keys (Rust)
+- Hardened Binance HTTP request signing by URL-encoding Ed25519 signatures in query strings (Rust)
+- Replaced the third-party `urlencoding` crate with the in-tree `nautilus_core::urlencoding` to shrink the supply-chain surface (Rust)
+- Bumped pinned SHAs for security-relevant GitHub Actions (`harden-runner`, `codeql-action`, `setup-uv`, `setup-rust-toolchain`) to current upstream releases
+- Refreshed `cargo-deny` and `osv-scanner` advisory configuration; removed the stale `pygments` advisory ignore now that upstream is patched
 
 ### Fixes
 - Fixed sockudo WebSocket backend dropping handshake leftover bytes when the server piggybacks the first frame on the 101 response (#3932), thanks @sunlei
 - Fixed account state regeneration dropping account-wide margins on every fill across live and backtest paths
 - Fixed `AccountState` to accept empty `balances` and `margins`
 - Fixed `FillModel` determinism via `IndexMap` in `OrderMatchingEngine` (#3914), thanks for reporting @timkoopmans
+- Fixed quote midpoint raw arithmetic across precision modes (#3849), thanks @BurnOutTrader
+- Fixed `quote_quantity` propagation in execution algorithm spawn orders (#3845), thanks @dxwil
+- Fixed streaming backtest shutdown determinism on `FORCE_STOP` (#3920)
 - Fixed `mark_values`/`equity` keying by base currency when conversion is off; now keys by settlement currency
 - Fixed `PortfolioAnalyzer` AttributeError on `MaxDrawdown`/`CAGR`/`CalmarRatio` (#3941), thanks for reporting @a1zb2yc3z
 - Fixed `stop_timer` in `TimeBarAggregator` (#3822), thanks @faysou
@@ -185,7 +193,7 @@ Released on TBD (UTC).
 - Fixed Kraken Spot quote-quantity orders never reaching terminal state from base/quote size mismatch
 - Fixed Kraken Spot ticker `QuoteTick.ts_event` using local init time instead of the exchange `timestamp` field (#3926), thanks @ptzafos
 - Fixed Kraken trade dedup clearing the entire set at capacity instead of evicting the oldest entry
-- Fixed Kraken Futures `AccountBalance` invariant panic on margin parse, thanks @Stamppot82
+- Fixed Kraken Futures `AccountBalance` invariant panic on margin parse (#3868), thanks @Stamppot82
 - Fixed Kraken Futures WebSocket re-authentication deadlock on reconnect (#3871), thanks for reporting @Stamppot82
 - Fixed OKX option greeks not forwarded due to inaccessible Cython `cdef` subscription attribute
 - Fixed OKX option greeks emitting `BlackScholes` convention regardless of subscribed greeks type
@@ -239,6 +247,7 @@ Released on TBD (UTC).
 - Added continuous futures support for bar requests and subscriptions (#3921), thanks @faysou
 - Improved `nautilus-live/defi` to no longer pull `LiveNode` orchestration deps
 - Improved CI uv cache via `setup-uv` auto mode to skip GHA uploads on self-hosted runners (#3933), thanks @sunlei
+- Cleaned up unused dependencies (#3886), thanks @sunlei
 - Improved CI cache hygiene on self-hosted runners with uv prune, prek auto-gate, and footprint summary
 - Migrated `WebSocketClient` onto the `WsTransport` trait, decoupling reconnect/auth from tungstenite types (Rust)
 - Changed Polymarket `PolymarketQuote.best_bid`/`best_ask` to optional, matching the Rust `Option<String>` schema

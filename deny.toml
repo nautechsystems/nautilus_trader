@@ -29,9 +29,7 @@ ignore = [
 
   # unic-* crates are unmaintained, pulled in via pyo3-stub-gen->rustpython-parser
   # This is dev-time only for generating .pyi stub files, not a runtime security risk
-  # RUSTSEC-0000-0000 is the blanket advisory for all unic crates (rustsec/advisory-db#2414)
   # TODO: Monitor https://github.com/Jij-Inc/pyo3-stub-gen for migration away from rustpython-parser
-  { id = "RUSTSEC-0000-0000", reason = "blanket unic-* unmaintained advisory, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0075", reason = "unic-char-range unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0080", reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0081", reason = "unic-char-property unmaintained, transitive via pyo3-stub-gen (dev tool only)" },

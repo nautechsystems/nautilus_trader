@@ -56,10 +56,6 @@ id = "RUSTSEC-2025-0141"
 reason = "bincode unmaintained, transitive via hypersync-client (not a security vulnerability)"
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2026-0097"
-reason = "rand 0.8.5 unsoundness, transitive build-time only via pyo3-stub-gen (direct rand deps fixed at 0.9.3/0.10.1)"
-
-[[IgnoredVulns]]
 id = "GHSA-7gcm-g887-7qv7"
 reason = "protobuf JSON recursion DoS, no fix available yet, low risk for internal use (we don't parse untrusted JSON with protobuf)"
 
