@@ -70,7 +70,7 @@ pub fn parse_tardis_ws_message(
                 }
             }
         }
-        WsMessage::BookSnapshot(msg) => match msg.bids.len() {
+        WsMessage::BookSnapshot(msg) => match msg.depth {
             1 => {
                 match parse_book_snapshot_msg_as_quote(
                     &msg,
@@ -909,6 +909,38 @@ mod tests {
             TardisExchange::Bitmex,
             1,
             0,
+        ));
+
+        let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);
+
+        assert!(result.is_some());
+        assert!(matches!(result.unwrap(), Data::Depth10(_)));
+    }
+
+    #[rstest]
+    fn test_parse_tardis_ws_message_sparse_book_snapshot_routes_to_depth10() {
+        let json_data = r#"{
+            "type": "book_snapshot",
+            "symbol": "ETC",
+            "exchange": "hyperliquid",
+            "name": "book_snapshot_20_10s",
+            "depth": 20,
+            "interval": 10000,
+            "bids": [{"price": 20.002, "amount": 5.81}],
+            "asks": [{"price": 20.003, "amount": 162.45}, {}],
+            "timestamp": "2025-03-03T10:48:10.000Z",
+            "localTimestamp": "2025-03-03T10:48:10.596818Z"
+        }"#;
+        let msg: BookSnapshotMsg = serde_json::from_str(json_data).unwrap();
+        let ws_msg = WsMessage::BookSnapshot(msg);
+
+        let instrument_id = InstrumentId::from("ETC.HYPERLIQUID");
+        let info = Arc::new(TardisInstrumentMiniInfo::new(
+            instrument_id,
+            None,
+            TardisExchange::Hyperliquid,
+            3,
+            2,
         ));
 
         let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);

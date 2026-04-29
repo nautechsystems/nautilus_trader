@@ -73,7 +73,7 @@ derive_builder = { workspace = true }
 flate2 = { workspace = true }
 futures-util = { workspace = true }
 log = { workspace = true }
-parquet = { workspace = true }
+parquet = { workspace = true, features = ["snap", "zstd"] }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 ryu = { workspace = true }

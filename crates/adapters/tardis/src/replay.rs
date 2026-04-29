@@ -39,7 +39,7 @@ use nautilus_serialization::arrow::{
 use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
 
 use crate::{
-    config::{BookSnapshotOutput, TardisReplayConfig},
+    config::{BookSnapshotOutput, ParquetCompression, TardisReplayConfig},
     http::TardisHttpClient,
     machine::TardisMachineClient,
 };
@@ -109,6 +109,13 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         .unwrap_or(BookSnapshotOutput::Deltas);
     log::info!("book_snapshot_output={book_snapshot_output:?}");
 
+    let compression = config
+        .compression
+        .clone()
+        .unwrap_or(ParquetCompression::Zstd);
+    log::info!("compression={compression:?}");
+    let compression = compression.as_parquet_compression();
+
     let http_client = TardisHttpClient::new(
         None,
         None,
@@ -157,18 +164,44 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
             Ok(msg) => {
                 match msg {
                     Data::Deltas(msg) => {
-                        handle_deltas_msg(&msg, &mut deltas_map, &mut deltas_cursors, &path);
+                        handle_deltas_msg(
+                            &msg,
+                            &mut deltas_map,
+                            &mut deltas_cursors,
+                            &path,
+                            compression,
+                        );
                     }
                     Data::Depth10(msg) => {
-                        handle_depth10_msg(*msg, &mut depths_map, &mut depths_cursors, &path);
+                        handle_depth10_msg(
+                            *msg,
+                            &mut depths_map,
+                            &mut depths_cursors,
+                            &path,
+                            compression,
+                        );
                     }
                     Data::Quote(msg) => {
-                        handle_quote_msg(msg, &mut quotes_map, &mut quotes_cursors, &path);
+                        handle_quote_msg(
+                            msg,
+                            &mut quotes_map,
+                            &mut quotes_cursors,
+                            &path,
+                            compression,
+                        );
                     }
                     Data::Trade(msg) => {
-                        handle_trade_msg(msg, &mut trades_map, &mut trades_cursors, &path);
+                        handle_trade_msg(
+                            msg,
+                            &mut trades_map,
+                            &mut trades_cursors,
+                            &path,
+                            compression,
+                        );
                     }
-                    Data::Bar(msg) => handle_bar_msg(msg, &mut bars_map, &mut bars_cursors, &path),
+                    Data::Bar(msg) => {
+                        handle_bar_msg(msg, &mut bars_map, &mut bars_cursors, &path, compression);
+                    }
                     Data::Delta(delta) => {
                         log::warn!(
                             "Skipping individual delta message for {} (use Deltas batch instead)",
@@ -203,27 +236,27 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
 
     for (instrument_id, deltas) in &deltas_map {
         let cursor = deltas_cursors.get(instrument_id).expect("Expected cursor");
-        batch_and_write_deltas(deltas, instrument_id, cursor.date_utc, &path);
+        batch_and_write_deltas(deltas, instrument_id, cursor.date_utc, &path, compression);
     }
 
     for (instrument_id, depths) in &depths_map {
         let cursor = depths_cursors.get(instrument_id).expect("Expected cursor");
-        batch_and_write_depths(depths, instrument_id, cursor.date_utc, &path);
+        batch_and_write_depths(depths, instrument_id, cursor.date_utc, &path, compression);
     }
 
     for (instrument_id, quotes) in &quotes_map {
         let cursor = quotes_cursors.get(instrument_id).expect("Expected cursor");
-        batch_and_write_quotes(quotes, instrument_id, cursor.date_utc, &path);
+        batch_and_write_quotes(quotes, instrument_id, cursor.date_utc, &path, compression);
     }
 
     for (instrument_id, trades) in &trades_map {
         let cursor = trades_cursors.get(instrument_id).expect("Expected cursor");
-        batch_and_write_trades(trades, instrument_id, cursor.date_utc, &path);
+        batch_and_write_trades(trades, instrument_id, cursor.date_utc, &path, compression);
     }
 
     for (bar_type, bars) in &bars_map {
         let cursor = bars_cursors.get(bar_type).expect("Expected cursor");
-        batch_and_write_bars(bars, bar_type, cursor.date_utc, &path);
+        batch_and_write_bars(bars, bar_type, cursor.date_utc, &path, compression);
     }
 
     log::info!(
@@ -238,6 +271,7 @@ fn handle_deltas_msg(
     map: &mut AHashMap<InstrumentId, Vec<OrderBookDelta>>,
     cursors: &mut AHashMap<InstrumentId, DateCursor>,
     path: &Path,
+    compression: Compression,
 ) {
     let cursor = cursors
         .entry(deltas.instrument_id)
@@ -245,7 +279,13 @@ fn handle_deltas_msg(
 
     if deltas.ts_init > cursor.end_ns {
         if let Some(deltas_vec) = map.remove(&deltas.instrument_id) {
-            batch_and_write_deltas(&deltas_vec, &deltas.instrument_id, cursor.date_utc, path);
+            batch_and_write_deltas(
+                &deltas_vec,
+                &deltas.instrument_id,
+                cursor.date_utc,
+                path,
+                compression,
+            );
         }
         // Update cursor
         *cursor = DateCursor::new(deltas.ts_init);
@@ -261,6 +301,7 @@ fn handle_depth10_msg(
     map: &mut AHashMap<InstrumentId, Vec<OrderBookDepth10>>,
     cursors: &mut AHashMap<InstrumentId, DateCursor>,
     path: &Path,
+    compression: Compression,
 ) {
     let cursor = cursors
         .entry(depth10.instrument_id)
@@ -268,7 +309,13 @@ fn handle_depth10_msg(
 
     if depth10.ts_init > cursor.end_ns {
         if let Some(depths_vec) = map.remove(&depth10.instrument_id) {
-            batch_and_write_depths(&depths_vec, &depth10.instrument_id, cursor.date_utc, path);
+            batch_and_write_depths(
+                &depths_vec,
+                &depth10.instrument_id,
+                cursor.date_utc,
+                path,
+                compression,
+            );
         }
         // Update cursor
         *cursor = DateCursor::new(depth10.ts_init);
@@ -284,6 +331,7 @@ fn handle_quote_msg(
     map: &mut AHashMap<InstrumentId, Vec<QuoteTick>>,
     cursors: &mut AHashMap<InstrumentId, DateCursor>,
     path: &Path,
+    compression: Compression,
 ) {
     let cursor = cursors
         .entry(quote.instrument_id)
@@ -291,7 +339,13 @@ fn handle_quote_msg(
 
     if quote.ts_init > cursor.end_ns {
         if let Some(quotes_vec) = map.remove(&quote.instrument_id) {
-            batch_and_write_quotes(&quotes_vec, &quote.instrument_id, cursor.date_utc, path);
+            batch_and_write_quotes(
+                &quotes_vec,
+                &quote.instrument_id,
+                cursor.date_utc,
+                path,
+                compression,
+            );
         }
         // Update cursor
         *cursor = DateCursor::new(quote.ts_init);
@@ -307,6 +361,7 @@ fn handle_trade_msg(
     map: &mut AHashMap<InstrumentId, Vec<TradeTick>>,
     cursors: &mut AHashMap<InstrumentId, DateCursor>,
     path: &Path,
+    compression: Compression,
 ) {
     let cursor = cursors
         .entry(trade.instrument_id)
@@ -314,7 +369,13 @@ fn handle_trade_msg(
 
     if trade.ts_init > cursor.end_ns {
         if let Some(trades_vec) = map.remove(&trade.instrument_id) {
-            batch_and_write_trades(&trades_vec, &trade.instrument_id, cursor.date_utc, path);
+            batch_and_write_trades(
+                &trades_vec,
+                &trade.instrument_id,
+                cursor.date_utc,
+                path,
+                compression,
+            );
         }
         // Update cursor
         *cursor = DateCursor::new(trade.ts_init);
@@ -330,6 +391,7 @@ fn handle_bar_msg(
     map: &mut AHashMap<BarType, Vec<Bar>>,
     cursors: &mut AHashMap<BarType, DateCursor>,
     path: &Path,
+    compression: Compression,
 ) {
     let cursor = cursors
         .entry(bar.bar_type)
@@ -337,7 +399,7 @@ fn handle_bar_msg(
 
     if bar.ts_init > cursor.end_ns {
         if let Some(bars_vec) = map.remove(&bar.bar_type) {
-            batch_and_write_bars(&bars_vec, &bar.bar_type, cursor.date_utc, path);
+            batch_and_write_bars(&bars_vec, &bar.bar_type, cursor.date_utc, path, compression);
         }
         // Update cursor
         *cursor = DateCursor::new(bar.ts_init);
@@ -353,9 +415,17 @@ fn batch_and_write_deltas(
     instrument_id: &InstrumentId,
     date: NaiveDate,
     path: &Path,
+    compression: Compression,
 ) {
     match book_deltas_to_arrow_record_batch_bytes(deltas) {
-        Ok(batch) => write_batch(&batch, "order_book_deltas", instrument_id, date, path),
+        Ok(batch) => write_batch(
+            &batch,
+            "order_book_deltas",
+            instrument_id,
+            date,
+            path,
+            compression,
+        ),
         Err(e) => {
             log::error!("Error converting OrderBookDeltas to Arrow: {e:?}");
         }
@@ -367,9 +437,17 @@ fn batch_and_write_depths(
     instrument_id: &InstrumentId,
     date: NaiveDate,
     path: &Path,
+    compression: Compression,
 ) {
     match book_depth10_to_arrow_record_batch_bytes(depths) {
-        Ok(batch) => write_batch(&batch, "order_book_depths", instrument_id, date, path),
+        Ok(batch) => write_batch(
+            &batch,
+            "order_book_depths",
+            instrument_id,
+            date,
+            path,
+            compression,
+        ),
         Err(e) => {
             log::error!("Error converting OrderBookDepth10 to Arrow: {e:?}");
         }
@@ -381,9 +459,10 @@ fn batch_and_write_quotes(
     instrument_id: &InstrumentId,
     date: NaiveDate,
     path: &Path,
+    compression: Compression,
 ) {
     match quotes_to_arrow_record_batch_bytes(quotes) {
-        Ok(batch) => write_batch(&batch, "quote_tick", instrument_id, date, path),
+        Ok(batch) => write_batch(&batch, "quote_tick", instrument_id, date, path, compression),
         Err(e) => {
             log::error!("Error converting QuoteTick to Arrow: {e:?}");
         }
@@ -395,16 +474,23 @@ fn batch_and_write_trades(
     instrument_id: &InstrumentId,
     date: NaiveDate,
     path: &Path,
+    compression: Compression,
 ) {
     match trades_to_arrow_record_batch_bytes(trades) {
-        Ok(batch) => write_batch(&batch, "trade_tick", instrument_id, date, path),
+        Ok(batch) => write_batch(&batch, "trade_tick", instrument_id, date, path, compression),
         Err(e) => {
             log::error!("Error converting TradeTick to Arrow: {e:?}");
         }
     }
 }
 
-fn batch_and_write_bars(bars: &[Bar], bar_type: &BarType, date: NaiveDate, path: &Path) {
+fn batch_and_write_bars(
+    bars: &[Bar],
+    bar_type: &BarType,
+    date: NaiveDate,
+    path: &Path,
+    compression: Compression,
+) {
     let batch = match bars_to_arrow_record_batch_bytes(bars) {
         Ok(batch) => batch,
         Err(e) => {
@@ -414,7 +500,7 @@ fn batch_and_write_bars(bars: &[Bar], bar_type: &BarType, date: NaiveDate, path:
     };
 
     let filepath = path.join(parquet_filepath_bars(bar_type, date));
-    if let Err(e) = write_parquet_local(&batch, &filepath) {
+    if let Err(e) = write_parquet_local(&batch, &filepath, compression) {
         log::error!("Error writing {}: {e}", filepath.display());
     } else {
         log::info!("File written: {}", filepath.display());
@@ -510,23 +596,28 @@ fn write_batch(
     instrument_id: &InstrumentId,
     date: NaiveDate,
     path: &Path,
+    compression: Compression,
 ) {
     let filepath = path.join(parquet_filepath(typename, instrument_id, date));
-    if let Err(e) = write_parquet_local(batch, &filepath) {
+    if let Err(e) = write_parquet_local(batch, &filepath, compression) {
         log::error!("Error writing {}: {e}", filepath.display());
     } else {
         log::info!("File written: {}", filepath.display());
     }
 }
 
-fn write_parquet_local(batch: &RecordBatch, file_path: &Path) -> anyhow::Result<()> {
+fn write_parquet_local(
+    batch: &RecordBatch,
+    file_path: &Path,
+    compression: Compression,
+) -> anyhow::Result<()> {
     if let Some(parent) = file_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
     let file = std::fs::File::create(file_path)?;
     let props = WriterProperties::builder()
-        .set_compression(Compression::SNAPPY)
+        .set_compression(compression)
         .build();
 
     let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))?;

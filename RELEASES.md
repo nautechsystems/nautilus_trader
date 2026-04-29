@@ -38,6 +38,7 @@ Released on TBD (UTC).
 - Added Polymarket WebSocket `idle_timeout_ms` for zombie detection (#3908), thanks for reporting @camarigor
 - Added Polymarket WebSocket `proxy_url` plumbing
 - Added Polymarket `pUSD` collateral currency (`Currency::pUSD()` in Rust, `pUSD` in Python) for the CLOB V2 cutover
+- Added configurable `compression` for Tardis Machine replay, defaulting to `zstd`
 - Added `ExecutionReport::OrderWithFills` and `send_order_with_fills` emitter for bundled status + fill reconciliation
 - Added ADL / liquidation detection and logging across Binance, Bybit, OKX, BitMEX, Hyperliquid, Deribit, and dYdX
 - Added Binance Futures COIN-M `delivery_autoclose-` prefix recognition for expiring contract auto-close events
@@ -204,6 +205,7 @@ Released on TBD (UTC).
 - Fixed Polymarket `parse_to_snapshot` missing `F_SNAPSHOT` flag on CLEAR and intermediate ADD deltas
 - Fixed Polymarket `parse_to_deltas` flagging `F_LAST` on every delta instead of only the final one
 - Fixed Polymarket `parse_to_trade_tick` using `uuid.uuid4()`, producing non-deterministic trade IDs
+- Fixed Tardis replay handling of sparse `book_snapshot_*` levels (#3953), thanks for reporting @a1zb2yc3z
 - Fixed Tardis trade ID fallback using random UUID4 when venue `id` missing/empty (CSV and WebSocket parsers)
 
 ### Internal Improvements

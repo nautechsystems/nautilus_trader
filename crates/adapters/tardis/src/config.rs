@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use parquet::basic::{Compression, ZstdLevel};
 use serde::{Deserialize, Serialize};
 
 use super::machine::types::{ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions};
@@ -26,6 +27,38 @@ pub enum BookSnapshotOutput {
     Deltas,
     /// Convert book snapshots to `OrderBookDepth10` and write to `order_book_depths/`.
     Depth10,
+}
+
+/// Determines the compression codec for Parquet files written by Tardis replay.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParquetCompression {
+    /// Use Zstandard compression with level 3.
+    #[default]
+    Zstd,
+    /// Use Snappy compression.
+    Snappy,
+    /// Write uncompressed Parquet files.
+    Uncompressed,
+}
+
+impl ParquetCompression {
+    /// Converts the replay config compression value to a Parquet compression value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the hard-coded Zstandard level 3 is rejected by the Parquet crate.
+    #[must_use]
+    pub fn as_parquet_compression(&self) -> Compression {
+        match self {
+            Self::Zstd => {
+                let level = ZstdLevel::try_new(3).expect("zstd level 3 is valid");
+                Compression::ZSTD(level)
+            }
+            Self::Snappy => Compression::SNAPPY,
+            Self::Uncompressed => Compression::UNCOMPRESSED,
+        }
+    }
 }
 
 /// Provides a configuration for a Tardis Machine -> Nautilus data -> Parquet replay run.
@@ -49,6 +82,12 @@ pub struct TardisReplayConfig {
     /// - `deltas`: Convert to `OrderBookDeltas` and write to `order_book_deltas/` (default).
     /// - `depth10`: Convert to `OrderBookDepth10` and write to `order_book_depths/`.
     pub book_snapshot_output: Option<BookSnapshotOutput>,
+    /// The compression codec for written data files.
+    ///
+    /// - `zstd`: Use Zstandard compression level 3 (default).
+    /// - `snappy`: Use Snappy compression.
+    /// - `uncompressed`: Write uncompressed Parquet files.
+    pub compression: Option<ParquetCompression>,
 }
 
 /// Configuration for the Tardis data client.
@@ -139,5 +178,58 @@ mod tests {
 
         let deserialized: BookSnapshotOutput = serde_json::from_str(&json).unwrap();
         assert!(matches!(deserialized, BookSnapshotOutput::Depth10));
+    }
+
+    #[rstest]
+    fn test_parquet_compression_default_is_zstd() {
+        assert!(matches!(
+            ParquetCompression::default(),
+            ParquetCompression::Zstd
+        ));
+        assert!(matches!(
+            ParquetCompression::default().as_parquet_compression(),
+            Compression::ZSTD(_)
+        ));
+    }
+
+    #[rstest]
+    fn test_parquet_compression_serde_roundtrip() {
+        let cases = [
+            (ParquetCompression::Zstd, "\"zstd\""),
+            (ParquetCompression::Snappy, "\"snappy\""),
+            (ParquetCompression::Uncompressed, "\"uncompressed\""),
+        ];
+
+        for (compression, expected_json) in cases {
+            let json = serde_json::to_string(&compression).unwrap();
+            assert_eq!(json, expected_json);
+
+            let deserialized: ParquetCompression = serde_json::from_str(&json).unwrap();
+            assert_eq!(
+                compression.as_parquet_compression(),
+                deserialized.as_parquet_compression()
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_replay_config_deserializes_compression() {
+        let json = r#"{
+            "tardis_ws_url": null,
+            "normalize_symbols": true,
+            "output_path": null,
+            "options": [],
+            "proxy_url": null,
+            "book_snapshot_output": "depth10",
+            "compression": "zstd"
+        }"#;
+
+        let config: TardisReplayConfig = serde_json::from_str(json).unwrap();
+
+        assert!(matches!(
+            config.book_snapshot_output,
+            Some(BookSnapshotOutput::Depth10)
+        ));
+        assert!(matches!(config.compression, Some(ParquetCompression::Zstd)));
     }
 }
