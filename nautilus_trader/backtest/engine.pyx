@@ -5946,7 +5946,7 @@ cdef class OrderMatchingEngine:
         cdef str close_trade_id = f"{trade_base}-CLOSE"
         cdef str open_trade_id = f"{trade_base}-OPEN"
         cdef Price settlement_px = self._option_settlement_price(underlying_price, False)
-        cdef Price option_close_px = custom_option_price if custom_option_price is not None else Price(position.avg_px_open, self.instrument.price_precision)
+        cdef Price option_close_px = custom_option_price if custom_option_price is not None else Price(0.0, self.instrument.price_precision)
         cdef OrderSide close_side = OrderSide.SELL if position.side == PositionSide.LONG else OrderSide.BUY
         cdef OrderSide underlying_order_side = OrderSide.BUY if underlying_side == PositionSide.LONG else OrderSide.SELL
         self._option_register_settlement_order(

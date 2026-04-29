@@ -95,6 +95,7 @@ Released on TBD (UTC).
 - Fixed backtest `OrderMatchingEngine` treating `quote_quantity=True` orders as base quantity; the quote notional is now converted to a base quantity before fill simulation (#3873), thanks for reporting @fedoraiver
 - Fixed `subscribe_option_chain` hanging on bootstrap in backtest (#3938), thanks for reporting @aaurix
 - Fixed backtest option expiry fills missing from cache and fills report (#3939), thanks for reporting @hotelmike
+- Fixed backtest physical option assignment closing the option leg at the opening premium (#3948), thanks for reporting @hotelmike
 - Fixed `DataBackendSession` GIL deadlock when streaming custom data types (#3847), thanks for reporting @GianC0
 - Fixed `BacktestNode` streaming with mixed built-in and custom data types (#3853), thanks for reporting @GianC0
 - Fixed `DataBackendSession` chunked streaming memory leak causing RSS growth (#3889), thanks for reporting @GianC0
@@ -108,10 +109,12 @@ Released on TBD (UTC).
 - Fixed `ParquetDataCatalog.get_intervals(identifier=None)` on per-identifier data (#3903), thanks for reporting @GianC0
 - Fixed `ParquetDataCatalog.consolidate_data` raising `IndexError` when the start/end range did not overlap any files, and `consolidate_catalog_by_period` aborting the loop on the first unrecognized directory rather than skipping it (#3910), thanks for reporting @M-Advis
 - Fixed remote catalog object paths under URI prefix so writes and reads under `s3://bucket/base/path` (and other remote schemes) no longer collapse to the bucket root (#3930), thanks @fedoraiver
+- Fixed S3-backed custom data queries and remote Feather discovery (#3931), thanks for reporting @fedoraiver
 - Fixed `FeatherWriter` writing 0-precision metadata on leading `CLEAR` delta (#3913), thanks for reporting @fedoraiver
 - Fixed empty error log on `TradingNode` clean shutdown from `CancelledError` (#3862), thanks for reporting @jxstanford
 - Fixed `Symbol` and `PositionId` deserialize of non-ASCII escaped strings (#3893), thanks for reporting @volemont
 - Fixed execution engine ignoring user-supplied `position_id` from `submit_order` (Rust)
+- Fixed `ExecutionEngine` leg-fill position events not publishing to subscribers (#3939)
 - Fixed cache load not repairing OTO contingent child `position_id` after a partial fill-time crash (Rust)
 - Fixed `TestDataGenerator.generate_trade_ticks` using random UUID4; now sequences deterministic `T-{idx}` IDs
 - Fixed reconciliation IDs non-deterministic across restarts (#3878), thanks for reporting @peanut-copilot

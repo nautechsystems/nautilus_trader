@@ -339,7 +339,7 @@ def test_itm_option_expiry_with_custom_settlement():
     Test ITM option exercise with custom settlement price for the option leg.
 
     With settlement_prices, the option leg closes at the specified price instead of
-    avg_px_open. Underlying still settles at strike.
+    zero. Underlying still settles at strike.
 
     """
     venue = Venue("NASDAQ")
@@ -631,6 +631,7 @@ def test_short_itm_assignment_fills_in_report():
     settlement_close = option_rows[option_rows.index.str.contains("LEG-EX-")]
     assert len(settlement_close) == 1
     assert float(settlement_close.iloc[0]["last_qty"]) == 1.0
+    assert float(settlement_close.iloc[0]["last_px"]) == 0.0
 
     underlying_open = underlying_rows.iloc[0]
     assert float(underlying_open["last_qty"]) == 100.0
@@ -668,6 +669,7 @@ def test_long_itm_exercise_fills_in_report():
     settlement_close = option_rows[option_rows.index.str.contains("LEG-EX-")]
     assert len(settlement_close) == 1
     assert float(settlement_close.iloc[0]["last_qty"]) == 1.0
+    assert float(settlement_close.iloc[0]["last_px"]) == 0.0
 
     underlying_open = underlying_rows.iloc[0]
     assert underlying_open["order_side"] == "BUY"
@@ -833,11 +835,57 @@ def test_long_itm_put_exercise_fills_in_report():
     assert len(option_rows) == 2  # open long put + exercise close
     assert len(underlying_rows) == 1  # exercise open
 
+    settlement_close = option_rows[option_rows.index.str.contains("LEG-EX-")]
+    assert len(settlement_close) == 1
+    assert float(settlement_close.iloc[0]["last_px"]) == 0.0
+
     underlying_open = underlying_rows.iloc[0]
     # Long PUT exercise: opposite of position.side -> SELL underlying
     assert underlying_open["order_side"] == "SELL"
     assert float(underlying_open["last_qty"]) == 100.0
     assert float(underlying_open["last_px"]) == 150.0  # strike
+
+    _assert_settlement_orders_cached(engine, expected_count=2)
+
+    engine.dispose()
+
+
+def test_short_itm_put_assignment_preserves_option_premium():
+    """
+    Short ITM put assignment closes the option at zero and keeps the premium cash flow.
+    """
+    venue = Venue("NASDAQ")
+    put_id = InstrumentId.from_str("AAPL240315P00150000.NASDAQ")
+    engine, _, underlying_id = _build_engine_with_put_option(
+        venue=venue,
+        underlying_price=140.0,  # ITM put: spot < strike
+        strategy=_ConfigurableOptionStrategy(option_id=put_id, order_side=OrderSide.SELL),
+    )
+
+    fills_report = engine.trader.generate_fills_report()
+    option_rows = fills_report[fills_report["instrument_id"] == put_id.value]
+    underlying_rows = fills_report[fills_report["instrument_id"] == underlying_id.value]
+    assert len(option_rows) == 2  # open short put + assignment close
+    assert len(underlying_rows) == 1  # assignment open
+
+    settlement_close = option_rows[option_rows.index.str.contains("LEG-EX-")]
+    underlying_open = underlying_rows.iloc[0]
+    account = engine.trader.generate_account_report(venue)
+    closed_positions = [
+        position for position in engine.cache.positions_closed() if position.instrument_id == put_id
+    ]
+
+    assert len(settlement_close) == 1
+    assert settlement_close.iloc[0]["order_side"] == "BUY"
+    assert float(settlement_close.iloc[0]["last_qty"]) == 1.0
+    assert float(settlement_close.iloc[0]["last_px"]) == 0.0
+    assert underlying_open["order_side"] == "BUY"
+    assert float(underlying_open["last_qty"]) == 100.0
+    assert float(underlying_open["last_px"]) == 150.0
+    assert float(account.iloc[-1]["total"]) == 1_000_500.0
+    assert len(closed_positions) == 1
+    assert closed_positions[0].avg_px_close == 0.0
+    assert closed_positions[0].realized_pnl == Money(500.0, USD)
 
     _assert_settlement_orders_cached(engine, expected_count=2)
 

@@ -57,7 +57,7 @@ end_time = "2026-01-09T21:05"
 # ## Strategy
 #
 # Buys one option; at expiry the option leg settles at `settlement_prices`
-# (or intrinsic/avg_px_open if omitted).
+# (or intrinsic for cash-settled options, zero for physical settlement).
 
 
 # %%
@@ -139,7 +139,7 @@ logging = LoggingConfig(
     clear_log_file=True,
 )
 
-# Custom settlement price for the option leg at expiry (overrides intrinsic/avg_px_open)
+# Custom settlement price for the option leg at expiry
 settlement_prices = {option_id: 50.0}
 
 engine_config = BacktestEngineConfig(
