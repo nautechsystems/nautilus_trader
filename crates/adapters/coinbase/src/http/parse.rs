@@ -23,7 +23,7 @@ use nautilus_model::{
     data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, TradeTick},
     enums::{
         AccountType, AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType,
-        PositionSideSpecified, RecordFlag, TimeInForce,
+        PositionSideSpecified, RecordFlag, TimeInForce, TriggerType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
@@ -505,13 +505,18 @@ pub fn parse_order_side(side: &CoinbaseOrderSide) -> OrderSide {
 
 /// Converts a Coinbase order status to the Nautilus [`OrderStatus`].
 ///
-/// `Open` maps to `Accepted` because Nautilus differentiates the initial
-/// accept event from later partial-fill states; callers should promote the
-/// status to `PartiallyFilled` / `Filled` based on `filled_qty`.
+/// `Pending` and `Queued` are transient pre-`Open` states the venue passes
+/// through after acknowledging the order. They are mapped to `Accepted`
+/// (rather than `Submitted`) so user-channel updates that race the REST
+/// `OrderAccepted` event do not appear as a backwards transition to the
+/// reconciler. `Open` also maps to `Accepted` because Nautilus differentiates
+/// the initial accept event from later partial-fill states; callers should
+/// promote the status to `PartiallyFilled` / `Filled` based on `filled_qty`.
 pub fn parse_order_status(status: CoinbaseOrderStatus) -> OrderStatus {
     match status {
-        CoinbaseOrderStatus::Pending | CoinbaseOrderStatus::Queued => OrderStatus::Submitted,
-        CoinbaseOrderStatus::Open => OrderStatus::Accepted,
+        CoinbaseOrderStatus::Pending | CoinbaseOrderStatus::Queued | CoinbaseOrderStatus::Open => {
+            OrderStatus::Accepted
+        }
         CoinbaseOrderStatus::Filled => OrderStatus::Filled,
         CoinbaseOrderStatus::Cancelled => OrderStatus::Canceled,
         CoinbaseOrderStatus::CancelQueued => OrderStatus::PendingCancel,
@@ -645,7 +650,9 @@ pub fn parse_order_status_report(
     }
 
     if let Some(trigger_price) = stop_price_from_configuration(order, price_precision) {
-        report = report.with_trigger_price(trigger_price);
+        report = report
+            .with_trigger_price(trigger_price)
+            .with_trigger_type(TriggerType::LastPrice);
     }
 
     if !order.average_filled_price.is_empty()
@@ -828,7 +835,7 @@ fn parse_money_field(value: Decimal, field: &str, currency: Currency) -> Option<
 /// other. Selecting per-field maxima could synthesize a pair that matches
 /// neither window, so we pick the whole window with the larger
 /// `initial_margin` (ties broken by `maintenance_margin`) and emit its pair
-/// verbatim — the stricter capital requirement governs risk.
+/// verbatim; the stricter capital requirement governs risk.
 ///
 /// # Errors
 ///
@@ -1708,7 +1715,8 @@ mod tests {
     #[case(CoinbaseOrderStatus::EditQueued, OrderStatus::PendingUpdate)]
     #[case(CoinbaseOrderStatus::Expired, OrderStatus::Expired)]
     #[case(CoinbaseOrderStatus::Failed, OrderStatus::Rejected)]
-    #[case(CoinbaseOrderStatus::Pending, OrderStatus::Submitted)]
+    #[case(CoinbaseOrderStatus::Pending, OrderStatus::Accepted)]
+    #[case(CoinbaseOrderStatus::Queued, OrderStatus::Accepted)]
     fn test_parse_order_status(#[case] input: CoinbaseOrderStatus, #[case] expected: OrderStatus) {
         assert_eq!(parse_order_status(input), expected);
     }
@@ -1957,6 +1965,7 @@ mod tests {
         assert_eq!(report.order_type, OrderType::StopLimit);
         assert_eq!(report.price, Some(Price::from("49500.00")));
         assert_eq!(report.trigger_price, Some(Price::from("49000.00")));
+        assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
     }
 
     #[rstest]

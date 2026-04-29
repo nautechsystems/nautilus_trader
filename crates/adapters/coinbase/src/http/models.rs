@@ -29,7 +29,7 @@ use crate::common::{
         CoinbaseTriggerStatus,
     },
     parse::{
-        deserialize_decimal_from_str, deserialize_empty_string_to_none,
+        deserialize_decimal_from_str, deserialize_decimal_or_zero, deserialize_margin_type_or_none,
         deserialize_product_type_or_unknown, deserialize_string_to_u64,
     },
 };
@@ -419,21 +419,25 @@ pub struct Order {
     pub filled_size: String,
     #[serde(default)]
     pub average_filled_price: String,
-    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    // Coinbase returns these as empty strings on terminal or unfilled orders
+    // (e.g. cancelled before any partial fill). `deserialize_decimal_or_zero`
+    // accepts `""` and `"0"` as `Decimal::ZERO` so a single empty field does
+    // not fail the entire historical-order batch.
+    #[serde(default, deserialize_with = "deserialize_decimal_or_zero")]
     pub fee: Decimal,
-    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    #[serde(default, deserialize_with = "deserialize_string_to_u64")]
     pub number_of_fills: u64,
-    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    #[serde(default, deserialize_with = "deserialize_decimal_or_zero")]
     pub filled_value: Decimal,
     #[serde(default)]
     pub pending_cancel: bool,
     #[serde(default)]
     pub size_in_quote: bool,
-    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    #[serde(default, deserialize_with = "deserialize_decimal_or_zero")]
     pub total_fees: Decimal,
     #[serde(default)]
     pub size_inclusive_of_fees: bool,
-    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    #[serde(default, deserialize_with = "deserialize_decimal_or_zero")]
     pub total_value_after_fees: Decimal,
     pub trigger_status: CoinbaseTriggerStatus,
     pub order_type: CoinbaseOrderType,
@@ -448,7 +452,7 @@ pub struct Order {
     #[serde(default)]
     pub cancel_message: String,
     pub order_placement_source: CoinbaseOrderPlacementSource,
-    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    #[serde(default, deserialize_with = "deserialize_decimal_or_zero")]
     pub outstanding_hold_amount: Decimal,
     #[serde(default)]
     pub is_liquidation: bool,
@@ -456,7 +460,7 @@ pub struct Order {
     pub last_fill_time: Option<String>,
     #[serde(default)]
     pub leverage: String,
-    #[serde(default, deserialize_with = "deserialize_empty_string_to_none")]
+    #[serde(default, deserialize_with = "deserialize_margin_type_or_none")]
     pub margin_type: Option<CoinbaseMarginType>,
     #[serde(default)]
     pub retail_portfolio_id: String,
@@ -580,7 +584,7 @@ pub struct Fill {
     pub trade_type: CoinbaseFillTradeType,
     pub price: String,
     pub size: String,
-    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    #[serde(default, deserialize_with = "deserialize_decimal_or_zero")]
     pub commission: Decimal,
     pub product_id: Ustr,
     pub sequence_timestamp: String,

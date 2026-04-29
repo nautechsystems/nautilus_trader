@@ -19,7 +19,7 @@ use std::{fmt::Debug, sync::Arc};
 
 use ahash::AHashMap;
 use nautilus_core::{
-    UnixNanos,
+    AtomicMap, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
@@ -30,6 +30,7 @@ use nautilus_model::{
 };
 use nautilus_network::{RECONNECTED, websocket::WebSocketClient};
 use tokio_tungstenite::tungstenite::Message;
+use ustr::Ustr;
 
 use crate::{
     common::consts::COINBASE,
@@ -43,8 +44,13 @@ use crate::{
     },
 };
 
-fn instrument_id_from_product(product_id: &ustr::Ustr) -> InstrumentId {
+fn instrument_id_from_product(product_id: &Ustr) -> InstrumentId {
     InstrumentId::from(format!("{product_id}.{COINBASE}").as_str())
+}
+
+fn resolve_instrument_id(aliases: &AtomicMap<Ustr, Ustr>, product_id: &Ustr) -> InstrumentId {
+    let resolved = aliases.get_cloned(product_id).unwrap_or(*product_id);
+    instrument_id_from_product(&resolved)
 }
 
 /// Commands sent from [`super::client::CoinbaseWebSocketClient`] to the feed handler.
@@ -137,6 +143,10 @@ pub struct FeedHandler {
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
+    /// Shared with [`super::client::CoinbaseWebSocketClient`]; consulted in
+    /// `resolve_instrument_id` to re-key inbound messages whose wire `product_id`
+    /// is the canonical alias of a subscribed/submitted product.
+    subscription_aliases: Arc<AtomicMap<Ustr, Ustr>>,
     bar_types: AHashMap<String, BarType>,
     account_id: Option<AccountId>,
     buffer: Vec<NautilusWsMessage>,
@@ -148,6 +158,7 @@ impl FeedHandler {
         signal: Arc<std::sync::atomic::AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+        subscription_aliases: Arc<AtomicMap<Ustr, Ustr>>,
     ) -> Self {
         Self {
             clock: get_atomic_clock_realtime(),
@@ -156,10 +167,15 @@ impl FeedHandler {
             cmd_rx,
             raw_rx,
             instruments: AHashMap::new(),
+            subscription_aliases,
             bar_types: AHashMap::new(),
             account_id: None,
             buffer: Vec::new(),
         }
+    }
+
+    fn resolve_instrument_id(&self, product_id: &Ustr) -> InstrumentId {
+        resolve_instrument_id(&self.subscription_aliases, product_id)
     }
 
     /// Sets the account ID used to stamp user-channel execution reports.
@@ -299,7 +315,10 @@ impl FeedHandler {
             CoinbaseWsMessage::Candles { events, .. } => self.handle_candles(&events, ts_init),
             CoinbaseWsMessage::Heartbeats { .. } => None,
             CoinbaseWsMessage::Subscriptions { events, .. } => {
-                log::info!("Subscription confirmed: {events:?}");
+                // Coinbase emits this after every subscribe and unsubscribe
+                // with the full current subscription set, so it's noisy at
+                // INFO and not strictly a "confirmation" of the latest action.
+                log::debug!("Subscription state: {events:?}");
                 None
             }
             CoinbaseWsMessage::User {
@@ -335,7 +354,7 @@ impl FeedHandler {
         let mut first: Option<NautilusWsMessage> = None;
 
         for event in events {
-            let instrument_id = instrument_id_from_product(&event.product_id);
+            let instrument_id = self.resolve_instrument_id(&event.product_id);
 
             let instrument = match self.instruments.get(&instrument_id) {
                 Some(inst) => inst,
@@ -377,7 +396,7 @@ impl FeedHandler {
     ) -> Option<NautilusWsMessage> {
         for event in events {
             for trade in &event.trades {
-                let instrument_id = instrument_id_from_product(&trade.product_id);
+                let instrument_id = self.resolve_instrument_id(&trade.product_id);
 
                 let instrument = match self.instruments.get(&instrument_id) {
                     Some(inst) => inst,
@@ -421,7 +440,7 @@ impl FeedHandler {
                     continue;
                 }
 
-                let instrument_id = instrument_id_from_product(&trade.product_id);
+                let instrument_id = self.resolve_instrument_id(&trade.product_id);
 
                 if let Some(instrument) = self.instruments.get(&instrument_id)
                     && let Ok(tick) = parse_ws_trade(trade, instrument, ts_init)
@@ -444,7 +463,7 @@ impl FeedHandler {
 
         for event in events {
             for ticker in &event.tickers {
-                let instrument_id = instrument_id_from_product(&ticker.product_id);
+                let instrument_id = self.resolve_instrument_id(&ticker.product_id);
 
                 let instrument = match self.instruments.get(&instrument_id) {
                     Some(inst) => inst,
@@ -502,7 +521,7 @@ impl FeedHandler {
             let is_snapshot = matches!(event.event_type, WsEventType::Snapshot);
 
             for order in &event.orders {
-                let instrument_id = instrument_id_from_product(&order.product_id);
+                let instrument_id = self.resolve_instrument_id(&order.product_id);
                 let instrument = match self.instruments.get(&instrument_id).cloned() {
                     Some(inst) => inst,
                     None => {
@@ -607,7 +626,7 @@ impl FeedHandler {
                     }
                 };
 
-                let instrument_id = instrument_id_from_product(&candle.product_id);
+                let instrument_id = self.resolve_instrument_id(&candle.product_id);
 
                 let instrument = match self.instruments.get(&instrument_id) {
                     Some(inst) => inst,
@@ -649,7 +668,6 @@ mod tests {
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
-    use ustr::Ustr;
 
     use super::*;
     use crate::common::testing::load_test_fixture;
@@ -657,7 +675,12 @@ mod tests {
     fn test_handler() -> FeedHandler {
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
-        FeedHandler::new(Arc::new(AtomicBool::new(false)), cmd_rx, raw_rx)
+        FeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            Arc::new(AtomicMap::new()),
+        )
     }
 
     fn btc_usd_instrument() -> InstrumentAny {
@@ -926,7 +949,8 @@ mod tests {
         let signal = Arc::new(AtomicBool::new(false));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut handler = FeedHandler::new(signal.clone(), cmd_rx, raw_rx);
+        let mut handler =
+            FeedHandler::new(signal.clone(), cmd_rx, raw_rx, Arc::new(AtomicMap::new()));
 
         signal.store(true, Ordering::Release);
 

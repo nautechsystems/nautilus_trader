@@ -43,8 +43,10 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderSide, OrderStatus},
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
+    enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TriggerType},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId,
+    },
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -53,6 +55,7 @@ use nautilus_model::{
 use nautilus_network::retry::RetryConfig;
 use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
+use ustr::Ustr;
 
 use crate::{
     common::{
@@ -61,10 +64,14 @@ use crate::{
         enums::{CoinbaseProductType, CoinbaseWsChannel},
     },
     config::CoinbaseExecClientConfig,
-    http::client::CoinbaseHttpClient,
+    http::{
+        client::CoinbaseHttpClient,
+        parse::{parse_quantity, parse_ws_cfm_account_state},
+    },
     websocket::{
         client::CoinbaseWebSocketClient,
         handler::{NautilusWsMessage, UserOrderUpdate},
+        messages::WsOrderUpdate,
         parse::parse_ws_user_event_to_fill_report,
     },
 };
@@ -138,6 +145,32 @@ struct OrderCumulativeState {
     total_fees: Decimal,
     avg_price: Decimal,
     quantity: Option<Quantity>,
+}
+
+// Captures the limit / trigger metadata of a submitted order, keyed by
+// `client_order_id` so it survives the venue-id-keyed cumulative state being
+// dropped on terminal user-channel events. Coinbase's user channel does not
+// echo `price`, `stop_price`, or `trigger_type`, so without these locally
+// cached values the engine reconciler would clear the local price the moment
+// a post-fill or cancel update lands.
+#[derive(Debug, Default, Clone)]
+struct OrderContext {
+    price: Option<Price>,
+    trigger_price: Option<Price>,
+    trigger_type: Option<TriggerType>,
+    // `post_only` order fills are guaranteed `Maker` (the venue rejects an
+    // immediate match outright). The Coinbase user channel does not echo
+    // this flag, so we cache it at submit time and pass it through to the
+    // synthesized FillReport's `liquidity_side`.
+    post_only: bool,
+    // The `product_id` the order was submitted with. Coinbase rewrites
+    // aliased products to the canonical id on the user channel, so
+    // `update.product_id` always reads as the canonical (e.g. `BTC-USD`)
+    // even for an order placed on the alias side (`BTC-USDC`). Looking the
+    // submitted id up by `client_order_id` lets us re-key user-channel
+    // echoes back to the caller's id without rewriting *every* canonical
+    // event globally.
+    submitted_product_id: Option<Ustr>,
 }
 
 // Bounded map for per-order cumulative tracking. Insertions track LRU order;
@@ -246,6 +279,14 @@ pub struct CoinbaseExecutionClient {
     instruments_cache: Arc<AHashMap<String, InstrumentAny>>,
     fill_dedup: Arc<Mutex<FillDedup>>,
     cumulative_state: Arc<Mutex<CumulativeStateMap>>,
+    order_contexts: Arc<Mutex<AHashMap<String, OrderContext>>>,
+    // Caches REST-derived metadata for orders this client did not submit
+    // (keyed by `venue_order_id`). Populated lazily when the user-channel
+    // handler encounters an unknown order whose `OrderStatusReport` would
+    // otherwise lack `price` / `trigger_price` / `trigger_type` and panic
+    // the engine's reconstruction path. Separate from `order_contexts`
+    // because external orders may carry a `client_order_id` we never set.
+    external_order_contexts: Arc<Mutex<AHashMap<String, OrderContext>>>,
 }
 
 impl CoinbaseExecutionClient {
@@ -322,6 +363,8 @@ impl CoinbaseExecutionClient {
             cumulative_state: Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
                 CUMULATIVE_STATE_CAPACITY,
             ))),
+            order_contexts: Arc::new(Mutex::new(AHashMap::new())),
+            external_order_contexts: Arc::new(Mutex::new(AHashMap::new())),
         })
     }
 
@@ -529,6 +572,8 @@ impl ExecutionClient for CoinbaseExecutionClient {
         if let Some(mut rx) = self.ws_user.take_out_rx() {
             let fill_dedup = Arc::clone(&self.fill_dedup);
             let cumulative_state = Arc::clone(&self.cumulative_state);
+            let order_contexts = Arc::clone(&self.order_contexts);
+            let external_order_contexts = Arc::clone(&self.external_order_contexts);
             let emitter = self.emitter.clone();
             let http_client = self.http_client.clone();
             let account_id = self.core.account_id;
@@ -544,13 +589,16 @@ impl ExecutionClient for CoinbaseExecutionClient {
                                 &emitter,
                                 &fill_dedup,
                                 &cumulative_state,
-                            );
+                                &order_contexts,
+                                &external_order_contexts,
+                                &http_client,
+                                account_id,
+                            )
+                            .await;
                         }
                         NautilusWsMessage::FuturesBalanceSummary(summary) => {
                             let ts = clock.get_time_ns();
-                            match crate::http::parse::parse_ws_cfm_account_state(
-                                &summary, account_id, ts, ts,
-                            ) {
+                            match parse_ws_cfm_account_state(&summary, account_id, ts, ts) {
                                 Ok(state) => emitter.send_account_state(state),
                                 Err(e) => log::warn!(
                                     "Failed to parse futures_balance_summary into AccountState: {e}"
@@ -928,11 +976,19 @@ impl ExecutionClient for CoinbaseExecutionClient {
             return Ok(());
         }
 
+        // The user channel does not need a product-wide alias registration:
+        // `order_contexts` (keyed by `client_order_id`) records the
+        // submitted `product_id` and `handle_user_order_update` rewrites the
+        // report's instrument id from there. A product-wide map would
+        // misroute external or canonical-side orders that share the same
+        // wire `product_id`.
+
         log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
         self.emitter.emit_order_submitted(&order);
 
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
+        let order_contexts = Arc::clone(&self.order_contexts);
         let clock = self.clock;
         let strategy_id = order.strategy_id();
         let client_order_id = order.client_order_id();
@@ -942,10 +998,31 @@ impl ExecutionClient for CoinbaseExecutionClient {
         let time_in_force = order.time_in_force();
         let price = order.price();
         let trigger_price = order.trigger_price();
+        let trigger_type = order.trigger_type();
         let expire_time = order.expire_time();
         let post_only = order.is_post_only();
         let is_quote_quantity = order.is_quote_quantity();
         let reduce_only = order.is_reduce_only();
+
+        // Cache limit/trigger metadata under `client_order_id` synchronously
+        // before the spawn so user-channel updates that race the REST submit
+        // response can still patch their reports. Coinbase's user channel does
+        // not echo `price`, `stop_price`, `trigger_type`, or whether the order
+        // is `post_only`, so without this the engine reconciler would clear
+        // the local price and synthesized fills would lack `LiquiditySide`.
+        {
+            let mut map = self.order_contexts.lock().expect(MUTEX_POISONED);
+            map.insert(
+                client_order_id.to_string(),
+                OrderContext {
+                    price,
+                    trigger_price,
+                    trigger_type,
+                    post_only,
+                    submitted_product_id: Some(instrument_id.symbol.inner()),
+                },
+            );
+        }
         let (leverage, margin_type) = if self.core.account_type == AccountType::Margin {
             (
                 self.config.default_leverage,
@@ -1000,6 +1077,23 @@ impl ExecutionClient for CoinbaseExecutionClient {
                             || response.failure_reason.clone(),
                             |e| format!("{}: {}", e.error, e.message),
                         );
+                        // `INVALID_LIMIT_PRICE_POST_ONLY` is Coinbase's reject
+                        // code when a `post_only` order would have crossed
+                        // the spread by the time it reached the matching
+                        // engine. Mark the rejection so strategies can react
+                        // (typically: re-quote at the new TOB).
+                        let due_post_only = reason.contains("INVALID_LIMIT_PRICE_POST_ONLY")
+                            || response.error_response.as_ref().is_some_and(|e| {
+                                e.preview_failure_reason == "PREVIEW_INVALID_LIMIT_PRICE_POSTONLY"
+                                    || e.new_order_failure_reason == "INVALID_LIMIT_PRICE_POST_ONLY"
+                            });
+                        // Order never made it to the venue: drop the cached
+                        // metadata so the map does not grow unbounded with
+                        // dead entries.
+                        order_contexts
+                            .lock()
+                            .expect(MUTEX_POISONED)
+                            .remove(client_order_id.as_str());
                         let ts_event = clock.get_time_ns();
                         emitter.emit_order_rejected_event(
                             strategy_id,
@@ -1007,11 +1101,15 @@ impl ExecutionClient for CoinbaseExecutionClient {
                             client_order_id,
                             &format!("submit-order-rejected: {reason}"),
                             ts_event,
-                            false,
+                            due_post_only,
                         );
                     }
                 }
                 Err(e) => {
+                    order_contexts
+                        .lock()
+                        .expect(MUTEX_POISONED)
+                        .remove(client_order_id.as_str());
                     let ts_event = clock.get_time_ns();
                     emitter.emit_order_rejected_event(
                         strategy_id,
@@ -1057,14 +1155,30 @@ impl ExecutionClient for CoinbaseExecutionClient {
             return Ok(());
         }
 
+        // Coinbase's `/orders/edit` requires both `price` and `size` to be
+        // present in the request even when only one is changing; omitting
+        // `size` is interpreted as 0 and rejected with `INVALID_EDITED_SIZE` /
+        // `CANNOT_EDIT_TO_BELOW_FILLED_SIZE`. Auto-fill missing fields from
+        // the cached order so strategies can call `modify_order(price=...)`
+        // without having to look up the current quantity themselves.
+        let (auto_price, auto_quantity) = {
+            let cache = self.core.cache();
+            let order = cache.order(&cmd.client_order_id);
+            (
+                cmd.price.or_else(|| order.and_then(|o| o.price())),
+                cmd.quantity.or_else(|| order.map(|o| o.quantity())),
+            )
+        };
+
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
+        let order_contexts = Arc::clone(&self.order_contexts);
         let clock = self.clock;
         let strategy_id = cmd.strategy_id;
         let instrument_id = cmd.instrument_id;
         let client_order_id = cmd.client_order_id;
-        let price = cmd.price;
-        let quantity = cmd.quantity;
+        let price = auto_price;
+        let quantity = auto_quantity;
         let trigger_price = cmd.trigger_price;
 
         self.spawn_task("modify_order", async move {
@@ -1074,7 +1188,24 @@ impl ExecutionClient for CoinbaseExecutionClient {
 
             match result {
                 Ok(resp) => {
-                    if !resp.success {
+                    if resp.success {
+                        // Refresh the submit-time metadata cache so subsequent
+                        // user-channel updates patch with the new price /
+                        // trigger_price (Coinbase user channel does not echo
+                        // these fields, so a stale cache would let the
+                        // reconciler revert the local order to the pre-edit
+                        // values).
+                        let mut map = order_contexts.lock().expect(MUTEX_POISONED);
+                        if let Some(meta) = map.get_mut(client_order_id.as_str()) {
+                            if price.is_some() {
+                                meta.price = price;
+                            }
+
+                            if trigger_price.is_some() {
+                                meta.trigger_price = trigger_price;
+                            }
+                        }
+                    } else {
                         let reason = resp
                             .errors
                             .iter()
@@ -1205,9 +1336,8 @@ impl ExecutionClient for CoinbaseExecutionClient {
             // Filter to statuses that are safe to cancel and to the requested
             // side since Coinbase's batch-cancel endpoint has no side parameter.
             //
-            // We can't use `OrderStatus::is_cancellable()` because it excludes
-            // `Submitted`, but Coinbase's `PENDING` / `QUEUED` map to `Submitted`
-            // and are still cancelable. We can't use `is_open()` either because
+            // Coinbase's `PENDING` / `QUEUED` / `OPEN` all map to `Accepted`
+            // and are cancelable. We can't use `OrderStatus::is_open()` because
             // it includes `PendingCancel`, and re-cancelling a `CANCEL_QUEUED`
             // order risks `CancelRejected` flipping the order back to its prior
             // working status.
@@ -1216,8 +1346,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                 .filter(|r| {
                     matches!(
                         r.order_status,
-                        OrderStatus::Submitted
-                            | OrderStatus::Accepted
+                        OrderStatus::Accepted
                             | OrderStatus::Triggered
                             | OrderStatus::PendingUpdate
                             | OrderStatus::PartiallyFilled
@@ -1380,27 +1509,138 @@ impl ExecutionClient for CoinbaseExecutionClient {
 // Processes a single user-channel order update: emits the status report,
 // synthesizes a FillReport from the cumulative delta, and deduplicates
 // replayed fills by (venue_order_id, trade_id).
-fn handle_user_order_update(
+#[allow(clippy::too_many_arguments)]
+async fn handle_user_order_update(
     carrier: UserOrderUpdate,
     emitter: &ExecutionEventEmitter,
     fill_dedup: &Arc<Mutex<FillDedup>>,
     cumulative_state: &Arc<Mutex<CumulativeStateMap>>,
+    order_contexts: &Arc<Mutex<AHashMap<String, OrderContext>>>,
+    external_order_contexts: &Arc<Mutex<AHashMap<String, OrderContext>>>,
+    http_client: &CoinbaseHttpClient,
+    account_id: AccountId,
+) {
+    // Coinbase's user channel does not echo `price`, `stop_price`,
+    // `trigger_type`, or `post_only`. Resolve an `OrderContext` (cached
+    // from `submit_order` for orders this client placed, or fetched from
+    // REST and cached for external orders) so the report can be patched
+    // before reaching the engine reconciler.
+    let context = resolve_order_context(
+        &carrier.update,
+        carrier.report.order_type,
+        carrier.report.price.is_none(),
+        order_contexts,
+        external_order_contexts,
+        http_client,
+        account_id,
+    )
+    .await;
+
+    let is_terminal = carrier.update.status.is_terminal();
+    let client_order_id = carrier.update.client_order_id.clone();
+    let venue_order_id = carrier.update.order_id.clone();
+
+    process_user_order_update(
+        carrier,
+        context,
+        emitter,
+        fill_dedup,
+        cumulative_state,
+        Some(http_client),
+    );
+
+    // Drop submit-time / enrichment metadata once the order reaches a
+    // terminal state so long-running clients do not accumulate one entry
+    // per order. Mirrors the cumulative-state cleanup in
+    // `process_user_order_update`.
+    if is_terminal {
+        if !client_order_id.is_empty() {
+            order_contexts
+                .lock()
+                .expect(MUTEX_POISONED)
+                .remove(&client_order_id);
+        }
+        external_order_contexts
+            .lock()
+            .expect(MUTEX_POISONED)
+            .remove(&venue_order_id);
+    }
+}
+
+// Sync portion of the user-channel update handler. Split from
+// `handle_user_order_update` so tests can drive it without a tokio runtime;
+// the only async dependency is REST enrichment in `resolve_order_context`.
+fn process_user_order_update(
+    carrier: UserOrderUpdate,
+    context: Option<OrderContext>,
+    emitter: &ExecutionEventEmitter,
+    fill_dedup: &Arc<Mutex<FillDedup>>,
+    cumulative_state: &Arc<Mutex<CumulativeStateMap>>,
+    http_client: Option<&CoinbaseHttpClient>,
 ) {
     let UserOrderUpdate {
         mut report,
         update,
-        instrument,
+        mut instrument,
         is_snapshot,
         ts_event,
         ts_init,
     } = carrier;
+
+    let mut fill_liquidity_side = LiquiditySide::NoLiquiditySide;
+    let have_order_contexts = context.is_some();
+    let mut publish_instrument_id: Option<InstrumentId> = None;
+
+    if let Some(meta) = context {
+        if report.price.is_none() && meta.price.is_some() {
+            report.price = meta.price;
+        }
+
+        if report.trigger_price.is_none() && meta.trigger_price.is_some() {
+            report.trigger_price = meta.trigger_price;
+        }
+
+        if report.trigger_type.is_none() && meta.trigger_type.is_some() {
+            report.trigger_type = meta.trigger_type;
+        }
+
+        if meta.post_only {
+            // `post_only` orders are guaranteed `Maker`. Non-post-only
+            // orders cannot be classified from the user channel alone so
+            // they keep `NoLiquiditySide` until the fill is reconciled
+            // against the REST `/orders/historical/fills` endpoint.
+            fill_liquidity_side = LiquiditySide::Maker;
+            // The user channel does not echo `post_only`, so propagate the
+            // cached flag to the OSR to preserve maker-only semantics for
+            // any downstream order reconstruction.
+            report.post_only = true;
+        }
+
+        if let Some(submitted) = meta.submitted_product_id
+            && submitted != update.product_id
+        {
+            let submitted_id = InstrumentId::new(Symbol::new(submitted), *COINBASE_VENUE);
+            report.instrument_id = submitted_id;
+            publish_instrument_id = Some(submitted_id);
+            // Replace the carrier's instrument with the submitted-side one
+            // (looked up from the http client's bootstrapped cache) so the
+            // FillReport's commission currency, price/size precision, and
+            // any other instrument-derived field reflect the actual order's
+            // instrument rather than the canonical wire alias.
+            if let Some(http) = http_client
+                && let Some(submitted_instrument) = http.instruments().get_cloned(&submitted_id)
+            {
+                instrument = submitted_instrument;
+            }
+        }
+    }
 
     let size_precision = instrument.size_precision();
 
     let cumulative_qty = if update.cumulative_quantity.is_empty() {
         Quantity::zero(size_precision)
     } else {
-        match crate::http::parse::parse_quantity(&update.cumulative_quantity, size_precision) {
+        match parse_quantity(&update.cumulative_quantity, size_precision) {
             Ok(q) => q,
             Err(e) => {
                 log::warn!(
@@ -1533,69 +1773,191 @@ fn handle_user_order_update(
         report.quantity = restored_quantity;
     }
 
-    emitter.send_order_status_report(*report);
+    // Emit the synthesized FillReport before the OrderStatusReport when there
+    // is one. The engine's reconciler treats an OrderStatusReport with status
+    // `Filled` / `PartiallyFilled` as authoritative for `filled_qty` and will
+    // *infer* a synthetic fill when the local order is behind the report. If
+    // the OrderStatusReport landed first, that inferred fill would race ours
+    // and ours would then be rejected as an overfill.
+    let synthesized_fill = if delta_qty.is_positive()
+        && last_fill_price_decimal.is_sign_positive()
+        && !last_fill_price_decimal.is_zero()
+    {
+        let price_precision = instrument.price_precision();
+        match Price::from_decimal_dp(last_fill_price_decimal, price_precision) {
+            Ok(last_px) => {
+                // Coinbase's user channel reports cumulative state and does
+                // not assign a per-fill trade id, so we synthesize one.
+                // `TradeId` is a 36-char stack string; a full venue UUID
+                // (36 chars) plus the cumulative_qty would overflow. Use the
+                // first 8 chars of the venue UUID (already random hex) as a
+                // stable per-order discriminator.
+                let order_id_short = &update.order_id[..update.order_id.len().min(8)];
+                let trade_id = TradeId::new(format!("{order_id_short}-{cumulative_qty}"));
+                let trade_id_str = trade_id.as_str().to_string();
 
-    if !delta_qty.is_positive() || !last_fill_price_decimal.is_sign_positive() {
-        return;
-    }
+                let is_new = {
+                    let mut dedup = fill_dedup.lock().expect(MUTEX_POISONED);
+                    dedup.insert((update.order_id.clone(), trade_id_str))
+                };
 
-    if last_fill_price_decimal.is_zero() {
-        return;
-    }
-
-    let price_precision = instrument.price_precision();
-    let last_px = match Price::from_decimal_dp(last_fill_price_decimal, price_precision) {
-        Ok(p) => p,
-        Err(e) => {
-            log::warn!(
-                "Failed to build Price from derived last_fill={last_fill_price_decimal} at precision {price_precision} for order {}: {e}",
-                update.order_id
-            );
-            return;
+                if is_new {
+                    let commission_currency = instrument.quote_currency();
+                    match Money::from_decimal(delta_fees, commission_currency) {
+                        Ok(commission) => Some(parse_ws_user_event_to_fill_report(
+                            &update,
+                            delta_qty,
+                            last_px,
+                            commission,
+                            trade_id,
+                            &instrument,
+                            emitter.account_id(),
+                            fill_liquidity_side,
+                            ts_event,
+                            ts_init,
+                        )),
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to build commission Money for order {}: {e}",
+                                update.order_id
+                            );
+                            None
+                        }
+                    }
+                } else {
+                    log::debug!(
+                        "Dropping duplicate fill venue_order_id={}, trade_id={}",
+                        update.order_id,
+                        trade_id,
+                    );
+                    None
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "Failed to build Price from derived last_fill={last_fill_price_decimal} at precision {price_precision} for order {}: {e}",
+                    update.order_id
+                );
+                None
+            }
         }
+    } else {
+        None
     };
 
-    let trade_id = TradeId::new(format!("{}-{}", update.order_id, cumulative_qty));
-    let trade_id_str = trade_id.as_str().to_string();
+    if let Some(mut fill_report) = synthesized_fill {
+        if let Some(id) = publish_instrument_id {
+            fill_report.instrument_id = id;
+        }
+        emitter.send_fill_report(fill_report);
+    }
 
-    let is_new = {
-        let mut dedup = fill_dedup.lock().expect(MUTEX_POISONED);
-        dedup.insert((update.order_id.clone(), trade_id_str))
+    // OSR emission policy:
+    // - For order types that carry a price (LIMIT / STOP_LIMIT) or trigger
+    //   (STOP_MARKET / *_IF_TOUCHED), the report must include the relevant
+    //   field before reaching the engine reconciler; otherwise the order
+    //   reconstruction path panics with a missing-field error. Patching
+    //   above pulls these from the OrderContext when one is available, but
+    //   if enrichment was needed and unavailable (REST fetch failed for an
+    //   external order) the report is still missing the field and is unsafe
+    //   to emit.
+    // - Snapshots emit only when we have submit-time metadata; the
+    //   user-channel snapshot omits these fields entirely. With metadata,
+    //   the report has been patched above and is safe to emit (this
+    //   preserves reconnect-time partial-fill recovery for orders submitted
+    //   by this process). For unknown orders, the REST mass-status path
+    //   called from `LiveNode` startup is the canonical source.
+    let report_safe_for_type = match report.order_type {
+        OrderType::Limit | OrderType::LimitIfTouched => report.price.is_some(),
+        OrderType::StopLimit => report.price.is_some() && report.trigger_price.is_some(),
+        OrderType::StopMarket | OrderType::MarketIfTouched => report.trigger_price.is_some(),
+        _ => true,
     };
-
-    if !is_new {
-        log::debug!(
-            "Dropping duplicate fill venue_order_id={}, trade_id={}",
+    let should_emit = (!is_snapshot || have_order_contexts) && report_safe_for_type;
+    if should_emit {
+        emitter.send_order_status_report(*report);
+    } else if !report_safe_for_type {
+        log::warn!(
+            "Suppressed unsafe OrderStatusReport for {} {}: missing price/trigger after enrichment",
+            report.order_type,
             update.order_id,
-            trade_id,
         );
-        return;
+    }
+}
+
+// Returns the submit-time / enriched metadata for `update`, fetching from
+// REST and populating the enrichment cache the first time an external order
+// is seen. `order_contexts` (keyed by `client_order_id`) covers orders this
+// client placed; `external_order_contexts` (keyed by venue `order_id`) covers
+// external orders whose `OrderStatusReport` would otherwise be unsafe to
+// reconstruct (LIMIT / STOP_LIMIT with `price = None`).
+async fn resolve_order_context(
+    update: &WsOrderUpdate,
+    order_type: OrderType,
+    report_price_missing: bool,
+    order_contexts: &Arc<Mutex<AHashMap<String, OrderContext>>>,
+    external_order_contexts: &Arc<Mutex<AHashMap<String, OrderContext>>>,
+    http_client: &CoinbaseHttpClient,
+    account_id: AccountId,
+) -> Option<OrderContext> {
+    if !update.client_order_id.is_empty() {
+        let map = order_contexts.lock().expect(MUTEX_POISONED);
+        if let Some(meta) = map.get(&update.client_order_id) {
+            return Some(meta.clone());
+        }
     }
 
-    let commission_currency = instrument.quote_currency();
-    let commission = match Money::from_decimal(delta_fees, commission_currency) {
-        Ok(m) => m,
+    if let Some(meta) = external_order_contexts
+        .lock()
+        .expect(MUTEX_POISONED)
+        .get(&update.order_id)
+    {
+        return Some(meta.clone());
+    }
+
+    let needs_enrichment = report_price_missing
+        && matches!(
+            order_type,
+            OrderType::Limit
+                | OrderType::StopLimit
+                | OrderType::LimitIfTouched
+                | OrderType::StopMarket
+                | OrderType::MarketIfTouched
+        );
+
+    if !needs_enrichment {
+        return None;
+    }
+
+    let venue_order_id = VenueOrderId::new(update.order_id.as_str());
+    match http_client
+        .request_order_status_report(account_id, None, Some(venue_order_id))
+        .await
+    {
+        Ok(rest_report) => {
+            let post_only_from_rest = matches!(order_type, OrderType::Limit | OrderType::StopLimit)
+                && rest_report.post_only;
+            let meta = OrderContext {
+                price: rest_report.price,
+                trigger_price: rest_report.trigger_price,
+                trigger_type: rest_report.trigger_type,
+                post_only: post_only_from_rest,
+                submitted_product_id: None,
+            };
+            external_order_contexts
+                .lock()
+                .expect(MUTEX_POISONED)
+                .insert(update.order_id.clone(), meta.clone());
+            Some(meta)
+        }
         Err(e) => {
             log::warn!(
-                "Failed to build commission Money for order {}: {e}",
+                "Failed to enrich external order {} via REST: {e}",
                 update.order_id
             );
-            return;
+            None
         }
-    };
-
-    let report = parse_ws_user_event_to_fill_report(
-        &update,
-        delta_qty,
-        last_px,
-        commission,
-        trade_id,
-        &instrument,
-        emitter.account_id(),
-        ts_event,
-        ts_init,
-    );
-    emitter.send_fill_report(report);
+    }
 }
 
 #[cfg(test)]
@@ -1835,6 +2197,16 @@ mod tests {
         make_carrier_with_kind(update, false)
     }
 
+    // Stub OrderContext with `price` populated so process_user_order_update's
+    // safe-emission gate accepts a LIMIT report. Mirrors what `submit_order`
+    // would have cached under production flow.
+    fn make_limit_context() -> OrderContext {
+        OrderContext {
+            price: Some(Price::from("100.00")),
+            ..OrderContext::default()
+        }
+    }
+
     fn make_carrier_with_kind(update: WsOrderUpdate, is_snapshot: bool) -> UserOrderUpdate {
         let instrument = test_instrument();
         let report = crate::websocket::parse::parse_ws_user_event_to_order_status_report(
@@ -1868,6 +2240,48 @@ mod tests {
         reports
     }
 
+    // Drains both `OrderStatusReport`s and `FillReport`s from `rx` in a single
+    // pass. Tests that need both must use this rather than calling
+    // `drain_status_reports` and `drain_fill_reports` sequentially, since each
+    // consumes the channel and discards non-matching events.
+    fn drain_all_reports(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    ) -> (Vec<OrderStatusReport>, Vec<FillReport>) {
+        let mut orders = Vec::new();
+        let mut fills = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                ExecutionEvent::Report(ExecutionReport::Order(r)) => orders.push(*r),
+                ExecutionEvent::Report(ExecutionReport::Fill(r)) => fills.push(*r),
+                _ => {}
+            }
+        }
+        (orders, fills)
+    }
+
+    fn drain_status_reports(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    ) -> Vec<OrderStatusReport> {
+        let mut reports = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            if let ExecutionEvent::Report(ExecutionReport::Order(report)) = event {
+                reports.push(*report);
+            }
+        }
+        reports
+    }
+
+    fn make_dedup_state_pair() -> (Arc<Mutex<FillDedup>>, Arc<Mutex<CumulativeStateMap>>) {
+        (
+            Arc::new(Mutex::new(FillDedup::new(64))),
+            Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
+                CUMULATIVE_STATE_CAPACITY,
+            ))),
+        )
+    }
+
     #[rstest]
     fn test_handle_user_order_update_emits_status_report_and_no_fill_when_zero_filled() {
         let (emitter, mut rx) = make_emitter();
@@ -1878,7 +2292,14 @@ mod tests {
 
         // Open with no fills yet.
         let update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
-        handle_user_order_update(make_carrier(update), &emitter, &dedup, &state);
+        process_user_order_update(
+            make_carrier(update),
+            Some(make_limit_context()),
+            &emitter,
+            &dedup,
+            &state,
+            None,
+        );
 
         // Status report emitted, no fill report.
         let mut got_status = false;
@@ -1905,13 +2326,13 @@ mod tests {
 
         // First partial: 0.5 @ 100, total_fees=0.05.
         let update_1 = make_user_order_update("0.5", "0.5", "100.00", "0.05", CbStatus::Open);
-        handle_user_order_update(make_carrier(update_1), &emitter, &dedup, &state);
+        process_user_order_update(make_carrier(update_1), None, &emitter, &dedup, &state, None);
 
         // Second partial: cumulative 1.0 @ 110, total_fees=0.15.
         // delta_qty = 0.5; per_fill_px = (110*1.0 - 100*0.5) / 0.5 = 120.
         // delta_fees = 0.10.
         let update_2 = make_user_order_update("1.0", "0", "110.00", "0.15", CbStatus::Filled);
-        handle_user_order_update(make_carrier(update_2), &emitter, &dedup, &state);
+        process_user_order_update(make_carrier(update_2), None, &emitter, &dedup, &state, None);
 
         let fills = drain_fill_reports(&mut rx);
         assert_eq!(fills.len(), 2);
@@ -1936,7 +2357,14 @@ mod tests {
         )));
 
         let update = make_user_order_update("0.5", "0.5", "100.00", "0.05", CbStatus::Open);
-        handle_user_order_update(make_carrier(update.clone()), &emitter, &dedup, &state);
+        process_user_order_update(
+            make_carrier(update.clone()),
+            None,
+            &emitter,
+            &dedup,
+            &state,
+            None,
+        );
 
         // Simulate a WS reconnect that wipes the cumulative state, then replays
         // the same cumulative=0.5 snapshot. The fill_dedup must drop the
@@ -1945,7 +2373,7 @@ mod tests {
             let mut s = state.lock().unwrap();
             s.clear();
         }
-        handle_user_order_update(make_carrier(update), &emitter, &dedup, &state);
+        process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
 
         let fills = drain_fill_reports(&mut rx);
         assert_eq!(fills.len(), 1, "replay should be deduplicated");
@@ -1960,7 +2388,7 @@ mod tests {
         )));
 
         let update = make_user_order_update("1.0", "0", "100.00", "0.10", CbStatus::Filled);
-        handle_user_order_update(make_carrier(update), &emitter, &dedup, &state);
+        process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
 
         // Drain emitted events.
         let _ = drain_fill_reports(&mut rx);
@@ -1982,7 +2410,7 @@ mod tests {
 
         // cumulative_quantity > 0 but avg_price = 0 (defensive: should not emit fill).
         let update = make_user_order_update("0.5", "0.5", "0", "0", CbStatus::Open);
-        handle_user_order_update(make_carrier(update), &emitter, &dedup, &state);
+        process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
 
         let fills = drain_fill_reports(&mut rx);
         assert!(
@@ -2003,11 +2431,13 @@ mod tests {
         // subscribed. Cumulative_quantity > 0 with positive avg_price would
         // normally synthesize a fill, but the snapshot flag must suppress it.
         let update = make_user_order_update("0.5", "0.5", "100.00", "0.05", CbStatus::Open);
-        handle_user_order_update(
+        process_user_order_update(
             make_carrier_with_kind(update, true),
+            None,
             &emitter,
             &dedup,
             &state,
+            None,
         );
 
         let fills = drain_fill_reports(&mut rx);
@@ -2033,12 +2463,19 @@ mod tests {
 
         // Cold-start snapshot at cumulative=0.5.
         let snap = make_user_order_update("0.5", "0.5", "100.00", "0.05", CbStatus::Open);
-        handle_user_order_update(make_carrier_with_kind(snap, true), &emitter, &dedup, &state);
+        process_user_order_update(
+            make_carrier_with_kind(snap, true),
+            None,
+            &emitter,
+            &dedup,
+            &state,
+            None,
+        );
 
         // Subsequent live update at cumulative=1.0 should emit a single fill
         // for the 0.5 delta only, not the full cumulative.
         let live = make_user_order_update("1.0", "0", "110.00", "0.15", CbStatus::Filled);
-        handle_user_order_update(make_carrier(live), &emitter, &dedup, &state);
+        process_user_order_update(make_carrier(live), None, &emitter, &dedup, &state, None);
 
         let fills = drain_fill_reports(&mut rx);
         assert_eq!(fills.len(), 1);
@@ -2061,14 +2498,28 @@ mod tests {
 
         // Live partial: cumulative=0, leaves=1.0 (full size 1.0 working).
         let working = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
-        handle_user_order_update(make_carrier(working), &emitter, &dedup, &state);
+        process_user_order_update(
+            make_carrier(working),
+            Some(make_limit_context()),
+            &emitter,
+            &dedup,
+            &state,
+            None,
+        );
         // Drain the open report.
         while rx.try_recv().is_ok() {}
 
         // Cancellation: venue zeroes leaves_quantity. cum+leaves would be 0,
         // but the report's quantity must stay 1.0 (the original order size).
         let cancelled = make_user_order_update("0", "0", "0", "0", CbStatus::Cancelled);
-        handle_user_order_update(make_carrier(cancelled), &emitter, &dedup, &state);
+        process_user_order_update(
+            make_carrier(cancelled),
+            Some(make_limit_context()),
+            &emitter,
+            &dedup,
+            &state,
+            None,
+        );
 
         let mut got_terminal_report: Option<OrderStatusReport> = None;
 
@@ -2082,6 +2533,227 @@ mod tests {
             report.quantity,
             Quantity::from("1.00000000"),
             "terminal report must restore the original order quantity"
+        );
+    }
+
+    #[rstest]
+    fn test_process_user_order_update_suppresses_snapshot_without_context() {
+        // Snapshot for an order we don't have context for must be suppressed
+        // so the engine reconciler does not panic reconstructing a LIMIT
+        // order from `report.price = None`.
+        let (emitter, mut rx) = make_emitter();
+        let (dedup, state) = make_dedup_state_pair();
+
+        let update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
+        process_user_order_update(
+            make_carrier_with_kind(update, true),
+            None,
+            &emitter,
+            &dedup,
+            &state,
+            None,
+        );
+
+        assert!(drain_status_reports(&mut rx).is_empty());
+        assert!(drain_fill_reports(&mut rx).is_empty());
+    }
+
+    #[rstest]
+    fn test_process_user_order_update_emits_snapshot_when_context_present() {
+        // With a known OrderContext the snapshot OSR is safe to emit and
+        // the patched price reaches the engine.
+        let (emitter, mut rx) = make_emitter();
+        let (dedup, state) = make_dedup_state_pair();
+        let context = OrderContext {
+            price: Some(Price::from("100.00")),
+            ..Default::default()
+        };
+
+        let update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
+        process_user_order_update(
+            make_carrier_with_kind(update, true),
+            Some(context),
+            &emitter,
+            &dedup,
+            &state,
+            None,
+        );
+
+        let osrs = drain_status_reports(&mut rx);
+        assert_eq!(osrs.len(), 1);
+        assert_eq!(osrs[0].price, Some(Price::from("100.00")));
+    }
+
+    #[rstest]
+    fn test_process_user_order_update_patches_price_and_trigger_from_context() {
+        // The user channel does not echo `price` / `stop_price` /
+        // `trigger_type`. Patching from context is what stops the engine
+        // reconciler clearing the local price.
+        let (emitter, mut rx) = make_emitter();
+        let (dedup, state) = make_dedup_state_pair();
+        let context = OrderContext {
+            price: Some(Price::from("100.50")),
+            trigger_price: Some(Price::from("99.00")),
+            trigger_type: Some(TriggerType::LastPrice),
+            ..Default::default()
+        };
+
+        let update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
+        process_user_order_update(
+            make_carrier(update),
+            Some(context),
+            &emitter,
+            &dedup,
+            &state,
+            None,
+        );
+
+        let osrs = drain_status_reports(&mut rx);
+        assert_eq!(osrs[0].price, Some(Price::from("100.50")));
+        assert_eq!(osrs[0].trigger_price, Some(Price::from("99.00")));
+        assert_eq!(osrs[0].trigger_type, Some(TriggerType::LastPrice));
+    }
+
+    #[rstest]
+    fn test_process_user_order_update_rekeys_to_submitted_product_id() {
+        // Wire `product_id` is `BTC-USD` (canonical) but the order was
+        // submitted on the alias side `BTC-USDC`. Both the OSR and the
+        // synthesized FillReport must surface the submitted id.
+        let (emitter, mut rx) = make_emitter();
+        let (dedup, state) = make_dedup_state_pair();
+        let context = OrderContext {
+            price: Some(Price::from("100.00")),
+            submitted_product_id: Some(Ustr::from("BTC-USDC")),
+            ..Default::default()
+        };
+
+        let update = make_user_order_update("1.0", "0", "100.00", "0.05", CbStatus::Filled);
+        process_user_order_update(
+            make_carrier(update),
+            Some(context),
+            &emitter,
+            &dedup,
+            &state,
+            None,
+        );
+
+        let (osrs, fills) = drain_all_reports(&mut rx);
+        assert_eq!(osrs.len(), 1);
+        assert_eq!(
+            osrs[0].instrument_id,
+            InstrumentId::from("BTC-USDC.COINBASE")
+        );
+        assert_eq!(fills.len(), 1);
+        assert_eq!(
+            fills[0].instrument_id,
+            InstrumentId::from("BTC-USDC.COINBASE")
+        );
+    }
+
+    #[rstest]
+    #[case(true, LiquiditySide::Maker)]
+    #[case(false, LiquiditySide::NoLiquiditySide)]
+    fn test_process_user_order_update_stamps_liquidity_side_from_post_only(
+        #[case] post_only: bool,
+        #[case] expected: LiquiditySide,
+    ) {
+        let (emitter, mut rx) = make_emitter();
+        let (dedup, state) = make_dedup_state_pair();
+        let context = OrderContext {
+            price: Some(Price::from("100.00")),
+            post_only,
+            ..Default::default()
+        };
+
+        let update = make_user_order_update("1.0", "0", "100.00", "0.05", CbStatus::Filled);
+        process_user_order_update(
+            make_carrier(update),
+            Some(context),
+            &emitter,
+            &dedup,
+            &state,
+            None,
+        );
+
+        let fills = drain_fill_reports(&mut rx);
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].liquidity_side, expected);
+    }
+
+    #[rstest]
+    fn test_process_user_order_update_propagates_post_only_to_status_report() {
+        // Coinbase's user channel does not echo `post_only`; downstream
+        // reconstruction would lose maker-only semantics if we did not
+        // propagate the cached flag to the OrderStatusReport.
+        let (emitter, mut rx) = make_emitter();
+        let (dedup, state) = make_dedup_state_pair();
+        let context = OrderContext {
+            price: Some(Price::from("100.00")),
+            post_only: true,
+            ..Default::default()
+        };
+
+        let update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
+        process_user_order_update(
+            make_carrier(update),
+            Some(context),
+            &emitter,
+            &dedup,
+            &state,
+            None,
+        );
+
+        let osrs = drain_status_reports(&mut rx);
+        assert_eq!(osrs.len(), 1);
+        assert!(osrs[0].post_only);
+    }
+
+    #[rstest]
+    #[case(OrderType::Limit)]
+    #[case(OrderType::StopLimit)]
+    fn test_process_user_order_update_suppresses_unsafe_report_when_enrichment_unavailable(
+        #[case] order_type: OrderType,
+    ) {
+        // For LIMIT / STOP_LIMIT orders, missing `price` (or `trigger_price`)
+        // would panic the engine reconciler. When enrichment is unavailable
+        // the OSR must be suppressed rather than emitted with `None` fields.
+        let (emitter, mut rx) = make_emitter();
+        let (dedup, state) = make_dedup_state_pair();
+        let mut update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
+        update.order_type = match order_type {
+            OrderType::Limit => CbType::Limit,
+            OrderType::StopLimit => CbType::StopLimit,
+            _ => CbType::Limit,
+        };
+
+        process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
+
+        assert!(drain_status_reports(&mut rx).is_empty());
+    }
+
+    #[rstest]
+    fn test_process_user_order_update_trade_id_fits_stack_str() {
+        // A full Coinbase venue UUID is 36 characters; concatenating the
+        // cumulative qty would overflow `TradeId`'s 36-char stack string,
+        // so the synthesized id is `{order_id_prefix_8}-{cumulative_qty}`.
+        let (emitter, mut rx) = make_emitter();
+        let (dedup, state) = make_dedup_state_pair();
+        let mut update = make_user_order_update("1.0", "0", "100.00", "0.05", CbStatus::Filled);
+        update.order_id = "11d357f0-155e-4ed4-b87c-1cf966f65d10".to_string();
+
+        process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
+
+        let fills = drain_fill_reports(&mut rx);
+        assert_eq!(fills.len(), 1);
+        let trade_id = fills[0].trade_id.as_str();
+        assert!(
+            trade_id.len() <= 36,
+            "trade_id was {} chars",
+            trade_id.len()
+        );
+        assert!(
+            trade_id.starts_with("11d357f0-"),
+            "trade_id should start with the 8-char prefix, was {trade_id}",
         );
     }
 }

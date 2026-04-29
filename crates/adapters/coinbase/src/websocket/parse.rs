@@ -326,6 +326,7 @@ pub fn parse_ws_user_event_to_fill_report(
     trade_id: TradeId,
     instrument: &InstrumentAny,
     account_id: AccountId,
+    liquidity_side: LiquiditySide,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> FillReport {
@@ -348,7 +349,7 @@ pub fn parse_ws_user_event_to_fill_report(
         last_qty,
         last_px,
         commission,
-        LiquiditySide::NoLiquiditySide,
+        liquidity_side,
         client_order_id,
         None,
         ts_event,
@@ -746,6 +747,7 @@ mod tests {
             trade_id,
             &instrument,
             AccountId::new("COINBASE-001"),
+            LiquiditySide::Maker,
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -756,7 +758,7 @@ mod tests {
         assert_eq!(report.last_qty, Quantity::from("0.50000000"));
         assert_eq!(report.last_px, Price::from("120.00"));
         assert_eq!(report.commission, commission);
-        assert_eq!(report.liquidity_side, LiquiditySide::NoLiquiditySide);
+        assert_eq!(report.liquidity_side, LiquiditySide::Maker);
         assert_eq!(report.trade_id, trade_id);
     }
 }

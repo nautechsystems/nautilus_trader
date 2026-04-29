@@ -12,7 +12,6 @@ keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
-publish = false # Do not publish to crates.io yet
 
 [lints]
 workspace = true
@@ -101,6 +100,12 @@ rstest = { workspace = true }
 [[bin]]
 name = "coinbase-http-public"
 path = "bin/http_public.rs"
+doc = false
+test = false
+
+[[bin]]
+name = "coinbase-cancel-all-open"
+path = "bin/cancel_all_open.rs"
 doc = false
 test = false
 

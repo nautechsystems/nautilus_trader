@@ -137,6 +137,7 @@ pub struct EditOrderRequest {
 #[serde(untagged)]
 pub enum OrderConfiguration {
     MarketIoc(MarketIoc),
+    MarketFok(MarketFok),
     LimitGtc(LimitGtc),
     LimitGtd(LimitGtd),
     LimitFok(LimitFok),
@@ -147,12 +148,20 @@ pub enum OrderConfiguration {
 /// Market order with IOC fill.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketIoc {
-    pub market_market_ioc: MarketIocParams,
+    pub market_market_ioc: MarketParams,
 }
 
-/// Market order parameters.
+/// Market order with FOK fill.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MarketIocParams {
+pub struct MarketFok {
+    pub market_market_fok: MarketParams,
+}
+
+/// Market order parameters (shared by `market_market_ioc` and
+/// `market_market_fok`; both wire shapes accept the same `base_size` /
+/// `quote_size` body).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarketParams {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -313,7 +322,7 @@ mod tests {
             product_id: Ustr::from("BTC-USD"),
             side: CoinbaseOrderSide::Buy,
             order_configuration: OrderConfiguration::MarketIoc(MarketIoc {
-                market_market_ioc: MarketIocParams {
+                market_market_ioc: MarketParams {
                     quote_size: Some(Decimal::from_str("100").unwrap()),
                     base_size: None,
                 },

@@ -85,17 +85,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_factory = CoinbaseDataClientFactory::new();
     let exec_factory = CoinbaseExecutionClientFactory::new(trader_id, account_id);
 
-    // The Coinbase user-channel does not include `price`, `stop_price`, or
-    // `trigger_type` on order updates, so unclaimed external LIMIT or
-    // STOP_LIMIT reports can panic the engine's external-order reconcile path.
-    // Filter them out when running this adapter alongside other clients on the
-    // same Coinbase account; harmless for solo testing.
-    let exec_engine_config = LiveExecEngineConfig::builder()
-        .filter_unclaimed_external_orders(true)
-        .build();
+    // The user-channel handler enriches missing `price` / `stop_price` /
+    // `trigger_type` fields from REST on first sight, so external LIMIT and
+    // STOP_LIMIT orders are safe under the default
+    // `filter_unclaimed_external_orders=false`.
+    let exec_engine_config = LiveExecEngineConfig::builder().build();
 
-    // Bump the coinbase modules to debug so subscribe/parse paths surface
-    // during initial bring-up; drop back to Info once the feed is trusted.
+    // Coinbase modules at debug surface subscribe / parse details for new
+    // deployments; switch to Info once the feed is trusted.
     let log_config = LoggerConfig {
         stdout_level: LevelFilter::Info,
         module_level: AHashMap::from_iter([(Ustr::from("nautilus_coinbase"), LevelFilter::Debug)]),
@@ -114,6 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .build()?;
 
+    let order_qty = Quantity::from("0.0001");
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
@@ -122,14 +120,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
-        .order_qty(Quantity::from("0.0001"))
+        .order_qty(order_qty)
         .tob_offset_ticks(500)
         .use_post_only(true)
         .enable_limit_buys(true)
-        .enable_limit_sells(false)
+        .enable_limit_sells(true)
         .enable_stop_buys(false)
         .enable_stop_sells(false)
-        .close_positions_on_stop(false)
+        .cancel_orders_on_stop(true)
+        .close_positions_on_stop(true)
         .reduce_only_on_stop(false)
         .log_data(false)
         .build();

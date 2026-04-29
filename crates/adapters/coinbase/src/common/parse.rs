@@ -19,8 +19,9 @@ use std::str::FromStr;
 
 use nautilus_core::UnixNanos;
 pub use nautilus_core::serialization::{
-    deserialize_decimal_from_str, deserialize_optional_decimal_from_str, deserialize_string_to_u64,
-    serialize_decimal_as_str, serialize_optional_decimal_as_str,
+    deserialize_decimal_from_str, deserialize_decimal_or_zero,
+    deserialize_optional_decimal_from_str, deserialize_string_to_u64, serialize_decimal_as_str,
+    serialize_optional_decimal_as_str,
 };
 use nautilus_model::{
     data::BarType,
@@ -31,7 +32,7 @@ use serde::{
     de::{self, Unexpected},
 };
 
-use crate::common::enums::{CoinbaseGranularity, CoinbaseProductType};
+use crate::common::enums::{CoinbaseGranularity, CoinbaseMarginType, CoinbaseProductType};
 
 /// Deserializes an optional value where Coinbase uses an empty string for `None`.
 pub fn deserialize_empty_string_to_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -66,6 +67,25 @@ where
 {
     let value = String::deserialize(deserializer)?;
     Ok(CoinbaseProductType::from_str(&value).unwrap_or(CoinbaseProductType::Unknown))
+}
+
+/// Deserializes the optional `margin_type` field on historical orders.
+///
+/// Coinbase returns one of `""`, `"UNKNOWN_MARGIN_TYPE"`, `"CROSS"`, or
+/// `"ISOLATED"` here. The first two carry no information (spot orders, or
+/// futures orders the venue declines to classify), so they map to `None`.
+/// Unrecognized values also map to `None` so a future enum variant cannot
+/// fail an entire historical-orders batch.
+pub fn deserialize_margin_type_or_none<'de, D>(
+    deserializer: D,
+) -> Result<Option<CoinbaseMarginType>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    Ok(value
+        .filter(|s| !s.is_empty())
+        .and_then(|s| CoinbaseMarginType::from_str(&s).ok()))
 }
 
 /// Converts a [`UnixNanos`] timestamp to an RFC 3339 string in UTC.

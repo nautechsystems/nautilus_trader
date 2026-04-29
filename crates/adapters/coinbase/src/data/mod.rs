@@ -235,6 +235,20 @@ impl CoinbaseDataClient {
     fn product_id(instrument_id: InstrumentId) -> Ustr {
         instrument_id.symbol.inner()
     }
+
+    // Resolves a caller-supplied product id to Coinbase's canonical alias (if
+    // any). Coinbase consolidates aliased pairs into a single book server-side
+    // and rewrites WS subscription confirmations and inbound messages to use
+    // the canonical id (e.g. BTC-USDC -> BTC-USD), so we must subscribe with
+    // the canonical id and remember the mapping so inbound messages can be
+    // re-keyed to what the strategy actually subscribed to.
+    fn resolve_wire_product_id(&self, subscribed: Ustr) -> Ustr {
+        self.http_client
+            .product_aliases()
+            .get_cloned(&subscribed)
+            .filter(|alias| !alias.is_empty())
+            .unwrap_or(subscribed)
+    }
 }
 
 fn dispatch_ws_message(
@@ -405,14 +419,6 @@ impl DataClient for CoinbaseDataClient {
         Ok(())
     }
 
-    fn unsubscribe_instrument(
-        &mut self,
-        _unsubscription: &UnsubscribeInstrument,
-    ) -> anyhow::Result<()> {
-        // `subscribe_instrument` only replays cached state; no venue subscription to tear down.
-        Ok(())
-    }
-
     fn subscribe_book_deltas(&mut self, subscription: SubscribeBookDeltas) -> anyhow::Result<()> {
         log::debug!("Subscribing to book deltas: {}", subscription.instrument_id);
 
@@ -421,10 +427,14 @@ impl DataClient for CoinbaseDataClient {
         }
 
         let ws = self.ws_client.clone();
-        let product_id = Self::product_id(subscription.instrument_id);
+        let subscribed_id = Self::product_id(subscription.instrument_id);
+        let wire_id = self.resolve_wire_product_id(subscribed_id);
+        if wire_id != subscribed_id {
+            ws.register_subscription_alias(wire_id, subscribed_id);
+        }
 
         get_runtime().spawn(async move {
-            if let Err(e) = ws.subscribe(CoinbaseWsChannel::Level2, &[product_id]).await {
+            if let Err(e) = ws.subscribe(CoinbaseWsChannel::Level2, &[wire_id]).await {
                 log::error!("Failed to subscribe to book deltas: {e:?}");
             }
         });
@@ -436,10 +446,14 @@ impl DataClient for CoinbaseDataClient {
         log::debug!("Subscribing to quotes: {}", subscription.instrument_id);
 
         let ws = self.ws_client.clone();
-        let product_id = Self::product_id(subscription.instrument_id);
+        let subscribed_id = Self::product_id(subscription.instrument_id);
+        let wire_id = self.resolve_wire_product_id(subscribed_id);
+        if wire_id != subscribed_id {
+            ws.register_subscription_alias(wire_id, subscribed_id);
+        }
 
         get_runtime().spawn(async move {
-            if let Err(e) = ws.subscribe(CoinbaseWsChannel::Ticker, &[product_id]).await {
+            if let Err(e) = ws.subscribe(CoinbaseWsChannel::Ticker, &[wire_id]).await {
                 log::error!("Failed to subscribe to quotes: {e:?}");
             }
         });
@@ -451,131 +465,18 @@ impl DataClient for CoinbaseDataClient {
         log::debug!("Subscribing to trades: {}", subscription.instrument_id);
 
         let ws = self.ws_client.clone();
-        let product_id = Self::product_id(subscription.instrument_id);
+        let subscribed_id = Self::product_id(subscription.instrument_id);
+        let wire_id = self.resolve_wire_product_id(subscribed_id);
+        if wire_id != subscribed_id {
+            ws.register_subscription_alias(wire_id, subscribed_id);
+        }
 
         get_runtime().spawn(async move {
             if let Err(e) = ws
-                .subscribe(CoinbaseWsChannel::MarketTrades, &[product_id])
+                .subscribe(CoinbaseWsChannel::MarketTrades, &[wire_id])
                 .await
             {
                 log::error!("Failed to subscribe to trades: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn subscribe_bars(&mut self, subscription: SubscribeBars) -> anyhow::Result<()> {
-        log::debug!("Subscribing to bars: {}", subscription.bar_type);
-
-        let instrument_id = subscription.bar_type.instrument_id();
-
-        if !self.instruments.contains_key(&instrument_id) {
-            anyhow::bail!("Instrument {instrument_id} not found");
-        }
-
-        let bar_type = subscription.bar_type;
-        let product_id = Self::product_id(instrument_id);
-        let key = product_id.to_string();
-
-        // Register on the original client so the bar type persists across clones
-        self.ws_client.register_bar_type(key.clone(), bar_type);
-
-        let mut ws = self.ws_client.clone();
-
-        get_runtime().spawn(async move {
-            ws.add_bar_type(key, bar_type).await;
-
-            if let Err(e) = ws
-                .subscribe(CoinbaseWsChannel::Candles, &[product_id])
-                .await
-            {
-                log::error!("Failed to subscribe to bars: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn unsubscribe_book_deltas(
-        &mut self,
-        unsubscription: &UnsubscribeBookDeltas,
-    ) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from book deltas: {}",
-            unsubscription.instrument_id
-        );
-
-        let ws = self.ws_client.clone();
-        let product_id = Self::product_id(unsubscription.instrument_id);
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws
-                .unsubscribe(CoinbaseWsChannel::Level2, &[product_id])
-                .await
-            {
-                log::error!("Failed to unsubscribe from book deltas: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn unsubscribe_quotes(&mut self, unsubscription: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from quotes: {}",
-            unsubscription.instrument_id
-        );
-
-        let ws = self.ws_client.clone();
-        let product_id = Self::product_id(unsubscription.instrument_id);
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws
-                .unsubscribe(CoinbaseWsChannel::Ticker, &[product_id])
-                .await
-            {
-                log::error!("Failed to unsubscribe from quotes: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn unsubscribe_trades(&mut self, unsubscription: &UnsubscribeTrades) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from trades: {}",
-            unsubscription.instrument_id
-        );
-
-        let ws = self.ws_client.clone();
-        let product_id = Self::product_id(unsubscription.instrument_id);
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws
-                .unsubscribe(CoinbaseWsChannel::MarketTrades, &[product_id])
-                .await
-            {
-                log::error!("Failed to unsubscribe from trades: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn unsubscribe_bars(&mut self, unsubscription: &UnsubscribeBars) -> anyhow::Result<()> {
-        log::debug!("Unsubscribing from bars: {}", unsubscription.bar_type);
-
-        let instrument_id = unsubscription.bar_type.instrument_id();
-        let product_id = Self::product_id(instrument_id);
-        let ws = self.ws_client.clone();
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws
-                .unsubscribe(CoinbaseWsChannel::Candles, &[product_id])
-                .await
-            {
-                log::error!("Failed to unsubscribe from bars: {e:?}");
             }
         });
 
@@ -595,19 +496,9 @@ impl DataClient for CoinbaseDataClient {
         )
     }
 
-    fn unsubscribe_mark_prices(&mut self, _cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        Ok(())
-    }
-
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         log::debug!("Subscribing to index prices: {}", cmd.instrument_id);
         self.deriv_polls.subscribe_index(cmd.instrument_id);
-        Ok(())
-    }
-
-    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        log::debug!("Unsubscribing from index prices: {}", cmd.instrument_id);
-        self.deriv_polls.unsubscribe_index(cmd.instrument_id);
         Ok(())
     }
 
@@ -617,9 +508,150 @@ impl DataClient for CoinbaseDataClient {
         Ok(())
     }
 
+    fn subscribe_bars(&mut self, subscription: SubscribeBars) -> anyhow::Result<()> {
+        log::debug!("Subscribing to bars: {}", subscription.bar_type);
+
+        let instrument_id = subscription.bar_type.instrument_id();
+
+        if !self.instruments.contains_key(&instrument_id) {
+            anyhow::bail!("Instrument {instrument_id} not found");
+        }
+
+        let bar_type = subscription.bar_type;
+        let subscribed_id = Self::product_id(instrument_id);
+        let wire_id = self.resolve_wire_product_id(subscribed_id);
+        if wire_id != subscribed_id {
+            self.ws_client
+                .register_subscription_alias(wire_id, subscribed_id);
+        }
+        let key = wire_id.to_string();
+
+        // Register on the original client so the bar type persists across clones
+        self.ws_client.register_bar_type(key.clone(), bar_type);
+
+        let mut ws = self.ws_client.clone();
+
+        get_runtime().spawn(async move {
+            ws.add_bar_type(key, bar_type).await;
+
+            if let Err(e) = ws.subscribe(CoinbaseWsChannel::Candles, &[wire_id]).await {
+                log::error!("Failed to subscribe to bars: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    // Unsubscribe paths intentionally do NOT call
+    // `unregister_subscription_alias`. The same canonical wire id is shared
+    // across multiple data channels (ticker, market_trades, level2,
+    // candles), so dropping the entry on the first unsubscribe would cause
+    // every still-active channel for the same alias to mistag inbound
+    // messages. The mapping is stable per product for the process lifetime
+    // and the venue does not deliver messages for products that aren't
+    // subscribed to, so leaving it in place is safe.
+
+    fn unsubscribe_instrument(
+        &mut self,
+        _unsubscription: &UnsubscribeInstrument,
+    ) -> anyhow::Result<()> {
+        // `subscribe_instrument` only replays cached state; no venue subscription to tear down.
+        Ok(())
+    }
+
+    fn unsubscribe_book_deltas(
+        &mut self,
+        unsubscription: &UnsubscribeBookDeltas,
+    ) -> anyhow::Result<()> {
+        log::debug!(
+            "Unsubscribing from book deltas: {}",
+            unsubscription.instrument_id
+        );
+
+        let ws = self.ws_client.clone();
+        let subscribed_id = Self::product_id(unsubscription.instrument_id);
+        let wire_id = self.resolve_wire_product_id(subscribed_id);
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe(CoinbaseWsChannel::Level2, &[wire_id]).await {
+                log::error!("Failed to unsubscribe from book deltas: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_quotes(&mut self, unsubscription: &UnsubscribeQuotes) -> anyhow::Result<()> {
+        log::debug!(
+            "Unsubscribing from quotes: {}",
+            unsubscription.instrument_id
+        );
+
+        let ws = self.ws_client.clone();
+        let subscribed_id = Self::product_id(unsubscription.instrument_id);
+        let wire_id = self.resolve_wire_product_id(subscribed_id);
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe(CoinbaseWsChannel::Ticker, &[wire_id]).await {
+                log::error!("Failed to unsubscribe from quotes: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_trades(&mut self, unsubscription: &UnsubscribeTrades) -> anyhow::Result<()> {
+        log::debug!(
+            "Unsubscribing from trades: {}",
+            unsubscription.instrument_id
+        );
+
+        let ws = self.ws_client.clone();
+        let subscribed_id = Self::product_id(unsubscription.instrument_id);
+        let wire_id = self.resolve_wire_product_id(subscribed_id);
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws
+                .unsubscribe(CoinbaseWsChannel::MarketTrades, &[wire_id])
+                .await
+            {
+                log::error!("Failed to unsubscribe from trades: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_mark_prices(&mut self, _cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
+        log::debug!("Unsubscribing from index prices: {}", cmd.instrument_id);
+        self.deriv_polls.unsubscribe_index(cmd.instrument_id);
+        Ok(())
+    }
+
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
         log::debug!("Unsubscribing from funding rates: {}", cmd.instrument_id);
         self.deriv_polls.unsubscribe_funding(cmd.instrument_id);
+        Ok(())
+    }
+
+    fn unsubscribe_bars(&mut self, unsubscription: &UnsubscribeBars) -> anyhow::Result<()> {
+        log::debug!("Unsubscribing from bars: {}", unsubscription.bar_type);
+
+        let instrument_id = unsubscription.bar_type.instrument_id();
+        let subscribed_id = Self::product_id(instrument_id);
+        let wire_id = self.resolve_wire_product_id(subscribed_id);
+        let ws = self.ws_client.clone();
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe(CoinbaseWsChannel::Candles, &[wire_id]).await {
+                log::error!("Failed to unsubscribe from bars: {e:?}");
+            }
+        });
+
         Ok(())
     }
 

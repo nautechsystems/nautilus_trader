@@ -1319,7 +1319,7 @@ async fn test_data_client_unsubscribe_during_inflight_poll_masks_dropped_kind() 
 // unsubscribed while a poll is in flight, the task must exit cleanly via
 // the `None` match on the post-await lookup (entry removed) and emit
 // nothing. The inner select! also lets the cancel preempt, so either
-// path is acceptable — the assertion is behavioural (no event, task
+// path is acceptable: the assertion is behavioural (no event, task
 // gone) rather than path-specific.
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]

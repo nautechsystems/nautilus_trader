@@ -89,12 +89,14 @@ pub enum CoinbaseOrderType {
     Limit,
     #[serde(alias = "Stop")]
     Stop,
-    #[serde(alias = "StopLimit")]
+    #[serde(alias = "StopLimit", alias = "Stop Limit")]
     StopLimit,
     #[serde(alias = "Bracket")]
     Bracket,
     Twap,
+    #[serde(alias = "Roll Open")]
     RollOpen,
+    #[serde(alias = "Roll Close")]
     RollClose,
     Liquidation,
     Scaled,
@@ -496,6 +498,9 @@ mod tests {
         assert_eq!(order_type, CoinbaseOrderType::Limit);
 
         let order_type: CoinbaseOrderType = serde_json::from_str("\"StopLimit\"").unwrap();
+        assert_eq!(order_type, CoinbaseOrderType::StopLimit);
+
+        let order_type: CoinbaseOrderType = serde_json::from_str("\"Stop Limit\"").unwrap();
         assert_eq!(order_type, CoinbaseOrderType::StopLimit);
 
         let order_type = CoinbaseOrderType::from_str("STOP_LIMIT").unwrap();

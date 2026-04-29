@@ -7,6 +7,13 @@ order execution on both spot (Cash) and CFM derivatives (Margin) accounts
 through a shared execution client, with the account type selected by the
 factory (see [Execution scope](#execution-scope)).
 
+:::note
+This adapter is Rust-only and is consumed by the v2 system (and the Rust
+`LiveNode`). It does not ship a legacy Python `TradingNode` integration;
+only configuration and enum types are exported through PyO3 so v2 Python
+entry points can construct them.
+:::
+
 ## Overview
 
 The Coinbase adapter is implemented in Rust and consumed by the v2 system.
@@ -89,6 +96,29 @@ Examples of full Nautilus instrument IDs:
 - `ETH-USDC.COINBASE` (spot Ether/USDC).
 - `BIP-20DEC30-CDE.COINBASE` (BTC perpetual swap).
 - `BIT-24APR26-CDE.COINBASE` (BTC dated future, Apr 2026).
+
+### Aliased products (USDC and USD)
+
+Coinbase consolidates USDC- and USD-quoted versions of the same pair into a
+single matching-engine book and exposes the relationship in `GET /products`
+via the `alias` and `alias_to` fields:
+
+```text
+BTC-USD :  alias=""        alias_to=["BTC-USDC"]   # canonical
+BTC-USDC:  alias="BTC-USD" alias_to=[]             # alias of BTC-USD
+```
+
+When a caller subscribes or submits using the alias side, the venue rewrites
+the request to the canonical id on the wire. The adapter handles this
+transparently: it records the `product_id -> alias` map at bootstrap, sends
+the canonical id on subscribe and order submit, registers a reverse mapping
+on the WebSocket clients, and re-keys inbound messages back to the
+caller-supplied id before parsing.
+
+A strategy holding only USDC can therefore trade `BTC-USDC.COINBASE` end to
+end without referencing the canonical `BTC-USD`. Settlement currency is
+determined by the submitted `product_id`, so an order placed on
+`BTC-USDC.COINBASE` always debits or credits the USDC wallet.
 
 ## Environments
 
@@ -293,7 +323,7 @@ running the probe binary above and inspecting the portfolio wallet list.
 
 | Symptom                                                              | Likely cause                                                                                          | Fix                                                                                       |
 |----------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
-| Rejected only for a specific product (e.g. `BTC-USD` with only USDC) | Portfolio is missing a wallet for the product's quote currency. USD and USDC are separate on Coinbase.| Switch to a product quoted in a currency you hold (e.g. `BTC-USDC`), or convert on coinbase.com to fund the missing wallet. |
+| Rejected only for a specific product (e.g. `BTC-USD` with only USDC) | Portfolio is missing a wallet for the product's quote currency. USD and USDC are separate on Coinbase, and the venue routes orders by the submitted `product_id`, not by the canonical alias. | Submit against the product whose quote currency you hold (e.g. `BTC-USDC` for USDC wallets). The adapter resolves the data‑side alias internally; no config change needed. Funding the missing wallet via coinbase.com is also an option but unnecessary when only one currency is held. |
 | Every order rejected across all products                             | Key is bound to a non‑default portfolio and `retail_portfolio_id` is unset.                           | Set `retail_portfolio_id` on `CoinbaseExecClientConfig` to the target portfolio UUID.     |
 | Rejected for `*-USD` products on a non‑US account                    | Jurisdictional restriction (e.g. AU accounts cannot trade USD‑quoted pairs).                          | Use locally‑available quotes (USDC, AUD, EUR, etc.) instead of USD.                       |
 | Rejected right after key rotation                                    | New key was created in a different portfolio than the previous one.                                   | Update `retail_portfolio_id` to match the new key's portfolio, or move funds.             |
@@ -336,15 +366,21 @@ values (and distinct `account_id`s).
 
 ### Order types
 
-| Order Type             | Spot | Perpetual | Future | Notes                                                                |
-|------------------------|------|-----------|--------|----------------------------------------------------------------------|
-| `MARKET`               | ✓    | ✓         | ✓      | IOC on Spot; IOC or FOK on Perpetual.                                |
-| `LIMIT`                | ✓    | ✓         | ✓      |                                                                      |
-| `STOP_MARKET`          | -    | -         | -      | Not exposed by the venue.                                            |
-| `STOP_LIMIT`           | -    | ✓         | ✓      | Not available on Spot.                                               |
-| `MARKET_IF_TOUCHED`    | -    | -         | -      | Not exposed by the venue.                                            |
-| `LIMIT_IF_TOUCHED`     | -    | -         | -      | Not exposed by the venue.                                            |
-| `TRAILING_STOP_MARKET` | -    | -         | -      | Not exposed by the venue.                                            |
+The matrix lists order types as exposed through the Nautilus model. The
+right column shows the corresponding `order_configuration` keys the adapter
+emits. Coinbase order types not in this table (TWAP, Bracket, Scaled, SOR
+LIMIT IOC) are documented under [Advanced order features](#advanced-order-features)
+and noted there as *Not yet supported* by the adapter.
+
+| Order Type             | Spot | Perpetual | Future | Wire shape                                                  |
+|------------------------|------|-----------|--------|-------------------------------------------------------------|
+| `MARKET`               | ✓    | ✓         | ✓      | `market_market_ioc` (spot + CFM); `market_market_fok` (CFM only) |
+| `LIMIT`                | ✓    | ✓         | ✓      | `limit_limit_gtc` / `limit_limit_gtd` / `limit_limit_fok`   |
+| `STOP_LIMIT`           | -    | ✓         | ✓      | `stop_limit_stop_limit_gtc` / `stop_limit_stop_limit_gtd`   |
+| `STOP_MARKET`          | -    | -         | -      | *Not exposed by the venue.*                                 |
+| `MARKET_IF_TOUCHED`    | -    | -         | -      | *Not exposed by the venue.*                                 |
+| `LIMIT_IF_TOUCHED`     | -    | -         | -      | *Not exposed by the venue.*                                 |
+| `TRAILING_STOP_MARKET` | -    | -         | -      | *Not exposed by the venue.*                                 |
 
 ### Execution instructions
 
@@ -355,23 +391,26 @@ values (and distinct `account_id`s).
 
 ### Time in force
 
-| Time in force | Spot | Perpetual | Future | Notes                                                |
-|---------------|------|-----------|--------|------------------------------------------------------|
-| `GTC`         | ✓    | ✓         | ✓      | Good Till Canceled.                                  |
-| `GTD`         | ✓    | ✓         | ✓      | LIMIT and STOP_LIMIT (perp/future).                  |
-| `IOC`         | ✓    | ✓         | ✓      | MARKET only.                                         |
-| `FOK`         | ✓    | ✓         | -      | LIMIT (Spot) and MARKET (Perpetual).                 |
+The adapter accepts the values in this matrix; combinations not listed are
+rejected at submit time with `"Unsupported TIF {tif} for {order_type}"`.
+
+| Order type   | GTC | GTD | IOC | FOK | Notes                                                          |
+|--------------|-----|-----|-----|-----|----------------------------------------------------------------|
+| `MARKET`     | ✓   | -   | ✓   | (✓) | GTC is mapped to IOC; explicit IOC is honoured. FOK builds the venue's `market_market_fok` shape, but the matching engine currently rejects it on spot with `UNSUPPORTED_ORDER_CONFIGURATION`; usable on CFM derivatives only. |
+| `LIMIT`      | ✓   | ✓   | -   | ✓   | GTD requires `expire_time`. LIMIT IOC *not yet supported* (see [SOR LIMIT IOC](#advanced-order-features)). |
+| `STOP_LIMIT` | ✓   | ✓   | -   | -   | Requires `trigger_price`. Derivatives only.                    |
 
 ### Advanced order features
 
 | Feature            | Spot | Perpetual | Future | Notes                                                                              |
 |--------------------|------|-----------|--------|------------------------------------------------------------------------------------|
 | Order Modification | ✓    | ✓         | ✓      | GTC variants only (LIMIT, STOP_LIMIT, Bracket); other types use cancel‑replace.    |
-| Bracket Orders     | -    | ✓         | ✓      | Native bracket on perp/future.                                                     |
-| OCO Orders         | -    | -         | -      | Not exposed as a distinct order type.                                              |
-| Iceberg Orders     | -    | -         | -      | Not documented.                                                                    |
-| TWAP Orders        | ✓    | -         | -      | Spot only.                                                                         |
-| Scaled Orders      | ✓    | -         | -      | Spot only; ladders one parent across a price range.                                |
+| Bracket Orders     | -    | -         | -      | *Not yet supported.* Venue exposes `trigger_bracket_gtc` / `trigger_bracket_gtd`.  |
+| OCO Orders         | -    | -         | -      | *Not exposed by the venue* as a distinct order type.                               |
+| Iceberg Orders     | -    | -         | -      | *Not exposed by the venue.*                                                        |
+| TWAP Orders        | -    | -         | -      | *Not yet supported.* Venue exposes `twap_limit_gtd`.                               |
+| Scaled Orders      | -    | -         | -      | *Not yet supported.* Venue exposes `scaled_limit_gtc`.                             |
+| SOR LIMIT IOC      | -    | -         | -      | *Not yet supported.* Venue exposes `sor_limit_ioc` for smart‑order‑routed LIMIT IOC. |
 
 See the [Create Order reference](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/create-order)
 and [Edit Order reference](https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/edit-order)
@@ -500,11 +539,18 @@ failure reason.
 
 `modify_order` posts to `/orders/edit` with the typed `EditOrderRequest`.
 Coinbase restricts edits to GTC variants (LIMIT, STOP_LIMIT, Bracket); other
-order types must use cancel-replace. The exec client forwards `price`,
-`quantity`, and `trigger_price` (mapped to the venue's `stop_price` field).
-Failures emit `OrderModifyRejected` with the typed `EditOrderResponse`
-failure reason (preferring `edit_failure_reason`, falling back to
-`preview_failure_reason`).
+order types must use cancel-replace.
+
+Coinbase's `/orders/edit` requires both `price` and `size` even when only one
+is changing; an omitted `size` is read as 0 and rejected with
+`INVALID_EDITED_SIZE` or `CANNOT_EDIT_TO_BELOW_FILLED_SIZE`. The exec client
+auto-fills missing fields from the cached order, so strategies can call
+`modify_order(price=X)` without repeating the current quantity. Values from
+the `ModifyOrder` command win; otherwise the cached order's current `price`
+and `quantity` are used.
+
+Failures emit `OrderModifyRejected` with the typed `EditOrderResponse` reason
+(preferring `edit_failure_reason`, falling back to `preview_failure_reason`).
 
 ### Cancellation
 
@@ -523,27 +569,32 @@ failure reason (preferring `edit_failure_reason`, falling back to
 ### User WebSocket channel
 
 `CoinbaseExecutionClient` subscribes to the `user` channel with no
-`product_ids` filter (returns events for all products) and to a fresh JWT.
-Each user event is parsed into an `OrderStatusReport` and fed to the
-execution event stream. Coinbase reports cumulative state per order rather
-than per-trade fills, so the exec client tracks
-`(filled_qty, total_fees, avg_price, max_quantity)` per venue order and:
+`product_ids` filter and a fresh JWT, parses each event into an
+`OrderStatusReport`, and feeds it to the execution event stream. Coinbase
+reports cumulative state per order rather than per-trade fills, so the exec
+client synthesizes a `FillReport` from the cumulative delta. The per-fill
+price is derived as `(avg_now * qty_now - avg_prev * qty_prev) / delta_qty`
+so multi-fill orders carry the correct trade price, not the cumulative
+weighted average. The original quantity is restored on terminal updates
+(`CANCELLED`, `EXPIRED`, `FAILED`) where the venue zeroes `leaves_quantity`.
 
-1. Synthesizes a `FillReport` from the cumulative delta. The per-fill price
-   is derived as `(avg_now * qty_now - avg_prev * qty_prev) / delta_qty` so
-   multi-fill orders carry the correct trade price rather than the
-   cumulative weighted average.
-2. Restores the original quantity on terminal updates (`CANCELLED`,
-   `EXPIRED`, `FAILED`) where the venue zeroes `leaves_quantity` and
-   cum+leaves would otherwise collapse to `filled_qty`.
-3. Suppresses fill synthesis on `snapshot` events but uses them to seed
-   the cumulative-state baseline so subsequent live updates compute correct
-   deltas.
-4. Persists cumulative state across WebSocket reconnects via
-   `Arc<Mutex<...>>` owned by the exec client (not the feed handler).
+The user channel does not echo `price`, `stop_price`, `trigger_type`, or
+maker/taker classification. The exec client caches these at submit time
+under the `client_order_id` and patches reports before emit, so the
+reconciler does not observe a `Some(price) -> None` divergence and
+`post_only` fills are correctly stamped `liquidity_side = Maker`. Order
+status `PENDING`, `QUEUED`, and `OPEN` all map to `OrderStatus::Accepted` to
+avoid spurious backwards-transition warnings when user-channel updates
+race the REST `OrderAccepted` event.
+
+A `submit_order` rejection carrying `INVALID_LIMIT_PRICE_POST_ONLY` (or the
+preview/new-order equivalent) is emitted with `due_post_only = true` so
+strategies can react to post-only crossings (typically by re-quoting against
+the new TOB).
 
 On reconnect, account state is re-fetched via REST so balance changes during
-the disconnect window are recovered.
+the disconnect window are recovered. Cumulative per-order tracking persists
+across reconnects so synthesized fill deltas remain correct.
 
 ## Rate limiting
 
@@ -688,16 +739,14 @@ no Python factory wiring is required.
 - **Position reports are always empty for Cash accounts.** Coinbase spot has
   no positions. Derivatives (CFM) position reports come from `cfm/positions`
   and appear only on Margin clients.
-- **External-order reconciliation from the WS user channel is unsafe for
-  LIMIT and STOP_LIMIT.** The Coinbase user channel does not include
-  `price`, `stop_price`, or `trigger_type` on order updates. If the engine's
-  `LiveExecEngineConfig.filter_unclaimed_external_orders` is `false`
-  (the default), an `OrderStatusReport` for an order this client did not
-  submit will reach the engine's external-order reconcile path, which can
-  panic when reconstructing a `LimitOrder`/`StopLimitOrder` without those
-  fields. **Set `filter_unclaimed_external_orders = true` when running this
-  adapter alongside other clients on the same Coinbase account.** A
-  REST-enrichment fix is tracked for a follow-up.
+- **User-channel updates omit `price`, `stop_price`, and `trigger_type`.**
+  For orders this client submitted, the missing fields are patched from a
+  cache populated at `submit_order` time. For external orders (submitted by
+  another process or via the Coinbase UI), the user-channel handler
+  enriches the report on first sight by fetching
+  `/orders/historical/{venue_order_id}` and caching the result. The REST
+  call adds latency to the first user-channel update for an external
+  order; subsequent updates use the cached enrichment.
 - **Cancel-all and batch-cancel REST list failures are logged only.** If the
   list-open-orders REST call fails, no per-order `OrderCancelRejected` is
   emitted; orders remain in `PendingCancel` until the next reconciliation
@@ -705,11 +754,25 @@ no Python factory wiring is required.
 - **Newly listed products require a reconnect to be tradeable.** The
   instrument cache is populated on connect; products listed after that
   are not in the cache and `submit_order` will deny them.
-- **MARKET orders execute as IOC even when constructed with the Nautilus
-  default `TimeInForce::Gtc`.** Coinbase's only MARKET wrapper is
-  `market_market_ioc`. Strategies needing strict backtest/live parity for
-  MARKET orders should construct `MarketOrder` with `TimeInForce::Ioc`
-  explicitly. Explicit `Fok`, `Day`, or `Gtd` on a MARKET order is rejected.
+- **MARKET orders default to IOC.** A `MarketOrder` constructed with the
+  Nautilus default `TimeInForce::Gtc` is mapped to `market_market_ioc` at
+  the venue. Explicit `TimeInForce::Ioc` is honoured; `TimeInForce::Fok`
+  routes to `market_market_fok` but is rejected at runtime by the matching
+  engine on spot with `UNSUPPORTED_ORDER_CONFIGURATION` (the wire shape is
+  documented in the API spec but only accepted on CFM derivatives). `Day`
+  and `Gtd` are rejected at submit time.
+
+## Authenticated binaries
+
+Two binaries assist with live verification and account hygiene:
+
+- `coinbase-http-private` lists portfolios, prints wallet balances, runs
+  `/orders/preview` for `BTC-USD` and `BTC-USDC`, and surfaces per-product
+  gating flags. Recommended first stop when bringing a new account online.
+- `coinbase-cancel-all-open` cancels every open order on the authenticated
+  CDP key. Useful between test runs to clear resting orders.
+
+Both read `COINBASE_API_KEY` and `COINBASE_API_SECRET` from the environment.
 
 ## Contributing
 

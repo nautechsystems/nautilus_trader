@@ -98,6 +98,11 @@ pub struct CoinbaseWebSocketClient {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    /// Maps a canonical wire `product_id` to the `product_id` the caller
+    /// subscribed or submitted with. Coinbase rewrites aliased products to
+    /// their canonical form on the wire (e.g. `BTC-USDC -> BTC-USD`), so
+    /// inbound messages must be re-keyed to the caller's id before parsing.
+    subscription_aliases: Arc<AtomicMap<Ustr, Ustr>>,
     bar_types: ahash::AHashMap<String, BarType>,
     subscriptions: SubscriptionState,
     credential: Option<CoinbaseCredential>,
@@ -116,6 +121,7 @@ impl Clone for CoinbaseWebSocketClient {
             cmd_tx: Arc::clone(&self.cmd_tx),
             out_rx: None,
             instruments: Arc::clone(&self.instruments),
+            subscription_aliases: Arc::clone(&self.subscription_aliases),
             bar_types: self.bar_types.clone(),
             subscriptions: self.subscriptions.clone(),
             credential: self.credential.clone(),
@@ -141,6 +147,7 @@ impl CoinbaseWebSocketClient {
             cmd_tx: Arc::new(tokio::sync::RwLock::new(placeholder_tx)),
             out_rx: None,
             instruments: Arc::new(AtomicMap::new()),
+            subscription_aliases: Arc::new(AtomicMap::new()),
             bar_types: ahash::AHashMap::new(),
             subscriptions: SubscriptionState::new('|'),
             credential: None,
@@ -296,9 +303,10 @@ impl CoinbaseWebSocketClient {
         let subscriptions = self.subscriptions.clone();
         let credential = self.credential.clone();
         let cmd_tx_reconnect = cmd_tx.clone();
+        let aliases_for_handler = Arc::clone(&self.subscription_aliases);
 
         let stream_handle = get_runtime().spawn(async move {
-            let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx);
+            let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, aliases_for_handler);
 
             loop {
                 match handler.next().await {
@@ -480,6 +488,24 @@ impl CoinbaseWebSocketClient {
     #[must_use]
     pub fn instruments(&self) -> &Arc<AtomicMap<InstrumentId, InstrumentAny>> {
         &self.instruments
+    }
+
+    /// Returns a reference to the canonical-to-subscribed alias map.
+    #[must_use]
+    pub fn subscription_aliases(&self) -> &Arc<AtomicMap<Ustr, Ustr>> {
+        &self.subscription_aliases
+    }
+
+    /// Records that inbound messages carrying `canonical` should be re-keyed to
+    /// `subscribed`. Caller is the data/exec client at subscribe or submit time
+    /// when the local product id differs from Coinbase's canonical alias.
+    pub fn register_subscription_alias(&self, canonical: Ustr, subscribed: Ustr) {
+        self.subscription_aliases.insert(canonical, subscribed);
+    }
+
+    /// Removes an alias registration. Safe to call if no entry exists.
+    pub fn unregister_subscription_alias(&self, canonical: &Ustr) {
+        self.subscription_aliases.remove(canonical);
     }
 
     /// Returns the subscription state.

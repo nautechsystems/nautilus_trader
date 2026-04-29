@@ -23,6 +23,7 @@ Released on TBD (UTC).
 - Added Binance `proxy_url` plumbing for market and user-data WS streams (#3937), thanks for reporting @huangqingchi
 - Added Bybit user-related endpoints (#3894), thanks @sunlei
 - Added Bybit `BybitPositionIdx` enum and `bybit_resolve_position_idx` PyO3 helper
+- Added Coinbase initial integration adapter (Rust)
 - Added `DydxNetwork` re-export on the `nautilus_trader.adapters.dydx` package
 - Added Hyperliquid historical funding rates via `fundingHistory` info endpoint
 - Added Hyperliquid configurable MARKET slippage (`market_order_slippage_bps`) with per-order override

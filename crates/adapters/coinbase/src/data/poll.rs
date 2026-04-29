@@ -141,7 +141,7 @@ impl DerivPollManager {
 
     /// Spawns polling tasks for every entry with at least one active flag.
     /// Called from `connect()` so subscriptions made before a
-    /// `disconnect()` remain live after the client reconnects — the data
+    /// `disconnect()` remain live after the client reconnects: the data
     /// engine suppresses duplicate subscribe commands, so the caller does
     /// not re-issue them.
     pub(crate) fn resume(&self) {
@@ -655,7 +655,7 @@ mod tests {
         assert!(entry.emit_index);
         assert!(!entry.emit_funding);
         // The new token must be live, while the prior cycle's token is
-        // still cancelled — together these prove the manager installed a
+        // still cancelled: together these prove the manager installed a
         // distinct token for the fresh task rather than reusing the
         // cancelled one.
         assert!(

@@ -129,7 +129,12 @@ impl CoinbaseInstrumentProvider {
         let response: ProductsResponse =
             serde_json::from_value(json.clone()).map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        self.parse_and_cache_products(&response.products)
+        let instruments = self.parse_and_cache_products(&response.products)?;
+        // Populate the alias map so subscribe paths (which only see the parsed
+        // `InstrumentAny`) can resolve a caller-supplied product id back to the
+        // canonical id Coinbase uses on the wire.
+        self.client.record_product_aliases(&response.products);
+        Ok(instruments)
     }
 
     /// Parses a products list response, filtering by product type, and caches the instruments.
@@ -151,7 +156,12 @@ impl CoinbaseInstrumentProvider {
             .filter(|p| p.product_type == product_type)
             .collect();
 
-        self.parse_and_cache_product_refs(&filtered)
+        let instruments = self.parse_and_cache_product_refs(&filtered)?;
+        // Filtering throws away non-matching products, but their alias
+        // metadata is independent of the type filter and should still be
+        // recorded so subsequent subscribes can resolve aliased pairs.
+        self.client.record_product_aliases(&response.products);
+        Ok(instruments)
     }
 
     /// Parses a single product response and caches the instrument.
@@ -183,6 +193,8 @@ impl CoinbaseInstrumentProvider {
         let instrument = parse_instrument(&product, ts_init)?;
 
         self.cache_instrument(&instrument);
+        self.client
+            .record_product_aliases(std::slice::from_ref(&product));
 
         Ok(instrument)
     }

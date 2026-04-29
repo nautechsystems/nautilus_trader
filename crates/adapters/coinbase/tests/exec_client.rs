@@ -1187,7 +1187,8 @@ async fn test_http_submit_order_rejects_unsupported_market_tif() {
     let addr = start_mock_server(state.clone()).await;
     let client = create_http_client(addr);
 
-    // FOK on MARKET is unsupported; should fail before HTTP.
+    // DAY on MARKET is unsupported; should fail before HTTP. (IOC and FOK
+    // both map to valid `market_market_*` configurations.)
     let result = client
         .submit_order(
             ClientOrderId::new("client-400"),
@@ -1195,7 +1196,7 @@ async fn test_http_submit_order_rejects_unsupported_market_tif() {
             OrderSide::Buy,
             OrderType::Market,
             Quantity::from("0.001"),
-            TimeInForce::Fok,
+            TimeInForce::Day,
             None,
             None,
             None,
@@ -1514,7 +1515,7 @@ async fn test_http_request_position_status_reports_for_cfm() {
     assert_eq!(report.instrument_id.symbol.as_str(), "BIP-20DEC30-CDE");
 
     // `get_or_fetch_instrument` may trigger a single /market/products/{id}
-    // lookup to bootstrap the BIP instrument, which is fine — the CFM
+    // lookup to bootstrap the BIP instrument, which is fine: the CFM
     // endpoint itself must only be hit once.
     let positions_requests = state.requests_for("/cfm/positions");
     assert_eq!(positions_requests.len(), 1);
@@ -1829,5 +1830,195 @@ async fn test_exec_client_mass_status_margin_includes_cfm_positions() {
         position_reports.get(&instrument_id).map(Vec::len),
         Some(1),
         "Margin mass status must carry the CFM position"
+    );
+}
+
+// HTTP error-path tests. Each spins up an ad-hoc router with a single failure
+// behaviour so the assertion is unambiguous: the test name names the failure
+// mode, and a regression in retry/parse handling fails exactly the right test.
+
+async fn start_failure_server(router: Router) -> SocketAddr {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    let start = std::time::Instant::now();
+
+    loop {
+        if tokio::net::TcpStream::connect(addr).await.is_ok() {
+            break;
+        }
+        assert!(
+            start.elapsed() <= std::time::Duration::from_secs(5),
+            "failure server did not start within timeout"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    addr
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_submit_surfaces_error_on_500_status() {
+    let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let attempts_clone = Arc::clone(&attempts);
+    let router = Router::new().route(
+        "/api/v3/brokerage/orders",
+        post(move || {
+            let attempts = Arc::clone(&attempts_clone);
+            async move {
+                attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "internal error"})),
+                )
+            }
+        }),
+    );
+    let addr = start_failure_server(router).await;
+    let client = create_http_client_with_retry(addr, Some(fast_retry_config(3)));
+
+    let result = client
+        .submit_order(
+            ClientOrderId::new("client-500"),
+            btc_usd_instrument_id(),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.1"),
+            TimeInForce::Gtc,
+            Some(Price::from("50000.00")),
+            None,
+            None,
+            false,
+            false,
+            None,
+            None,
+            false,
+            None,
+        )
+        .await;
+    assert!(result.is_err(), "expected 500 to surface as error");
+    // POSTs are non-idempotent; a 500 should never trigger the retry loop.
+    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_submit_surfaces_error_on_429_status_without_retry() {
+    let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let attempts_clone = Arc::clone(&attempts);
+    let router = Router::new().route(
+        "/api/v3/brokerage/orders",
+        post(move || {
+            let attempts = Arc::clone(&attempts_clone);
+            async move {
+                attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                (
+                    axum::http::StatusCode::TOO_MANY_REQUESTS,
+                    Json(json!({"error": "rate limited"})),
+                )
+            }
+        }),
+    );
+    let addr = start_failure_server(router).await;
+    let client = create_http_client_with_retry(addr, Some(fast_retry_config(3)));
+
+    let result = client
+        .submit_order(
+            ClientOrderId::new("client-429"),
+            btc_usd_instrument_id(),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.1"),
+            TimeInForce::Gtc,
+            Some(Price::from("50000.00")),
+            None,
+            None,
+            false,
+            false,
+            None,
+            None,
+            false,
+            None,
+        )
+        .await;
+    assert!(result.is_err(), "expected 429 to surface as error");
+    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_get_products_surfaces_error_on_malformed_body() {
+    // Server returns 200 with a non-JSON body. The deserializer must surface
+    // the parse failure rather than swallow it silently. Track route hits so
+    // the assertion would not pass on an off-route 404.
+    let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let hits_clone = Arc::clone(&hits);
+    let router = Router::new().route(
+        "/api/v3/brokerage/market/products",
+        get(move || {
+            let hits = Arc::clone(&hits_clone);
+            async move {
+                hits.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                "not json{{{"
+            }
+        }),
+    );
+    let addr = start_failure_server(router).await;
+    let client = create_http_client(addr);
+
+    let result = client.get_products().await;
+    assert_eq!(
+        hits.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "expected the malformed-body route to be hit exactly once"
+    );
+    let err = result.expect_err("malformed body must surface as a parse error");
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("parse")
+            || msg.contains("decode")
+            || msg.contains("expected")
+            || msg.contains("json")
+            || msg.contains("deserialize"),
+        "expected a parse/decode-style error, was: {err}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_get_products_surfaces_error_on_404() {
+    let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let hits_clone = Arc::clone(&hits);
+    let router = Router::new().route(
+        "/api/v3/brokerage/market/products",
+        get(move || {
+            let hits = Arc::clone(&hits_clone);
+            async move {
+                hits.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                (
+                    axum::http::StatusCode::NOT_FOUND,
+                    Json(json!({"error": "not found"})),
+                )
+            }
+        }),
+    );
+    let addr = start_failure_server(router).await;
+    let client = create_http_client(addr);
+
+    let result = client.get_products().await;
+    assert_eq!(
+        hits.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "expected the 404 route to be hit exactly once"
+    );
+    let err = result.expect_err("404 must surface as error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("404") || msg.contains("not found") || msg.contains("Not Found"),
+        "expected the error to reference the 404 status, was: {err}"
     );
 }

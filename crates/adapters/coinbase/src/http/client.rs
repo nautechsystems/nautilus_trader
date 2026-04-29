@@ -77,9 +77,9 @@ use crate::{
         },
         query::{
             CancelOrdersRequest, CreateOrderRequest, EditOrderRequest, FillListQuery, LimitFok,
-            LimitFokParams, LimitGtc, LimitGtcParams, LimitGtd, LimitGtdParams, MarketIoc,
-            MarketIocParams, OrderConfiguration, OrderListQuery, StopLimitGtc, StopLimitGtcParams,
-            StopLimitGtd, StopLimitGtdParams,
+            LimitFokParams, LimitGtc, LimitGtcParams, LimitGtd, LimitGtdParams, MarketFok,
+            MarketIoc, MarketParams, OrderConfiguration, OrderListQuery, StopLimitGtc,
+            StopLimitGtcParams, StopLimitGtd, StopLimitGtdParams,
         },
     },
 };
@@ -785,6 +785,11 @@ pub struct CoinbaseHttpClient {
     pub(crate) inner: Arc<CoinbaseRawHttpClient>,
     clock: &'static AtomicTime,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    /// Maps a product ID to its Coinbase-canonical alias (e.g. `BTC-USDC -> BTC-USD`).
+    /// Coinbase consolidates aliased pairs into a single book server-side, so the
+    /// WebSocket feed and user-channel echo the canonical id even when callers
+    /// subscribed or submitted with the alias.
+    product_aliases: Arc<AtomicMap<Ustr, Ustr>>,
 }
 
 impl Default for CoinbaseHttpClient {
@@ -877,6 +882,7 @@ impl CoinbaseHttpClient {
             inner: Arc::new(raw),
             clock: get_atomic_clock_realtime(),
             instruments: Arc::new(AtomicMap::new()),
+            product_aliases: Arc::new(AtomicMap::new()),
         }
     }
 
@@ -903,6 +909,12 @@ impl CoinbaseHttpClient {
     #[must_use]
     pub fn instruments(&self) -> &Arc<AtomicMap<InstrumentId, InstrumentAny>> {
         &self.instruments
+    }
+
+    /// Returns a reference to the product alias map (`product_id -> canonical product_id`).
+    #[must_use]
+    pub fn product_aliases(&self) -> &Arc<AtomicMap<Ustr, Ustr>> {
+        &self.product_aliases
     }
 
     /// Returns the current timestamp from the atomic clock.
@@ -1036,6 +1048,7 @@ impl CoinbaseHttpClient {
         }
 
         self.cache_instruments(&instruments);
+        self.record_product_aliases(&response.products);
         Ok(instruments)
     }
 
@@ -1058,6 +1071,7 @@ impl CoinbaseHttpClient {
         let ts_init = self.ts_now();
         let instrument = parse_instrument(&product, ts_init)?;
         self.cache_instrument(&instrument);
+        self.record_product_aliases(std::slice::from_ref(&product));
         Ok(instrument)
     }
 
@@ -1283,6 +1297,28 @@ impl CoinbaseHttpClient {
         });
     }
 
+    /// Records `product_id -> alias` entries for any product whose `alias`
+    /// field is non-empty. Coinbase aliases pairs to a canonical id (e.g.
+    /// `BTC-USDC -> BTC-USD`) that the WebSocket and user channel use on the
+    /// wire even when callers operate on the alias side.
+    pub fn record_product_aliases(&self, products: &[crate::http::models::Product]) {
+        let aliased: Vec<(Ustr, Ustr)> = products
+            .iter()
+            .filter(|p| !p.alias.is_empty())
+            .map(|p| (p.product_id, p.alias))
+            .collect();
+
+        if aliased.is_empty() {
+            return;
+        }
+
+        self.product_aliases.rcu(|m| {
+            for (product_id, alias) in &aliased {
+                m.insert(*product_id, *alias);
+            }
+        });
+    }
+
     // Returns the cached instrument for a product ID, fetching it on miss.
     // Order and fill reconciliation calls parse hundreds of historical
     // records and each one needs precision metadata. Rather than forcing
@@ -1297,7 +1333,7 @@ impl CoinbaseHttpClient {
         if let Some(instrument) = self.instruments.get_cloned(&instrument_id) {
             return Ok(instrument);
         }
-        // Cache miss — fetch and cache the single product. Any parse error
+        // Cache miss: fetch and cache the single product. Any parse error
         // (unsupported product type, missing fields) surfaces to the caller so
         // the offending record can be skipped with a log.
         self.request_instrument(product_id.as_str()).await
@@ -1573,34 +1609,43 @@ pub fn build_order_configuration(
 
     match order_type {
         OrderType::Market => {
-            // Coinbase's `market_market_ioc` is the only documented MARKET
-            // wrapper. Accept Nautilus' default GTC (treated as IOC at the
-            // venue, mirroring the Bybit adapter pattern) and explicit IOC;
-            // reject FOK / DAY / GTD so callers do not silently get IOC
-            // semantics when they asked for an explicit non-IOC TIF.
+            // Coinbase exposes `market_market_ioc` and `market_market_fok` for
+            // MARKET orders. Nautilus' default GTC is mapped to IOC (mirroring
+            // the Bybit adapter pattern); explicit IOC and FOK are honoured;
+            // DAY / GTD are rejected.
             //
             // Note: a MARKET order built with TIF=GTC will execute as IOC at
             // Coinbase. Backtest replays of the same order through the
             // matching engine treat it differently. Strategies that need
             // strict backtest/live parity should construct MarketOrders with
-            // TIF=IOC explicitly.
-            if !matches!(time_in_force, TimeInForce::Ioc | TimeInForce::Gtc) {
-                anyhow::bail!("Unsupported TIF {time_in_force} for MARKET on Coinbase (use IOC)");
-            }
+            // TIF=IOC or TIF=FOK explicitly.
             let params = if is_quote_quantity {
-                MarketIocParams {
+                MarketParams {
                     quote_size: Some(qty),
                     base_size: None,
                 }
             } else {
-                MarketIocParams {
+                MarketParams {
                     quote_size: None,
                     base_size: Some(qty),
                 }
             };
-            Ok(OrderConfiguration::MarketIoc(MarketIoc {
-                market_market_ioc: params,
-            }))
+
+            match time_in_force {
+                TimeInForce::Ioc | TimeInForce::Gtc => {
+                    Ok(OrderConfiguration::MarketIoc(MarketIoc {
+                        market_market_ioc: params,
+                    }))
+                }
+                TimeInForce::Fok => Ok(OrderConfiguration::MarketFok(MarketFok {
+                    market_market_fok: params,
+                })),
+                _ => {
+                    anyhow::bail!(
+                        "Unsupported TIF {time_in_force} for MARKET on Coinbase (use IOC or FOK)"
+                    )
+                }
+            }
         }
         OrderType::Limit => {
             let limit_price =
@@ -1863,6 +1908,50 @@ mod tests {
     }
 
     #[rstest]
+    fn test_build_order_configuration_market_fok() {
+        let cfg = build_order_configuration(
+            OrderType::Market,
+            OrderSide::Buy,
+            Quantity::from("0.5"),
+            None,
+            None,
+            TimeInForce::Fok,
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap();
+
+        match cfg {
+            OrderConfiguration::MarketFok(m) => {
+                assert!(m.market_market_fok.base_size.is_some());
+                assert!(m.market_market_fok.quote_size.is_none());
+            }
+            other => panic!("expected MarketFok, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case(TimeInForce::Day)]
+    #[case(TimeInForce::Gtd)]
+    fn test_build_order_configuration_market_rejects_unsupported_tif(#[case] tif: TimeInForce) {
+        let result = build_order_configuration(
+            OrderType::Market,
+            OrderSide::Buy,
+            Quantity::from("1"),
+            None,
+            None,
+            tif,
+            None,
+            false,
+            false,
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
     fn test_build_order_configuration_limit_gtc_post_only() {
         let cfg = build_order_configuration(
             OrderType::Limit,
@@ -1946,23 +2035,6 @@ mod tests {
             ),
             other => panic!("expected StopLimitGtc, was {other:?}"),
         }
-    }
-
-    #[rstest]
-    fn test_build_order_configuration_market_rejects_fok() {
-        let result = build_order_configuration(
-            OrderType::Market,
-            OrderSide::Buy,
-            Quantity::from("1"),
-            None,
-            None,
-            TimeInForce::Fok,
-            None,
-            false,
-            false,
-            false,
-        );
-        assert!(result.is_err());
     }
 
     #[rstest]
