@@ -623,18 +623,6 @@ impl LiveNodeConfig {
             );
         }
 
-        if self.logging.file_config.is_some() {
-            anyhow::bail!(
-                "LoggerConfig.file_config is not supported by the Rust live runtime yet (use py_init_logging)"
-            );
-        }
-
-        if self.logging.clear_log_file {
-            anyhow::bail!(
-                "LoggerConfig.clear_log_file is not supported by the Rust live runtime yet"
-            );
-        }
-
         self.data_engine.validate_runtime_support()?;
         self.risk_engine.validate_runtime_support()?;
         self.exec_engine.validate_runtime_support()?;
@@ -1224,7 +1212,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_validate_runtime_support_rejects_file_config() {
+    fn test_validate_runtime_support_accepts_file_config() {
         use nautilus_common::logging::writer::FileWriterConfig;
 
         let config = LiveNodeConfig {
@@ -1235,12 +1223,11 @@ mod tests {
             ..Default::default()
         };
 
-        let error = config.validate_runtime_support().unwrap_err().to_string();
-        assert!(error.contains("file_config"));
+        assert!(config.validate_runtime_support().is_ok());
     }
 
     #[rstest]
-    fn test_validate_runtime_support_rejects_clear_log_file() {
+    fn test_validate_runtime_support_accepts_clear_log_file() {
         let config = LiveNodeConfig {
             logging: LoggerConfig {
                 clear_log_file: true,
@@ -1249,8 +1236,7 @@ mod tests {
             ..Default::default()
         };
 
-        let error = config.validate_runtime_support().unwrap_err().to_string();
-        assert!(error.contains("clear_log_file"));
+        assert!(config.validate_runtime_support().is_ok());
     }
 
     #[rstest]

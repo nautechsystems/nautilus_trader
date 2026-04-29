@@ -218,6 +218,7 @@ impl FileWriter {
         instance_id: String,
         file_config: FileWriterConfig,
         fileout_level: LevelFilter,
+        clear_log_file: bool,
     ) -> Option<Self> {
         // Set up log file
         let json_format = match file_config.file_format.as_ref().map(|s| s.to_lowercase()) {
@@ -239,6 +240,13 @@ impl FileWriter {
                     return None;
                 }
             };
+
+        if clear_log_file
+            && file_path.exists()
+            && let Err(e) = File::create(&file_path)
+        {
+            eprintln!("{NAUTILUS_PREFIX} Error clearing log file: {e}");
+        }
 
         match File::options()
             .create(true)
@@ -301,7 +309,7 @@ impl FileWriter {
             }
         };
 
-        let suffix = if is_json_format { "json" } else { "log" };
+        let suffix = if is_json_format { "jsonl" } else { "log" };
         let mut file_path = PathBuf::new();
 
         if let Some(directory) = file_config.directory.as_ref() {
@@ -472,6 +480,7 @@ mod tests {
             "instance-123".to_string(),
             config,
             LevelFilter::Info,
+            false,
         )
         .unwrap();
 
@@ -526,6 +535,7 @@ mod tests {
             "instance-123".to_string(),
             config,
             LevelFilter::Info,
+            false,
         );
 
         assert!(writer.is_none());
@@ -549,6 +559,7 @@ mod tests {
             "instance-123".to_string(),
             config,
             LevelFilter::Info,
+            false,
         );
 
         assert!(writer.is_none());
@@ -570,6 +581,7 @@ mod tests {
             "instance-123".to_string(),
             config,
             LevelFilter::Info,
+            false,
         )
         .unwrap();
 
@@ -593,11 +605,12 @@ mod tests {
             "instance-123".to_string(),
             config,
             LevelFilter::Info,
+            false,
         )
         .unwrap();
 
         assert!(writer.json_format);
-        assert!(writer.path.extension().unwrap() == "json");
+        assert!(writer.path.extension().unwrap() == "jsonl");
     }
 
     #[rstest]
