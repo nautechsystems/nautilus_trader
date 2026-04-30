@@ -26,6 +26,10 @@ M = $(shell printf "\033[0;34m>\033[0m") # Message prefix for commands
 # Verbose options for specific targets (defaults to true, can be overridden)
 VERBOSE ?= true
 
+# UV_SYNC_FLAGS controls whether uv keeps packages not managed by this project
+# Set UV_SYNC_FLAGS= to make uv prune packages not in uv.lock
+UV_SYNC_FLAGS ?= --inexact
+
 # TARGET_DIR controls where cargo places build artifacts.
 # Can be overridden to use a separate directory: make build-debug TARGET_DIR=target-python
 TARGET_DIR ?= target
@@ -130,21 +134,25 @@ RESET  := \033[0m
 .PHONY: install-deps
 install-deps:  #-- Install Python dependencies only (no package build)
 	$(info $(M) Installing Python dependencies...)
-	$Q uv sync --active --all-groups --all-extras --inexact --no-install-package nautilus_trader
+	$Q uv sync --active --all-groups --all-extras $(UV_SYNC_FLAGS) --no-install-package nautilus_trader
+
+.PHONY: sync-deps
+sync-deps: UV_SYNC_FLAGS =
+sync-deps: install-deps  #-- Sync Python dependencies exactly (prune packages not in uv.lock)
 
 .PHONY: install
 install: install-deps
 install: export BUILD_MODE=release
 install:  #-- Install in release mode with all dependencies and extras
 	$(info $(M) Installing NautilusTrader in release mode...)
-	$Q uv sync --active --all-groups --all-extras --inexact
+	$Q uv sync --active --all-groups --all-extras $(UV_SYNC_FLAGS)
 
 .PHONY: install-debug
 install-debug: install-deps
 install-debug: export BUILD_MODE=debug
 install-debug:  #-- Install in debug mode for development
 	$(info $(M) Installing NautilusTrader in debug mode...)
-	$Q uv sync --active --all-groups --all-extras --inexact
+	$Q uv sync --active --all-groups --all-extras $(UV_SYNC_FLAGS)
 
 #== Build
 
@@ -797,7 +805,7 @@ test-performance:  #-- Run performance tests with codspeed benchmarking
 .PHONY: sync-v2
 sync-v2:  #-- Sync v2 Python dependencies (without building the package)
 	$(info $(M) Syncing v2 Python dependencies...)
-	$Q cd python && VIRTUAL_ENV= uv sync --all-groups --no-install-package nautilus-trader --inexact
+	$Q cd python && VIRTUAL_ENV= uv sync --all-groups --no-install-package nautilus-trader $(UV_SYNC_FLAGS)
 
 .PHONY: build-debug-v2
 build-debug-v2: sync-v2  #-- Build the v2 Python package in debug mode (fast incremental builds)
