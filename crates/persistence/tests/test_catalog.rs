@@ -3846,6 +3846,229 @@ fn test_convert_stream_to_data_no_files() {
 }
 
 #[rstest]
+fn test_convert_stream_to_data_unknown_type_no_files() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let result = catalog.convert_stream_to_data(
+        "test_instance",
+        "unknown_data_type",
+        Some("backtest"),
+        None,
+        false,
+    );
+
+    assert!(
+        result.is_ok(),
+        "Unknown stream data types should be ignored when no files exist",
+    );
+}
+
+#[rstest]
+fn test_convert_stream_to_data_unknown_type_with_files_errors() {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let feather_dir = temp_dir
+        .path()
+        .join("backtest")
+        .join("test_instance")
+        .join("unknown_data_type");
+    fs::create_dir_all(&feather_dir).unwrap();
+    fs::File::create(feather_dir.join("unknown_0.feather")).unwrap();
+
+    let result = catalog.convert_stream_to_data(
+        "test_instance",
+        "unknown_data_type",
+        Some("backtest"),
+        None,
+        false,
+    );
+
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown data class"),
+        "Should error once unknown stream files are present",
+    );
+}
+
+#[rstest]
+fn test_convert_stream_to_data_writes_arrow_batches_without_deserializing() {
+    use std::sync::Arc;
+
+    use arrow::{
+        array::{Array, StringArray, UInt64Array},
+        datatypes::{DataType, Field, Schema},
+        ipc::writer::StreamWriter,
+        record_batch::RecordBatch,
+    };
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let feather_dir = temp_dir
+        .path()
+        .join("backtest")
+        .join("test_instance")
+        .join("quotes")
+        .join("AUDUSD.SIM");
+    fs::create_dir_all(&feather_dir).unwrap();
+
+    let mut metadata = HashMap::new();
+    metadata.insert("instrument_id".to_string(), "AUD/USD.SIM".to_string());
+    let schema = Arc::new(Schema::new_with_metadata(
+        vec![
+            Field::new("ts_init", DataType::UInt64, false),
+            Field::new("ts_event", DataType::UInt64, false),
+            Field::new("payload", DataType::Utf8, false),
+        ],
+        metadata,
+    ));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(UInt64Array::from(vec![300, 100, 200])),
+            Arc::new(UInt64Array::from(vec![30, 10, 20])),
+            Arc::new(StringArray::from(vec!["c", "a", "b"])),
+        ],
+    )
+    .unwrap();
+
+    let feather_path = feather_dir.join("AUDUSD.SIM_0.feather");
+    let mut feather_file = fs::File::create(feather_path).unwrap();
+    let mut writer = StreamWriter::try_new(&mut feather_file, &schema).unwrap();
+    writer.write(&batch).unwrap();
+    writer.finish().unwrap();
+
+    catalog
+        .convert_stream_to_data("test_instance", "quotes", Some("backtest"), None, false)
+        .unwrap();
+
+    let files = catalog
+        .query_files("quotes", Some(vec!["AUD/USD.SIM".to_string()]), None, None)
+        .unwrap();
+    assert_eq!(files.len(), 1);
+
+    let parquet_path = std::path::PathBuf::from(&files[0]);
+    let parquet_path = if parquet_path.is_absolute() {
+        parquet_path
+    } else {
+        temp_dir.path().join(parquet_path)
+    };
+    let parquet_file = fs::File::open(parquet_path).unwrap();
+    let builder = ParquetRecordBatchReaderBuilder::try_new(parquet_file).unwrap();
+    let parquet_schema = builder.schema().clone();
+    assert_eq!(
+        parquet_schema.metadata().get("instrument_id"),
+        Some(&"AUD/USD.SIM".to_string()),
+    );
+
+    let mut reader = builder.build().unwrap();
+    let parquet_batch = reader.next().unwrap().unwrap();
+    assert_eq!(parquet_batch.num_rows(), 3);
+    assert_eq!(parquet_batch.num_columns(), 3);
+
+    let ts_init = parquet_batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<UInt64Array>()
+        .unwrap();
+    assert_eq!(ts_init.value(0), 100);
+    assert_eq!(ts_init.value(1), 200);
+    assert_eq!(ts_init.value(2), 300);
+
+    let payload = parquet_batch
+        .column(2)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    assert_eq!(payload.value(0), "a");
+    assert_eq!(payload.value(1), "b");
+    assert_eq!(payload.value(2), "c");
+}
+
+#[rstest]
+fn test_convert_stream_to_data_converts_bar_type_metadata_to_external() {
+    use std::sync::Arc;
+
+    use arrow::{
+        array::{StringArray, UInt64Array},
+        datatypes::{DataType, Field, Schema},
+        ipc::writer::StreamWriter,
+        record_batch::RecordBatch,
+    };
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let bar_type_internal = BarType::new(
+        audusd_sim_id(),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid),
+        AggregationSource::Internal,
+    )
+    .to_string();
+    let bar_type_external = BarType::new(
+        audusd_sim_id(),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Bid),
+        AggregationSource::External,
+    )
+    .to_string();
+    let feather_dir = temp_dir
+        .path()
+        .join("backtest")
+        .join("test_instance_bars")
+        .join("bars")
+        .join(bar_type_internal.replace('/', ""));
+    fs::create_dir_all(&feather_dir).unwrap();
+
+    let mut metadata = HashMap::new();
+    metadata.insert("bar_type".to_string(), bar_type_internal);
+    let schema = Arc::new(Schema::new_with_metadata(
+        vec![
+            Field::new("ts_init", DataType::UInt64, false),
+            Field::new("ts_event", DataType::UInt64, false),
+            Field::new("payload", DataType::Utf8, false),
+        ],
+        metadata,
+    ));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(UInt64Array::from(vec![100])),
+            Arc::new(UInt64Array::from(vec![100])),
+            Arc::new(StringArray::from(vec!["bar"])),
+        ],
+    )
+    .unwrap();
+
+    let feather_path = feather_dir.join("bars_0.feather");
+    let mut feather_file = fs::File::create(feather_path).unwrap();
+    let mut writer = StreamWriter::try_new(&mut feather_file, &schema).unwrap();
+    writer.write(&batch).unwrap();
+    writer.finish().unwrap();
+
+    catalog
+        .convert_stream_to_data("test_instance_bars", "bars", Some("backtest"), None, false)
+        .unwrap();
+
+    let files = catalog
+        .query_files("bars", Some(vec![bar_type_external.clone()]), None, None)
+        .unwrap();
+    assert_eq!(files.len(), 1);
+
+    let parquet_path = std::path::PathBuf::from(&files[0]);
+    let parquet_path = if parquet_path.is_absolute() {
+        parquet_path
+    } else {
+        temp_dir.path().join(parquet_path)
+    };
+    let parquet_file = fs::File::open(parquet_path).unwrap();
+    let builder = ParquetRecordBatchReaderBuilder::try_new(parquet_file).unwrap();
+    assert_eq!(
+        builder.schema().metadata().get("bar_type"),
+        Some(&bar_type_external),
+    );
+}
+
+#[rstest]
 fn test_instrument_roundtrip_with_info_params() {
     // Roundtrip an instrument with info (Params) through the Rust catalog to ensure
     // Params serialization/deserialization is correct.
