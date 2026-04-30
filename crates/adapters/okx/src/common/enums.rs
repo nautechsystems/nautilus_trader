@@ -305,6 +305,7 @@ pub enum OKXInstrumentStatus {
     Suspend,
     Preopen,
     Test,
+    PostOnly,
 }
 
 /// Represents an instrument contract type on OKX.
