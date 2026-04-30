@@ -39,6 +39,7 @@ from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestJoin
 from nautilus_trader.data.messages import RequestOrderBookDeltas
 from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
@@ -4455,6 +4456,139 @@ class TestDataEngine:
         assert request.id not in self.data_engine._request_workflows
         assert request.id not in self.data_engine._requests
         assert len(handler) == 0
+
+    def test_request_order_book_snapshot_without_client_cleans_up_workflow_state(self):
+        # Arrange
+        handler = []
+        request = RequestOrderBookSnapshot(
+            instrument_id=ETHUSDT_BINANCE.id,
+            limit=1,
+            client_id=None,
+            venue=BINANCE,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert request.id not in self.data_engine._request_workflows
+        assert request.id not in self.data_engine._requests
+        assert len(handler) == 0
+
+    def test_request_quote_ticks_with_incompatible_dates_cleans_up_workflow_state(self):
+        # Arrange
+        self.clock.advance_time(pd.Timestamp("2024-01-03T00:00:00", tz="UTC").value)
+
+        handler = []
+        request = RequestQuoteTicks(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=pd.Timestamp("2024-01-02T00:00:00", tz="UTC"),
+            end=pd.Timestamp("2024-01-01T00:00:00", tz="UTC"),
+            limit=0,
+            client_id=None,
+            venue=BINANCE,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert request.id not in self.data_engine._request_workflows
+        assert request.id not in self.data_engine._requests
+        assert len(handler) == 0
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
+    def test_request_instrument_catalog_miss_cleans_up_workflow_state(self):
+        # Arrange
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
+        catalog.write_data([ETHUSDT_BINANCE])
+        self.data_engine.register_catalog(catalog)
+
+        start = unix_nanos_to_dt(ETHUSDT_BINANCE.ts_init + 1)
+        end = unix_nanos_to_dt(ETHUSDT_BINANCE.ts_init + 2)
+        self.clock.advance_time(ETHUSDT_BINANCE.ts_init + 3)
+
+        handler = []
+        request = RequestInstrument(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=start,
+            end=end,
+            client_id=None,
+            venue=BINANCE,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert request.id not in self.data_engine._request_workflows
+        assert request.id not in self.data_engine._requests
+        assert len(handler) == 0
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
+    def test_request_join_with_instruments_uses_grouped_workflow_state(self):
+        # Arrange
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
+        catalog.write_data([BTCUSDT_BINANCE, ETHUSDT_BINANCE])
+        self.data_engine.register_catalog(catalog)
+        self.clock.advance_time(max(BTCUSDT_BINANCE.ts_init, ETHUSDT_BINANCE.ts_init) + 1)
+
+        join_handler = []
+
+        first_request = RequestInstrument(
+            instrument_id=BTCUSDT_BINANCE.id,
+            start=None,
+            end=None,
+            client_id=None,
+            venue=BINANCE,
+            callback=None,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"join_request": True},
+        )
+        second_request = RequestInstrument(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=None,
+            end=None,
+            client_id=None,
+            venue=BINANCE,
+            callback=None,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"join_request": True},
+        )
+        join_request = RequestJoin(
+            request_ids=(first_request.id, second_request.id),
+            start=None,
+            end=None,
+            callback=join_handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=first_request)
+        self.msgbus.request(endpoint="DataEngine.request", request=second_request)
+        self.msgbus.request(endpoint="DataEngine.request", request=join_request)
+
+        # Assert
+        assert len(join_handler) == 1
+        assert join_handler[0].data == []
+        assert self.data_engine._request_workflows == {}
+        assert self.data_engine._requests == {}
 
     def test_request_aggregated_bars_with_bars(self):
         # Arrange
