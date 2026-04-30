@@ -328,6 +328,7 @@ cdef class DataEngine(Component):
     cdef object _inherit_request_workflows(self, RequestData target, RequestData source)
     cdef dict _request_response_params(self, UUID4 request_id, dict fallback_params = *)
     cdef void _abort_request(self, UUID4 request_id)
+    cdef void _complete_grouped_request_or_abort(self, RequestData request)
     cdef void _emit_empty_request_response(self, UUID4 parent_request_id)
     cdef list _get_bar_types_from_aggregators(self)
     cpdef void _init_historical_aggregators(self, RequestData request)

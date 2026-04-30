@@ -2009,6 +2009,7 @@ cdef class DataEngine(Component):
 
         if client is None:
             self._log_request_warning(request)
+            self._complete_grouped_request_or_abort(request)
             return  # No client to handle request
 
         client.request_instruments(request)
@@ -2023,6 +2024,7 @@ cdef class DataEngine(Component):
 
         if client is None:
             self._log_request_warning(request)
+            self._complete_grouped_request_or_abort(request)
             return  # No client to handle request
 
         client.request_instrument(request)
@@ -2046,6 +2048,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request):
         if client is None:
             self._log_request_warning(request)
+            self._complete_grouped_request_or_abort(request)
             return  # No client to handle request
 
         client.request_order_book_snapshot(request)
@@ -2077,6 +2080,7 @@ cdef class DataEngine(Component):
 
         if start > end:
             self._log.error(f"Cannot handle request: incompatible request dates for {request}")
+            self._complete_grouped_request_or_abort(request)
             return
 
         cdef list query_interval = [(start.value, end.value)]
@@ -2157,6 +2161,7 @@ cdef class DataEngine(Component):
                 client.request(request)
             except:
                 self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}, {request}")
+                self._complete_grouped_request_or_abort(request)
 
     def _log_request_warning(self, RequestData request):
         self._log.warning(f"Cannot handle request: no client registered for '{request.client_id}', {request}")
@@ -2225,6 +2230,7 @@ cdef class DataEngine(Component):
                 bar_type = request.bar_type
                 if bar_type is None:
                     self._log.error("No bar type provided for bars request")
+                    self._complete_grouped_request_or_abort(request)
                     return
 
                 data = catalog.bars(
@@ -2274,6 +2280,7 @@ cdef class DataEngine(Component):
         if isinstance(request, RequestInstrument):
             if len(data) == 0:
                 self._log.error(f"Cannot find instrument for {request.instrument_id}")
+                self._complete_grouped_request_or_abort(request)
                 return
 
         if isinstance(request, RequestInstruments) or isinstance(request, RequestInstrument):
@@ -2450,6 +2457,15 @@ cdef class DataEngine(Component):
 
         for request_id in request.request_ids:
             joined_request = self._requests.get(request_id)
+            if joined_request is None:
+                self._log.error(f"joined_request for {request_id=} not found.")
+                self._parent_join_request_id.pop(request.id, None)
+                self._abort_request(request.id)
+                if request.correlation_id is not None:
+                    self._abort_request(request.correlation_id)
+
+                return
+
             new_request = joined_request.with_dates(state.start, state.end, self._clock.timestamp_ns())
             new_state = self._inherit_request_workflows(new_request, joined_request)
             new_state.join_request = False
@@ -3007,9 +3023,13 @@ cdef class DataEngine(Component):
             self._handle_forward_prices_response(response.correlation_id, response.data)
             return
 
-        # We may need to join responses from a catalog and a client
+        # We may need to join responses from a catalog and a client.
+        # Standalone instruments are processed immediately; grouped instrument children
+        # still need to fan in through the request-group path.
         grouped_response = None
-        if response.data_type.type == Instrument:
+        cdef bint is_grouped_child = response.correlation_id in self._request_group_parent_request_id
+        cdef bint is_standalone_instrument = response.data_type.type == Instrument and not is_grouped_child
+        if is_standalone_instrument:
             grouped_response = response
         else:
             grouped_response = self._handle_request_group(response)
@@ -3122,6 +3142,7 @@ cdef class DataEngine(Component):
                 )
 
             data_result += response.data
+            self._requests.pop(response.correlation_id, None)
             self._request_workflows.pop(response.correlation_id, None)
 
         data_result.sort(key=lambda x: x.ts_init)
@@ -3900,7 +3921,7 @@ cdef class DataEngine(Component):
     cdef tuple _get_bar_aggregator_key(self, BarType bar_type, UUID4 request_id = None):
         return (bar_type.standard(), request_id)
 
-# -- INTERNAL - Spread Quote Aggregators ----------------------------------------------------------
+    # -- INTERNAL - Spread Quote Aggregators ----------------------------------------------------------
 
     cpdef bint _should_request_spread_quote_ticks(self, RequestQuoteTicks request):
         # Check if a spread quote aggregator is running, meaning a request using one is already ongoing, or
@@ -4278,6 +4299,28 @@ cdef class DataEngine(Component):
         # Drop all engine bookkeeping for a request that could not be started.
         self._requests.pop(request_id, None)
         self._request_workflows.pop(request_id, None)
+
+    cdef void _complete_grouped_request_or_abort(self, RequestData request):
+        if request.id not in self._request_group_parent_request_id:
+            self._abort_request(request.id)
+            return
+
+        state = self._ensure_request_workflows(request)
+        response = DataResponse(
+            client_id=request.client_id,
+            venue=request.venue,
+            data_type=request.data_type,
+            data=[],
+            correlation_id=request.id,
+            response_id=UUID4(),
+            start=state.start,
+            end=state.end,
+            ts_init=self._clock.timestamp_ns(),
+            params=self._request_response_params(request.id),
+        )
+        self._handle_response(response)
+
+    # -- INTERNAL - Continuous Futures ----------------------------------------------------------------
 
     cpdef void _handle_subscribe_continuous_future_bars(self, MarketDataClient client, SubscribeBars command):
         # `target_bar_type` keeps the original (possibly composite) shape so source resolution
