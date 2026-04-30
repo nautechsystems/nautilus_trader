@@ -5,9 +5,9 @@ name: dst
 # Builds the in-scope crates under `--cfg madsim --features simulation` and
 # runs the test subset known to work under simulation (all of nautilus-common
 # plus the cross-crate seam pinning tests in nautilus-network and
-# nautilus-core). Triggered on pushes to release-track branches (master,
-# nightly) and on manual dispatch. PRs and develop pushes do not gate on
-# this workflow. See docs/concepts/dst.md for the contract and scope.
+# nautilus-core). Triggered on pushes to nightly and test-ci and on manual
+# dispatch. PRs, master pushes, and develop pushes do not gate on this
+# workflow. See docs/concepts/dst.md for the contract and scope.
 
 permissions:
   contents: read
@@ -15,7 +15,7 @@ permissions:
 
 on:
   push:
-    branches: [master, nightly, test-ci]
+    branches: [nightly, test-ci]
   workflow_dispatch:
 
 concurrency:
