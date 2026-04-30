@@ -885,7 +885,7 @@ mod tests {
 
         assert_eq!(
             bar.bar_type,
-            BarType::from("XBTUSD.BITMEX-10000-MILLISECOND-LAST-EXTERNAL")
+            BarType::from("XBTUSD.BITMEX-10-SECOND-LAST-EXTERNAL")
         );
         assert_eq!(bar.open, Price::from("7623.5"));
         assert_eq!(bar.high, Price::from("7623.5"));

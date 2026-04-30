@@ -381,7 +381,7 @@ fn test_bar_type_step_overflow_returns_encode_error() {
         InstrumentId::from("AAPL.XNAS"),
         BarSpecification::new(
             (u32::MAX as usize) + 1,
-            BarAggregation::Minute,
+            BarAggregation::Tick,
             PriceType::Last,
         ),
         AggregationSource::Internal,

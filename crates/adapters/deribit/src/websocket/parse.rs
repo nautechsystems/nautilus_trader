@@ -631,16 +631,17 @@ pub fn resolution_to_bar_type(
         "10" => (10, BarAggregation::Minute),
         "15" => (15, BarAggregation::Minute),
         "30" => (30, BarAggregation::Minute),
-        "60" => (60, BarAggregation::Minute),
-        "120" => (120, BarAggregation::Minute),
-        "180" => (180, BarAggregation::Minute),
-        "360" => (360, BarAggregation::Minute),
-        "720" => (720, BarAggregation::Minute),
+        "60" => (1, BarAggregation::Hour),
+        "120" => (2, BarAggregation::Hour),
+        "180" => (3, BarAggregation::Hour),
+        "360" => (6, BarAggregation::Hour),
+        "720" => (12, BarAggregation::Hour),
         "1D" => (1, BarAggregation::Day),
         _ => anyhow::bail!("Unsupported Deribit resolution: {resolution}"),
     };
 
-    let spec = BarSpecification::new(step, aggregation, PriceType::Last);
+    let spec = BarSpecification::new_checked(step, aggregation, PriceType::Last)
+        .context("invalid Deribit bar resolution")?;
     Ok(BarType::new(
         instrument_id,
         spec,
@@ -1674,8 +1675,8 @@ mod tests {
         let bar_type = resolution_to_bar_type(instrument_id, "60").unwrap();
 
         assert_eq!(bar_type.instrument_id(), instrument_id);
-        assert_eq!(bar_type.spec().step.get(), 60);
-        assert_eq!(bar_type.spec().aggregation, BarAggregation::Minute);
+        assert_eq!(bar_type.spec().step.get(), 1);
+        assert_eq!(bar_type.spec().aggregation, BarAggregation::Hour);
     }
 
     #[rstest]

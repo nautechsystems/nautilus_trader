@@ -6409,11 +6409,11 @@ mod property_tests {
 
     use super::*;
 
-    fn aggregation_strategy() -> impl Strategy<Value = BarAggregation> {
+    fn time_bar_spec_strategy() -> impl Strategy<Value = (BarAggregation, usize)> {
         prop_oneof![
-            Just(BarAggregation::Second),
-            Just(BarAggregation::Minute),
-            Just(BarAggregation::Hour),
+            (Just(BarAggregation::Second), 1usize..=5),
+            (Just(BarAggregation::Minute), 1usize..=5),
+            (Just(BarAggregation::Hour), 1usize..=4),
         ]
     }
 
@@ -6427,8 +6427,7 @@ mod property_tests {
     proptest! {
         #[rstest]
         fn prop_skip_first_drops_partial_then_emits(
-            aggregation in aggregation_strategy(),
-            step in 1usize..=5,
+            (aggregation, step) in time_bar_spec_strategy(),
             interval_type in interval_type_strategy(),
             skip_first in any::<bool>(),
         ) {
@@ -6511,8 +6510,7 @@ mod property_tests {
 
         #[rstest]
         fn prop_skip_first_noop_on_exact_boundary(
-            aggregation in aggregation_strategy(),
-            step in 1usize..=5,
+            (aggregation, step) in time_bar_spec_strategy(),
             interval_type in interval_type_strategy(),
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());

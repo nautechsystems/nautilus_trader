@@ -393,7 +393,7 @@ mod tests {
         let instrument_id = create_test_instrument_id();
         let bar_type = BarType::new(
             instrument_id,
-            BarSpecification::new(99, BarAggregation::Minute, PriceType::Last),
+            BarSpecification::new(12, BarAggregation::Minute, PriceType::Last),
             AggregationSource::External,
         );
         let result = bar_type_to_ib_bar_size(&bar_type);

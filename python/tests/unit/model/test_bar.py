@@ -81,6 +81,78 @@ def test_bar_spec_str_with_various_aggregations(step, aggregation, expected_str)
 
 
 @pytest.mark.parametrize(
+    ("step", "aggregation", "expected_msg"),
+    [
+        (
+            12,
+            BarAggregation.MILLISECOND,
+            "Invalid step in bar_type.spec.step: 12 for aggregation=10. "
+            "step must evenly divide 1000",
+        ),
+        (
+            1000,
+            BarAggregation.MILLISECOND,
+            "Invalid step in bar_type.spec.step: 1000 for aggregation=10. step must not be 1000",
+        ),
+        (
+            50,
+            BarAggregation.SECOND,
+            "Invalid step in bar_type.spec.step: 50 for aggregation=11. step must evenly divide 60",
+        ),
+        (
+            60,
+            BarAggregation.MINUTE,
+            "Invalid step in bar_type.spec.step: 60 for aggregation=12. step must not be 60",
+        ),
+        (
+            13,
+            BarAggregation.HOUR,
+            "Invalid step in bar_type.spec.step: 13 for aggregation=13. step must evenly divide 24",
+        ),
+        (
+            12,
+            BarAggregation.MONTH,
+            "Invalid step in bar_type.spec.step: 12 for aggregation=16. step must not be 12",
+        ),
+    ],
+)
+def test_bar_spec_invalid_periodic_step(step, aggregation, expected_msg):
+    with pytest.raises(ValueError, match=expected_msg):
+        BarSpecification(step, aggregation, PriceType.BID)
+
+
+@pytest.mark.parametrize(
+    ("step", "aggregation"),
+    [
+        (2, BarAggregation.DAY),
+        (2, BarAggregation.WEEK),
+        (7, BarAggregation.YEAR),
+        (7, BarAggregation.TICK),
+        (7, BarAggregation.TICK_IMBALANCE),
+        (7, BarAggregation.TICK_RUNS),
+        (7, BarAggregation.VOLUME),
+        (7, BarAggregation.VOLUME_IMBALANCE),
+        (7, BarAggregation.VOLUME_RUNS),
+        (7, BarAggregation.VALUE),
+        (7, BarAggregation.VALUE_IMBALANCE),
+        (7, BarAggregation.VALUE_RUNS),
+        (7, BarAggregation.RENKO),
+    ],
+)
+def test_bar_spec_non_periodic_step_passes(step, aggregation):
+    spec = BarSpecification(step, aggregation, PriceType.BID)
+
+    assert spec.step == step
+    assert spec.aggregation == aggregation
+    assert spec.price_type == PriceType.BID
+
+
+def test_bar_spec_from_str_rejects_invalid_periodic_step():
+    with pytest.raises(ValueError, match=r"Invalid step in bar_type\.spec\.step"):
+        BarSpecification.from_str("60-MINUTE-BID")
+
+
+@pytest.mark.parametrize(
     ("step", "aggregation", "expected"),
     [
         (500, BarAggregation.MILLISECOND, timedelta(milliseconds=500)),
@@ -166,11 +238,18 @@ def test_bar_type_from_str_valid(value, expected):
 
 @pytest.mark.parametrize(
     "value",
-    ["", "AUD/USD", "AUD/USD.IDEALPRO-1-MILLISECOND-BID"],
+    ["", "AUD/USD", "AUD/USD.IDEALPRO-1-MILLISECOND-BID", "AUD/USD.SIM-60-MINUTE-LAST-INTERNAL"],
 )
 def test_bar_type_from_str_invalid(value):
     with pytest.raises(ValueError, match="Error parsing"):
         BarType.from_str(value)
+
+
+def test_bar_type_from_str_invalid_composite_spec_step():
+    input_str = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@60-MINUTE-EXTERNAL"
+
+    with pytest.raises(ValueError, match="invalid token: '60' at position 5"):
+        BarType.from_str(input_str)
 
 
 def test_bar_type_from_str_with_utf8():

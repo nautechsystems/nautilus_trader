@@ -545,6 +545,11 @@ class TestBarType:
                 "Error parsing `BarType` from 'AUD/USD.SIM-a-0-0-0', invalid token: 'a' at position 1",
             ],
             [
+                "AUD/USD.SIM-60-MINUTE-LAST-INTERNAL",
+                "Error parsing `BarType` from 'AUD/USD.SIM-60-MINUTE-LAST-INTERNAL', "
+                "invalid token: '60' at position 1",
+            ],
+            [
                 "AUD/USD.SIM-1000-a-0-0",
                 "Error parsing `BarType` from 'AUD/USD.SIM-1000-a-0-0', invalid token: 'a' at position 2",
             ],

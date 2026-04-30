@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use anyhow::Context;
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_MICROSECOND};
 use nautilus_model::{
     data::BarSpecification,
@@ -268,7 +269,29 @@ pub fn parse_bar_spec(value: &str) -> anyhow::Result<BarSpecification> {
         _ => anyhow::bail!("Unsupported bar aggregation type: '{suffix}'"),
     };
 
-    Ok(BarSpecification::new(step, aggregation, PriceType::Last))
+    parse_canonical_bar_spec(step, aggregation)
+        .with_context(|| format!("Invalid bar spec '{value}'"))
+}
+
+fn parse_canonical_bar_spec(
+    step: usize,
+    aggregation: BarAggregation,
+) -> anyhow::Result<BarSpecification> {
+    match aggregation {
+        BarAggregation::Millisecond if step.is_multiple_of(1000) => {
+            parse_canonical_bar_spec(step / 1000, BarAggregation::Second)
+        }
+        BarAggregation::Second if step.is_multiple_of(60) => {
+            parse_canonical_bar_spec(step / 60, BarAggregation::Minute)
+        }
+        BarAggregation::Minute if step.is_multiple_of(60) => {
+            parse_canonical_bar_spec(step / 60, BarAggregation::Hour)
+        }
+        BarAggregation::Hour if step.is_multiple_of(24) => {
+            parse_canonical_bar_spec(step / 24, BarAggregation::Day)
+        }
+        _ => BarSpecification::new_checked(step, aggregation, PriceType::Last),
+    }
 }
 
 /// Converts a Nautilus `BarSpecification` to the Tardis trade bar string convention.
@@ -277,6 +300,26 @@ pub fn parse_bar_spec(value: &str) -> anyhow::Result<BarSpecification> {
 ///
 /// Returns an error if the bar aggregation kind is unsupported.
 pub fn bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> anyhow::Result<String> {
+    match bar_spec.aggregation {
+        BarAggregation::Hour => {
+            let minutes = bar_spec
+                .step
+                .get()
+                .checked_mul(60)
+                .context("bar specification step overflow")?;
+            return Ok(format!("trade_bar_{minutes}m"));
+        }
+        BarAggregation::Day => {
+            let minutes = bar_spec
+                .step
+                .get()
+                .checked_mul(1440)
+                .context("bar specification step overflow")?;
+            return Ok(format!("trade_bar_{minutes}m"));
+        }
+        _ => {}
+    }
+
     let suffix = match bar_spec.aggregation {
         BarAggregation::Millisecond => "ms",
         BarAggregation::Second => "s",
@@ -446,7 +489,9 @@ mod tests {
 
     #[rstest]
     #[case("trade_bar_10ms", 10, BarAggregation::Millisecond)]
+    #[case("trade_bar_10000ms", 10, BarAggregation::Second)]
     #[case("trade_bar_5m", 5, BarAggregation::Minute)]
+    #[case("trade_bar_60m", 1, BarAggregation::Hour)]
     #[case("trade_bar_100ticks", 100, BarAggregation::Tick)]
     #[case("trade_bar_100000vol", 100000, BarAggregation::Volume)]
     fn test_parse_bar_spec(
@@ -481,6 +526,14 @@ mod tests {
     #[case(
         BarSpecification::new(5, BarAggregation::Minute, PriceType::Last),
         "trade_bar_5m"
+    )]
+    #[case(
+        BarSpecification::new(1, BarAggregation::Hour, PriceType::Last),
+        "trade_bar_60m"
+    )]
+    #[case(
+        BarSpecification::new(2, BarAggregation::Day, PriceType::Last),
+        "trade_bar_2880m"
     )]
     #[case(
         BarSpecification::new(100, BarAggregation::Tick, PriceType::Last),
