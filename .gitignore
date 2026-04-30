@@ -89,6 +89,7 @@ PERF.JSON
 output.json
 
 # AI assistants and tools
+.codex
 .cursorignore
 .mcp.json
 .mcp.local.json
