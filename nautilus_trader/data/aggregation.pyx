@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import ROUND_HALF_EVEN
 from decimal import Decimal
 from typing import Callable
 
@@ -39,11 +40,14 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.rust.core cimport millis_to_nanos
 from nautilus_trader.core.rust.core cimport secs_to_nanos
+from nautilus_trader.core.rust.model cimport FIXED_PRECISION
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport QuantityRaw
+from nautilus_trader.core.rust.model cimport price_as_f64
+from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
@@ -54,6 +58,7 @@ from nautilus_trader.model.greeks cimport GreeksCalculator
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport generic_spread_id_to_list
 from nautilus_trader.model.identifiers cimport is_generic_spread_id
+from nautilus_trader.model.enums import ContinuousFutureAdjustmentType
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -99,6 +104,11 @@ cdef class BarBuilder:
         self._high = None
         self._low = None
         self._close = None
+        self._adjustment_mode = None
+        self._adjustment_raw = 0
+        self._adjustment_ratio = 1.0
+        self._adjustment_active = False
+        self._adjustment_is_ratio = False
         self.volume = Quantity.zero_c(precision=self.size_precision)
 
     def __repr__(self) -> str:
@@ -132,6 +142,8 @@ cdef class BarBuilder:
         if ts_init < self.ts_last:
             return  # Not applicable
 
+        price = self._apply_adjustment_to_price(price)
+
         if self._open is None:
             # Initialize builder
             self._open = price
@@ -163,37 +175,56 @@ cdef class BarBuilder:
         if ts_init < self.ts_last:
             return  # Not applicable
 
+        cdef Price bar_open = self._apply_adjustment_to_price(bar.open)
+        cdef Price bar_high = self._apply_adjustment_to_price(bar.high)
+        cdef Price bar_low = self._apply_adjustment_to_price(bar.low)
+        cdef Price bar_close = self._apply_adjustment_to_price(bar.close)
+
         if self._open is None:
             # Initialize builder
-            self._open = bar.open
-            self._high = bar.high
-            self._low = bar.low
+            self._open = bar_open
+            self._high = bar_high
+            self._low = bar_low
             self.initialized = True
         else:
-            if bar.high > self._high:
-                self._high = bar.high
+            if bar_high._mem.raw > self._high._mem.raw:
+                self._high = bar_high
 
-            if bar.low < self._low:
-                self._low = bar.low
+            if bar_low._mem.raw < self._low._mem.raw:
+                self._low = bar_low
 
-        self._close = bar.close
+        self._close = bar_close
         self.volume._mem.raw += volume._mem.raw
         self.count += 1
         self.ts_last = ts_init
 
-    cpdef void reset(self):
-        """
-        Reset the bar builder.
+    cpdef void set_adjustment(self, object adjustment, object mode = None):
+        # Adjustment applies at ingress on subsequent update()/update_bar() calls,
+        # so running OHLC state is always in the adjusted (common) frame.
+        # Only the ratio-vs-spread distinction matters here; direction affects only
+        # the sign/magnitude of the cumulative offset, which the caller has already applied.
+        # We pre-compute the adjustment once here so the per-tick hot path is pure C math.
+        Condition.not_none(adjustment, "adjustment")
+        if mode is None:
+            mode = ContinuousFutureAdjustmentType.BACKWARD_SPREAD
 
-        All stateful fields are reset to their initial value.
-        """
-        self._open = None
-        self._high = None
-        self._low = None
-        self._close = None
+        self._adjustment_mode = ContinuousFutureAdjustmentType(mode)
+        cdef object adj_decimal = adjustment if isinstance(adjustment, Decimal) else Decimal(str(adjustment))
 
-        self.volume = Quantity.zero_c(precision=self.size_precision)
-        self.count = 0
+        if self._adjustment_mode.is_ratio:
+            self._adjustment_is_ratio = True
+            self._adjustment_ratio = float(adj_decimal)
+            self._adjustment_active = adj_decimal != 1
+            return
+
+        # Spread mode: scale the Decimal offset to FIXED_PRECISION once so the hot path
+        # can add it straight onto `price._mem.raw` (signed PriceRaw supports negatives).
+        self._adjustment_is_ratio = False
+        cdef object scaled = (adj_decimal * (Decimal(10) ** int(FIXED_PRECISION))).to_integral_value(
+            rounding=ROUND_HALF_EVEN,
+        )
+        self._adjustment_raw = <PriceRaw>int(scaled)
+        self._adjustment_active = self._adjustment_raw != 0
 
     cpdef Bar build_now(self):
         """
@@ -246,6 +277,37 @@ cdef class BarBuilder:
         self.reset()
 
         return bar
+
+    cdef Price _apply_adjustment_to_price(self, Price price):
+        # Hot path: pure C math; no Decimal / str allocations per tick.
+        if not self._adjustment_active:
+            return price
+
+        if self._adjustment_is_ratio:
+            # Multiply in double; Rust's `price_new` rounds to the target precision.
+            return Price.from_mem_c(
+                price_new(price_as_f64(&price._mem) * self._adjustment_ratio, price._mem.precision),
+            )
+
+        # Spread: signed raw addition. `PriceRaw` is int64/int128, so backward-spread
+        # adjustments that push prices below zero are representable (bounded by PRICE_RAW_MIN).
+        return Price.from_raw_c(price._mem.raw + self._adjustment_raw, price._mem.precision)
+
+    cpdef void reset(self):
+        """
+        Reset the bar builder.
+
+        All per-bar OHLCV state is cleared. Adjustment configuration set via
+        `set_adjustment` is retained across resets so it spans subsequent bars
+        within the same continuous-future segment.
+        """
+        self._open = None
+        self._high = None
+        self._low = None
+        self._close = None
+
+        self.volume = Quantity.zero_c(precision=self.size_precision)
+        self.count = 0
 
 
 cdef class BarAggregator:
