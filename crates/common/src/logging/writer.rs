@@ -614,6 +614,68 @@ mod tests {
     }
 
     #[rstest]
+    fn test_file_writer_clear_log_file_truncates_existing_file() {
+        let temp_dir = tempdir().unwrap();
+
+        let config = FileWriterConfig {
+            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+            file_name: Some("test".to_string()),
+            file_format: None,
+            file_rotate: None,
+        };
+
+        let existing_path = temp_dir.path().join("test.log");
+        std::fs::write(&existing_path, "stale contents").unwrap();
+        assert_eq!(
+            std::fs::metadata(&existing_path).unwrap().len(),
+            "stale contents".len() as u64
+        );
+
+        let writer = FileWriter::new(
+            "TRADER-001".to_string(),
+            "instance-123".to_string(),
+            config,
+            LevelFilter::Info,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(writer.path, existing_path);
+        assert_eq!(std::fs::metadata(&existing_path).unwrap().len(), 0);
+    }
+
+    #[rstest]
+    fn test_file_writer_clear_log_file_false_preserves_existing_file() {
+        let temp_dir = tempdir().unwrap();
+
+        let config = FileWriterConfig {
+            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+            file_name: Some("test".to_string()),
+            file_format: None,
+            file_rotate: None,
+        };
+
+        let existing_path = temp_dir.path().join("test.log");
+        let existing_contents = "preserved contents";
+        std::fs::write(&existing_path, existing_contents).unwrap();
+
+        let writer = FileWriter::new(
+            "TRADER-001".to_string(),
+            "instance-123".to_string(),
+            config,
+            LevelFilter::Info,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(writer.path, existing_path);
+        assert_eq!(
+            std::fs::read_to_string(&existing_path).unwrap(),
+            existing_contents
+        );
+    }
+
+    #[rstest]
     fn test_stdout_writer_filters_error_level() {
         let writer = StdoutWriter::new(LevelFilter::Info, true);
 

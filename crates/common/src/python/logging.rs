@@ -45,6 +45,7 @@ impl LoggerConfig {
         bypass_logging=None,
         log_components_only=None,
         file_config=None,
+        clear_log_file=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
@@ -56,6 +57,7 @@ impl LoggerConfig {
         bypass_logging: Option<bool>,
         log_components_only: Option<bool>,
         file_config: Option<FileWriterConfig>,
+        clear_log_file: Option<bool>,
     ) -> PyResult<Self> {
         let component_levels = parse_component_levels(component_levels).map_err(to_pyvalue_err)?;
         Ok(Self::new(
@@ -69,7 +71,7 @@ impl LoggerConfig {
             false,
             bypass_logging.unwrap_or(false),
             file_config,
-            false,
+            clear_log_file.unwrap_or(false),
         ))
     }
 

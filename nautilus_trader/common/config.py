@@ -594,7 +594,7 @@ class LoggingConfig(NautilusConfig, frozen=True):
         The path to the log file directory.
         If ``None`` then will write to the current working directory.
     log_file_name : str, optional
-        The custom log file name (will use a '.log' suffix for plain text or '.json' for JSON).
+        The custom log file name (will use a '.log' suffix for plain text or '.jsonl' for JSON).
         This will override automatic naming, and no daily file rotation will occur.
     log_file_format : str { 'JSON' }, optional
         The log file format. If ``None`` (default) then will log in plain text.

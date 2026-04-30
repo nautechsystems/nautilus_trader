@@ -4,8 +4,11 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added continuous futures support for aggregated bars (#3921), thanks @faysou
+- Added `LoggerConfig.file_config` and `clear_log_file` support to the Rust `LiveNode` runtime (#3955), thanks @filipmacek
+- Added `LoggerConfig` Python constructor for direct construction without `from_spec` (#3955), thanks @filipmacek
 
 ### Breaking Changes
+- Changed JSON log file extension from `.json` to `.jsonl`; update log shippers watching `.json` (#3955), thanks @filipmacek
 
 ### Security
 

@@ -200,6 +200,7 @@ class LoggerConfig:
         bypass_logging: bool | None = None,
         log_components_only: bool | None = None,
         file_config: FileWriterConfig | None = None,
+        clear_log_file: bool | None = None,
     ) -> None: ...
     @staticmethod
     def from_spec(spec: str) -> LoggerConfig: ...
