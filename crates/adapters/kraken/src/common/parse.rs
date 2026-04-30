@@ -85,8 +85,8 @@ pub fn normalize_currency_code(code: &str) -> &str {
 /// Kraken's REST `/0/public/AssetPairs` `wsname` field is supposed to be the WS-ready
 /// symbol, but some entries are stale. Each entry is `(rest_wsname_code, ws_v2_code)`.
 const KRAKEN_SYMBOL_RENAMES: &[(&str, &str)] = &[
-    ("XBT", "BTC"),   // XBT is Bitcoin's ISO 4217 code; WS v2 requires BTC
-    ("XDG", "DOGE"),  // XDG is Kraken's legacy altname for Dogecoin; WS v2 requires DOGE
+    ("XBT", "BTC"),  // XBT is Bitcoin's ISO 4217 code; WS v2 requires BTC
+    ("XDG", "DOGE"), // XDG is Kraken's legacy altname for Dogecoin; WS v2 requires DOGE
 ];
 
 /// Normalizes a Kraken spot `wsname` symbol to the form accepted by WS v2.
