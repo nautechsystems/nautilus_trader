@@ -4455,6 +4455,7 @@ class TestDataEngine:
         # Assert
         assert request.id not in self.data_engine._request_workflows
         assert request.id not in self.data_engine._requests
+        assert not self.msgbus.is_pending_request(request.id)
         assert len(handler) == 0
 
     def test_request_order_book_snapshot_without_client_cleans_up_workflow_state(self):
@@ -4477,6 +4478,7 @@ class TestDataEngine:
         # Assert
         assert request.id not in self.data_engine._request_workflows
         assert request.id not in self.data_engine._requests
+        assert not self.msgbus.is_pending_request(request.id)
         assert len(handler) == 0
 
     def test_request_quote_ticks_with_incompatible_dates_cleans_up_workflow_state(self):
@@ -4503,6 +4505,44 @@ class TestDataEngine:
         # Assert
         assert request.id not in self.data_engine._request_workflows
         assert request.id not in self.data_engine._requests
+        assert not self.msgbus.is_pending_request(request.id)
+        assert len(handler) == 0
+
+    def test_aggregated_bars_with_incompatible_dates_cleans_up_aggregator_state(self):
+        # Arrange
+        self.data_engine.register_client(self.mock_market_data_client)
+        self.clock.advance_time(pd.Timestamp("2024-01-03T00:00:00", tz="UTC").value)
+
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec, AggregationSource.INTERNAL)
+
+        handler = []
+        request = RequestTradeTicks(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=pd.Timestamp("2024-01-02T00:00:00", tz="UTC"),
+            end=pd.Timestamp("2024-01-01T00:00:00", tz="UTC"),
+            limit=0,
+            client_id=None,
+            venue=BINANCE,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={
+                "bar_types": (bar_type,),
+                "update_subscriptions": False,
+                "update_catalog": False,
+            },
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert request.id not in self.data_engine._request_workflows
+        assert request.id not in self.data_engine._requests
+        assert request.id not in self.data_engine._bar_types_params
+        assert self.data_engine._bar_aggregators == {}
+        assert not self.msgbus.is_pending_request(request.id)
         assert len(handler) == 0
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
@@ -4535,7 +4575,49 @@ class TestDataEngine:
         # Assert
         assert request.id not in self.data_engine._request_workflows
         assert request.id not in self.data_engine._requests
+        assert not self.msgbus.is_pending_request(request.id)
         assert len(handler) == 0
+
+    def test_request_join_missing_child_cleans_up_group_state(self):
+        # Arrange
+        first_request = RequestQuoteTicks(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=None,
+            end=None,
+            limit=0,
+            client_id=None,
+            venue=BINANCE,
+            callback=None,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"join_request": True},
+        )
+        missing_request_id = UUID4()
+        join_handler = []
+        join_request = RequestJoin(
+            request_ids=(first_request.id, missing_request_id),
+            start=None,
+            end=None,
+            callback=join_handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=None,
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=first_request)
+        self.msgbus.request(endpoint="DataEngine.request", request=join_request)
+
+        # Assert
+        assert self.data_engine._request_workflows == {}
+        assert self.data_engine._requests == {}
+        assert self.data_engine._request_group_n_components == {}
+        assert self.data_engine._request_group_parent_request == {}
+        assert self.data_engine._request_group_parent_request_id == {}
+        assert self.data_engine._request_group_responses == {}
+        assert self.data_engine._parent_join_request_id == {}
+        assert not self.msgbus.is_pending_request(join_request.id)
+        assert len(join_handler) == 0
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_join_with_instruments_uses_grouped_workflow_state(self):

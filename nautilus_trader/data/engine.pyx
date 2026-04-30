@@ -3576,30 +3576,8 @@ cdef class DataEngine(Component):
                     time_aggregator._build_with_no_updates = False
 
     cpdef void _finalize_aggregated_bars_request(self, DataResponse response):
-        used_params = self._bar_types_params.pop(response.correlation_id, None)
-        if not used_params:
+        if not self._cleanup_request_bar_aggregators(response.correlation_id):
             self._log.error(f"No stored params to finalize aggregated bars for request id {response.correlation_id}.")
-            return
-
-        update_subscriptions = used_params.get("update_subscriptions", False)
-        used_request_id = response.correlation_id if not update_subscriptions else None
-
-        bar_types = used_params.get("bar_types", ())
-        for bar_type in bar_types:
-            key = self._get_bar_aggregator_key(bar_type, used_request_id)
-            aggregator = self._bar_aggregators.get(key)
-            if not aggregator:
-                continue
-
-            # After a request we set is_running to False so a request using the same aggregator
-            # or a subscription can use the aggregator
-            aggregator.set_running(False)
-
-            # When update_subscriptions we leave the aggregator set up for other requests
-            if not update_subscriptions:
-                self._dispose_bar_aggregator(bar_type, historical=True, request_id=used_request_id)
-                self._bar_aggregators.pop(key, None)
-                self._log.debug(f"Removed aggregator for {key=}")
 
     cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command):
         key = self._get_bar_aggregator_key(command.bar_type)
@@ -4297,8 +4275,62 @@ cdef class DataEngine(Component):
 
     cdef void _abort_request(self, UUID4 request_id):
         # Drop all engine bookkeeping for a request that could not be started.
+        self._msgbus._correlation_index.pop(request_id, None)
+        self._cleanup_request_group(request_id)
+        self._cleanup_request_bar_aggregators(request_id)
+        self._long_request_generator.pop(request_id, None)
+        self._parent_long_request_id.pop(request_id, None)
+        self._parent_join_request_id.pop(request_id, None)
+        self._parent_request_id.pop(request_id, None)
         self._requests.pop(request_id, None)
         self._request_workflows.pop(request_id, None)
+
+    cdef void _cleanup_request_group(self, UUID4 parent_request_id):
+        parent_request = self._request_group_parent_request.pop(parent_request_id, None)
+        responses = self._request_group_responses.pop(parent_request_id, [])
+        self._request_group_n_components.pop(parent_request_id, None)
+
+        child_request_ids = [
+            request_id for request_id, group_parent_request_id in self._request_group_parent_request_id.items()
+            if group_parent_request_id == parent_request_id
+        ]
+        for request_id in child_request_ids:
+            self._request_group_parent_request_id.pop(request_id, None)
+            self._abort_request(request_id)
+
+        for response in responses:
+            self._abort_request(response.correlation_id)
+
+        if isinstance(parent_request, RequestJoin):
+            for request_id in parent_request.request_ids:
+                self._abort_request(request_id)
+
+    cdef bint _cleanup_request_bar_aggregators(self, UUID4 request_id):
+        used_params = self._bar_types_params.pop(request_id, None)
+        if not used_params:
+            return False
+
+        update_subscriptions = used_params.get("update_subscriptions", False)
+        used_request_id = request_id if not update_subscriptions else None
+
+        bar_types = used_params.get("bar_types", ())
+        for bar_type in bar_types:
+            key = self._get_bar_aggregator_key(bar_type, used_request_id)
+            aggregator = self._bar_aggregators.get(key)
+            if not aggregator:
+                continue
+
+            # After a request we set is_running to False so a request using the same aggregator
+            # or a subscription can use the aggregator
+            aggregator.set_running(False)
+
+            # When update_subscriptions we leave the aggregator set up for other requests
+            if not update_subscriptions:
+                self._dispose_bar_aggregator(bar_type, historical=True, request_id=used_request_id)
+                self._bar_aggregators.pop(key, None)
+                self._log.debug(f"Removed aggregator for {key=}")
+
+        return True
 
     cdef void _complete_grouped_request_or_abort(self, RequestData request):
         if request.id not in self._request_group_parent_request_id:
