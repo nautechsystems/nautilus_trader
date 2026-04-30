@@ -344,7 +344,10 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
         config: Any,
         config_type: type[LiveDataClientConfig | LiveExecClientConfig],
     ) -> ImportableConfig | LiveDataClientConfig | LiveExecClientConfig:
-        if isinstance(config, (ImportableConfig, LiveDataClientConfig, LiveExecClientConfig)):
+        if isinstance(
+            config,
+            (ImportableConfig, LiveDataClientConfig, LiveExecClientConfig),
+        ) or TradingNodeConfig._is_live_client_config(config):
             return config
 
         if not isinstance(config, dict):
@@ -361,3 +364,7 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
             )
 
         return msgspec.json.decode(encoded, type=config_type, dec_hook=msgspec_decoding_hook)
+
+    @staticmethod
+    def _is_live_client_config(config: Any) -> bool:
+        return isinstance(getattr(config, "routing", None), RoutingConfig)
