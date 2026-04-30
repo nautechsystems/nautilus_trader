@@ -23,6 +23,7 @@ use nautilus_common::{
     clients::ExecutionClient,
     clock::{self, Clock, TestClock},
     messages::execution::{CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
+    msgbus::{self, TypedHandler, switchboard},
 };
 use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MINUTE};
 use nautilus_execution::engine::{
@@ -545,6 +546,153 @@ fn test_order_filled_with_unrecognized_strategy_id(mut execution_engine: Executi
         OrderStatus::Submitted,
         "Order should remain SUBMITTED when filled event has mismatched strategy_id"
     );
+}
+
+#[rstest]
+fn test_process_filled_order_publishes_order_fills_topic(mut execution_engine: ExecutionEngine) {
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let fills_topic = switchboard::get_order_fills_topic(instrument.id());
+    let order_topic = switchboard::get_event_orders_topic(order.strategy_id());
+    let received = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+    let topics = Rc::new(RefCell::new(Vec::<&'static str>::new()));
+    let fills_handler = TypedHandler::from({
+        let received = received.clone();
+        let topics = topics.clone();
+        move |event: &OrderEventAny| {
+            topics.borrow_mut().push("fills");
+            received.borrow_mut().push(event.clone());
+        }
+    });
+    let order_handler = TypedHandler::from({
+        let topics = topics.clone();
+        move |_event: &OrderEventAny| {
+            topics.borrow_mut().push("orders");
+        }
+    });
+    msgbus::subscribe_order_events(fills_topic.into(), fills_handler.clone(), None);
+    msgbus::subscribe_order_events(order_topic.into(), order_handler.clone(), None);
+
+    let event = OrderEventAny::Filled(OrderFilled::new(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::new("T-001"),
+        order.order_side(),
+        order.order_type(),
+        order.quantity(),
+        Price::from_str("1.0").unwrap(),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        None,
+        Some(Money::from("2 USD")),
+    ));
+
+    execution_engine.process(&event);
+    msgbus::unsubscribe_order_events(fills_topic.into(), &fills_handler);
+    msgbus::unsubscribe_order_events(order_topic.into(), &order_handler);
+
+    let received = received.borrow();
+    assert_eq!(received.len(), 1);
+    assert!(matches!(received[0], OrderEventAny::Filled(_)));
+    assert_eq!(received[0].client_order_id(), order.client_order_id());
+    assert_eq!(received[0].instrument_id(), instrument.id());
+    assert_eq!(topics.borrow().as_slice(), ["fills", "orders"]);
+}
+
+#[rstest]
+fn test_process_canceled_order_publishes_order_cancels_topic(
+    mut execution_engine: ExecutionEngine,
+) {
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let cancels_topic = switchboard::get_order_cancels_topic(instrument.id());
+    let order_topic = switchboard::get_event_orders_topic(order.strategy_id());
+    let received = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+    let topics = Rc::new(RefCell::new(Vec::<&'static str>::new()));
+    let cancels_handler = TypedHandler::from({
+        let received = received.clone();
+        let topics = topics.clone();
+        move |event: &OrderEventAny| {
+            topics.borrow_mut().push("cancels");
+            received.borrow_mut().push(event.clone());
+        }
+    });
+    let order_handler = TypedHandler::from({
+        let topics = topics.clone();
+        move |_event: &OrderEventAny| {
+            topics.borrow_mut().push("orders");
+        }
+    });
+    msgbus::subscribe_order_events(cancels_topic.into(), cancels_handler.clone(), None);
+    msgbus::subscribe_order_events(order_topic.into(), order_handler.clone(), None);
+
+    let event = TestOrderEventStubs::canceled(
+        &order,
+        AccountId::test_default(),
+        Some(VenueOrderId::from("V-001")),
+    );
+
+    execution_engine.process(&event);
+    msgbus::unsubscribe_order_events(cancels_topic.into(), &cancels_handler);
+    msgbus::unsubscribe_order_events(order_topic.into(), &order_handler);
+
+    let received = received.borrow();
+    assert_eq!(received.len(), 1);
+    assert!(matches!(received[0], OrderEventAny::Canceled(_)));
+    assert_eq!(received[0].client_order_id(), order.client_order_id());
+    assert_eq!(received[0].instrument_id(), instrument.id());
+    assert_eq!(topics.borrow().as_slice(), ["orders", "cancels"]);
+}
+
+fn prepare_accepted_order(execution_engine: &mut ExecutionEngine) -> (InstrumentAny, OrderAny) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = InstrumentAny::from(audusd_sim());
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+
+    let submitted = TestOrderEventStubs::submitted(&order, AccountId::test_default());
+    execution_engine.process(&submitted);
+
+    let accepted = TestOrderEventStubs::accepted(
+        &order,
+        AccountId::test_default(),
+        VenueOrderId::from("V-001"),
+    );
+    execution_engine.process(&accepted);
+
+    (instrument, order)
 }
 
 #[rstest]

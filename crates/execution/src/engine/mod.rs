@@ -1861,10 +1861,14 @@ impl ExecutionEngine {
 
                 if self.apply_fill_to_order(&mut order, fill).is_ok() {
                     self.handle_order_fill(&order, fill, oms_type);
+                    let event = OrderEventAny::Filled(fill);
+                    self.publish_order_event(&event);
                 }
             }
             _ => {
-                let _ = self.apply_event_to_order(&mut order, event);
+                if self.apply_event_to_order(&mut order, event).is_ok() {
+                    self.publish_order_event(event);
+                }
             }
         }
     }
@@ -2093,14 +2097,21 @@ impl ExecutionEngine {
             log::debug!("{SEND}{EVT} {event}");
         }
 
-        let topic = switchboard::get_event_orders_topic(event.strategy_id());
-        msgbus::publish_order_event(topic, event);
-
         if self.config.snapshot_orders {
             self.create_order_state_snapshot(order);
         }
 
         Ok(())
+    }
+
+    fn publish_order_event(&self, event: &OrderEventAny) {
+        let topic = switchboard::get_event_orders_topic(event.strategy_id());
+        msgbus::publish_order_event(topic, event);
+
+        if let OrderEventAny::Canceled(_) = event {
+            let cancels_topic = switchboard::get_order_cancels_topic(event.instrument_id());
+            msgbus::publish_order_event(cancels_topic, event);
+        }
     }
 
     fn check_overfill(&self, order: &OrderAny, fill: &OrderFilled) -> anyhow::Result<()> {
@@ -2195,6 +2206,10 @@ impl ExecutionEngine {
             // For spread instruments, contingent orders can still be triggered
             // but without position linkage (since no position is created for spreads)
         }
+
+        let event = OrderEventAny::Filled(fill);
+        let fills_topic = switchboard::get_order_fills_topic(fill.instrument_id);
+        msgbus::publish_order_event(fills_topic, &event);
     }
 
     /// Handle position creation or update for a fill.
