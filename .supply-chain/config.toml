@@ -154,7 +154,7 @@ version = "0.2.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-chains]]
@@ -162,15 +162,15 @@ version = "0.2.34"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-consensus]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-consensus-any]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-contract]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-core]]
@@ -198,7 +198,7 @@ version = "0.3.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-eips]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-json-abi]]
@@ -206,15 +206,15 @@ version = "1.5.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-json-rpc]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-network]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-network-primitives]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-primitives]]
@@ -222,7 +222,7 @@ version = "1.5.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-provider]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-rlp]]
@@ -234,27 +234,27 @@ version = "0.3.15"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-rpc-client]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-rpc-types-any]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-rpc-types-eth]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-serde]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-signer]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-signer-local]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-sol-macro]]
@@ -278,11 +278,11 @@ version = "1.5.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-transport]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-transport-http]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-trie]]
@@ -290,7 +290,7 @@ version = "0.9.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-tx-macros]]
-version = "2.0.1"
+version = "2.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.anyhow]]
@@ -838,7 +838,7 @@ version = "2.11.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.databento]]
-version = "0.47.0"
+version = "0.49.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.datafusion]]
@@ -966,11 +966,11 @@ version = "53.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.dbn]]
-version = "0.54.0"
+version = "0.56.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.dbn-macros]]
-version = "0.54.0"
+version = "0.56.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.derivative]]
@@ -1574,139 +1574,139 @@ version = "0.2.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-analysis]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-architect-ax]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-backtest]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-binance]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-bitmex]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-blockchain]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-bybit]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-cli]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-common]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-core]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-cryptography]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-data]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-databento]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-deribit]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-dydx]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-execution]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-hyperliquid]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-indicators]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-infrastructure]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-kraken]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-live]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-model]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-network]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-okx]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-persistence]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-persistence-macros]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-portfolio]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-risk]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-sandbox]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-serialization]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-system]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-tardis]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-testkit]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-trading]]
-version = "0.56.0"
+version = "0.57.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.ntapi]]

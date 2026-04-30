@@ -1,3 +1,25 @@
+# NautilusTrader 1.227.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+
+### Breaking Changes
+
+### Security
+
+### Fixes
+
+### Internal Improvements
+- Upgraded `alloy` crate to v2.0.4
+- Upgraded `databento` crate to v0.49.0
+
+### Documentation Updates
+
+### Deprecations
+
+---
+
 # NautilusTrader 1.226.0 Beta
 
 Released on 29th April 2026 (UTC).
