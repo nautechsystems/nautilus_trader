@@ -190,6 +190,17 @@ class LogGuard: ...
 
 @typing.final
 class LoggerConfig:
+    def __init__(
+        self,
+        stdout_level: LogLevel | None = None,
+        fileout_level: LogLevel | None = None,
+        component_levels: dict[str, str] | None = None,
+        is_colored: bool | None = None,
+        print_config: bool | None = None,
+        bypass_logging: bool | None = None,
+        log_components_only: bool | None = None,
+        file_config: FileWriterConfig | None = None,
+    ) -> None: ...
     @staticmethod
     def from_spec(spec: str) -> LoggerConfig: ...
 

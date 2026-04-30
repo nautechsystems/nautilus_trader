@@ -27,7 +27,6 @@ use nautilus_common::{
     logging::{
         headers, init_logging,
         logger::{LogGuard, LoggerConfig},
-        writer::FileWriterConfig,
     },
     messages::system::ShutdownSystem,
     msgbus::{
@@ -220,12 +219,8 @@ impl NautilusKernel {
         #[cfg(feature = "tracing-bridge")]
         let use_tracing = config.use_tracing;
 
-        let log_guard = match init_logging(
-            trader_id,
-            instance_id,
-            config,
-            FileWriterConfig::default(), // TODO: Properly incorporate file writer config
-        ) {
+        let file_config = config.file_config.clone().unwrap_or_default();
+        let log_guard = match init_logging(trader_id, instance_id, config, file_config) {
             Ok(guard) => guard,
             Err(e) => {
                 // Only recover from SetLoggerError (logger already registered).

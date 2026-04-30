@@ -183,7 +183,7 @@ class NautilusKernel:
         if logging.clear_log_file and logging.log_directory and logging.log_file_name:
             file_path = Path(
                 logging.log_directory,
-                f"{logging.log_file_name}.{'log' if logging.log_file_format is None else 'json'}",
+                f"{logging.log_file_name}.{'log' if logging.log_file_format is None else 'jsonl'}",
             )
 
             if file_path.exists():
