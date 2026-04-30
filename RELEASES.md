@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added continuous futures support for aggregated bars (#3921), thanks @faysou
 
 ### Breaking Changes
 

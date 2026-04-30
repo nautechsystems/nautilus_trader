@@ -284,7 +284,8 @@ cdef class BarBuilder:
             return price
 
         if self._adjustment_is_ratio:
-            # Multiply in double; Rust's `price_new` rounds to the target precision.
+            # Multiply in double; Rust's `price_new` rounds to the target precision
+            # Float can shift 1 ULP for high-precision raws (spread mode is exact)
             return Price.from_mem_c(
                 price_new(price_as_f64(&price._mem) * self._adjustment_ratio, price._mem.precision),
             )

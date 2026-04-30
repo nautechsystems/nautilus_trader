@@ -27,6 +27,12 @@ Instrument definitions for tradable assets and contracts.
 
 User-defined instruments whose prices are computed by evaluating a numeric expression over component instrument prices.
 
+## Continuous Futures
+
+Splicing consecutive futures contracts into one adjusted bar series via an explicit roll
+table, including the four adjustment modes, request and subscription flow, and the mid-bar
+roll boundary policy.
+
 ## Value Types
 
 The immutable numeric types (`Price`, `Quantity`, `Money`) used throughout the platform,

@@ -3045,7 +3045,7 @@ cdef class DataEngine(Component):
 
                 final_data = []
             else:
-                for data in grouped_response.data:
+                for data in response_data:
                     self.process_historical(data)
 
                 if grouped_response.correlation_id in self._bar_types_params:
@@ -4279,20 +4279,6 @@ cdef class DataEngine(Component):
         self._requests.pop(request_id, None)
         self._request_workflows.pop(request_id, None)
 
-    # -- INTERNAL - Continuous Futures ----------------------------------------------------------------
-    #
-    # A continuous-future request/subscription is driven by a list of segments (contracts) and, between
-    # any two consecutive segments, a transition with the pre/post-transition prices used to compute the
-    # cumulative adjustment. The request side mirrors `_handle_long_request` one level up: each segment
-    # emits one inner request via `_msgbus.request`, and `_handle_continuous_future_response` is its
-    # callback. The inner request itself may be long-looped (if `time_range_generator` is set in params),
-    # so both loops compose: outer iterates segments, inner iterates time ranges within a segment.
-    # The subscription side is a small state machine driven by a time alert at each upcoming transition.
-    #
-    # Methods are grouped as: (1) subscribe/unsubscribe, (2) request, (3) shared helpers.
-
-    # -- (1) Subscribe / Unsubscribe -----------------------------------------------------------------
-
     cpdef void _handle_subscribe_continuous_future_bars(self, MarketDataClient client, SubscribeBars command):
         # `target_bar_type` keeps the original (possibly composite) shape so source resolution
         # can see the composite chain; `target_key` is the standardised form used as dict key
@@ -4577,8 +4563,6 @@ cdef class DataEngine(Component):
             aggregator.set_running(False)
             self._bar_aggregators.pop(key, None)
 
-    # -- (2) Request ---------------------------------------------------------------------------------
-
     cpdef void _handle_continuous_future_request(self, RequestData request):
         if not isinstance(request, RequestBars):
             self._log.error(f"Continuous future requests require `RequestBars`, was {type(request)}")
@@ -4783,8 +4767,6 @@ cdef class DataEngine(Component):
 
         self._update_continuous_future_data(parent_id)
 
-    # -- (3) Shared helpers --------------------------------------------------------------------------
-
     cdef void _continuous_future_ensure_target_instrument(self, BarType target_bar_type, object transitions):
         # Continuous-future targets (e.g. `ES.XCME`) are synthetic ids with no market
         # data of their own, but downstream consumers (aggregators, cache lookups,
@@ -4886,6 +4868,7 @@ cdef class DataEngine(Component):
         cdef dict row
         cdef object transition_ns
         cdef object previous_transition_ns = None
+        cdef InstrumentId previous_post_id = None
         cdef object pre_id_str, post_id_str
         cdef InstrumentId pre_id, post_id
         cdef object pre_price, post_price
@@ -4943,6 +4926,16 @@ cdef class DataEngine(Component):
                     f"pre={pre_id.venue}, post={post_id.venue}",
                 )
                 return False
+
+            # Chain continuity: row i's pre must match row i-1's post, else cumulative offset is broken
+            if previous_post_id is not None and pre_id != previous_post_id:
+                self._log.error(
+                    f"Continuous future chain discontinuity for {target_bar_type}: "
+                    f"previous post {previous_post_id} != current pre {pre_id}",
+                )
+                return False
+
+            previous_post_id = post_id
 
             if last_post_id_str is not None and post_id == last_post_id:
                 last_post_id_found = True

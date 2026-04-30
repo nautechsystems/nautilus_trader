@@ -335,6 +335,7 @@ class TestBarBuilder:
         assert built_bar.close == Price.from_str("101.00000")
 
     def test_multiple_bar_updates_correctly_increments_count(self):
+        # Arrange
         bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
