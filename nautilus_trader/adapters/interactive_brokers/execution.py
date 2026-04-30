@@ -243,7 +243,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Queue spread combo fills until orderStatus provides the matching avg fill price chunk.
         self._pending_combo_fills: dict[
             ClientOrderId,
-            deque[tuple[Order, Execution, IBContract, CommissionAndFeesReport, Decimal]],
+            deque[
+                tuple[Order, Execution, IBContract, CommissionAndFeesReport, Decimal, VenueOrderId]
+            ],
         ] = {}
         self._pending_combo_fill_avgs: dict[ClientOrderId, deque[tuple[Decimal, Price]]] = {}
 
