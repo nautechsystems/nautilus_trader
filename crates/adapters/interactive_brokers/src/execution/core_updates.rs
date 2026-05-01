@@ -8,7 +8,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use super::*;
-use crate::execution::parse;
+use crate::{
+    common::enums::{IbAction, IbOrderStatus},
+    execution::parse,
+};
 
 impl InteractiveBrokersExecutionClient {
     /// Starts the order update subscription stream.
@@ -214,7 +217,10 @@ impl InteractiveBrokersExecutionClient {
                 );
             }
             OrderUpdate::OpenOrder(order_data) => {
-                if order_data.order.what_if && order_data.order_state.status == "PreSubmitted" {
+                if order_data.order.what_if
+                    && IbOrderStatus::from_str(&order_data.order_state.status)
+                        .is_ok_and(|status| status == IbOrderStatus::PreSubmitted)
+                {
                     Self::handle_whatif_order(
                         order_data,
                         venue_order_id_map,
@@ -251,7 +257,7 @@ impl InteractiveBrokersExecutionClient {
                     };
 
                     if let Some(client_order_id) = client_order_id
-                        && matches!(status_str, "Submitted" | "PreSubmitted")
+                        && IbOrderStatus::from_str(status_str).is_ok_and(IbOrderStatus::is_accepted)
                     {
                         let mut accepted = accepted_orders
                             .lock()
@@ -363,10 +369,9 @@ impl InteractiveBrokersExecutionClient {
             order_fill_progress,
         )?;
 
-        if matches!(
-            status.status.as_str(),
-            "Filled" | "ApiCancelled" | "Cancelled" | "Inactive"
-        ) {
+        let ib_order_status = IbOrderStatus::from_str(&status.status).ok();
+
+        if ib_order_status.is_some_and(IbOrderStatus::is_terminal) {
             Self::flush_pending_combo_fills(
                 client_order_id,
                 pending_combo_fills,
@@ -391,8 +396,8 @@ impl InteractiveBrokersExecutionClient {
         let venue_order_id = VenueOrderId::from(format!("{}", status.order_id));
         let status_str = status.status.as_str();
 
-        match status_str {
-            "Submitted" | "PreSubmitted" => {
+        match ib_order_status {
+            Some(IbOrderStatus::Submitted | IbOrderStatus::PreSubmitted) => {
                 let mut accepted = accepted_orders
                     .lock()
                     .map_err(|_| anyhow::anyhow!("Failed to lock accepted orders map"))?;
@@ -435,14 +440,14 @@ impl InteractiveBrokersExecutionClient {
                     );
                 }
             }
-            "Filled" => {
+            Some(IbOrderStatus::Filled) => {
                 tracing::debug!(
                     "Order {} filled (IB status: {})",
                     client_order_id,
                     status_str
                 );
             }
-            "Cancelled" | "ApiCancelled" => {
+            Some(IbOrderStatus::Cancelled | IbOrderStatus::ApiCancelled) => {
                 pending_cancel_orders
                     .lock()
                     .map_err(|_| anyhow::anyhow!("Failed to lock pending cancel orders map"))?
@@ -471,7 +476,7 @@ impl InteractiveBrokersExecutionClient {
                     .map_err(|e| anyhow::anyhow!("Failed to send order canceled event: {e}"))?;
                 tracing::info!("Order {} canceled", client_order_id);
             }
-            "PendingCancel" => {
+            Some(IbOrderStatus::PendingCancel) => {
                 Self::emit_order_pending_cancel(
                     status.order_id,
                     client_order_id,
@@ -1005,11 +1010,10 @@ impl InteractiveBrokersExecutionClient {
                     false
                 }
             }) {
-                let ratio = if combo_leg.action == "BUY" {
-                    combo_leg.ratio
-                } else {
-                    -combo_leg.ratio
-                };
+                let ratio = IbAction::from_str(&combo_leg.action)
+                    .map_or(-combo_leg.ratio, |action| {
+                        action.signed_multiplier() * combo_leg.ratio
+                    });
                 return (leg_id, ratio);
             }
         }
@@ -1042,11 +1046,8 @@ impl InteractiveBrokersExecutionClient {
         let combo_quantity =
             Quantity::new(combo_quantity_value, spread_instrument.size_precision());
 
-        let execution_side_numeric = match exec_data.execution.side.as_str() {
-            "BUY" | "BOT" => 1,
-            "SELL" | "SLD" => -1,
-            _ => anyhow::bail!("Unknown execution side: {}", exec_data.execution.side),
-        };
+        let execution_side_numeric =
+            IbAction::from_str(&exec_data.execution.side)?.signed_multiplier();
         let leg_side_numeric = if ratio >= 0 { 1 } else { -1 };
         let combo_order_side = if execution_side_numeric == leg_side_numeric {
             OrderSide::Buy
@@ -1105,11 +1106,7 @@ impl InteractiveBrokersExecutionClient {
         let leg_quantity =
             Quantity::new(exec_data.execution.shares, leg_instrument.size_precision());
 
-        let order_side = match exec_data.execution.side.as_str() {
-            "BUY" | "BOT" => OrderSide::Buy,
-            "SELL" | "SLD" => OrderSide::Sell,
-            _ => anyhow::bail!("Unknown execution side: {}", exec_data.execution.side),
-        };
+        let order_side = IbAction::from_str(&exec_data.execution.side)?.order_side();
 
         let commission_money = Money::new(commission, Currency::from(commission_currency));
 

@@ -26,6 +26,7 @@ impl InteractiveBrokersExecutionClient {
         clock: &'static AtomicTime,
         account_id: AccountId,
         accepted_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
+        order_submit_lock: &Arc<AsyncMutex<()>>,
     ) -> anyhow::Result<()> {
         if cmd.order_init.post_only {
             let ts_event = clock.get_time_ns();
@@ -104,13 +105,14 @@ impl InteractiveBrokersExecutionClient {
             anyhow::bail!("{}", reason);
         }
 
-        let ib_order_id = Self::reserve_next_local_order_id(next_order_id)?;
         let contract =
             Self::resolve_contract_for_instrument(cmd.instrument_id, instrument_provider)?;
 
         let order_any = OrderAny::try_from(cmd.order_init.clone())
             .context("Failed to construct order from `OrderInitialized`")?;
         let order_ref = cmd.order_init.client_order_id.to_string();
+        let _submit_guard = order_submit_lock.lock().await;
+        let ib_order_id = Self::reserve_next_local_order_id(next_order_id)?;
         let mut ib_order = nautilus_order_to_ib_order(
             &order_any,
             &contract,
@@ -271,6 +273,7 @@ impl InteractiveBrokersExecutionClient {
         account_id: AccountId,
         strategy_id: StrategyId,
         accepted_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
+        order_submit_lock: &Arc<AsyncMutex<()>>,
     ) -> anyhow::Result<()> {
         let num_orders = orders.len();
         let is_bracket_order = num_orders == 3;
@@ -280,6 +283,8 @@ impl InteractiveBrokersExecutionClient {
             first_order.instrument_id(),
             instrument_provider,
         )?;
+
+        let _submit_guard = order_submit_lock.lock().await;
 
         if is_bracket_order {
             let parent_order = &orders[0];
@@ -472,7 +477,8 @@ impl InteractiveBrokersExecutionClient {
                 ib_order.account = ib_account.clone();
                 ib_order.clearing_account = ib_account;
                 ib_order.oca_group = oca_group_name.clone();
-                ib_order.oca_type = OcaType::from(1);
+                ib_order.oca_type =
+                    crate::common::enums::IbOcaType::CancelWithBlock.ibapi_oca_type();
                 ib_order.transmit = is_last;
 
                 client

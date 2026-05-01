@@ -34,6 +34,7 @@ use nautilus_model::{
 };
 
 use crate::{
+    common::enums::IbHistoricalTickType,
     data::convert::{
         bar_type_to_ib_bar_size, chrono_to_ib_datetime, ib_bar_to_nautilus_bar,
         ib_timestamp_to_unix_nanos, price_type_to_ib_what_to_show,
@@ -317,7 +318,7 @@ impl HistoricalInteractiveBrokersClient {
     ///
     /// # Arguments
     ///
-    /// * `tick_type` - "TRADES" or "BID_ASK"
+    /// * `tick_type` - historical tick type.
     /// * `start_date_time` - Start date
     /// * `end_date_time` - End date
     /// * `contracts` - List of IB contracts
@@ -331,7 +332,7 @@ impl HistoricalInteractiveBrokersClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn request_ticks(
         &self,
-        tick_type: &str,
+        tick_type: IbHistoricalTickType,
         start_date_time: DateTime<Utc>,
         end_date_time: DateTime<Utc>,
         contracts: Option<Vec<Contract>>,
@@ -339,10 +340,6 @@ impl HistoricalInteractiveBrokersClient {
         use_rth: bool,
         _timeout: u64,
     ) -> anyhow::Result<Vec<Data>> {
-        if tick_type != "TRADES" && tick_type != "BID_ASK" {
-            anyhow::bail!("tick_type must be 'TRADES' or 'BID_ASK'");
-        }
-
         if start_date_time >= end_date_time {
             anyhow::bail!("Start date must be before end date");
         }
@@ -438,7 +435,7 @@ impl HistoricalInteractiveBrokersClient {
             );
 
             match tick_type {
-                "TRADES" => {
+                IbHistoricalTickType::Trades => {
                     loop {
                         // Make request for this batch
                         let mut subscription = self
@@ -524,7 +521,7 @@ impl HistoricalInteractiveBrokersClient {
                         });
                     }
                 }
-                "BID_ASK" => {
+                IbHistoricalTickType::BidAsk => {
                     loop {
                         // Make request for this batch
                         let mut subscription = self
@@ -608,7 +605,6 @@ impl HistoricalInteractiveBrokersClient {
                         });
                     }
                 }
-                _ => unreachable!(),
             }
         }
 
@@ -676,6 +672,27 @@ impl HistoricalInteractiveBrokersClient {
 
         // Load instruments from contracts (equivalent to Python's _fetch_instruments_if_not_cached)
         for contract in contracts {
+            match self
+                .instrument_provider
+                .get_instrument(&self.ib_client, &contract)
+                .await
+            {
+                Ok(Some(instrument)) => {
+                    if !loaded_instruments.iter().any(|i| i.id() == instrument.id()) {
+                        loaded_instruments.push(instrument);
+                    }
+                    continue;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to fetch contract details from original contract {:?}: {}",
+                        contract,
+                        e
+                    );
+                }
+            }
+
             // Try to find instrument by contract ID first
             let instrument_id = if let Some(cached_id) = self
                 .instrument_provider

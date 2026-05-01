@@ -34,7 +34,10 @@ use rust_decimal::Decimal;
 use time::{PrimitiveDateTime, macros::format_description};
 
 use crate::{
-    common::parse::is_spread_instrument_id,
+    common::{
+        enums::{IbAction, IbOrderStatus, IbOrderType, IbTimeInForce},
+        parse::is_spread_instrument_id,
+    },
     providers::instruments::InteractiveBrokersInstrumentProvider,
 };
 
@@ -74,11 +77,7 @@ pub fn parse_execution_to_fill_report(
     let execution_price = execution.price * price_magnifier;
 
     // Determine order side
-    let order_side = match execution.side.as_str() {
-        "BUY" | "BOT" => OrderSide::Buy,
-        "SELL" | "SLD" => OrderSide::Sell,
-        _ => anyhow::bail!("Unknown order side: {}", execution.side),
-    };
+    let order_side = IbAction::from_str(&execution.side)?.order_side();
 
     // Get instrument for precision
     let instrument = instrument_provider
@@ -146,13 +145,8 @@ pub fn parse_order_status_to_report(
     let price_magnifier = instrument_provider.get_price_magnifier(&instrument_id) as f64;
 
     // Convert Nautilus order status
-    let nautilus_status = match order_status.status.as_str() {
-        "ApiPending" | "PendingSubmit" | "PreSubmitted" => NautilusOrderStatus::Submitted,
-        "Submitted" => NautilusOrderStatus::Accepted,
-        "PendingCancel" => NautilusOrderStatus::PendingCancel,
-        "ApiCancelled" | "Cancelled" => NautilusOrderStatus::Canceled,
-        "Filled" => NautilusOrderStatus::Filled,
-        "Inactive" => NautilusOrderStatus::Rejected,
+    let nautilus_status = match IbOrderStatus::from_str(&order_status.status) {
+        Ok(status) => status.nautilus_status(),
         _ => {
             tracing::warn!(
                 "Unknown order status: {}, defaulting to SUBMITTED",
@@ -164,12 +158,7 @@ pub fn parse_order_status_to_report(
 
     // Get order side
     let order_side = if let Some(order) = order {
-        match order.action {
-            ibapi::orders::Action::Buy => OrderSide::Buy,
-            ibapi::orders::Action::Sell => OrderSide::Sell,
-            ibapi::orders::Action::SellShort => OrderSide::Sell,
-            ibapi::orders::Action::SellLong => OrderSide::Sell,
-        }
+        IbAction::from(order.action).order_side()
     } else {
         // Default to Buy if order not available
         OrderSide::Buy
@@ -224,20 +213,11 @@ pub fn parse_order_status_to_report(
 
     // Map time in force from IB order if available
     let time_in_force = if let Some(order) = order {
-        let tif_str = order.tif.to_string();
-        match tif_str.as_str() {
-            "DAY" => TimeInForce::Day,
-            "GTC" => TimeInForce::Gtc,
-            "IOC" => TimeInForce::Ioc,
-            "FOK" => TimeInForce::Fok,
-            _ => {
-                // Try to parse GTD date
-                if tif_str.starts_with("GTD") || !order.good_till_date.is_empty() {
-                    TimeInForce::Gtd
-                } else {
-                    TimeInForce::Day // Default fallback
-                }
-            }
+        let ib_time_in_force = IbTimeInForce::from(order.tif.clone());
+        if ib_time_in_force == IbTimeInForce::GoodTilDate || !order.good_till_date.is_empty() {
+            TimeInForce::Gtd
+        } else {
+            ib_time_in_force.nautilus_time_in_force()
         }
     } else {
         TimeInForce::Day // Default when order not available
@@ -296,18 +276,7 @@ pub fn parse_order_status_to_report(
 }
 
 fn map_ib_order_type(order_type: &str) -> OrderType {
-    match order_type {
-        "MKT" | "MOC" => OrderType::Market,
-        "LMT" | "LOC" => OrderType::Limit,
-        "STP" => OrderType::StopMarket,
-        "STP LMT" => OrderType::StopLimit,
-        "TRAIL" => OrderType::TrailingStopMarket,
-        "TRAIL LIMIT" => OrderType::TrailingStopLimit,
-        "MIT" => OrderType::MarketIfTouched,
-        "LIT" => OrderType::LimitIfTouched,
-        "MTL" => OrderType::MarketToLimit,
-        _ => OrderType::Market,
-    }
+    IbOrderType::from_str(order_type).map_or(OrderType::Market, IbOrderType::nautilus_order_type)
 }
 
 fn parse_ib_order_pricing_fields(

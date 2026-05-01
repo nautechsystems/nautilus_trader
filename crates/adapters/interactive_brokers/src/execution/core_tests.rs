@@ -48,6 +48,23 @@ fn create_test_leg_instrument() -> InstrumentId {
     InstrumentId::new(Symbol::from("SPY C400"), Venue::from("SMART"))
 }
 
+#[rstest]
+#[case(1, 0, 1)]
+#[case(1, 310, 310_000_001)]
+#[case(42, 1_402, 402_000_042)]
+#[case(450_000_123, 402, 450_000_123)]
+#[case(1, -12, 12_000_001)]
+fn apply_client_order_id_floor(
+    #[case] next_id: i32,
+    #[case] client_id: i32,
+    #[case] expected: i32,
+) {
+    assert_eq!(
+        InteractiveBrokersExecutionClient::apply_client_order_id_floor(next_id, client_id),
+        expected
+    );
+}
+
 fn create_test_execution_data(
     order_id: i32,
     execution_id: &str,

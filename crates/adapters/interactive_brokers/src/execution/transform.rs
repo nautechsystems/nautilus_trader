@@ -29,7 +29,10 @@ use nautilus_model::{
     types::Price,
 };
 
-use crate::providers::instruments::InteractiveBrokersInstrumentProvider;
+use crate::{
+    common::enums::{IbOrderType, IbTimeInForce, IbTriggerMethod},
+    providers::instruments::InteractiveBrokersInstrumentProvider,
+};
 
 mod policy;
 mod tags;
@@ -110,51 +113,22 @@ fn transform_order_type(
     trigger_price: Option<Price>,
     price_magnifier: f64,
 ) -> (&'static str, Option<f64>, Option<f64>) {
-    let (order_type_str, limit_price, aux_price) = match order_type {
-        NautilusOrderType::Market => {
-            if time_in_force == NautilusTimeInForce::AtTheClose {
-                ("MOC", None, None)
-            } else {
-                ("MKT", None, None)
-            }
+    let ib_order_type = IbOrderType::from_nautilus(order_type, time_in_force);
+    let (limit_price, aux_price) = match order_type {
+        NautilusOrderType::Market | NautilusOrderType::MarketToLimit => (None, None),
+        NautilusOrderType::Limit => (convert_price_opt(price, price_magnifier), None),
+        NautilusOrderType::StopMarket | NautilusOrderType::MarketIfTouched => {
+            (None, convert_price_opt(trigger_price, price_magnifier))
         }
-        NautilusOrderType::Limit => {
-            if time_in_force == NautilusTimeInForce::AtTheClose {
-                ("LOC", convert_price_opt(price, price_magnifier), None)
-            } else {
-                ("LMT", convert_price_opt(price, price_magnifier), None)
-            }
-        }
-        NautilusOrderType::StopMarket => (
-            "STP",
-            None,
-            convert_price_opt(trigger_price, price_magnifier),
-        ),
-        NautilusOrderType::StopLimit => (
-            "STP LMT",
+        NautilusOrderType::StopLimit | NautilusOrderType::LimitIfTouched => (
             convert_price_opt(price, price_magnifier),
             convert_price_opt(trigger_price, price_magnifier),
         ),
-        NautilusOrderType::MarketIfTouched => (
-            "MIT",
-            None,
-            convert_price_opt(trigger_price, price_magnifier),
-        ),
-        NautilusOrderType::LimitIfTouched => (
-            "LIT",
-            convert_price_opt(price, price_magnifier),
-            convert_price_opt(trigger_price, price_magnifier),
-        ),
-        NautilusOrderType::TrailingStopMarket => ("TRAIL", None, None),
-        NautilusOrderType::TrailingStopLimit => (
-            "TRAIL LIMIT",
-            convert_price_opt(price, price_magnifier),
-            None,
-        ),
-        NautilusOrderType::MarketToLimit => ("MTL", None, None),
+        NautilusOrderType::TrailingStopMarket => (None, None),
+        NautilusOrderType::TrailingStopLimit => (convert_price_opt(price, price_magnifier), None),
     };
 
-    (order_type_str, limit_price, aux_price)
+    (ib_order_type.as_str(), limit_price, aux_price)
 }
 
 /// Transform Nautilus time in force to IB time in force.
@@ -162,15 +136,7 @@ fn transform_time_in_force(
     tif: NautilusTimeInForce,
     _expire_time: Option<nautilus_core::UnixNanos>,
 ) -> TimeInForce {
-    match tif {
-        NautilusTimeInForce::Day => TimeInForce::Day,
-        NautilusTimeInForce::Gtc => TimeInForce::GoodTilCanceled,
-        NautilusTimeInForce::Ioc => TimeInForce::ImmediateOrCancel,
-        NautilusTimeInForce::Fok => TimeInForce::FillOrKill,
-        NautilusTimeInForce::Gtd => TimeInForce::GoodTilDate,
-        NautilusTimeInForce::AtTheOpen => TimeInForce::OnOpen,
-        NautilusTimeInForce::AtTheClose => TimeInForce::Day,
-    }
+    IbTimeInForce::from_nautilus(tif).ibapi_time_in_force()
 }
 
 pub(super) fn format_ib_datetime(value: UnixNanos) -> String {
@@ -190,17 +156,17 @@ pub(super) fn trigger_type_to_ib_trigger_method(
     trigger_type: TriggerType,
 ) -> ibapi::orders::conditions::TriggerMethod {
     let value = match trigger_type {
-        TriggerType::Default => 0,
-        TriggerType::DoubleBidAsk => 1,
-        TriggerType::LastPrice => 2,
-        TriggerType::DoubleLast => 3,
-        TriggerType::BidAsk => 4,
-        TriggerType::LastOrBidAsk => 7,
-        TriggerType::MidPoint => 8,
-        _ => 0,
+        TriggerType::Default => IbTriggerMethod::Default,
+        TriggerType::DoubleBidAsk => IbTriggerMethod::DoubleBidAsk,
+        TriggerType::LastPrice => IbTriggerMethod::Last,
+        TriggerType::DoubleLast => IbTriggerMethod::DoubleLast,
+        TriggerType::BidAsk => IbTriggerMethod::BidAsk,
+        TriggerType::LastOrBidAsk => IbTriggerMethod::LastOrBidAsk,
+        TriggerType::MidPoint => IbTriggerMethod::Midpoint,
+        _ => IbTriggerMethod::Default,
     };
 
-    ibapi::orders::conditions::TriggerMethod::from(value)
+    value.ibapi_trigger_method()
 }
 
 #[cfg(test)]

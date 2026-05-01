@@ -15,11 +15,13 @@
 
 //! Parsing utilities for converting Interactive Brokers data to Nautilus types.
 
-use std::{collections::HashMap, sync::LazyLock};
+use std::{collections::HashMap, str::FromStr, sync::LazyLock};
 
 use ibapi::contracts::{Contract, Currency, Exchange, SecurityType, Symbol};
 use nautilus_core::UnixNanos;
 use nautilus_model::identifiers::{InstrumentId, Symbol as NautilusSymbol, TradeId, Venue};
+
+use crate::common::enums::{IbOptionRight, IbSecurityType};
 
 /// Generate a unique trade ID for Interactive Brokers trades.
 ///
@@ -244,19 +246,10 @@ pub fn ib_contract_to_instrument_id_raw(
         contract.local_symbol.as_str()
     };
 
-    let sec_type_str = match contract.security_type {
-        SecurityType::Stock => "STK",
-        SecurityType::Option => "OPT",
-        SecurityType::Future => "FUT",
-        SecurityType::FuturesOption => "FOP",
-        SecurityType::ForexPair => "CASH",
-        SecurityType::Crypto => "CRYPTO",
-        SecurityType::Index => "IND",
-        SecurityType::CFD => "CFD",
-        SecurityType::Commodity => "CMDTY",
-        SecurityType::Bond => "BOND",
-        _ => "OTHER",
-    };
+    let sec_type_str = IbSecurityType::try_from(&contract.security_type).map_or_else(
+        |_| "OTHER".to_string(),
+        |security_type| security_type.to_string(),
+    );
 
     let symbol_str = format!("{local_symbol}={sec_type_str}");
     let symbol = NautilusSymbol::from(symbol_str.as_str());
@@ -728,20 +721,9 @@ fn instrument_id_to_ib_contract_raw(
 
     let venue_exchange = instrument_id.venue.as_str().replace('/', ".");
     let exchange_str = exchange.unwrap_or(venue_exchange.as_str());
-    let security_type = match sec_type_code {
-        "STK" => SecurityType::Stock,
-        "OPT" => SecurityType::Option,
-        "FUT" => SecurityType::Future,
-        "FOP" => SecurityType::FuturesOption,
-        "CASH" => SecurityType::ForexPair,
-        "CRYPTO" => SecurityType::Crypto,
-        "CONTFUT" => SecurityType::ContinuousFuture,
-        "IND" => SecurityType::Index,
-        "CFD" => SecurityType::CFD,
-        "CMDTY" => SecurityType::Commodity,
-        "BOND" => SecurityType::Bond,
-        _ => return None,
-    };
+    let security_type = IbSecurityType::from_str(sec_type_code)
+        .ok()
+        .map(IbSecurityType::ibapi_security_type)?;
 
     let contract = match security_type {
         SecurityType::Stock => Contract {
@@ -840,13 +822,7 @@ fn parse_option_symbol(symbol: &str) -> Option<OptionSymbol> {
 
     let expiry = &remaining[..6];
     let right_char = remaining.chars().nth(6)?;
-    let right = if right_char == 'C' || right_char == 'c' {
-        "C"
-    } else if right_char == 'P' || right_char == 'p' {
-        "P"
-    } else {
-        return None;
-    };
+    let right = IbOptionRight::from_str(&right_char.to_string()).ok()?;
 
     let strike_str = &remaining[7..];
     if strike_str.len() < 8 {
@@ -897,11 +873,7 @@ fn parse_named_option_symbol(symbol: &str) -> Option<NamedOptionSymbol> {
         return None;
     }
 
-    let right = match parts[0] {
-        "C" | "c" => "C",
-        "P" | "p" => "P",
-        _ => return None,
-    };
+    let right = IbOptionRight::from_str(parts[0]).ok()?;
 
     let expiry = parts[2];
     if expiry.len() != 8 || !expiry.chars().all(|c| c.is_ascii_digit()) {
@@ -1003,9 +975,7 @@ fn parse_futures_option_symbol(symbol: &str) -> Option<String> {
 
     // Parse right and strike
     let right_char = rest.chars().next()?;
-    if right_char != 'C' && right_char != 'c' && right_char != 'P' && right_char != 'p' {
-        return None;
-    }
+    IbOptionRight::from_str(&right_char.to_string()).ok()?;
 
     let strike_str = &rest[1..];
     strike_str.parse::<f64>().ok()?;

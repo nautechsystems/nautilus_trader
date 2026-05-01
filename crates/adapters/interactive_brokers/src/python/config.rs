@@ -15,35 +15,54 @@
 
 //! Python bindings for Interactive Brokers configuration types.
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::identifiers::InstrumentId;
 use pyo3::prelude::*;
 
 use crate::config::{
     DockerizedIBGatewayConfig, InteractiveBrokersDataClientConfig,
     InteractiveBrokersExecClientConfig, InteractiveBrokersInstrumentProviderConfig, MarketDataType,
-    TradingMode,
+    SymbologyMethod, TradingMode,
 };
 
 #[pymethods]
 impl MarketDataType {
     #[classattr]
-    const REALTIME: i32 = 1;
+    const REALTIME: Self = Self::Realtime;
 
     #[classattr]
-    const FROZEN: i32 = 2;
+    const FROZEN: Self = Self::Frozen;
 
     #[classattr]
-    const DELAYED: i32 = 3;
+    const DELAYED: Self = Self::Delayed;
 
     #[classattr]
-    const DELAYED_FROZEN: i32 = 4;
+    const DELAYED_FROZEN: Self = Self::DelayedFrozen;
+}
+
+#[pymethods]
+impl SymbologyMethod {
+    #[classattr]
+    const SIMPLIFIED: Self = Self::Simplified;
+
+    #[classattr]
+    const RAW: Self = Self::Raw;
+}
+
+#[pymethods]
+impl TradingMode {
+    #[classattr]
+    const PAPER: Self = Self::Paper;
+
+    #[classattr]
+    const LIVE: Self = Self::Live;
 }
 
 #[pymethods]
 impl InteractiveBrokersDataClientConfig {
     /// Creates a new `InteractiveBrokersDataClientConfig` instance.
     #[new]
-    #[pyo3(signature = (host=None, port=None, client_id=None, use_regular_trading_hours=None, market_data_type=None, ignore_quote_tick_size_updates=None, connection_timeout=None, request_timeout=None, handle_revised_bars=None, batch_quotes=None))]
+    #[pyo3(signature = (host=None, port=None, client_id=None, use_regular_trading_hours=None, market_data_type=None, ignore_quote_tick_size_updates=None, connection_timeout=None, request_timeout=None, handle_revised_bars=None, batch_quotes=None, instrument_provider=None, ibg_host=None, ibg_port=None, ibg_client_id=None, request_timeout_secs=None, dockerized_gateway=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         host: Option<String>,
@@ -56,24 +75,49 @@ impl InteractiveBrokersDataClientConfig {
         request_timeout: Option<u64>,
         handle_revised_bars: Option<bool>,
         batch_quotes: Option<bool>,
-    ) -> Self {
-        Self {
-            host: host.unwrap_or_else(|| crate::common::consts::DEFAULT_HOST.to_string()),
-            port: port.unwrap_or(crate::common::consts::DEFAULT_PORT),
-            client_id: client_id.unwrap_or(crate::common::consts::DEFAULT_CLIENT_ID),
+        instrument_provider: Option<InteractiveBrokersInstrumentProviderConfig>,
+        ibg_host: Option<String>,
+        ibg_port: Option<u16>,
+        ibg_client_id: Option<i32>,
+        request_timeout_secs: Option<u64>,
+        dockerized_gateway: Option<&DockerizedIBGatewayConfig>,
+    ) -> PyResult<Self> {
+        if dockerized_gateway.is_some() {
+            return Err(to_pyvalue_err(
+                "`dockerized_gateway` is not wired into the Rust/PyO3 IB data client; start `DockerizedIBGateway` separately and pass `ibg_host`/`ibg_port`",
+            ));
+        }
+
+        Ok(Self {
+            host: ibg_host
+                .or(host)
+                .unwrap_or_else(|| crate::common::consts::DEFAULT_HOST.to_string()),
+            port: ibg_port
+                .or(port)
+                .unwrap_or(crate::common::consts::DEFAULT_PORT),
+            client_id: ibg_client_id
+                .or(client_id)
+                .unwrap_or(crate::common::consts::DEFAULT_CLIENT_ID),
             use_regular_trading_hours: use_regular_trading_hours.unwrap_or(true),
             market_data_type: market_data_type.unwrap_or_default(),
             ignore_quote_tick_size_updates: ignore_quote_tick_size_updates.unwrap_or(false),
             connection_timeout: connection_timeout.unwrap_or(300),
-            request_timeout: request_timeout.unwrap_or(60),
+            request_timeout: request_timeout_secs.or(request_timeout).unwrap_or(60),
             handle_revised_bars: handle_revised_bars.unwrap_or(false),
             batch_quotes: batch_quotes.unwrap_or(true),
-        }
+            instrument_provider: instrument_provider.unwrap_or_default(),
+        })
     }
 
     /// Returns the host.
     #[getter]
     fn host(&self) -> &str {
+        &self.host
+    }
+
+    /// Returns the IB Gateway/TWS host.
+    #[getter("ibg_host")]
+    fn ibg_host(&self) -> &str {
         &self.host
     }
 
@@ -83,9 +127,21 @@ impl InteractiveBrokersDataClientConfig {
         self.port
     }
 
+    /// Returns the IB Gateway/TWS port.
+    #[getter("ibg_port")]
+    fn ibg_port(&self) -> u16 {
+        self.port
+    }
+
     /// Returns the client ID.
     #[getter]
     fn client_id(&self) -> i32 {
+        self.client_id
+    }
+
+    /// Returns the IB API client ID.
+    #[getter("ibg_client_id")]
+    fn ibg_client_id(&self) -> i32 {
         self.client_id
     }
 
@@ -119,6 +175,12 @@ impl InteractiveBrokersDataClientConfig {
         self.request_timeout
     }
 
+    /// Returns the request timeout in seconds.
+    #[getter("request_timeout_secs")]
+    fn request_timeout_secs(&self) -> u64 {
+        self.request_timeout
+    }
+
     /// Returns whether to handle revised bars.
     #[getter]
     fn handle_revised_bars(&self) -> bool {
@@ -130,13 +192,29 @@ impl InteractiveBrokersDataClientConfig {
     fn batch_quotes(&self) -> bool {
         self.batch_quotes
     }
+
+    /// Returns the instrument provider configuration.
+    #[getter]
+    fn instrument_provider(&self) -> InteractiveBrokersInstrumentProviderConfig {
+        self.instrument_provider.clone()
+    }
+
+    /// Sets the instrument provider configuration.
+    #[setter]
+    fn set_instrument_provider(
+        &mut self,
+        instrument_provider: InteractiveBrokersInstrumentProviderConfig,
+    ) {
+        self.instrument_provider = instrument_provider;
+    }
 }
 
 #[pymethods]
 impl InteractiveBrokersExecClientConfig {
     /// Creates a new `InteractiveBrokersExecClientConfig` instance.
     #[new]
-    #[pyo3(signature = (host=None, port=None, client_id=None, account_id=None, connection_timeout=None, request_timeout=None, fetch_all_open_orders=None, track_option_exercise_from_position_update=None))]
+    #[pyo3(signature = (host=None, port=None, client_id=None, account_id=None, connection_timeout=None, request_timeout=None, fetch_all_open_orders=None, track_option_exercise_from_position_update=None, instrument_provider=None, ibg_host=None, ibg_port=None, ibg_client_id=None, request_timeout_secs=None, dockerized_gateway=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_new(
         host: Option<String>,
         port: Option<u16>,
@@ -146,23 +224,48 @@ impl InteractiveBrokersExecClientConfig {
         request_timeout: Option<u64>,
         fetch_all_open_orders: Option<bool>,
         track_option_exercise_from_position_update: Option<bool>,
-    ) -> Self {
-        Self {
-            host: host.unwrap_or_else(|| crate::common::consts::DEFAULT_HOST.to_string()),
-            port: port.unwrap_or(crate::common::consts::DEFAULT_PORT),
-            client_id: client_id.unwrap_or(crate::common::consts::DEFAULT_CLIENT_ID),
+        instrument_provider: Option<InteractiveBrokersInstrumentProviderConfig>,
+        ibg_host: Option<String>,
+        ibg_port: Option<u16>,
+        ibg_client_id: Option<i32>,
+        request_timeout_secs: Option<u64>,
+        dockerized_gateway: Option<&DockerizedIBGatewayConfig>,
+    ) -> PyResult<Self> {
+        if dockerized_gateway.is_some() {
+            return Err(to_pyvalue_err(
+                "`dockerized_gateway` is not wired into the Rust/PyO3 IB execution client; start `DockerizedIBGateway` separately and pass `ibg_host`/`ibg_port`",
+            ));
+        }
+
+        Ok(Self {
+            host: ibg_host
+                .or(host)
+                .unwrap_or_else(|| crate::common::consts::DEFAULT_HOST.to_string()),
+            port: ibg_port
+                .or(port)
+                .unwrap_or(crate::common::consts::DEFAULT_PORT),
+            client_id: ibg_client_id
+                .or(client_id)
+                .unwrap_or(crate::common::consts::DEFAULT_CLIENT_ID),
             account_id,
             connection_timeout: connection_timeout.unwrap_or(300),
-            request_timeout: request_timeout.unwrap_or(60),
+            request_timeout: request_timeout_secs.or(request_timeout).unwrap_or(60),
             fetch_all_open_orders: fetch_all_open_orders.unwrap_or(false),
             track_option_exercise_from_position_update: track_option_exercise_from_position_update
                 .unwrap_or(false),
-        }
+            instrument_provider: instrument_provider.unwrap_or_default(),
+        })
     }
 
     /// Returns the host.
     #[getter]
     fn host(&self) -> &str {
+        &self.host
+    }
+
+    /// Returns the IB Gateway/TWS host.
+    #[getter("ibg_host")]
+    fn ibg_host(&self) -> &str {
         &self.host
     }
 
@@ -172,9 +275,21 @@ impl InteractiveBrokersExecClientConfig {
         self.port
     }
 
+    /// Returns the IB Gateway/TWS port.
+    #[getter("ibg_port")]
+    fn ibg_port(&self) -> u16 {
+        self.port
+    }
+
     /// Returns the client ID.
     #[getter]
     fn client_id(&self) -> i32 {
+        self.client_id
+    }
+
+    /// Returns the IB API client ID.
+    #[getter("ibg_client_id")]
+    fn ibg_client_id(&self) -> i32 {
         self.client_id
     }
 
@@ -196,6 +311,12 @@ impl InteractiveBrokersExecClientConfig {
         self.request_timeout
     }
 
+    /// Returns the request timeout in seconds.
+    #[getter("request_timeout_secs")]
+    fn request_timeout_secs(&self) -> u64 {
+        self.request_timeout
+    }
+
     /// Returns whether to fetch all open orders.
     #[getter]
     fn fetch_all_open_orders(&self) -> bool {
@@ -206,6 +327,21 @@ impl InteractiveBrokersExecClientConfig {
     #[getter]
     fn track_option_exercise_from_position_update(&self) -> bool {
         self.track_option_exercise_from_position_update
+    }
+
+    /// Returns the instrument provider configuration.
+    #[getter]
+    fn instrument_provider(&self) -> InteractiveBrokersInstrumentProviderConfig {
+        self.instrument_provider.clone()
+    }
+
+    /// Sets the instrument provider configuration.
+    #[setter]
+    fn set_instrument_provider(
+        &mut self,
+        instrument_provider: InteractiveBrokersInstrumentProviderConfig,
+    ) {
+        self.instrument_provider = instrument_provider;
     }
 }
 

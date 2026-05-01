@@ -13,14 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use ibapi::{
-    contracts::TagValue,
-    orders::{OcaType, Order as IBOrder},
-};
+use ibapi::{contracts::TagValue, orders::Order as IBOrder};
 use serde_json::Value;
 use ustr::Ustr;
 
-use crate::execution::conditions::create_ib_conditions;
+use crate::{common::enums::IbOcaType, execution::conditions::create_ib_conditions};
 
 pub(super) fn apply_ib_order_tags(ib_order: &mut IBOrder, tags: Option<&[Ustr]>) {
     let Some(tags) = tags else {
@@ -60,7 +57,7 @@ fn apply_ib_order_tag_json(ib_order: &mut IBOrder, tags_obj: &Value) {
     }
 
     if let Some(oca_type) = tags_obj.get("ocaType").and_then(|v| v.as_i64()) {
-        ib_order.oca_type = OcaType::from(oca_type as i32);
+        ib_order.oca_type = IbOcaType::from(oca_type as i32).ibapi_oca_type();
     }
 
     if let Some(outside_rth) = tags_obj.get("outsideRth").and_then(|v| v.as_bool()) {

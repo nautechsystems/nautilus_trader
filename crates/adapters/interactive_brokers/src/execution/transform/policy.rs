@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::convert::TryInto;
-
 use ibapi::orders::{Order as IBOrder, TimeInForce};
 use nautilus_model::{
     enums::{OrderType as NautilusOrderType, TrailingOffsetType},
@@ -74,11 +72,10 @@ pub(super) fn apply_trailing_order_policy(
     }
 
     if let Some(trailing_offset) = order.trailing_offset() {
-        ib_order.aux_price = Some(
-            trailing_offset
-                .try_into()
-                .unwrap_or_else(|_| trailing_offset.to_string().parse::<f64>().unwrap_or(0.0)),
-        );
+        let trailing_offset_f64 = trailing_offset.to_string().parse::<f64>().map_err(|e| {
+            anyhow::anyhow!("Failed to convert trailing offset {trailing_offset} to f64: {e}")
+        })?;
+        ib_order.aux_price = Some(trailing_offset_f64);
     }
 
     if let Some(trigger_price) = order.trigger_price() {

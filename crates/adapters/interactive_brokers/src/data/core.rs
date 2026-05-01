@@ -157,6 +157,103 @@ fn parse_start_ns(params: Option<&nautilus_core::Params>) -> Option<UnixNanos> {
         .map(UnixNanos::from)
 }
 
+fn parse_bool_param_value(value: &str) -> bool {
+    matches!(value, "true" | "True" | "1")
+}
+
+fn datetime_to_unix_nanos(dt: chrono::DateTime<chrono::Utc>) -> UnixNanos {
+    UnixNanos::from(
+        dt.timestamp_nanos_opt()
+            .unwrap_or_else(|| dt.timestamp() * 1_000_000_000) as u64,
+    )
+}
+
+fn request_trading_hours(use_regular_trading_hours: bool) -> ibapi::market_data::TradingHours {
+    if use_regular_trading_hours {
+        ibapi::market_data::TradingHours::Regular
+    } else {
+        ibapi::market_data::TradingHours::Extended
+    }
+}
+
+fn retreat_historical_tick_end_datetime(
+    min_ts_nanos: u64,
+) -> Option<chrono::DateTime<chrono::Utc>> {
+    let new_end_nanos = min_ts_nanos.saturating_sub(1_000_000); // 1ms
+    let seconds = (new_end_nanos / 1_000_000_000) as i64;
+    let nanos = (new_end_nanos % 1_000_000_000) as u32;
+    chrono::DateTime::from_timestamp(seconds, nanos)
+}
+
+fn should_continue_historical_tick_pagination(
+    current_start_date: Option<chrono::DateTime<chrono::Utc>>,
+    current_end_date: Option<chrono::DateTime<chrono::Utc>>,
+    current_len: usize,
+    limit: usize,
+) -> bool {
+    current_len < limit
+        && current_start_date
+            .zip(current_end_date)
+            .is_none_or(|(start, end)| end > start)
+}
+
+fn retreat_end_to_earliest_tick<T>(
+    batch: &[T],
+    ts_event: impl Fn(&T) -> UnixNanos,
+) -> Option<chrono::DateTime<chrono::Utc>> {
+    batch
+        .iter()
+        .min_by_key(|tick| ts_event(tick))
+        .and_then(|tick| retreat_historical_tick_end_datetime(ts_event(tick).as_u64()))
+}
+
+fn retain_historical_ticks_in_range<T>(
+    ticks: &mut Vec<T>,
+    start_nanos: Option<UnixNanos>,
+    end_nanos: Option<UnixNanos>,
+    ts_event: impl Fn(&T) -> UnixNanos,
+) {
+    ticks.retain(|tick| {
+        let ts_event = ts_event(tick);
+        start_nanos.is_none_or(|start| ts_event >= start)
+            && end_nanos.is_none_or(|end| ts_event <= end)
+    });
+}
+
+fn extend_historical_tick_batch<T>(
+    all_ticks: &mut Vec<T>,
+    batch_ticks: Vec<T>,
+    current_start_date: Option<chrono::DateTime<chrono::Utc>>,
+    current_end_date: &mut Option<chrono::DateTime<chrono::Utc>>,
+    start_nanos: Option<UnixNanos>,
+    end_nanos: Option<UnixNanos>,
+    limit: usize,
+    ts_event: impl Fn(&T) -> UnixNanos,
+) -> bool {
+    if batch_ticks.is_empty() {
+        return false;
+    }
+
+    if let Some(new_end) = retreat_end_to_earliest_tick(&batch_ticks, &ts_event) {
+        *current_end_date = Some(new_end);
+    } else {
+        return false;
+    }
+
+    all_ticks.extend(batch_ticks);
+
+    if current_start_date
+        .as_ref()
+        .zip(current_end_date.as_ref())
+        .is_some_and(|(start, end)| end <= start)
+    {
+        retain_historical_ticks_in_range(all_ticks, start_nanos, end_nanos, &ts_event);
+        return false;
+    }
+
+    all_ticks.len() < limit
+}
+
 impl InteractiveBrokersDataClient {
     /// Create a new `InteractiveBrokersDataClient`.
     ///
@@ -290,13 +387,13 @@ impl InteractiveBrokersDataClient {
             symbol: Symbol::from(underlying_symbol.to_string()),
             security_type: SecurityType::Stock,
             last_trade_date_or_contract_month: String::new(),
-            strike: 0.0,
+            strike: f64::MAX,
             right: String::new(),
             multiplier: String::new(),
             exchange: IBExchange::from(exchange.unwrap_or("SMART")),
             currency: IBCurrency::from(currency.unwrap_or("USD")),
             local_symbol: String::new(),
-            primary_exchange: IBExchange::default(),
+            primary_exchange: IBExchange::from(""),
             trading_class: String::new(),
             include_expired: false,
             security_id_type: String::new(),
@@ -364,6 +461,8 @@ impl InteractiveBrokersDataClient {
                 symbol,
                 exchange.unwrap_or(""),
                 currency.unwrap_or("USD"),
+                None,
+                false,
                 min_expiry_days,
                 max_expiry_days,
             )
@@ -466,19 +565,31 @@ impl DataClient for InteractiveBrokersDataClient {
 
         // Clear subscriptions and cache
         {
-            let mut subscriptions = self.subscriptions.blocking_lock();
+            let mut subscriptions = self
+                .subscriptions
+                .try_lock()
+                .context("Failed to lock IB subscriptions for reset")?;
             subscriptions.clear();
         }
         {
-            let mut subscriptions = self.option_greeks_subscriptions.blocking_lock();
+            let mut subscriptions = self
+                .option_greeks_subscriptions
+                .try_lock()
+                .context("Failed to lock IB option greeks subscriptions for reset")?;
             subscriptions.clear();
         }
         {
-            let mut cache = self.quote_cache.blocking_lock();
+            let mut cache = self
+                .quote_cache
+                .try_lock()
+                .context("Failed to lock IB quote cache for reset")?;
             cache.clear();
         }
         {
-            let mut cache = self.option_greeks_cache.blocking_lock();
+            let mut cache = self
+                .option_greeks_cache
+                .try_lock()
+                .context("Failed to lock IB option greeks cache for reset")?;
             cache.clear();
         }
 
@@ -551,6 +662,13 @@ impl DataClient for InteractiveBrokersDataClient {
                 "Data client connected with {} instruments in provider cache",
                 instrument_count
             );
+
+            for instrument in self.instrument_provider.get_all() {
+                if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+                    tracing::warn!("Failed to publish startup-loaded instrument: {e}");
+                    break;
+                }
+            }
         }
 
         tracing::info!("Connected Interactive Brokers data client");
@@ -612,9 +730,7 @@ impl DataClient for InteractiveBrokersDataClient {
             .params
             .as_ref()
             .and_then(|params| params.get_str("batch_quotes"))
-            .map_or(self.config.batch_quotes, |s| {
-                s == "true" || s == "True" || s == "1"
-            });
+            .map_or(self.config.batch_quotes, parse_bool_param_value);
 
         let use_market_data = is_bag || batch_quotes;
 
@@ -724,7 +840,10 @@ impl DataClient for InteractiveBrokersDataClient {
         self.tasks.push(task);
 
         // Record subscription
-        let mut subscriptions = self.subscriptions.blocking_lock();
+        let mut subscriptions = self
+            .subscriptions
+            .try_lock()
+            .context("Failed to lock IB subscriptions")?;
         subscriptions.insert(
             cmd.instrument_id,
             SubscriptionInfo {
@@ -812,7 +931,10 @@ impl DataClient for InteractiveBrokersDataClient {
 
         self.tasks.push(task);
 
-        let mut subscriptions = self.subscriptions.blocking_lock();
+        let mut subscriptions = self
+            .subscriptions
+            .try_lock()
+            .context("Failed to lock IB subscriptions")?;
         subscriptions.insert(
             cmd.instrument_id,
             SubscriptionInfo {
@@ -895,7 +1017,10 @@ impl DataClient for InteractiveBrokersDataClient {
 
         self.tasks.push(task);
 
-        let mut subscriptions = self.option_greeks_subscriptions.blocking_lock();
+        let mut subscriptions = self
+            .option_greeks_subscriptions
+            .try_lock()
+            .context("Failed to lock IB option greeks subscriptions")?;
         if let Some(existing) = subscriptions.insert(cmd.instrument_id, subscription_token) {
             existing.cancel();
         }
@@ -910,7 +1035,10 @@ impl DataClient for InteractiveBrokersDataClient {
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         tracing::debug!("Unsubscribing from quotes for {}", cmd.instrument_id);
 
-        let mut subscriptions = self.subscriptions.blocking_lock();
+        let mut subscriptions = self
+            .subscriptions
+            .try_lock()
+            .context("Failed to lock IB subscriptions")?;
         if let Some(sub_info) = subscriptions.remove(&cmd.instrument_id) {
             sub_info.cancellation_token.cancel();
             tracing::info!("Unsubscribed from quotes for {}", cmd.instrument_id);
@@ -933,7 +1061,10 @@ impl DataClient for InteractiveBrokersDataClient {
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
         tracing::debug!("Unsubscribing from index prices for {}", cmd.instrument_id);
 
-        let mut subscriptions = self.subscriptions.blocking_lock();
+        let mut subscriptions = self
+            .subscriptions
+            .try_lock()
+            .context("Failed to lock IB subscriptions")?;
         if let Some(sub_info) = subscriptions.remove(&cmd.instrument_id) {
             sub_info.cancellation_token.cancel();
             tracing::info!("Unsubscribed from index prices for {}", cmd.instrument_id);
@@ -950,7 +1081,10 @@ impl DataClient for InteractiveBrokersDataClient {
     fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
         tracing::debug!("Unsubscribing from option greeks for {}", cmd.instrument_id);
 
-        let mut subscriptions = self.option_greeks_subscriptions.blocking_lock();
+        let mut subscriptions = self
+            .option_greeks_subscriptions
+            .try_lock()
+            .context("Failed to lock IB option greeks subscriptions")?;
         if let Some(subscription_token) = subscriptions.remove(&cmd.instrument_id) {
             subscription_token.cancel();
             tracing::info!("Unsubscribed from option greeks for {}", cmd.instrument_id);
@@ -1030,7 +1164,10 @@ impl DataClient for InteractiveBrokersDataClient {
         self.tasks.push(task);
 
         // Record subscription
-        let mut subscriptions = self.subscriptions.blocking_lock();
+        let mut subscriptions = self
+            .subscriptions
+            .try_lock()
+            .context("Failed to lock IB subscriptions")?;
         subscriptions.insert(
             cmd.instrument_id,
             SubscriptionInfo {
@@ -1047,7 +1184,10 @@ impl DataClient for InteractiveBrokersDataClient {
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
         tracing::debug!("Unsubscribing from trades for {}", cmd.instrument_id);
 
-        let mut subscriptions = self.subscriptions.blocking_lock();
+        let mut subscriptions = self
+            .subscriptions
+            .try_lock()
+            .context("Failed to lock IB subscriptions")?;
         if let Some(sub_info) = subscriptions.remove(&cmd.instrument_id) {
             sub_info.cancellation_token.cancel();
             tracing::info!("Unsubscribed from trades for {}", cmd.instrument_id);
@@ -1146,7 +1286,10 @@ impl DataClient for InteractiveBrokersDataClient {
         self.tasks.push(task);
 
         // Record subscription
-        let mut subscriptions = self.subscriptions.blocking_lock();
+        let mut subscriptions = self
+            .subscriptions
+            .try_lock()
+            .context("Failed to lock IB subscriptions")?;
         subscriptions.insert(
             instrument_id,
             SubscriptionInfo {
@@ -1164,7 +1307,10 @@ impl DataClient for InteractiveBrokersDataClient {
         tracing::debug!("Unsubscribing from bars for {}", cmd.bar_type);
 
         let instrument_id = cmd.bar_type.instrument_id();
-        let mut subscriptions = self.subscriptions.blocking_lock();
+        let mut subscriptions = self
+            .subscriptions
+            .try_lock()
+            .context("Failed to lock IB subscriptions")?;
         if let Some(sub_info) = subscriptions.remove(&instrument_id) {
             sub_info.cancellation_token.cancel();
             tracing::info!("Unsubscribed from bars for {}", cmd.bar_type);
@@ -1224,7 +1370,7 @@ impl DataClient for InteractiveBrokersDataClient {
             .params
             .as_ref()
             .and_then(|params| params.get_str("is_smart_depth"))
-            .is_none_or(|s| s == "true" || s == "True" || s == "1");
+            .is_none_or(parse_bool_param_value);
 
         // Spawn subscription task
         let client_clone = client.as_arc().clone();
@@ -1256,7 +1402,10 @@ impl DataClient for InteractiveBrokersDataClient {
         self.tasks.push(task);
 
         // Record subscription
-        let mut subscriptions = self.subscriptions.blocking_lock();
+        let mut subscriptions = self
+            .subscriptions
+            .try_lock()
+            .context("Failed to lock IB subscriptions")?;
         subscriptions.insert(
             cmd.instrument_id,
             SubscriptionInfo {
@@ -1276,7 +1425,10 @@ impl DataClient for InteractiveBrokersDataClient {
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         tracing::debug!("Unsubscribing from book deltas for {}", cmd.instrument_id);
 
-        let mut subscriptions = self.subscriptions.blocking_lock();
+        let mut subscriptions = self
+            .subscriptions
+            .try_lock()
+            .context("Failed to lock IB subscriptions")?;
         if let Some(sub_info) = subscriptions.remove(&cmd.instrument_id) {
             sub_info.cancellation_token.cancel();
             tracing::info!("Unsubscribed from book deltas for {}", cmd.instrument_id);
@@ -1299,7 +1451,7 @@ impl DataClient for InteractiveBrokersDataClient {
             .params
             .as_ref()
             .and_then(|params| params.get_str("force_instrument_update"))
-            .is_some_and(|s| s == "true" || s == "True" || s == "1");
+            .is_some_and(parse_bool_param_value);
 
         // Get instrument from provider (or load if not found or force_update)
         let instrument =
@@ -1316,20 +1468,8 @@ impl DataClient for InteractiveBrokersDataClient {
                 let request_id = cmd.request_id;
                 let client_id = cmd.client_id.unwrap_or(self.client_id);
                 let params = cmd.params.clone();
-                let start_nanos = cmd.start.map(|dt| {
-                    UnixNanos::from(
-                        dt.timestamp_nanos_opt()
-                            .unwrap_or_else(|| dt.timestamp() * 1_000_000_000)
-                            as u64,
-                    )
-                });
-                let end_nanos = cmd.end.map(|dt| {
-                    UnixNanos::from(
-                        dt.timestamp_nanos_opt()
-                            .unwrap_or_else(|| dt.timestamp() * 1_000_000_000)
-                            as u64,
-                    )
-                });
+                let start_nanos = cmd.start.map(datetime_to_unix_nanos);
+                let end_nanos = cmd.end.map(datetime_to_unix_nanos);
 
                 let client_clone = client.as_arc().clone();
 
@@ -1376,18 +1516,8 @@ impl DataClient for InteractiveBrokersDataClient {
                     ))?
             };
 
-        let start_nanos = cmd.start.map(|dt| {
-            UnixNanos::from(
-                dt.timestamp_nanos_opt()
-                    .unwrap_or_else(|| dt.timestamp() * 1_000_000_000) as u64,
-            )
-        });
-        let end_nanos = cmd.end.map(|dt| {
-            UnixNanos::from(
-                dt.timestamp_nanos_opt()
-                    .unwrap_or_else(|| dt.timestamp() * 1_000_000_000) as u64,
-            )
-        });
+        let start_nanos = cmd.start.map(datetime_to_unix_nanos);
+        let end_nanos = cmd.end.map(datetime_to_unix_nanos);
 
         let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
             cmd.request_id,
@@ -1420,23 +1550,29 @@ impl DataClient for InteractiveBrokersDataClient {
             .params
             .as_ref()
             .and_then(|params| params.get_str("force_instrument_update"))
-            .is_some_and(|s| s == "true" || s == "True" || s == "1");
+            .is_some_and(parse_bool_param_value);
 
         // Check if ib_contracts parameter is provided for batch loading
-        let mut contracts_to_load: Vec<ibapi::contracts::Contract> = Vec::new();
+        let mut contract_specs_to_load: Vec<serde_json::Value> = Vec::new();
 
         if let Some(params) = &cmd.params
             && let Some(ib_contracts_json_str) = params.get_str("ib_contracts")
         {
-            // Parse JSON string containing array of contracts
-            match crate::common::contracts::parse_contracts_from_json_array(ib_contracts_json_str) {
-                Ok(contracts) => {
+            // Parse JSON string containing array of contracts.
+            match serde_json::from_str::<serde_json::Value>(ib_contracts_json_str) {
+                Ok(serde_json::Value::Array(contract_specs)) => {
                     tracing::info!(
-                        "Parsed {} contracts from ib_contracts JSON",
-                        contracts.len()
+                        "Parsed {} contract specs from ib_contracts JSON",
+                        contract_specs.len()
                     );
                     log::debug!("Parsed ib_contracts payload: {}", ib_contracts_json_str);
-                    contracts_to_load = contracts;
+                    contract_specs_to_load = contract_specs;
+                }
+                Ok(value) => {
+                    tracing::warn!(
+                        "Expected ib_contracts JSON array, received {}. Continuing without contracts",
+                        value
+                    );
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -1456,29 +1592,33 @@ impl DataClient for InteractiveBrokersDataClient {
         let client_id = cmd.client_id.unwrap_or(self.client_id);
         let venue = cmd.venue.unwrap_or(*IB_VENUE);
         let params = cmd.params.clone();
-        let start_nanos = cmd.start.map(|dt| {
-            UnixNanos::from(
-                dt.timestamp_nanos_opt()
-                    .unwrap_or_else(|| dt.timestamp() * 1_000_000_000) as u64,
-            )
-        });
-        let end_nanos = cmd.end.map(|dt| {
-            UnixNanos::from(
-                dt.timestamp_nanos_opt()
-                    .unwrap_or_else(|| dt.timestamp() * 1_000_000_000) as u64,
-            )
-        });
+        let start_nanos = cmd.start.map(datetime_to_unix_nanos);
+        let end_nanos = cmd.end.map(datetime_to_unix_nanos);
 
         // Handle batch loading if contracts are provided or force_update is requested
-        if !contracts_to_load.is_empty() || force_update {
-            let contracts_to_load_clone = contracts_to_load;
+        if !contract_specs_to_load.is_empty() || force_update {
+            let contract_specs_to_load_clone = contract_specs_to_load;
 
             get_runtime().spawn(async move {
                 let mut loaded_instrument_ids = Vec::new();
 
                 // Load instruments from contracts if provided
-                if !contracts_to_load_clone.is_empty() {
-                    for contract in contracts_to_load_clone {
+                if !contract_specs_to_load_clone.is_empty() {
+                    for contract_spec in contract_specs_to_load_clone {
+                        let contract =
+                            match crate::common::contracts::parse_contract_from_json(&contract_spec)
+                            {
+                                Ok(contract) => contract,
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Failed to parse IB contract spec {:?}: {}",
+                                        contract_spec,
+                                        e
+                                    );
+                                    continue;
+                                }
+                            };
+
                         log::debug!(
                             "Loading instrument from IB contract spec (sec_type={:?}, symbol={}, local_symbol={}, exchange={}, expiry={})",
                             contract.security_type,
@@ -1487,30 +1627,20 @@ impl DataClient for InteractiveBrokersDataClient {
                             contract.exchange.as_str(),
                             contract.last_trade_date_or_contract_month.as_str()
                         );
-                        // Convert contract to instrument ID and load
-                        if let Ok(instrument_id) =
-                            crate::common::parse::ib_contract_to_instrument_id_simple(&contract)
+
+                        match instrument_provider
+                            .load_contract_spec(&client_clone, &contract, Some(&contract_spec))
+                            .await
                         {
-                            if instrument_provider.find(&instrument_id).is_none() {
-                                if let Err(e) = instrument_provider
-                                    .fetch_contract_details(
-                                        &client_clone,
-                                        instrument_id,
-                                        false,
-                                        None,
-                                    )
-                                    .await
-                                {
-                                    tracing::warn!(
-                                        "Failed to load contract for {}: {}",
-                                        instrument_id,
-                                        e
-                                    );
-                                } else {
-                                    loaded_instrument_ids.push(instrument_id);
-                                }
-                            } else {
-                                loaded_instrument_ids.push(instrument_id);
+                            Ok(mut instrument_ids) => {
+                                loaded_instrument_ids.append(&mut instrument_ids);
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to load IB contract spec {:?}: {}",
+                                    contract_spec,
+                                    e
+                                );
                             }
                         }
                     }
@@ -1620,18 +1750,8 @@ impl DataClient for InteractiveBrokersDataClient {
         let request_id = cmd.request_id;
         let client_id = cmd.client_id.unwrap_or(self.client_id);
         let params = cmd.params.clone();
-        let start_nanos = cmd.start.map(|dt| {
-            UnixNanos::from(
-                dt.timestamp_nanos_opt()
-                    .unwrap_or_else(|| dt.timestamp() * 1_000_000_000) as u64,
-            )
-        });
-        let end_nanos = cmd.end.map(|dt| {
-            UnixNanos::from(
-                dt.timestamp_nanos_opt()
-                    .unwrap_or_else(|| dt.timestamp() * 1_000_000_000) as u64,
-            )
-        });
+        let start_nanos = cmd.start.map(datetime_to_unix_nanos);
+        let end_nanos = cmd.end.map(datetime_to_unix_nanos);
 
         // Spawn async task to handle the request with pagination
         let client_clone = client.as_arc().clone();
@@ -1640,6 +1760,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let end_nanos_clone = end_nanos;
         let cmd_start = cmd.start;
         let cmd_end = cmd.end;
+        let trading_hours = request_trading_hours(self.config.use_regular_trading_hours);
 
         get_runtime().spawn(async move {
             let mut all_quotes = Vec::new();
@@ -1650,16 +1771,13 @@ impl DataClient for InteractiveBrokersDataClient {
             }
             let current_start_date = cmd_start;
 
-            // Pagination loop: continue while (start exists and end > start) or (len < limit)
             loop {
-                let should_continue =
-                    if let (Some(start), Some(end)) = (current_start_date, current_end_date) {
-                        end > start
-                    } else {
-                        false
-                    };
-
-                if !should_continue && all_quotes.len() >= limit {
+                if !should_continue_historical_tick_pagination(
+                    current_start_date,
+                    current_end_date,
+                    all_quotes.len(),
+                    limit,
+                ) {
                     break;
                 }
 
@@ -1672,7 +1790,7 @@ impl DataClient for InteractiveBrokersDataClient {
                         current_start_date.as_ref().map(chrono_to_ib_datetime),
                         current_end_ib,
                         number_of_ticks,
-                        ibapi::market_data::TradingHours::Regular,
+                        trading_hours,
                         false, // ignore_size
                     )
                     .await
@@ -1703,43 +1821,16 @@ impl DataClient for InteractiveBrokersDataClient {
                             }
                         }
 
-                        if batch_quotes.is_empty() {
-                            break;
-                        }
-
-                        // Update current_end_date to the minimum ts_init from this batch for next iteration
-                        // This works backwards in time
-                        if let Some(min_tick) = batch_quotes.iter().min_by_key(|t| t.ts_init) {
-                            let min_ts_nanos = min_tick.ts_init.as_u64();
-                            // Convert UnixNanos to DateTime<Utc>
-                            let min_ts_seconds = (min_ts_nanos / 1_000_000_000) as i64;
-                            let min_ts_nanos_remainder = (min_ts_nanos % 1_000_000_000) as u32;
-                            current_end_date = chrono::DateTime::from_timestamp(
-                                min_ts_seconds,
-                                min_ts_nanos_remainder,
-                            );
-                        }
-
-                        all_quotes.extend(batch_quotes);
-
-                        // Check if we should continue - need start and current_end > start
-                        if let (Some(start_dt), Some(end_dt)) =
-                            (current_start_date, current_end_date)
-                            && end_dt <= start_dt
-                        {
-                            // Filter out quotes after end_date_time and before start
-                            if let Some(end_limit) = end_nanos_clone {
-                                all_quotes.retain(|q| q.ts_init <= end_limit);
-                            }
-
-                            if let Some(start_limit) = start_nanos_clone {
-                                all_quotes.retain(|q| q.ts_init >= start_limit);
-                            }
-                            break;
-                        }
-
-                        // Break if we've reached the limit
-                        if all_quotes.len() >= limit {
+                        if !extend_historical_tick_batch(
+                            &mut all_quotes,
+                            batch_quotes,
+                            current_start_date,
+                            &mut current_end_date,
+                            start_nanos_clone,
+                            end_nanos_clone,
+                            limit,
+                            |quote| quote.ts_event,
+                        ) {
                             break;
                         }
                     }
@@ -1754,13 +1845,14 @@ impl DataClient for InteractiveBrokersDataClient {
                 }
             }
 
-            // Filter out ticks after end_date_time if specified
-            if let Some(end_limit) = end_nanos_clone {
-                all_quotes.retain(|q| q.ts_init <= end_limit);
-            }
+            retain_historical_ticks_in_range(
+                &mut all_quotes,
+                start_nanos_clone,
+                end_nanos_clone,
+                |quote| quote.ts_event,
+            );
 
-            // Sort by ts_init
-            all_quotes.sort_by_key(|q| q.ts_init);
+            all_quotes.sort_by_key(|q| q.ts_event);
 
             let quotes_count = all_quotes.len();
             let response = DataResponse::Quotes(QuotesResponse::new(
@@ -1832,18 +1924,8 @@ impl DataClient for InteractiveBrokersDataClient {
         let request_id = cmd.request_id;
         let client_id = cmd.client_id.unwrap_or(self.client_id);
         let params = cmd.params.clone();
-        let start_nanos = cmd.start.map(|dt| {
-            UnixNanos::from(
-                dt.timestamp_nanos_opt()
-                    .unwrap_or_else(|| dt.timestamp() * 1_000_000_000) as u64,
-            )
-        });
-        let end_nanos = cmd.end.map(|dt| {
-            UnixNanos::from(
-                dt.timestamp_nanos_opt()
-                    .unwrap_or_else(|| dt.timestamp() * 1_000_000_000) as u64,
-            )
-        });
+        let start_nanos = cmd.start.map(datetime_to_unix_nanos);
+        let end_nanos = cmd.end.map(datetime_to_unix_nanos);
 
         // Spawn async task to handle the request with pagination
         let client_clone = client.as_arc().clone();
@@ -1852,6 +1934,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let end_nanos_clone = end_nanos;
         let cmd_start = cmd.start;
         let cmd_end = cmd.end;
+        let trading_hours = request_trading_hours(self.config.use_regular_trading_hours);
 
         get_runtime().spawn(async move {
             let mut all_trades = Vec::new();
@@ -1862,16 +1945,13 @@ impl DataClient for InteractiveBrokersDataClient {
             }
             let current_start_date = cmd_start;
 
-            // Pagination loop: continue while (start exists and end > start) or (len < limit)
             loop {
-                let should_continue =
-                    if let (Some(start), Some(end)) = (current_start_date, current_end_date) {
-                        end > start
-                    } else {
-                        false
-                    };
-
-                if !should_continue && all_trades.len() >= limit {
+                if !should_continue_historical_tick_pagination(
+                    current_start_date,
+                    current_end_date,
+                    all_trades.len(),
+                    limit,
+                ) {
                     break;
                 }
 
@@ -1884,7 +1964,7 @@ impl DataClient for InteractiveBrokersDataClient {
                         current_start_date.as_ref().map(chrono_to_ib_datetime),
                         current_end_ib,
                         number_of_ticks,
-                        ibapi::market_data::TradingHours::Regular,
+                        trading_hours,
                     )
                     .await
                 {
@@ -1916,43 +1996,16 @@ impl DataClient for InteractiveBrokersDataClient {
                             }
                         }
 
-                        if batch_trades.is_empty() {
-                            break;
-                        }
-
-                        // Update current_end_date to the minimum ts_init from this batch for next iteration
-                        // This works backwards in time
-                        if let Some(min_tick) = batch_trades.iter().min_by_key(|t| t.ts_init) {
-                            let min_ts_nanos = min_tick.ts_init.as_u64();
-                            // Convert UnixNanos to DateTime<Utc>
-                            let min_ts_seconds = (min_ts_nanos / 1_000_000_000) as i64;
-                            let min_ts_nanos_remainder = (min_ts_nanos % 1_000_000_000) as u32;
-                            current_end_date = chrono::DateTime::from_timestamp(
-                                min_ts_seconds,
-                                min_ts_nanos_remainder,
-                            );
-                        }
-
-                        all_trades.extend(batch_trades);
-
-                        // Check if we should continue - need start and current_end > start
-                        if let (Some(start_dt), Some(end_dt)) =
-                            (current_start_date, current_end_date)
-                            && end_dt <= start_dt
-                        {
-                            // Filter out trades after end_date_time and before start
-                            if let Some(end_limit) = end_nanos_clone {
-                                all_trades.retain(|t| t.ts_init <= end_limit);
-                            }
-
-                            if let Some(start_limit) = start_nanos_clone {
-                                all_trades.retain(|t| t.ts_init >= start_limit);
-                            }
-                            break;
-                        }
-
-                        // Break if we've reached the limit
-                        if all_trades.len() >= limit {
+                        if !extend_historical_tick_batch(
+                            &mut all_trades,
+                            batch_trades,
+                            current_start_date,
+                            &mut current_end_date,
+                            start_nanos_clone,
+                            end_nanos_clone,
+                            limit,
+                            |trade| trade.ts_event,
+                        ) {
                             break;
                         }
                     }
@@ -1967,13 +2020,14 @@ impl DataClient for InteractiveBrokersDataClient {
                 }
             }
 
-            // Filter out ticks after end_date_time if specified
-            if let Some(end_limit) = end_nanos_clone {
-                all_trades.retain(|t| t.ts_init <= end_limit);
-            }
+            retain_historical_ticks_in_range(
+                &mut all_trades,
+                start_nanos_clone,
+                end_nanos_clone,
+                |trade| trade.ts_event,
+            );
 
-            // Sort by ts_init
-            all_trades.sort_by_key(|t| t.ts_init);
+            all_trades.sort_by_key(|t| t.ts_event);
 
             let trades_count = all_trades.len();
             let response = DataResponse::Trades(TradesResponse::new(
@@ -2054,21 +2108,12 @@ impl DataClient for InteractiveBrokersDataClient {
         let request_id = cmd.request_id;
         let client_id = cmd.client_id.unwrap_or(self.client_id);
         let params = cmd.params.clone();
-        let start_nanos = cmd.start.map(|dt| {
-            UnixNanos::from(
-                dt.timestamp_nanos_opt()
-                    .unwrap_or_else(|| dt.timestamp() * 1_000_000_000) as u64,
-            )
-        });
-        let end_nanos = cmd.end.map(|dt| {
-            UnixNanos::from(
-                dt.timestamp_nanos_opt()
-                    .unwrap_or_else(|| dt.timestamp() * 1_000_000_000) as u64,
-            )
-        });
+        let start_nanos = cmd.start.map(datetime_to_unix_nanos);
+        let end_nanos = cmd.end.map(datetime_to_unix_nanos);
 
         // Spawn async task to handle the request with segmentation
         let client_clone = client.as_arc().clone();
+        let trading_hours = request_trading_hours(self.config.use_regular_trading_hours);
 
         get_runtime().spawn(async move {
             let mut all_bars = Vec::new();
@@ -2083,7 +2128,7 @@ impl DataClient for InteractiveBrokersDataClient {
                         seg_duration,
                         ib_bar_size,
                         Some(ib_what_to_show),
-                        ibapi::market_data::TradingHours::Regular,
+                        trading_hours,
                     )
                     .await
                 {
@@ -2156,5 +2201,72 @@ impl DataClient for InteractiveBrokersDataClient {
 impl Drop for InteractiveBrokersDataClient {
     fn drop(&mut self) {
         let _ = self.stop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(true, ibapi::market_data::TradingHours::Regular)]
+    #[case(false, ibapi::market_data::TradingHours::Extended)]
+    fn test_request_trading_hours_uses_config(
+        #[case] use_regular_trading_hours: bool,
+        #[case] expected: ibapi::market_data::TradingHours,
+    ) {
+        assert_eq!(request_trading_hours(use_regular_trading_hours), expected);
+    }
+
+    #[rstest]
+    fn test_retreat_historical_tick_end_datetime_subtracts_one_millisecond() {
+        let result = retreat_historical_tick_end_datetime(1_234_567_890).unwrap();
+
+        assert_eq!(result.timestamp_nanos_opt().unwrap() as u64, 1_233_567_890);
+    }
+
+    #[rstest]
+    fn test_retreat_historical_tick_end_datetime_saturates_at_zero() {
+        let result = retreat_historical_tick_end_datetime(500_000).unwrap();
+
+        assert_eq!(result.timestamp_nanos_opt().unwrap(), 0);
+    }
+
+    #[rstest]
+    #[case(None, Some(chrono::DateTime::from_timestamp(2, 0).unwrap()), 0, 10, true)]
+    #[case(Some(chrono::DateTime::from_timestamp(1, 0).unwrap()), Some(chrono::DateTime::from_timestamp(2, 0).unwrap()), 0, 10, true)]
+    #[case(Some(chrono::DateTime::from_timestamp(2, 0).unwrap()), Some(chrono::DateTime::from_timestamp(1, 0).unwrap()), 0, 10, false)]
+    #[case(Some(chrono::DateTime::from_timestamp(1, 0).unwrap()), Some(chrono::DateTime::from_timestamp(2, 0).unwrap()), 10, 10, false)]
+    fn test_should_continue_historical_tick_pagination(
+        #[case] start: Option<chrono::DateTime<chrono::Utc>>,
+        #[case] end: Option<chrono::DateTime<chrono::Utc>>,
+        #[case] current_len: usize,
+        #[case] limit: usize,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(
+            should_continue_historical_tick_pagination(start, end, current_len, limit),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case("true", true)]
+    #[case("True", true)]
+    #[case("1", true)]
+    #[case("false", false)]
+    #[case("False", false)]
+    #[case("0", false)]
+    fn test_parse_bool_param_value(#[case] value: &str, #[case] expected: bool) {
+        assert_eq!(parse_bool_param_value(value), expected);
+    }
+
+    #[rstest]
+    fn test_datetime_to_unix_nanos() {
+        let dt = chrono::DateTime::from_timestamp(1, 2).unwrap();
+
+        assert_eq!(datetime_to_unix_nanos(dt), UnixNanos::from(1_000_000_002));
     }
 }
