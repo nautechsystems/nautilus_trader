@@ -92,6 +92,8 @@ pub struct RiskEngine {
     max_notional_per_order: AHashMap<InstrumentId, Decimal>,
     trading_state: TradingState,
     config: RiskEngineConfig,
+    command_count: u64,
+    event_count: u64,
 }
 
 impl Debug for RiskEngine {
@@ -122,6 +124,8 @@ impl RiskEngine {
             max_notional_per_order: config.max_notional_per_order.clone(),
             trading_state: TradingState::Active,
             config,
+            command_count: 0,
+            event_count: 0,
         }
     }
 
@@ -350,6 +354,8 @@ impl RiskEngine {
     /// Executes a trading command through the risk management pipeline.
     // Required by message bus dispatch
     pub fn execute(&mut self, command: TradingCommand) {
+        self.command_count += 1;
+
         // This will extend to other commands such as `RiskCommand`
         self.handle_command(command);
     }
@@ -357,6 +363,8 @@ impl RiskEngine {
     /// Processes an order event for risk monitoring and state updates.
     #[expect(clippy::needless_pass_by_value)] // Required by message bus dispatch
     pub fn process(&mut self, event: OrderEventAny) {
+        self.event_count += 1;
+
         // This will extend to other events such as `RiskEvent`
         self.handle_event(&event);
     }
@@ -406,6 +414,8 @@ impl RiskEngine {
         self.throttled_modify_order.reset();
         self.max_notional_per_order = self.config.max_notional_per_order.clone();
         self.trading_state = TradingState::Active;
+        self.command_count = 0;
+        self.event_count = 0;
 
         log::info!("Reset");
     }
@@ -436,6 +446,18 @@ impl RiskEngine {
     #[must_use]
     pub const fn config(&self) -> &RiskEngineConfig {
         &self.config
+    }
+
+    /// Returns the total count of trading commands received by the engine.
+    #[must_use]
+    pub const fn command_count(&self) -> u64 {
+        self.command_count
+    }
+
+    /// Returns the total count of order events received by the engine.
+    #[must_use]
+    pub const fn event_count(&self) -> u64 {
+        self.event_count
     }
 
     /// Returns the current trading state.

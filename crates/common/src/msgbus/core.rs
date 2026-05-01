@@ -268,6 +268,10 @@ pub struct MessageBus {
     pub(crate) endpoints_data: IntoEndpointMap<Data>,
     routers_typed: AHashMap<TypeId, Box<dyn Any>>,
     endpoints_typed: AHashMap<TypeId, Box<dyn Any>>,
+    sent_count: u64,
+    req_count: u64,
+    res_count: u64,
+    pub_count: u64,
 }
 
 impl Default for MessageBus {
@@ -339,6 +343,10 @@ impl MessageBus {
             endpoints_data: IntoEndpointMap::new(),
             routers_typed: AHashMap::new(),
             endpoints_typed: AHashMap::new(),
+            sent_count: 0,
+            req_count: 0,
+            res_count: 0,
+            pub_count: 0,
         }
     }
 
@@ -425,6 +433,10 @@ impl MessageBus {
 
         self.routers_typed.clear();
         self.endpoints_typed.clear();
+        self.sent_count = 0;
+        self.req_count = 0;
+        self.res_count = 0;
+        self.pub_count = 0;
     }
 
     /// Returns the memory address of this instance as a hexadecimal string.
@@ -437,6 +449,46 @@ impl MessageBus {
     #[must_use]
     pub fn switchboard(&self) -> &MessagingSwitchboard {
         &self.switchboard
+    }
+
+    /// Returns the total count of messages sent to endpoints.
+    #[must_use]
+    pub const fn sent_count(&self) -> u64 {
+        self.sent_count
+    }
+
+    /// Returns the total count of requests sent to endpoints.
+    #[must_use]
+    pub const fn req_count(&self) -> u64 {
+        self.req_count
+    }
+
+    /// Returns the total count of responses sent to registered handlers.
+    #[must_use]
+    pub const fn res_count(&self) -> u64 {
+        self.res_count
+    }
+
+    /// Returns the total count of messages published to topics.
+    #[must_use]
+    pub const fn pub_count(&self) -> u64 {
+        self.pub_count
+    }
+
+    pub(crate) fn increment_sent_count(&mut self) {
+        self.sent_count += 1;
+    }
+
+    pub(crate) fn increment_req_count(&mut self) {
+        self.req_count += 1;
+    }
+
+    pub(crate) fn increment_res_count(&mut self) {
+        self.res_count += 1;
+    }
+
+    pub(crate) fn increment_pub_count(&mut self) {
+        self.pub_count += 1;
     }
 
     /// Returns the registered endpoint addresses.
@@ -628,6 +680,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_dispose_resets_counters() {
+        let mut msgbus = MessageBus::default();
+
+        msgbus.increment_sent_count();
+        msgbus.increment_req_count();
+        msgbus.increment_res_count();
+        msgbus.increment_pub_count();
+        msgbus.dispose();
+
+        assert_eq!(msgbus.sent_count(), 0);
+        assert_eq!(msgbus.req_count(), 0);
+        assert_eq!(msgbus.res_count(), 0);
+        assert_eq!(msgbus.pub_count(), 0);
+    }
+
+    #[rstest]
     fn test_endpoints_when_no_endpoints() {
         let msgbus = get_message_bus();
         assert!(msgbus.borrow().endpoints().is_empty());
@@ -709,14 +777,44 @@ mod tests {
         let msgbus = get_message_bus();
         let endpoint = "MyEndpoint".into();
         let (handler, checker) = get_call_check_handler(None);
+        let sent_count = msgbus.borrow().sent_count();
 
         msgbus::register_any(endpoint, handler);
         assert!(msgbus.borrow().get_endpoint(endpoint).is_some());
         assert!(!checker.was_called());
 
-        // Send a message to the endpoint
         msgbus::send_any(endpoint, &"Test Message");
+
         assert!(checker.was_called());
+        assert_eq!(msgbus.borrow().sent_count(), sent_count + 1);
+    }
+
+    #[rstest]
+    fn test_endpoint_send_value_increments_sent_count() {
+        let msgbus = get_message_bus();
+        let endpoint = "MyValueEndpoint".into();
+        let (handler, checker) = get_call_check_handler(None);
+        let sent_count = msgbus.borrow().sent_count();
+
+        msgbus::register_any(endpoint, handler);
+        msgbus::send_any_value(endpoint, &"Test Message");
+
+        assert!(checker.was_called());
+        assert_eq!(msgbus.borrow().sent_count(), sent_count + 1);
+    }
+
+    #[rstest]
+    fn test_publish_any_increments_publish_count() {
+        let msgbus = get_message_bus();
+        let topic = "my-published-topic";
+        let (handler, checker) = get_call_check_handler(None);
+        let pub_count = msgbus.borrow().pub_count();
+
+        msgbus::subscribe_any(topic.into(), handler, None);
+        msgbus::publish_any(topic.into(), &"Test Message");
+
+        assert!(checker.was_called());
+        assert_eq!(msgbus.borrow().pub_count(), pub_count + 1);
     }
 
     #[rstest]

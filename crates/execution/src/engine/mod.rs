@@ -24,7 +24,7 @@ pub mod config;
 pub mod stubs;
 
 use std::{
-    cell::{RefCell, RefMut},
+    cell::{Cell, RefCell, RefMut},
     collections::{HashMap, HashSet},
     fmt::Debug,
     rc::Rc,
@@ -111,6 +111,9 @@ pub struct ExecutionEngine {
     external_clients: HashSet<ClientId>,
     pos_id_generator: PositionIdGenerator,
     config: ExecutionEngineConfig,
+    command_count: Cell<u64>,
+    event_count: u64,
+    report_count: u64,
 }
 
 impl Debug for ExecutionEngine {
@@ -145,6 +148,9 @@ impl ExecutionEngine {
                 .collect(),
             pos_id_generator: PositionIdGenerator::new(trader_id, clock),
             config: config.unwrap_or_default(),
+            command_count: Cell::new(0),
+            event_count: 0,
+            report_count: 0,
         }
     }
 
@@ -195,6 +201,24 @@ impl ExecutionEngine {
                 }
             }),
         );
+    }
+
+    /// Returns the total count of trading commands received by the engine.
+    #[must_use]
+    pub fn command_count(&self) -> u64 {
+        self.command_count.get()
+    }
+
+    /// Returns the total count of order events received by the engine.
+    #[must_use]
+    pub const fn event_count(&self) -> u64 {
+        self.event_count
+    }
+
+    /// Returns the total count of execution reports received by the engine.
+    #[must_use]
+    pub const fn report_count(&self) -> u64 {
+        self.report_count
     }
 
     /// Subscribes to instrument updates for a venue via the message bus.
@@ -866,6 +890,10 @@ impl ExecutionEngine {
 
     /// Reconciles an execution report.
     pub fn reconcile_execution_report(&mut self, report: &ExecutionReport) {
+        if !matches!(report, ExecutionReport::MassStatus(_)) {
+            self.report_count += 1;
+        }
+
         match report {
             ExecutionReport::Order(order_report) => {
                 self.reconcile_order_status_report(order_report);
@@ -1443,6 +1471,8 @@ impl ExecutionEngine {
     /// in the mass status. Orders created as external during this pass already receive
     /// inferred fills, so their companion fill reports are skipped to avoid double-fills.
     pub fn reconcile_execution_mass_status(&mut self, mass_status: &ExecutionMassStatus) {
+        self.report_count += 1;
+
         log::info!(
             "Reconciling mass status for client={}, account={}, venue={}",
             mass_status.client_id,
@@ -1538,6 +1568,9 @@ impl ExecutionEngine {
     /// Resets the execution engine to its initial state.
     pub fn reset(&mut self) {
         self.pos_id_generator.reset();
+        self.command_count.set(0);
+        self.event_count = 0;
+        self.report_count = 0;
 
         log::info!("Reset");
     }
@@ -1548,6 +1581,8 @@ impl ExecutionEngine {
     }
 
     fn execute_command(&self, command: TradingCommand) {
+        self.command_count.set(self.command_count.get() + 1);
+
         if self.config.debug {
             log::debug!("{RECV}{CMD} {command:?}");
         }
@@ -1800,6 +1835,8 @@ impl ExecutionEngine {
     }
 
     fn handle_event(&mut self, event: &OrderEventAny) {
+        self.event_count += 1;
+
         if self.config.debug {
             log::debug!("{RECV}{EVT} {event:?}");
         }

@@ -840,9 +840,12 @@ pub fn publish_any(topic: MStr<Topic>, message: &dyn Any) {
     // Take buffer (re-entrancy safe)
     let mut handlers = ANY_HANDLERS.with_borrow_mut(std::mem::take);
 
-    get_message_bus()
-        .borrow_mut()
-        .fill_matching_any_handlers(topic, &mut handlers);
+    {
+        let bus_rc = get_message_bus();
+        let mut bus = bus_rc.borrow_mut();
+        bus.fill_matching_any_handlers(topic, &mut handlers);
+        bus.increment_pub_count();
+    }
 
     for handler in &handlers {
         handler.0.handle(message);
@@ -1067,7 +1070,11 @@ fn publish_typed<T: 'static>(
 
     // Borrow scope ends before dispatch to support re-entrant publishes
     let bus_rc = get_message_bus();
-    fill_fn(&mut bus_rc.borrow_mut(), &mut handlers);
+    {
+        let mut bus = bus_rc.borrow_mut();
+        fill_fn(&mut bus, &mut handlers);
+        bus.increment_pub_count();
+    }
 
     for handler in &handlers {
         handler.handle(message);
@@ -1079,7 +1086,15 @@ fn publish_typed<T: 'static>(
 
 /// Sends a message to an endpoint handler using runtime type dispatch (Any).
 pub fn send_any(endpoint: MStr<Endpoint>, message: &dyn Any) {
-    let handler = get_message_bus().borrow().get_endpoint(endpoint).cloned();
+    let handler = {
+        let bus = get_message_bus();
+        let mut bus = bus.borrow_mut();
+        let handler = bus.get_endpoint(endpoint).cloned();
+        if handler.is_some() {
+            bus.increment_sent_count();
+        }
+        handler
+    };
 
     if let Some(handler) = handler {
         handler.0.handle(message);
@@ -1090,7 +1105,15 @@ pub fn send_any(endpoint: MStr<Endpoint>, message: &dyn Any) {
 
 /// Sends a message to an endpoint, converting to Any (convenience wrapper).
 pub fn send_any_value<T: 'static>(endpoint: MStr<Endpoint>, message: &T) {
-    let handler = get_message_bus().borrow().get_endpoint(endpoint).cloned();
+    let handler = {
+        let bus = get_message_bus();
+        let mut bus = bus.borrow_mut();
+        let handler = bus.get_endpoint(endpoint).cloned();
+        if handler.is_some() {
+            bus.increment_sent_count();
+        }
+        handler
+    };
 
     if let Some(handler) = handler {
         handler.0.handle(message);
@@ -1101,10 +1124,13 @@ pub fn send_any_value<T: 'static>(endpoint: MStr<Endpoint>, message: &T) {
 
 /// Sends the [`DataResponse`] to the registered correlation ID handler.
 pub fn send_response(correlation_id: &UUID4, message: &DataResponse) {
-    let handler = get_message_bus()
-        .borrow()
-        .get_response_handler(correlation_id)
-        .cloned();
+    let handler = {
+        let bus = get_message_bus();
+        let mut bus = bus.borrow_mut();
+        let handler = bus.get_response_handler(correlation_id).cloned();
+        bus.increment_res_count();
+        handler
+    };
 
     if let Some(handler) = handler {
         match message {
@@ -1185,11 +1211,13 @@ pub fn send_trading_command(endpoint: MStr<Endpoint>, command: TradingCommand) {
 
 /// Sends a data command to an endpoint handler, transferring ownership.
 pub fn send_data_command(endpoint: MStr<Endpoint>, command: DataCommand) {
-    send_endpoint_owned(
+    let is_request = data_command_is_request(&command);
+    send_endpoint_owned_counted(
         endpoint,
         command,
         |bus| bus.endpoints_data_commands.get(endpoint),
         "send_data_command",
+        is_request,
     );
 }
 
@@ -1245,7 +1273,12 @@ fn send_endpoint_ref<T: 'static, F>(
 {
     let handler = {
         let bus = get_message_bus();
-        get_handler(&bus.borrow()).cloned()
+        let mut bus = bus.borrow_mut();
+        let handler = get_handler(&bus).cloned();
+        if handler.is_some() {
+            bus.increment_sent_count();
+        }
+        handler
     };
 
     if let Some(handler) = handler {
@@ -1264,15 +1297,46 @@ fn send_endpoint_owned<T: 'static, F>(
 ) where
     F: FnOnce(&MessageBus) -> Option<&TypedIntoHandler<T>>,
 {
+    send_endpoint_owned_counted(endpoint, message, get_handler, fn_name, false);
+}
+
+#[inline]
+fn send_endpoint_owned_counted<T: 'static, F>(
+    endpoint: MStr<Endpoint>,
+    message: T,
+    get_handler: F,
+    fn_name: &str,
+    count_request: bool,
+) where
+    F: FnOnce(&MessageBus) -> Option<&TypedIntoHandler<T>>,
+{
     let handler = {
         let bus = get_message_bus();
-        get_handler(&bus.borrow()).cloned()
+        let mut bus = bus.borrow_mut();
+        let handler = get_handler(&bus).cloned();
+        if handler.is_some() {
+            bus.increment_sent_count();
+            if count_request {
+                bus.increment_req_count();
+            }
+        }
+        handler
     };
 
     if let Some(handler) = handler {
         handler.handle(message);
     } else {
         log::error!("{fn_name}: no registered endpoint '{endpoint}'");
+    }
+}
+
+#[inline]
+fn data_command_is_request(command: &DataCommand) -> bool {
+    match command {
+        DataCommand::Request(_) => true,
+        #[cfg(feature = "defi")]
+        DataCommand::DefiRequest(_) => true,
+        _ => false,
     }
 }
 
@@ -1298,13 +1362,14 @@ mod tests {
 
     use super::*;
     use crate::messages::{
-        data::{DataCommand, SubscribeCommand, SubscribeQuotes},
+        data::{DataCommand, RequestCommand, RequestQuotes, SubscribeCommand, SubscribeQuotes},
         execution::{CancelAllOrders, TradingCommand},
     };
 
     #[rstest]
     fn test_typed_quote_publish_subscribe_integration() {
-        let _msgbus = get_message_bus();
+        let msgbus = get_message_bus();
+        let pub_count = msgbus.borrow().pub_count();
         let received = Rc::new(RefCell::new(Vec::new()));
         let received_clone = received.clone();
 
@@ -1319,6 +1384,7 @@ mod tests {
         publish_quote("data.quotes.TEST".into(), &quote);
 
         assert_eq!(received.borrow().len(), 2);
+        assert_eq!(msgbus.borrow().pub_count(), pub_count + 2);
     }
 
     #[rstest]
@@ -1606,14 +1672,11 @@ mod tests {
 
     #[rstest]
     fn test_send_data_command_allows_reentrant_topic_access() {
-        use nautilus_model::identifiers::ClientId;
+        use crate::msgbus::switchboard::get_trades_topic;
 
-        use crate::{
-            messages::data::{DataCommand, SubscribeCommand, SubscribeQuotes},
-            msgbus::switchboard::get_trades_topic,
-        };
-
-        let _msgbus = get_message_bus();
+        let msgbus = get_message_bus();
+        let sent_count = msgbus.borrow().sent_count();
+        let req_count = msgbus.borrow().req_count();
         let topic_retrieved = Rc::new(RefCell::new(false));
         let topic_clone = topic_retrieved.clone();
 
@@ -1637,6 +1700,45 @@ mod tests {
         send_data_command(endpoint, cmd);
 
         assert!(*topic_retrieved.borrow());
+        assert_eq!(msgbus.borrow().sent_count(), sent_count + 1);
+        assert_eq!(msgbus.borrow().req_count(), req_count);
+
+        let request = DataCommand::Request(RequestCommand::Quotes(RequestQuotes::new(
+            InstrumentId::from("TEST.VENUE"),
+            None,
+            None,
+            None,
+            Some(ClientId::new("SIM")),
+            UUID4::new(),
+            0.into(),
+            None,
+        )));
+        send_data_command(endpoint, request);
+
+        assert_eq!(msgbus.borrow().sent_count(), sent_count + 2);
+        assert_eq!(msgbus.borrow().req_count(), req_count + 1);
+    }
+
+    #[rstest]
+    fn test_send_data_request_without_endpoint_does_not_increment_counts() {
+        let msgbus = get_message_bus();
+        let sent_count = msgbus.borrow().sent_count();
+        let req_count = msgbus.borrow().req_count();
+
+        let request = DataCommand::Request(RequestCommand::Quotes(RequestQuotes::new(
+            InstrumentId::from("MISSING.VENUE"),
+            None,
+            None,
+            None,
+            Some(ClientId::new("SIM")),
+            UUID4::new(),
+            0.into(),
+            None,
+        )));
+        send_data_command("Missing.dataCmd".into(), request);
+
+        assert_eq!(msgbus.borrow().sent_count(), sent_count);
+        assert_eq!(msgbus.borrow().req_count(), req_count);
     }
 
     #[rstest]
@@ -1673,6 +1775,30 @@ mod tests {
         send_data_response(endpoint, resp);
 
         assert!(*topic_retrieved.borrow());
+    }
+
+    #[rstest]
+    fn test_send_response_increments_response_count() {
+        use nautilus_model::identifiers::ClientId;
+
+        use crate::messages::data::{DataResponse, QuotesResponse};
+
+        let msgbus = get_message_bus();
+        let res_count = msgbus.borrow().res_count();
+        let resp = DataResponse::Quotes(QuotesResponse {
+            correlation_id: UUID4::new(),
+            client_id: ClientId::new("SIM"),
+            instrument_id: InstrumentId::from("TEST.VENUE"),
+            data: vec![],
+            start: None,
+            end: None,
+            ts_init: 0.into(),
+            params: None,
+        });
+
+        send_response(&UUID4::new(), &resp);
+
+        assert_eq!(msgbus.borrow().res_count(), res_count + 1);
     }
 
     #[rstest]

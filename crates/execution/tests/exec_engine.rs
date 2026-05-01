@@ -22,7 +22,12 @@ use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
     clock::{self, Clock, TestClock},
-    messages::execution::{CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
+    messages::{
+        ExecutionReport,
+        execution::{
+            CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+        },
+    },
     msgbus::{self, TypedHandler, switchboard},
 };
 use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MINUTE};
@@ -312,6 +317,54 @@ fn test_set_position_id_counts_updates_correctly(mut execution_engine: Execution
 fn test_execution_engine_default_config_initializes_correctly(execution_engine: ExecutionEngine) {
     let integrity_check = execution_engine.check_integrity();
     assert!(integrity_check);
+}
+
+#[rstest]
+fn test_counters_increment_and_reset(mut execution_engine: ExecutionEngine) {
+    assert_eq!(execution_engine.command_count(), 0);
+    assert_eq!(execution_engine.event_count(), 0);
+    assert_eq!(execution_engine.report_count(), 0);
+
+    let instrument_id = audusd_sim().id();
+    let command = CancelAllOrders::new(
+        TraderId::test_default(),
+        None,
+        StrategyId::test_default(),
+        instrument_id,
+        OrderSide::NoOrderSide,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    execution_engine.execute(TradingCommand::CancelAllOrders(command));
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .build();
+    let event = TestOrderEventStubs::submitted(&order, AccountId::test_default());
+    execution_engine.process(&event);
+
+    let report = create_order_status_report(
+        Some(ClientOrderId::from("O-001")),
+        VenueOrderId::from("V-001"),
+        instrument_id,
+        OrderStatus::Accepted,
+        Quantity::from(1),
+        Quantity::from(0),
+    );
+    execution_engine.reconcile_execution_report(&ExecutionReport::Order(Box::new(report)));
+
+    assert_eq!(execution_engine.command_count(), 1);
+    assert_eq!(execution_engine.event_count(), 1);
+    assert_eq!(execution_engine.report_count(), 1);
+
+    execution_engine.reset();
+
+    assert_eq!(execution_engine.command_count(), 0);
+    assert_eq!(execution_engine.event_count(), 0);
+    assert_eq!(execution_engine.report_count(), 0);
 }
 
 #[rstest]
@@ -8672,6 +8725,14 @@ fn test_reconcile_execution_mass_status_empty(mut execution_engine: ExecutionEng
     );
 
     execution_engine.reconcile_execution_mass_status(&mass_status);
+
+    assert_eq!(execution_engine.report_count(), 1);
+
+    execution_engine.reset();
+    execution_engine
+        .reconcile_execution_report(&ExecutionReport::MassStatus(Box::new(mass_status)));
+
+    assert_eq!(execution_engine.report_count(), 1);
 }
 
 #[rstest]
