@@ -257,6 +257,7 @@ pub fn okx_status_to_market_action(status: OKXInstrumentStatus) -> MarketStatusA
         OKXInstrumentStatus::Suspend => MarketStatusAction::Suspend,
         OKXInstrumentStatus::Preopen => MarketStatusAction::PreOpen,
         OKXInstrumentStatus::Test => MarketStatusAction::NotAvailableForTrading,
+        OKXInstrumentStatus::PostOnly => MarketStatusAction::Quoting,
     }
 }
 
@@ -5054,5 +5055,18 @@ mod tests {
     #[rstest]
     fn test_extract_inst_family_single_segment_fails() {
         assert!(extract_inst_family("BTC").is_err());
+    }
+
+    #[rstest]
+    #[case(OKXInstrumentStatus::Live, MarketStatusAction::Trading)]
+    #[case(OKXInstrumentStatus::Suspend, MarketStatusAction::Suspend)]
+    #[case(OKXInstrumentStatus::Preopen, MarketStatusAction::PreOpen)]
+    #[case(OKXInstrumentStatus::Test, MarketStatusAction::NotAvailableForTrading)]
+    #[case(OKXInstrumentStatus::PostOnly, MarketStatusAction::Quoting)]
+    fn test_okx_status_to_market_action(
+        #[case] status: OKXInstrumentStatus,
+        #[case] expected: MarketStatusAction,
+    ) {
+        assert_eq!(okx_status_to_market_action(status), expected);
     }
 }
