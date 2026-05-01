@@ -2600,12 +2600,12 @@ mod tests {
         // Test error handling with invalid price string
         let invalid_price = "invalid-price";
         let result = crate::common::parse::parse_price(invalid_price, 2);
-        assert!(result.is_err());
+        result.unwrap_err();
 
         // Test error handling with invalid quantity string
         let invalid_quantity = "invalid-quantity";
         let result = crate::common::parse::parse_quantity(invalid_quantity, 8);
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[rstest]
@@ -3395,7 +3395,7 @@ mod tests {
 
         // Test error case
         let invalid_timestamp = "invalid-timestamp";
-        assert!(parse_rfc3339_timestamp(invalid_timestamp).is_err());
+        parse_rfc3339_timestamp(invalid_timestamp).unwrap_err();
     }
 
     #[rstest]
@@ -3407,7 +3407,7 @@ mod tests {
 
         // Test error case
         let invalid_price = "invalid-price";
-        assert!(parse_price(invalid_price, precision).is_err());
+        parse_price(invalid_price, precision).unwrap_err();
     }
 
     #[rstest]
@@ -3419,7 +3419,7 @@ mod tests {
 
         // Test error case
         let invalid_quantity = "invalid-quantity";
-        assert!(parse_quantity(invalid_quantity, precision).is_err());
+        parse_quantity(invalid_quantity, precision).unwrap_err();
     }
 
     #[rstest]
@@ -5054,7 +5054,7 @@ mod tests {
 
     #[rstest]
     fn test_extract_inst_family_single_segment_fails() {
-        assert!(extract_inst_family("BTC").is_err());
+        extract_inst_family("BTC").unwrap_err();
     }
 
     #[rstest]

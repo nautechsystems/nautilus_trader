@@ -152,7 +152,7 @@ pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Register BinanceBar for Arrow/JSON serialization and Python extraction
     ensure_custom_data_registered::<BinanceBar>();
-    let _ = ensure_rust_extractor_registered::<BinanceBar>();
+    let _result = ensure_rust_extractor_registered::<BinanceBar>();
 
     let registry = get_global_pyo3_registry();
 

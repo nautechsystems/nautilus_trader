@@ -944,7 +944,7 @@ async fn test_modify_order_generates_events() {
 
     // Modify uses cancel-replace on Binance Spot, which generates cancel + new events
     let result = client.modify_order(modify_cmd);
-    assert!(result.is_ok());
+    result.unwrap();
 
     // Should get at least one execution event (cancel or accepted for the replacement)
     wait_until_async(
@@ -1001,7 +1001,7 @@ async fn test_query_account_does_not_block_within_runtime() {
     );
 
     let result = client.query_account(query_cmd);
-    assert!(result.is_ok());
+    result.unwrap();
 
     wait_until_async(
         || {

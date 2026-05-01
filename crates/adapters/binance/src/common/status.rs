@@ -224,7 +224,7 @@ mod tests {
             UnixNanos::default(),
         );
 
-        assert!(rx.try_recv().is_err());
+        rx.try_recv().unwrap_err();
     }
 
     #[rstest]

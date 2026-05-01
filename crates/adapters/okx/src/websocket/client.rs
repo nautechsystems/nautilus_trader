@@ -3027,7 +3027,7 @@ mod tests {
             .as_secs()
             .to_string();
 
-        assert!(timestamp.parse::<u64>().is_ok());
+        timestamp.parse::<u64>().unwrap();
         assert_eq!(timestamp.len(), 10);
         assert!(timestamp.chars().all(|c| c.is_ascii_digit()));
     }
@@ -3126,7 +3126,7 @@ mod tests {
             TransportBackend::default(),
             None,
         );
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[rstest]

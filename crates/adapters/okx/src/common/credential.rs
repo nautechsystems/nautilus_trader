@@ -180,7 +180,7 @@ mod tests {
         );
 
         assert!(!signature.is_empty());
-        assert!(BASE64_STANDARD.decode(&signature).is_ok());
+        BASE64_STANDARD.decode(&signature).unwrap();
 
         // Verify the message is constructed correctly
         let expected_message = "2020-12-08T09:08:57.715ZGET/api/v5/account/balance?ccy=BTC";
@@ -210,7 +210,7 @@ mod tests {
         );
 
         assert!(!signature.is_empty());
-        assert!(BASE64_STANDARD.decode(&signature).is_ok());
+        BASE64_STANDARD.decode(&signature).unwrap();
     }
 
     #[rstest]
@@ -231,7 +231,7 @@ mod tests {
         );
 
         assert!(!signature.is_empty());
-        assert!(BASE64_STANDARD.decode(&signature).is_ok());
+        BASE64_STANDARD.decode(&signature).unwrap();
 
         // Verify the message is constructed correctly
         let expected_message =

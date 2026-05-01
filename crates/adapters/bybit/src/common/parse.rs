@@ -2005,13 +2005,13 @@ mod tests {
         #[case] step: u64,
     ) {
         let result = bar_spec_to_bybit_interval(aggregation, step);
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[rstest]
     fn test_bar_spec_to_bybit_interval_unsupported_aggregation() {
         let result = bar_spec_to_bybit_interval(BarAggregation::Second, 1);
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[rstest]
@@ -2129,7 +2129,7 @@ mod tests {
     #[case("-1.0")]
     fn test_parse_tp_sl_params_rejects_invalid_take_profit(#[case] price: &str) {
         let p = params_from(&[("take_profit", json!(price))]);
-        assert!(parse_bybit_tp_sl_params(Some(&p)).is_err());
+        parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
     }
 
     #[rstest]
@@ -2138,7 +2138,7 @@ mod tests {
     #[case("inf")]
     fn test_parse_tp_sl_params_rejects_invalid_stop_loss(#[case] price: &str) {
         let p = params_from(&[("stop_loss", json!(price))]);
-        assert!(parse_bybit_tp_sl_params(Some(&p)).is_err());
+        parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
     }
 
     #[rstest]
@@ -2152,7 +2152,7 @@ mod tests {
             ("tp_order_type", json!("Limit")),
             ("tp_limit_price", json!(price)),
         ]);
-        assert!(parse_bybit_tp_sl_params(Some(&p)).is_err());
+        parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
     }
 
     #[rstest]
@@ -2161,7 +2161,7 @@ mod tests {
             ("take_profit", json!("55000.00")),
             ("tp_trigger_by", json!("InvalidType")),
         ]);
-        assert!(parse_bybit_tp_sl_params(Some(&p)).is_err());
+        parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
     }
 
     #[rstest]
@@ -2170,7 +2170,7 @@ mod tests {
             ("stop_loss", json!("47000.00")),
             ("sl_order_type", json!("Stop")),
         ]);
-        assert!(parse_bybit_tp_sl_params(Some(&p)).is_err());
+        parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
     }
 
     #[rstest]

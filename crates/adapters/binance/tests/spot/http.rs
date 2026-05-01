@@ -1114,7 +1114,7 @@ async fn test_ping_returns_success() {
     .unwrap();
 
     let result = client.ping().await;
-    assert!(result.is_ok());
+    result.unwrap();
 }
 
 #[rstest]
@@ -1243,7 +1243,7 @@ async fn test_account_requires_credentials() {
     };
     let result = client.account(&params).await;
 
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -1295,7 +1295,7 @@ async fn test_open_orders_requires_credentials() {
 
     let result = client.open_orders(Some("BTCUSDT")).await;
 
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -1345,7 +1345,7 @@ async fn test_my_trades_requires_credentials() {
         .account_trades("BTCUSDT", None, None, None, None)
         .await;
 
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -1398,8 +1398,8 @@ async fn test_rate_limit_triggers_after_threshold() {
     )
     .unwrap();
 
-    assert!(client.ping().await.is_ok());
-    assert!(client.ping().await.is_ok());
+    client.ping().await.unwrap();
+    client.ping().await.unwrap();
 
     let result = client.ping().await;
     assert!(result.is_err());
@@ -1458,7 +1458,7 @@ async fn test_new_order_requires_credentials() {
         )
         .await;
 
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -1516,7 +1516,7 @@ async fn test_cancel_order_requires_credentials() {
 
     let result = client.cancel_order("BTCUSDT", Some(12345), None).await;
 
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -1564,7 +1564,7 @@ async fn test_cancel_all_orders_requires_credentials() {
 
     let result = client.cancel_open_orders("BTCUSDT").await;
 
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]

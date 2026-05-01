@@ -1123,7 +1123,7 @@ async fn test_authenticated_endpoint_requires_credentials() {
             None,
         )
         .await;
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -1271,7 +1271,7 @@ async fn test_get_wallet_balance_requires_credentials() {
 
     // Should fail when trying to call authenticated endpoint without credentials
     let result = client.get_wallet_balance(&params).await;
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -1322,7 +1322,7 @@ async fn test_get_positions_requires_credentials() {
         .unwrap();
 
     let result = client.get_positions(&params).await;
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -1369,7 +1369,7 @@ async fn test_get_fee_rate_requires_credentials() {
     };
 
     let result = client.get_fee_rate(&params).await;
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -1412,7 +1412,7 @@ async fn test_get_account_info_requires_credentials() {
     let client = BybitHttpClient::new(Some(base_url), 60, 3, 1000, 10_000, 5_000, None).unwrap();
 
     let result = client.get_account_info().await;
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]

@@ -2462,7 +2462,7 @@ mod tests {
             false,
         );
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     fn create_test_raw_client() -> BinanceRawFuturesHttpClient {

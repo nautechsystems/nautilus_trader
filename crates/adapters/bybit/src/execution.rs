@@ -1904,7 +1904,7 @@ mod tests {
 
     #[rstest]
     fn test_map_order_type_rejects_trailing_stop() {
-        assert!(BybitExecutionClient::map_order_type(OrderType::TrailingStopMarket).is_err());
+        BybitExecutionClient::map_order_type(OrderType::TrailingStopMarket).unwrap_err();
     }
 
     #[rstest]

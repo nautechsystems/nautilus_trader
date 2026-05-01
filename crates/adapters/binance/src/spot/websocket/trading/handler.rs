@@ -768,8 +768,8 @@ impl BinanceSpotWsTradingHandler {
         // Skip rate_limits group
         let mut rate_limits = decoder.rate_limits_decoder();
         while rate_limits.advance().unwrap_or(None).is_some() {}
-        let mut decoder = rate_limits.parent().map_err(|_| {
-            BinanceWsApiError::ClientError("Failed to get parent from rate_limits".to_string())
+        let mut decoder = rate_limits.parent().map_err(|e| {
+            BinanceWsApiError::ClientError(format!("Failed to get parent from rate_limits: {e}"))
         })?;
 
         // Extract request ID

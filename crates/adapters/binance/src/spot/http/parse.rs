@@ -1054,7 +1054,7 @@ mod tests {
     fn test_decode_ping_valid() {
         // Ping: block_length=0, template_id=101, schema_id=3, version=1
         let buf = create_header(0, PING_TEMPLATE_ID, SBE_SCHEMA_ID, SBE_SCHEMA_VERSION);
-        assert!(decode_ping(&buf).is_ok());
+        decode_ping(&buf).unwrap();
     }
 
     #[rstest]

@@ -327,7 +327,7 @@ async fn handle_ws_connection(mut socket: WebSocket) {
 
             if method == Some("SUBSCRIBE") {
                 let resp = json!({"result": null, "id": id});
-                let _ = socket.send(Message::Text(resp.to_string().into())).await;
+                let _result = socket.send(Message::Text(resp.to_string().into())).await;
 
                 if let Some(params) = parsed.get("params").and_then(|p| p.as_array()) {
                     for param in params {
@@ -337,26 +337,26 @@ async fn handle_ws_connection(mut socket: WebSocket) {
                                     stream.split('@').next().unwrap_or("BTCUSDT").to_uppercase();
                                 let data = build_sbe_trades_stream_event(&symbol);
                                 tokio::time::sleep(Duration::from_millis(50)).await;
-                                let _ = socket.send(Message::Binary(data.into())).await;
+                                let _result = socket.send(Message::Binary(data.into())).await;
                             } else if stream.contains("@bestBidAsk") {
                                 let symbol =
                                     stream.split('@').next().unwrap_or("BTCUSDT").to_uppercase();
                                 let data = build_sbe_best_bid_ask_stream_event(&symbol);
                                 tokio::time::sleep(Duration::from_millis(50)).await;
-                                let _ = socket.send(Message::Binary(data.into())).await;
+                                let _result = socket.send(Message::Binary(data.into())).await;
                             } else if stream.contains("@depth") {
                                 let symbol =
                                     stream.split('@').next().unwrap_or("BTCUSDT").to_uppercase();
                                 let data = build_sbe_depth_snapshot_stream_event(&symbol);
                                 tokio::time::sleep(Duration::from_millis(50)).await;
-                                let _ = socket.send(Message::Binary(data.into())).await;
+                                let _result = socket.send(Message::Binary(data.into())).await;
                             }
                         }
                     }
                 }
             } else if method == Some("UNSUBSCRIBE") {
                 let resp = json!({"result": null, "id": id});
-                let _ = socket.send(Message::Text(resp.to_string().into())).await;
+                let _result = socket.send(Message::Text(resp.to_string().into())).await;
             }
         }
     }
@@ -689,7 +689,7 @@ async fn test_unsubscribe_trades() {
         None,
     );
     let result = client.unsubscribe_trades(&unsub_cmd);
-    assert!(result.is_ok());
+    result.unwrap();
 }
 
 #[rstest]
@@ -754,7 +754,7 @@ async fn test_unsubscribe_quotes() {
         None,
     );
     let result = client.unsubscribe_quotes(&unsub_cmd);
-    assert!(result.is_ok());
+    result.unwrap();
 }
 
 #[rstest]

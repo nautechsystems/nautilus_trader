@@ -277,7 +277,7 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let result = factory.create("OKX-DERIV", &config, cache.into());
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
     #[rstest]

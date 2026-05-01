@@ -101,7 +101,7 @@ async fn handle_ws_connection(mut socket: WebSocket) {
         {
             let id = parsed.get("id").and_then(|v| v.as_u64()).unwrap_or(1);
             let resp = json!({"result": null, "id": id});
-            let _ = socket.send(Message::Text(resp.to_string().into())).await;
+            let _result = socket.send(Message::Text(resp.to_string().into())).await;
         }
     }
 }
@@ -159,7 +159,7 @@ async fn handle_ws_trading_connection(mut socket: WebSocket) {
             _ => continue,
         };
 
-        let _ = socket
+        let _result = socket
             .send(Message::Text(response.to_string().into()))
             .await;
     }
@@ -876,7 +876,7 @@ async fn test_cancel_all_orders_completes() {
 
     // Futures cancel_all returns success code via HTTP; cancel events arrive through WS
     let result = client.cancel_all_orders(cancel_all_cmd);
-    assert!(result.is_ok());
+    result.unwrap();
 }
 
 #[rstest]
@@ -947,7 +947,7 @@ async fn test_cancel_order_completes() {
     // arrives via the WS user data stream, which this mock does not simulate.
     // We verify the command is accepted and the HTTP request completes without error.
     let result = client.cancel_order(cancel_cmd);
-    assert!(result.is_ok());
+    result.unwrap();
 }
 
 #[rstest]
@@ -1452,7 +1452,7 @@ async fn handle_ws_injectable_connection(mut socket: WebSocket, injector: WsInje
                         {
                             let id = parsed.get("id").and_then(|v| v.as_u64()).unwrap_or(1);
                             let resp = json!({"result": null, "id": id});
-                            let _ = socket.send(Message::Text(resp.to_string().into())).await;
+                            let _result = socket.send(Message::Text(resp.to_string().into())).await;
                         }
                     }
                     None | Some(Err(_)) => break,
@@ -1460,7 +1460,7 @@ async fn handle_ws_injectable_connection(mut socket: WebSocket, injector: WsInje
                 }
             }
             Ok(injected) = rx.recv() => {
-                let _ = socket.send(Message::Text(injected.into())).await;
+                let _result = socket.send(Message::Text(injected.into())).await;
             }
         }
     }
@@ -1605,7 +1605,7 @@ async fn test_query_account_does_not_block_within_runtime() {
     );
 
     let result = client.query_account(cmd);
-    assert!(result.is_ok());
+    result.unwrap();
 
     match recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Account(_))).await {
         ExecutionEvent::Account(_) => {}

@@ -1246,7 +1246,7 @@ mod tests {
             clock,
         );
 
-        assert!(rx.try_recv().is_err());
+        rx.try_recv().unwrap_err();
     }
 
     #[rstest]
@@ -1298,7 +1298,7 @@ mod tests {
             clock,
         );
 
-        assert!(rx.try_recv().is_err());
+        rx.try_recv().unwrap_err();
     }
 
     fn new_order_value() -> serde_json::Value {
@@ -1451,7 +1451,7 @@ mod tests {
         let mut amended1 = value.clone();
         amended1["data"][0]["price"] = serde_json::Value::String("31000".to_string());
         ctx.dispatch_value(&amended1);
-        let _ = ctx.recv_updated();
+        let _result = ctx.recv_updated();
 
         let mut amended2 = value;
         amended2["data"][0]["price"] = serde_json::Value::String("32000".to_string());

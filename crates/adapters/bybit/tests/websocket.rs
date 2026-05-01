@@ -651,7 +651,7 @@ async fn test_private_client_authentication() {
     // Check if auth was attempted (connection was made)
     assert!(*state.connection_count.lock().await > 0);
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -682,7 +682,7 @@ async fn test_authentication_failure() {
     // Verify the server doesn't mark it as authenticated
     assert!(!state.authenticated.load(Ordering::Relaxed));
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -911,7 +911,7 @@ async fn test_wait_until_active_timeout() {
     );
 
     // Connect will fail, but we won't await it
-    let _ = client.connect().await;
+    let _result = client.connect().await;
 
     // wait_until_active should timeout
     let result = client.wait_until_active(0.5).await;
@@ -1028,7 +1028,7 @@ async fn test_reauth_after_disconnect() {
         None,
     );
 
-    let _ = client.connect().await;
+    let _result = client.connect().await;
 
     // Wait for initial connection
     wait_until_async(
@@ -1043,7 +1043,7 @@ async fn test_reauth_after_disconnect() {
     // Short delay for disconnect trigger to be observed by server
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -1062,7 +1062,7 @@ async fn test_login_failure_emits_error() {
         None,
     );
 
-    let _ = client.connect().await;
+    let _result = client.connect().await;
 
     // Wait for connection attempt
     wait_until_async(
@@ -1074,7 +1074,7 @@ async fn test_login_failure_emits_error() {
     // Verify auth failed
     assert!(!state.authenticated.load(Ordering::Relaxed));
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -1383,7 +1383,7 @@ async fn test_private_orders_subscription() {
         None,
     );
 
-    let _ = client.connect().await;
+    let _result = client.connect().await;
 
     // Wait for connection
     wait_until_async(
@@ -1393,9 +1393,9 @@ async fn test_private_orders_subscription() {
     .await;
 
     // Subscribe to orders (may succeed or fail depending on auth timing)
-    let _ = client.subscribe_orders().await;
+    let _result = client.subscribe_orders().await;
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -1414,7 +1414,7 @@ async fn test_private_executions_subscription() {
         None,
     );
 
-    let _ = client.connect().await;
+    let _result = client.connect().await;
 
     // Wait for connection
     wait_until_async(
@@ -1424,9 +1424,9 @@ async fn test_private_executions_subscription() {
     .await;
 
     // Subscribe to executions (may succeed or fail depending on auth timing)
-    let _ = client.subscribe_executions().await;
+    let _result = client.subscribe_executions().await;
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -1445,7 +1445,7 @@ async fn test_private_wallet_subscription() {
         None,
     );
 
-    let _ = client.connect().await;
+    let _result = client.connect().await;
 
     // Wait for connection
     wait_until_async(
@@ -1455,9 +1455,9 @@ async fn test_private_wallet_subscription() {
     .await;
 
     // Subscribe to wallet (may succeed or fail depending on auth timing)
-    let _ = client.subscribe_wallet().await;
+    let _result = client.subscribe_wallet().await;
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -1503,7 +1503,7 @@ async fn test_rapid_consecutive_reconnections() {
 
         state.disconnect_trigger.store(true, Ordering::Relaxed);
 
-        let _ = client.subscribe(vec![format!("publicTrade.ETH{i}")]).await;
+        let _result = client.subscribe(vec![format!("publicTrade.ETH{i}")]).await;
 
         tokio::time::sleep(Duration::from_millis(200)).await;
         state.disconnect_trigger.store(false, Ordering::Relaxed);
@@ -1559,7 +1559,7 @@ async fn test_reconnection_race_condition() {
     .await;
 
     state.disconnect_trigger.store(true, Ordering::Relaxed);
-    let _ = client
+    let _result = client
         .subscribe(vec!["orderbook.50.ETHUSDT".to_string()])
         .await;
 
@@ -1597,7 +1597,7 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
         None,
     );
 
-    let _ = client.connect().await;
+    let _result = client.connect().await;
 
     wait_until_async(
         || async { *state.connection_count.lock().await > 0 },
@@ -1605,7 +1605,7 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
     )
     .await;
 
-    let _ = client.subscribe_orders().await;
+    let _result = client.subscribe_orders().await;
 
     tokio::time::sleep(Duration::from_millis(1000)).await;
 
@@ -1614,7 +1614,7 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
         "Connection should be maintained during delayed auth"
     );
 
-    let _ = client.close().await;
+    let _result = client.close().await;
 }
 
 #[rstest]
@@ -1667,7 +1667,7 @@ async fn test_multiple_partial_subscription_failures() {
         "publicTrade.SOLUSDT".to_string(),
         "orderbook.50.ETHUSDT".to_string(),
     ];
-    let _ = client.subscribe(mixed_topics).await;
+    let _result = client.subscribe(mixed_topics).await;
 
     wait_until_async(
         || async { !state.subscription_events.lock().await.is_empty() },
@@ -1711,7 +1711,7 @@ async fn test_is_active_false_during_reconnection() {
 
     state.disconnect_trigger.store(true, Ordering::Relaxed);
 
-    let _ = client
+    let _result = client
         .subscribe(vec!["publicTrade.BTCUSDT".to_string()])
         .await;
 
@@ -2748,7 +2748,7 @@ async fn test_batch_place_order_with_order_iv_and_mmp() {
     }];
 
     let result = client.batch_place_orders(orders).await;
-    assert!(result.is_ok());
+    result.unwrap();
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -2824,7 +2824,7 @@ async fn test_batch_place_order_omits_order_iv_when_none() {
     }];
 
     let result = client.batch_place_orders(orders).await;
-    assert!(result.is_ok());
+    result.unwrap();
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -2878,7 +2878,7 @@ async fn test_batch_amend_order_with_order_iv() {
     }];
 
     let result = client.batch_amend_orders(orders).await;
-    assert!(result.is_ok());
+    result.unwrap();
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 

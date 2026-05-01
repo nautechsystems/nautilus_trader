@@ -225,7 +225,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                     }
 
                     if state.suppress_control_pong.load(Ordering::Relaxed) {
-                        let _ = socket.send(Message::Close(None)).await;
+                        let _result = socket.send(Message::Close(None)).await;
                         break;
                     }
 
@@ -261,7 +261,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                 "msg": "Invalid signature",
                                 "connId": "test-conn",
                             });
-                            let _ = socket
+                            let _result = socket
                                 .send(Message::Text(response.to_string().into()))
                                 .await;
                             continue;
@@ -366,7 +366,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                             }
 
                             if state.drop_next_connection.swap(false, Ordering::Relaxed) {
-                                let _ = socket.send(Message::Close(None)).await;
+                                let _result = socket.send(Message::Close(None)).await;
                                 break;
                             }
                         }
@@ -396,7 +396,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                         }
 
                         if state.drop_next_connection.swap(false, Ordering::Relaxed) {
-                            let _ = socket.send(Message::Close(None)).await;
+                            let _result = socket.send(Message::Close(None)).await;
                             break;
                         }
                     }
@@ -425,7 +425,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
     }
 
     if state.drop_next_connection.swap(false, Ordering::Relaxed) {
-        let _ = socket.send(Message::Close(None)).await;
+        let _result = socket.send(Message::Close(None)).await;
     }
 
     state.authenticated.store(false, Ordering::Relaxed);
@@ -2089,7 +2089,7 @@ async fn test_is_active_false_during_reconnection() {
 
     state.drop_next_connection.store(true, Ordering::Relaxed);
 
-    let _ = client
+    let _result = client
         .subscribe_book(InstrumentId::from("ETH-USD.OKX"))
         .await;
 

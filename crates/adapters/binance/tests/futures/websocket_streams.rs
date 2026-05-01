@@ -150,7 +150,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                     "msg": "Forced subscription failure",
                                     "id": id
                                 });
-                                let _ = socket
+                                let _result = socket
                                     .send(Message::Text(error_response.to_string().into()))
                                     .await;
                                 break;
@@ -597,7 +597,7 @@ async fn test_connection_failure_invalid_url() {
     let mut client = result.unwrap();
 
     let connect_result = client.connect().await;
-    assert!(connect_result.is_err());
+    connect_result.unwrap_err();
 }
 
 #[rstest]
@@ -651,7 +651,6 @@ async fn test_invalid_product_type_rejected() {
         TransportBackend::default(),
     );
 
-    assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
     assert!(err_msg.contains("UsdM or CoinM"));
 }
@@ -675,7 +674,7 @@ async fn test_pool_creates_second_connection_on_overflow() {
     let streams: Vec<String> = (0..201).map(|i| format!("stream{i}@aggTrade")).collect();
 
     let result = client.subscribe(streams).await;
-    assert!(result.is_ok());
+    result.unwrap();
 
     wait_until_async(
         || async { *state.connection_count.lock().await >= 2 },
@@ -892,7 +891,7 @@ async fn test_reconnection_after_server_drop() {
 
     // Drop the connection after the next subscribe
     state.drop_next_connection.store(true, Ordering::Relaxed);
-    let _ = client.subscribe(vec!["ethusdt@aggTrade".to_string()]).await;
+    let _result = client.subscribe(vec!["ethusdt@aggTrade".to_string()]).await;
 
     // Client should reconnect (total connections increases)
     wait_until_async(
@@ -952,7 +951,7 @@ async fn test_is_active_false_during_reconnection() {
 
     // Trigger disconnect after next subscription
     state.drop_next_connection.store(true, Ordering::Relaxed);
-    let _ = client.subscribe(vec!["ethusdt@aggTrade".to_string()]).await;
+    let _result = client.subscribe(vec!["ethusdt@aggTrade".to_string()]).await;
 
     // Client should become inactive during reconnection
     wait_until_async(|| async { !client.is_active() }, Duration::from_secs(5)).await;
@@ -980,7 +979,7 @@ async fn test_rapid_consecutive_reconnections() {
     // Trigger 3 rapid reconnection cycles
     for i in 0..3 {
         state.drop_next_connection.store(true, Ordering::Relaxed);
-        let _ = client.subscribe(vec![format!("stream{i}@aggTrade")]).await;
+        let _result = client.subscribe(vec![format!("stream{i}@aggTrade")]).await;
 
         let expected = initial_total + i + 1;
         wait_until_async(

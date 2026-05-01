@@ -135,7 +135,7 @@ mod tests {
     #[case(OrderType::TrailingStopMarket)]
     fn test_order_type_to_binance_spot_unsupported(#[case] order_type: OrderType) {
         let result = order_type_to_binance_spot(order_type, false);
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[rstest]
@@ -154,6 +154,6 @@ mod tests {
     #[case(TimeInForce::Gtd)]
     fn test_time_in_force_to_binance_spot_rejects_gtd(#[case] tif: TimeInForce) {
         let result = time_in_force_to_binance_spot(tif);
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 }

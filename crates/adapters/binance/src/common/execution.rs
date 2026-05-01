@@ -179,7 +179,7 @@ mod tests {
         };
 
         let (result, ()) = tokio::join!(wait_fut, register_fut);
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
     #[rstest]

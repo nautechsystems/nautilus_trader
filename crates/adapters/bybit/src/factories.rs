@@ -280,7 +280,7 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let result = factory.create("BYBIT-DERIV", &config, cache.into());
-        assert!(result.is_ok());
+        result.unwrap();
     }
 
     #[rstest]

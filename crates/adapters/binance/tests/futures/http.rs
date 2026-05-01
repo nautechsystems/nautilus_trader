@@ -420,7 +420,7 @@ async fn test_account_requires_credentials() {
     let result: Result<serde_json::Value, _> = client
         .get("/fapi/v2/account", None::<&()>, true, false)
         .await;
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[rstest]
@@ -631,5 +631,5 @@ async fn test_rate_limit_triggers() {
     let result: Result<serde_json::Value, _> = client
         .get("/fapi/v2/account", None::<&()>, true, false)
         .await;
-    assert!(result.is_err());
+    result.unwrap_err();
 }

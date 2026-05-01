@@ -4352,7 +4352,7 @@ mod tests {
         }"#;
 
         let result: Result<serde_json::Value, _> = serde_json::from_str(json_with_unknown_category);
-        assert!(result.is_ok());
+        result.unwrap();
 
         // Test deserialization of the category field directly
         let category_result: Result<OKXOrderCategory, _> =
@@ -6162,7 +6162,7 @@ mod tests {
             UnixNanos::default(),
         );
 
-        assert!(result.is_err());
+        result.unwrap_err();
     }
 
     #[rstest]

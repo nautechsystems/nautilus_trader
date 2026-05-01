@@ -588,7 +588,7 @@ async fn test_connection_failure_invalid_url() {
 
     // But connection should fail
     let connect_result = client.connect().await;
-    assert!(connect_result.is_err());
+    connect_result.unwrap_err();
 }
 
 #[rstest]
@@ -620,7 +620,7 @@ async fn test_pool_creates_second_connection_on_overflow() {
     let streams: Vec<String> = (0..1025).map(|i| format!("sym{i}@trade")).collect();
 
     let result = client.subscribe(streams).await;
-    assert!(result.is_ok());
+    result.unwrap();
 
     wait_until_async(
         || async { *state.connection_count.lock().await >= 2 },
@@ -760,7 +760,7 @@ async fn test_reconnection_after_server_drop() {
     let initial_total = state.total_connections();
 
     state.drop_next_connection.store(true, Ordering::Relaxed);
-    let _ = client.subscribe(vec!["ethusdt@trade".to_string()]).await;
+    let _result = client.subscribe(vec!["ethusdt@trade".to_string()]).await;
 
     wait_until_async(
         || async { state.total_connections() > initial_total },
@@ -816,7 +816,7 @@ async fn test_is_active_false_during_reconnection() {
     .await;
 
     state.drop_next_connection.store(true, Ordering::Relaxed);
-    let _ = client.subscribe(vec!["ethusdt@trade".to_string()]).await;
+    let _result = client.subscribe(vec!["ethusdt@trade".to_string()]).await;
 
     wait_until_async(|| async { !client.is_active() }, Duration::from_secs(5)).await;
 
@@ -841,7 +841,7 @@ async fn test_rapid_consecutive_reconnections() {
 
     for i in 0..3 {
         state.drop_next_connection.store(true, Ordering::Relaxed);
-        let _ = client.subscribe(vec![format!("stream{i}@trade")]).await;
+        let _result = client.subscribe(vec![format!("stream{i}@trade")]).await;
 
         let expected = initial_total + i + 1;
         wait_until_async(

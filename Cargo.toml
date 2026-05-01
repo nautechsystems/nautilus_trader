@@ -605,6 +605,18 @@ suspicious_doc_comments = "warn"
 large_stack_arrays = "warn"
 panic_in_result_fn = "warn"
 
+# Async correctness
+await_holding_lock = "warn"
+await_holding_refcell_ref = "warn"
+let_underscore_future = "warn"
+large_futures = "warn"
+
+# TODO: Don't fail silently. Incremental rollout needed (~1400 sites workspace-wide)
+# let_underscore_must_use = "warn"
+# unused_result_ok = "warn"
+# assertions_on_result_states = "warn"
+# map_err_ignore = "warn"
+
 # Explicitly allowed (opinionated lints we disagree with)
 redundant_else = "allow" # Sometimes explicit else blocks improve readability
 single_match_else = "allow" # Match can be clearer than if-let-else for some patterns

@@ -74,7 +74,7 @@ async fn handle_ws_connection(mut socket: WebSocket) {
 
             if method == Some("SUBSCRIBE") {
                 let resp = json!({"result": null, "id": id});
-                let _ = socket.send(Message::Text(resp.to_string().into())).await;
+                let _result = socket.send(Message::Text(resp.to_string().into())).await;
 
                 if let Some(params) = parsed.get("params").and_then(|p| p.as_array()) {
                     for param in params {
@@ -93,7 +93,8 @@ async fn handle_ws_connection(mut socket: WebSocket) {
                                     "m": false
                                 });
                                 tokio::time::sleep(Duration::from_millis(50)).await;
-                                let _ = socket.send(Message::Text(trade.to_string().into())).await;
+                                let _result =
+                                    socket.send(Message::Text(trade.to_string().into())).await;
                             } else if stream.contains("@bookTicker") {
                                 let quote = json!({
                                     "e": "bookTicker",
@@ -107,7 +108,8 @@ async fn handle_ws_connection(mut socket: WebSocket) {
                                     "A": "0.500"
                                 });
                                 tokio::time::sleep(Duration::from_millis(50)).await;
-                                let _ = socket.send(Message::Text(quote.to_string().into())).await;
+                                let _result =
+                                    socket.send(Message::Text(quote.to_string().into())).await;
                             } else if stream.contains("@depth") {
                                 let depth_update = json!({
                                     "e": "depthUpdate",
@@ -121,7 +123,7 @@ async fn handle_ws_connection(mut socket: WebSocket) {
                                     "a": [["50001.00", "0.500"], ["50002.00", "1.500"]]
                                 });
                                 tokio::time::sleep(Duration::from_millis(50)).await;
-                                let _ = socket
+                                let _result = socket
                                     .send(Message::Text(depth_update.to_string().into()))
                                     .await;
                             } else if stream.contains("@markPrice") {
@@ -136,7 +138,7 @@ async fn handle_ws_connection(mut socket: WebSocket) {
                                     "T": 1700028800000_i64
                                 });
                                 tokio::time::sleep(Duration::from_millis(50)).await;
-                                let _ = socket
+                                let _result = socket
                                     .send(Message::Text(mark_price.to_string().into()))
                                     .await;
                             }
@@ -145,7 +147,7 @@ async fn handle_ws_connection(mut socket: WebSocket) {
                 }
             } else if method == Some("UNSUBSCRIBE") {
                 let resp = json!({"result": null, "id": id});
-                let _ = socket.send(Message::Text(resp.to_string().into())).await;
+                let _result = socket.send(Message::Text(resp.to_string().into())).await;
             }
         }
     }
@@ -566,7 +568,7 @@ async fn test_unsubscribe_trades() {
         None,
     );
     let result = client.unsubscribe_trades(&unsub_cmd);
-    assert!(result.is_ok());
+    result.unwrap();
 }
 
 #[rstest]
@@ -628,7 +630,7 @@ async fn test_unsubscribe_quotes() {
         None,
     );
     let result = client.unsubscribe_quotes(&unsub_cmd);
-    assert!(result.is_ok());
+    result.unwrap();
 }
 
 #[rstest]

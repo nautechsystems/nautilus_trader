@@ -2022,7 +2022,7 @@ mod tests {
             clock,
         );
 
-        assert!(rx.try_recv().is_err());
+        rx.try_recv().unwrap_err();
     }
 
     #[rstest]
@@ -2101,7 +2101,7 @@ mod tests {
             clock,
         );
 
-        assert!(rx.try_recv().is_err());
+        rx.try_recv().unwrap_err();
     }
 
     #[rstest]
@@ -2206,7 +2206,7 @@ mod tests {
             clock,
         );
 
-        assert!(rx.try_recv().is_err());
+        rx.try_recv().unwrap_err();
     }
 
     #[rstest]
@@ -2386,7 +2386,7 @@ mod tests {
             clock,
         );
 
-        assert!(rx.try_recv().is_err());
+        rx.try_recv().unwrap_err();
     }
 
     #[rstest]
@@ -2423,7 +2423,7 @@ mod tests {
             &mut funding_cache,
             clock,
         );
-        assert!(rx.try_recv().is_err());
+        rx.try_recv().unwrap_err();
 
         // With product_type=Linear, "BTCUSDT" -> "BTCUSDT-LINEAR" matches
         handle_ws_message(
@@ -2476,7 +2476,7 @@ mod tests {
             &mut funding_cache,
             clock,
         );
-        assert!(rx.try_recv().is_err());
+        rx.try_recv().unwrap_err();
 
         // With subscription, trade should be emitted
         trade_subs.insert(instrument.id());

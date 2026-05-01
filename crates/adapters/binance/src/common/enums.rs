@@ -1056,6 +1056,6 @@ mod tests {
     #[case("invalid")]
     #[case("")]
     fn test_price_match_from_param_invalid(#[case] input: &str) {
-        assert!(BinancePriceMatch::from_param(input).is_err());
+        BinancePriceMatch::from_param(input).unwrap_err();
     }
 }

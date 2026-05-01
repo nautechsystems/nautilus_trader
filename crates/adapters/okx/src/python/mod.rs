@@ -56,8 +56,8 @@ pub(super) fn extract_optional_trigger_type(
 ) -> PyResult<Option<OKXTriggerType>> {
     extract_optional_string(dict, key)?
         .map(|value| {
-            OKXTriggerType::from_str(&value).map_err(|_| {
-                to_pyvalue_err(format!("Invalid OKX trigger type {value:?} for {key}"))
+            OKXTriggerType::from_str(&value).map_err(|e| {
+                to_pyvalue_err(format!("Invalid OKX trigger type {value:?} for {key}: {e}"))
             })
         })
         .transpose()

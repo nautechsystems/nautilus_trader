@@ -966,7 +966,7 @@ async fn test_query_account_does_not_block_within_runtime() {
     );
 
     let result = client.query_account(cmd);
-    assert!(result.is_ok());
+    result.unwrap();
 
     wait_until_async(
         || {
