@@ -57,15 +57,6 @@ pub fn py_to_json_value(obj: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
 
 /// Convert a Python object (IBContract or dict) to a Rust Contract.
 ///
-/// # Arguments
-///
-/// * `obj` - The Python object to convert. Can be an `IBContract` instance (which has a `.json()` method)
-///           or a dictionary.
-///
-/// # Returns
-///
-/// Returns the parsed Rust `Contract`.
-///
 /// # Errors
 ///
 /// Returns a PyValueError if conversion fails.

@@ -51,15 +51,6 @@ fn raw_ib_account_code(account_id: &AccountId) -> String {
 
 /// Subscribe to account summary and parse to balances and margins.
 ///
-/// # Arguments
-///
-/// * `client` - The IB API client
-/// * `account_id` - The account ID
-///
-/// # Returns
-///
-/// Returns balances and margins parsed from account summary.
-///
 /// # Errors
 ///
 /// Returns an error if subscription fails.
@@ -220,11 +211,6 @@ fn merge_account_summary_balance(
 ///
 /// This spawns a background task to handle PnL updates.
 ///
-/// # Arguments
-///
-/// * `client` - The IB API client
-/// * `account_id` - The account ID
-///
 /// # Errors
 ///
 /// Returns an error if subscription fails.
@@ -271,16 +257,6 @@ pub fn create_position_tracker() -> PositionTracker {
 }
 
 /// Check if a position update represents an external change (e.g., option exercise).
-///
-/// # Arguments
-///
-/// * `position_tracker` - Shared position tracker
-/// * `contract_id` - IB contract ID
-/// * `new_quantity` - New position quantity
-///
-/// # Returns
-///
-/// Returns `(is_external_change, old_quantity)` if this is an external change.
 pub async fn check_external_position_change(
     position_tracker: &PositionTracker,
     contract_id: i32,
@@ -319,12 +295,6 @@ pub async fn check_external_position_change(
 ///
 /// This fetches all current positions and initializes the position tracker
 /// to avoid processing duplicates from execDetails.
-///
-/// # Arguments
-///
-/// * `client` - The IB API client
-/// * `account_id` - The account ID
-/// * `position_tracker` - Shared position tracker to initialize
 ///
 /// # Errors
 ///
@@ -383,13 +353,6 @@ pub async fn initialize_position_tracking(
 ///
 /// This spawns a background task to track position changes and generate position status reports
 /// for external changes.
-///
-/// # Arguments
-///
-/// * `client` - The IB API client
-/// * `account_id` - The account ID
-/// * `position_tracker` - Shared position tracker for detecting external changes
-/// * `instrument_provider` - Instrument provider for resolving contracts to instruments
 ///
 /// # Errors
 ///

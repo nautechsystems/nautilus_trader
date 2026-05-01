@@ -27,14 +27,6 @@ use serde_json::Value;
 
 /// Create IB order conditions from a list of condition dictionaries.
 ///
-/// # Arguments
-///
-/// * `conditions_data` - A JSON array of condition dictionaries
-///
-/// # Returns
-///
-/// A vector of OrderCondition enum variants ready to be encoded into the order.
-///
 /// # Errors
 ///
 /// Returns an error if conditions_data is not an array or if any condition is invalid.

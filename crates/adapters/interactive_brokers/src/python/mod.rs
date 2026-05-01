@@ -15,26 +15,15 @@
 
 //! Python bindings from `pyo3`.
 
+use pyo3::prelude::*;
+
 pub mod config;
 pub mod conversion;
-
-#[cfg(feature = "python")]
-pub mod data;
-
-#[cfg(feature = "python")]
-pub mod execution;
-
-#[cfg(feature = "gateway")]
-#[cfg(feature = "python")]
-pub mod gateway;
-
-#[cfg(feature = "python")]
 pub mod historical;
-
-#[cfg(feature = "python")]
 pub mod providers;
 
-use pyo3::prelude::*;
+#[cfg(feature = "gateway")]
+pub mod gateway;
 
 /// Loaded as `nautilus_pyo3.interactive_brokers`.
 ///
@@ -50,8 +39,6 @@ pub fn interactive_brokers(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<
     m.add_class::<crate::config::InteractiveBrokersInstrumentProviderConfig>()?;
     m.add_class::<crate::config::DockerizedIBGatewayConfig>()?;
     m.add_class::<crate::config::TradingMode>()?;
-    m.add_class::<crate::data::InteractiveBrokersDataClient>()?;
-    m.add_class::<crate::execution::InteractiveBrokersExecutionClient>()?;
     m.add_class::<crate::historical::HistoricalInteractiveBrokersClient>()?;
     m.add_class::<crate::providers::instruments::InteractiveBrokersInstrumentProvider>()?;
 

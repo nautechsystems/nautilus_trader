@@ -13,6 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Enumerations for Interactive Brokers adapter.
-
-// Placeholder for IB-specific enums that will be added as needed.
+//! Enumerations for the Interactive Brokers adapter.

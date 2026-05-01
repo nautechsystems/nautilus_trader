@@ -47,18 +47,6 @@ pub(crate) fn should_use_avg_fill_price(avg_fill_price: f64, instrument_id: &Ins
 
 /// Parse an IB execution to a Nautilus FillReport.
 ///
-/// # Arguments
-///
-/// * `execution` - The IB execution
-/// * `contract` - The IB contract
-/// * `commission` - Commission amount
-/// * `commission_currency` - Commission currency
-/// * `instrument_id` - The instrument ID
-/// * `account_id` - The account ID
-/// * `instrument_provider` - Instrument provider for price conversion
-/// * `ts_init` - Initial timestamp
-/// * `avg_px` - Optional average fill price (from order status tracking)
-///
 /// # Errors
 ///
 /// Returns an error if parsing fails.
@@ -142,15 +130,6 @@ pub fn parse_execution_to_fill_report(
 }
 
 /// Parse an IB order status to a Nautilus OrderStatusReport.
-///
-/// # Arguments
-///
-/// * `order_status` - The IB order status
-/// * `order` - The IB order (if available)
-/// * `instrument_id` - The instrument ID
-/// * `account_id` - The account ID
-/// * `instrument_provider` - Instrument provider for price conversion
-/// * `ts_init` - Initial timestamp
 ///
 /// # Errors
 ///
@@ -407,10 +386,6 @@ fn decimal_from_f64(value: f64) -> anyhow::Result<Decimal> {
 /// - "20230223 00:43:36 UTC"
 /// - "20230223 00:43:36" (assumed UTC)
 /// - "20250225-15:15:00" (assumed UTC)
-///
-/// # Arguments
-///
-/// * `time_str` - The execution time string from IB
 ///
 /// # Errors
 ///

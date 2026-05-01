@@ -34,14 +34,6 @@ use ustr::Ustr;
 use crate::common::contract_to_params;
 
 /// Convert tick size to precision value.
-///
-/// # Arguments
-///
-/// * `tick_size` - The tick size to convert
-///
-/// # Returns
-///
-/// Returns the precision value (number of decimal places).
 #[must_use]
 pub fn tick_size_to_precision(tick_size: f64) -> u8 {
     if tick_size <= 0.0 {
@@ -63,10 +55,6 @@ pub fn tick_size_to_precision(tick_size: f64) -> u8 {
 /// Convert timestamp string to UnixNanos.
 ///
 /// Handles formats like "20230101" or "20230101 00:00:00 UTC".
-///
-/// # Arguments
-///
-/// * `details` - The IB contract details
 ///
 /// # Errors
 ///
@@ -163,11 +151,6 @@ pub fn expiry_timestring_to_unix_nanos(
 }
 
 /// Parse an IB ContractDetails to a Nautilus instrument.
-///
-/// # Arguments
-///
-/// * `details` - The IB contract details
-/// * `instrument_id` - The instrument ID to use
 ///
 /// # Errors
 ///
@@ -570,10 +553,6 @@ fn parse_index_contract(
 /// - Sorts legs alphabetically by symbol
 /// - All legs must have the same venue
 ///
-/// # Arguments
-///
-/// * `leg_tuples` - Vector of (instrument_id, ratio) tuples
-///
 /// # Errors
 ///
 /// Returns an error if:
@@ -630,12 +609,6 @@ pub fn create_spread_instrument_id(
 ///
 /// This implements the same logic as Python's `parse_spread_instrument_id`.
 /// Uses contract details from the first leg to determine spread properties.
-///
-/// # Arguments
-///
-/// * `instrument_id` - The spread instrument ID
-/// * `leg_contract_details` - Vector of (contract_details, ratio) tuples
-/// * `timestamp_ns` - Optional timestamp (uses current time if None)
 ///
 /// # Errors
 ///

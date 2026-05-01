@@ -24,12 +24,6 @@ use nautilus_model::identifiers::{InstrumentId, Symbol as NautilusSymbol, TradeI
 /// Generate a unique trade ID for Interactive Brokers trades.
 ///
 /// This format matches the Python adapter: "{secs}-{price}-{size}"
-///
-/// # Arguments
-///
-/// * `ts_event` - Event timestamp in nanoseconds
-/// * `price` - Trade price
-/// * `size` - Trade size
 pub fn generate_ib_trade_id(ts_event: UnixNanos, price: f64, size: f64) -> TradeId {
     let ts_secs = ts_event.as_i64() / 1_000_000_000;
     TradeId::new(format!("{ts_secs}-{price}-{size}"))
@@ -44,11 +38,6 @@ pub fn generate_ib_trade_id(ts_event: UnixNanos, price: f64, size: f64) -> Trade
 /// - FUT: "ESM23" -> "ESM23.GLOBEX"
 /// - OPT: "AAPL230120C00150000" -> "AAPL230120C00150000.SMART"
 /// - IND: "SPX" -> "^SPX.SMART"
-///
-/// # Arguments
-///
-/// * `contract` - The IB contract to convert
-/// * `venue` - Optional venue override (defaults based on security type)
 ///
 /// # Errors
 ///
@@ -227,11 +216,6 @@ pub fn ib_contract_to_instrument_id_simplified(
 /// - "AAPL=STK.SMART"
 /// - "EUR.USD=CASH.IDEALPRO"
 /// - "ESM23=FUT.GLOBEX"
-///
-/// # Arguments
-///
-/// * `contract` - The IB contract to convert
-/// * `venue` - Optional venue override (defaults based on security type)
 ///
 /// # Errors
 ///
@@ -453,16 +437,6 @@ const FUTURES_MONTH_CODES: &[(char, &str)] = &[
 /// 1. Check symbol-specific venue mapping first (prefix matching)
 /// 2. Use VENUE_MEMBERS mapping if convert_exchange_to_mic_venue is enabled
 /// 3. Fall back to exchange
-///
-/// # Arguments
-///
-/// * `contract` - The IB contract
-/// * `symbol_to_mic_venue` - Symbol prefix to venue mapping
-/// * `convert_exchange_to_mic_venue` - Whether to convert exchange to MIC venue
-///
-/// # Returns
-///
-/// The determined venue as a string.
 pub fn determine_venue_from_contract(
     contract: &Contract,
     symbol_to_mic_venue: &std::collections::HashMap<String, String>,
@@ -536,11 +510,6 @@ pub fn determine_venue_from_contract(
 /// - Commodities (CMDTY)
 /// - Indices (IND)
 /// - Option Spreads (BAG) - requires contract details map
-///
-/// # Arguments
-///
-/// * `instrument_id` - The NautilusTrader instrument identifier
-/// * `exchange` - An optional exchange string. If `None`, defaults to "SMART"
 ///
 /// # Errors
 ///
@@ -1047,14 +1016,6 @@ fn parse_futures_option_symbol(symbol: &str) -> Option<String> {
 /// Check if an instrument ID represents a spread.
 ///
 /// This checks if the symbol contains the spread format pattern: `(ratio)symbol_` or `((ratio))symbol_`
-///
-/// # Arguments
-///
-/// * `instrument_id` - The instrument ID to check
-///
-/// # Returns
-///
-/// Returns `true` if the instrument ID appears to be a spread.
 #[must_use]
 pub fn is_spread_instrument_id(instrument_id: &InstrumentId) -> bool {
     let symbol_str = instrument_id.symbol.as_str();
@@ -1069,14 +1030,6 @@ pub fn is_spread_instrument_id(instrument_id: &InstrumentId) -> bool {
 /// - Positive ratios: `(ratio)SYMBOL`
 /// - Negative ratios: `((abs(ratio)))SYMBOL`
 /// - Returns sorted list of (instrument_id, ratio) tuples
-///
-/// # Arguments
-///
-/// * `instrument_id` - The spread instrument ID to parse
-///
-/// # Returns
-///
-/// Returns a vector of (instrument_id, ratio) tuples, sorted alphabetically by symbol.
 ///
 /// # Errors
 ///

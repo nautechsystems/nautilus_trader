@@ -82,14 +82,6 @@ pub enum ErrorCategory {
 }
 
 /// Classify an IB error code into a category.
-///
-/// # Arguments
-///
-/// * `error_code` - The IB API error code
-///
-/// # Returns
-///
-/// Returns the error category for the given code.
 pub fn classify_error_code(error_code: i32) -> ErrorCategory {
     match error_code {
         // Client errors - should not retry
@@ -115,14 +107,6 @@ pub fn classify_error_code(error_code: i32) -> ErrorCategory {
 }
 
 /// Determine if an error is recoverable.
-///
-/// # Arguments
-///
-/// * `error_code` - The IB API error code
-///
-/// # Returns
-///
-/// Returns `true` if the error is recoverable (should retry).
 pub fn is_recoverable_error(error_code: i32) -> bool {
     matches!(
         classify_error_code(error_code),
@@ -131,28 +115,11 @@ pub fn is_recoverable_error(error_code: i32) -> bool {
 }
 
 /// Determine if an error requires subscription resubscription.
-///
-/// # Arguments
-///
-/// * `error_code` - The IB API error code
-///
-/// # Returns
-///
-/// Returns `true` if subscriptions should be resubscribed.
 pub fn requires_resubscription(error_code: i32) -> bool {
     matches!(error_code, 10189 | 366 | 102 | 10182)
 }
 
 /// Get a human-readable error description.
-///
-/// # Arguments
-///
-/// * `error_code` - The IB API error code
-/// * `error_string` - The error message from IB
-///
-/// # Returns
-///
-/// Returns a formatted error description.
 pub fn format_error_message(error_code: i32, error_string: &str) -> String {
     let category = classify_error_code(error_code);
     let category_str = match category {

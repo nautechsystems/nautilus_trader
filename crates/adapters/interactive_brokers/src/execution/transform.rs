@@ -44,14 +44,6 @@ use self::{
 
 /// Transform a Nautilus order to an IB order.
 ///
-/// # Arguments
-///
-/// * `order` - The Nautilus order
-/// * `contract` - The IB contract for the instrument
-/// * `instrument_provider` - Instrument provider for price magnifier access
-/// * `order_id` - The IB order ID
-/// * `order_ref` - The order reference (client order ID)
-///
 /// # Errors
 ///
 /// Returns an error if the transformation fails.

@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Common functionality shared across the Interactive Brokers adapter.
-//!
-//! This module provides core utilities, constants, and data structures used throughout
-//! the Interactive Brokers integration.
+//! Shared utilities, constants, and data structures for the Interactive Brokers adapter.
 
 pub mod connection;
 pub mod consts;
@@ -26,7 +23,6 @@ pub mod parse;
 pub mod shared_client;
 pub mod types;
 
-// Re-export commonly used items from parse module
 pub use contracts::{
     contract_to_json_value, contract_to_params, parse_contract_from_json,
     parse_contracts_from_json_array,

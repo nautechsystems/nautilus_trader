@@ -85,14 +85,6 @@ fn security_type_to_code(security_type: &SecurityType) -> &str {
 /// This function parses a JSON object (dictionary) representing an IBContract
 /// and converts it to a rust-ibapi Contract struct.
 ///
-/// # Arguments
-///
-/// * `json` - JSON value representing the contract dictionary
-///
-/// # Returns
-///
-/// Returns a Contract if parsing succeeds, or None if parsing fails.
-///
 /// # Errors
 ///
 /// Returns an error if the JSON is not a valid object or if required fields are missing.
@@ -166,14 +158,6 @@ pub fn parse_contract_from_json(json: &Value) -> anyhow::Result<Contract> {
 }
 
 /// Parse multiple IB contracts from JSON array.
-///
-/// # Arguments
-///
-/// * `json_str` - JSON string containing an array of contract dictionaries
-///
-/// # Returns
-///
-/// Returns a vector of parsed contracts.
 ///
 /// # Errors
 ///

@@ -32,18 +32,6 @@ use nautilus_model::{
 /// This builds a quote from individual tick updates. You typically need to accumulate
 /// bid/ask prices and sizes from multiple tick updates before creating a QuoteTick.
 ///
-/// # Arguments
-///
-/// * `instrument_id` - The instrument identifier
-/// * `bid_price` - Bid price (if available)
-/// * `ask_price` - Ask price (if available)
-/// * `bid_size` - Bid size (if available)
-/// * `ask_size` - Ask size (if available)
-/// * `price_precision` - Price precision for the instrument
-/// * `size_precision` - Size precision for the instrument
-/// * `ts_event` - Event timestamp
-/// * `ts_init` - Initialization timestamp
-///
 /// # Errors
 ///
 /// Returns an error if price or size conversion fails.
@@ -76,17 +64,6 @@ pub fn parse_quote_tick(
 }
 
 /// Parse IB trade tick data into a TradeTick.
-///
-/// # Arguments
-///
-/// * `instrument_id` - The instrument identifier
-/// * `price` - Trade price
-/// * `size` - Trade size
-/// * `price_precision` - Price precision for the instrument
-/// * `size_precision` - Size precision for the instrument
-/// * `ts_event` - Event timestamp
-/// * `ts_init` - Initialization timestamp
-/// * `trade_id` - Optional trade ID (will be generated if not provided)
 ///
 /// # Errors
 ///
@@ -190,19 +167,6 @@ pub fn parse_option_open_interest(tick_type: &TickType, value: f64) -> Option<f6
 
 /// Parse IB real-time bar data into a Bar.
 ///
-/// # Arguments
-///
-/// * `bar_type` - The bar type specification
-/// * `open` - Opening price
-/// * `high` - High price
-/// * `low` - Low price
-/// * `close` - Closing price
-/// * `volume` - Volume
-/// * `price_precision` - Price precision for the instrument
-/// * `size_precision` - Size precision for the instrument
-/// * `ts_event` - Event timestamp
-/// * `ts_init` - Initialization timestamp
-///
 /// # Errors
 ///
 /// Returns an error if price or size conversion fails.
@@ -238,14 +202,6 @@ pub fn parse_realtime_bar(
 }
 
 /// Parse IB market depth operation to BookAction.
-///
-/// # Arguments
-///
-/// * `operation` - IB market depth operation (0=insert, 1=update, 2=delete)
-///
-/// # Returns
-///
-/// Returns the corresponding BookAction.
 #[must_use]
 pub fn parse_market_depth_operation(operation: i32) -> BookAction {
     match operation {
