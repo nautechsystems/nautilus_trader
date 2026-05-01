@@ -757,8 +757,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
             if command.venue_order_id is not None and venue_order_id != command.venue_order_id:
                 continue
 
-            client_order_id = self._cache.client_order_id(venue_order_id)
-            if client_order_id is None:
+            cached_client_order_id = self._cache.client_order_id(venue_order_id)
+            client_order_id = cached_client_order_id
+            if cached_client_order_id is None:
                 client_order_id = ClientOrderId(str(UUID4()))
 
             report = polymarket_trade.parse_to_fill_report(
@@ -773,6 +774,15 @@ class PolymarketExecutionClient(LiveExecutionClient):
             if fill_key in parsed_fill_keys:
                 self._log.warning(f"Duplicate fill key {fill_key}, skipping")
                 continue
+
+            if cached_client_order_id is not None:
+                order = self._cache.order(cached_client_order_id)
+                if order is not None:
+                    self._align_order_quantity_to_venue_fill(
+                        order,
+                        venue_order_id,
+                        report.last_qty,
+                    )
 
             parsed_fill_keys.add(fill_key)
             reports.append(report)

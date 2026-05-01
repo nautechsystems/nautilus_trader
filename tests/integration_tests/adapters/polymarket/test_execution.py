@@ -969,6 +969,68 @@ class TestPolymarketExecutionClient:
         assert len(reports_no) == 1
         assert reports_no[0].instrument_id == instrument_no.id
 
+    @pytest.mark.parametrize(
+        ("rest_size", "expected_order_quantity"),
+        [
+            ("1.546366", "1.546366"),
+            ("1.556300", "1.546300"),
+        ],
+    )
+    def test_parse_trades_response_aligns_cached_order_before_missing_fill_reconciliation(
+        self,
+        rest_size,
+        expected_order_quantity,
+    ):
+        """
+        Missing-fill REST reports must align sub-threshold dust before reconciliation.
+        """
+        condition_id, asset_id, instrument, client_order_id, venue_order_id = (
+            self._setup_dust_market_order(
+                quantity="1.500000",
+                cached_quantity="1.546300",
+            )
+        )
+        order = self.cache.order(client_order_id)
+        assert order is not None
+        trade_payload = {
+            "id": "3975ed82-2a1d-4e85-9c2b-6b1302267b12",
+            "taker_order_id": venue_order_id.value,
+            "market": condition_id,
+            "asset_id": asset_id,
+            "side": "BUY",
+            "size": rest_size,
+            "fee_rate_bps": "0",
+            "price": "0.97",
+            "status": "CONFIRMED",
+            "match_time": "1777597141",
+            "last_update": "1777597141",
+            "outcome": "Down",
+            "bucket_index": 0,
+            "owner": self.http_client.creds.api_key,
+            "maker_address": self.http_client.get_address.return_value,
+            "transaction_hash": "0x16527181ac3c2dfb8ab81457aadc40cd9671a2b5f54f511a35b3d60736fb32e3",
+            "maker_orders": [],
+            "trader_side": "TAKER",
+        }
+        command = Mock()
+        command.instrument_id = instrument.id
+        command.venue_order_id = None
+        parsed_fill_keys: set[tuple[TradeId, VenueOrderId]] = set()
+        reports: list[FillReport] = []
+
+        self.exec_client._parse_trades_response_object(
+            command=command,
+            json_obj=trade_payload,
+            parsed_fill_keys=parsed_fill_keys,
+            reports=reports,
+        )
+
+        assert len(reports) == 1
+        assert reports[0].client_order_id == client_order_id
+        assert reports[0].venue_order_id == venue_order_id
+        assert reports[0].last_qty == Quantity.from_str(rest_size)
+        assert order.quantity == Quantity.from_str(expected_order_quantity)
+
     def test_handle_ws_message_invalid_json(self):
         """
         Test handling invalid JSON websocket message.
