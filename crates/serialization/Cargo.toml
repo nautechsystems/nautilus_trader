@@ -6,6 +6,8 @@ include = [
   "src/**/*",
   "schemas/**/*",
   "generated/**/*",
+  "tests/**/*",
+  "benches/**/*",
   "build.rs",
   "Cargo.toml",
   "README.md",
