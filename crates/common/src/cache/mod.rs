@@ -28,8 +28,10 @@ mod index;
 mod tests;
 
 use std::{
+    cell::{Ref, RefCell},
     collections::VecDeque,
     fmt::{Debug, Display},
+    rc::Rc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -72,6 +74,38 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use crate::xrate::get_exchange_rate;
+
+/// Read-only view over the platform cache.
+///
+/// Adapter-facing code receives this type instead of the mutable cache handle so cache writes stay
+/// owned by the data and execution engines.
+#[derive(Clone, Debug)]
+pub struct CacheView {
+    inner: Rc<RefCell<Cache>>,
+}
+
+impl CacheView {
+    /// Creates a new [`CacheView`] from a cache handle.
+    #[must_use]
+    pub fn new(inner: Rc<RefCell<Cache>>) -> Self {
+        Self { inner }
+    }
+
+    /// Borrows the cache immutably.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    pub fn borrow(&self) -> Ref<'_, Cache> {
+        self.inner.borrow()
+    }
+}
+
+impl From<Rc<RefCell<Cache>>> for CacheView {
+    fn from(inner: Rc<RefCell<Cache>>) -> Self {
+        Self::new(inner)
+    }
+}
 
 /// A common in-memory `Cache` for market and execution related data.
 #[cfg_attr(

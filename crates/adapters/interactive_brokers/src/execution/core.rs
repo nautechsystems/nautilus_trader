@@ -184,6 +184,9 @@ pub struct InteractiveBrokersExecutionClient {
     accepted_orders: Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
     /// Set of client order IDs that have already emitted an OrderPendingCancel event.
     pending_cancel_orders: Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
+    /// Submitted orders for the Python direct API, which has no sync core.
+    #[cfg(feature = "python")]
+    submitted_orders: Arc<Mutex<AHashMap<ClientOrderId, OrderAny>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -362,6 +365,8 @@ impl InteractiveBrokersExecutionClient {
             order_fill_progress: Arc::new(Mutex::new(AHashMap::new())),
             accepted_orders: Arc::new(Mutex::new(ahash::AHashSet::new())),
             pending_cancel_orders: Arc::new(Mutex::new(ahash::AHashSet::new())),
+            #[cfg(feature = "python")]
+            submitted_orders: Arc::new(Mutex::new(AHashMap::new())),
         })
     }
 
@@ -451,7 +456,8 @@ impl InteractiveBrokersExecutionClient {
         position_id: Option<PositionId>,
         params: Option<HashMap<String, String>>,
     ) -> anyhow::Result<()> {
-        self.cache_order_for_python(order.clone(), position_id)?;
+        self.ib_client.as_ref().context("IB client not connected")?;
+        self.track_submitted_order(order.clone())?;
 
         let cmd = SubmitOrder {
             trader_id,
@@ -485,9 +491,9 @@ impl InteractiveBrokersExecutionClient {
             anyhow::bail!("Order list cannot be empty");
         }
 
-        for order in &orders {
-            self.cache_order_for_python(order.clone(), position_id)?;
-        }
+        self.ib_client.as_ref().context("IB client not connected")?;
+
+        self.track_submitted_orders(&orders)?;
 
         let ts_init = get_atomic_clock_realtime().get_time_ns();
         let instrument_id = orders[0].instrument_id();
@@ -517,7 +523,7 @@ impl InteractiveBrokersExecutionClient {
             ts_init,
         );
 
-        ExecutionClient::submit_order_list(self, cmd)
+        self.submit_order_list_with_orders(cmd, orders)
     }
 
     #[cfg(feature = "python")]
@@ -803,15 +809,100 @@ impl InteractiveBrokersExecutionClient {
         self.generate_position_status_reports(&cmd).await
     }
 
-    #[cfg(feature = "python")]
-    pub(crate) fn cache_order_for_python(
+    fn submit_order_list_with_orders(
         &self,
-        order: OrderAny,
-        position_id: Option<PositionId>,
+        cmd: SubmitOrderList,
+        orders: Vec<OrderAny>,
     ) -> anyhow::Result<()> {
-        self.core
-            .cache_mut()
-            .add_order(order, position_id, Some(self.client_id()), true)
+        let client = self.ib_client.as_ref().context("IB client not connected")?;
+
+        let order_id_map = Arc::clone(&self.order_id_map);
+        let venue_order_id_map = Arc::clone(&self.venue_order_id_map);
+        let instrument_id_map = Arc::clone(&self.instrument_id_map);
+        let trader_id_map = Arc::clone(&self.trader_id_map);
+        let strategy_id_map = Arc::clone(&self.strategy_id_map);
+        let next_order_id = Arc::clone(&self.next_order_id);
+        let instrument_provider = Arc::clone(&self.instrument_provider);
+        let exec_sender = get_exec_event_sender();
+        let clock = get_atomic_clock_realtime();
+        let account_id = self.core.account_id;
+        let strategy_id = cmd.strategy_id;
+        let accepted_orders = Arc::clone(&self.accepted_orders);
+        let client_clone = client.as_arc().clone();
+
+        let handle = get_runtime().spawn(async move {
+            if let Err(e) = Self::handle_submit_order_list_async(
+                &cmd,
+                &orders,
+                &client_clone,
+                &order_id_map,
+                &venue_order_id_map,
+                &instrument_id_map,
+                &trader_id_map,
+                &strategy_id_map,
+                &next_order_id,
+                &instrument_provider,
+                &exec_sender,
+                clock,
+                account_id,
+                strategy_id,
+                &accepted_orders,
+            )
+            .await
+            {
+                tracing::error!("Error submitting order list: {e}");
+            }
+        });
+
+        self.pending_tasks
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock pending tasks"))?
+            .push(handle);
+
+        Ok(())
+    }
+
+    #[cfg(feature = "python")]
+    fn track_submitted_order(&self, order: OrderAny) -> anyhow::Result<()> {
+        self.submitted_orders
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock submitted orders map"))?
+            .insert(order.client_order_id(), order);
+
+        Ok(())
+    }
+
+    #[cfg(feature = "python")]
+    fn track_submitted_orders(&self, orders: &[OrderAny]) -> anyhow::Result<()> {
+        let mut submitted_orders = self
+            .submitted_orders
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock submitted orders map"))?;
+
+        for order in orders {
+            submitted_orders.insert(order.client_order_id(), order.clone());
+        }
+
+        Ok(())
+    }
+
+    fn order_for_modify(&self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny> {
+        if let Some(order) = self.core.cache().order(client_order_id).cloned() {
+            return Ok(order);
+        }
+
+        #[cfg(feature = "python")]
+        if let Some(order) = self
+            .submitted_orders
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock submitted orders map"))?
+            .get(client_order_id)
+            .cloned()
+        {
+            return Ok(order);
+        }
+
+        anyhow::bail!("Order not found for modify: {client_order_id}")
     }
 
     fn reserve_next_local_order_id(next_order_id: &Arc<Mutex<i32>>) -> anyhow::Result<i32> {
@@ -1763,67 +1854,15 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     }
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
-        let client = self.ib_client.as_ref().context("IB client not connected")?;
-
+        self.ib_client.as_ref().context("IB client not connected")?;
         let orders = self.core.get_orders_for_list(&cmd.order_list)?;
-
-        let order_id_map = Arc::clone(&self.order_id_map);
-        let venue_order_id_map = Arc::clone(&self.venue_order_id_map);
-        let instrument_id_map = Arc::clone(&self.instrument_id_map);
-        let trader_id_map = Arc::clone(&self.trader_id_map);
-        let strategy_id_map = Arc::clone(&self.strategy_id_map);
-        let next_order_id = Arc::clone(&self.next_order_id);
-        let instrument_provider = Arc::clone(&self.instrument_provider);
-        let exec_sender = get_exec_event_sender();
-        let clock = get_atomic_clock_realtime();
-        let account_id = self.core.account_id;
-        let strategy_id = cmd.strategy_id;
-        let accepted_orders = Arc::clone(&self.accepted_orders);
-        let client_clone = client.as_arc().clone();
-
-        let handle = get_runtime().spawn(async move {
-            if let Err(e) = Self::handle_submit_order_list_async(
-                &cmd,
-                &orders,
-                &client_clone,
-                &order_id_map,
-                &venue_order_id_map,
-                &instrument_id_map,
-                &trader_id_map,
-                &strategy_id_map,
-                &next_order_id,
-                &instrument_provider,
-                &exec_sender,
-                clock,
-                account_id,
-                strategy_id,
-                &accepted_orders,
-            )
-            .await
-            {
-                tracing::error!("Error submitting order list: {e}");
-            }
-        });
-
-        self.pending_tasks
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock pending tasks"))?
-            .push(handle);
-
-        Ok(())
+        self.submit_order_list_with_orders(cmd, orders)
     }
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         let client = self.ib_client.as_ref().context("IB client not connected")?;
 
-        // Get order from cache before spawning async task (Rc doesn't work across async boundaries)
-        let original_order = {
-            let cache = self.core.cache();
-            cache
-                .order(&cmd.client_order_id)
-                .cloned()
-                .context("Order not found in cache")?
-        };
+        let original_order = self.order_for_modify(&cmd.client_order_id)?;
 
         let order_id_map = Arc::clone(&self.order_id_map);
         let venue_order_id_map = Arc::clone(&self.venue_order_id_map);

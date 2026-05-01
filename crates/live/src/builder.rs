@@ -20,7 +20,9 @@ use std::{collections::HashMap, time::Duration};
 use nautilus_common::{
     cache::CacheConfig,
     enums::Environment,
-    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+    factories::{
+        ClientConfig, DataClientFactory, ExecutionClientFactory, SimulatedExecutionClientFactory,
+    },
     logging::logger::LoggerConfig,
     msgbus::database::MessageBusConfig,
 };
@@ -38,6 +40,12 @@ use crate::{
     runner::AsyncRunner,
 };
 
+#[derive(Debug)]
+enum ExecutionClientFactoryEntry {
+    Adapter(Box<dyn ExecutionClientFactory>),
+    Simulated(Box<dyn SimulatedExecutionClientFactory>),
+}
+
 /// Builder for constructing a [`LiveNode`] with a fluent API.
 ///
 /// Provides configuration options specific to live nodes,
@@ -51,7 +59,7 @@ pub struct LiveNodeBuilder {
     name: String,
     config: LiveNodeConfig,
     data_client_factories: HashMap<String, Box<dyn DataClientFactory>>,
-    exec_client_factories: HashMap<String, Box<dyn ExecutionClientFactory>>,
+    exec_client_factories: HashMap<String, ExecutionClientFactoryEntry>,
     data_client_configs: HashMap<String, Box<dyn ClientConfig>>,
     exec_client_configs: HashMap<String, Box<dyn ClientConfig>>,
 }
@@ -309,7 +317,36 @@ impl LiveNodeBuilder {
             anyhow::bail!("Execution client '{name}' is already registered");
         }
 
-        self.exec_client_factories.insert(name.clone(), factory);
+        self.exec_client_factories
+            .insert(name.clone(), ExecutionClientFactoryEntry::Adapter(factory));
+        self.exec_client_configs.insert(name, config);
+        Ok(self)
+    }
+
+    /// Add a simulated execution client factory.
+    ///
+    /// This path is for sync-core clients such as the sandbox matching engine, which owns cache
+    /// mutation. Live venue adapters should use [`Self::add_exec_client`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a client with the same name is already registered.
+    pub fn add_simulated_exec_client(
+        mut self,
+        name: Option<String>,
+        factory: Box<dyn SimulatedExecutionClientFactory>,
+        config: Box<dyn ClientConfig>,
+    ) -> anyhow::Result<Self> {
+        let name = name.unwrap_or_else(|| factory.name().to_string());
+
+        if self.exec_client_factories.contains_key(&name) {
+            anyhow::bail!("Execution client '{name}' is already registered");
+        }
+
+        self.exec_client_factories.insert(
+            name.clone(),
+            ExecutionClientFactoryEntry::Simulated(factory),
+        );
         self.exec_client_configs.insert(name, config);
         Ok(self)
     }
@@ -342,8 +379,12 @@ impl LiveNodeBuilder {
             if let Some(config) = self.data_client_configs.remove(&name) {
                 log::debug!("Creating data client {name}");
 
-                let client =
-                    factory.create(&name, config.as_ref(), kernel.cache(), kernel.clock())?;
+                let client = factory.create(
+                    &name,
+                    config.as_ref(),
+                    kernel.cache().into(),
+                    kernel.clock(),
+                )?;
                 let client_id = client.client_id();
                 let venue = client.venue();
 
@@ -368,7 +409,14 @@ impl LiveNodeBuilder {
             if let Some(config) = self.exec_client_configs.remove(&name) {
                 log::debug!("Creating execution client {name}");
 
-                let client = factory.create(&name, config.as_ref(), kernel.cache())?;
+                let client = match factory {
+                    ExecutionClientFactoryEntry::Adapter(factory) => {
+                        factory.create(&name, config.as_ref(), kernel.cache().into())?
+                    }
+                    ExecutionClientFactoryEntry::Simulated(factory) => {
+                        factory.create(&name, config.as_ref(), kernel.cache())?
+                    }
+                };
                 let client_id = client.client_id();
                 let venue = client.venue();
 

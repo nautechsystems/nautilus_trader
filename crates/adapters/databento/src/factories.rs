@@ -18,7 +18,7 @@
 use std::{any::Any, cell::RefCell, fmt::Debug, path::PathBuf, rc::Rc};
 
 use nautilus_common::{
-    cache::Cache,
+    cache::CacheView,
     clients::DataClient,
     clock::Clock,
     factories::{ClientConfig, DataClientFactory},
@@ -176,7 +176,7 @@ impl DataClientFactory for DatabentoDataClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        _cache: Rc<RefCell<Cache>>,
+        _cache: CacheView,
         _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn DataClient>> {
         let databento_config = config

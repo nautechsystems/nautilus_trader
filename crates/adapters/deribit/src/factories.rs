@@ -18,7 +18,7 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
 use nautilus_common::{
-    cache::Cache,
+    cache::CacheView,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
@@ -30,7 +30,7 @@ use nautilus_model::{
 };
 
 use crate::{
-    common::consts::DERIBIT_VENUE,
+    common::consts::{DERIBIT, DERIBIT_VENUE},
     config::{DeribitDataClientConfig, DeribitExecClientConfig},
     data::DeribitDataClient,
     execution::DeribitExecutionClient,
@@ -73,7 +73,7 @@ impl DataClientFactory for DeribitDataClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        _cache: Rc<RefCell<Cache>>,
+        _cache: CacheView,
         _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn DataClient>> {
         let deribit_config = config
@@ -92,7 +92,7 @@ impl DataClientFactory for DeribitDataClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "DERIBIT"
+        DERIBIT
     }
 
     fn config_type(&self) -> &'static str {
@@ -137,7 +137,7 @@ impl ExecutionClientFactory for DeribitExecutionClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        cache: Rc<RefCell<Cache>>,
+        cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let deribit_config = config
             .as_any()
@@ -170,7 +170,7 @@ impl ExecutionClientFactory for DeribitExecutionClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "DERIBIT"
+        DERIBIT
     }
 
     fn config_type(&self) -> &'static str {
@@ -203,14 +203,14 @@ mod tests {
     #[rstest]
     fn test_deribit_data_client_factory_creation() {
         let factory = DeribitDataClientFactory::new();
-        assert_eq!(factory.name(), "DERIBIT");
+        assert_eq!(factory.name(), DERIBIT);
         assert_eq!(factory.config_type(), "DeribitDataClientConfig");
     }
 
     #[rstest]
     fn test_deribit_data_client_factory_default() {
         let factory = DeribitDataClientFactory::new();
-        assert_eq!(factory.name(), "DERIBIT");
+        assert_eq!(factory.name(), DERIBIT);
     }
 
     #[rstest]
@@ -242,7 +242,7 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let clock = Rc::new(RefCell::new(TestClock::new()));
 
-        let result = factory.create("DERIBIT-TEST", &config, cache, clock);
+        let result = factory.create("DERIBIT-TEST", &config, cache.into(), clock);
         assert!(result.is_ok());
 
         let client = result.unwrap();

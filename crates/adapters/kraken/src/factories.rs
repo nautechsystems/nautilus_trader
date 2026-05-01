@@ -18,7 +18,7 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
 use nautilus_common::{
-    cache::Cache,
+    cache::CacheView,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
@@ -30,7 +30,10 @@ use nautilus_model::{
 };
 
 use crate::{
-    common::{consts::KRAKEN_VENUE, enums::KrakenProductType},
+    common::{
+        consts::{KRAKEN, KRAKEN_VENUE},
+        enums::KrakenProductType,
+    },
     config::{KrakenDataClientConfig, KrakenExecClientConfig},
     data::{KrakenFuturesDataClient, KrakenSpotDataClient},
     execution::{KrakenFuturesExecutionClient, KrakenSpotExecutionClient},
@@ -73,7 +76,7 @@ impl DataClientFactory for KrakenDataClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        _cache: Rc<RefCell<Cache>>,
+        _cache: CacheView,
         _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn DataClient>> {
         let kraken_config = config
@@ -101,7 +104,7 @@ impl DataClientFactory for KrakenDataClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "KRAKEN"
+        KRAKEN
     }
 
     fn config_type(&self) -> &'static str {
@@ -146,7 +149,7 @@ impl ExecutionClientFactory for KrakenExecutionClientFactory {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        cache: Rc<RefCell<Cache>>,
+        cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let kraken_config = config
             .as_any()
@@ -189,7 +192,7 @@ impl ExecutionClientFactory for KrakenExecutionClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "KRAKEN"
+        KRAKEN
     }
 
     fn config_type(&self) -> &'static str {
@@ -221,14 +224,14 @@ mod tests {
     #[rstest]
     fn test_kraken_data_client_factory_creation() {
         let factory = KrakenDataClientFactory::new();
-        assert_eq!(factory.name(), "KRAKEN");
+        assert_eq!(factory.name(), KRAKEN);
         assert_eq!(factory.config_type(), "KrakenDataClientConfig");
     }
 
     #[rstest]
     fn test_kraken_data_client_factory_default() {
         let factory = KrakenDataClientFactory::new();
-        assert_eq!(factory.name(), "KRAKEN");
+        assert_eq!(factory.name(), KRAKEN);
     }
 
     #[rstest]
@@ -259,7 +262,7 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let clock = Rc::new(RefCell::new(TestClock::new()));
 
-        let result = factory.create("KRAKEN-TEST", &config, cache, clock);
+        let result = factory.create("KRAKEN-TEST", &config, cache.into(), clock);
         assert!(result.is_ok());
 
         let client = result.unwrap();
@@ -275,7 +278,7 @@ mod tests {
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("KRAKEN-TEST", &config, cache);
+        let result = factory.create("KRAKEN-TEST", &config, cache.into());
         assert!(result.is_ok());
 
         let client = result.unwrap();
@@ -293,7 +296,7 @@ mod tests {
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("KRAKEN-TEST", &config, cache);
+        let result = factory.create("KRAKEN-TEST", &config, cache.into());
         assert!(result.is_ok());
 
         let client = result.unwrap();

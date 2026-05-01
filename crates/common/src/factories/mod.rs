@@ -21,7 +21,7 @@ pub mod order;
 
 pub use client::{
     ClientConfig, DataClientFactory, DataClientFactoryRegistry, ExecutionClientFactory,
-    ExecutionClientFactoryRegistry,
+    ExecutionClientFactoryRegistry, SimulatedExecutionClientFactory,
 };
 pub use event::OrderEventFactory;
 pub use order::OrderFactory;

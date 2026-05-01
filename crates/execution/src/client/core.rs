@@ -15,13 +15,9 @@
 
 //! Base execution client functionality.
 
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use nautilus_common::cache::Cache;
+use nautilus_common::cache::{Cache, CacheView};
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::{AccountId, ClientId, ClientOrderId, TraderId, Venue},
@@ -51,7 +47,7 @@ pub struct ExecutionClientCore {
     connected: AtomicBool,
     started: AtomicBool,
     instruments_initialized: AtomicBool,
-    cache: Rc<RefCell<Cache>>,
+    cache: CacheView,
 }
 
 impl Clone for ExecutionClientCore {
@@ -86,7 +82,7 @@ impl ExecutionClientCore {
         account_id: AccountId,
         account_type: AccountType,
         base_currency: Option<Currency>,
-        cache: Rc<RefCell<Cache>>,
+        cache: impl Into<CacheView>,
     ) -> Self {
         Self {
             trader_id,
@@ -99,18 +95,13 @@ impl ExecutionClientCore {
             connected: AtomicBool::new(false),
             started: AtomicBool::new(false),
             instruments_initialized: AtomicBool::new(false),
-            cache,
+            cache: cache.into(),
         }
     }
 
     /// Returns a read-only borrow of the cache.
     pub fn cache(&self) -> std::cell::Ref<'_, Cache> {
         self.cache.borrow()
-    }
-
-    /// Returns a mutable borrow of the cache.
-    pub fn cache_mut(&self) -> std::cell::RefMut<'_, Cache> {
-        self.cache.borrow_mut()
     }
 
     /// Returns the order for the given `client_order_id` from the cache.

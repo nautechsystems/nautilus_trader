@@ -26,7 +26,7 @@ use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
 use ahash::AHashMap;
 
 use crate::{
-    cache::Cache,
+    cache::{Cache, CacheView},
     clients::{DataClient, ExecutionClient},
     clock::Clock,
 };
@@ -47,6 +47,9 @@ pub trait ClientConfig: Debug {
 pub trait DataClientFactory: Debug {
     /// Create a new data client instance.
     ///
+    /// Data clients receive a read-only cache view so adapters can query platform state during
+    /// construction without mutating the cache.
+    ///
     /// # Errors
     ///
     /// Returns an error if client creation fails.
@@ -54,7 +57,7 @@ pub trait DataClientFactory: Debug {
         &self,
         name: &str,
         config: &dyn ClientConfig,
-        cache: Rc<RefCell<Cache>>,
+        cache: CacheView,
         clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn DataClient>>;
 
@@ -71,6 +74,33 @@ pub trait DataClientFactory: Debug {
 /// (e.g., Binance, Bybit, Interactive Brokers) based on the provided configuration.
 pub trait ExecutionClientFactory: Debug {
     /// Create a new execution client instance.
+    ///
+    /// Execution clients receive a read-only cache view so venue adapters can query platform state
+    /// during construction without mutating the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if client creation fails.
+    fn create(
+        &self,
+        name: &str,
+        config: &dyn ClientConfig,
+        cache: CacheView,
+    ) -> anyhow::Result<Box<dyn ExecutionClient>>;
+
+    /// Returns the name of this factory.
+    fn name(&self) -> &str;
+
+    /// Returns the supported configuration type name for this factory.
+    fn config_type(&self) -> &str;
+}
+
+/// Factory trait for simulated execution clients owned by the sync core.
+///
+/// Simulated execution clients may need the mutable cache handle because they host the matching
+/// engine and therefore own cache updates that a live venue adapter must not perform.
+pub trait SimulatedExecutionClientFactory: Debug {
+    /// Create a new simulated execution client instance.
     ///
     /// # Errors
     ///
@@ -232,7 +262,7 @@ mod tests {
             &self,
             _name: &str,
             _config: &dyn ClientConfig,
-            _cache: Rc<RefCell<Cache>>,
+            _cache: CacheView,
             _clock: Rc<RefCell<dyn Clock>>,
         ) -> anyhow::Result<Box<dyn DataClient>> {
             Err(anyhow::anyhow!("Mock factory - not implemented"))

@@ -1153,7 +1153,7 @@ mod tests {
 
     use async_trait::async_trait;
     use nautilus_common::{
-        cache::Cache,
+        cache::CacheView,
         clients::DataClient,
         clock::Clock,
         enums::Environment,
@@ -1213,7 +1213,7 @@ mod tests {
             &self,
             name: &str,
             _config: &dyn ClientConfig,
-            _cache: Rc<RefCell<Cache>>,
+            _cache: CacheView,
             _clock: Rc<RefCell<dyn Clock>>,
         ) -> anyhow::Result<Box<dyn DataClient>> {
             Ok(Box::new(TestHistoricalBarsDataClient::new(

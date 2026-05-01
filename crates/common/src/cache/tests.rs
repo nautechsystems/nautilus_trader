@@ -17,6 +17,7 @@
 
 #[cfg(feature = "defi")]
 use std::sync::Arc;
+use std::{cell::RefCell, rc::Rc};
 
 use ahash::AHashSet;
 use bytes::Bytes;
@@ -55,11 +56,35 @@ use nautilus_model::{
 };
 use rstest::{fixture, rstest};
 
-use crate::cache::{Cache, CacheConfig};
+use crate::cache::{Cache, CacheConfig, CacheView};
 
 #[fixture]
 fn cache() -> Cache {
     Cache::default()
+}
+
+#[rstest]
+fn test_cache_view_borrows_same_cache(audusd_sim: CurrencyPair) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+
+    let view = CacheView::from(cache);
+    let borrowed = view.borrow();
+
+    assert!(borrowed.instrument(&audusd_sim.id).is_some());
+}
+
+#[rstest]
+#[should_panic]
+fn test_cache_view_borrow_panics_when_mutably_borrowed() {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let view = CacheView::from(cache.clone());
+    let _mutable_borrow = cache.borrow_mut();
+
+    let _borrowed = view.borrow();
 }
 
 #[rstest]
