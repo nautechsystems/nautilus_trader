@@ -17,6 +17,7 @@ import asyncio
 import json
 from collections import OrderedDict
 from collections import defaultdict
+from decimal import Decimal
 from typing import Any
 
 import msgspec
@@ -1776,12 +1777,12 @@ class PolymarketExecutionClient(LiveExecutionClient):
         venue_order_id: VenueOrderId,
         fill_qty: Quantity,
     ) -> None:
-        filled_after = float(order.filled_qty) + float(fill_qty)
-        diff = filled_after - float(order.quantity)
-        if diff <= 0.0 or diff >= DUST_SNAP_THRESHOLD:
+        filled_after = order.filled_qty + fill_qty
+        diff = filled_after.as_decimal() - order.quantity.as_decimal()
+        if diff <= Decimal(0) or diff >= Decimal(str(DUST_SNAP_THRESHOLD)):
             return
 
-        quantity = Quantity(filled_after, fill_qty.precision)
+        quantity = filled_after
         ts_now = self._clock.timestamp_ns()
         self._log.info(
             f"Aligning {order.client_order_id!r} quantity to Polymarket fill "
@@ -1808,8 +1809,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self,
         report: OrderStatusReport,
     ) -> OrderStatusReport:
-        diff = float(report.filled_qty) - float(report.quantity)
-        if diff <= 0.0 or diff >= DUST_SNAP_THRESHOLD:
+        diff = report.filled_qty.as_decimal() - report.quantity.as_decimal()
+        if diff <= Decimal(0) or diff >= Decimal(str(DUST_SNAP_THRESHOLD)):
             return report
 
         self._log.info(
@@ -2141,6 +2142,14 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 ts_init=self._clock.timestamp_ns(),
                 filled_user_order_id=order_id,
             )
+            if client_order_id is not None:
+                order = self._cache.order(client_order_id)
+                if order is not None:
+                    self._align_order_quantity_to_venue_fill(
+                        order,
+                        venue_order_id,
+                        report.last_qty,
+                    )
             self._send_fill_report(report)
             self._record_processed_fill(trade_id, venue_order_id)
             self._record_processed_trade(trade_id, msg.status)

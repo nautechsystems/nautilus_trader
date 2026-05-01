@@ -1657,6 +1657,74 @@ class TestPolymarketExecutionClient:
 
         fill_spy.assert_called_once()
 
+    def test_orphan_ws_trade_aligns_cached_order_before_fill_report(self, mocker):
+        """
+        Orphan websocket trade reports must align cached orders before reconciliation.
+        """
+        condition_id, asset_id, instrument, client_order_id, venue_order_id = (
+            self._setup_dust_market_order(
+                quantity="1.500000",
+                cached_quantity="1.546300",
+            )
+        )
+        order = self.cache.order(client_order_id)
+        assert order is not None
+
+        def assert_aligned_before_report(report):
+            assert order.quantity == Quantity.from_str("1.546366")
+            assert report.client_order_id == client_order_id
+            assert report.venue_order_id == venue_order_id
+            assert report.last_qty == Quantity.from_str("1.546366")
+
+        orphan_cache = MagicMock()
+        orphan_cache.instrument.return_value = self.cache.instrument(instrument.id)
+        orphan_cache.client_order_id.return_value = client_order_id
+        orphan_cache.strategy_id_for_order.return_value = None
+        orphan_cache.order.return_value = order
+        orphan_client = MagicMock()
+        orphan_client._api_key = self.exec_client._api_key
+        orphan_client._cache = orphan_cache
+        orphan_client._clock = self.clock
+        orphan_client._log = MagicMock()
+        orphan_client._processed_fills = set()
+        orphan_client.account_id = self.account_id
+        orphan_client._align_order_quantity_to_venue_fill = (
+            self.exec_client._align_order_quantity_to_venue_fill
+        )
+        orphan_client._send_fill_report.side_effect = assert_aligned_before_report
+        msg = PolymarketUserTrade(
+            asset_id=asset_id,
+            bucket_index=0,
+            fee_rate_bps="0",
+            id="3975ed82-2a1d-4e85-9c2b-6b1302267b12",
+            last_update="1777597141",
+            maker_address="0xd224E6150f754B7f11a3eBB121Adc51D616422f8",
+            maker_orders=[],
+            market=condition_id,
+            match_time="1777597141",
+            outcome="Down",
+            owner=self.http_client.creds.api_key,
+            price="0.97",
+            side=PolymarketOrderSide.BUY,
+            size="1.546366",
+            status=PolymarketTradeStatus.MATCHED,
+            taker_order_id=venue_order_id.value,
+            timestamp="1777597141876",
+            trade_owner=self.http_client.creds.api_key,
+            trader_side=PolymarketLiquiditySide.TAKER,
+            type=PolymarketEventType.TRADE,
+        )
+
+        PolymarketExecutionClient._handle_user_trade_in_ws_trade_msg(
+            orphan_client,
+            msg,
+            TradeId(msg.id),
+            False,
+            venue_order_id.value,
+        )
+
+        orphan_client._send_fill_report.assert_called_once()
+
     def test_dust_threshold_overage_fill_does_not_align_cached_order(self, mocker):
         """
         A real overfill at or above the dust threshold must stay visible to Nautilus.
@@ -1758,6 +1826,32 @@ class TestPolymarketExecutionClient:
         )
 
         assert order.quantity == Quantity.from_str("1.500000")
+        updated_calls = [
+            call
+            for call in send_spy.call_args_list
+            if type(call.args[0]).__name__ == "OrderUpdated"
+        ]
+        assert len(updated_calls) == 0
+
+    def test_dust_alignment_threshold_handles_exact_production_overage(self, mocker):
+        """
+        Exact production-threshold overages must not be rounded into dust alignment.
+        """
+        _, _, _, client_order_id, venue_order_id = self._setup_dust_market_order(
+            quantity="2.000000",
+            cached_quantity="2.000000",
+        )
+        order = self.cache.order(client_order_id)
+        assert order is not None
+        send_spy = mocker.spy(self.exec_client, "_send_order_event")
+
+        self.exec_client._align_order_quantity_to_venue_fill(
+            order,
+            venue_order_id,
+            Quantity.from_str("2.010000"),
+        )
+
+        assert order.quantity == Quantity.from_str("2.000000")
         updated_calls = [
             call
             for call in send_spy.call_args_list
