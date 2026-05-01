@@ -29,12 +29,17 @@ use chrono::{DateTime, Utc};
 use nautilus_model::enums::OrderType;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 
-use crate::proto::dydxprotocol::{
-    clob::{
-        Order, OrderId,
-        order::{ConditionType, GoodTilOneof, Side as OrderSide, TimeInForce as OrderTimeInForce},
+use crate::{
+    common::consts::DYDX_NAUTILUS_ORDER_ROUTER_ADDRESS,
+    proto::dydxprotocol::{
+        clob::{
+            Order, OrderId,
+            order::{
+                ConditionType, GoodTilOneof, Side as OrderSide, TimeInForce as OrderTimeInForce,
+            },
+        },
+        subaccounts::SubaccountId,
     },
-    subaccounts::SubaccountId,
 };
 
 /// Maximum short-term order lifetime in blocks.
@@ -479,7 +484,7 @@ impl OrderBuilder {
                 .unwrap_or(0),
             twap_parameters: None,
             builder_code_parameters: None,
-            order_router_address: String::new(),
+            order_router_address: DYDX_NAUTILUS_ORDER_ROUTER_ADDRESS.to_string(),
         })
     }
 }

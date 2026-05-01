@@ -7,6 +7,8 @@ Released on TBD (UTC).
 - Added `LoggerConfig.file_config` and `clear_log_file` support to the Rust `LiveNode` runtime (#3955), thanks @filipmacek
 - Added `LoggerConfig` Python constructor for direct construction without `from_spec` (#3955), thanks @filipmacek
 - Added Interactive Brokers PyO3 live client config support in `TradingNodeConfig` (#3964), thanks @faysou
+- Added `limit_aggressive` and `test_modify_rejected` flags to `ExecTesterConfig` for marketable/modify-rejection tests
+- Added dYdX historical funding rate requests via the `request_funding_rates` HTTP method and PyO3 binding
 
 ### Breaking Changes
 - Removed `From<OrderInitialized>` for order types; use `TryFrom` to surface invariant errors via `try_from`/`try_into`
@@ -20,15 +22,27 @@ Released on TBD (UTC).
 - Fixed Kraken symbol normalization for WS v2 compatibility (#3961), thanks @mcgrj
 - Fixed OKX missing `post_only` instrument status (#3966), thanks @jhavie
 - Fixed `OrderAny::from_events` panic on malformed `OrderInitialized`; reconciliation returns `Err` instead of crashing
+- Fixed dYdX FOK and DAY time-in-force orders to reject pre-submission instead of failing at the venue or mapping to GTC
+- Fixed dYdX MIT/LIT round-tripping on reconcile when the Indexer collapses both variants under `TAKE_PROFIT`
+- Fixed dYdX GTD expiry to surface `OrderExpired` on both WS and HTTP reconciliation paths
+- Fixed dYdX `TriggerType` default when `condition_type` is unset so reconciliation no longer rejects the report
+- Fixed dYdX `TAKE_PROFIT` order type deserialization (the Indexer omits the `_LIMIT` suffix)
+- Fixed dYdX reconciliation noise by dropping reports for orders already in a terminal state in the local cache
+- Fixed dYdX Python `_request_instrument(s)` to pass the full `_handle_data_response` argument set
+- Fixed dYdX Python `_subscribe_order_book_depth` to log a graceful warning instead of raising `NotImplementedError`
+- Fixed `ExecTester` LIT pricing direction so reconciled BUY/SELL LIT orders satisfy the `trigger_price` invariant
 
 ### Internal Improvements
 - Refined data engine request workflow (#3928), thanks @faysou
 - Avoided object materialization in Rust stream Feather to parquet conversion (#3954), thanks @faysou
 - Improved Interactive Brokers Python 3.14 installation and integration test coverage
+- Improved live exec clients to log ERROR with `timeout_post_stop` hint when cancel tasks abort on disconnect
+- Improved `ExecTester` to refresh tracked orders from cache before modify/cancel-replace so they see venue acks
 - Upgraded `alloy` crate to v2.0.4
 - Upgraded `databento` crate to v0.49.0
 
 ### Documentation Updates
+- Added dYdX adapter notes for FOK deprecation, DAY rejection, equity-tier limit, and MIT/LIT round-tripping
 
 ### Deprecations
 

@@ -32,6 +32,7 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.nautilus_pyo3 import DydxNetwork
 from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
@@ -388,6 +389,12 @@ class DydxDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_orderbook(pyo3_instrument_id)
 
+    async def _subscribe_order_book_depth(self, command: SubscribeOrderBook) -> None:
+        self._log.warning(
+            "Order book depth subscriptions not supported by dYdX; "
+            "use `subscribe_book_deltas` with a managed book instead",
+        )
+
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         # dYdX doesn't have a dedicated quote tick channel
         # Quotes are synthesized from orderbook data (top-of-book)
@@ -450,6 +457,10 @@ class DydxDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_orderbook(pyo3_instrument_id)
 
+    async def _unsubscribe_order_book_depth(self, command: UnsubscribeOrderBook) -> None:
+        # dYdX does not support order book depth subscriptions
+        pass
+
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         instrument_id = command.instrument_id
         self._active_quote_subs.discard(instrument_id)
@@ -495,6 +506,9 @@ class DydxDataClient(LiveMarketDataClient):
             data_type=request.data_type,
             data=instrument,
             correlation_id=request.id,
+            start=None,
+            end=None,
+            params=request.params,
         )
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
@@ -503,6 +517,9 @@ class DydxDataClient(LiveMarketDataClient):
             data_type=request.data_type,
             data=instruments,
             correlation_id=request.id,
+            start=None,
+            end=None,
+            params=request.params,
         )
 
     async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
@@ -529,6 +546,14 @@ class DydxDataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.error(
                 f"Error requesting order book snapshot for {request.instrument_id}: {e}",
+            )
+            self._handle_data_response(
+                data_type=request.data_type,
+                data=[],
+                correlation_id=request.id,
+                start=None,
+                end=None,
+                params=request.params,
             )
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
@@ -565,6 +590,49 @@ class DydxDataClient(LiveMarketDataClient):
 
         except Exception as e:
             self._log.error(f"Error requesting trade ticks for {request.instrument_id}: {e}")
+            self._handle_trade_ticks(
+                request.instrument_id,
+                [],
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )
+
+    async def _request_funding_rates(self, request: RequestFundingRates) -> None:
+        try:
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                request.instrument_id.value,
+            )
+            limit = request.limit if request.limit > 0 else None
+
+            pyo3_funding_rates = await self._http_client.request_funding_rates(
+                instrument_id=pyo3_instrument_id,
+                start=ensure_pydatetime_utc(request.start),
+                end=ensure_pydatetime_utc(request.end),
+                limit=limit,
+            )
+            funding_rates = FundingRateUpdate.from_pyo3_list(pyo3_funding_rates)
+
+            self._handle_funding_rates(
+                request.instrument_id,
+                funding_rates,
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )
+
+        except Exception as e:
+            self._log.error(f"Error requesting funding rates for {request.instrument_id}: {e}")
+            self._handle_funding_rates(
+                request.instrument_id,
+                [],
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )
 
     async def _request_bars(self, request: RequestBars) -> None:
         bar_type = request.bar_type
@@ -595,3 +663,11 @@ class DydxDataClient(LiveMarketDataClient):
             )
         except Exception as e:
             self._log.error(f"Error requesting bars for {bar_type}: {e}")
+            self._handle_bars(
+                bar_type,
+                [],
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )

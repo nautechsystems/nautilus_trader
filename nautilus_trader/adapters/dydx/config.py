@@ -32,9 +32,7 @@ class DydxDataClientConfig(LiveDataClientConfig, frozen=True):
     Parameters
     ----------
     wallet_address : str, optional
-        The dYdX wallet address.
-        If ``None`` then will source `DYDX_WALLET_ADDRESS` or
-        `DYDX_TESTNET_WALLET_ADDRESS` environment variables.
+        Legacy compatibility field. The public data client does not use wallet credentials.
     environment : DydxNetwork, optional
         The dYdX network environment for the client (MAINNET or TESTNET).
         If ``None`` then defaults to MAINNET.

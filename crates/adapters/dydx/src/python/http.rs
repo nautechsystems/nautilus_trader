@@ -459,6 +459,37 @@ impl DydxHttpClient {
         })
     }
 
+    /// Requests historical funding rates for an instrument.
+    #[pyo3(name = "request_funding_rates")]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
+    fn py_request_funding_rates<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let funding_rates = client
+                .request_funding_rates(instrument_id, start, end, limit)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let pylist = PyList::new(
+                    py,
+                    funding_rates
+                        .into_iter()
+                        .map(|rate| rate.into_py_any_unwrap(py)),
+                )?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
+
     /// Requests an order book snapshot for a symbol.
     ///
     /// Fetches order book data from the dYdX Indexer API and converts it to Nautilus

@@ -36,6 +36,10 @@ pub const DYDX_TESTNET_CHAIN_ID: &str = "dydx-testnet-4";
 /// Cosmos SDK bech32 address prefix for dYdX.
 pub const DYDX_BECH32_PREFIX: &str = "dydx";
 
+/// Order router address for the NautilusTrader order attribution.
+/// Defined by dYdX governance proposal 381 (<https://mintscan.io/dydx/proposals/381>).
+pub const DYDX_NAUTILUS_ORDER_ROUTER_ADDRESS: &str = "dydx1pahjv32ex740hahnp5dc4hnmlchkeea6ndqat5";
+
 /// USDC gas denomination (native chain token).
 pub const USDC_GAS_DENOM: &str =
     "ibc/8E27BA2D5493AF5636760E354E46004562C46AB7EC0CC4C1CA14E9E20E2545B5";

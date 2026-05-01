@@ -104,6 +104,9 @@ const DYDX_MAX_BARS_PER_REQUEST: u32 = 1_000;
 /// Perpetual markets endpoint (shared between `get_markets` and `get_market`).
 const ENDPOINT_PERPETUAL_MARKETS: &str = "/v4/perpetualMarkets";
 
+const QUERY_MARKET_TYPE_PERPETUAL: &str = "marketType=PERPETUAL";
+const DYDX_INDEXER_REPORT_LIMIT: u32 = 1_000;
+
 fn bar_type_to_resolution(bar_type: &BarType) -> anyhow::Result<DydxCandleResolution> {
     if bar_type.aggregation_source() != AggregationSource::External {
         anyhow::bail!(
@@ -561,7 +564,7 @@ impl DydxRawHttpClient {
 
         if let Some(m) = market {
             query_parts.push(format!("market={m}"));
-            query_parts.push("marketType=PERPETUAL".to_string());
+            query_parts.push(QUERY_MARKET_TYPE_PERPETUAL.to_string());
         }
 
         if let Some(l) = limit {
@@ -591,7 +594,7 @@ impl DydxRawHttpClient {
 
         if let Some(m) = market {
             query_parts.push(format!("market={m}"));
-            query_parts.push("marketType=PERPETUAL".to_string());
+            query_parts.push(QUERY_MARKET_TYPE_PERPETUAL.to_string());
         }
 
         if let Some(l) = limit {
@@ -1560,7 +1563,12 @@ impl DydxHttpClient {
 
         let orders = self
             .inner
-            .get_orders(address, subaccount_number, market.as_deref(), None)
+            .get_orders(
+                address,
+                subaccount_number,
+                market.as_deref(),
+                Some(DYDX_INDEXER_REPORT_LIMIT),
+            )
             .await?;
 
         let mut reports = Vec::new();
@@ -1621,7 +1629,12 @@ impl DydxHttpClient {
 
         let fills_response = self
             .inner
-            .get_fills(address, subaccount_number, market.as_deref(), None)
+            .get_fills(
+                address,
+                subaccount_number,
+                market.as_deref(),
+                Some(DYDX_INDEXER_REPORT_LIMIT),
+            )
             .await?;
 
         let mut reports = Vec::new();
