@@ -1032,6 +1032,92 @@ class TestPolymarketExecutionClient:
         assert reports[0].last_qty == Quantity.from_str(rest_size)
         assert order.quantity == Quantity.from_str(expected_order_quantity)
 
+    @pytest.mark.asyncio
+    async def test_generate_fill_reports_aligns_cached_order_before_live_reconciliation(
+        self,
+        mocker,
+    ):
+        """
+        Live fill reconciliation is synchronous while OrderUpdated is queue-driven.
+        The cached order must be adjusted in-band before the FillReport is reconciled.
+        """
+        condition_id, asset_id, instrument, client_order_id, venue_order_id = (
+            self._setup_dust_market_order(
+                quantity="1.500000",
+                cached_quantity="1.546300",
+            )
+        )
+        order = self.cache.order(client_order_id)
+        assert order is not None
+        trade_payload = {
+            "id": "3975ed82-2a1d-4e85-9c2b-6b1302267b12",
+            "taker_order_id": venue_order_id.value,
+            "market": condition_id,
+            "asset_id": asset_id,
+            "side": "BUY",
+            "size": "1.546366",
+            "fee_rate_bps": "0",
+            "price": "0.97",
+            "status": "CONFIRMED",
+            "match_time": "1777597141",
+            "last_update": "1777597141",
+            "outcome": "Down",
+            "bucket_index": 0,
+            "owner": self.http_client.creds.api_key,
+            "maker_address": self.http_client.get_address.return_value,
+            "transaction_hash": "0x16527181ac3c2dfb8ab81457aadc40cd9671a2b5f54f511a35b3d60736fb32e3",
+            "maker_orders": [],
+            "trader_side": "TAKER",
+        }
+        mock_get_trades = mocker.patch.object(self.http_client, "get_trades")
+        mock_get_trades.return_value = [trade_payload]
+        live_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+        live_exec_engine = LiveExecutionEngine(
+            loop=self.loop,
+            msgbus=live_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        live_client = PolymarketExecutionClient(
+            loop=self.loop,
+            http_client=self.http_client,
+            msgbus=live_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=self.provider,
+            ws_auth=self.ws_auth,
+            config=PolymarketExecClientConfig(),
+            name=None,
+        )
+        live_exec_engine.register_client(live_client)
+        order_updates = []
+        live_msgbus.subscribe(f"events.order.{order.strategy_id}", order_updates.append)
+        command = GenerateFillReports(
+            instrument_id=instrument.id,
+            venue_order_id=None,
+            start=None,
+            end=None,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        reports = await live_client.generate_fill_reports(command)
+
+        assert len(reports) == 1
+        assert reports[0].client_order_id == client_order_id
+        assert reports[0].venue_order_id == venue_order_id
+        assert reports[0].last_qty == Quantity.from_str("1.546366")
+        assert order.quantity == Quantity.from_str("1.546366")
+        updated_quantities = [
+            event.quantity for event in order_updates if type(event).__name__ == "OrderUpdated"
+        ]
+        assert updated_quantities == [Quantity.from_str("1.546366")]
+        assert live_exec_engine.reconcile_execution_report(reports[0])
+        assert order.filled_qty == Quantity.from_str("1.546366")
+
     def test_handle_ws_message_invalid_json(self):
         """
         Test handling invalid JSON websocket message.
@@ -1670,28 +1756,31 @@ class TestPolymarketExecutionClient:
         order = self.cache.order(client_order_id)
         assert order is not None
 
-        def assert_aligned_before_report(report):
-            assert order.quantity == Quantity.from_str("1.546366")
-            assert report.client_order_id == client_order_id
-            assert report.venue_order_id == venue_order_id
-            assert report.last_qty == Quantity.from_str("1.546366")
-
-        orphan_cache = MagicMock()
-        orphan_cache.instrument.return_value = self.cache.instrument(instrument.id)
-        orphan_cache.client_order_id.return_value = client_order_id
-        orphan_cache.strategy_id_for_order.return_value = None
-        orphan_cache.order.return_value = order
-        orphan_client = MagicMock()
-        orphan_client._api_key = self.exec_client._api_key
-        orphan_client._cache = orphan_cache
-        orphan_client._clock = self.clock
-        orphan_client._log = MagicMock()
-        orphan_client._processed_fills = set()
-        orphan_client.account_id = self.account_id
-        orphan_client._align_order_quantity_to_venue_fill = (
-            self.exec_client._align_order_quantity_to_venue_fill
+        live_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
         )
-        orphan_client._send_fill_report.side_effect = assert_aligned_before_report
+        live_exec_engine = LiveExecutionEngine(
+            loop=self.loop,
+            msgbus=live_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        live_client = PolymarketExecutionClient(
+            loop=self.loop,
+            http_client=self.http_client,
+            msgbus=live_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=self.provider,
+            ws_auth=self.ws_auth,
+            config=PolymarketExecClientConfig(),
+            name=None,
+        )
+        mocker.patch.object(live_client, "_strategy_id_for_order", return_value=None)
+        live_exec_engine.register_client(live_client)
+        order_updates = []
+        live_msgbus.subscribe(f"events.order.{order.strategy_id}", order_updates.append)
         msg = PolymarketUserTrade(
             asset_id=asset_id,
             bucket_index=0,
@@ -1715,15 +1804,20 @@ class TestPolymarketExecutionClient:
             type=PolymarketEventType.TRADE,
         )
 
-        PolymarketExecutionClient._handle_user_trade_in_ws_trade_msg(
-            orphan_client,
+        live_client._handle_user_trade_in_ws_trade_msg(
             msg,
             TradeId(msg.id),
             False,
             venue_order_id.value,
         )
 
-        orphan_client._send_fill_report.assert_called_once()
+        assert order.quantity == Quantity.from_str("1.546366")
+        assert order.filled_qty == Quantity.from_str("1.546366")
+        updated_quantities = [
+            event.quantity for event in order_updates if type(event).__name__ == "OrderUpdated"
+        ]
+        assert updated_quantities == [Quantity.from_str("1.546366")]
+        assert (TradeId(msg.id), venue_order_id) in live_client._processed_fills
 
     def test_dust_threshold_overage_fill_does_not_align_cached_order(self, mocker):
         """

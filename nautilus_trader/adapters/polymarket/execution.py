@@ -109,6 +109,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
@@ -783,6 +784,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         order,
                         venue_order_id,
                         report.last_qty,
+                        apply_immediately=True,
                     )
 
             parsed_fill_keys.add(fill_key)
@@ -1776,6 +1778,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         order: Order,
         venue_order_id: VenueOrderId,
         fill_qty: Quantity,
+        apply_immediately: bool = False,
     ) -> None:
         filled_after = order.filled_qty + fill_qty
         diff = filled_after.as_decimal() - order.quantity.as_decimal()
@@ -1803,6 +1806,15 @@ class PolymarketExecutionClient(LiveExecutionClient):
             ts_init=ts_now,
             is_quote_quantity=False,
         )
+        if apply_immediately:
+            order.apply(updated)
+            self._cache.update_order(order)
+            self._msgbus.publish(
+                topic=f"events.order.{order.strategy_id}",
+                msg=updated,
+            )
+            return
+
         self._send_order_event(updated)
 
     def _align_order_status_report_quantity_to_fill(
@@ -1821,6 +1833,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
         report.quantity = report.filled_qty
         report.leaves_qty = report.quantity.saturating_sub(report.filled_qty)
         return report
+
+    def _strategy_id_for_order(self, client_order_id: ClientOrderId) -> StrategyId | None:
+        return self._cache.strategy_id_for_order(client_order_id)
 
     def _handle_ws_message(self, raw: bytes) -> None:
         try:
@@ -2131,7 +2146,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         strategy_id = None
 
         if client_order_id:
-            strategy_id = self._cache.strategy_id_for_order(client_order_id)
+            strategy_id = self._strategy_id_for_order(client_order_id)
 
         if strategy_id is None:
             self._log.warning("Strategy ID not found - parsing fill report")
@@ -2149,6 +2164,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         order,
                         venue_order_id,
                         report.last_qty,
+                        apply_immediately=True,
                     )
             self._send_fill_report(report)
             self._record_processed_fill(trade_id, venue_order_id)
