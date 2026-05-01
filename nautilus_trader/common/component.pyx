@@ -2684,7 +2684,10 @@ cdef class MessageBus:
         cdef list subs
 
         for pattern in patterns:
-            if is_matching(topic, pattern):
+            # `pattern` here is an already-resolved concrete topic (e.g. "data.instrument.VENUE.SYMBOL"),
+            # and `topic` is the new subscription pattern (may include wildcards).
+            # We must match concrete topic against subscription pattern, not vice versa.
+            if is_matching(pattern, topic):
                 subs = list(self._patterns[pattern])
                 subs.append(sub)
                 subs = sorted(subs, reverse=True)
@@ -2693,6 +2696,10 @@ cdef class MessageBus:
 
         self._subscriptions[sub] = sorted(matches)
 
+        # The message bus caches resolved subscriber lists per concrete topic to avoid
+        # re-matching on every publish. When adding a new subscription, these caches
+        # may now be stale for topics that were already resolved with a non-empty set
+        # of subscribers. Mark the cache as needing re-resolution.
         self._resolved = False
 
         self._log.debug(f"Added {sub}")
@@ -2769,8 +2776,11 @@ cdef class MessageBus:
         # Get all subscriptions matching topic pattern
         # Note: cannot use truthiness on array
         cdef Subscription[:] subs = self._patterns.get(topic)
-        if subs is None or (not self._resolved and len(subs) == 0):
-            # Add the topic pattern and get matching subscribers
+        if subs is None or not self._resolved:
+            # Resolve subscribers for this concrete topic. The message bus caches resolved
+            # subscriber lists per topic for performance. Any subscribe/unsubscribe marks
+            # the cache as potentially stale via `self._resolved = False`, so we must
+            # re-resolve on the next publish to ensure late subscriptions take effect.
             subs = self._resolve_subscriptions(topic)
             self._resolved = True
 

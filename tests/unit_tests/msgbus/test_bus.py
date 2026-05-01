@@ -380,6 +380,28 @@ def test_publish_with_header_sends_to_handler_after_published(bus):
     assert bus.pub_count == 2
 
 
+def test_publish_with_header_sends_to_handler_after_published_when_cached_topic_has_subscribers(bus):
+    # Arrange
+    early_subscriber = []
+    late_subscriber = []
+    bus.subscribe(topic="data.*.POLYMARKET.*", handler=early_subscriber.append)
+
+    # Act
+    # Publish once so the bus caches this concrete topic with a non-empty subscriber list.
+    bus.publish("data.instrument.POLYMARKET.TEST-SYMBOL", "ONE")
+
+    # Subscribe a new wildcard AFTER the topic has been published and cached.
+    bus.subscribe(topic="data.instrument.POLYMARKET.*", handler=late_subscriber.append)
+
+    # Publish again to the same concrete topic; late subscriber should now receive.
+    bus.publish("data.instrument.POLYMARKET.TEST-SYMBOL", "TWO")
+
+    # Assert
+    assert "ONE" in early_subscriber
+    assert "TWO" in early_subscriber
+    assert "TWO" in late_subscriber
+
+
 def test_publish_with_none_matching_header_then_filters_from_subscriber(bus):
     # Arrange
     subscriber = []
