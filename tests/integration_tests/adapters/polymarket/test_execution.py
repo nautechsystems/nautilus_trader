@@ -27,25 +27,39 @@ import msgspec
 import pytest
 from py_clob_client_v2.client import ClobClient
 from py_clob_client_v2.client import OrderPayload
+from py_clob_client_v2.order_utils.model.order_data_v2 import SignedOrderV2
+from py_clob_client_v2.order_utils.model.side import Side
+from py_clob_client_v2.order_utils.model.signature_type_v2 import SignatureTypeV2
 
 from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trades_key
+from nautilus_trader.adapters.polymarket.common.constants import DUST_SNAP_THRESHOLD
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_CANCEL_ALREADY_DONE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWebSocketAuth
+from nautilus_trader.adapters.polymarket.common.enums import PolymarketEventType
+from nautilus_trader.adapters.polymarket.common.enums import PolymarketLiquiditySide
+from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
+from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderStatus
+from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderType
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.config import PolymarketExecClientConfig
 from nautilus_trader.adapters.polymarket.execution import PolymarketExecutionClient
+from nautilus_trader.adapters.polymarket.execution import _signed_order_taker_amount
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
+from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserOrder
+from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserTrade
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
+from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.currencies import USDC
 from nautilus_trader.model.currencies import pUSD
 from nautilus_trader.model.enums import AssetClass
@@ -262,6 +276,68 @@ class TestPolymarketExecutionClient:
         self.cache.add_venue_order_id(client_order_id, venue_order_id)
 
         return client_order_id, venue_order_id
+
+    def _add_dust_test_instrument(self) -> tuple[str, str, BinaryOption]:
+        condition_id = "0xc258a6ecc832a280af6c7a536ffa711cf33abcb9f068999f38f0e9115d2acb87"
+        asset_id = "96775532774940201542686144688806928382655148862211756904686246321726178211470"
+        instrument_id = get_polymarket_instrument_id(condition_id, asset_id)
+        instrument = BinaryOption(
+            instrument_id=instrument_id,
+            raw_symbol=Symbol(instrument_id.symbol.value),
+            outcome="Down",
+            description="BTC 5m test",
+            asset_class=AssetClass.ALTERNATIVE,
+            currency=pUSD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            size_precision=6,
+            size_increment=Quantity.from_str("0.000001"),
+            activation_ns=0,
+            expiration_ns=0,
+            max_quantity=None,
+            min_quantity=None,
+            maker_fee=Decimal(0),
+            taker_fee=Decimal("0.072"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(instrument)
+        return condition_id, asset_id, instrument
+
+    def _setup_dust_market_order(
+        self,
+        quantity: str = "1.500000",
+        cached_quantity: str | None = None,
+    ) -> tuple[str, str, BinaryOption, ClientOrderId, VenueOrderId]:
+        condition_id, asset_id, instrument = self._add_dust_test_instrument()
+        order = self.strategy.order_factory.market(
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str(quantity),
+            quote_quantity=True,
+            time_in_force=TimeInForce.FOK,
+        )
+        venue_order_id = VenueOrderId(
+            "0xba9368d57c285d09a7003f7635f3babb99fae2b538ab558f2eaeeab2c0155500",
+        )
+        order.apply(TestEventStubs.order_submitted(order, account_id=self.account_id))
+        order.apply(
+            TestEventStubs.order_accepted(
+                order,
+                account_id=self.account_id,
+                venue_order_id=venue_order_id,
+            ),
+        )
+        if cached_quantity is not None:
+            order.apply(
+                TestEventStubs.order_updated(
+                    order,
+                    quantity=Quantity.from_str(cached_quantity),
+                ),
+            )
+        self.cache.add_order(order, None)
+        self.cache.add_venue_order_id(order.client_order_id, venue_order_id)
+        return condition_id, asset_id, instrument, order.client_order_id, venue_order_id
 
     def test_handle_ws_order_placement_message(self):
         """
@@ -1187,6 +1263,54 @@ class TestPolymarketExecutionClient:
         # Assert - no exception raised, warning logged
         # Test passes if we reach this point without exception
 
+    def test_signed_order_taker_amount_prefers_dict_order_value(self):
+        """
+        Dict-backed signed orders should read the explicit order payload first.
+        """
+
+        class DictBackedSignedOrder:
+            order = {"takerAmount": "20000000"}
+            takerAmount = "1"
+
+        assert _signed_order_taker_amount(DictBackedSignedOrder()) == 20_000_000
+
+    def test_signed_order_taker_amount_reads_real_signed_order_v2(self):
+        """
+        SignedOrderV2 exposes takerAmount as an attribute in the installed client.
+        """
+        signed_order = SignedOrderV2(
+            salt="1",
+            maker="0x0000000000000000000000000000000000000001",
+            signer="0x0000000000000000000000000000000000000001",
+            tokenId="123",
+            makerAmount="1500000",
+            takerAmount="1898733",
+            side=Side.BUY,
+            signatureType=SignatureTypeV2.POLY_GNOSIS_SAFE,
+            timestamp="1777601643",
+            metadata="0x0000000000000000000000000000000000000000000000000000000000000000",
+            builder="0x0000000000000000000000000000000000000000000000000000000000000000",
+            expiration="0",
+            signature="0xsignature",
+        )
+
+        assert _signed_order_taker_amount(signed_order) == 1_898_733
+
+    def test_signed_order_taker_amount_reads_mapping_backed_order(self):
+        """
+        Non-dict order payloads still work if they expose takerAmount by key.
+        """
+
+        class MappingBackedOrder:
+            def __getitem__(self, key):
+                assert key == "takerAmount"
+                return "321"
+
+        class MappingBackedSignedOrder:
+            order = MappingBackedOrder()
+
+        assert _signed_order_taker_amount(MappingBackedSignedOrder()) == 321
+
     @pytest.mark.asyncio
     async def test_submit_market_order_success(self, mocker):
         """
@@ -1362,6 +1486,395 @@ class TestPolymarketExecutionClient:
         updated_event = updated_calls[0].args[0]
         assert updated_event.quantity == Quantity.from_str("20.00")
         assert not updated_event.is_quote_quantity
+
+    def test_dust_overage_fill_aligns_cached_order_before_fill_event(self, mocker):
+        """
+        PM can report a confirmed fill a few 1e-6 shares above the signed taker amount.
+        The cached order must be aligned before emitting OrderFilled so Nautilus does not
+        reject the real venue fill as an overfill.
+        """
+        condition_id = "0xc258a6ecc832a280af6c7a536ffa711cf33abcb9f068999f38f0e9115d2acb87"
+        asset_id = "96775532774940201542686144688806928382655148862211756904686246321726178211470"
+        instrument_id = get_polymarket_instrument_id(condition_id, asset_id)
+        instrument = BinaryOption(
+            instrument_id=instrument_id,
+            raw_symbol=Symbol(instrument_id.symbol.value),
+            outcome="Down",
+            description="BTC 5m test",
+            asset_class=AssetClass.ALTERNATIVE,
+            currency=pUSD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            size_precision=6,
+            size_increment=Quantity.from_str("0.000001"),
+            activation_ns=0,
+            expiration_ns=0,
+            max_quantity=None,
+            min_quantity=None,
+            maker_fee=Decimal(0),
+            taker_fee=Decimal("0.072"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(instrument)
+
+        order = self.strategy.order_factory.market(
+            instrument_id=instrument_id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("1.500000"),
+            quote_quantity=True,
+            time_in_force=TimeInForce.FOK,
+        )
+        venue_order_id = VenueOrderId(
+            "0xba9368d57c285d09a7003f7635f3babb99fae2b538ab558f2eaeeab2c0155500",
+        )
+        order.apply(TestEventStubs.order_submitted(order, account_id=self.account_id))
+        order.apply(
+            TestEventStubs.order_accepted(
+                order,
+                account_id=self.account_id,
+                venue_order_id=venue_order_id,
+            ),
+        )
+        order.apply(
+            TestEventStubs.order_updated(
+                order,
+                quantity=Quantity.from_str("1.546300"),
+            ),
+        )
+        self.cache.add_order(order, None)
+        self.cache.add_venue_order_id(order.client_order_id, venue_order_id)
+        self.exec_client._fill_tracker.register(
+            venue_order_id=venue_order_id,
+            submitted_qty=Quantity.from_str("1.546300"),
+            order_side=OrderSide.BUY,
+            instrument_id=instrument_id,
+            size_precision=instrument.size_precision,
+            price_precision=instrument.price_precision,
+        )
+
+        def assert_aligned_before_fill(**kwargs):
+            assert order.quantity == Quantity.from_str("1.546366")
+            assert kwargs["last_qty"] == Quantity.from_str("1.546366")
+
+        fill_spy = mocker.patch.object(
+            self.exec_client,
+            "generate_order_filled",
+            side_effect=assert_aligned_before_fill,
+        )
+        msg = PolymarketUserTrade(
+            asset_id=asset_id,
+            bucket_index=0,
+            fee_rate_bps="0",
+            id="3975ed82-2a1d-4e85-9c2b-6b1302267b12",
+            last_update="1777597141",
+            maker_address="0xd224E6150f754B7f11a3eBB121Adc51D616422f8",
+            maker_orders=[],
+            market=condition_id,
+            match_time="1777597141",
+            outcome="Down",
+            owner=self.http_client.creds.api_key,
+            price="0.97",
+            side=PolymarketOrderSide.BUY,
+            size="1.546366",
+            status=PolymarketTradeStatus.MATCHED,
+            taker_order_id=venue_order_id.value,
+            timestamp="1777597141876",
+            trade_owner=self.http_client.creds.api_key,
+            trader_side=PolymarketLiquiditySide.TAKER,
+            type=PolymarketEventType.TRADE,
+        )
+
+        self.exec_client._handle_user_trade_in_ws_trade_msg(
+            msg,
+            TradeId(msg.id),
+            False,
+            venue_order_id.value,
+        )
+
+        fill_spy.assert_called_once()
+
+    def test_dust_threshold_overage_fill_does_not_align_cached_order(self, mocker):
+        """
+        A real overfill at or above the dust threshold must stay visible to Nautilus.
+        """
+        _, _, _, client_order_id, venue_order_id = self._setup_dust_market_order()
+        order = self.cache.order(client_order_id)
+        assert order is not None
+        send_spy = mocker.spy(self.exec_client, "_send_order_event")
+
+        self.exec_client._align_order_quantity_to_venue_fill(
+            order,
+            venue_order_id,
+            Quantity.from_str("1.520000"),
+        )
+
+        assert order.quantity == Quantity.from_str("1.500000")
+        updated_calls = [
+            call
+            for call in send_spy.call_args_list
+            if type(call.args[0]).__name__ == "OrderUpdated"
+        ]
+        assert len(updated_calls) == 0
+
+    @pytest.mark.parametrize(
+        ("overage", "expected_quantity", "expected_updates"),
+        [
+            ("0.010000", "1.500000", 0),
+            ("0.009999", "1.509999", 1),
+        ],
+    )
+    def test_dust_threshold_boundary_fill_alignment(
+        self,
+        mocker,
+        overage,
+        expected_quantity,
+        expected_updates,
+    ):
+        """
+        Alignment is exclusive at the dust threshold and active just below it.
+        """
+        _, _, _, client_order_id, venue_order_id = self._setup_dust_market_order()
+        order = self.cache.order(client_order_id)
+        assert order is not None
+        assert Decimal(overage) <= Decimal(str(DUST_SNAP_THRESHOLD))
+        send_spy = mocker.spy(self.exec_client, "_send_order_event")
+
+        fill_qty = Decimal("1.500000") + Decimal(overage)
+        self.exec_client._align_order_quantity_to_venue_fill(
+            order,
+            venue_order_id,
+            Quantity.from_str(str(fill_qty)),
+        )
+
+        assert order.quantity == Quantity.from_str(expected_quantity)
+        updated_calls = [
+            call
+            for call in send_spy.call_args_list
+            if type(call.args[0]).__name__ == "OrderUpdated"
+        ]
+        assert len(updated_calls) == expected_updates
+
+    def test_equal_fill_does_not_emit_dust_alignment_update(self, mocker):
+        """
+        Equal fill quantity is normal completion, not a dust overage needing an update.
+        """
+        _, _, _, client_order_id, venue_order_id = self._setup_dust_market_order()
+        order = self.cache.order(client_order_id)
+        assert order is not None
+        send_spy = mocker.spy(self.exec_client, "_send_order_event")
+
+        self.exec_client._align_order_quantity_to_venue_fill(
+            order,
+            venue_order_id,
+            Quantity.from_str("1.500000"),
+        )
+
+        assert order.quantity == Quantity.from_str("1.500000")
+        updated_calls = [
+            call
+            for call in send_spy.call_args_list
+            if type(call.args[0]).__name__ == "OrderUpdated"
+        ]
+        assert len(updated_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_order_status_report_aligns_dust_overage_before_reconciliation(self, mocker):
+        """
+        Reconciliation can infer an OrderFilled from a PM order report. The cached order
+        must be aligned first, or Nautilus rejects the inferred fill as an overfill.
+        """
+        condition_id = "0xc258a6ecc832a280af6c7a536ffa711cf33abcb9f068999f38f0e9115d2acb87"
+        asset_id = "96775532774940201542686144688806928382655148862211756904686246321726178211470"
+        instrument_id = get_polymarket_instrument_id(condition_id, asset_id)
+        instrument = BinaryOption(
+            instrument_id=instrument_id,
+            raw_symbol=Symbol(instrument_id.symbol.value),
+            outcome="Down",
+            description="BTC 5m test",
+            asset_class=AssetClass.ALTERNATIVE,
+            currency=pUSD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            size_precision=6,
+            size_increment=Quantity.from_str("0.000001"),
+            activation_ns=0,
+            expiration_ns=0,
+            max_quantity=None,
+            min_quantity=None,
+            maker_fee=Decimal(0),
+            taker_fee=Decimal("0.072"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(instrument)
+
+        order = self.strategy.order_factory.market(
+            instrument_id=instrument_id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("1.500000"),
+            quote_quantity=True,
+            time_in_force=TimeInForce.FOK,
+        )
+        venue_order_id = VenueOrderId(
+            "0xba9368d57c285d09a7003f7635f3babb99fae2b538ab558f2eaeeab2c0155500",
+        )
+        order.apply(TestEventStubs.order_submitted(order, account_id=self.account_id))
+        order.apply(
+            TestEventStubs.order_accepted(
+                order,
+                account_id=self.account_id,
+                venue_order_id=venue_order_id,
+            ),
+        )
+        order.apply(
+            TestEventStubs.order_updated(
+                order,
+                quantity=Quantity.from_str("1.546300"),
+            ),
+        )
+        self.cache.add_order(order, None)
+        self.cache.add_venue_order_id(order.client_order_id, venue_order_id)
+
+        mock_get_order = mocker.patch.object(self.http_client, "get_order")
+        mock_get_order.return_value = {
+            "associate_trades": ["3975ed82-2a1d-4e85-9c2b-6b1302267b12"],
+            "id": venue_order_id.value,
+            "status": "MATCHED",
+            "market": condition_id,
+            "original_size": "1.546300",
+            "outcome": "Down",
+            "maker_address": self.http_client.get_address.return_value,
+            "owner": self.http_client.creds.api_key,
+            "price": "0.97",
+            "side": "BUY",
+            "size_matched": "1.546366",
+            "asset_id": asset_id,
+            "expiration": None,
+            "order_type": "FOK",
+            "created_at": 1777597141,
+        }
+        command = GenerateOrderStatusReport(
+            instrument_id=instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=venue_order_id,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        report = await self.exec_client.generate_order_status_report(command)
+
+        assert report is not None
+        assert report.quantity == Quantity.from_str("1.546366")
+        assert report.filled_qty == Quantity.from_str("1.546366")
+
+        live_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+        live_exec_engine = LiveExecutionEngine(
+            loop=self.loop,
+            msgbus=live_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        assert live_exec_engine.reconcile_execution_report(report)
+        assert order.quantity == Quantity.from_str("1.546366")
+        assert order.filled_qty == Quantity.from_str("1.546366")
+        filled_events = [
+            event
+            for event in order.events
+            if type(event).__name__ == "OrderFilled"
+        ]
+        assert len(filled_events) == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("original_size", "size_matched"),
+        [
+            ("1.500000", "1.520000"),
+            ("1.520000", "1.500000"),
+        ],
+    )
+    async def test_order_status_report_does_not_align_outside_dust_overage(
+        self,
+        mocker,
+        original_size,
+        size_matched,
+    ):
+        """
+        Report alignment is limited to positive overages below the dust threshold.
+        """
+        condition_id, asset_id, _, client_order_id, venue_order_id = (
+            self._setup_dust_market_order()
+        )
+        mock_get_order = mocker.patch.object(self.http_client, "get_order")
+        mock_get_order.return_value = {
+            "associate_trades": ["3975ed82-2a1d-4e85-9c2b-6b1302267b12"],
+            "id": venue_order_id.value,
+            "status": "MATCHED",
+            "market": condition_id,
+            "original_size": original_size,
+            "outcome": "Down",
+            "maker_address": self.http_client.get_address.return_value,
+            "owner": self.http_client.creds.api_key,
+            "price": "0.97",
+            "side": "BUY",
+            "size_matched": size_matched,
+            "asset_id": asset_id,
+            "expiration": None,
+            "order_type": "FOK",
+            "created_at": 1777597141,
+        }
+        command = GenerateOrderStatusReport(
+            instrument_id=get_polymarket_instrument_id(condition_id, asset_id),
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        report = await self.exec_client.generate_order_status_report(command)
+
+        assert report is not None
+        assert report.quantity == Quantity.from_str(original_size)
+        assert report.filled_qty == Quantity.from_str(size_matched)
+
+    def test_ws_order_status_report_aligns_dust_overage_for_unknown_strategy(self, mocker):
+        """
+        Orphan order websocket reports must use the same dust alignment as polling.
+        """
+        condition_id, asset_id, _ = self._add_dust_test_instrument()
+        send_spy = mocker.patch.object(self.exec_client, "_send_order_status_report")
+        msg = PolymarketUserOrder(
+            asset_id=asset_id,
+            associate_trades=["3975ed82-2a1d-4e85-9c2b-6b1302267b12"],
+            created_at="1777597141",
+            expiration=None,
+            id="0xba9368d57c285d09a7003f7635f3babb99fae2b538ab558f2eaeeab2c0155500",
+            maker_address=self.http_client.get_address.return_value,
+            market=condition_id,
+            order_owner=self.http_client.creds.api_key,
+            order_type=PolymarketOrderType.FOK,
+            original_size="1.546300",
+            outcome="Down",
+            owner=self.http_client.creds.api_key,
+            price="0.97",
+            side=PolymarketOrderSide.BUY,
+            size_matched="1.546366",
+            status=PolymarketOrderStatus.MATCHED,
+            timestamp="1777597141876",
+            type=PolymarketEventType.UPDATE,
+        )
+
+        self.exec_client._handle_ws_order_msg(msg, wait_for_ack=False)
+
+        send_spy.assert_called_once()
+        report = send_spy.call_args.args[0]
+        assert report.client_order_id is None
+        assert report.quantity == Quantity.from_str("1.546366")
+        assert report.filled_qty == Quantity.from_str("1.546366")
 
     @pytest.mark.asyncio
     async def test_submit_market_order_with_fok(self, mocker):

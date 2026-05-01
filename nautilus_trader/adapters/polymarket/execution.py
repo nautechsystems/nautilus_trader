@@ -116,6 +116,18 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 
 
+def _signed_order_taker_amount(signed_order: object) -> int:
+    order = getattr(signed_order, "order", None)
+    if isinstance(order, dict) and "takerAmount" in order:
+        return int(order["takerAmount"])
+
+    taker_amount = getattr(signed_order, "takerAmount", None)
+    if taker_amount is not None:
+        return int(taker_amount)
+
+    return int(order["takerAmount"])
+
+
 class PolymarketExecutionClient(LiveExecutionClient):
     """
     Provides an execution client for Polymarket, a decentralized predication market.
@@ -419,11 +431,13 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     if client_order_id is None:
                         client_order_id = ClientOrderId(str(UUID4()))
 
-                    report = polymarket_order.parse_to_order_status_report(
-                        account_id=self.account_id,
-                        instrument=instrument,
-                        client_order_id=client_order_id,
-                        ts_init=self._clock.timestamp_ns(),
+                    report = self._align_order_status_report_quantity_to_fill(
+                        polymarket_order.parse_to_order_status_report(
+                            account_id=self.account_id,
+                            instrument=instrument,
+                            client_order_id=client_order_id,
+                            ts_init=self._clock.timestamp_ns(),
+                        ),
                     )
                     reports.append(report)
         finally:
@@ -597,11 +611,13 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 )
                 return None
 
-            return polymarket_order.parse_to_order_status_report(
-                account_id=self.account_id,
-                instrument=instrument,
-                client_order_id=command.client_order_id,
-                ts_init=self._clock.timestamp_ns(),
+            return self._align_order_status_report_quantity_to_fill(
+                polymarket_order.parse_to_order_status_report(
+                    account_id=self.account_id,
+                    instrument=instrument,
+                    client_order_id=command.client_order_id,
+                    ts_init=self._clock.timestamp_ns(),
+                ),
             )
         finally:
             await self._retry_manager_pool.release(retry_manager)
@@ -1591,8 +1607,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         base_quantity = None
 
         if order.is_quote_quantity and order.side == OrderSide.BUY:
-            # SignedOrderV2 is a flat dataclass; takerAmount is the share base unit count.
-            taker_amount = int(signed_order.takerAmount)
+            taker_amount = _signed_order_taker_amount(signed_order)
             base_qty_value = taker_amount / 1e6
             base_quantity = Quantity(base_qty_value, instrument.size_precision)
 
@@ -1745,6 +1760,57 @@ class PolymarketExecutionClient(LiveExecutionClient):
         finally:
             await self._retry_manager_pool.release(retry_manager)
 
+    def _align_order_quantity_to_venue_fill(
+        self,
+        order: Order,
+        venue_order_id: VenueOrderId,
+        fill_qty: Quantity,
+    ) -> None:
+        filled_after = float(order.filled_qty) + float(fill_qty)
+        diff = filled_after - float(order.quantity)
+        if diff <= 0.0 or diff >= DUST_SNAP_THRESHOLD:
+            return
+
+        quantity = Quantity(filled_after, fill_qty.precision)
+        ts_now = self._clock.timestamp_ns()
+        self._log.info(
+            f"Aligning {order.client_order_id!r} quantity to Polymarket fill "
+            f"{quantity} (dust overage={diff:.6f})",
+        )
+        updated = OrderUpdated(
+            trader_id=self.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=venue_order_id,
+            account_id=self.account_id,
+            quantity=quantity,
+            price=None,
+            trigger_price=None,
+            event_id=UUID4(),
+            ts_event=ts_now,
+            ts_init=ts_now,
+            is_quote_quantity=False,
+        )
+        self._send_order_event(updated)
+
+    def _align_order_status_report_quantity_to_fill(
+        self,
+        report: OrderStatusReport,
+    ) -> OrderStatusReport:
+        diff = float(report.filled_qty) - float(report.quantity)
+        if diff <= 0.0 or diff >= DUST_SNAP_THRESHOLD:
+            return report
+
+        self._log.info(
+            f"Aligning {report.venue_order_id!r} order report quantity to "
+            f"Polymarket filled quantity {report.filled_qty} "
+            f"(dust overage={diff:.6f})",
+        )
+        report.quantity = report.filled_qty
+        report.leaves_qty = report.quantity.saturating_sub(report.filled_qty)
+        return report
+
     def _handle_ws_message(self, raw: bytes) -> None:
         try:
             if self._config.log_raw_ws_messages:
@@ -1862,11 +1928,13 @@ class PolymarketExecutionClient(LiveExecutionClient):
             strategy_id = self._cache.strategy_id_for_order(client_order_id)
 
         if strategy_id is None:
-            report = msg.parse_to_order_status_report(
-                account_id=self.account_id,
-                instrument=instrument,
-                client_order_id=client_order_id,
-                ts_init=self._clock.timestamp_ns(),
+            report = self._align_order_status_report_quantity_to_fill(
+                msg.parse_to_order_status_report(
+                    account_id=self.account_id,
+                    instrument=instrument,
+                    client_order_id=client_order_id,
+                    ts_init=self._clock.timestamp_ns(),
+                ),
             )
             self._send_order_status_report(report)
             return
@@ -2086,6 +2154,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         last_qty = instrument.make_qty(msg.last_qty(order_id))
         last_qty = self._fill_tracker.snap_fill_qty(venue_order_id, last_qty)
+        self._align_order_quantity_to_venue_fill(order, venue_order_id, last_qty)
         last_px = instrument.make_price(msg.last_px(order_id))
         liquidity_side = msg.liquidity_side()
         commission = calculate_commission(
