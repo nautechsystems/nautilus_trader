@@ -63,6 +63,7 @@ chrono = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
+rust_decimal = { workspace = true }
 serde = { workspace = true }
 ustr = { workspace = true }
 

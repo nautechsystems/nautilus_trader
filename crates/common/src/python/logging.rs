@@ -35,6 +35,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LoggerConfig {
+    /// Configuration for the Nautilus logger.
     #[new]
     #[pyo3(signature = (
         stdout_level=None,

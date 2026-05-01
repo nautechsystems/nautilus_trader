@@ -23,11 +23,11 @@ use pyo3::{PyTypeInfo, prelude::*, types::PyType};
 use crate::{
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BarIntervalType,
-        BetSide, BookAction, BookType, ContingencyType, CurrencyType, GreeksConvention,
-        InstrumentClass, InstrumentCloseType, LiquiditySide, MarketStatus, MarketStatusAction,
-        OmsType, OptionKind, OrderSide, OrderStatus, OrderType, OtoTriggerMode,
-        PositionAdjustmentType, PositionSide, PriceType, RecordFlag, TimeInForce, TradingState,
-        TrailingOffsetType, TriggerType,
+        BetSide, BookAction, BookType, ContingencyType, ContinuousFutureAdjustmentType,
+        CurrencyType, GreeksConvention, InstrumentClass, InstrumentCloseType, LiquiditySide,
+        MarketStatus, MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
+        OtoTriggerMode, PositionAdjustmentType, PositionSide, PriceType, RecordFlag, TimeInForce,
+        TradingState, TrailingOffsetType, TriggerType,
     },
     python::common::EnumIterator,
 };
@@ -478,6 +478,76 @@ impl ContingencyType {
     #[must_use]
     pub fn value(&self) -> u8 {
         *self as u8
+    }
+
+    #[classmethod]
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
+        EnumIterator::new::<Self>(py)
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
+        let tokenized = data_str.to_uppercase();
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl ContinuousFutureAdjustmentType {
+    /// The price-adjustment scheme applied when stitching segment contracts into a
+    /// continuous future series.
+    ///
+    /// The direction (backward vs. forward) selects the anchor contract:
+    /// - Backward modes anchor on the most recent contract; prices in older
+    ///   segments are shifted into the latest contract's frame.
+    /// - Forward modes anchor on the first contract; prices in later segments
+    ///   are shifted into the first contract's frame.
+    ///
+    /// The kind (spread vs. ratio) selects how each transition's offset is combined:
+    /// - Spread modes accumulate additive offsets (`post_price - pre_price`).
+    /// - Ratio modes accumulate multiplicative factors (`post_price / pre_price`)
+    ///   and require strictly positive prices.
+    #[new]
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(&t, value)
+    }
+
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    /// Returns whether this mode accumulates multiplicative factors.
+    #[getter(is_ratio)]
+    #[must_use]
+    pub const fn py_is_ratio(&self) -> bool {
+        self.is_ratio()
+    }
+
+    /// Returns whether this mode anchors on the most recent contract.
+    #[getter(is_backward)]
+    #[must_use]
+    pub const fn py_is_backward(&self) -> bool {
+        self.is_backward()
     }
 
     #[classmethod]

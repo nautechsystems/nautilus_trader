@@ -45,11 +45,20 @@ use nautilus_model::{
         QuoteTick, TradeTick,
         bar::{Bar, BarType, get_bar_interval_ns, get_time_bar_start},
     },
-    enums::{AggregationSource, AggressorSide, BarAggregation, BarIntervalType},
+    enums::{
+        AggregationSource, AggressorSide, BarAggregation, BarIntervalType,
+        ContinuousFutureAdjustmentType,
+    },
     identifiers::InstrumentId,
     instruments::{FixedTickScheme, TickSchemeRule},
-    types::{Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw},
+    types::{
+        Price, Quantity,
+        fixed::{FIXED_PRECISION, FIXED_SCALAR, mantissa_exponent_to_fixed_i128},
+        price::PriceRaw,
+        quantity::QuantityRaw,
+    },
 };
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 /// Type alias for bar handler to reduce type complexity.
 type BarHandler = Box<dyn FnMut(Bar)>;
@@ -129,6 +138,11 @@ pub struct BarBuilder {
     low: Option<Price>,
     close: Option<Price>,
     volume: Quantity,
+    adjustment_mode: ContinuousFutureAdjustmentType,
+    adjustment_raw: PriceRaw,
+    adjustment_ratio: f64,
+    adjustment_active: bool,
+    adjustment_is_ratio: bool,
 }
 
 impl BarBuilder {
@@ -160,7 +174,68 @@ impl BarBuilder {
             low: None,
             close: None,
             volume: Quantity::zero(size_precision),
+            adjustment_mode: ContinuousFutureAdjustmentType::default(),
+            adjustment_raw: 0,
+            adjustment_ratio: 1.0,
+            adjustment_active: false,
+            adjustment_is_ratio: false,
         }
+    }
+
+    /// Configures the per-tick continuous-future price adjustment.
+    ///
+    /// Adjustment applies on ingress in [`Self::update`] and [`Self::update_bar`], so the running
+    /// OHLC state is always in the adjusted (common) frame. The adjustment configuration is
+    /// retained across [`Self::reset`] so it spans subsequent bars within the same continuous-
+    /// future segment.
+    ///
+    /// # Panics
+    ///
+    /// Panics if scaling the spread `adjustment` to the fixed-point representation overflows.
+    pub fn set_adjustment(&mut self, adjustment: Decimal, mode: ContinuousFutureAdjustmentType) {
+        self.adjustment_mode = mode;
+
+        if mode.is_ratio() {
+            self.adjustment_is_ratio = true;
+            self.adjustment_ratio = adjustment.to_f64().unwrap_or(1.0);
+            self.adjustment_active = adjustment != Decimal::ONE;
+            return;
+        }
+
+        // Spread mode: scale the Decimal offset to FIXED_PRECISION once so the hot path
+        // can add it straight onto `price.raw`. Signed PriceRaw supports negatives, so
+        // backward-spread offsets that push prices below zero remain representable.
+        self.adjustment_is_ratio = false;
+        let exponent = -(adjustment.scale() as i8);
+        let raw_i128 =
+            mantissa_exponent_to_fixed_i128(adjustment.mantissa(), exponent, FIXED_PRECISION)
+                .expect("Failed to scale continuous-future adjustment to fixed precision");
+
+        #[allow(
+            clippy::useless_conversion,
+            reason = "i128 to PriceRaw is real when not high-precision"
+        )]
+        let raw: PriceRaw = raw_i128
+            .try_into()
+            .expect("Continuous-future adjustment exceeds PriceRaw range");
+
+        self.adjustment_raw = raw;
+        self.adjustment_active = self.adjustment_raw != 0;
+    }
+
+    fn apply_adjustment_to_price(&self, price: Price) -> Price {
+        if !self.adjustment_active {
+            return price;
+        }
+
+        if self.adjustment_is_ratio {
+            // Multiply in double; `Price::new` rounds to the target precision.
+            // Float can shift 1 ULP for high-precision raws (spread mode is exact).
+            return Price::new(price.as_f64() * self.adjustment_ratio, price.precision);
+        }
+
+        // Spread: signed raw addition.
+        Price::from_raw(price.raw + self.adjustment_raw, price.precision)
     }
 
     /// Updates the builder state with the given price, size, and init timestamp.
@@ -172,6 +247,8 @@ impl BarBuilder {
         if ts_init < self.ts_last {
             return; // Not applicable
         }
+
+        let price = self.apply_adjustment_to_price(price);
 
         if self.open.is_none() {
             self.open = Some(price);
@@ -204,30 +281,36 @@ impl BarBuilder {
             return; // Not applicable
         }
 
+        let bar_open = self.apply_adjustment_to_price(bar.open);
+        let bar_high = self.apply_adjustment_to_price(bar.high);
+        let bar_low = self.apply_adjustment_to_price(bar.low);
+        let bar_close = self.apply_adjustment_to_price(bar.close);
+
         if self.open.is_none() {
-            self.open = Some(bar.open);
-            self.high = Some(bar.high);
-            self.low = Some(bar.low);
+            self.open = Some(bar_open);
+            self.high = Some(bar_high);
+            self.low = Some(bar_low);
             self.initialized = true;
         } else {
-            if bar.high > self.high.unwrap() {
-                self.high = Some(bar.high);
+            if bar_high > self.high.unwrap() {
+                self.high = Some(bar_high);
             }
 
-            if bar.low < self.low.unwrap() {
-                self.low = Some(bar.low);
+            if bar_low < self.low.unwrap() {
+                self.low = Some(bar_low);
             }
         }
 
-        self.close = Some(bar.close);
+        self.close = Some(bar_close);
         self.volume = self.volume.add(volume);
         self.count += 1;
         self.ts_last = ts_init;
     }
 
-    /// Reset the bar builder.
+    /// Resets per-bar OHLCV state.
     ///
-    /// All stateful fields are reset to their initial value.
+    /// Adjustment configuration set via [`Self::set_adjustment`] is retained across resets so it
+    /// spans subsequent bars within the same continuous-future segment.
     pub fn reset(&mut self) {
         self.open = None;
         self.high = None;
@@ -2851,6 +2934,258 @@ mod tests {
         assert_eq!(builder.ts_last, 2_000);
         assert_eq!(builder.count, 1);
         assert_eq!(builder.volume, Quantity::from(10));
+    }
+
+    #[rstest]
+    #[case::spread_zero_inactive(
+        Decimal::ZERO,
+        ContinuousFutureAdjustmentType::BackwardSpread,
+        false
+    )]
+    #[case::spread_positive_active(
+        Decimal::new(150, 2), // 1.50
+        ContinuousFutureAdjustmentType::BackwardSpread,
+        true,
+    )]
+    #[case::spread_negative_active(
+        Decimal::new(-250, 2), // -2.50
+        ContinuousFutureAdjustmentType::ForwardSpread,
+        true,
+    )]
+    #[case::spread_sub_precision_inactive(
+        // 1e-28 scales to 0 raw under banker's rounding, so should be inactive.
+        Decimal::new(1, 28),
+        ContinuousFutureAdjustmentType::BackwardSpread,
+        false,
+    )]
+    #[case::ratio_one_inactive(Decimal::ONE, ContinuousFutureAdjustmentType::BackwardRatio, false)]
+    #[case::ratio_non_one_active(
+        Decimal::new(105, 2), // 1.05
+        ContinuousFutureAdjustmentType::ForwardRatio,
+        true,
+    )]
+    fn test_bar_builder_set_adjustment_active_flag(
+        equity_aapl: Equity,
+        #[case] adjustment: Decimal,
+        #[case] mode: ContinuousFutureAdjustmentType,
+        #[case] expected_active: bool,
+    ) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(bar_type, 2, 0);
+
+        builder.set_adjustment(adjustment, mode);
+
+        assert_eq!(builder.adjustment_active, expected_active);
+        assert_eq!(builder.adjustment_is_ratio, mode.is_ratio());
+        assert_eq!(builder.adjustment_mode, mode);
+    }
+
+    #[rstest]
+    fn test_bar_builder_set_adjustment_mode_switch_resets_flags(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(bar_type, 2, 0);
+
+        // ratio -> spread: subsequent update must shift, not scale.
+        builder.set_adjustment(
+            Decimal::new(150, 2), // 1.50
+            ContinuousFutureAdjustmentType::BackwardRatio,
+        );
+        builder.set_adjustment(
+            Decimal::new(50, 2), // +0.50
+            ContinuousFutureAdjustmentType::BackwardSpread,
+        );
+        assert!(!builder.adjustment_is_ratio);
+        builder.update(Price::from("100.00"), Quantity::from(1), 1_000.into());
+        assert_eq!(builder.build_now().close, Price::from("100.50"));
+
+        // spread -> ratio: subsequent update must scale, not shift.
+        builder.set_adjustment(
+            Decimal::new(11, 1), // 1.1
+            ContinuousFutureAdjustmentType::ForwardRatio,
+        );
+        assert!(builder.adjustment_is_ratio);
+        builder.update(Price::from("100.00"), Quantity::from(1), 2_000.into());
+        assert_eq!(builder.build_now().close, Price::from("110.00"));
+    }
+
+    #[rstest]
+    fn test_bar_builder_update_applies_backward_spread_adjustment(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(bar_type, 2, 0);
+
+        builder.set_adjustment(
+            Decimal::new(250, 2), // +2.50
+            ContinuousFutureAdjustmentType::BackwardSpread,
+        );
+
+        builder.update(Price::from("100.00"), Quantity::from(1), 1_000.into());
+        builder.update(Price::from("99.00"), Quantity::from(1), 2_000.into());
+        builder.update(Price::from("101.00"), Quantity::from(1), 3_000.into());
+
+        let bar = builder.build_now();
+        assert_eq!(bar.open, Price::from("102.50"));
+        assert_eq!(bar.high, Price::from("103.50"));
+        assert_eq!(bar.low, Price::from("101.50"));
+        assert_eq!(bar.close, Price::from("103.50"));
+    }
+
+    #[rstest]
+    fn test_bar_builder_update_applies_forward_ratio_adjustment(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(bar_type, 2, 0);
+
+        builder.set_adjustment(
+            Decimal::new(11, 1), // 1.1
+            ContinuousFutureAdjustmentType::ForwardRatio,
+        );
+
+        builder.update(Price::from("100.00"), Quantity::from(1), 1_000.into());
+        builder.update(Price::from("90.00"), Quantity::from(1), 2_000.into());
+        builder.update(Price::from("110.00"), Quantity::from(1), 3_000.into());
+
+        let bar = builder.build_now();
+        assert_eq!(bar.open, Price::from("110.00"));
+        assert_eq!(bar.high, Price::from("121.00"));
+        assert_eq!(bar.low, Price::from("99.00"));
+        assert_eq!(bar.close, Price::from("121.00"));
+    }
+
+    #[rstest]
+    fn test_bar_builder_update_bar_applies_adjustment_to_ohlc(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(bar_type, 2, 0);
+
+        builder.set_adjustment(
+            Decimal::new(-100, 2), // -1.00
+            ContinuousFutureAdjustmentType::BackwardSpread,
+        );
+
+        let input = Bar::new(
+            bar_type,
+            Price::from("100.00"),
+            Price::from("105.00"),
+            Price::from("99.00"),
+            Price::from("102.00"),
+            Quantity::from(10),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+        );
+        builder.update_bar(input, input.volume, input.ts_init);
+
+        let bar = builder.build_now();
+        assert_eq!(bar.open, Price::from("99.00"));
+        assert_eq!(bar.high, Price::from("104.00"));
+        assert_eq!(bar.low, Price::from("98.00"));
+        assert_eq!(bar.close, Price::from("101.00"));
+    }
+
+    #[rstest]
+    fn test_bar_builder_reset_retains_adjustment(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(bar_type, 2, 0);
+
+        builder.set_adjustment(
+            Decimal::new(500, 2), // +5.00
+            ContinuousFutureAdjustmentType::BackwardSpread,
+        );
+        builder.update(Price::from("100.00"), Quantity::from(1), 1_000.into());
+        let bar_one = builder.build_now();
+        assert_eq!(bar_one.close, Price::from("105.00"));
+
+        // Adjustment must persist across the reset triggered by build_now.
+        assert!(builder.adjustment_active);
+
+        builder.update(Price::from("110.00"), Quantity::from(1), 2_000.into());
+        let bar_two = builder.build_now();
+        assert_eq!(bar_two.close, Price::from("115.00"));
+    }
+
+    #[rstest]
+    fn test_bar_builder_update_bar_applies_ratio_adjustment(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(bar_type, 2, 0);
+
+        builder.set_adjustment(
+            Decimal::new(11, 1), // 1.1
+            ContinuousFutureAdjustmentType::ForwardRatio,
+        );
+
+        let input = Bar::new(
+            bar_type,
+            Price::from("100.00"),
+            Price::from("110.00"),
+            Price::from("90.00"),
+            Price::from("105.00"),
+            Quantity::from(10),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+        );
+        builder.update_bar(input, input.volume, input.ts_init);
+
+        let bar = builder.build_now();
+        assert_eq!(bar.open, Price::from("110.00"));
+        assert_eq!(bar.high, Price::from("121.00"));
+        assert_eq!(bar.low, Price::from("99.00"));
+        assert_eq!(bar.close, Price::from("115.50"));
+    }
+
+    #[rstest]
+    fn test_bar_builder_spread_below_zero_representable(equity_aapl: Equity) {
+        // Cython documents that backward-spread offsets pushing prices below zero
+        // remain representable in PriceRaw; verify the same on the Rust side.
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(bar_type, 2, 0);
+
+        builder.set_adjustment(
+            Decimal::new(-15000, 2), // -150.00
+            ContinuousFutureAdjustmentType::BackwardSpread,
+        );
+
+        builder.update(Price::from("100.00"), Quantity::from(1), 1_000.into());
+        let bar = builder.build_now();
+        assert_eq!(bar.close, Price::from("-50.00"));
+        assert!(bar.close.raw < 0);
+        assert_eq!(bar.close.precision, 2);
     }
 
     #[rstest]
@@ -6691,6 +7026,250 @@ mod property_tests {
             let emitted_total: u64 = bars.len() as u64 * step;
             let pending = aggregator.core.builder.volume.as_f64();
             prop_assert!((emitted_total as f64 + pending - total_input as f64).abs() < 1e-6);
+        }
+
+        #[rstest]
+        fn prop_bar_builder_spread_adjustment_is_additive(
+            updates in prop::collection::vec((10_000i64..=100_000i64, 1u64..=100u64), 1..=20),
+            spread_cents in -10_000i64..=10_000i64,
+            backward in any::<bool>(),
+        ) {
+            let instrument = InstrumentAny::Equity(equity_aapl());
+            let bar_spec = BarSpecification::new(1, BarAggregation::Tick, PriceType::Last);
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+            let mut builder = BarBuilder::new(bar_type, 2, 0);
+
+            let spread = Decimal::new(spread_cents, 2);
+            let mode = if backward {
+                ContinuousFutureAdjustmentType::BackwardSpread
+            } else {
+                ContinuousFutureAdjustmentType::ForwardSpread
+            };
+            builder.set_adjustment(spread, mode);
+
+            let mut min_cents = i64::MAX;
+            let mut max_cents = i64::MIN;
+
+            for (i, (price_cents, size)) in updates.iter().enumerate() {
+                if *price_cents < min_cents {
+                    min_cents = *price_cents;
+                }
+
+                if *price_cents > max_cents {
+                    max_cents = *price_cents;
+                }
+
+                builder.update(
+                    Price::new((*price_cents as f64) / 100.0, 2),
+                    Quantity::new(*size as f64, 0),
+                    UnixNanos::from((i as u64 + 1) * 1_000),
+                );
+            }
+
+            let bar = builder.build_now();
+            let first_decimal = Decimal::new(updates.first().unwrap().0, 2);
+            let last_decimal = Decimal::new(updates.last().unwrap().0, 2);
+            let min_decimal = Decimal::new(min_cents, 2);
+            let max_decimal = Decimal::new(max_cents, 2);
+
+            prop_assert_eq!(bar.open.as_decimal(), first_decimal + spread);
+            prop_assert_eq!(bar.close.as_decimal(), last_decimal + spread);
+            prop_assert_eq!(bar.low.as_decimal(), min_decimal + spread);
+            prop_assert_eq!(bar.high.as_decimal(), max_decimal + spread);
+        }
+
+        #[rstest]
+        fn prop_bar_builder_inactive_adjustment_is_identity(
+            updates in prop::collection::vec((1i64..=100_000i64, 1u64..=1_000u64), 1..=20),
+            use_ratio in any::<bool>(),
+        ) {
+            let instrument = InstrumentAny::Equity(equity_aapl());
+            let bar_spec = BarSpecification::new(1, BarAggregation::Tick, PriceType::Last);
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+
+            let mut adjusted = BarBuilder::new(bar_type, 2, 0);
+            let mut baseline = BarBuilder::new(bar_type, 2, 0);
+
+            // Inactive in either mode: ZERO spread or ONE ratio.
+            let (input, mode) = if use_ratio {
+                (Decimal::ONE, ContinuousFutureAdjustmentType::BackwardRatio)
+            } else {
+                (Decimal::ZERO, ContinuousFutureAdjustmentType::BackwardSpread)
+            };
+            adjusted.set_adjustment(input, mode);
+
+            for (i, (price_cents, size)) in updates.iter().enumerate() {
+                let price = Price::new((*price_cents as f64) / 100.0, 2);
+                let qty = Quantity::new(*size as f64, 0);
+                let ts = UnixNanos::from((i as u64 + 1) * 1_000);
+                adjusted.update(price, qty, ts);
+                baseline.update(price, qty, ts);
+            }
+
+            let bar_adjusted = adjusted.build_now();
+            let bar_baseline = baseline.build_now();
+            prop_assert_eq!(bar_adjusted.open, bar_baseline.open);
+            prop_assert_eq!(bar_adjusted.high, bar_baseline.high);
+            prop_assert_eq!(bar_adjusted.low, bar_baseline.low);
+            prop_assert_eq!(bar_adjusted.close, bar_baseline.close);
+            prop_assert_eq!(bar_adjusted.volume, bar_baseline.volume);
+        }
+
+        #[rstest]
+        fn prop_bar_builder_spread_preserves_raw_arithmetic(
+            updates in prop::collection::vec((10_000i64..=100_000i64, 1u64..=100u64), 1..=20),
+            // Sub-precision spread: scale 4 versus price precision 2. Locks in that
+            // spread mode performs raw addition without rounding to price precision.
+            spread_micro in -10_000i64..=10_000i64,
+        ) {
+            let instrument = InstrumentAny::Equity(equity_aapl());
+            let bar_spec = BarSpecification::new(1, BarAggregation::Tick, PriceType::Last);
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+            let mut builder = BarBuilder::new(bar_type, 2, 0);
+
+            let spread = Decimal::new(spread_micro, 4);
+            builder.set_adjustment(spread, ContinuousFutureAdjustmentType::BackwardSpread);
+
+            let adjustment_raw_i128 = mantissa_exponent_to_fixed_i128(
+                spread.mantissa(),
+                -(spread.scale() as i8),
+                FIXED_PRECISION,
+            )
+            .expect("scale within range");
+            #[allow(
+                clippy::useless_conversion,
+                reason = "i128 to PriceRaw is real when not high-precision"
+            )]
+            let expected_adjustment_raw: PriceRaw =
+                adjustment_raw_i128.try_into().expect("within PriceRaw range");
+
+            let mut min_cents = i64::MAX;
+            let mut max_cents = i64::MIN;
+            let mut last_price = Price::new(0.0, 2);
+            let mut first_price = Price::new(0.0, 2);
+
+            for (i, (price_cents, size)) in updates.iter().enumerate() {
+                if *price_cents < min_cents {
+                    min_cents = *price_cents;
+                }
+
+                if *price_cents > max_cents {
+                    max_cents = *price_cents;
+                }
+
+                let price = Price::new((*price_cents as f64) / 100.0, 2);
+
+                if i == 0 {
+                    first_price = price;
+                }
+
+                last_price = price;
+                builder.update(
+                    price,
+                    Quantity::new(*size as f64, 0),
+                    UnixNanos::from((i as u64 + 1) * 1_000),
+                );
+            }
+
+            let bar = builder.build_now();
+            let min_price = Price::new((min_cents as f64) / 100.0, 2);
+            let max_price = Price::new((max_cents as f64) / 100.0, 2);
+            prop_assert_eq!(bar.open.raw, first_price.raw + expected_adjustment_raw);
+            prop_assert_eq!(bar.close.raw, last_price.raw + expected_adjustment_raw);
+            prop_assert_eq!(bar.low.raw, min_price.raw + expected_adjustment_raw);
+            prop_assert_eq!(bar.high.raw, max_price.raw + expected_adjustment_raw);
+            prop_assert_eq!(bar.open.precision, 2);
+            prop_assert_eq!(bar.high.precision, 2);
+            prop_assert_eq!(bar.low.precision, 2);
+            prop_assert_eq!(bar.close.precision, 2);
+        }
+
+        #[rstest]
+        fn prop_bar_builder_active_ratio_scales_each_ohlc(
+            updates in prop::collection::vec((1_000i64..=100_000i64, 1u64..=100u64), 1..=20),
+            // Ratio in [0.50, 2.00] excluding exactly 1.00 to stay on the active path.
+            ratio_centi in prop_oneof![50i64..=99i64, 101i64..=200i64],
+            backward in any::<bool>(),
+        ) {
+            let instrument = InstrumentAny::Equity(equity_aapl());
+            let bar_spec = BarSpecification::new(1, BarAggregation::Tick, PriceType::Last);
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+            let mut builder = BarBuilder::new(bar_type, 2, 0);
+
+            let ratio_decimal = Decimal::new(ratio_centi, 2);
+            let ratio_f64 = (ratio_centi as f64) / 100.0;
+            let mode = if backward {
+                ContinuousFutureAdjustmentType::BackwardRatio
+            } else {
+                ContinuousFutureAdjustmentType::ForwardRatio
+            };
+            builder.set_adjustment(ratio_decimal, mode);
+
+            let mut min_cents = i64::MAX;
+            let mut max_cents = i64::MIN;
+            let mut first_cents = 0i64;
+            let mut last_cents = 0i64;
+
+            for (i, (price_cents, size)) in updates.iter().enumerate() {
+                if *price_cents < min_cents {
+                    min_cents = *price_cents;
+                }
+
+                if *price_cents > max_cents {
+                    max_cents = *price_cents;
+                }
+
+                if i == 0 {
+                    first_cents = *price_cents;
+                }
+
+                last_cents = *price_cents;
+                builder.update(
+                    Price::new((*price_cents as f64) / 100.0, 2),
+                    Quantity::new(*size as f64, 0),
+                    UnixNanos::from((i as u64 + 1) * 1_000),
+                );
+            }
+
+            let bar = builder.build_now();
+            // Recompute via the same float math as the hot path so equality is exact.
+            let expect = |cents: i64| Price::new((cents as f64) / 100.0 * ratio_f64, 2);
+            prop_assert_eq!(bar.open, expect(first_cents));
+            prop_assert_eq!(bar.close, expect(last_cents));
+            // Ratio with positive ratio_f64 preserves ordering, so min/max map directly.
+            prop_assert_eq!(bar.low, expect(min_cents));
+            prop_assert_eq!(bar.high, expect(max_cents));
+        }
+
+        #[rstest]
+        fn prop_bar_builder_spread_mode_direction_is_metadata_only(
+            updates in prop::collection::vec((10_000i64..=100_000i64, 1u64..=100u64), 1..=20),
+            spread_cents in -10_000i64..=10_000i64,
+        ) {
+            let instrument = InstrumentAny::Equity(equity_aapl());
+            let bar_spec = BarSpecification::new(1, BarAggregation::Tick, PriceType::Last);
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+
+            let spread = Decimal::new(spread_cents, 2);
+            let mut backward = BarBuilder::new(bar_type, 2, 0);
+            let mut forward = BarBuilder::new(bar_type, 2, 0);
+            backward.set_adjustment(spread, ContinuousFutureAdjustmentType::BackwardSpread);
+            forward.set_adjustment(spread, ContinuousFutureAdjustmentType::ForwardSpread);
+
+            for (i, (price_cents, size)) in updates.iter().enumerate() {
+                let price = Price::new((*price_cents as f64) / 100.0, 2);
+                let qty = Quantity::new(*size as f64, 0);
+                let ts = UnixNanos::from((i as u64 + 1) * 1_000);
+                backward.update(price, qty, ts);
+                forward.update(price, qty, ts);
+            }
+
+            let bar_backward = backward.build_now();
+            let bar_forward = forward.build_now();
+            prop_assert_eq!(bar_backward.open, bar_forward.open);
+            prop_assert_eq!(bar_backward.high, bar_forward.high);
+            prop_assert_eq!(bar_backward.low, bar_forward.low);
+            prop_assert_eq!(bar_backward.close, bar_forward.close);
         }
 
         #[rstest]
