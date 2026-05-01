@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 from collections.abc import Mapping
 from datetime import timedelta
 from datetime import timezone
@@ -31,12 +30,6 @@ from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
-
-
-pytestmark = pytest.mark.skipif(
-    sys.version_info >= (3, 14),
-    reason="Interactive Brokers adapter requires Python < 3.14 (nautilus-ibapi incompatibility)",
-)
 
 
 def _make_instrument(instrument_id: InstrumentId) -> Instrument:

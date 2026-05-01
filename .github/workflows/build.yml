@@ -163,9 +163,8 @@ jobs:
     strategy:
       fail-fast: false
       # PRs build on 3.13 only: ruff target-version=py312 guards syntax in pre-commit,
-      # and 3.13 exercises the `python_version < '3.14'` dependency cohort
-      # (defusedxml, nautilus-ibapi, protobuf). Pushes (develop/nightly/master) run
-      # the full matrix before any wheel publishes.
+      # and pushes to develop/nightly/master run the full matrix before any wheel
+      # publishes.
       matrix:
         python-version: ${{ fromJSON(github.event_name == 'pull_request' && '["3.13"]' || '["3.12", "3.13", "3.14"]') }}
     defaults:

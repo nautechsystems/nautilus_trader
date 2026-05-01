@@ -15,6 +15,7 @@ Released on TBD (UTC).
 ### Fixes
 
 ### Internal Improvements
+- Improved Interactive Brokers Python 3.14 installation and integration test coverage
 - Upgraded `alloy` crate to v2.0.4
 - Upgraded `databento` crate to v0.49.0
 

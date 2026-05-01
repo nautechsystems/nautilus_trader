@@ -12,77 +12,37 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import sys
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
 
-
-def pytest_ignore_collect(collection_path, config):
-    """
-    Prevent collection of test files on Python 3.14.
-    """
-    if sys.version_info >= (3, 14):
-        return True
-    return False
-
-
-# Add pytestmark to skip all IB tests on Python 3.14 due to nautilus-ibapi compatibility
-pytestmark = pytest.mark.skipif(
-    sys.version_info >= (3, 14),
-    reason="Interactive Brokers adapter requires Python < 3.14 (nautilus-ibapi incompatibility)",
+from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers.config import (
+    InteractiveBrokersInstrumentProviderConfig,
 )
-
-# Skip imports if Python 3.14+ to avoid ImportError during collection
-if sys.version_info < (3, 14):
-    from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
-    from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
-    from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
-    from nautilus_trader.adapters.interactive_brokers.config import (
-        InteractiveBrokersDataClientConfig,
-    )
-    from nautilus_trader.adapters.interactive_brokers.config import (
-        InteractiveBrokersExecClientConfig,
-    )
-    from nautilus_trader.adapters.interactive_brokers.config import (
-        InteractiveBrokersInstrumentProviderConfig,
-    )
-    from nautilus_trader.adapters.interactive_brokers.factories import (
-        InteractiveBrokersLiveDataClientFactory,
-    )
-    from nautilus_trader.adapters.interactive_brokers.factories import (
-        InteractiveBrokersLiveExecClientFactory,
-    )
-    from nautilus_trader.adapters.interactive_brokers.providers import (
-        InteractiveBrokersInstrumentProvider,
-    )
-    from nautilus_trader.model.events import AccountState
-    from nautilus_trader.model.identifiers import AccountId
-    from nautilus_trader.model.identifiers import Venue
-    from nautilus_trader.test_kit.stubs.events import TestEventStubs
-    from tests.integration_tests.adapters.interactive_brokers.mock_client import (
-        MockInteractiveBrokersClient,
-    )
-    from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
-else:
-    # Dummy imports for Python 3.14+ to avoid NameError
-    InteractiveBrokersClient = None
-    IB_VENUE = None
-    DockerizedIBGatewayConfig = None
-    InteractiveBrokersDataClientConfig = None
-    InteractiveBrokersExecClientConfig = None
-    InteractiveBrokersInstrumentProviderConfig = None
-    InteractiveBrokersLiveDataClientFactory = None
-    InteractiveBrokersLiveExecClientFactory = None
-    InteractiveBrokersInstrumentProvider = None
-    AccountState = None
-    AccountId = None
-    Venue = None
-    TestEventStubs = None
-    MockInteractiveBrokersClient = None
-    IBTestContractStubs = None
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveDataClientFactory,
+)
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveExecClientFactory,
+)
+from nautilus_trader.adapters.interactive_brokers.providers import (
+    InteractiveBrokersInstrumentProvider,
+)
+from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from tests.integration_tests.adapters.interactive_brokers.mock_client import (
+    MockInteractiveBrokersClient,
+)
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 
 
 def mocked_ib_client(
