@@ -39,6 +39,11 @@ pub const LOT_SIZE_SCALE: u32 = 2;
 /// Smaller positions are filtered as dust during reconciliation.
 pub const DUST_POSITION_THRESHOLD: f64 = 0.01;
 
+/// Maximum positive fill overage (in shares) handled by order quantity alignment.
+/// The largest reproduced production overage is 0.000066 shares; 0.01 matches
+/// Polymarket's existing cent-share dust ceiling and remains exclusive.
+pub const DUST_SNAP_THRESHOLD: f64 = 0.01;
+
 /// Underfill tolerance for `OrderFillTracker`, in ulps of the instrument
 /// size precision (resolves to `0.01` at size_precision=6).
 /// See `docs/integrations/polymarket.md` (Fill quantity normalization).

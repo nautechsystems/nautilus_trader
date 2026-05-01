@@ -21,15 +21,27 @@ use nautilus_common::cache::fifo::FifoCacheMap;
 use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide},
-    identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
+    events::{OrderEventAny, OrderUpdated},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
+    },
+    orders::{Order, OrderAny},
     reports::FillReport,
     types::{Currency, Money, Price, Quantity},
 };
 
-use crate::common::consts::SNAP_UNDERFILL_ULPS;
+use crate::common::consts::{DUST_SNAP_THRESHOLD, SNAP_UNDERFILL_ULPS};
+
+#[derive(Debug, Clone)]
+struct OrderFillMetadata {
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    client_order_id: ClientOrderId,
+    account_id: Option<AccountId>,
+}
 
 /// Cumulative fill state for a single order.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct OrderFillState {
     submitted_qty: Quantity,
     cumulative_filled: f64,
@@ -39,6 +51,7 @@ struct OrderFillState {
     instrument_id: InstrumentId,
     size_precision: u8,
     price_precision: u8,
+    metadata: Option<OrderFillMetadata>,
 }
 
 /// Tracks per-order fill accumulation and detects dust residuals.
@@ -67,6 +80,81 @@ impl OrderFillTrackerMap {
         size_precision: u8,
         price_precision: u8,
     ) {
+        self.register_inner(
+            venue_order_id,
+            submitted_qty,
+            order_side,
+            instrument_id,
+            size_precision,
+            price_precision,
+            None,
+        );
+    }
+
+    /// Register an accepted order with enough metadata to emit dust alignment updates.
+    #[expect(clippy::too_many_arguments)]
+    pub fn register_order(
+        &self,
+        venue_order_id: VenueOrderId,
+        order: &OrderAny,
+        size_precision: u8,
+        price_precision: u8,
+    ) {
+        self.register_with_metadata(
+            venue_order_id,
+            order.quantity(),
+            order.order_side(),
+            order.instrument_id(),
+            size_precision,
+            price_precision,
+            order.trader_id(),
+            order.strategy_id(),
+            order.client_order_id(),
+            order.account_id(),
+        );
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    pub fn register_with_metadata(
+        &self,
+        venue_order_id: VenueOrderId,
+        submitted_qty: Quantity,
+        order_side: OrderSide,
+        instrument_id: InstrumentId,
+        size_precision: u8,
+        price_precision: u8,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        client_order_id: ClientOrderId,
+        account_id: Option<AccountId>,
+    ) {
+        self.register_inner(
+            venue_order_id,
+            submitted_qty,
+            order_side,
+            instrument_id,
+            size_precision,
+            price_precision,
+            Some(OrderFillMetadata {
+                trader_id,
+                strategy_id,
+                client_order_id,
+                account_id,
+            }),
+        );
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    fn register_inner(
+        &self,
+        venue_order_id: VenueOrderId,
+        submitted_qty: Quantity,
+        order_side: OrderSide,
+        instrument_id: InstrumentId,
+        size_precision: u8,
+        price_precision: u8,
+        metadata: Option<OrderFillMetadata>,
+    ) {
         let state = OrderFillState {
             submitted_qty,
             cumulative_filled: 0.0,
@@ -76,6 +164,7 @@ impl OrderFillTrackerMap {
             instrument_id,
             size_precision,
             price_precision,
+            metadata,
         };
         self.inner
             .lock()
@@ -162,6 +251,70 @@ impl OrderFillTrackerMap {
             }
             None => fill_qty,
         }
+    }
+
+    /// Emit an `OrderUpdated` event when a positive venue fill overage is dust.
+    ///
+    /// This is the Rust equivalent of the Python execution client's
+    /// `_align_order_quantity_to_venue_fill`: preserve the venue fill quantity,
+    /// grow the accepted order quantity first, then let Nautilus reconcile the
+    /// fill against the aligned quantity.
+    pub fn align_order_quantity_to_venue_fill(
+        &self,
+        venue_order_id: &VenueOrderId,
+        fill_qty: Quantity,
+        ts_now: UnixNanos,
+    ) -> Option<OrderEventAny> {
+        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let state = guard.get_mut(venue_order_id)?;
+        let metadata = state.metadata.clone()?;
+        let filled_after = state.cumulative_filled + fill_qty.as_f64();
+        let diff = filled_after - state.submitted_qty.as_f64();
+        if diff <= 0.0 || diff >= DUST_SNAP_THRESHOLD {
+            return None;
+        }
+
+        let quantity = Quantity::new(filled_after, state.size_precision);
+        state.submitted_qty = quantity;
+        log::info!(
+            "Aligning {} quantity to Polymarket fill {} (dust overage={diff:.6})",
+            metadata.client_order_id,
+            quantity,
+        );
+
+        let updated = OrderUpdated::new(
+            metadata.trader_id,
+            metadata.strategy_id,
+            state.instrument_id,
+            metadata.client_order_id,
+            quantity,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            Some(*venue_order_id),
+            metadata.account_id,
+            None,
+            None,
+            None,
+            false,
+        );
+        Some(OrderEventAny::Updated(updated))
+    }
+
+    /// Returns whether this fill would need positive-overfill alignment.
+    pub fn needs_positive_overfill_alignment(
+        &self,
+        venue_order_id: &VenueOrderId,
+        fill_qty: Quantity,
+    ) -> bool {
+        let guard = self.inner.lock().expect(MUTEX_POISONED);
+        let Some(state) = guard.get(venue_order_id) else {
+            return false;
+        };
+        let filled_after = state.cumulative_filled + fill_qty.as_f64();
+        let diff = filled_after - state.submitted_qty.as_f64();
+        diff > 0.0 && diff < DUST_SNAP_THRESHOLD
     }
 
     /// Check if an order has a dust residual after all fills.

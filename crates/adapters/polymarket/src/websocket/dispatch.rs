@@ -275,6 +275,13 @@ fn dispatch_maker_fills(
         let is_accepted = ctx.fill_tracker.contains(&maker_venue_order_id);
 
         if is_accepted {
+            if let Some(updated) = ctx.fill_tracker.align_order_quantity_to_venue_fill(
+                &maker_venue_order_id,
+                report.last_qty,
+                ctx.clock.get_time_ns(),
+            ) {
+                ctx.emitter.send_order_event(updated);
+            }
             ctx.fill_tracker.record_fill(
                 &maker_venue_order_id,
                 report.last_qty.as_f64(),
@@ -330,6 +337,13 @@ fn dispatch_taker_fill(
     let is_accepted = ctx.fill_tracker.contains(&venue_order_id);
 
     if is_accepted {
+        if let Some(updated) = ctx.fill_tracker.align_order_quantity_to_venue_fill(
+            &venue_order_id,
+            report.last_qty,
+            ctx.clock.get_time_ns(),
+        ) {
+            ctx.emitter.send_order_event(updated);
+        }
         ctx.fill_tracker.record_fill(
             &venue_order_id,
             report.last_qty.as_f64(),
@@ -518,7 +532,7 @@ mod tests {
     use nautilus_core::time::AtomicTime;
     use nautilus_model::{
         enums::{AccountType, OrderStatus},
-        identifiers::TraderId,
+        identifiers::{ClientOrderId, StrategyId, TraderId},
         types::Currency,
     };
     use rstest::rstest;
@@ -1263,13 +1277,21 @@ mod tests {
         let venue_order_id = VenueOrderId::from("0xtaker-overfill");
         // Submitted qty truncated to USDC scale.
         let submitted = Quantity::new(714.285710, instrument.size_precision());
-        fill_tracker.register(
+        let trader_id = TraderId::from("TESTER-001");
+        let strategy_id = StrategyId::from("S-001");
+        let client_order_id = ClientOrderId::from("O-OVERFILL");
+        let account_id = AccountId::from("POLY-001");
+        fill_tracker.register_with_metadata(
             venue_order_id,
             submitted,
             OrderSide::Buy,
             instrument.id(),
             instrument.size_precision(),
             instrument.price_precision(),
+            trader_id,
+            strategy_id,
+            client_order_id,
+            Some(account_id),
         );
 
         let pending_fills = Mutex::new(FifoCacheMap::default());
@@ -1284,7 +1306,7 @@ mod tests {
             pending_fills: &pending_fills,
             pending_order_reports: &pending_order_reports,
             emitter: &emitter,
-            account_id: AccountId::from("POLY-001"),
+            account_id,
             clock: nautilus_core::time::get_atomic_clock_realtime(),
             user_address: "0xtest",
             user_api_key: "test-key",
@@ -1329,6 +1351,21 @@ mod tests {
             drift < 1e-9,
             "cumulative_filled {cumulative} must preserve venue fill {expected_venue_fill}",
         );
+
+        // The emitted OrderUpdated must precede the FillReport so the engine
+        // sees the aligned quantity before reconciling the venue fill.
+        let event = receiver.try_recv().expect("expected an order update");
+        match event {
+            ExecutionEvent::Order(nautilus_model::events::OrderEventAny::Updated(updated)) => {
+                assert_eq!(
+                    updated.quantity,
+                    Quantity::new(expected_venue_fill, instrument.size_precision()),
+                );
+                assert_eq!(updated.client_order_id, client_order_id);
+                assert_eq!(updated.venue_order_id, Some(venue_order_id));
+            }
+            other => panic!("expected order update, was {other:?}"),
+        }
 
         // The emitted FillReport must carry the venue qty.
         let event = receiver.try_recv().expect("expected a fill report");

@@ -1483,6 +1483,19 @@ impl ExecutionClient for PolymarketExecutionClient {
         );
 
         let reports = apply_fill_filters(reports, cmd.venue_order_id, cmd.start, cmd.end);
+        for report in &reports {
+            if self
+                .fill_tracker
+                .needs_positive_overfill_alignment(&report.venue_order_id, report.last_qty)
+            {
+                anyhow::bail!(
+                    "Rust Polymarket generate_fill_reports cannot safely align positive dust \
+                     overfills before synchronous reconciliation for {}; use the WebSocket path \
+                     or Python adapter until REST immediate alignment is ported",
+                    report.venue_order_id
+                );
+            }
+        }
 
         log::info!("Generated {} fill reports", reports.len());
         Ok(reports)
@@ -1736,11 +1749,9 @@ fn handle_order_response(
                     emitter.emit_order_accepted(order, venue_order_id, ts_now);
 
                     // Register order in fill tracker for dust detection
-                    fill_tracker.register(
+                    fill_tracker.register_order(
                         venue_order_id,
-                        order.quantity(),
-                        order.order_side(),
-                        order.instrument_id(),
+                        order,
                         size_precision,
                         price_precision,
                     );
@@ -1755,6 +1766,13 @@ fn handle_order_response(
                         for mut fill in buffered {
                             fill.last_qty =
                                 fill_tracker.snap_fill_qty(&venue_order_id, fill.last_qty);
+                            if let Some(updated) = fill_tracker.align_order_quantity_to_venue_fill(
+                                &venue_order_id,
+                                fill.last_qty,
+                                clock.get_time_ns(),
+                            ) {
+                                emitter.send_order_event(updated);
+                            }
                             fill_tracker.record_fill(
                                 &venue_order_id,
                                 fill.last_qty.as_f64(),

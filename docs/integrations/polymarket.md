@@ -481,6 +481,10 @@ before Nautilus reconciles the fill.
   WS fills are handed to Nautilus. On the immediate report paths it applies the
   `OrderUpdated` event directly to the cached order before sending the fill
   report because `LiveExecutionEngine` reconciles reports synchronously.
+- The Rust WebSocket path emits an `OrderUpdated` before the corresponding
+  `FillReport` when accepted-order fill tracking detects positive dust overfill.
+  Rust REST `generate_fill_reports` refuses a tracked positive dust overfill
+  until an equivalent immediate cache-alignment path is available there.
 - `OrderFillTracker.check_dust_and_build_fill(...)` (Rust) and
   `OrderFillTracker.check_dust_residual(...)` (Python) emit a synthetic
   underfill fill at `Matched` status when `submitted - cumulative_filled`
