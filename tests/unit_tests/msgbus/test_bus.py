@@ -380,7 +380,9 @@ def test_publish_with_header_sends_to_handler_after_published(bus):
     assert bus.pub_count == 2
 
 
-def test_publish_with_header_sends_to_handler_after_published_when_cached_topic_has_subscribers(bus):
+def test_publish_with_header_sends_to_handler_after_published_when_cached_topic_has_subscribers(
+    bus,
+):
     # Arrange
     early_subscriber = []
     late_subscriber = []
