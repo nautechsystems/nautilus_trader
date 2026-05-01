@@ -3513,72 +3513,74 @@ impl ParquetDataCatalog {
         data_name: &str,
         identifiers: Option<&[String]>,
     ) -> anyhow::Result<Vec<String>> {
-        // Construct the base directory path: {subdirectory}/{instance_id}/{data_name}
         let base_dir = make_object_store_path(&self.base_path, &[subdirectory, instance_id]);
-        let data_dir = make_object_store_path(&base_dir, &[data_name]);
 
         let mut files = Vec::new();
 
-        // Try to list files in the data directory (for per-instrument subdirectories)
-        let subdir_prefix = ObjectPath::from(format!("{data_dir}/"));
         let list_result = self.execute_async(async {
-            let mut stream = self.object_store.list(Some(&subdir_prefix));
-            let mut subdirs = Vec::new();
-            let mut flat_files = Vec::new();
+            let prefix = ObjectPath::from(format!("{base_dir}/"));
+            let mut stream = self.object_store.list(Some(&prefix));
+            let mut feather_files = Vec::new();
 
             while let Some(object) = stream.next().await {
                 let object = object?;
                 let path_str = object.location.to_string();
 
-                // Check if this is a subdirectory (per-instrument) or a flat file
-                if let Some(relative_path) = path_str.strip_prefix(&format!("{data_dir}/")) {
-                    if relative_path.ends_with(".feather") {
-                        if let Some(identifiers) = identifiers
-                            && let Some((subdir_name, _)) = relative_path.split_once('/')
-                            && !identifiers.iter().any(|id| {
-                                subdir_name.contains(id)
-                                    || subdir_name.contains(&urisafe_instrument_id(id))
-                            })
-                        {
+                if !path_str.ends_with(".feather") {
+                    continue;
+                }
+
+                let Some(relative_path) = path_str.strip_prefix(&format!("{base_dir}/")) else {
+                    continue;
+                };
+
+                if let Some(data_relative_path) =
+                    relative_path.strip_prefix(&format!("{data_name}/"))
+                {
+                    if let Some(identifiers) = identifiers {
+                        let identifier_path = data_relative_path
+                            .split_once('/')
+                            .map_or(data_relative_path, |(identifier, _)| identifier);
+
+                        if !Self::stream_identifier_matches(identifier_path, identifiers) {
                             continue;
                         }
-
-                        flat_files.push(path_str);
-                    } else {
-                        // This might be a subdirectory - check if it contains feather files
-                        let subdir_path = format!("{path_str}/");
-                        let mut subdir_stream = self
-                            .object_store
-                            .list(Some(&ObjectPath::from(subdir_path.as_str())));
-
-                        while let Some(subdir_object) = subdir_stream.next().await {
-                            let subdir_object = subdir_object?;
-                            let subdir_file_path = subdir_object.location.to_string();
-
-                            if subdir_file_path.ends_with(".feather") {
-                                // Check identifier filter if provided
-                                if let Some(identifiers) = identifiers {
-                                    let subdir_name = relative_path.split('/').next().unwrap_or("");
-                                    if !identifiers.iter().any(|id| {
-                                        subdir_name.contains(id)
-                                            || subdir_name.contains(&urisafe_instrument_id(id))
-                                    }) {
-                                        continue;
-                                    }
-                                }
-                                subdirs.push(subdir_file_path);
-                            }
-                        }
                     }
+
+                    feather_files.push(path_str);
+                } else if Self::is_flat_stream_file(relative_path, data_name) {
+                    feather_files.push(path_str);
                 }
             }
 
-            Ok::<Vec<String>, anyhow::Error>([subdirs, flat_files].concat())
+            Ok::<Vec<String>, anyhow::Error>(feather_files)
         })?;
 
         files.extend(list_result);
         files.sort();
         Ok(files)
+    }
+
+    fn is_flat_stream_file(relative_path: &str, data_name: &str) -> bool {
+        if relative_path.contains('/') {
+            return false;
+        }
+
+        let Some(file_stem) = relative_path.strip_suffix(".feather") else {
+            return false;
+        };
+        let Some(timestamp) = file_stem.strip_prefix(&format!("{data_name}_")) else {
+            return false;
+        };
+
+        !timestamp.is_empty() && timestamp.chars().all(|ch| ch.is_ascii_digit())
+    }
+
+    fn stream_identifier_matches(candidate: &str, identifiers: &[String]) -> bool {
+        identifiers.iter().any(|id| {
+            let safe_id = urisafe_instrument_id(id);
+            candidate.contains(id) || candidate.contains(&safe_id)
+        })
     }
 
     /// Reads a feather file and returns all RecordBatches.
