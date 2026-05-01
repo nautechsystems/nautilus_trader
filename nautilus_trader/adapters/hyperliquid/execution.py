@@ -814,6 +814,11 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             if trigger_price is not None:
                 pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(trigger_price))
 
+            # Mark in-flight BEFORE the await so the WS cancel handler
+            # sees it regardless of timing. Cleaned up in except if HTTP fails.
+            self._pending_modify_keys[command.client_order_id.value] = venue_order_id.value
+            self._log.info(f"Order modification requested for {command.client_order_id}")
+
             await self._client.modify_order(
                 instrument_id=pyo3_instrument_id,
                 venue_order_id=pyo3_venue_order_id,
@@ -827,11 +832,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 time_in_force=pyo3_time_in_force,
                 client_order_id=pyo3_client_order_id,
             )
-            # Mark the old venue_order_id as in-flight only after a successful
-            # HTTP round-trip, so a failing modify never leaves stale race state.
-            self._pending_modify_keys[command.client_order_id.value] = venue_order_id.value
-            self._log.info(f"Order modification requested for {command.client_order_id}")
+
         except Exception as e:
+            self._pending_modify_keys.pop(command.client_order_id.value, None)
             self.generate_order_modify_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
@@ -1019,6 +1022,19 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         if key in self._terminal_orders:
             self._log.debug(f"Ignoring duplicate OrderCanceled for {event.client_order_id!r}")
+            return
+
+        # Suppress cancel-before-accept leg of a Hyperliquid cancel-replace modify
+        pending_old_voi = self._pending_modify_keys.get(key)
+        if (
+            pending_old_voi is not None
+            and event.venue_order_id is not None
+            and event.venue_order_id.value == pending_old_voi
+        ):
+            self._log.debug(
+                f"Suppressing cancel-before-accept for {event.client_order_id!r} "
+                f"venue_order_id={event.venue_order_id!r}",
+            )
             return
 
         self._terminal_orders.add(key)
