@@ -133,6 +133,12 @@ pub struct ExecTesterConfig {
     /// Use post-only for limit orders.
     #[builder(default = false)]
     pub use_post_only: bool,
+    /// Place limit orders at marketable prices (cross the spread). Combined
+    /// with `limit_time_in_force = Ioc`/`Fok`, exercises aggressive-fill
+    /// (TC-E13, TC-E15) and passive-no-fill (TC-E14, TC-E16) scenarios when
+    /// inverted with the standard passive offset.
+    #[builder(default = false)]
+    pub limit_aggressive: bool,
     /// Use quote quantity for orders.
     #[builder(default = false)]
     pub use_quote_quantity: bool,
@@ -167,6 +173,14 @@ pub struct ExecTesterConfig {
     /// Test reduce-only rejection by setting reduce_only on open position order.
     #[builder(default = false)]
     pub test_reject_reduce_only: bool,
+    /// Programmatically attempt one strategy-wide modify against the next
+    /// accepted limit order (whichever side acks first) to exercise the
+    /// adapter's modify-rejection path (TC-E36). Independent of
+    /// `modify_orders_to_maintain_tob_offset`, which only fires on price drift.
+    /// Not honored when `batch_submit_limit_pair` is true; combine with
+    /// individual buy/sell maintenance instead.
+    #[builder(default = false)]
+    pub test_modify_rejected: bool,
     /// Whether unsubscribe is supported on stop.
     #[builder(default = true)]
     pub can_unsubscribe: bool,
@@ -228,6 +242,7 @@ impl ExecTesterConfig {
             cancel_replace_orders_to_maintain_tob_offset: false,
             cancel_replace_stop_orders_to_maintain_offset: false,
             use_post_only: false,
+            limit_aggressive: false,
             use_quote_quantity: false,
             emulation_trigger: None,
             cancel_orders_on_stop: true,
@@ -240,6 +255,7 @@ impl ExecTesterConfig {
             log_data: true,
             test_reject_post_only: false,
             test_reject_reduce_only: false,
+            test_modify_rejected: false,
             can_unsubscribe: true,
         }
     }

@@ -20,7 +20,7 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
 };
-use nautilus_core::{Params, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick,
@@ -30,7 +30,8 @@ use nautilus_model::{
         AggressorSide, BookType, ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    identifiers::{ClientId, InstrumentId, StrategyId, TradeId, TraderId},
+    events::{OrderAccepted, OrderEventAny},
+    identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId},
     instruments::{InstrumentAny, stubs::crypto_perpetual_ethusdt},
     orderbook::OrderBook,
     orders::{LimitOrder, Order, OrderAny},
@@ -1285,4 +1286,310 @@ fn test_submit_stop_order_stop_time_in_force_overrides_expire(
     let order = tester.buy_stop_order.unwrap();
     assert_eq!(order.time_in_force(), TimeInForce::Ioc);
     assert!(order.expire_time().is_none());
+}
+
+#[rstest]
+fn test_config_limit_aggressive_default() {
+    let config = ExecTesterConfig::default();
+    assert!(!config.limit_aggressive);
+}
+
+#[rstest]
+fn test_config_limit_aggressive_builder() {
+    let config = ExecTesterConfig::builder().limit_aggressive(true).build();
+    assert!(config.limit_aggressive);
+}
+
+#[rstest]
+fn test_config_test_modify_rejected_default() {
+    let config = ExecTesterConfig::default();
+    assert!(!config.test_modify_rejected);
+}
+
+#[rstest]
+fn test_config_test_modify_rejected_builder() {
+    let config = ExecTesterConfig::builder()
+        .test_modify_rejected(true)
+        .build();
+    assert!(config.test_modify_rejected);
+}
+
+#[rstest]
+fn test_exec_tester_modify_rejected_attempted_starts_false(config: ExecTesterConfig) {
+    let tester = ExecTester::new(config);
+    assert!(!tester.modify_rejected_attempted);
+}
+
+// `limit_aggressive` flips BUY pricing to cross the spread (place at/above ask).
+#[rstest]
+fn test_maintain_buy_orders_limit_aggressive_crosses_ask(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.limit_aggressive = true;
+    config.tob_offset_ticks = 5;
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.price_offset = Some(tester.get_price_offset(&instrument));
+    tester.instrument = Some(instrument);
+
+    let best_bid = Price::from("3000.0");
+    let best_ask = Price::from("3001.0");
+    tester.maintain_orders(best_bid, best_ask);
+
+    let order = tester.buy_order.expect("buy order should be submitted");
+    let price = order.price().expect("limit order has price");
+    // Aggressive BUY: priced at or above the ask, so trivially >= ask.
+    assert!(price >= best_ask, "expected {price} >= {best_ask}");
+}
+
+// `limit_aggressive` flips SELL pricing to cross the spread (place at/below bid).
+#[rstest]
+fn test_maintain_sell_orders_limit_aggressive_crosses_bid(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.limit_aggressive = true;
+    config.tob_offset_ticks = 5;
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.price_offset = Some(tester.get_price_offset(&instrument));
+    tester.instrument = Some(instrument);
+
+    let best_bid = Price::from("3000.0");
+    let best_ask = Price::from("3001.0");
+    // Disable the buy side so only the sell order maintenance runs.
+    tester.config.enable_limit_buys = false;
+    tester.maintain_orders(best_bid, best_ask);
+
+    let order = tester.sell_order.expect("sell order should be submitted");
+    let price = order.price().expect("limit order has price");
+    assert!(price <= best_bid, "expected {price} <= {best_bid}");
+}
+
+// Default (passive) BUY pricing places below the bid, never crossing.
+#[rstest]
+fn test_maintain_buy_orders_passive_below_bid(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.tob_offset_ticks = 5;
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.price_offset = Some(tester.get_price_offset(&instrument));
+    tester.instrument = Some(instrument);
+
+    let best_bid = Price::from("3000.0");
+    let best_ask = Price::from("3001.0");
+    tester.maintain_orders(best_bid, best_ask);
+
+    let order = tester.buy_order.expect("buy order should be submitted");
+    let price = order.price().expect("limit order has price");
+    assert!(price < best_bid, "expected {price} < {best_bid}");
+}
+
+// `limit_aggressive` combined with `limit_time_in_force=Ioc` produces an aggressive
+// IOC limit order: the configuration that exercises TC-E13 (immediate-fill) and
+// TC-E14 (when paired with a non-aggressive price, no-fill cancel).
+#[rstest]
+fn test_submit_limit_order_aggressive_ioc_carries_ioc_tif(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.limit_aggressive = true;
+    config.limit_time_in_force = Some(TimeInForce::Ioc);
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.instrument = Some(instrument);
+
+    tester
+        .submit_limit_order(OrderSide::Buy, Price::from("3001.0"))
+        .unwrap();
+
+    let order = tester.buy_order.unwrap();
+    assert_eq!(order.time_in_force(), TimeInForce::Ioc);
+}
+
+// FOK passthrough on the limit path (TC-E15 / TC-E16).
+#[rstest]
+fn test_submit_limit_order_fok_carries_fok_tif(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.limit_time_in_force = Some(TimeInForce::Fok);
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.instrument = Some(instrument);
+
+    tester
+        .submit_limit_order(OrderSide::Buy, Price::from("3000.0"))
+        .unwrap();
+
+    assert_eq!(tester.buy_order.unwrap().time_in_force(), TimeInForce::Fok,);
+}
+
+// DAY TIF passthrough: TC-E73 relies on the adapter denying DAY before the
+// venue ever sees it. The tester's job is just to forward the configured TIF.
+#[rstest]
+fn test_submit_limit_order_day_tif_carries_day_tif(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.limit_time_in_force = Some(TimeInForce::Day);
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.instrument = Some(instrument);
+
+    tester
+        .submit_limit_order(OrderSide::Buy, Price::from("3000.0"))
+        .unwrap();
+
+    assert_eq!(tester.buy_order.unwrap().time_in_force(), TimeInForce::Day,);
+}
+
+// `test_modify_rejected` flips the one-shot guard the first time the maintain loop
+// finds an accepted resting order. The order itself doesn't have to transition to
+// ACCEPTED status in unit tests; we only verify the guard is consumed exactly once
+// when there is an in-flight buy order.
+#[rstest]
+fn test_modify_rejected_one_shot_guard_consumed(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.test_modify_rejected = true;
+    config.tob_offset_ticks = 5;
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.price_offset = Some(tester.get_price_offset(&instrument));
+    tester.instrument = Some(instrument);
+
+    let best_bid = Price::from("3000.0");
+    let best_ask = Price::from("3001.0");
+
+    // First call: submits the order; guard remains unset because the order is not
+    // yet venue-acknowledged.
+    tester.maintain_orders(best_bid, best_ask);
+    assert!(tester.buy_order.is_some());
+    assert!(!tester.modify_rejected_attempted);
+
+    // Subsequent calls cannot flip the guard either, since the order has no
+    // venue_order_id yet. This documents that the guard waits for venue acceptance.
+    tester.maintain_orders(best_bid, best_ask);
+    assert!(!tester.modify_rejected_attempted);
+}
+
+// Apply an `OrderAccepted` event to the cache copy so subsequent cache reads
+// observe a venue-acknowledged order. Mirrors what the OrderManager does when
+// a real `OrderAccepted` event flows through the engine.
+fn ack_buy_order_in_cache(tester: &ExecTester, cache: &Rc<RefCell<Cache>>) {
+    let order = tester
+        .buy_order
+        .as_ref()
+        .cloned()
+        .expect("buy order should be tracked locally");
+    let cid = order.client_order_id();
+    let strategy_id = order.strategy_id();
+    let instrument_id = order.instrument_id();
+
+    let accepted = OrderAccepted::new(
+        TraderId::from("TRADER-001"),
+        strategy_id,
+        instrument_id,
+        cid,
+        VenueOrderId::from("V-1"),
+        AccountId::from("SIM-001"),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+    );
+
+    let mut cache_mut = cache.borrow_mut();
+    let mut order_in_cache = cache_mut
+        .order(&cid)
+        .expect("order should be in cache after submit")
+        .clone();
+    order_in_cache
+        .apply(OrderEventAny::Accepted(accepted))
+        .unwrap();
+    cache_mut.update_order(&order_in_cache).unwrap();
+}
+
+// Once a real `OrderAccepted` event has been applied to the cache, the next
+// `maintain_orders` call should refresh the locally tracked clone, observe a
+// non-empty `venue_order_id`, and consume the one-shot modify-rejected guard.
+#[rstest]
+fn test_modify_rejected_fires_after_cache_acceptance(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.test_modify_rejected = true;
+    config.tob_offset_ticks = 5;
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache.clone());
+    tester.price_offset = Some(tester.get_price_offset(&instrument));
+    tester.instrument = Some(instrument);
+
+    let best_bid = Price::from("3000.0");
+    let best_ask = Price::from("3001.0");
+
+    tester.maintain_orders(best_bid, best_ask);
+    assert!(tester.buy_order.is_some());
+    assert!(!tester.modify_rejected_attempted);
+
+    // Simulate the venue acknowledging the order. This puts the canonical
+    // accepted state in the cache; the tester's stored `buy_order` is still
+    // the pre-submit clone.
+    ack_buy_order_in_cache(&tester, &cache);
+
+    // Next maintain tick refreshes from cache and trips the guard.
+    tester.maintain_orders(best_bid, best_ask);
+    assert!(
+        tester.modify_rejected_attempted,
+        "expected guard to flip once the cache shows venue acceptance",
+    );
+
+    // And only once.
+    tester.maintain_orders(best_bid, best_ask);
+    assert!(tester.modify_rejected_attempted);
+}
+
+// Batch-mode submission must also honor `limit_aggressive`, otherwise IOC/FOK
+// fill scenarios silently submit passive prices in batch mode.
+#[rstest]
+fn test_maintain_batch_limit_pair_limit_aggressive_crosses_spread(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.batch_submit_limit_pair = true;
+    config.limit_aggressive = true;
+    config.tob_offset_ticks = 5;
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.price_offset = Some(tester.get_price_offset(&instrument));
+    tester.instrument = Some(instrument);
+
+    let best_bid = Price::from("3000.0");
+    let best_ask = Price::from("3001.0");
+    tester.maintain_orders(best_bid, best_ask);
+
+    let buy = tester.buy_order.expect("batch buy should be submitted");
+    let sell = tester.sell_order.expect("batch sell should be submitted");
+    let buy_price = buy.price().expect("limit order has price");
+    let sell_price = sell.price().expect("limit order has price");
+
+    assert!(buy_price >= best_ask, "expected {buy_price} >= {best_ask}");
+    assert!(
+        sell_price <= best_bid,
+        "expected {sell_price} <= {best_bid}"
+    );
 }
