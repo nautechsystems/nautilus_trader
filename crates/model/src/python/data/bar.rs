@@ -390,13 +390,13 @@ impl BarType {
     /// Returns whether this bar type is externally aggregated.
     #[pyo3(name = "is_externally_aggregated")]
     fn py_is_externally_aggregated(&self) -> bool {
-        self.aggregation_source() == AggregationSource::External
+        self.is_externally_aggregated()
     }
 
     /// Returns whether this bar type is internally aggregated.
     #[pyo3(name = "is_internally_aggregated")]
     fn py_is_internally_aggregated(&self) -> bool {
-        self.aggregation_source() == AggregationSource::Internal
+        self.is_internally_aggregated()
     }
 
     /// Returns the `InstrumentId` for this bar type.

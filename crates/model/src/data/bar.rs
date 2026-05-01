@@ -593,6 +593,18 @@ impl BarType {
         }
     }
 
+    /// Returns whether the bar aggregation source is `EXTERNAL`.
+    #[must_use]
+    pub fn is_externally_aggregated(&self) -> bool {
+        self.aggregation_source() == AggregationSource::External
+    }
+
+    /// Returns whether the bar aggregation source is `INTERNAL`.
+    #[must_use]
+    pub fn is_internally_aggregated(&self) -> bool {
+        self.aggregation_source() == AggregationSource::Internal
+    }
+
     /// Returns the standard bar type component.
     #[must_use]
     pub fn standard(&self) -> Self {
@@ -1284,6 +1296,42 @@ mod tests {
         );
         assert_eq!(bar_type.aggregation_source(), AggregationSource::External);
         assert_eq!(bar_type, BarType::from(input));
+    }
+
+    #[rstest]
+    #[case("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL", true, false)]
+    #[case("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-INTERNAL", false, true)]
+    #[case(
+        "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
+        false,
+        true
+    )]
+    #[case(
+        "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-EXTERNAL@1-MINUTE-INTERNAL",
+        true,
+        false
+    )]
+    fn test_bar_type_aggregation_source_predicates(
+        #[case] input: &str,
+        #[case] expected_external: bool,
+        #[case] expected_internal: bool,
+    ) {
+        let bar_type = BarType::from(input);
+        assert_eq!(bar_type.is_externally_aggregated(), expected_external);
+        assert_eq!(bar_type.is_internally_aggregated(), expected_internal);
+    }
+
+    #[rstest]
+    fn test_bar_type_composite_aggregation_source_predicates_track_inner() {
+        let bar_type =
+            BarType::from("BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL");
+
+        assert!(bar_type.is_internally_aggregated());
+        assert!(!bar_type.is_externally_aggregated());
+
+        let composite = bar_type.composite();
+        assert!(composite.is_externally_aggregated());
+        assert!(!composite.is_internally_aggregated());
     }
 
     #[rstest]
