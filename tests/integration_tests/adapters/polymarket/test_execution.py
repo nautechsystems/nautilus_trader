@@ -44,6 +44,7 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderType
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.config import PolymarketExecClientConfig
+from nautilus_trader.adapters.polymarket import execution as polymarket_execution
 from nautilus_trader.adapters.polymarket.execution import PolymarketExecutionClient
 from nautilus_trader.adapters.polymarket.execution import _signed_order_taker_amount
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
@@ -1730,6 +1731,30 @@ class TestPolymarketExecutionClient:
             order,
             venue_order_id,
             Quantity.from_str("1.500000"),
+        )
+
+        assert order.quantity == Quantity.from_str("1.500000")
+        updated_calls = [
+            call
+            for call in send_spy.call_args_list
+            if type(call.args[0]).__name__ == "OrderUpdated"
+        ]
+        assert len(updated_calls) == 0
+
+    def test_dust_alignment_threshold_is_exclusive_at_exact_boundary(self, mocker, monkeypatch):
+        """
+        A fill exactly at the dust threshold is a true overfill, not an alignment case.
+        """
+        _, _, _, client_order_id, venue_order_id = self._setup_dust_market_order()
+        order = self.cache.order(client_order_id)
+        assert order is not None
+        monkeypatch.setattr(polymarket_execution, "DUST_SNAP_THRESHOLD", 0.5)
+        send_spy = mocker.spy(self.exec_client, "_send_order_event")
+
+        self.exec_client._align_order_quantity_to_venue_fill(
+            order,
+            venue_order_id,
+            Quantity.from_str("2.000000"),
         )
 
         assert order.quantity == Quantity.from_str("1.500000")
