@@ -4059,6 +4059,9 @@ cdef class OrderMatchingEngine:
         Condition.not_none(instrument, "instrument")
         Condition.equal(instrument.id, self.instrument.id, "instrument.id", "self.instrument.id")
 
+        if instrument.price_increment != self.instrument.price_increment:
+            self._core.update_price_increment(instrument.price_increment)
+
         self.instrument = instrument
         self._price_prec = instrument.price_precision
         self._size_prec = instrument.size_precision

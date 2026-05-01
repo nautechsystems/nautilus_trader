@@ -57,6 +57,7 @@ from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import LimitOrder
@@ -72,6 +73,36 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 _ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
+
+
+def _ethusdt_perp_binance_with_finer_tick() -> CryptoPerpetual:
+    instrument = _ETHUSDT_PERP_BINANCE
+    return CryptoPerpetual(
+        instrument_id=instrument.id,
+        raw_symbol=instrument.raw_symbol,
+        base_currency=instrument.base_currency,
+        quote_currency=instrument.quote_currency,
+        settlement_currency=instrument.settlement_currency,
+        is_inverse=instrument.is_inverse,
+        price_precision=3,
+        size_precision=instrument.size_precision,
+        price_increment=Price.from_str("0.001"),
+        size_increment=instrument.size_increment,
+        max_quantity=instrument.max_quantity,
+        min_quantity=instrument.min_quantity,
+        max_notional=instrument.max_notional,
+        min_notional=instrument.min_notional,
+        max_price=instrument.max_price,
+        min_price=instrument.min_price,
+        margin_init=instrument.margin_init,
+        margin_maint=instrument.margin_maint,
+        maker_fee=instrument.maker_fee,
+        taker_fee=instrument.taker_fee,
+        ts_event=instrument.ts_event,
+        ts_init=instrument.ts_init,
+        tick_scheme_name=instrument.tick_scheme_name,
+        info=instrument.info,
+    )
 
 
 class TestOrderMatchingEngine:
@@ -128,6 +159,66 @@ class TestOrderMatchingEngine:
 
         # Assert
         assert self.matching_engine.instrument.id == _ETHUSDT_PERP_BINANCE.id
+
+    def test_update_instrument_propagates_tick_size_change(self) -> None:
+        exec_messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", lambda x: exec_messages.append(x))
+
+        # Seed initial quote context (2dp)
+        self.matching_engine.process_quote_tick(
+            TestDataStubs.quote_tick(
+                instrument=self.instrument,
+                bid_price=1000.00,
+                ask_price=1000.01,
+                ts_event=0,
+                ts_init=0,
+            ),
+        )
+
+        # Apply tick-size change (2dp -> 3dp)
+        instrument = _ethusdt_perp_binance_with_finer_tick()
+        self.cache.add_instrument(instrument)
+        self.matching_engine.update_instrument(instrument)
+
+        # Process quote tick with 3dp pricing; this updates MatchingCore bid/ask raw.
+        self.matching_engine.process_quote_tick(
+            TestDataStubs.quote_tick(
+                instrument=instrument,
+                bid_price=1000.004,
+                ask_price=1000.005,
+                ts_event=1,
+                ts_init=1,
+            ),
+        )
+
+        # A post-only order which would cross should be rejected; rejection reason should
+        # reflect the *updated* tick size (3dp) when formatting bid/ask from MatchingCore.
+        order = TestExecStubs.limit_order(
+            instrument=instrument,
+            order_side=OrderSide.BUY,
+            price=instrument.make_price(1000.005),  # at ask -> would take
+            post_only=True,
+        )
+        self.matching_engine.process_order(order, self.account_id)
+
+        rejected = next((m for m in exec_messages if isinstance(m, OrderRejected)), None)
+        assert rejected is not None
+        assert rejected.due_post_only is True
+        assert "bid=1000.004" in rejected.reason
+        assert "ask=1000.005" in rejected.reason
+
+        # And a post-only BUY resting on the book (maker) should be accepted under the new tick size.
+        exec_messages.clear()
+        maker_order = TestExecStubs.limit_order(
+            instrument=instrument,
+            order_side=OrderSide.BUY,
+            price=instrument.make_price(1000.004),  # at bid -> maker
+            post_only=True,
+        )
+        self.matching_engine.process_order(maker_order, self.account_id)
+
+        accepted = next((m for m in exec_messages if isinstance(m, OrderAccepted)), None)
+        assert accepted is not None
 
     def test_process_instrument_status(self) -> None:
         self.matching_engine.process_status(MarketStatusAction.CLOSE)

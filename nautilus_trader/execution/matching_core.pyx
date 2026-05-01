@@ -191,6 +191,21 @@ cdef class MatchingCore:
         self.is_last_initialized = True
         self.last_raw = last_raw
 
+    cpdef void update_price_increment(self, Price price_increment):
+        """
+        Update the price increment (tick size) for the matching core.
+
+        Parameters
+        ----------
+        price_increment : Price
+            The new minimum price increment (tick size).
+
+        """
+        Condition.not_none(price_increment, "price_increment")
+
+        self._price_increment = price_increment
+        self._price_precision = price_increment.precision
+
     cpdef void reset(self):
         self._orders.clear()
         self._orders_bid.clear()
