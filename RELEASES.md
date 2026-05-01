@@ -9,7 +9,9 @@ Released on TBD (UTC).
 - Added Interactive Brokers PyO3 live client config support in `TradingNodeConfig` (#3964), thanks @faysou
 
 ### Breaking Changes
+- Removed `From<OrderInitialized>` for order types; use `TryFrom` to surface invariant errors via `try_from`/`try_into`
 - Changed JSON log file extension from `.json` to `.jsonl`; update log shippers watching `.json` (#3955), thanks @filipmacek
+- Changed Python order `create()` methods to raise `ValueError` on invalid `OrderInitialized` instead of panicking
 
 ### Security
 
@@ -17,6 +19,7 @@ Released on TBD (UTC).
 - Fixed `Strategy`/`Actor` clock callback leak on dispose (#3967), thanks for reporting @frslvr
 - Fixed Kraken symbol normalization for WS v2 compatibility (#3961), thanks @mcgrj
 - Fixed OKX missing `post_only` instrument status (#3966), thanks @jhavie
+- Fixed `OrderAny::from_events` panic on malformed `OrderInitialized`; reconciliation returns `Err` instead of crashing
 
 ### Internal Improvements
 - Refined data engine request workflow (#3928), thanks @faysou

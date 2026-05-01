@@ -108,7 +108,8 @@ impl InteractiveBrokersExecutionClient {
         let contract =
             Self::resolve_contract_for_instrument(cmd.instrument_id, instrument_provider)?;
 
-        let order_any = OrderAny::from(cmd.order_init.clone());
+        let order_any = OrderAny::try_from(cmd.order_init.clone())
+            .context("Failed to construct order from `OrderInitialized`")?;
         let order_ref = cmd.order_init.client_order_id.to_string();
         let mut ib_order = nautilus_order_to_ib_order(
             &order_any,

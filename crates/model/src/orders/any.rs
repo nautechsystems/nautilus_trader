@@ -48,7 +48,9 @@ impl OrderAny {
     /// Returns an error if:
     /// - The `events` is empty.
     /// - The first event is not `OrderInitialized`.
-    /// - Any event has an invalid state transition when applied to the order.
+    /// - The initialization event violates an order invariant
+    ///   (e.g. missing required price/trigger fields, invalid quantity, invalid TIF/expire combo).
+    /// - Any subsequent event has an invalid state transition when applied to the order.
     ///
     #[expect(clippy::missing_panics_doc)] // Guarded by empty check above
     pub fn from_events(events: Vec<OrderEventAny>) -> anyhow::Result<Self> {
@@ -60,7 +62,8 @@ impl OrderAny {
         let init_event = events.first().unwrap();
         match init_event {
             OrderEventAny::Initialized(init) => {
-                let mut order = Self::from(init.clone());
+                let mut order = Self::try_from(init.clone())
+                    .map_err(|e| anyhow::anyhow!("Invalid `OrderInitialized` event: {e}"))?;
                 // Apply the rest of the events
                 for event in events.into_iter().skip(1) {
                     // Apply event to order
@@ -347,8 +350,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        enums::{OrderType, TrailingOffsetType},
-        events::{OrderEventAny, OrderUpdated, order::spec::OrderInitializedSpec},
+        enums::{OrderSide, OrderType, TrailingOffsetType, TriggerType},
+        events::{
+            OrderEventAny, OrderInitialized, OrderUpdated, order::spec::OrderInitializedSpec,
+        },
         identifiers::{ClientOrderId, InstrumentId, StrategyId},
         orders::builder::OrderTestBuilder,
         types::{Price, Quantity},
@@ -406,6 +411,316 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             "No order events provided to create OrderAny"
+        );
+    }
+
+    #[rstest]
+    fn test_order_any_from_events_invalid_init_returns_error() {
+        // Limit order with `price = None` violates `LimitOrder` invariants. Previously this
+        // panicked inside `From<OrderInitialized>`; `from_events` must now surface it as `Err`.
+        let init_event = OrderInitializedSpec::builder()
+            .order_type(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .build();
+
+        let events = vec![OrderEventAny::Initialized(init_event)];
+        let result = OrderAny::from_events(events);
+
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("Invalid `OrderInitialized` event")
+                && msg.contains("`price` is required for `LimitOrder`"),
+            "unexpected error message: {msg}"
+        );
+    }
+
+    #[rstest]
+    #[case::buy(
+        OrderSide::Buy,
+        Price::from("100.00"),
+        Price::from("101.00"),
+        "BUY Limit-If-Touched"
+    )]
+    #[case::sell(
+        OrderSide::Sell,
+        Price::from("100.00"),
+        Price::from("99.00"),
+        "SELL Limit-If-Touched"
+    )]
+    fn test_order_any_from_events_invalid_predicate_returns_error(
+        #[case] side: OrderSide,
+        #[case] price: Price,
+        #[case] trigger_price: Price,
+        #[case] expected_msg: &str,
+    ) {
+        // LimitIfTouched enforces `trigger_price <= price` for BUY and `trigger_price >= price`
+        // for SELL inside `new_checked`. Reconciliation must see violations as `Err` rather
+        // than panicking, on either side.
+        let init_event = OrderInitializedSpec::builder()
+            .order_type(OrderType::LimitIfTouched)
+            .order_side(side)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .price(price)
+            .trigger_price(trigger_price)
+            .trigger_type(TriggerType::LastPrice)
+            .build();
+
+        let events = vec![OrderEventAny::Initialized(init_event)];
+        let result = OrderAny::from_events(events);
+
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("Invalid `OrderInitialized` event") && msg.contains(expected_msg),
+            "unexpected error message: {msg}"
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn make_init_with_optional_fields(
+        order_type: OrderType,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+        trigger_type: Option<TriggerType>,
+        limit_offset: Option<Decimal>,
+        trailing_offset: Option<Decimal>,
+        trailing_offset_type: Option<TrailingOffsetType>,
+    ) -> OrderInitialized {
+        OrderInitializedSpec::builder()
+            .order_type(order_type)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .maybe_price(price)
+            .maybe_trigger_price(trigger_price)
+            .maybe_trigger_type(trigger_type)
+            .maybe_limit_offset(limit_offset)
+            .maybe_trailing_offset(trailing_offset)
+            .maybe_trailing_offset_type(trailing_offset_type)
+            .build()
+    }
+
+    #[rstest]
+    #[case::lit_missing_price(
+        make_init_with_optional_fields(
+            OrderType::LimitIfTouched,
+            None,
+            Some(Price::from("100.00")),
+            Some(TriggerType::LastPrice),
+            None,
+            None,
+            None,
+        ),
+        "`price` is required for `LimitIfTouchedOrder`"
+    )]
+    #[case::lit_missing_trigger_price(
+        make_init_with_optional_fields(
+            OrderType::LimitIfTouched,
+            Some(Price::from("100.00")),
+            None,
+            Some(TriggerType::LastPrice),
+            None,
+            None,
+            None,
+        ),
+        "`trigger_price` is required for `LimitIfTouchedOrder`"
+    )]
+    #[case::lit_missing_trigger_type(
+        make_init_with_optional_fields(
+            OrderType::LimitIfTouched,
+            Some(Price::from("100.00")),
+            Some(Price::from("99.00")),
+            None,
+            None,
+            None,
+            None,
+        ),
+        "`trigger_type` is required for `LimitIfTouchedOrder`"
+    )]
+    #[case::stop_limit_missing_price(
+        make_init_with_optional_fields(
+            OrderType::StopLimit,
+            None,
+            Some(Price::from("100.00")),
+            Some(TriggerType::LastPrice),
+            None,
+            None,
+            None,
+        ),
+        "`price` is required for `StopLimitOrder`"
+    )]
+    #[case::stop_limit_missing_trigger_price(
+        make_init_with_optional_fields(
+            OrderType::StopLimit,
+            Some(Price::from("100.00")),
+            None,
+            Some(TriggerType::LastPrice),
+            None,
+            None,
+            None,
+        ),
+        "`trigger_price` is required for `StopLimitOrder`"
+    )]
+    #[case::stop_limit_missing_trigger_type(
+        make_init_with_optional_fields(
+            OrderType::StopLimit,
+            Some(Price::from("100.00")),
+            Some(Price::from("99.00")),
+            None,
+            None,
+            None,
+            None,
+        ),
+        "`trigger_type` is required for `StopLimitOrder`"
+    )]
+    #[case::stop_market_missing_trigger_price(
+        make_init_with_optional_fields(
+            OrderType::StopMarket,
+            None,
+            None,
+            Some(TriggerType::LastPrice),
+            None,
+            None,
+            None,
+        ),
+        "`trigger_price` is required for `StopMarketOrder`"
+    )]
+    #[case::stop_market_missing_trigger_type(
+        make_init_with_optional_fields(
+            OrderType::StopMarket,
+            None,
+            Some(Price::from("100.00")),
+            None,
+            None,
+            None,
+            None,
+        ),
+        "`trigger_type` is required for `StopMarketOrder`"
+    )]
+    #[case::mit_missing_trigger_price(
+        make_init_with_optional_fields(
+            OrderType::MarketIfTouched,
+            None,
+            None,
+            Some(TriggerType::LastPrice),
+            None,
+            None,
+            None,
+        ),
+        "`trigger_price` is required for `MarketIfTouchedOrder`"
+    )]
+    #[case::mit_missing_trigger_type(
+        make_init_with_optional_fields(
+            OrderType::MarketIfTouched,
+            None,
+            Some(Price::from("100.00")),
+            None,
+            None,
+            None,
+            None,
+        ),
+        "`trigger_type` is required for `MarketIfTouchedOrder`"
+    )]
+    #[case::tsl_missing_price(
+        make_init_with_optional_fields(
+            OrderType::TrailingStopLimit,
+            None, Some(Price::from("99.00")), Some(TriggerType::LastPrice),
+            Some(dec!(1)), Some(dec!(1)), Some(TrailingOffsetType::Price),
+        ),
+        "`price` is required for `TrailingStopLimitOrder`",
+    )]
+    #[case::tsl_missing_trigger_price(
+        make_init_with_optional_fields(
+            OrderType::TrailingStopLimit,
+            Some(Price::from("100.00")), None, Some(TriggerType::LastPrice),
+            Some(dec!(1)), Some(dec!(1)), Some(TrailingOffsetType::Price),
+        ),
+        "`trigger_price` is required for `TrailingStopLimitOrder`",
+    )]
+    #[case::tsl_missing_trigger_type(
+        make_init_with_optional_fields(
+            OrderType::TrailingStopLimit,
+            Some(Price::from("100.00")), Some(Price::from("99.00")), None,
+            Some(dec!(1)), Some(dec!(1)), Some(TrailingOffsetType::Price),
+        ),
+        "`trigger_type` is required for `TrailingStopLimitOrder`",
+    )]
+    #[case::tsl_missing_limit_offset(
+        make_init_with_optional_fields(
+            OrderType::TrailingStopLimit,
+            Some(Price::from("100.00")), Some(Price::from("99.00")), Some(TriggerType::LastPrice),
+            None, Some(dec!(1)), Some(TrailingOffsetType::Price),
+        ),
+        "`limit_offset` is required for `TrailingStopLimitOrder`",
+    )]
+    #[case::tsl_missing_trailing_offset(
+        make_init_with_optional_fields(
+            OrderType::TrailingStopLimit,
+            Some(Price::from("100.00")), Some(Price::from("99.00")), Some(TriggerType::LastPrice),
+            Some(dec!(1)), None, Some(TrailingOffsetType::Price),
+        ),
+        "`trailing_offset` is required for `TrailingStopLimitOrder`",
+    )]
+    #[case::tsl_missing_trailing_offset_type(
+        make_init_with_optional_fields(
+            OrderType::TrailingStopLimit,
+            Some(Price::from("100.00")), Some(Price::from("99.00")), Some(TriggerType::LastPrice),
+            Some(dec!(1)), Some(dec!(1)), None,
+        ),
+        "`trailing_offset_type` is required for `TrailingStopLimitOrder`",
+    )]
+    #[case::tsm_missing_trigger_price(
+        make_init_with_optional_fields(
+            OrderType::TrailingStopMarket,
+            None, None, Some(TriggerType::LastPrice),
+            None, Some(dec!(1)), Some(TrailingOffsetType::Price),
+        ),
+        "`trigger_price` is required for `TrailingStopMarketOrder`",
+    )]
+    #[case::tsm_missing_trigger_type(
+        make_init_with_optional_fields(
+            OrderType::TrailingStopMarket,
+            None, Some(Price::from("100.00")), None,
+            None, Some(dec!(1)), Some(TrailingOffsetType::Price),
+        ),
+        "`trigger_type` is required for `TrailingStopMarketOrder`",
+    )]
+    #[case::tsm_missing_trailing_offset(
+        make_init_with_optional_fields(
+            OrderType::TrailingStopMarket,
+            None,
+            Some(Price::from("100.00")),
+            Some(TriggerType::LastPrice),
+            None,
+            None,
+            Some(TrailingOffsetType::Price),
+        ),
+        "`trailing_offset` is required for `TrailingStopMarketOrder`"
+    )]
+    #[case::tsm_missing_trailing_offset_type(
+        make_init_with_optional_fields(
+            OrderType::TrailingStopMarket,
+            None, Some(Price::from("100.00")), Some(TriggerType::LastPrice),
+            None, Some(dec!(1)), None,
+        ),
+        "`trailing_offset_type` is required for `TrailingStopMarketOrder`",
+    )]
+    fn test_order_any_from_events_missing_required_field_returns_error(
+        #[case] init: OrderInitialized,
+        #[case] expected_field_msg: &str,
+    ) {
+        // Each case omits exactly one required field for its order type. `from_events` must
+        // surface the per-type `TryFrom` error rather than panicking inside `OrderAny::from`.
+        let events = vec![OrderEventAny::Initialized(init)];
+        let result = OrderAny::from_events(events);
+
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("Invalid `OrderInitialized` event") && msg.contains(expected_field_msg),
+            "unexpected error message: {msg}"
         );
     }
 

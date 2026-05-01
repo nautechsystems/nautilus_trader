@@ -19,7 +19,10 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
+use nautilus_core::{
+    UUID4, UnixNanos,
+    correctness::{CorrectnessError, FAILED},
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -517,23 +520,34 @@ impl Order for MarketIfTouchedOrder {
     }
 }
 
-impl From<OrderInitialized> for MarketIfTouchedOrder {
-    fn from(event: OrderInitialized) -> Self {
-        Self::new(
+impl TryFrom<OrderInitialized> for MarketIfTouchedOrder {
+    type Error = OrderError;
+
+    fn try_from(event: OrderInitialized) -> Result<Self, Self::Error> {
+        let trigger_price =
+            event
+                .trigger_price
+                .ok_or_else(|| CorrectnessError::PredicateViolation {
+                    message:
+                        "`trigger_price` is required for `MarketIfTouchedOrder` initialization"
+                            .to_string(),
+                })?;
+        let trigger_type =
+            event
+                .trigger_type
+                .ok_or_else(|| CorrectnessError::PredicateViolation {
+                    message: "`trigger_type` is required for `MarketIfTouchedOrder` initialization"
+                        .to_string(),
+                })?;
+        Self::new_checked(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,
             event.client_order_id,
             event.order_side,
             event.quantity,
-            event
-            .trigger_price // TODO: Improve this error, model order domain errors
-            .expect(
-                "Error initializing order: `trigger_price` was `None` for `MarketIfTouchedOrder`",
-            ),
-            event.trigger_type.expect(
-                "Error initializing order: `trigger_type` was `None` for `MarketIfTouchedOrder`",
-            ),
+            trigger_price,
+            trigger_type,
             event.time_in_force,
             event.expire_time,
             event.reduce_only,
@@ -706,7 +720,7 @@ mod tests {
             .build();
 
         // Convert the OrderInitialized event into a MarketIfTouchedOrder
-        let order: MarketIfTouchedOrder = order_initialized.clone().into();
+        let order: MarketIfTouchedOrder = order_initialized.clone().try_into().unwrap();
 
         // Assert essential fields match the OrderInitialized fields
         assert_eq!(order.trader_id(), order_initialized.trader_id);

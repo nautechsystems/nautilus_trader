@@ -19,7 +19,10 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
+use nautilus_core::{
+    UUID4, UnixNanos,
+    correctness::{CorrectnessError, FAILED},
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -579,23 +582,51 @@ impl Display for TrailingStopMarketOrder {
     }
 }
 
-impl From<OrderInitialized> for TrailingStopMarketOrder {
-    fn from(event: OrderInitialized) -> Self {
-        Self::new(
+impl TryFrom<OrderInitialized> for TrailingStopMarketOrder {
+    type Error = OrderError;
+
+    fn try_from(event: OrderInitialized) -> Result<Self, Self::Error> {
+        let trigger_price =
+            event
+                .trigger_price
+                .ok_or_else(|| CorrectnessError::PredicateViolation {
+                    message:
+                        "`trigger_price` is required for `TrailingStopMarketOrder` initialization"
+                            .to_string(),
+                })?;
+        let trigger_type =
+            event
+                .trigger_type
+                .ok_or_else(|| CorrectnessError::PredicateViolation {
+                    message:
+                        "`trigger_type` is required for `TrailingStopMarketOrder` initialization"
+                            .to_string(),
+                })?;
+        let trailing_offset =
+            event
+                .trailing_offset
+                .ok_or_else(|| CorrectnessError::PredicateViolation {
+                    message:
+                        "`trailing_offset` is required for `TrailingStopMarketOrder` initialization"
+                            .to_string(),
+                })?;
+        let trailing_offset_type = event.trailing_offset_type.ok_or_else(|| {
+            CorrectnessError::PredicateViolation {
+                message: "`trailing_offset_type` is required for `TrailingStopMarketOrder` initialization"
+                    .to_string(),
+            }
+        })?;
+        Self::new_checked(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,
             event.client_order_id,
             event.order_side,
             event.quantity,
-            event
-                .trigger_price
-                .expect("Error initializing order: trigger_price is None"),
-            event
-                .trigger_type
-                .expect("Error initializing order: trigger_type is None"),
-            event.trailing_offset.unwrap(),
-            event.trailing_offset_type.unwrap(),
+            trigger_price,
+            trigger_type,
+            trailing_offset,
+            trailing_offset_type,
             event.time_in_force,
             event.expire_time,
             event.reduce_only,
@@ -798,7 +829,7 @@ mod tests {
             .build();
 
         // Convert the OrderInitialized event into a TrailingStopMarketOrder
-        let order: TrailingStopMarketOrder = order_initialized.clone().into();
+        let order: TrailingStopMarketOrder = order_initialized.clone().try_into().unwrap();
 
         // Assert essential fields match the OrderInitialized fields
         assert_eq!(order.trader_id(), order_initialized.trader_id);
