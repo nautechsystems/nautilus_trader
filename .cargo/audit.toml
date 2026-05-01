@@ -1,16 +1,30 @@
 # cargo-audit configuration
 # https://github.com/rustsec/rustsec/blob/main/cargo-audit/audit.toml.example
 #
-# Keep in sync with deny.toml [advisories] ignore list.
+# Mirrors deny.toml [advisories] ignore list, plus two advisories that
+# cargo-audit surfaces but cargo-deny does not match against the lockfile:
+#   - RUSTSEC-2024-0388 (derivative, unmaintained via alloy-primitives -> ruint -> ark-ff)
+#   - RUSTSEC-2023-0071 (rsa Marvin Attack, transitive via sqlx-mysql, no upstream fix)
 
 [advisories]
 ignore = [
-  # capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix
-  "RUSTSEC-2025-0143",
   # paste unmaintained, transitive via alloy
   "RUSTSEC-2024-0436",
-  # rand 0.8.5 unsoundness, transitive build-time only via pyo3-stub-gen
-  "RUSTSEC-2026-0097",
+  # derivative unmaintained, transitive via alloy-primitives -> ruint -> ark-ff
+  "RUSTSEC-2024-0388",
+  # rustls-pemfile unmaintained, transitive via nautilus-network
+  "RUSTSEC-2025-0134",
+  # unic-* unmaintained, transitive via pyo3-stub-gen -> rustpython-parser (dev tool only)
+  "RUSTSEC-2025-0075",
+  "RUSTSEC-2025-0080",
+  "RUSTSEC-2025-0081",
+  "RUSTSEC-2025-0090",
+  "RUSTSEC-2025-0098",
+  "RUSTSEC-2025-0100",
+  # bincode unmaintained, transitive via hypersync-client
+  "RUSTSEC-2025-0141",
+  # capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix
+  "RUSTSEC-2025-0143",
   # rsa Marvin Attack, transitive via sqlx-mysql, no fix available
   "RUSTSEC-2023-0071",
 ]
