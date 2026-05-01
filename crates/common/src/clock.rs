@@ -66,6 +66,20 @@ pub trait Clock: Debug + Any {
     /// does not have an event handler, then this handler is used.
     fn register_default_handler(&mut self, callback: TimeEventCallback);
 
+    /// Cancel the registered default event handler (if any).
+    ///
+    /// Releases the held callback so any Python object owned by it can be dropped.
+    /// Required to break reference cycles between Python components and their clock,
+    /// since the clock stores callbacks as `Py<PyAny>` which Python's GC cannot trace.
+    fn cancel_default_handler(&mut self);
+
+    /// Cancel all registered named event callbacks.
+    ///
+    /// Releases callbacks registered via [`Clock::set_time_alert_ns`] or
+    /// [`Clock::set_timer_ns`] with an explicit `callback` argument. Called during
+    /// component disposal to break reference cycles via Python `Py<PyAny>` callbacks.
+    fn cancel_callbacks(&mut self);
+
     /// Get handler for [`TimeEvent`].
     ///
     /// Note: Panics if the event does not have an associated handler
@@ -247,6 +261,11 @@ impl CallbackRegistry {
     /// Registers a default handler callback.
     pub fn register_default_handler(&mut self, callback: TimeEventCallback) {
         self.default_callback = Some(callback);
+    }
+
+    /// Cancels the registered default handler callback (if any).
+    pub fn cancel_default_handler(&mut self) {
+        self.default_callback = None;
     }
 
     /// Registers a callback for a specific timer name.
@@ -556,6 +575,14 @@ impl Clock for TestClock {
 
     fn register_default_handler(&mut self, callback: TimeEventCallback) {
         self.callbacks.register_default_handler(callback);
+    }
+
+    fn cancel_default_handler(&mut self) {
+        self.callbacks.cancel_default_handler();
+    }
+
+    fn cancel_callbacks(&mut self) {
+        self.callbacks.clear();
     }
 
     /// Returns the handler for the given `TimeEvent`.
@@ -1420,6 +1447,80 @@ mod tests {
 
         assert_eq!(test_clock.timer_count(), 0);
         assert_eq!(test_clock.timestamp_ns(), UnixNanos::default()); // Time reset to zero
+    }
+
+    #[rstest]
+    fn test_cancel_default_handler_clears_default(mut test_clock: TestClock) {
+        // Default handler is registered by the fixture
+        test_clock.cancel_default_handler();
+
+        // Without a default and without an explicit callback, scheduling fails
+        let alert_time: UnixNanos = (*test_clock.timestamp_ns() + 1000).into();
+        let err = test_clock
+            .set_time_alert_ns("alert", alert_time, None, None)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("No callbacks provided"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_cancel_default_handler_is_idempotent_on_empty_registry() {
+        // Fresh clock with no handler registered: cancel must not panic
+        let mut clock = TestClock::new();
+        clock.cancel_default_handler();
+        clock.cancel_default_handler();
+    }
+
+    #[rstest]
+    fn test_cancel_callbacks_clears_named(mut test_clock: TestClock) {
+        let alert_time: UnixNanos = (*test_clock.timestamp_ns() + 1000).into();
+        let callback = TimeEventCallback::from(TestCallback::default());
+        test_clock
+            .set_time_alert_ns("named_alert", alert_time, Some(callback), None)
+            .unwrap();
+        test_clock.cancel_timer("named_alert");
+
+        // Cancel both default and named callbacks; rescheduling without a callback fails
+        test_clock.cancel_default_handler();
+        test_clock.cancel_callbacks();
+
+        let err = test_clock
+            .set_time_alert_ns("named_alert", alert_time, None, None)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("No callbacks provided"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_cancel_default_handler_preserves_named_callbacks(mut test_clock: TestClock) {
+        let alert_time: UnixNanos = (*test_clock.timestamp_ns() + 1000).into();
+        let callback = TimeEventCallback::from(TestCallback::default());
+        test_clock
+            .set_time_alert_ns("alert", alert_time, Some(callback), None)
+            .unwrap();
+        test_clock.cancel_timer("alert");
+
+        test_clock.cancel_default_handler();
+
+        // Named callback survives: rescheduling under the same name without a callback works
+        test_clock
+            .set_time_alert_ns("alert", alert_time, None, None)
+            .unwrap();
+    }
+
+    #[rstest]
+    fn test_cancel_callbacks_preserves_default_handler(mut test_clock: TestClock) {
+        // Default handler from fixture remains available
+        test_clock.cancel_callbacks();
+
+        let alert_time: UnixNanos = (*test_clock.timestamp_ns() + 1000).into();
+        test_clock
+            .set_time_alert_ns("alert", alert_time, None, None)
+            .unwrap();
     }
 
     #[rstest]

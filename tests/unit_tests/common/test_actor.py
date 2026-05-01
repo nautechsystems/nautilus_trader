@@ -917,6 +917,64 @@ class TestActor:
         assert "on_dispose" in actor.calls
         assert actor.state == ComponentState.DISPOSED
 
+    def test_dispose_clears_clock_callbacks(self) -> None:
+        # Arrange
+        # Keep clocks alive through the assertion so a no-op `cancel_*` would
+        # manifest as accumulated sentinels/actors. Two checks:
+        #  1. Sentinels: held via a named callback registered with set_time_alert_ns;
+        #     accumulating sentinels would catch a no-op `cancel_callbacks()`.
+        #  2. Actors: held via the default handler installed by register_base
+        #     (clock -> bound `handle_event` -> actor); accumulating actors would
+        #     catch a no-op `cancel_default_handler()`.
+        import gc
+        import weakref
+
+        class Sentinel:
+            pass
+
+        sentinel_baseline = sum(1 for o in gc.get_objects() if isinstance(o, Sentinel))
+        clocks = []
+        actor_refs = []
+
+        # Act
+        for _ in range(10):
+            clock = TestClock()
+            actor = MockActor()
+            actor.register_base(
+                portfolio=self.portfolio,
+                msgbus=self.msgbus,
+                cache=self.cache,
+                clock=clock,
+            )
+            sentinel = Sentinel()
+            clock.set_time_alert_ns(
+                "alert",
+                10,
+                callback=lambda _e, _s=sentinel: None,
+                allow_past=False,
+            )
+            actor_refs.append(weakref.ref(actor))
+            actor.dispose()
+            clocks.append(clock)
+            del actor, sentinel
+            gc.collect()
+
+        # Assert
+        sentinel_residual = (
+            sum(1 for o in gc.get_objects() if isinstance(o, Sentinel)) - sentinel_baseline
+        )
+        assert sentinel_residual <= 1, (
+            f"sentinels accumulated despite cancel_callbacks: residual={sentinel_residual}"
+        )
+
+        actors_alive = sum(1 for r in actor_refs if r() is not None)
+        assert actors_alive <= 1, (
+            f"actors accumulated despite cancel_default_handler: alive={actors_alive}"
+        )
+
+        del clocks
+        gc.collect()
+
     def test_degrade(self) -> None:
         # Arrange
         actor = MockActor()

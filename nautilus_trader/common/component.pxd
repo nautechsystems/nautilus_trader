@@ -50,6 +50,8 @@ cdef class Clock:
     cpdef datetime local_now(self, tzinfo tz=*)
     cpdef uint64_t next_time_ns(self, str name)
     cpdef void register_default_handler(self, handler: Callable[[TimeEvent], None])
+    cpdef void cancel_default_handler(self)
+    cpdef void cancel_callbacks(self)
     cpdef void set_time_alert(
         self,
         str name,

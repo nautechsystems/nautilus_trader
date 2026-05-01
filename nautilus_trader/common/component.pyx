@@ -61,6 +61,8 @@ from nautilus_trader.core.rust.common cimport component_state_to_cstr
 from nautilus_trader.core.rust.common cimport component_trigger_from_cstr
 from nautilus_trader.core.rust.common cimport component_trigger_to_cstr
 from nautilus_trader.core.rust.common cimport is_matching_ffi
+from nautilus_trader.core.rust.common cimport live_clock_cancel_callbacks
+from nautilus_trader.core.rust.common cimport live_clock_cancel_default_handler
 from nautilus_trader.core.rust.common cimport live_clock_cancel_timer
 from nautilus_trader.core.rust.common cimport live_clock_drop
 from nautilus_trader.core.rust.common cimport live_clock_new
@@ -89,6 +91,8 @@ from nautilus_trader.core.rust.common cimport logging_is_initialized
 from nautilus_trader.core.rust.common cimport logging_log_header
 from nautilus_trader.core.rust.common cimport logging_log_sysinfo
 from nautilus_trader.core.rust.common cimport test_clock_advance_time
+from nautilus_trader.core.rust.common cimport test_clock_cancel_callbacks
+from nautilus_trader.core.rust.common cimport test_clock_cancel_default_handler
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timer
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timers
 from nautilus_trader.core.rust.common cimport test_clock_drop
@@ -265,6 +269,27 @@ cdef class Clock:
 
         """
         raise NotImplementedError("method `register_default_handler` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void cancel_default_handler(self):
+        """
+        Cancel the registered default handler (if any).
+
+        Releases the Python callback held by the clock so the bound method (and the
+        component that owns it) can be garbage collected. The clock stores the
+        callback as a Rust ``Py<PyAny>`` which Python's GC cannot trace, so any
+        cycle through it must be broken explicitly.
+        """
+        raise NotImplementedError("method `cancel_default_handler` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void cancel_callbacks(self):
+        """
+        Cancel all registered named callbacks.
+
+        Releases callbacks registered via ``set_time_alert`` or ``set_timer`` with an
+        explicit handler. Companion to ``cancel_default_handler`` for breaking reference
+        cycles between Python components and the clock during disposal.
+        """
+        raise NotImplementedError("method `cancel_callbacks` must be implemented in the subclass")  # pragma: no cover
 
     cpdef uint64_t next_time_ns(self, str name):
         """
@@ -640,6 +665,12 @@ cdef class TestClock(Clock):
 
         test_clock_register_default_handler(&self._mem, <PyObject *>callback)
 
+    cpdef void cancel_default_handler(self):
+        test_clock_cancel_default_handler(&self._mem)
+
+    cpdef void cancel_callbacks(self):
+        test_clock_cancel_callbacks(&self._mem)
+
     cpdef void set_time_alert_ns(
         self,
         str name,
@@ -855,6 +886,12 @@ cdef class LiveClock(Clock):
         callback = create_pyo3_conversion_wrapper(callback)
 
         live_clock_register_default_handler(&self._mem, <PyObject *>callback)
+
+    cpdef void cancel_default_handler(self):
+        live_clock_cancel_default_handler(&self._mem)
+
+    cpdef void cancel_callbacks(self):
+        live_clock_cancel_callbacks(&self._mem)
 
     cpdef void set_time_alert_ns(
         self,

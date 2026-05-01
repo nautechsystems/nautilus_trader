@@ -108,6 +108,16 @@ impl PyClock {
             .register_default_handler(TimeEventCallback::from(callback));
     }
 
+    #[pyo3(name = "cancel_default_handler")]
+    fn py_cancel_default_handler(&mut self) {
+        self.0.borrow_mut().cancel_default_handler();
+    }
+
+    #[pyo3(name = "cancel_callbacks")]
+    fn py_cancel_callbacks(&mut self) {
+        self.0.borrow_mut().cancel_callbacks();
+    }
+
     #[pyo3(
         name = "set_time_alert",
         signature = (name, alert_time, callback=None, allow_past=None)

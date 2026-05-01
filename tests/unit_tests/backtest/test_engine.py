@@ -129,6 +129,18 @@ class TestBacktestEngine:
         assert engine.iteration == 0
         assert engine.get_log_guard() is None  # Logging bypassed
 
+    def test_dispose_disposes_emulator(self):
+        # Arrange
+        engine = BacktestEngine(BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)))
+        emulator = engine.kernel.emulator
+        assert not emulator.is_disposed
+
+        # Act
+        engine.dispose()
+
+        # Assert
+        assert emulator.is_disposed
+
     def test_reset_engine(self):
         # Arrange
         self.engine.run()

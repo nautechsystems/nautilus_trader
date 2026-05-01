@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import gc
 import time
 from datetime import datetime
 from datetime import timedelta
@@ -42,6 +43,39 @@ class TestTestClock:
     def test_instantiated_clock(self):
         # Arrange, Act, Assert
         assert self.clock.timer_count == 0
+
+    def test_cancel_default_handler_does_not_accumulate_holders(self):
+        # Arrange
+        # Keep clocks alive through the assertion so a no-op `cancel_default_handler`
+        # would manifest as accumulated holders. Releasing the clock would mask the
+        # bug because dropping the registry also drops the Py<PyAny>.
+        # PyO3 may defer the Py<PyAny> drop to the next attached call, so this
+        # asserts bounded growth (no leak), not zero-residual behavior.
+        class Holder:
+            def handler(self, _event):
+                pass
+
+        baseline = sum(1 for o in gc.get_objects() if isinstance(o, Holder))
+        clocks = []
+
+        # Act
+        for _ in range(10):
+            holder = Holder()
+            clock = TestClock()
+            clock.register_default_handler(holder.handler)
+            clock.cancel_default_handler()
+            clocks.append(clock)
+            del holder
+            gc.collect()
+
+        # Assert
+        residual = sum(1 for o in gc.get_objects() if isinstance(o, Holder)) - baseline
+        assert residual <= 1, (
+            f"holders accumulated despite cancel_default_handler: residual={residual}"
+        )
+
+        del clocks
+        gc.collect()
 
     def test_utc_now_when_no_time_set(self):
         # Arrange, Act, Assert

@@ -1127,6 +1127,9 @@ class NautilusKernel:
         if not self.exec_engine.is_disposed:
             self.exec_engine.dispose()
 
+        if not self._emulator.is_disposed:
+            self._emulator.dispose()
+
         if not self.trader.is_disposed:
             self.trader.dispose()
 

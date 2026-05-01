@@ -236,6 +236,12 @@ cdef extern from "../includes/common.h":
     # Panics if the `callback_ptr` is null or represents the Python `None` object.
     void test_clock_register_default_handler(TestClock_API *clock, PyObject *callback_ptr);
 
+    # Cancels the default callback handler for TestClock (releases the held callback).
+    void test_clock_cancel_default_handler(TestClock_API *clock);
+
+    # Cancels all registered named callbacks for TestClock (releases held callbacks).
+    void test_clock_cancel_callbacks(TestClock_API *clock);
+
     void test_clock_set_time(const TestClock_API *clock, uint64_t to_time_ns);
 
     double test_clock_timestamp(const TestClock_API *clock);
@@ -324,6 +330,12 @@ cdef extern from "../includes/common.h":
     #
     # Panics if `callback_ptr` is null or represents the Python `None` object.
     void live_clock_register_default_handler(LiveClock_API *clock, PyObject *callback_ptr);
+
+    # Cancels the default callback handler for LiveClock (releases the held callback).
+    void live_clock_cancel_default_handler(LiveClock_API *clock);
+
+    # Cancels all registered named callbacks for LiveClock (releases held callbacks).
+    void live_clock_cancel_callbacks(LiveClock_API *clock);
 
     double live_clock_timestamp(LiveClock_API *clock);
 

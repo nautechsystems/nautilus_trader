@@ -140,6 +140,14 @@ impl Clock for LiveClock {
         self.callbacks.register_default_handler(handler);
     }
 
+    fn cancel_default_handler(&mut self) {
+        self.callbacks.cancel_default_handler();
+    }
+
+    fn cancel_callbacks(&mut self) {
+        self.callbacks.clear();
+    }
+
     /// # Panics
     ///
     /// This function panics if:
