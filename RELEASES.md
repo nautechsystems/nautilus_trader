@@ -12,6 +12,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Removed `From<OrderInitialized>` for order types; use `TryFrom` to surface invariant errors via `try_from`/`try_into`
+- Renamed `time_bars_origins` config param to `time_bars_origin_offset` in Rust `DataEngineConfig`/`LiveDataEngineConfig`
 - Changed JSON log file extension from `.json` to `.jsonl`; update log shippers watching `.json` (#3955), thanks @filipmacek
 - Changed Python order `create()` methods to raise `ValueError` on invalid `OrderInitialized` instead of panicking
 
@@ -33,6 +34,8 @@ Released on TBD (UTC).
 - Fixed `ExecTester` LIT pricing direction so reconciled BUY/SELL LIT orders satisfy the `trigger_price` invariant
 
 ### Internal Improvements
+- Added `ContinuousFutureAdjustmentType` enum and `BarBuilder` price adjustment pipeline (Rust)
+- Added native `is_externally_aggregated`/`is_internally_aggregated` methods on `BarType` (Rust)
 - Refined data engine request workflow (#3928), thanks @faysou
 - Avoided object materialization in Rust stream Feather to parquet conversion (#3954), thanks @faysou
 - Improved Interactive Brokers Python 3.14 installation and integration test coverage

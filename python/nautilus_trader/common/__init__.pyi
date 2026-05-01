@@ -194,7 +194,7 @@ class LoggerConfig:
         self,
         stdout_level: LogLevel | None = None,
         fileout_level: LogLevel | None = None,
-        component_levels: dict[str, str] | None = None,
+        component_levels: typing.Mapping[str, str] | None = None,
         is_colored: bool | None = None,
         print_config: bool | None = None,
         bypass_logging: bool | None = None,

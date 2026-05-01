@@ -18,7 +18,7 @@ class DataEngineConfig:
         time_bars_skip_first_non_full_bar: bool | None = None,
         time_bars_interval_type: typing.Any | None = None,
         time_bars_build_delay: int | None = None,
-        time_bars_origins: typing.Mapping[model.BarAggregation, int] | None = None,
+        time_bars_origin_offset: typing.Mapping[model.BarAggregation, int] | None = None,
         validate_data_sequence: bool | None = None,
         buffer_deltas: bool | None = None,
         emit_quotes_from_book: bool | None = None,

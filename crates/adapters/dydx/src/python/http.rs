@@ -460,6 +460,12 @@ impl DydxHttpClient {
     }
 
     /// Requests historical funding rates for an instrument.
+    ///
+    /// Fetches funding rate data from the dYdX Indexer API's
+    /// `/v4/historicalFunding/:ticker` endpoint and converts them to Nautilus
+    /// `FundingRateUpdate` objects.
+    ///
+    /// Results are returned in chronological order (oldest first).
     #[pyo3(name = "request_funding_rates")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_funding_rates<'py>(

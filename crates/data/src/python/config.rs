@@ -62,7 +62,7 @@ impl DataEngineConfig {
         time_bars_skip_first_non_full_bar = None,
         time_bars_interval_type = None,
         time_bars_build_delay = None,
-        time_bars_origins = None,
+        time_bars_origin_offset = None,
         validate_data_sequence = None,
         buffer_deltas = None,
         emit_quotes_from_book = None,
@@ -76,7 +76,7 @@ impl DataEngineConfig {
         time_bars_skip_first_non_full_bar: Option<bool>,
         time_bars_interval_type: Option<Py<PyAny>>,
         time_bars_build_delay: Option<u64>,
-        time_bars_origins: Option<HashMap<BarAggregation, u64>>,
+        time_bars_origin_offset: Option<HashMap<BarAggregation, u64>>,
         validate_data_sequence: Option<bool>,
         buffer_deltas: Option<bool>,
         emit_quotes_from_book: Option<bool>,
@@ -88,7 +88,7 @@ impl DataEngineConfig {
             Some(value) => Some(coerce_bar_interval_type(&value)?),
             None => None,
         };
-        let time_bars_origins = time_bars_origins.map(|map| {
+        let time_bars_origin_offset = time_bars_origin_offset.map(|map| {
             map.into_iter()
                 .map(|(agg, nanos)| (agg, Duration::from_nanos(nanos)))
                 .collect()
@@ -99,7 +99,7 @@ impl DataEngineConfig {
             .maybe_time_bars_skip_first_non_full_bar(time_bars_skip_first_non_full_bar)
             .maybe_time_bars_interval_type(time_bars_interval_type)
             .maybe_time_bars_build_delay(time_bars_build_delay)
-            .maybe_time_bars_origins(time_bars_origins)
+            .maybe_time_bars_origin_offset(time_bars_origin_offset)
             .maybe_validate_data_sequence(validate_data_sequence)
             .maybe_buffer_deltas(buffer_deltas)
             .maybe_emit_quotes_from_book(emit_quotes_from_book)

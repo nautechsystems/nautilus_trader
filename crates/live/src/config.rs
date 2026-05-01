@@ -72,7 +72,7 @@ pub struct LiveDataEngineConfig {
     ///
     /// Keys are `BarAggregation` variant names, values are offset durations in nanoseconds.
     #[builder(default)]
-    pub time_bars_origins: HashMap<String, u64>,
+    pub time_bars_origin_offset: HashMap<String, u64>,
     /// If data timestamp sequencing should be validated and handled.
     #[builder(default)]
     pub validate_data_sequence: bool,
@@ -111,8 +111,8 @@ impl Default for LiveDataEngineConfig {
 
 impl From<LiveDataEngineConfig> for DataEngineConfig {
     fn from(config: LiveDataEngineConfig) -> Self {
-        let time_bars_origins = config
-            .time_bars_origins
+        let time_bars_origin_offset = config
+            .time_bars_origin_offset
             .into_iter()
             .map(|(agg, nanos)| {
                 let agg = BarAggregation::from_str(&agg)
@@ -127,7 +127,7 @@ impl From<LiveDataEngineConfig> for DataEngineConfig {
             time_bars_skip_first_non_full_bar: config.time_bars_skip_first_non_full_bar,
             time_bars_interval_type: config.time_bars_interval_type,
             time_bars_build_delay: config.time_bars_build_delay,
-            time_bars_origins,
+            time_bars_origin_offset,
             validate_data_sequence: config.validate_data_sequence,
             buffer_deltas: config.buffer_deltas,
             emit_quotes_from_book: config.emit_quotes_from_book,
@@ -633,10 +633,10 @@ impl LiveNodeConfig {
 
 impl LiveDataEngineConfig {
     fn validate_runtime_support(&self) -> anyhow::Result<()> {
-        for agg_str in self.time_bars_origins.keys() {
+        for agg_str in self.time_bars_origin_offset.keys() {
             BarAggregation::from_str(agg_str).map_err(|e| {
                 anyhow::anyhow!(
-                    "invalid LiveDataEngineConfig.time_bars_origins key {agg_str:?}: {e}"
+                    "invalid LiveDataEngineConfig.time_bars_origin_offset key {agg_str:?}: {e}"
                 )
             })?;
         }
@@ -982,7 +982,7 @@ mod tests {
             BarIntervalType::RightOpen,
         );
         assert_eq!(converted.time_bars_build_delay, 1_500);
-        assert!(converted.time_bars_origins.is_empty());
+        assert!(converted.time_bars_origin_offset.is_empty());
         assert!(converted.validate_data_sequence);
         assert!(converted.buffer_deltas);
         assert!(!converted.emit_quotes_from_book);
@@ -995,9 +995,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_live_data_engine_config_converts_time_bars_origins() {
+    fn test_live_data_engine_config_converts_time_bars_origin_offset() {
         let config = LiveDataEngineConfig {
-            time_bars_origins: HashMap::from([("Minute".to_string(), 5_000_000_000)]),
+            time_bars_origin_offset: HashMap::from([("Minute".to_string(), 5_000_000_000)]),
             emit_quotes_from_book: true,
             emit_quotes_from_book_depths: true,
             ..Default::default()
@@ -1005,9 +1005,9 @@ mod tests {
 
         let converted: DataEngineConfig = config.into();
 
-        assert_eq!(converted.time_bars_origins.len(), 1);
+        assert_eq!(converted.time_bars_origin_offset.len(), 1);
         assert_eq!(
-            converted.time_bars_origins[&BarAggregation::Minute],
+            converted.time_bars_origin_offset[&BarAggregation::Minute],
             Duration::from_nanos(5_000_000_000),
         );
         assert!(converted.emit_quotes_from_book);
@@ -1240,17 +1240,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_validate_runtime_support_rejects_invalid_time_bars_origins_key() {
+    fn test_validate_runtime_support_rejects_invalid_time_bars_origin_offset_key() {
         let config = LiveNodeConfig {
             data_engine: LiveDataEngineConfig {
-                time_bars_origins: HashMap::from([("INVALID".to_string(), 1_000)]),
+                time_bars_origin_offset: HashMap::from([("INVALID".to_string(), 1_000)]),
                 ..Default::default()
             },
             ..Default::default()
         };
 
         let error = config.validate_runtime_support().unwrap_err().to_string();
-        assert!(error.contains("time_bars_origins"));
+        assert!(error.contains("time_bars_origin_offset"));
     }
 
     #[rstest]
@@ -1297,7 +1297,7 @@ mod tests {
         assert!(!config.time_bars_skip_first_non_full_bar);
         assert_eq!(config.time_bars_interval_type, BarIntervalType::LeftOpen);
         assert_eq!(config.time_bars_build_delay, 0);
-        assert!(config.time_bars_origins.is_empty());
+        assert!(config.time_bars_origin_offset.is_empty());
         assert!(!config.validate_data_sequence);
         assert!(!config.buffer_deltas);
         assert!(!config.emit_quotes_from_book);

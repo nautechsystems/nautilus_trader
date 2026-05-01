@@ -53,7 +53,7 @@ pub struct DataEngineConfig {
     pub time_bars_build_delay: u64,
     /// A dictionary mapping time bar aggregations to their origin time offsets.
     #[builder(default)]
-    pub time_bars_origins: HashMap<BarAggregation, Duration>,
+    pub time_bars_origin_offset: HashMap<BarAggregation, Duration>,
     /// If data objects timestamp sequencing will be validated and handled.
     #[builder(default)]
     pub validate_data_sequence: bool,

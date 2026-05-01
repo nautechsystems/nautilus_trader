@@ -2071,9 +2071,8 @@ impl DataEngine {
         let size_precision = instrument.size_precision();
 
         if bar_type.spec().is_time_aggregated() {
-            // Get time_bars_origin_offset from config
             let time_bars_origin_offset = config
-                .time_bars_origins
+                .time_bars_origin_offset
                 .get(&bar_type.spec().aggregation)
                 .map(|duration| chrono::TimeDelta::from_std(*duration).unwrap_or_default());
 
