@@ -22,7 +22,6 @@ import logging
 from collections import OrderedDict
 from dataclasses import dataclass
 
-from nautilus_trader.adapters.polymarket.common.constants import SNAP_OVERFILL_ULPS
 from nautilus_trader.adapters.polymarket.common.constants import SNAP_UNDERFILL_ULPS
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
@@ -100,12 +99,9 @@ class OrderFillTracker:
             return fill_qty
         diff = float(state.submitted_qty) - float(fill_qty)
         ulp = 10 ** (-state.size_precision)
-        if diff > 0.0:
-            tolerance = SNAP_UNDERFILL_ULPS * ulp
-        elif diff < 0.0:
-            tolerance = SNAP_OVERFILL_ULPS * ulp
-        else:
+        if diff <= 0.0:
             return fill_qty
+        tolerance = SNAP_UNDERFILL_ULPS * ulp
         if abs(diff) < tolerance:
             log.info(
                 "Snapping fill qty %s -> %s (dust=%.6f)",
