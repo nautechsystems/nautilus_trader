@@ -1139,6 +1139,8 @@ mod tests {
     #[case("SOL/USD", "SOL/USD")]
     #[case("BTC/USD", "BTC/USD")]
     #[case("ETH/BTC", "ETH/BTC")]
+    #[case("XDG/USD", "DOGE/USD")]
+    #[case("XDG/EUR", "DOGE/EUR")]
     fn test_to_kraken_ws_v2_symbol(#[case] input: &str, #[case] expected: &str) {
         let symbol = Ustr::from(input);
         let result = to_ws_v2_symbol(symbol);
