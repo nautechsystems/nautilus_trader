@@ -445,45 +445,42 @@ It is not recommended for production use at this time.
 
 ## Fill quantity normalization
 
-The adapter snaps fill quantities reported by the venue to the locally registered
-order quantity when the difference is dust. Two distinct rounding mechanisms make
-this necessary, so two asymmetric tolerances are applied. Both scale with the
-instrument's `size_precision` (one ulp = `10^-size_precision`).
+The adapter normalizes dust fill quantities in two places. Underfills are
+snapped by `OrderFillTracker.snap_fill_qty(...)` when the venue truncates the
+last fill to a cent-share tick. Positive overfills are preserved as reported by
+the venue, then the Python execution client aligns the cached order quantity
+before Nautilus reconciles the fill.
 
-| Direction | Constant              | Default ulps | At precision 6 | Source of drift                                                            |
-|-----------|-----------------------|--------------|----------------|----------------------------------------------------------------------------|
-| Underfill | `SNAP_UNDERFILL_ULPS` | 10_000       | 0.01           | CLOB rounds fills to integer cent ticks (e.g., `23.69` from `23.696681`).  |
-| Overfill  | `SNAP_OVERFILL_ULPS`  | 100          | 0.0001         | `adjust_market_buy_amount` truncates `submitted_qty` to USDC scale (6 dp). |
+| Direction         | Mechanism                          | Constant              | At precision 6 | Source of drift                                                            |
+|-------------------|------------------------------------|-----------------------|----------------|----------------------------------------------------------------------------|
+| Underfill         | Fill quantity snap                 | `SNAP_UNDERFILL_ULPS` | 0.01           | CLOB rounds fills to integer cent ticks (e.g., `23.69` from `23.696681`).  |
+| Positive overfill | Execution order-quantity alignment | `DUST_SNAP_THRESHOLD` | 0.01 shares    | `adjust_market_buy_amount` truncates `submitted_qty` to USDC scale (6 dp). |
 
 ### Why asymmetric
 
 - **Underfill** comes from CLOB tick rounding and can be up to one cent in
   share terms. Snapping up lets the order reach `Filled` cleanly when the
   CLOB truncates the last tick of fill quantity.
-- **Overfill** is a much smaller drift: only V2 market BUYs ever produce
-  it in practice. `adjust_market_buy_amount` truncates the registered base
-  quantity to USDC scale, but the on-chain fill comes back at full
-  precision and may exceed `submitted_qty` by a small number of ulps
-  (4 ulps observed in production). Without the snap, the engine rejects
-  the fill as an overfill (`potential_overfill > 0`) and the local
-  `filled_qty` stays at zero even though the position is on-chain.
-
-The snap function does not gate on order type: overfill drift in any
-tracked order under `SNAP_OVERFILL_ULPS` is absorbed. In practice no other
-order class produces overfill drift (limit and resting-maker orders fill
-at exact submitted base qty), so the broader behavior is a safety net.
-The overfill tolerance is intentionally tighter than the underfill side
-(~25× headroom over the observed drift, 100× below CLOB tick magnitude),
-so a real venue overfill above `SNAP_OVERFILL_ULPS` still surfaces as an
-engine-side error rather than being silently absorbed.
+- **Positive overfill** is a smaller drift: only V2 market BUYs are known to
+  produce it in practice. `adjust_market_buy_amount` truncates the registered
+  base quantity to USDC scale, but the venue fill can come back at full
+  precision and exceed `submitted_qty` by microshares. The largest reproduced
+  production overage in the regression fixtures is 0.000066 shares (66 ulps at
+  `size_precision=6`). The Python execution client aligns the cached order
+  quantity only when `0 < fill_overage < DUST_SNAP_THRESHOLD`; the threshold is
+  exclusive, so a real venue overfill of 0.01 shares or larger still surfaces as
+  an engine-side error.
 
 ### Where the snap runs
 
 - `OrderFillTracker.snap_fill_qty(...)` is invoked on every WS user-channel
-  fill (both taker fills in `dispatch_taker_fill` and maker fills in
-  `dispatch_maker_fills`) before the fill is emitted to the engine. It also
-  runs when fills are drained from the HTTP-roundtrip buffer in
-  `submit_order`.
+  fill before the fill is emitted to the engine. It snaps underfill dust only;
+  positive overfills are left at the venue-reported quantity.
+- The Python execution client calls `_align_order_quantity_to_venue_fill`
+  before REST missing-fill reports, orphan WS fill reports, and strategy-known
+  WS fills are handed to Nautilus. On the immediate report paths it applies the
+  `OrderUpdated` event directly to the cached order before sending the fill
+  report because `LiveExecutionEngine` reconciles reports synchronously.
 - `OrderFillTracker.check_dust_and_build_fill(...)` (Rust) and
   `OrderFillTracker.check_dust_residual(...)` (Python) emit a synthetic
   underfill fill at `Matched` status when `submitted - cumulative_filled`

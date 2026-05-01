@@ -1075,6 +1075,8 @@ class TestPolymarketExecutionClient:
             trader_id=self.trader_id,
             clock=self.clock,
         )
+        portfolio_updates = []
+        live_msgbus.register("Portfolio.update_order", portfolio_updates.append)
         live_exec_engine = LiveExecutionEngine(
             loop=self.loop,
             msgbus=live_msgbus,
@@ -1115,6 +1117,9 @@ class TestPolymarketExecutionClient:
             event.quantity for event in order_updates if type(event).__name__ == "OrderUpdated"
         ]
         assert updated_quantities == [Quantity.from_str("1.546366")]
+        assert [
+            event.quantity for event in portfolio_updates if type(event).__name__ == "OrderUpdated"
+        ] == [Quantity.from_str("1.546366")]
         assert live_exec_engine.reconcile_execution_report(reports[0])
         assert order.filled_qty == Quantity.from_str("1.546366")
 
@@ -1459,6 +1464,17 @@ class TestPolymarketExecutionClient:
             order = MappingBackedOrder()
 
         assert _signed_order_taker_amount(MappingBackedSignedOrder()) == 321
+
+    def test_signed_order_taker_amount_rejects_unreadable_shape(self):
+        """
+        Unsupported SDK shapes should fail with a useful diagnostic.
+        """
+
+        class MissingTakerAmount:
+            order = None
+
+        with pytest.raises(TypeError, match="signed_order has no readable takerAmount"):
+            _signed_order_taker_amount(MissingTakerAmount())
 
     @pytest.mark.asyncio
     async def test_submit_market_order_success(self, mocker):
@@ -1818,6 +1834,91 @@ class TestPolymarketExecutionClient:
         ]
         assert updated_quantities == [Quantity.from_str("1.546366")]
         assert (TradeId(msg.id), venue_order_id) in live_client._processed_fills
+
+    @pytest.mark.asyncio
+    async def test_strategy_ws_trade_live_engine_processes_alignment_before_fill(self):
+        """
+        Live engine FIFO must apply OrderUpdated before the strategy-known WS fill.
+        """
+        condition_id, asset_id, instrument, client_order_id, venue_order_id = (
+            self._setup_dust_market_order(
+                quantity="1.500000",
+                cached_quantity="1.546300",
+            )
+        )
+        order = self.cache.order(client_order_id)
+        assert order is not None
+        live_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+        live_exec_engine = LiveExecutionEngine(
+            loop=asyncio.get_running_loop(),
+            msgbus=live_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        live_client = PolymarketExecutionClient(
+            loop=asyncio.get_running_loop(),
+            http_client=self.http_client,
+            msgbus=live_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            instrument_provider=self.provider,
+            ws_auth=self.ws_auth,
+            config=PolymarketExecClientConfig(),
+            name=None,
+        )
+        live_exec_engine.register_client(live_client)
+        order_updates = []
+        live_msgbus.subscribe(f"events.order.{order.strategy_id}", order_updates.append)
+        msg = PolymarketUserTrade(
+            asset_id=asset_id,
+            bucket_index=0,
+            fee_rate_bps="0",
+            id="3975ed82-2a1d-4e85-9c2b-6b1302267b12",
+            last_update="1777597141",
+            maker_address="0xd224E6150f754B7f11a3eBB121Adc51D616422f8",
+            maker_orders=[],
+            market=condition_id,
+            match_time="1777597141",
+            outcome="Down",
+            owner=self.http_client.creds.api_key,
+            price="0.97",
+            side=PolymarketOrderSide.BUY,
+            size="1.546366",
+            status=PolymarketTradeStatus.MATCHED,
+            taker_order_id=venue_order_id.value,
+            timestamp="1777597141876",
+            trade_owner=self.http_client.creds.api_key,
+            trader_side=PolymarketLiquiditySide.TAKER,
+            type=PolymarketEventType.TRADE,
+        )
+
+        live_exec_engine.start()
+        try:
+            live_client._handle_user_trade_in_ws_trade_msg(
+                msg,
+                TradeId(msg.id),
+                False,
+                venue_order_id.value,
+            )
+            for _ in range(50):
+                if live_exec_engine.evt_qsize() == 0 and order.status == OrderStatus.FILLED:
+                    break
+                await asyncio.sleep(0.01)
+
+            assert live_exec_engine.evt_qsize() == 0
+            assert order.quantity == Quantity.from_str("1.546366")
+            assert order.filled_qty == Quantity.from_str("1.546366")
+            assert order.status == OrderStatus.FILLED
+            updated_quantities = [
+                event.quantity for event in order_updates if type(event).__name__ == "OrderUpdated"
+            ]
+            assert updated_quantities == [Quantity.from_str("1.546366")]
+        finally:
+            live_exec_engine.stop()
+            await asyncio.sleep(0.01)
 
     def test_dust_threshold_overage_fill_does_not_align_cached_order(self, mocker):
         """

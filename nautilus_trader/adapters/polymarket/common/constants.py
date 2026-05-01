@@ -54,15 +54,12 @@ POLYMARKET_HTTP_RATE_LIMIT: Final[int] = 100  # requests per minute
 # Smaller positions are filtered as dust during reconciliation.
 DUST_POSITION_THRESHOLD: Final[float] = 0.01
 
-# Maximum positive fill overage (in shares) snapped by order quantity alignment.
+# Maximum positive fill overage (in shares) handled by order quantity alignment.
+# The largest reproduced production overage is 0.000066 shares; 0.01 matches
+# Polymarket's existing cent-share dust ceiling and remains exclusive.
 DUST_SNAP_THRESHOLD: Final[float] = 0.01
 
 # Underfill tolerance for OrderFillTracker, in ulps of the instrument
 # size precision (resolves to 0.01 at size_precision=6).
 # See ``docs/integrations/polymarket.md`` (Fill quantity normalization).
 SNAP_UNDERFILL_ULPS: Final[float] = 10_000.0
-
-# Overfill tolerance for OrderFillTracker, in ulps of the instrument
-# size precision (resolves to 0.0001 at size_precision=6).
-# See ``docs/integrations/polymarket.md`` (Fill quantity normalization).
-SNAP_OVERFILL_ULPS: Final[float] = 100.0

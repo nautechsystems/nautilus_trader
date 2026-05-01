@@ -26,7 +26,7 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 
-use crate::common::consts::{SNAP_OVERFILL_ULPS, SNAP_UNDERFILL_ULPS};
+use crate::common::consts::SNAP_UNDERFILL_ULPS;
 
 /// Cumulative fill state for a single order.
 #[derive(Debug, Clone, Copy)]
@@ -137,22 +137,19 @@ impl OrderFillTrackerMap {
         }
     }
 
-    /// Snap a single fill qty to `submitted_qty` when the diff is dust.
+    /// Snap a single underfill qty to `submitted_qty` when the diff is dust.
     /// See `docs/integrations/polymarket.md` (Fill quantity normalization).
     pub fn snap_fill_qty(&self, venue_order_id: &VenueOrderId, fill_qty: Quantity) -> Quantity {
         let guard = self.inner.lock().expect(MUTEX_POISONED);
         match guard.get(venue_order_id) {
             Some(s) => {
                 let diff = s.submitted_qty.as_f64() - fill_qty.as_f64();
-                let ulp = 10f64.powi(-(s.size_precision as i32));
-                let tolerance = if diff > 0.0 {
-                    SNAP_UNDERFILL_ULPS * ulp
-                } else if diff < 0.0 {
-                    SNAP_OVERFILL_ULPS * ulp
-                } else {
+                if diff <= 0.0 {
                     return fill_qty;
-                };
+                }
 
+                let ulp = 10f64.powi(-(s.size_precision as i32));
+                let tolerance = SNAP_UNDERFILL_ULPS * ulp;
                 if diff.abs() < tolerance {
                     log::info!(
                         "Snapping fill qty {fill_qty} -> {} (dust={diff:.6})",
@@ -272,7 +269,7 @@ mod tests {
 
     // Tolerances at size_precision=6:
     //   SNAP_UNDERFILL_ULPS = 10_000 -> 0.01
-    //   SNAP_OVERFILL_ULPS  = 100    -> 0.0001
+    //   Positive overfills are preserved as reported by the venue.
     #[rstest]
     // Underfill well within tolerance: CLOB truncated the fill to a cent
     // tick, snap UP to submitted_qty so the order can reach FILLED cleanly.
@@ -285,15 +282,11 @@ mod tests {
     #[case::underfill_above_tolerance(100.000000, 99.980000, 99.980000)]
     // Underfill far past tolerance: leave fill alone.
     #[case::large_underfill(100.000000, 50.000000, 50.000000)]
-    // Overfill within the tighter tolerance: V2 market BUY where the SDK
-    // truncates registered qty to USDC scale but the on-chain fill comes
-    // back at full precision. Observed drift is 4 ulps (4e-6 at
-    // size_precision=6). Snap DOWN so the engine does not reject as
-    // overfill.
-    #[case::overfill_dust(714.285710, 714.285714, 714.285710)]
-    // Overfill near the overfill tolerance (0.000099 < 0.0001): still snaps.
-    #[case::overfill_near_tolerance(100.000000, 100.000099, 100.000000)]
-    // Overfill at exactly the overfill tolerance must NOT snap.
+    // Overfill within the old overfill tolerance: preserve the venue fill.
+    #[case::overfill_dust(714.285710, 714.285714, 714.285714)]
+    // Overfill near the old overfill tolerance: preserve the venue fill.
+    #[case::overfill_near_tolerance(100.000000, 100.000099, 100.000099)]
+    // Overfill at exactly the old overfill tolerance must also be preserved.
     #[case::overfill_at_tolerance(100.000000, 100.000100, 100.000100)]
     // Overfill above the overfill tolerance but below the underfill
     // tolerance must NOT snap. This is the asymmetry: a 0.005 overfill is
@@ -321,16 +314,16 @@ mod tests {
     }
 
     // Tolerances scale with size_precision: at size_precision=3 the
-    // underfill tolerance becomes 10 (10_000 * 1e-3) and the overfill
-    // tolerance becomes 0.1 (100 * 1e-3). This case verifies the scaling.
+    // underfill tolerance becomes 10 (10_000 * 1e-3). Positive overfills
+    // are preserved at every precision.
     #[rstest]
     // Underfill within scaled tolerance (5 < 10): snap.
     #[case::underfill_scaled_within(100.000, 95.000, 100.000)]
     // Underfill above scaled tolerance (15 > 10): no snap.
     #[case::underfill_scaled_above(100.000, 85.000, 85.000)]
-    // Overfill within scaled tolerance (0.05 < 0.1): snap.
-    #[case::overfill_scaled_within(100.000, 100.050, 100.000)]
-    // Overfill above scaled tolerance (0.2 > 0.1): no snap.
+    // Overfill within the old scaled tolerance: preserve the venue fill.
+    #[case::overfill_scaled_within(100.000, 100.050, 100.050)]
+    // Overfill above the old scaled tolerance: preserve the venue fill.
     #[case::overfill_scaled_above(100.000, 100.200, 100.200)]
     fn test_snap_fill_qty_scales_with_precision(
         #[case] submitted: f64,

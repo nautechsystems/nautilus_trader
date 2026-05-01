@@ -1245,11 +1245,11 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_taker_fill_snaps_overfill_to_submitted_qty() {
-        // Reproduces the V2 market-BUY scenario that motivated the dust-snap
-        // fix: SDK truncates the registered qty to USDC scale, but the
-        // on-chain fill comes back at full precision and exceeds submitted
-        // by microshares. Without the snap the engine rejects as overfill.
+    fn test_dispatch_taker_fill_preserves_positive_overfill() {
+        // Reproduces the V2 market-BUY scenario where the venue reports a
+        // fill that exceeds the submitted quantity by microshares. The Rust
+        // dispatch path must preserve the venue fill instead of silently
+        // snapping it down in the adapter.
         use crate::common::enums::{
             PolymarketEventType, PolymarketOrderSide, PolymarketOutcome, PolymarketTradeStatus,
         };
@@ -1318,27 +1318,26 @@ mod tests {
 
         dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
 
-        // The dispatcher must record the snapped quantity in the tracker so
-        // any subsequent ORDER MATCHED with size_matched > submitted_qty is
-        // capped to it. record_fill happens before the FillReport is sent.
+        // The dispatcher must record the venue fill quantity in the tracker.
+        // record_fill happens before the FillReport is sent.
         let cumulative = fill_tracker
             .get_cumulative_filled(&venue_order_id)
             .expect("order must be registered");
-        let expected_snapped = submitted.as_f64();
-        let drift = (cumulative - expected_snapped).abs();
+        let expected_venue_fill = 714.285714;
+        let drift = (cumulative - expected_venue_fill).abs();
         assert!(
             drift < 1e-9,
-            "cumulative_filled {cumulative} must be snapped to submitted {expected_snapped}",
+            "cumulative_filled {cumulative} must preserve venue fill {expected_venue_fill}",
         );
 
-        // The emitted FillReport must carry the snapped qty so the engine
-        // does not reject it as an overfill.
+        // The emitted FillReport must carry the venue qty.
         let event = receiver.try_recv().expect("expected a fill report");
         match event {
             ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
                 assert_eq!(
-                    report.last_qty, submitted,
-                    "fill report qty must be snapped to submitted",
+                    report.last_qty,
+                    Quantity::new(expected_venue_fill, instrument.size_precision()),
+                    "fill report qty must preserve venue fill",
                 );
                 assert_eq!(report.venue_order_id, venue_order_id);
             }

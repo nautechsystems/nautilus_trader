@@ -44,9 +44,9 @@ pub const DUST_POSITION_THRESHOLD: f64 = 0.01;
 /// See `docs/integrations/polymarket.md` (Fill quantity normalization).
 pub const SNAP_UNDERFILL_ULPS: f64 = 10_000.0;
 
-/// Overfill tolerance for `OrderFillTracker`, in ulps of the instrument
-/// size precision (resolves to `0.0001` at size_precision=6).
-/// See `docs/integrations/polymarket.md` (Fill quantity normalization).
+/// Legacy overfill tolerance retained for compatibility with existing callers.
+/// `OrderFillTracker` now preserves positive venue overfills instead of
+/// snapping them to submitted quantity.
 pub const SNAP_OVERFILL_ULPS: f64 = 100.0;
 
 pub const WS_MAX_SUBSCRIPTIONS: usize = 200;

@@ -128,7 +128,13 @@ def _signed_order_taker_amount(signed_order: object) -> int:
     if taker_amount is not None:
         return int(taker_amount)
 
-    return int(order["takerAmount"])
+    try:
+        return int(order["takerAmount"])
+    except (KeyError, TypeError) as exc:
+        raise TypeError(
+            "signed_order has no readable takerAmount "
+            f"(signed_order={type(signed_order).__name__}, order={type(order).__name__})",
+        ) from exc
 
 
 class PolymarketExecutionClient(LiveExecutionClient):
@@ -1810,6 +1816,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
         if apply_immediately:
             order.apply(updated)
             self._cache.update_order(order)
+            if "Portfolio.update_order" in self._msgbus.endpoints():
+                self._msgbus.send(endpoint="Portfolio.update_order", msg=updated)
             self._msgbus.publish(
                 topic=f"events.order.{order.strategy_id}",
                 msg=updated,
