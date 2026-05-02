@@ -6064,6 +6064,7 @@ dependencies = [
  "criterion",
  "indexmap 2.14.0",
  "log",
+ "madsim",
  "nautilus-common",
  "nautilus-core",
  "nautilus-data",

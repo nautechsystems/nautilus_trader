@@ -27,8 +27,11 @@
 //!   from the bus counter deltas.
 //! - `cancel_starvation`: alternates a batch of trade ticks with a single
 //!   `CancelOrder`, repeatedly. The runner's biased `select!` prioritises
-//!   data events over exec commands, so each cancel waits behind the trade
-//!   backlog. Reports queue-wait latency percentiles for the cancel.
+//!   exec commands over data events, so each cancel should be picked up on
+//!   the next iteration regardless of how deep the trade backlog is.
+//!   Reports cancel observation latency percentiles, timed
+//!   `now - cancel.ts_init` (see "How the cancel latency is measured" below
+//!   for the precise meaning).
 //!
 //! Output is a single `key=value` line per scenario (no JSON, no extra log
 //! noise: the node is configured with `bypass_logging`).
@@ -42,16 +45,24 @@
 //! pushes events synchronously, then yields with `tokio::task::yield_now`
 //! to let the runner drain.
 //!
-//! # Why the cancel-starvation latency is queue-wait, not handler time
+//! # How the cancel latency is measured
 //!
-//! Because everything is single-threaded, when the driver pushes a batch of
-//! trades synchronously the runner is paused and the trades sit in
-//! `data_evt_rx`. After the cancel is submitted, the driver waits until
-//! `sent_count` has advanced by `trade_batch + 1` dispatches. The runner's
-//! biased select drains data first, so the `+ 1` event is the cancel itself.
-//! The recorded latency therefore includes the time to drain the trade
-//! backlog: it is end-to-end queue wait under load, not pure cancel-handler
-//! cost.
+//! The driver stamps `cancel.ts_init` from the kernel clock, then submits the
+//! cancel and waits until `ExecutionEngine::command_count` advances. That
+//! counter only ticks for trading commands, so it confirms the cancel itself
+//! has been processed.
+//!
+//! The recorded `latency.cancel.*` is `now - cancel.ts_init` measured at the
+//! moment the driver next regains control after the runner yields. On a
+//! single-threaded `tokio::join!` runtime the runner can keep draining other
+//! ready events (e.g. trades that follow the cancel into the same activation)
+//! before yielding back, so the value is best read as cancel **observation
+//! latency**: an upper bound on cancel dispatch plus any tail-end work the
+//! runner did inside the same activation. Pin-point cancel-handler timing
+//! would require an instrumentation hook inside the exec-command path; this
+//! harness measures end-to-end "from when a strategy stamped the command to
+//! when the runtime gives the strategy back the floor", which is the number a
+//! strategy would care about.
 //!
 //! # Running
 //!
@@ -89,7 +100,7 @@ use std::time::{Duration, Instant};
 
 use nautilus_common::{
     enums::Environment,
-    live::runner::get_data_event_sender,
+    live::{dst, runner::get_data_event_sender},
     logging::logger::LoggerConfig,
     messages::{
         DataEvent,
@@ -97,12 +108,11 @@ use nautilus_common::{
     },
     msgbus,
     runner::get_trading_cmd_sender,
-    testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{
     config::{LiveExecEngineConfig, LiveNodeConfig},
-    node::LiveNode,
+    node::{LiveNode, LiveNodeHandle},
 };
 use nautilus_model::{
     data::{Data, trade::TradeTick},
@@ -110,7 +120,6 @@ use nautilus_model::{
     identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId},
     types::{Price, Quantity},
 };
-use rstest::rstest;
 
 const TRADE_BURST_COUNT: usize = 100_000;
 const CANCEL_STARVATION_COUNT: usize = 1_000;
@@ -211,8 +220,17 @@ fn read_pub_count() -> u64 {
     msgbus::get_message_bus().borrow().pub_count()
 }
 
-fn read_sent_count() -> u64 {
-    msgbus::get_message_bus().borrow().sent_count()
+// Yields cooperatively until the runner reports `Running`. Avoids
+// `wait_until_async`, which sleeps via real `tokio::time` and panics under
+// madsim where there is no real Tokio reactor.
+async fn wait_until_running(handle: &LiveNodeHandle) {
+    let mut iters = 0u32;
+
+    while !handle.is_running() {
+        dst::task::yield_now().await;
+        iters += 1;
+        assert!(iters < 100_000, "node failed to reach Running state");
+    }
 }
 
 // Yields and sleeps until pub_count is unchanged for STABLE_DRAIN_ITERS
@@ -222,7 +240,7 @@ async fn drain_until_stable() {
     let mut prev = read_pub_count();
     let mut stable = 0;
     while stable < STABLE_DRAIN_ITERS {
-        tokio::time::sleep(DRAIN_TICK).await;
+        dst::time::sleep(DRAIN_TICK).await;
         let cur = read_pub_count();
         if cur == prev {
             stable += 1;
@@ -241,9 +259,12 @@ fn percentile(sorted_us: &[u128], pct: f64) -> u128 {
     sorted_us[idx.min(sorted_us.len() - 1)]
 }
 
-#[rstest]
 #[ignore]
-#[tokio::test(flavor = "current_thread")]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(flavor = "current_thread")
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn stress_trade_burst() {
     let mut node = LiveNode::build("StressNode".to_string(), Some(stress_config())).unwrap();
     let handle = node.handle();
@@ -251,11 +272,7 @@ async fn stress_trade_burst() {
     let driver_handle = handle.clone();
 
     let driver = async move {
-        wait_until_async(
-            || async { driver_handle.is_running() },
-            Duration::from_secs(5),
-        )
-        .await;
+        wait_until_running(&driver_handle).await;
 
         let total = TRADE_BURST_COUNT * stress_scale();
         let before = snapshot_bus();
@@ -271,7 +288,7 @@ async fn stress_trade_burst() {
             sender.send(DataEvent::Data(Data::Trade(trade))).unwrap();
 
             if (i + 1) % TRADE_BATCH == 0 {
-                tokio::task::yield_now().await;
+                dst::task::yield_now().await;
 
                 let now = Instant::now();
                 let interval = now.duration_since(last_sample);
@@ -316,23 +333,24 @@ async fn stress_trade_burst() {
     });
 }
 
-#[rstest]
 #[ignore]
-#[tokio::test(flavor = "current_thread")]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(flavor = "current_thread")
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn stress_cancel_starvation() {
     let mut node = LiveNode::build("StressNode".to_string(), Some(stress_config())).unwrap();
     let handle = node.handle();
     let clock = node.kernel().clock();
+    let exec_engine = node.kernel().exec_engine().clone();
 
     let driver_handle = handle.clone();
     let driver_clock = clock.clone();
+    let driver_exec_engine = exec_engine.clone();
 
     let driver = async move {
-        wait_until_async(
-            || async { driver_handle.is_running() },
-            Duration::from_secs(5),
-        )
-        .await;
+        wait_until_running(&driver_handle).await;
 
         let scale = stress_scale();
         let cancels = CANCEL_STARVATION_COUNT * scale;
@@ -344,6 +362,8 @@ async fn stress_cancel_starvation() {
         let start = Instant::now();
         let mut latencies_us: Vec<u128> = Vec::with_capacity(cancels);
         let mut trades_sent: usize = 0;
+        let mut yield_iters_total: u64 = 0;
+        let mut yield_iters_max: u32 = 0;
         let trade_step = total_trades / cancels;
 
         for seq in 0..cancels {
@@ -354,29 +374,36 @@ async fn stress_cancel_starvation() {
                 trades_sent += 1;
             }
 
-            // The driver is single-threaded, so all `trade_step` trades pushed
-            // above are still queued in `data_evt_rx` at this point. Wait until
-            // the bus has dispatched the trade backlog plus one more event, the
-            // cancel itself (the runner's biased select drains data first, then
-            // exec commands). The recorded latency is `now - cancel.ts_init`,
-            // mirroring how production code times a strategy action: from when
-            // the command was created to when the runtime dispatched it.
-            let pre_sent = read_sent_count();
-            let target = pre_sent + trade_step as u64 + 1;
+            // Trigger on `ExecutionEngine::command_count` (incremented inside
+            // `execute_command`), which only ticks for trading commands and
+            // therefore confirms the cancel has been processed. The latency is
+            // `now - cancel.ts_init` measured at the moment the driver next
+            // gets control: on the single-threaded `tokio::join!` runtime, the
+            // runner can keep draining ready events after the cancel before it
+            // yields back, so the value is end-to-end observation latency, not
+            // pure handler time. See the module doc for the full caveat.
+            let pre_cmd = driver_exec_engine.borrow().command_count();
             let ts_init = driver_clock.borrow().timestamp_ns();
             get_trading_cmd_sender().execute(TradingCommand::CancelOrder(sample_cancel(
                 seq as u64, ts_init,
             )));
 
-            loop {
-                tokio::task::yield_now().await;
+            let mut yield_iters = 0u32;
 
-                if read_sent_count() >= target {
+            loop {
+                dst::task::yield_now().await;
+                yield_iters += 1;
+
+                if driver_exec_engine.borrow().command_count() > pre_cmd {
                     break;
                 }
             }
             let now = driver_clock.borrow().timestamp_ns();
             latencies_us.push(u128::from(now.as_u64() - ts_init.as_u64()) / 1_000);
+            yield_iters_total += u64::from(yield_iters);
+            if yield_iters > yield_iters_max {
+                yield_iters_max = yield_iters;
+            }
         }
 
         drain_until_stable().await;
@@ -392,12 +419,14 @@ async fn stress_cancel_starvation() {
         let p999 = percentile(&latencies_us, 0.999);
         let max = latencies_us.last().copied().unwrap_or(0);
 
+        let yield_iters_mean = yield_iters_total as f64 / cancels as f64;
         println!(
             "scenario=cancel_starvation cancels={} trades={} elapsed_ms={} \
              counter.msgbus.sent={} counter.msgbus.pub={} \
              latency.cancel.min_us={} latency.cancel.p50_us={} \
              latency.cancel.p95_us={} latency.cancel.p99_us={} \
-             latency.cancel.p999_us={} latency.cancel.max_us={}",
+             latency.cancel.p999_us={} latency.cancel.max_us={} \
+             yield_iters.mean={:.1} yield_iters.max={}",
             cancels,
             trades_sent,
             total_elapsed.as_millis(),
@@ -409,6 +438,8 @@ async fn stress_cancel_starvation() {
             p99,
             p999,
             max,
+            yield_iters_mean,
+            yield_iters_max,
         );
 
         driver_handle.stop();

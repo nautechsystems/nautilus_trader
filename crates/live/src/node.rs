@@ -634,10 +634,10 @@ impl LiveNode {
 
         let AsyncRunnerChannels {
             mut time_evt_rx,
-            mut data_evt_rx,
-            mut data_cmd_rx,
             mut exec_evt_rx,
             mut exec_cmd_rx,
+            mut data_evt_rx,
+            mut data_cmd_rx,
         } = runner.take_channels();
 
         log::info!("Event loop starting");
@@ -897,7 +897,10 @@ impl LiveNode {
                     self.exec_manager.prune_recent_fills_cache(60.0);
                 }
 
-                // Event processing branches
+                // Event processing branches. Exec commands and events are
+                // ordered ahead of data events so a strategy action (cancel,
+                // submit, etc.) is not delayed behind a market data backlog
+                // when the biased select polls receivers each iteration.
                 Some(handler) = time_evt_rx.recv() => {
                     AsyncRunner::handle_time_event(handler);
 
@@ -905,20 +908,6 @@ impl LiveNode {
                         log::debug!("Residual time event");
                         residual_events += 1;
                     }
-                }
-                Some(evt) = data_evt_rx.recv() => {
-                    if is_shutting_down {
-                        log::debug!("Residual data event: {evt:?}");
-                        residual_events += 1;
-                    }
-                    AsyncRunner::handle_data_event(evt);
-                }
-                Some(cmd) = data_cmd_rx.recv() => {
-                    if is_shutting_down {
-                        log::debug!("Residual data command: {cmd:?}");
-                        residual_events += 1;
-                    }
-                    AsyncRunner::handle_data_command(cmd);
                 }
                 Some(evt) = exec_evt_rx.recv() => {
                     if is_shutting_down {
@@ -1027,6 +1016,20 @@ impl LiveNode {
                         _ => {}
                     }
                     AsyncRunner::handle_exec_command(cmd);
+                }
+                Some(evt) = data_evt_rx.recv() => {
+                    if is_shutting_down {
+                        log::debug!("Residual data event: {evt:?}");
+                        residual_events += 1;
+                    }
+                    AsyncRunner::handle_data_event(evt);
+                }
+                Some(cmd) = data_cmd_rx.recv() => {
+                    if is_shutting_down {
+                        log::debug!("Residual data command: {cmd:?}");
+                        residual_events += 1;
+                    }
+                    AsyncRunner::handle_data_command(cmd);
                 }
             }
         }
@@ -1532,12 +1535,6 @@ async fn drive_with_event_buffering<F: std::future::Future>(
             Some(handler) = time_evt_rx.recv() => {
                 AsyncRunner::handle_time_event(handler);
             }
-            Some(evt) = data_evt_rx.recv() => {
-                pending.data_evts.push(evt);
-            }
-            Some(cmd) = data_cmd_rx.recv() => {
-                pending.data_cmds.push(cmd);
-            }
             Some(evt) = exec_evt_rx.recv() => {
                 // Account events are safe to process immediately. Report and
                 // Order events need ExecEngine borrow_mut which may conflict
@@ -1571,6 +1568,12 @@ async fn drive_with_event_buffering<F: std::future::Future>(
             }
             Some(cmd) = exec_cmd_rx.recv() => {
                 pending.exec_cmds.push(cmd);
+            }
+            Some(evt) = data_evt_rx.recv() => {
+                pending.data_evts.push(evt);
+            }
+            Some(cmd) = data_cmd_rx.recv() => {
+                pending.data_cmds.push(cmd);
             }
         }
     }

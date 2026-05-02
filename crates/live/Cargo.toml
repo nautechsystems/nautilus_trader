@@ -56,6 +56,11 @@ python = [
   "streaming",
 ]
 defi = ["dep:nautilus-data", "nautilus-common/defi", "nautilus-data/defi"]
+simulation = [
+  "node",
+  "nautilus-common/simulation",
+  "nautilus-execution/simulation",
+]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -92,6 +97,7 @@ pyo3-stub-gen = { workspace = true, optional = true }
 [dev-dependencies]
 async-trait = { workspace = true }
 criterion = { workspace = true }
+madsim = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 ustr = { workspace = true }

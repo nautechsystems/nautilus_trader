@@ -42,16 +42,23 @@ Released on TBD (UTC).
 - Added `OrderMatchingCore::update_price_increment` primitive for tick-size propagation parity (Rust)
 - Added `ContinuousFutureAdjustmentType` enum and `BarBuilder` price adjustment pipeline (Rust)
 - Added native `is_externally_aggregated`/`is_internally_aggregated` methods on `BarType` (Rust)
+- Added live node stress harness with `trade_burst` and `cancel_starvation` scenarios (Rust)
+- Added `DataEngine` and `AsyncRunner` per-stage benches for the trade-to-cache path (Rust)
+- Added Python `TradingNode` parity stress harness for v1 vs v2 comparison
+- Added `cargo-flamegraph` to workspace tools with pinned version
+- Added `simulation` feature on `nautilus-live` so the stress harness runs under `cfg(madsim)` for DST validation
 - Refined data engine request workflow (#3928), thanks @faysou
 - Avoided object materialization in Rust stream Feather to parquet conversion (#3954), thanks @faysou
 - Improved Interactive Brokers Python 3.14 installation and integration test coverage
 - Improved live exec clients to log ERROR with `timeout_post_stop` hint when cancel tasks abort on disconnect
 - Improved `ExecTester` to refresh tracked orders from cache before modify/cancel-replace so they see venue acks
+- Improved live node biased select to dispatch exec commands ahead of market data
 - Upgraded `alloy` crate to v2.0.4
 - Upgraded `databento` crate to v0.49.0
 
 ### Documentation Updates
 - Added dYdX adapter notes for FOK deprecation, DAY rejection, equity-tier limit, and MIT/LIT round-tripping
+- Added DST docs caveats for process-global lazy state RNG consumption and `CacheView` factory blocker
 
 ### Deprecations
 
