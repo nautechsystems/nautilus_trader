@@ -22,7 +22,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     orders::{Order, OrderAny},
-    types::Price,
+    types::{Price, price::PriceRaw},
 };
 use nautilus_trading::{
     nautilus_strategy,
@@ -45,7 +45,7 @@ pub struct ExecTester {
     pub(super) core: StrategyCore,
     pub(super) config: ExecTesterConfig,
     pub(super) instrument: Option<InstrumentAny>,
-    pub(super) price_offset: Option<f64>,
+    pub(super) price_offset: Option<u64>,
     pub(super) preinitialized_market_data: bool,
 
     // Order tracking
@@ -327,8 +327,8 @@ impl ExecTester {
         Ok(())
     }
 
-    pub(super) fn get_price_offset(&self, instrument: &InstrumentAny) -> f64 {
-        instrument.price_increment().as_f64() * self.config.tob_offset_ticks as f64
+    pub(super) fn get_price_offset(&self, _instrument: &InstrumentAny) -> u64 {
+        self.config.tob_offset_ticks
     }
 
     fn expire_time_from_delta(&self, mins: u64) -> UnixNanos {
@@ -462,9 +462,12 @@ impl ExecTester {
         let Some(instrument) = &self.instrument else {
             return;
         };
-        let Some(price_offset) = self.price_offset else {
+        let Some(price_offset_ticks) = self.price_offset else {
             return;
         };
+
+        let increment = instrument.price_increment();
+        let precision = instrument.price_precision();
 
         // `test_reject_post_only` and `limit_aggressive` both cross the spread for
         // BUY (place at/above the ask). `test_reject_post_only` additionally sets
@@ -472,9 +475,9 @@ impl ExecTester {
         // pairs with IOC/FOK TIF for marketable-fill scenarios.
         let cross_spread = self.config.test_reject_post_only || self.config.limit_aggressive;
         let price = if cross_spread {
-            instrument.make_price(best_ask.as_f64() + price_offset)
+            add_price_ticks(best_ask, increment, price_offset_ticks, precision)
         } else {
-            instrument.make_price(best_bid.as_f64() - price_offset)
+            sub_price_ticks(best_bid, increment, price_offset_ticks, precision)
         };
 
         let needs_new_order = match &self.buy_order {
@@ -545,16 +548,19 @@ impl ExecTester {
         let Some(instrument) = &self.instrument else {
             return;
         };
-        let Some(price_offset) = self.price_offset else {
+        let Some(price_offset_ticks) = self.price_offset else {
             return;
         };
+
+        let increment = instrument.price_increment();
+        let precision = instrument.price_precision();
 
         // See `maintain_buy_orders` for the cross_spread and refresh rationale.
         let cross_spread = self.config.test_reject_post_only || self.config.limit_aggressive;
         let price = if cross_spread {
-            instrument.make_price(best_bid.as_f64() - price_offset)
+            sub_price_ticks(best_bid, increment, price_offset_ticks, precision)
         } else {
-            instrument.make_price(best_ask.as_f64() + price_offset)
+            add_price_ticks(best_ask, increment, price_offset_ticks, precision)
         };
 
         let needs_new_order = match &self.sell_order {
@@ -626,7 +632,7 @@ impl ExecTester {
         let Some(instrument) = &self.instrument else {
             return;
         };
-        let Some(price_offset) = self.price_offset else {
+        let Some(price_offset_ticks) = self.price_offset else {
             return;
         };
 
@@ -643,19 +649,22 @@ impl ExecTester {
             return;
         }
 
+        let increment = instrument.price_increment();
+        let precision = instrument.price_precision();
+
         // `test_reject_post_only` and `limit_aggressive` flip the BUY/SELL
         // pricing to cross the spread; mirrored from `maintain_buy_orders` /
         // `maintain_sell_orders` so batch mode supports the same scenarios.
         let cross_spread = self.config.test_reject_post_only || self.config.limit_aggressive;
         let (buy_price, sell_price) = if cross_spread {
             (
-                instrument.make_price(best_ask.as_f64() + price_offset),
-                instrument.make_price(best_bid.as_f64() - price_offset),
+                add_price_ticks(best_ask, increment, price_offset_ticks, precision),
+                sub_price_ticks(best_bid, increment, price_offset_ticks, precision),
             )
         } else {
             (
-                instrument.make_price(best_bid.as_f64() - price_offset),
-                instrument.make_price(best_ask.as_f64() + price_offset),
+                sub_price_ticks(best_bid, increment, price_offset_ticks, precision),
+                add_price_ticks(best_ask, increment, price_offset_ticks, precision),
             )
         };
         let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
@@ -715,8 +724,9 @@ impl ExecTester {
             return;
         };
 
-        let price_increment = instrument.price_increment().as_f64();
-        let stop_offset = price_increment * self.config.stop_offset_ticks as f64;
+        let increment = instrument.price_increment();
+        let precision = instrument.price_precision();
+        let stop_offset_ticks = self.config.stop_offset_ticks;
 
         // Determine trigger price based on order type
         let trigger_price = if matches!(
@@ -724,10 +734,10 @@ impl ExecTester {
             OrderType::LimitIfTouched | OrderType::MarketIfTouched | OrderType::TrailingStopMarket
         ) {
             // IF_TOUCHED and trailing-stop buy: place BELOW market
-            instrument.make_price(best_bid.as_f64() - stop_offset)
+            sub_price_ticks(best_bid, increment, stop_offset_ticks, precision)
         } else {
             // STOP buy orders are placed ABOVE the market (stop loss on short)
-            instrument.make_price(best_ask.as_f64() + stop_offset)
+            add_price_ticks(best_ask, increment, stop_offset_ticks, precision)
         };
 
         // Calculate limit price if needed
@@ -736,14 +746,22 @@ impl ExecTester {
             OrderType::StopLimit | OrderType::LimitIfTouched
         ) {
             if let Some(limit_offset_ticks) = self.config.stop_limit_offset_ticks {
-                let limit_offset = price_increment * limit_offset_ticks as f64;
-
                 if self.config.stop_order_type == OrderType::LimitIfTouched {
                     // BUY LIT requires trigger_price <= price.
-                    Some(instrument.make_price(trigger_price.as_f64() + limit_offset))
+                    Some(add_price_ticks(
+                        trigger_price,
+                        increment,
+                        limit_offset_ticks,
+                        precision,
+                    ))
                 } else {
                     // BUY StopLimit requires trigger_price <= price.
-                    Some(instrument.make_price(trigger_price.as_f64() + limit_offset))
+                    Some(add_price_ticks(
+                        trigger_price,
+                        increment,
+                        limit_offset_ticks,
+                        precision,
+                    ))
                 }
             } else {
                 Some(trigger_price)
@@ -794,8 +812,9 @@ impl ExecTester {
             return;
         };
 
-        let price_increment = instrument.price_increment().as_f64();
-        let stop_offset = price_increment * self.config.stop_offset_ticks as f64;
+        let increment = instrument.price_increment();
+        let precision = instrument.price_precision();
+        let stop_offset_ticks = self.config.stop_offset_ticks;
 
         // Determine trigger price based on order type
         let trigger_price = if matches!(
@@ -803,10 +822,10 @@ impl ExecTester {
             OrderType::LimitIfTouched | OrderType::MarketIfTouched | OrderType::TrailingStopMarket
         ) {
             // IF_TOUCHED and trailing-stop sell: place ABOVE market
-            instrument.make_price(best_ask.as_f64() + stop_offset)
+            add_price_ticks(best_ask, increment, stop_offset_ticks, precision)
         } else {
             // STOP sell orders are placed BELOW the market (stop loss on long)
-            instrument.make_price(best_bid.as_f64() - stop_offset)
+            sub_price_ticks(best_bid, increment, stop_offset_ticks, precision)
         };
 
         // Calculate limit price if needed
@@ -815,14 +834,22 @@ impl ExecTester {
             OrderType::StopLimit | OrderType::LimitIfTouched
         ) {
             if let Some(limit_offset_ticks) = self.config.stop_limit_offset_ticks {
-                let limit_offset = price_increment * limit_offset_ticks as f64;
-
                 if self.config.stop_order_type == OrderType::LimitIfTouched {
                     // SELL LIT requires trigger_price >= price.
-                    Some(instrument.make_price(trigger_price.as_f64() - limit_offset))
+                    Some(sub_price_ticks(
+                        trigger_price,
+                        increment,
+                        limit_offset_ticks,
+                        precision,
+                    ))
                 } else {
                     // SELL StopLimit requires trigger_price >= price.
-                    Some(instrument.make_price(trigger_price.as_f64() - limit_offset))
+                    Some(sub_price_ticks(
+                        trigger_price,
+                        increment,
+                        limit_offset_ticks,
+                        precision,
+                    ))
                 }
             } else {
                 Some(trigger_price)
@@ -1135,18 +1162,19 @@ impl ExecTester {
         }
 
         let quantity = instrument.make_qty(self.config.order_qty.as_f64(), None);
-        let price_increment = instrument.price_increment().as_f64();
-        let bracket_offset = price_increment * self.config.bracket_offset_ticks as f64;
+        let increment = instrument.price_increment();
+        let precision = instrument.price_precision();
+        let bracket_offset_ticks = self.config.bracket_offset_ticks;
 
         let (tp_price, sl_trigger_price) = match order_side {
             OrderSide::Buy => {
-                let tp = instrument.make_price(entry_price.as_f64() + bracket_offset);
-                let sl = instrument.make_price(entry_price.as_f64() - bracket_offset);
+                let tp = add_price_ticks(entry_price, increment, bracket_offset_ticks, precision);
+                let sl = sub_price_ticks(entry_price, increment, bracket_offset_ticks, precision);
                 (tp, sl)
             }
             OrderSide::Sell => {
-                let tp = instrument.make_price(entry_price.as_f64() - bracket_offset);
-                let sl = instrument.make_price(entry_price.as_f64() + bracket_offset);
+                let tp = sub_price_ticks(entry_price, increment, bracket_offset_ticks, precision);
+                let sl = add_price_ticks(entry_price, increment, bracket_offset_ticks, precision);
                 (tp, sl)
             }
             _ => anyhow::bail!("Invalid order side for bracket: {order_side:?}"),
@@ -1235,4 +1263,14 @@ impl ExecTester {
 
         self.submit_order_apply_params(order)
     }
+}
+
+fn add_price_ticks(base: Price, increment: Price, ticks: u64, precision: u8) -> Price {
+    let offset_raw = increment.raw * ticks as PriceRaw;
+    Price::from_raw(base.raw + offset_raw, precision)
+}
+
+fn sub_price_ticks(base: Price, increment: Price, ticks: u64, precision: u8) -> Price {
+    let offset_raw = increment.raw * ticks as PriceRaw;
+    Price::from_raw(base.raw - offset_raw, precision)
 }

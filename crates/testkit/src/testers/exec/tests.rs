@@ -32,7 +32,7 @@ use nautilus_model::{
     },
     events::{OrderAccepted, OrderEventAny},
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId},
-    instruments::{InstrumentAny, stubs::crypto_perpetual_ethusdt},
+    instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     orderbook::OrderBook,
     orders::{LimitOrder, Order, OrderAny},
     stubs::TestDefault,
@@ -227,11 +227,9 @@ fn test_exec_tester_creation(config: ExecTesterConfig) {
 fn test_get_price_offset(config: ExecTesterConfig, instrument: InstrumentAny) {
     let tester = ExecTester::new(config);
 
-    // price_increment = 0.01, tob_offset_ticks = 500
-    // Expected: 0.01 * 500 = 5.0
-    let offset = tester.get_price_offset(&instrument);
+    let offset_ticks = tester.get_price_offset(&instrument);
 
-    assert!((offset - 5.0).abs() < 1e-10);
+    assert_eq!(offset_ticks, 500);
 }
 
 #[rstest]
@@ -243,10 +241,9 @@ fn test_get_price_offset_different_ticks(instrument: InstrumentAny) {
 
     let tester = ExecTester::new(config);
 
-    // price_increment = 0.01, tob_offset_ticks = 100
-    let offset = tester.get_price_offset(&instrument);
+    let offset_ticks = tester.get_price_offset(&instrument);
 
-    assert!((offset - 1.0).abs() < 1e-10);
+    assert_eq!(offset_ticks, 100);
 }
 
 #[rstest]
@@ -258,10 +255,9 @@ fn test_get_price_offset_single_tick(instrument: InstrumentAny) {
 
     let tester = ExecTester::new(config);
 
-    // price_increment = 0.01, tob_offset_ticks = 1
-    let offset = tester.get_price_offset(&instrument);
+    let offset_ticks = tester.get_price_offset(&instrument);
 
-    assert!((offset - 0.01).abs() < 1e-10);
+    assert_eq!(offset_ticks, 1);
 }
 
 #[rstest]
@@ -1340,7 +1336,8 @@ fn test_maintain_buy_orders_limit_aggressive_crosses_ask(
 
     let order = tester.buy_order.expect("buy order should be submitted");
     let price = order.price().expect("limit order has price");
-    // Aggressive BUY: priced at or above the ask, so trivially >= ask.
+    // Aggressive BUY: ask + 5 ticks at 0.01 increment.
+    assert_eq!(price, Price::from("3001.05"));
     assert!(price >= best_ask, "expected {price} >= {best_ask}");
 }
 
@@ -1366,6 +1363,8 @@ fn test_maintain_sell_orders_limit_aggressive_crosses_bid(
 
     let order = tester.sell_order.expect("sell order should be submitted");
     let price = order.price().expect("limit order has price");
+    // Aggressive SELL: bid - 5 ticks at 0.01 increment.
+    assert_eq!(price, Price::from("2999.95"));
     assert!(price <= best_bid, "expected {price} <= {best_bid}");
 }
 
@@ -1388,6 +1387,8 @@ fn test_maintain_buy_orders_passive_below_bid(
 
     let order = tester.buy_order.expect("buy order should be submitted");
     let price = order.price().expect("limit order has price");
+    // Passive BUY: bid - 5 ticks at 0.01 increment.
+    assert_eq!(price, Price::from("2999.95"));
     assert!(price < best_bid, "expected {price} < {best_bid}");
 }
 
@@ -1587,9 +1588,191 @@ fn test_maintain_batch_limit_pair_limit_aggressive_crosses_spread(
     let buy_price = buy.price().expect("limit order has price");
     let sell_price = sell.price().expect("limit order has price");
 
+    // Aggressive batch: BUY at ask + 5 ticks, SELL at bid - 5 ticks (0.01 increment).
+    assert_eq!(buy_price, Price::from("3001.05"));
+    assert_eq!(sell_price, Price::from("2999.95"));
     assert!(buy_price >= best_ask, "expected {buy_price} >= {best_ask}");
     assert!(
         sell_price <= best_bid,
         "expected {sell_price} <= {best_bid}"
     );
+}
+
+// BUY StopLimit through the maintain path: trigger above the ask, limit above
+// the trigger so `trigger_price <= price` invariant holds.
+#[rstest]
+fn test_maintain_stop_buy_orders_stop_limit_prices(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.enable_stop_buys = true;
+    config.stop_order_type = OrderType::StopLimit;
+    config.stop_offset_ticks = 100;
+    config.stop_limit_offset_ticks = Some(50);
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.instrument = Some(instrument);
+
+    tester.maintain_orders(Price::from("3000.0"), Price::from("3001.0"));
+
+    let order = tester.buy_stop_order.expect("buy stop order submitted");
+    assert_eq!(order.order_type(), OrderType::StopLimit);
+    // Trigger: ask + 100 ticks at 0.01 = 3002.0; limit: trigger + 50 ticks = 3002.5.
+    assert_eq!(order.trigger_price(), Some(Price::from("3002.0")));
+    assert_eq!(order.price(), Some(Price::from("3002.5")));
+}
+
+// BUY LimitIfTouched through the maintain path: trigger below the bid, limit
+// above the trigger (upstream fix; previously LIT used `trigger - offset`).
+#[rstest]
+fn test_maintain_stop_buy_orders_lit_prices(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.enable_stop_buys = true;
+    config.stop_order_type = OrderType::LimitIfTouched;
+    config.stop_offset_ticks = 100;
+    config.stop_limit_offset_ticks = Some(50);
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.instrument = Some(instrument);
+
+    tester.maintain_orders(Price::from("3000.0"), Price::from("3001.0"));
+
+    let order = tester.buy_stop_order.expect("buy stop order submitted");
+    assert_eq!(order.order_type(), OrderType::LimitIfTouched);
+    // Trigger: bid - 100 ticks at 0.01 = 2999.0; limit: trigger + 50 ticks = 2999.5.
+    assert_eq!(order.trigger_price(), Some(Price::from("2999.0")));
+    assert_eq!(order.price(), Some(Price::from("2999.5")));
+}
+
+// SELL StopLimit through the maintain path: trigger below the bid, limit below
+// the trigger so `trigger_price >= price` invariant holds.
+#[rstest]
+fn test_maintain_stop_sell_orders_stop_limit_prices(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.enable_stop_sells = true;
+    config.stop_order_type = OrderType::StopLimit;
+    config.stop_offset_ticks = 100;
+    config.stop_limit_offset_ticks = Some(50);
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.instrument = Some(instrument);
+
+    tester.maintain_orders(Price::from("3000.0"), Price::from("3001.0"));
+
+    let order = tester.sell_stop_order.expect("sell stop order submitted");
+    assert_eq!(order.order_type(), OrderType::StopLimit);
+    // Trigger: bid - 100 ticks at 0.01 = 2999.0; limit: trigger - 50 ticks = 2998.5.
+    assert_eq!(order.trigger_price(), Some(Price::from("2999.0")));
+    assert_eq!(order.price(), Some(Price::from("2998.5")));
+}
+
+// SELL LimitIfTouched through the maintain path: trigger above the ask, limit
+// below the trigger (upstream fix; previously LIT used `trigger + offset`).
+#[rstest]
+fn test_maintain_stop_sell_orders_lit_prices(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.enable_stop_sells = true;
+    config.stop_order_type = OrderType::LimitIfTouched;
+    config.stop_offset_ticks = 100;
+    config.stop_limit_offset_ticks = Some(50);
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.instrument = Some(instrument);
+
+    tester.maintain_orders(Price::from("3000.0"), Price::from("3001.0"));
+
+    let order = tester.sell_stop_order.expect("sell stop order submitted");
+    assert_eq!(order.order_type(), OrderType::LimitIfTouched);
+    // Trigger: ask + 100 ticks at 0.01 = 3002.0; limit: trigger - 50 ticks = 3001.5.
+    assert_eq!(order.trigger_price(), Some(Price::from("3002.0")));
+    assert_eq!(order.price(), Some(Price::from("3001.5")));
+}
+
+// BUY bracket: TP above entry, SL below entry, both at `bracket_offset_ticks`.
+// The entry order is tracked locally; SL/TP land in the cache via `submit_order_list`.
+#[rstest]
+fn test_submit_bracket_order_buy_tp_sl_prices(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.enable_brackets = true;
+    config.bracket_offset_ticks = 100;
+    let instrument_id = instrument.id();
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache.clone());
+    tester.instrument = Some(instrument);
+
+    tester
+        .submit_bracket_order(OrderSide::Buy, Price::from("3000.0"))
+        .expect("bracket submission");
+
+    let cache_ref = cache.borrow();
+    let orders = cache_ref.orders(None, Some(&instrument_id), None, None, None);
+
+    let sl = orders
+        .iter()
+        .find(|o| o.order_side() == OrderSide::Sell && o.order_type() == OrderType::StopMarket)
+        .expect("SL stop-market present");
+    let tp = orders
+        .iter()
+        .find(|o| o.order_side() == OrderSide::Sell && o.order_type() == OrderType::Limit)
+        .expect("TP limit present");
+
+    // Entry 3000.0 +/- 100 ticks at 0.01 increment: TP = 3001.0, SL trigger = 2999.0.
+    assert_eq!(tp.price(), Some(Price::from("3001.0")));
+    assert_eq!(sl.trigger_price(), Some(Price::from("2999.0")));
+}
+
+// SELL bracket: TP below entry, SL above entry. Mirror of the BUY case.
+#[rstest]
+fn test_submit_bracket_order_sell_tp_sl_prices(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.enable_brackets = true;
+    config.bracket_offset_ticks = 100;
+    let instrument_id = instrument.id();
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache.clone());
+    tester.instrument = Some(instrument);
+
+    tester
+        .submit_bracket_order(OrderSide::Sell, Price::from("3000.0"))
+        .expect("bracket submission");
+
+    let cache_ref = cache.borrow();
+    let orders = cache_ref.orders(None, Some(&instrument_id), None, None, None);
+
+    let sl = orders
+        .iter()
+        .find(|o| o.order_side() == OrderSide::Buy && o.order_type() == OrderType::StopMarket)
+        .expect("SL stop-market present");
+    let tp = orders
+        .iter()
+        .find(|o| o.order_side() == OrderSide::Buy && o.order_type() == OrderType::Limit)
+        .expect("TP limit present");
+
+    // Entry 3000.0 +/- 100 ticks at 0.01 increment: TP = 2999.0, SL trigger = 3001.0.
+    assert_eq!(tp.price(), Some(Price::from("2999.0")));
+    assert_eq!(sl.trigger_price(), Some(Price::from("3001.0")));
 }
