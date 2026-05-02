@@ -43,6 +43,7 @@ logs/
 .benchmarks*
 .coverage*
 htmlcov/
+perf.data
 
 # Rust related
 *target/
