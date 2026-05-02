@@ -14,6 +14,7 @@ CARGO_LLVM_COV_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-llvm-
 CARGO_MACHETE_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-machete)
 CARGO_NEXTEST_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-nextest)
 CARGO_VET_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-vet)
+FLAMEGRAPH_VERSION := $(shell bash scripts/cargo-tool-version.sh flamegraph)
 LYCHEE_VERSION := $(shell bash scripts/cargo-tool-version.sh lychee)
 # Tool versions from tools.toml
 PREK_VERSION := $(shell bash scripts/tool-version.sh prek)
@@ -333,7 +334,7 @@ outdated: check-edit-installed  #-- Check for outdated dependencies
 	uv tree --outdated --depth 1 --all-groups
 	@printf "\n$(CYAN)Checking tool versions...$(RESET)\n"
 	@outdated_count=0; \
-	for tool in cargo-audit:$(CARGO_AUDIT_VERSION) cargo-deny:$(CARGO_DENY_VERSION) cargo-edit:$(CARGO_EDIT_VERSION) cargo-llvm-cov:$(CARGO_LLVM_COV_VERSION) cargo-machete:$(CARGO_MACHETE_VERSION) cargo-nextest:$(CARGO_NEXTEST_VERSION) cargo-vet:$(CARGO_VET_VERSION) lychee:$(LYCHEE_VERSION); do \
+	for tool in cargo-audit:$(CARGO_AUDIT_VERSION) cargo-deny:$(CARGO_DENY_VERSION) cargo-edit:$(CARGO_EDIT_VERSION) cargo-llvm-cov:$(CARGO_LLVM_COV_VERSION) cargo-machete:$(CARGO_MACHETE_VERSION) cargo-nextest:$(CARGO_NEXTEST_VERSION) cargo-vet:$(CARGO_VET_VERSION) flamegraph:$(FLAMEGRAPH_VERSION) lychee:$(LYCHEE_VERSION); do \
 		name=$${tool%%:*}; current=$${tool##*:}; \
 		latest=$$(cargo search $$name --limit 1 2>/dev/null | head -1 | awk -F\" '{print $$2}'); \
 		if [ "$$current" != "$$latest" ]; then \
@@ -365,6 +366,7 @@ install-tools: check-binstall-installed update-uv  #-- Install required developm
 	&& cargo install cargo-llvm-cov --version $(CARGO_LLVM_COV_VERSION) --locked \
 	&& cargo install cargo-audit --version $(CARGO_AUDIT_VERSION) --locked \
 	&& cargo install cargo-vet --version $(CARGO_VET_VERSION) --locked \
+	&& cargo install flamegraph --version $(FLAMEGRAPH_VERSION) --locked \
 	&& cargo install lychee --version $(LYCHEE_VERSION) --locked \
 	&& cargo binstall prek --version $(PREK_VERSION) --no-confirm --locked \
 	&& bash scripts/install-osv-scanner.sh

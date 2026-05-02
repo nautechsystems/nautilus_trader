@@ -110,3 +110,8 @@ required-features = ["node"]
 name = "node"
 path = "tests/node.rs"
 required-features = ["node"]
+
+[[test]]
+name = "stress"
+path = "tests/stress.rs"
+required-features = ["node"]

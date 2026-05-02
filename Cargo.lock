@@ -5694,6 +5694,7 @@ dependencies = [
  "async-trait",
  "bon",
  "chrono",
+ "criterion",
  "futures",
  "indexmap 2.14.0",
  "log",

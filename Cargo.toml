@@ -387,6 +387,7 @@ cargo-llvm-cov = "0.8.5"
 cargo-machete = "0.9.2"
 cargo-nextest = "0.9.133"
 cargo-vet = "0.10.2"
+flamegraph = "0.6.12"
 lychee = "0.24.1"
 
 # cargo-vet supply chain security configuration

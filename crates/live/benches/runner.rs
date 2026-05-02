@@ -13,14 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{hint::black_box, sync::Arc};
+use std::{cell::RefCell, hint::black_box, rc::Rc, sync::Arc, time::Duration};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_common::{
     messages::{DataEvent, data::DataCommand},
+    msgbus::{
+        self, MessageBus, TypedIntoHandler, register_data_endpoint,
+        switchboard::MessagingSwitchboard,
+    },
     timer::TimeEventHandler,
 };
 use nautilus_core::UnixNanos;
+use nautilus_live::runner::AsyncRunner;
 use nautilus_model::{
     data::{Data, quote::QuoteTick, trade::TradeTick},
     enums::AggressorSide,
@@ -266,35 +271,55 @@ fn bench_memory_usage(c: &mut Criterion) {
     group.finish();
 }
 
-// Benchmark select! pattern performance (without AsyncRunner to avoid OnceCell issues)
-fn bench_select_pattern(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Select Pattern");
+// Drives the actual runner dispatch path: msgbus endpoint lookup, sent_count
+// increment, and a noop handler. Skips the 5-branch `select!` poll cost,
+// which is bounded by `tokio::mpsc::recv` and is small relative to the
+// dispatch shown by this bench. Pair with the `stress_trade_burst` test
+// (`crates/live/tests/stress.rs`) for end-to-end runner+engine numbers.
+fn bench_runner_dispatch(c: &mut Criterion) {
+    msgbus::set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
 
-    group.bench_function("select_first_ready", |b| {
-        b.iter(|| {
-            let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-            let (_time_tx, mut time_rx) =
-                tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
-            let (_signal_tx, mut signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+    register_data_endpoint(
+        MessagingSwitchboard::data_engine_process_data(),
+        TypedIntoHandler::from(|data: Data| {
+            black_box(data);
+        }),
+    );
 
-            // Send a data event
-            let quote = create_test_quote();
-            data_tx.send(DataEvent::Data(Data::Quote(quote))).unwrap();
+    let mut group = c.benchmark_group("AsyncRunner dispatch");
+    let trade = create_test_trade();
 
-            // Simulate select! choosing first ready channel
-            let result = if data_rx.try_recv().is_ok() {
-                1
-            } else if time_rx.try_recv().is_ok() {
-                2
-            } else if signal_rx.try_recv().is_ok() {
-                3
-            } else {
-                0
-            };
+    for size in [100_usize, 1_000, 10_000] {
+        group.throughput(Throughput::Elements(size as u64));
+        group.bench_function(BenchmarkId::new("drain_data_events", size), |b| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
 
-            black_box(result);
+            b.iter_custom(|iters| {
+                let mut total = Duration::ZERO;
+
+                for _ in 0..iters {
+                    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+                    for _ in 0..size {
+                        tx.send(DataEvent::Data(Data::Trade(trade))).unwrap();
+                    }
+                    drop(tx);
+
+                    let start = std::time::Instant::now();
+                    rt.block_on(async {
+                        while let Some(evt) = rx.recv().await {
+                            AsyncRunner::handle_data_event(evt);
+                        }
+                    });
+                    total += start.elapsed();
+                }
+
+                total
+            });
         });
-    });
+    }
 
     group.finish();
 }
@@ -307,6 +332,6 @@ criterion_group!(
     bench_concurrent_channels,
     bench_batch_processing,
     bench_memory_usage,
-    bench_select_pattern
+    bench_runner_dispatch,
 );
 criterion_main!(benches);
