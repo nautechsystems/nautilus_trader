@@ -625,6 +625,11 @@ class InteractiveBrokersClient(
                         break
         except asyncio.CancelledError:
             self._log.debug("Client TWS incoming message reader was cancelled")
+        except RuntimeError as e:
+            if "after shutdown" in str(e):
+                self._log.debug("Client TWS incoming message reader stopping during shutdown")
+            else:
+                self._log.exception("Unhandled exception in Client TWS incoming message reader", e)
         except Exception as e:
             self._log.exception("Unhandled exception in Client TWS incoming message reader", e)
         finally:
