@@ -9,6 +9,7 @@ use crate::shared_buffer::SharedStateBuffer;
 ///
 /// Hooks into MessageBus publish path as a sidecar — does not modify
 /// the original event flow.
+/// Shared memory path: `/dev/shm/sextant_state_{instrument_id}`
 pub struct StateEncoder {
     buffer: SharedStateBuffer,
     current: ContextWindow,

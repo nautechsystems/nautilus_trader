@@ -2,7 +2,7 @@
 name = "nautilus-risk-potential"
 version = "0.1.0"
 edition = "2021"
-description = "Differentiable risk potential field for KuaaMU Quant Engine"
+description = "Differentiable risk potential field for Sextant"
 license = "LGPL-3.0-or-later"
 
 [dependencies]

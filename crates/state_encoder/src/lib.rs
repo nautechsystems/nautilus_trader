@@ -1,4 +1,4 @@
-//! State encoder for KuaaMU Quant Engine.
+//! State encoder for Sextant.
 //!
 //! Encodes Nautilus internal events into a shared-memory `ContextWindow`
 //! that agents can read via mmap with zero serialization overhead.

@@ -1,4 +1,4 @@
-//! Autoresearch runtime for KuaaMU Quant Engine.
+//! Autoresearch runtime for Sextant.
 //!
 //! Implements the Karpathy Ratchet: Agent proposes strategy hypotheses,
 //! micro-backtests validate them, and only improvements are retained.

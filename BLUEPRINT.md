@@ -1,4 +1,4 @@
-# KuaaMU Quant Engine — AI-Native 改造蓝图
+# Sextant — AI-Native 改造蓝图
 
 **基座**: NautilusTrader (Rust Core + Python API)
 **目标**: 为 Agent 量化交易构建高性能、可自主进化、链上可验证的执行基础设施

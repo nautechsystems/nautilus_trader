@@ -1,4 +1,4 @@
-//! Agent swarm for KuaaMU Quant Engine.
+//! Agent swarm for Sextant.
 //!
 //! Defines the Agent trait, Intent types, IntentCompiler, and SwarmCoordinator
 //! for multi-agent trading with AI-native decision making.

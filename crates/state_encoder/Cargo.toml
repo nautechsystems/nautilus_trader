@@ -2,7 +2,7 @@
 name = "nautilus-state-encoder"
 version = "0.1.0"
 edition = "2021"
-description = "Shared memory state encoder for KuaaMU Quant Engine"
+description = "Shared memory state encoder for Sextant"
 license = "LGPL-3.0-or-later"
 
 [dependencies]

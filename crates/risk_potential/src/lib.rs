@@ -1,4 +1,4 @@
-//! Differentiable risk potential field for KuaaMU Quant Engine.
+//! Differentiable risk potential field for Sextant.
 //!
 //! Risk is not a hard wall but a potential field. Agents sense the gradient
 //! and self-regulate. The engine retains non-bypassable hard limits.

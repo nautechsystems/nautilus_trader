@@ -1,4 +1,4 @@
-//! ERC-8004 reputation attestation layer for KuaaMU Quant Engine.
+//! ERC-8004 reputation attestation layer for Sextant.
 //!
 //! Each trade decision and outcome is attested on-chain.
 //! Reputation score determines agent autonomy level (Slider).

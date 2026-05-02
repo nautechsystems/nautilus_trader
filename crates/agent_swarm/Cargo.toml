@@ -2,7 +2,7 @@
 name = "nautilus-agent-swarm"
 version = "0.1.0"
 edition = "2021"
-description = "AI-native agent swarm for KuaaMU Quant Engine"
+description = "AI-native agent swarm for Sextant"
 license = "LGPL-3.0-or-later"
 
 [dependencies]
