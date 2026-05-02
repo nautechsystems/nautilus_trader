@@ -27,6 +27,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.matching_core import MatchingCore
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
@@ -55,8 +56,10 @@ from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import LimitOrder
@@ -3789,6 +3792,227 @@ class TestOrderMatchingEngine:
         fills = [m for m in messages if isinstance(m, OrderFilled)]
         assert len(fills) == 1
         assert fills[0].last_px == Price.from_str("90.000")
+
+
+def _ethusdt_perp_binance_with_tick(price_precision: int, increment: str) -> CryptoPerpetual:
+    base = _ETHUSDT_PERP_BINANCE
+    return CryptoPerpetual(
+        instrument_id=base.id,
+        raw_symbol=base.raw_symbol,
+        base_currency=base.base_currency,
+        quote_currency=base.quote_currency,
+        settlement_currency=base.settlement_currency,
+        is_inverse=base.is_inverse,
+        price_precision=price_precision,
+        size_precision=base.size_precision,
+        price_increment=Price.from_str(increment),
+        size_increment=base.size_increment,
+        max_quantity=base.max_quantity,
+        min_quantity=base.min_quantity,
+        max_notional=base.max_notional,
+        min_notional=base.min_notional,
+        max_price=base.max_price,
+        min_price=base.min_price,
+        margin_init=base.margin_init,
+        margin_maint=base.margin_maint,
+        maker_fee=base.maker_fee,
+        taker_fee=base.taker_fee,
+        ts_event=base.ts_event,
+        ts_init=base.ts_init,
+        tick_scheme_name=base.tick_scheme_name,
+        info=base.info,
+    )
+
+
+@pytest.mark.parametrize(
+    ("initial", "updated", "expected_precision"),
+    [
+        ("0.01", "0.001", 3),  # finer tick: numeric and precision both change
+        ("0.01", "0.05", 2),  # coarser tick at same precision: numeric only
+        ("0.01", "0.010", 3),  # numerically equal, precision-only change
+    ],
+)
+def test_matching_core_update_price_increment(
+    initial: str,
+    updated: str,
+    expected_precision: int,
+) -> None:
+    # Arrange
+    core = MatchingCore(
+        instrument_id=TestIdStubs.usdjpy_id(),
+        price_increment=Price.from_str(initial),
+        trigger_stop_order=lambda *_: None,
+        fill_market_order=lambda *_: None,
+        fill_limit_order=lambda *_: None,
+    )
+
+    # Act
+    core.update_price_increment(Price.from_str(updated))
+
+    # Assert
+    assert core.price_increment == Price.from_str(updated)
+    assert core.price_increment.precision == expected_precision
+    assert core.price_precision == expected_precision
+
+
+def test_matching_core_update_price_increment_rejects_none() -> None:
+    # Arrange
+    core = MatchingCore(
+        instrument_id=TestIdStubs.usdjpy_id(),
+        price_increment=Price.from_str("0.01"),
+        trigger_stop_order=lambda *_: None,
+        fill_market_order=lambda *_: None,
+        fill_limit_order=lambda *_: None,
+    )
+
+    # Act, Assert
+    with pytest.raises(TypeError):
+        core.update_price_increment(None)
+
+
+def test_update_instrument_propagates_tick_size_change() -> None:
+    # Arrange
+    clock = TestClock()
+    trader_id = TestIdStubs.trader_id()
+    account_id = TestIdStubs.account_id()
+    msgbus = MessageBus(trader_id=trader_id, clock=clock)
+    instrument = _ETHUSDT_PERP_BINANCE
+    cache = TestComponentStubs.cache()
+    cache.add_instrument(instrument)
+
+    matching_engine = OrderMatchingEngine(
+        instrument=instrument,
+        raw_id=0,
+        fill_model=FillModel(),
+        fee_model=MakerTakerFeeModel(),
+        book_type=BookType.L1_MBP,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        reject_stop_orders=True,
+        trade_execution=True,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    exec_messages: list[Any] = []
+    msgbus.register("ExecEngine.process", lambda x: exec_messages.append(x))
+
+    matching_engine.process_quote_tick(
+        TestDataStubs.quote_tick(
+            instrument=instrument,
+            bid_price=1000.00,
+            ask_price=1000.01,
+            ts_event=0,
+            ts_init=0,
+        ),
+    )
+
+    finer = _ethusdt_perp_binance_with_tick(price_precision=3, increment="0.001")
+    cache.add_instrument(finer)
+    matching_engine.update_instrument(finer)
+
+    matching_engine.process_quote_tick(
+        TestDataStubs.quote_tick(
+            instrument=finer,
+            bid_price=1000.004,
+            ask_price=1000.005,
+            ts_event=1,
+            ts_init=1,
+        ),
+    )
+
+    taker_order = TestExecStubs.limit_order(
+        instrument=finer,
+        order_side=OrderSide.BUY,
+        price=finer.make_price(1000.005),
+        post_only=True,
+        client_order_id=ClientOrderId("O-TAKER"),
+    )
+    maker_order = TestExecStubs.limit_order(
+        instrument=finer,
+        order_side=OrderSide.BUY,
+        price=finer.make_price(1000.004),
+        post_only=True,
+        client_order_id=ClientOrderId("O-MAKER"),
+    )
+
+    # Act
+    matching_engine.process_order(taker_order, account_id)
+    rejected = next((m for m in exec_messages if isinstance(m, OrderRejected)), None)
+
+    exec_messages.clear()
+    matching_engine.process_order(maker_order, account_id)
+    accepted = next((m for m in exec_messages if isinstance(m, OrderAccepted)), None)
+
+    # Assert
+    assert rejected is not None
+    assert rejected.due_post_only is True
+    assert "bid=1000.004" in rejected.reason
+    assert "ask=1000.005" in rejected.reason
+    assert accepted is not None
+
+
+def test_update_instrument_propagates_precision_only_change() -> None:
+    # Guards the engine's `price_precision` check: `Price` numeric equality
+    # treats "0.01" and "0.010" as equal, so a guard comparing only the
+    # increment would skip the core update on a precision-only change.
+    # Arrange
+    clock = TestClock()
+    account_id = TestIdStubs.account_id()
+    msgbus = MessageBus(trader_id=TestIdStubs.trader_id(), clock=clock)
+    instrument = _ETHUSDT_PERP_BINANCE
+    cache = TestComponentStubs.cache()
+    cache.add_instrument(instrument)
+
+    matching_engine = OrderMatchingEngine(
+        instrument=instrument,
+        raw_id=0,
+        fill_model=FillModel(),
+        fee_model=MakerTakerFeeModel(),
+        book_type=BookType.L1_MBP,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        reject_stop_orders=True,
+        trade_execution=True,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    exec_messages: list[Any] = []
+    msgbus.register("ExecEngine.process", lambda x: exec_messages.append(x))
+
+    # Same numeric increment (0.01 == 0.010) but precision 2 -> 3
+    repriced = _ethusdt_perp_binance_with_tick(price_precision=3, increment="0.010")
+    cache.add_instrument(repriced)
+    matching_engine.update_instrument(repriced)
+
+    matching_engine.process_quote_tick(
+        TestDataStubs.quote_tick(
+            instrument=repriced,
+            bid_price=1000.000,
+            ask_price=1000.010,
+            ts_event=0,
+            ts_init=0,
+        ),
+    )
+
+    # Act: post-only buy at the ask would take; rejection reason formats
+    # bid/ask via the core's `_price_precision`, which must now be 3
+    taker_order = TestExecStubs.limit_order(
+        instrument=repriced,
+        order_side=OrderSide.BUY,
+        price=repriced.make_price(1000.010),
+        post_only=True,
+    )
+    matching_engine.process_order(taker_order, account_id)
+
+    # Assert
+    rejected = next((m for m in exec_messages if isinstance(m, OrderRejected)), None)
+    assert rejected is not None
+    assert "bid=1000.000" in rejected.reason
+    assert "ask=1000.010" in rejected.reason
 
 
 def _create_bar_execution_matching_engine() -> OrderMatchingEngine:

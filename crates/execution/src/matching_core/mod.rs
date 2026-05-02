@@ -212,6 +212,11 @@ impl OrderMatchingCore {
         self.is_ask_initialized = true;
     }
 
+    /// Updates the price increment (tick size) for the matching core.
+    pub const fn update_price_increment(&mut self, price_increment: Price) {
+        self.price_increment = price_increment;
+    }
+
     pub fn reset(&mut self) {
         self.bid = None;
         self.ask = None;
@@ -996,5 +1001,19 @@ mod tests {
 
         let result = matching_core.is_touch_triggered(order_side.as_specified(), trigger_price);
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_update_price_increment_updates_increment_and_precision() {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
+
+        assert_eq!(matching_core.price_increment, Price::from("0.01"));
+        assert_eq!(matching_core.price_precision(), 2);
+
+        matching_core.update_price_increment(Price::from("0.001"));
+
+        assert_eq!(matching_core.price_increment, Price::from("0.001"));
+        assert_eq!(matching_core.price_precision(), 3);
     }
 }
