@@ -25,6 +25,9 @@ if [[ "$EVENT_NAME" == "push" ]]; then
   if [[ "$BEFORE_SHA" == "0000000000000000000000000000000000000000" ]]; then
     run_all "New branch push: running all jobs"
   fi
+  if [[ -z "${BEFORE_SHA:-}" ]] || ! git cat-file -e "${BEFORE_SHA}^{commit}" 2> /dev/null; then
+    run_all "Push base SHA not found: running all jobs"
+  fi
   changed_files="$(git diff --name-only "$BEFORE_SHA" HEAD)"
 else
   # The PR event payload freezes base.sha at PR creation time, so intervening

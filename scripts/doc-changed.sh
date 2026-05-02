@@ -5,7 +5,7 @@
 set -euo pipefail
 
 DESIRED_FEATURES=(ffi python high-precision defi)
-PROFILE="nextest"
+PROFILE="${CARGO_CI_PROFILE:-nextest}"
 
 run_full() {
   echo "Running full workspace doc check"

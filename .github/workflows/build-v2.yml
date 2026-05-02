@@ -51,19 +51,19 @@ jobs:
         run: bash scripts/ci/plan.sh
 
   pre-commit:
-    # Self-hosted for internal work; Depot for fork PRs.
+    # Fork PRs stay on GitHub-hosted runners.
     runs-on: >-
       ${{ github.event.pull_request.head.repo.fork
-      && fromJson('["depot-ubuntu-22.04-8"]')
+      && 'ubuntu-22.04'
       || fromJson('["self-hosted", "Linux", "X64", "build-v2"]') }}
     env:
-      # Self-hosted persists target dir outside the workspace so it survives
-      # actions/checkout's git clean -ffdx. Fork PRs run on Depot and fall
-      # through to Swatinem/rust-cache on the workspace target dir.
+      # Self-hosted keeps Rust artifacts outside the workspace.
       CARGO_TARGET_DIR: >-
         ${{ github.event.pull_request.head.repo.fork
         && format('{0}/target', github.workspace)
         || '/home/runner/.cache/cargo-target/pre-commit' }}
+      CARGO_CI_PROFILE: >-
+        ${{ github.event.pull_request.head.repo.fork && 'ci-pr' || 'nextest' }}
     steps:
       - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
@@ -89,6 +89,10 @@ jobs:
           free-disk-space: "true"
           build-type: "pre-commit"
           rust-cache-enabled: ${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}
+
+      - name: Limit Cargo build jobs on fork PR runners
+        if: github.event.pull_request.head.repo.fork
+        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Run pre-commit
         run: prek run --all-files

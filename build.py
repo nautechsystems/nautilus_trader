@@ -122,6 +122,8 @@ CARGO_BUILD_TARGET = os.environ.get("CARGO_BUILD_TARGET", "")
 # Determine the profile directory name
 if BUILD_MODE == "release":
     profile_dir = "release"
+elif BUILD_MODE == "ci-pr":
+    profile_dir = "ci-pr-wheel"
 elif BUILD_MODE == "debug-pyo3":
     profile_dir = "debug-pyo3"
 else:
@@ -187,6 +189,8 @@ def _build_rust_libs() -> None:
             if IS_LINUX:
                 existing_rustflags = os.environ.get("RUSTFLAGS", "")
                 os.environ["RUSTFLAGS"] = f"{existing_rustflags} -C link-arg=-s"
+        elif BUILD_MODE == "ci-pr":
+            build_options = ["--profile", "ci-pr-wheel"]
         elif BUILD_MODE == "debug-pyo3":
             build_options = ["--profile", "debug-pyo3"]
         else:
