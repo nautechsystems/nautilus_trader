@@ -1,0 +1,32 @@
+[package]
+name = "nautilus-state-encoder"
+version = "0.1.0"
+edition = "2021"
+description = "Shared memory state encoder for KuaaMU Quant Engine"
+license = "LGPL-3.0-or-later"
+
+[dependencies]
+nautilus-core = { path = "../core" }
+nautilus-model = { path = "../model" }
+nautilus-common = { path = "../common" }
+
+# Shared memory
+memmap2 = "0.9"
+rkyv = { version = "0.8", features = ["bytecheck"] }
+
+# Concurrency
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+
+# Atomic operations
+atomic = "0.6"
+
+# Logging
+tracing = "0.1"
+
+# Utilities
+ustr = "1"
+ahash = "0.8"
+
+[features]
+default = []

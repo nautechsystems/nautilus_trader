@@ -41,6 +41,11 @@ members = [
   "crates/system",
   "crates/testkit",
   "crates/trading",
+  "crates/agent_swarm",
+  "crates/state_encoder",
+  "crates/risk_potential",
+  "crates/autoresearch",
+  "crates/reputation",
 ]
 
 [workspace.package]

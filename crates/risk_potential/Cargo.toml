@@ -1,0 +1,20 @@
+[package]
+name = "nautilus-risk-potential"
+version = "0.1.0"
+edition = "2021"
+description = "Differentiable risk potential field for KuaaMU Quant Engine"
+license = "LGPL-3.0-or-later"
+
+[dependencies]
+nautilus-core = { path = "../core" }
+nautilus-model = { path = "../model" }
+nautilus-common = { path = "../common" }
+
+# Logging
+tracing = "0.1"
+
+# Utilities
+ustr = "1"
+
+[features]
+default = []

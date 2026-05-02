@@ -1,0 +1,33 @@
+[package]
+name = "nautilus-autoresearch"
+version = "0.1.0"
+edition = "2021"
+description = "Autoresearch ratchet for continuous strategy evolution"
+license = "LGPL-3.0-or-later"
+
+[dependencies]
+nautilus-core = { path = "../core" }
+nautilus-model = { path = "../model" }
+nautilus-common = { path = "../common" }
+nautilus-agent-swarm = { path = "../agent_swarm" }
+nautilus-backtest = { path = "../backtest" }
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# UUID
+uuid = { version = "1", features = ["v4"] }
+
+# Logging
+tracing = "0.1"
+
+# Utilities
+ustr = "1"
+ahash = "0.8"
+
+[features]
+default = []
