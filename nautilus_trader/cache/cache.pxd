@@ -145,6 +145,7 @@ cdef class Cache(CacheFacade):
     cpdef void purge_closed_positions(self, uint64_t ts_now, uint64_t buffer_secs=*, bint purge_from_database=*)
     cpdef void purge_order(self, ClientOrderId client_order_id, bint purge_from_database=*)
     cpdef void purge_position(self, PositionId position_id, bint purge_from_database=*)
+    cpdef void purge_instrument(self, InstrumentId instrument_id, bint purge_from_database=*)
     cpdef void purge_account_events(self, uint64_t ts_now, uint64_t lookback_secs=*, bint purge_from_database=*)
     cpdef void clear_index(self)
     cpdef void reset(self)

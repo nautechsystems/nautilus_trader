@@ -404,6 +404,87 @@ instrument_ids = self.cache.instrument_ids()                   # Get all instrum
 venue_instrument_ids = self.cache.instrument_ids(venue=venue)  # Get instrument IDs for a specific venue
 ```
 
+### Purging cached data
+
+Long-running sessions accumulate closed orders, closed positions, account events, and
+unused instruments. The cache exposes targeted and bulk purge methods so strategies and
+the live trading engine can keep memory bounded without restarting the system.
+
+#### Targeted purges
+
+Use these to drop a single entity. Each refuses to purge while the entity is still active.
+
+- `cache.purge_order(client_order_id)`: removes the order and every order-keyed index entry.
+  Skips open orders.
+- `cache.purge_position(position_id)`: removes the position, its snapshots, and position-keyed
+  index entries. Skips open positions.
+- `cache.purge_instrument(instrument_id)`: removes the instrument and every per-instrument
+  map (order book, quotes, trades, mark/index/funding prices, instrument status, greeks,
+  and bars referencing the instrument). Skips while any associated order is non-terminal
+  (anything that has not reached a closed state, including initialized, submitted,
+  accepted, emulated, released, and inflight orders) or any associated position is
+  non-closed.
+
+```python
+class HousekeepingStrategy(Strategy):
+    def on_start(self) -> None:
+        # Drop instruments that are no longer in the watchlist.
+        for instrument_id in self.cache.instrument_ids(venue=self.venue):
+            if instrument_id not in self.watchlist:
+                self.cache.purge_instrument(instrument_id)
+```
+
+:::warning
+`purge_instrument` is intended for actors and strategies with their own lifecycle logic
+for deciding when an instrument is no longer needed. Purging an instrument that another
+component still relies on causes missing instrument lookups and loses market-data
+history. Active subscriptions belong to the data engine, so unsubscribe before purging
+if you no longer want updates.
+:::
+
+#### Bulk purges
+
+Use these to sweep older entries by age. They take the current timestamp and a buffer or
+lookback window in seconds.
+
+- `cache.purge_closed_orders(ts_now, buffer_secs)`: closed orders whose close timestamp is
+  older than `buffer_secs`.
+- `cache.purge_closed_positions(ts_now, buffer_secs)`: closed positions whose close timestamp
+  is older than `buffer_secs`.
+- `cache.purge_account_events(ts_now, lookback_secs)`: account state events older than
+  `lookback_secs`. A value of `0` purges all events.
+
+#### Automatic purging in live trading
+
+`LiveExecEngineConfig` schedules the bulk purges on a timer. Set the interval to enable
+the loop and the buffer or lookback to control how recent entries are protected. The
+following defaults work well for most live sessions:
+
+```python
+from nautilus_trader.config import LiveExecEngineConfig
+
+exec_engine = LiveExecEngineConfig(
+    purge_closed_orders_interval_mins=15,
+    purge_closed_orders_buffer_mins=60,
+    purge_closed_positions_interval_mins=15,
+    purge_closed_positions_buffer_mins=60,
+    purge_account_events_interval_mins=15,
+    purge_account_events_lookback_mins=60,
+)
+```
+
+A 60-minute buffer keeps recent activity available for reconciliation while still
+trimming long-tail growth. Tune these down for HFT sessions and up if you need longer
+historical lookbacks for analytics. See
+[Configure live trading: memory management](../how_to/configure_live_trading.md) for the
+full parameter reference.
+
+:::note
+The instrument purge has no automatic loop because the right time to drop an instrument
+depends on strategy state, not age. Call `cache.purge_instrument` from the actor or
+strategy that owns the instrument's lifecycle.
+:::
+
 ---
 
 ### Custom data

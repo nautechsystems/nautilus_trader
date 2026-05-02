@@ -31,8 +31,13 @@ from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import IndexPriceUpdate
+from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
@@ -59,6 +64,7 @@ from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.mocks.actors import MockActor
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -1543,6 +1549,309 @@ class TestCache:
         assert self.cache.position(position_id) is not None
         # Verify events are preserved
         assert len(self.cache.position(position_id).events) == 1
+
+    def test_purge_instrument_when_not_in_cache_does_nothing(self):
+        # Arrange, Act
+        self.cache.purge_instrument(AUDUSD_SIM.id)
+
+        # Assert
+        assert self.cache.instrument(AUDUSD_SIM.id) is None
+        assert self.cache.check_integrity()
+
+    def test_purge_instrument_removes_from_cache_and_indices(self):
+        # Arrange
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        # Populate every cache-owned per-instrument map so we can confirm each one
+        # is cleaned up by the purge.
+        quote = TestDataStubs.quote_tick(instrument=AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+        trade = TestDataStubs.trade_tick(instrument=AUDUSD_SIM)
+        self.cache.add_trade_tick(trade)
+        bar = TestDataStubs.bar_5decimal()
+        self.cache.add_bar(bar)
+
+        order_book = TestDataStubs.order_book(instrument=AUDUSD_SIM)
+        self.cache.add_order_book(order_book)
+
+        mark_price = MarkPriceUpdate(
+            instrument_id=AUDUSD_SIM.id,
+            value=Price.from_str("1.00000"),
+            ts_event=5,
+            ts_init=10,
+        )
+        self.cache.add_mark_price(mark_price)
+
+        index_price = IndexPriceUpdate(
+            instrument_id=AUDUSD_SIM.id,
+            value=Price.from_str("1.00000"),
+            ts_event=5,
+            ts_init=10,
+        )
+        self.cache.add_index_price(index_price)
+
+        funding_rate = FundingRateUpdate(
+            instrument_id=AUDUSD_SIM.id,
+            rate=Decimal("0.0001"),
+            ts_event=5,
+            ts_init=10,
+        )
+        self.cache.add_funding_rate(funding_rate)
+
+        status = InstrumentStatus(
+            instrument_id=AUDUSD_SIM.id,
+            action=MarketStatusAction.TRADING,
+            ts_event=5,
+            ts_init=10,
+        )
+        self.cache.add_instrument_status(status)
+
+        # Add a closed order and closed position so the safety rule allows the purge
+        order_open = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        position_id = PositionId("P-PURGE-1")
+        self.cache.add_order(order_open, position_id)
+        order_open.apply(TestEventStubs.order_submitted(order_open))
+        self.cache.update_order(order_open)
+        order_open.apply(TestEventStubs.order_accepted(order_open))
+        self.cache.update_order(order_open)
+        fill_open = TestEventStubs.order_filled(
+            order_open,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00001"),
+        )
+        order_open.apply(fill_open)
+        self.cache.update_order(order_open)
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill_open)
+        self.cache.add_position(position, OmsType.NETTING)
+
+        order_close = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+        self.cache.add_order(order_close, position_id)
+        order_close.apply(TestEventStubs.order_submitted(order_close))
+        self.cache.update_order(order_close)
+        order_close.apply(TestEventStubs.order_accepted(order_close))
+        self.cache.update_order(order_close)
+        fill_close = TestEventStubs.order_filled(
+            order_close,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00010"),
+            trade_id=TradeId("T-2"),
+        )
+        order_close.apply(fill_close)
+        self.cache.update_order(order_close)
+        position.apply(fill_close)
+        self.cache.update_position(position)
+
+        assert position.is_closed
+        assert self.cache.instrument(AUDUSD_SIM.id) is not None
+        assert self.cache.has_quote_ticks(AUDUSD_SIM.id)
+        assert self.cache.has_trade_ticks(AUDUSD_SIM.id)
+        assert self.cache.has_bars(bar.bar_type)
+        assert self.cache.order_book(AUDUSD_SIM.id) is not None
+        assert self.cache.mark_price(AUDUSD_SIM.id) is not None
+        assert self.cache.index_price(AUDUSD_SIM.id) is not None
+        assert self.cache.funding_rate(AUDUSD_SIM.id) is not None
+        assert self.cache.instrument_status(AUDUSD_SIM.id) is not None
+
+        # Act
+        self.cache.purge_instrument(AUDUSD_SIM.id)
+
+        # Assert
+        assert self.cache.instrument(AUDUSD_SIM.id) is None
+        assert not self.cache.has_quote_ticks(AUDUSD_SIM.id)
+        assert not self.cache.has_trade_ticks(AUDUSD_SIM.id)
+        assert not self.cache.has_bars(bar.bar_type)
+        assert self.cache.order_book(AUDUSD_SIM.id) is None
+        assert self.cache.mark_price(AUDUSD_SIM.id) is None
+        assert self.cache.index_price(AUDUSD_SIM.id) is None
+        assert self.cache.funding_rate(AUDUSD_SIM.id) is None
+        assert self.cache.instrument_status(AUDUSD_SIM.id) is None
+        assert self.cache.check_integrity()
+
+    def test_purge_instrument_refuses_when_orders_open(self):
+        # Arrange
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        order = self.strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+        self.cache.add_order(order)
+        order.apply(TestEventStubs.order_submitted(order))
+        self.cache.update_order(order)
+        order.apply(TestEventStubs.order_accepted(order))
+        self.cache.update_order(order)
+
+        assert order.is_open
+
+        # Act
+        self.cache.purge_instrument(AUDUSD_SIM.id)
+
+        # Assert - guard prevents purge
+        assert self.cache.instrument(AUDUSD_SIM.id) is not None
+        assert self.cache.check_integrity()
+
+    def test_purge_instrument_refuses_when_orders_initialized_but_not_open(self):
+        # Regression: orders in non-terminal states like INITIALIZED/SUBMITTED are not
+        # in the open index, but purging would still leave them dangling without an
+        # instrument.
+        # Arrange
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        order = self.strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+        self.cache.add_order(order)
+
+        assert not order.is_open
+        assert not order.is_closed
+
+        # Act
+        self.cache.purge_instrument(AUDUSD_SIM.id)
+
+        # Assert - guard prevents purge
+        assert self.cache.instrument(AUDUSD_SIM.id) is not None
+        assert self.cache.check_integrity()
+
+    def test_purge_instrument_refuses_when_positions_open(self):
+        # Take the order through to FILLED so the order guard passes; the position
+        # remains open and must be the reason the purge is refused.
+        # Arrange
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        position_id = PositionId("P-OPEN-1")
+        self.cache.add_order(order, position_id)
+        order.apply(TestEventStubs.order_submitted(order))
+        self.cache.update_order(order)
+        order.apply(TestEventStubs.order_accepted(order))
+        self.cache.update_order(order)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00001"),
+        )
+        order.apply(fill)
+        self.cache.update_order(order)
+        assert order.is_closed
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.cache.add_position(position, OmsType.NETTING)
+
+        assert position.is_open
+
+        # Act
+        self.cache.purge_instrument(AUDUSD_SIM.id)
+
+        # Assert - guard prevents purge
+        assert self.cache.instrument(AUDUSD_SIM.id) is not None
+        assert self.cache.check_integrity()
+
+    def test_purge_instrument_clears_position_snapshots_index(self):
+        # Snapshots are tracked by the `_index_instrument_position_snapshots` map and
+        # are exposed via `position_snapshot_ids`. The purge must drop the index entry
+        # for the cleared instrument.
+        # Arrange
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        position_id = PositionId("P-SNAP-1")
+        self.cache.add_order(order, position_id)
+        order.apply(TestEventStubs.order_submitted(order))
+        self.cache.update_order(order)
+        order.apply(TestEventStubs.order_accepted(order))
+        self.cache.update_order(order)
+        fill_open = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00001"),
+        )
+        order.apply(fill_open)
+        self.cache.update_order(order)
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill_open)
+        self.cache.add_position(position, OmsType.NETTING)
+        self.cache.snapshot_position(position)
+
+        # Close the position so the order/position guards permit the purge
+        order_close = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+        self.cache.add_order(order_close, position_id)
+        order_close.apply(TestEventStubs.order_submitted(order_close))
+        self.cache.update_order(order_close)
+        order_close.apply(TestEventStubs.order_accepted(order_close))
+        self.cache.update_order(order_close)
+        fill_close = TestEventStubs.order_filled(
+            order_close,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00010"),
+            trade_id=TradeId("T-2"),
+        )
+        order_close.apply(fill_close)
+        self.cache.update_order(order_close)
+        position.apply(fill_close)
+        self.cache.update_position(position)
+        assert position.is_closed
+
+        assert self.cache.position_snapshot_ids(instrument_id=AUDUSD_SIM.id)
+
+        # Act
+        self.cache.purge_instrument(AUDUSD_SIM.id)
+
+        # Assert
+        assert self.cache.position_snapshot_ids(instrument_id=AUDUSD_SIM.id) == set()
+        assert self.cache.check_integrity()
+
+    @pytest.mark.parametrize("purge_from_database", [False, True])
+    def test_purge_instrument_purge_from_database_is_currently_a_noop(
+        self,
+        purge_from_database,
+    ):
+        # The `purge_from_database` parameter is documented as a no-op until the
+        # cache database adapter exposes a delete-instrument method. Lock that
+        # behavior in: both flag values must observably clear the same in-memory
+        # state.
+        # Arrange
+        self.cache.add_instrument(AUDUSD_SIM)
+        quote = TestDataStubs.quote_tick(instrument=AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
+        # Act
+        self.cache.purge_instrument(AUDUSD_SIM.id, purge_from_database=purge_from_database)
+
+        # Assert
+        assert self.cache.instrument(AUDUSD_SIM.id) is None
+        assert not self.cache.has_quote_ticks(AUDUSD_SIM.id)
+        assert self.cache.check_integrity()
 
     def test_purge_closed_orders_with_linked_orders_does_not_purge_parent_when_child_open(self):
         # Arrange - Create bracket order which has linked orders

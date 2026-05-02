@@ -29,7 +29,8 @@ use nautilus_model::defi::{
 use nautilus_model::{
     accounts::AccountAny,
     data::{
-        Bar, BarType, FundingRateUpdate, InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick,
+        Bar, BarType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
+        QuoteTick, TradeTick,
     },
     enums::{
         AggressorSide, BookType, ContingencyType, MarketStatusAction, OmsType, OrderSide,
@@ -2187,6 +2188,362 @@ fn test_purge_open_position_skips_purge() {
     assert!(cache.position(&position_id).is_some());
     // Verify events are preserved
     assert_eq!(cache.position(&position_id).unwrap().event_count(), 1);
+}
+
+#[rstest]
+fn test_purge_instrument_removes_from_cache_and_indices() {
+    let mut cache = Cache::default();
+    let audusd_sim = audusd_sim();
+    let instrument_id = audusd_sim.id;
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    // Populate every cache-owned per-instrument map so we can confirm each one is
+    // cleaned up by the purge.
+    let quote = QuoteTick {
+        instrument_id,
+        ..QuoteTick::default()
+    };
+    cache.add_quote(quote).unwrap();
+
+    let trade = TradeTick {
+        instrument_id,
+        ..TradeTick::default()
+    };
+    cache.add_trade(trade).unwrap();
+
+    let bar_type = BarType::from(format!("{instrument_id}-1-MINUTE-LAST-EXTERNAL").as_str());
+    let bar = Bar {
+        bar_type,
+        ..Bar::default()
+    };
+    cache.add_bar(bar).unwrap();
+
+    let order_book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    cache.add_order_book(order_book).unwrap();
+
+    let mark_price = MarkPriceUpdate::new(
+        instrument_id,
+        Price::from("1.00000"),
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+    );
+    cache.add_mark_price(mark_price).unwrap();
+
+    let index_price = IndexPriceUpdate::new(
+        instrument_id,
+        Price::from("1.00000"),
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+    );
+    cache.add_index_price(index_price).unwrap();
+
+    let funding_rate = FundingRateUpdate::new(
+        instrument_id,
+        "0.0001".parse().unwrap(),
+        None,
+        None,
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+    );
+    cache.add_funding_rate(funding_rate).unwrap();
+
+    let status = InstrumentStatus::new(
+        instrument_id,
+        MarketStatusAction::Trading,
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+        None,
+        None,
+        Some(true),
+        Some(true),
+        None,
+    );
+    cache.add_instrument_status(status).unwrap();
+
+    // Add a fully filled order and its filled-then-closed position so every associated
+    // order is in `orders_closed` and every position is in `positions_closed`.
+    let mut order_open = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let position_id = PositionId::new("P-PURGE-1");
+    let account_id = AccountId::new("SIM-001");
+    cache
+        .add_order(order_open.clone(), None, None, false)
+        .unwrap();
+    order_open
+        .apply(TestOrderEventStubs::submitted(&order_open, account_id))
+        .unwrap();
+    cache.update_order(&order_open).unwrap();
+    order_open
+        .apply(TestOrderEventStubs::accepted(
+            &order_open,
+            account_id,
+            VenueOrderId::new("V-1"),
+        ))
+        .unwrap();
+    cache.update_order(&order_open).unwrap();
+    let filled_open = TestOrderEventStubs::filled(
+        &order_open,
+        &instrument,
+        Some(TradeId::new("T-1")),
+        Some(position_id),
+        Some(Price::from("1.00001")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    order_open.apply(filled_open.clone()).unwrap();
+    cache.update_order(&order_open).unwrap();
+    assert!(order_open.is_closed());
+
+    let mut position = Position::new(&instrument, filled_open.into());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    let mut order_close = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-2"))
+        .build();
+    cache
+        .add_order(order_close.clone(), Some(position_id), None, false)
+        .unwrap();
+    order_close
+        .apply(TestOrderEventStubs::submitted(&order_close, account_id))
+        .unwrap();
+    cache.update_order(&order_close).unwrap();
+    order_close
+        .apply(TestOrderEventStubs::accepted(
+            &order_close,
+            account_id,
+            VenueOrderId::new("V-2"),
+        ))
+        .unwrap();
+    cache.update_order(&order_close).unwrap();
+    let filled_close = TestOrderEventStubs::filled(
+        &order_close,
+        &instrument,
+        Some(TradeId::new("T-2")),
+        Some(position_id),
+        Some(Price::from("1.00010")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    order_close.apply(filled_close.clone()).unwrap();
+    cache.update_order(&order_close).unwrap();
+    assert!(order_close.is_closed());
+
+    position.apply(&filled_close.into());
+    cache.update_position(&position).unwrap();
+    assert!(position.is_closed());
+
+    assert!(cache.instrument(&instrument_id).is_some());
+    assert!(cache.has_quote_ticks(&instrument_id));
+    assert!(cache.has_trade_ticks(&instrument_id));
+    assert!(cache.has_bars(&bar_type));
+    assert!(cache.order_book(&instrument_id).is_some());
+    assert!(cache.mark_price(&instrument_id).is_some());
+    assert!(cache.index_price(&instrument_id).is_some());
+    assert!(cache.funding_rate(&instrument_id).is_some());
+    assert!(cache.instrument_status(&instrument_id).is_some());
+
+    cache.purge_instrument(instrument_id);
+
+    assert!(cache.instrument(&instrument_id).is_none());
+    assert!(!cache.has_quote_ticks(&instrument_id));
+    assert!(!cache.has_trade_ticks(&instrument_id));
+    assert!(!cache.has_bars(&bar_type));
+    assert!(cache.order_book(&instrument_id).is_none());
+    assert!(cache.mark_price(&instrument_id).is_none());
+    assert!(cache.index_price(&instrument_id).is_none());
+    assert!(cache.funding_rate(&instrument_id).is_none());
+    assert!(cache.instrument_status(&instrument_id).is_none());
+    assert!(!cache.index.instrument_orders.contains_key(&instrument_id));
+    assert!(
+        !cache
+            .index
+            .instrument_positions
+            .contains_key(&instrument_id)
+    );
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
+fn test_purge_instrument_when_not_in_cache_is_noop() {
+    let mut cache = Cache::default();
+    let instrument_id = InstrumentId::from("AUD/USD.SIM");
+
+    cache.purge_instrument(instrument_id);
+
+    assert!(cache.instrument(&instrument_id).is_none());
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
+fn test_purge_instrument_refuses_when_orders_open() {
+    let mut cache = Cache::default();
+    let audusd_sim = audusd_sim();
+    let instrument_id = audusd_sim.id;
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+
+    cache.add_instrument(instrument).unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    order
+        .apply(OrderEventAny::Submitted(OrderSubmitted::default()))
+        .unwrap();
+    cache.update_order(&order).unwrap();
+    order
+        .apply(OrderEventAny::Accepted(OrderAccepted::default()))
+        .unwrap();
+    cache.update_order(&order).unwrap();
+    assert!(order.is_open());
+
+    cache.purge_instrument(instrument_id);
+
+    assert!(cache.instrument(&instrument_id).is_some());
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
+fn test_purge_instrument_refuses_when_orders_initialized_but_not_open() {
+    // Regression: orders in non-terminal states like INITIALIZED/SUBMITTED are not in
+    // `orders_open`, but purging would still leave them dangling without an instrument.
+    let mut cache = Cache::default();
+    let audusd_sim = audusd_sim();
+    let instrument_id = audusd_sim.id;
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+
+    cache.add_instrument(instrument).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    assert!(!order.is_open());
+    assert!(!order.is_closed());
+
+    cache.purge_instrument(instrument_id);
+
+    assert!(cache.instrument(&instrument_id).is_some());
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
+fn test_purge_instrument_refuses_when_positions_open() {
+    // Take the order through to FILLED so the order guard passes; the position remains
+    // open and must be the reason the purge is refused.
+    let mut cache = Cache::default();
+    let audusd_sim = audusd_sim();
+    let instrument_id = audusd_sim.id;
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let position_id = PositionId::new("P-OPEN-1");
+    let account_id = AccountId::new("SIM-001");
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    cache
+        .add_order(order.clone(), Some(position_id), None, false)
+        .unwrap();
+    order
+        .apply(TestOrderEventStubs::submitted(&order, account_id))
+        .unwrap();
+    cache.update_order(&order).unwrap();
+    order
+        .apply(TestOrderEventStubs::accepted(
+            &order,
+            account_id,
+            VenueOrderId::new("V-1"),
+        ))
+        .unwrap();
+    cache.update_order(&order).unwrap();
+    let filled = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        None,
+        Some(position_id),
+        Some(Price::from("1.00001")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    order.apply(filled.clone()).unwrap();
+    cache.update_order(&order).unwrap();
+    assert!(order.is_closed());
+
+    let position = Position::new(&instrument, filled.into());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    assert!(position.is_open());
+
+    cache.purge_instrument(instrument_id);
+
+    assert!(cache.instrument(&instrument_id).is_some());
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
+fn test_purge_instrument_clears_synthetic_only() {
+    // Synthetic instruments share the InstrumentId space; the absence guard checks both
+    // `instruments` and `synthetics`, so a synthetic-only entry must be purgeable.
+    let mut cache = Cache::default();
+    let synth = SyntheticInstrument::default();
+    let instrument_id = synth.id;
+    cache.add_synthetic(synth).unwrap();
+
+    assert!(cache.synthetic(&instrument_id).is_some());
+
+    cache.purge_instrument(instrument_id);
+
+    assert!(cache.synthetic(&instrument_id).is_none());
+    assert!(cache.check_integrity());
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_purge_instrument_clears_defi_pools_and_profilers(
+    test_pool: Pool,
+    test_pool_profiler: PoolProfiler,
+) {
+    let mut cache = Cache::default();
+    let instrument_id = test_pool.instrument_id;
+    cache.add_pool(test_pool).unwrap();
+    cache.add_pool_profiler(test_pool_profiler).unwrap();
+
+    assert!(cache.pool(&instrument_id).is_some());
+    assert!(cache.pool_profiler(&instrument_id).is_some());
+
+    cache.purge_instrument(instrument_id);
+
+    assert!(cache.pool(&instrument_id).is_none());
+    assert!(cache.pool_profiler(&instrument_id).is_none());
+    assert!(cache.check_integrity());
 }
 
 #[rstest]

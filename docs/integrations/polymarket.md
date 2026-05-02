@@ -537,6 +537,46 @@ The feature is enabled by default. Disable it by setting `auto_load_missing_inst
 `PolymarketDataClientConfig`. To preload a known set of markets at startup instead, supply
 `load_ids` or `event_slug_builder` on `PolymarketInstrumentProviderConfig`.
 
+### Purging instruments at runtime
+
+Polymarket auto-loads instruments on demand, so a long-running session keeps growing the cache as
+markets resolve, new markets appear, and strategies cycle through events. Use `cache.purge_instrument`
+to drop markets the strategy no longer tracks. The call removes the instrument record and every
+cache-owned map keyed by it (order book, quotes, trades, bars).
+
+```python
+class PolymarketHousekeeping(Strategy):
+    def on_position_closed(self, event: PositionClosed) -> None:
+        # Drop the market once the position is closed and you have no further interest.
+        instrument_id = event.instrument_id
+        self.unsubscribe_quote_ticks(instrument_id)
+        self.unsubscribe_order_book_deltas(instrument_id)
+        self.cache.purge_instrument(instrument_id)
+```
+
+Common triggers on Polymarket:
+
+- A market resolves and produces no further trades.
+- An event ends and the strategy rotates off its markets.
+- The strategy rotates a fixed-size watchlist and drops the oldest entry.
+
+The purge skips any instrument that still has non-terminal orders (initialized, submitted,
+accepted, emulated, released, or inflight) or non-closed positions, so it is safe to call without
+coordinating with the execution client. Active WebSocket subscriptions belong to the data engine.
+Unsubscribe before purging if you no longer want updates.
+
+The cache also exposes `purge_order`, `purge_position`, `purge_closed_orders`,
+`purge_closed_positions`, and `purge_account_events` for trimming closed execution state.
+For long-running Polymarket nodes, schedule the bulk purges from `LiveExecEngineConfig`
+(15 min interval, 60 min buffer is a sensible default). See
+[Cache: purging cached data](../concepts/cache.md#purging-cached-data) for the full set.
+
+:::warning
+The caller decides when an instrument is no longer needed. Purging an instrument that another
+actor, strategy, or engine still relies on causes missing instrument lookups and loses market-data
+history.
+:::
+
 ### Execution
 
 The execution adapter keeps a `user` channel connection for order and trade events and manages market

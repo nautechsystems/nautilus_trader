@@ -1275,6 +1275,99 @@ impl Cache {
         self.position_snapshots.remove(&position_id);
     }
 
+    /// Purges the instrument with the `instrument_id` from the cache (if found).
+    ///
+    /// All cache-owned data keyed by the instrument is removed: the instrument record,
+    /// any synthetic with the same id, order book and own-order-book state, quote/trade
+    /// histories, mark/index/funding price histories, instrument status, bars for any
+    /// `BarType` referencing the instrument, and the `instrument_orders` /
+    /// `instrument_positions` index entries.
+    ///
+    /// For safety, an instrument is prevented from being purged while any associated
+    /// order is non-terminal (anything not in `orders_closed`, including
+    /// initialized, submitted, accepted, emulated, released, or inflight states) or
+    /// any associated position is non-closed.
+    ///
+    /// Active subscriptions and other live data-engine state are not touched here;
+    /// those belong to the data and execution engines.
+    ///
+    /// # Warning
+    ///
+    /// Intended for actors and strategies that have their own lifecycle logic for
+    /// deciding when an instrument is no longer needed. Purging an instrument that any
+    /// other actor, strategy, or engine still relies on may cause incorrect behavior
+    /// (missing instrument lookups, lost market-data history). The caller is
+    /// responsible for ensuring the instrument is no longer in use before purging.
+    pub fn purge_instrument(&mut self, instrument_id: InstrumentId) {
+        #[cfg(feature = "defi")]
+        let defi_found = self.defi.pools.contains_key(&instrument_id)
+            || self.defi.pool_profilers.contains_key(&instrument_id);
+        #[cfg(not(feature = "defi"))]
+        let defi_found = false;
+
+        let found = self.instruments.contains_key(&instrument_id)
+            || self.synthetics.contains_key(&instrument_id)
+            || defi_found;
+
+        if !found {
+            log::warn!("Instrument {instrument_id} not found when purging");
+            return;
+        }
+
+        if let Some(orders) = self.index.instrument_orders.get(&instrument_id) {
+            let has_non_terminal = orders
+                .iter()
+                .any(|client_order_id| !self.index.orders_closed.contains(client_order_id));
+
+            if has_non_terminal {
+                log::warn!(
+                    "Instrument {instrument_id} has non-terminal orders when purging, skipping purge"
+                );
+                return;
+            }
+        }
+
+        if let Some(positions) = self.index.instrument_positions.get(&instrument_id) {
+            let has_non_closed = positions
+                .iter()
+                .any(|position_id| !self.index.positions_closed.contains(position_id));
+
+            if has_non_closed {
+                log::warn!(
+                    "Instrument {instrument_id} has non-closed positions when purging, skipping purge"
+                );
+                return;
+            }
+        }
+
+        self.instruments.remove(&instrument_id);
+        self.synthetics.remove(&instrument_id);
+        self.books.remove(&instrument_id);
+        self.own_books.remove(&instrument_id);
+        self.quotes.remove(&instrument_id);
+        self.trades.remove(&instrument_id);
+        self.mark_prices.remove(&instrument_id);
+        self.index_prices.remove(&instrument_id);
+        self.funding_rates.remove(&instrument_id);
+        self.instrument_statuses.remove(&instrument_id);
+        self.greeks.remove(&instrument_id);
+        self.option_greeks.remove(&instrument_id);
+
+        self.bars
+            .retain(|bar_type, _| bar_type.instrument_id() != instrument_id);
+
+        #[cfg(feature = "defi")]
+        {
+            self.defi.pools.remove(&instrument_id);
+            self.defi.pool_profilers.remove(&instrument_id);
+        }
+
+        self.index.instrument_orders.remove(&instrument_id);
+        self.index.instrument_positions.remove(&instrument_id);
+
+        log::info!("Purged instrument {instrument_id}");
+    }
+
     /// Purges all account state events which are outside the lookback window.
     ///
     /// Only events which are outside the lookback window will be purged.
