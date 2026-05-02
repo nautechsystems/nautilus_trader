@@ -15,6 +15,7 @@
 
 //! Common type aliases for Betfair identifiers and values.
 
+use nautilus_model::identifiers::ClientOrderId;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 use serde_json;
@@ -73,6 +74,17 @@ pub type CustomerStrategyRef = String;
 
 /// Handicap value for Asian handicap markets.
 pub type Handicap = Decimal;
+
+/// Cached order snapshot fed into `OcmState::sync_from_orders`.
+#[derive(Debug, Clone)]
+pub struct OrderSyncEntry {
+    pub bet_id: String,
+    pub client_order_id: ClientOrderId,
+    pub filled_qty: Decimal,
+    pub avg_px: Decimal,
+    pub is_closed: bool,
+    pub trade_ids: Vec<String>,
+}
 
 /// Deserializes an `Option<String>` from either a JSON string or number.
 ///

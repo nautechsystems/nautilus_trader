@@ -405,14 +405,33 @@ impl FillTracker {
 
     /// Pre-populates state for a bet from existing order data.
     ///
-    /// Called during reconnect sync so that the first stream update
-    /// computes a correct incremental fill instead of treating the
-    /// cumulative matched size as a new fill.
+    /// Monotonic in `filled_qty`: keeps the larger of the cached and
+    /// in-memory values so a cache that lags the tracker (engine has
+    /// not yet processed an emitted fill) cannot regress it.
     pub fn sync_order(&mut self, bet_id: &str, filled_qty: Decimal, avg_px: Decimal) {
-        self.filled_qty.insert(bet_id.to_string(), filled_qty);
+        let current = self
+            .filled_qty
+            .get(bet_id)
+            .copied()
+            .unwrap_or(Decimal::ZERO);
 
-        if avg_px > Decimal::ZERO {
-            self.avg_px.insert(bet_id.to_string(), avg_px);
+        if filled_qty > current {
+            self.filled_qty.insert(bet_id.to_string(), filled_qty);
+            if avg_px > Decimal::ZERO {
+                self.avg_px.insert(bet_id.to_string(), avg_px);
+            }
+        }
+    }
+
+    /// Seeds the trade-id dedup set so fills already published via another
+    /// channel are not re-emitted when the post-reconnect image arrives.
+    pub fn seed_published_trade_ids<I, S>(&mut self, trade_ids: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        for id in trade_ids {
+            self.published_trade_ids.insert(id.into());
         }
     }
 
@@ -2305,6 +2324,36 @@ mod tests {
     }
 
     #[rstest]
+    fn test_fill_tracker_sync_order_is_monotonic() {
+        let mut tracker = FillTracker::new();
+
+        // Tracker already has 10 from prior stream activity
+        tracker.sync_order("123456", Decimal::new(10, 0), Decimal::new(25, 1));
+
+        // Cache lags (engine hasn't processed the last fill yet) and reports 5
+        tracker.sync_order("123456", Decimal::new(5, 0), Decimal::new(20, 1));
+
+        // Next OCM with sm=15 must emit incremental fill of 5, not 10
+        let uo = make_test_uo(
+            "123456",
+            Decimal::new(20, 0),
+            Some(Decimal::new(15, 0)),
+            Some(Decimal::new(25, 1)),
+        );
+        let result = tracker.maybe_fill_report(
+            &uo,
+            uo.s,
+            InstrumentId::from("1.234567-123456-0.0.BETFAIR"),
+            AccountId::from("BETFAIR-001"),
+            Currency::from("GBP"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        let fill = result.expect("should emit incremental fill");
+        assert_eq!(fill.last_qty, Quantity::from("5.00"));
+    }
+
+    #[rstest]
     fn test_fill_tracker_sync_order_allows_incremental_fill() {
         let mut tracker = FillTracker::new();
 
@@ -2329,6 +2378,38 @@ mod tests {
         assert!(result.is_some(), "should emit fill for new matched qty");
         let fill = result.unwrap();
         assert_eq!(fill.last_qty, Quantity::from("5.00"));
+    }
+
+    #[rstest]
+    fn test_fill_tracker_seed_published_trade_ids_blocks_replay() {
+        let mut tracker = FillTracker::new();
+
+        let uo_for_id = make_test_uo(
+            "123456",
+            Decimal::new(20, 0),
+            Some(Decimal::new(10, 0)),
+            Some(Decimal::new(25, 1)),
+        );
+        let trade_id = make_trade_id(&uo_for_id);
+
+        // Seeded trade-id must block even with an empty FillTracker
+        // (cumulative-size gate would otherwise let this fill through)
+        tracker.seed_published_trade_ids([trade_id.to_string()]);
+
+        let result = tracker.maybe_fill_report(
+            &uo_for_id,
+            uo_for_id.s,
+            InstrumentId::from("1.234567-123456-0.0.BETFAIR"),
+            AccountId::from("BETFAIR-001"),
+            Currency::from("GBP"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        assert!(
+            result.is_none(),
+            "seeded trade-id should suppress duplicate fill",
+        );
     }
 
     #[rstest]
