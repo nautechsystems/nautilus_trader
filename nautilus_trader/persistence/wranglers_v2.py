@@ -140,6 +140,7 @@ class OrderBookDeltaDataWranglerV2(WranglerBase):
         ts_event = (
             pd.to_datetime(df["ts_event"], utc=True, format="mixed")
             .dt.tz_localize(None)
+            .astype("datetime64[ns]")
             .astype("int64")
         ).to_numpy(dtype="uint64")
 
@@ -147,6 +148,7 @@ class OrderBookDeltaDataWranglerV2(WranglerBase):
             ts_init = (
                 pd.to_datetime(df["ts_init"], utc=True, format="mixed")
                 .dt.tz_localize(None)
+                .astype("datetime64[ns]")
                 .astype("int64")
             ).to_numpy(dtype="uint64")
         else:
@@ -325,6 +327,7 @@ class OrderBookDepth10DataWranglerV2(WranglerBase):
         ts_event = (
             pd.to_datetime(df["ts_event"], utc=True, format="mixed")
             .dt.tz_localize(None)
+            .astype("datetime64[ns]")
             .astype("int64")
         ).to_numpy(dtype="uint64")
 
@@ -332,6 +335,7 @@ class OrderBookDepth10DataWranglerV2(WranglerBase):
             ts_init = (
                 pd.to_datetime(df["ts_init"], utc=True, format="mixed")
                 .dt.tz_localize(None)
+                .astype("datetime64[ns]")
                 .astype("int64")
             ).to_numpy(dtype="uint64")
         else:
@@ -500,6 +504,7 @@ class QuoteTickDataWranglerV2(WranglerBase):
         ts_event = (
             pd.to_datetime(df["ts_event"], utc=True, format="mixed")
             .dt.tz_localize(None)
+            .astype("datetime64[ns]")
             .astype("int64")
         ).to_numpy(dtype="uint64")
 
@@ -507,6 +512,7 @@ class QuoteTickDataWranglerV2(WranglerBase):
             ts_init = (
                 pd.to_datetime(df["ts_init"], utc=True, format="mixed")
                 .dt.tz_localize(None)
+                .astype("datetime64[ns]")
                 .astype("int64")
             ).to_numpy(dtype="uint64")
         else:
@@ -648,6 +654,7 @@ class TradeTickDataWranglerV2(WranglerBase):
         ts_event = (
             pd.to_datetime(df["ts_event"], utc=True, format="mixed")
             .dt.tz_localize(None)
+            .astype("datetime64[ns]")
             .astype("int64")
         ).to_numpy(dtype="uint64")
 
@@ -655,6 +662,7 @@ class TradeTickDataWranglerV2(WranglerBase):
             ts_init = (
                 pd.to_datetime(df["ts_init"], utc=True, format="mixed")
                 .dt.tz_localize(None)
+                .astype("datetime64[ns]")
                 .astype("int64")
             ).to_numpy(dtype="uint64")
         else:
@@ -795,6 +803,7 @@ class BarDataWranglerV2(WranglerBase):
         ts_event = (
             pd.to_datetime(df["ts_event"], utc=True, format="mixed")
             .dt.tz_localize(None)
+            .astype("datetime64[ns]")
             .astype("int64")
         ).to_numpy(dtype="uint64")
 
@@ -802,6 +811,7 @@ class BarDataWranglerV2(WranglerBase):
             ts_init = (
                 pd.to_datetime(df["ts_init"], utc=True, format="mixed")
                 .dt.tz_localize(None)
+                .astype("datetime64[ns]")
                 .astype("int64")
             ).to_numpy(dtype="uint64")
         else:
