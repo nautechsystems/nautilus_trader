@@ -312,10 +312,14 @@ class TestBacktestEngine:
         engine.run()
 
         # Assert
-        msg = messages[10]
-        assert msg.__class__.__name__ == "SignalCounter"
-        assert msg.ts_init == 1359676800000000000
-        assert msg.ts_event == 1359676800000000000
+        expected_ts = 1359676800000000000
+        msg = next(
+            m
+            for m in messages
+            if m.__class__.__name__ == "SignalCounter" and m.ts_event == expected_ts
+        )
+        assert msg.ts_init == expected_ts
+        assert msg.ts_event == expected_ts
 
     def test_set_instance_id(self):
         # Arrange

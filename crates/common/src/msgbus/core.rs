@@ -666,7 +666,7 @@ mod tests {
     use crate::msgbus::{
         self, ShareableMessageHandler, get_message_bus,
         matching::is_matching_backtracking,
-        stubs::{get_call_check_handler, get_stub_shareable_handler},
+        stubs::{get_any_saving_handler, get_call_check_handler, get_stub_shareable_handler},
         subscriptions_count_any,
     };
 
@@ -910,6 +910,71 @@ mod tests {
         assert_eq!(matches.len(), 2);
         assert_eq!(matches[0].handler_id, Ustr::from("3"));
         assert_eq!(matches[1].handler_id, Ustr::from("1"));
+    }
+
+    #[rstest]
+    fn test_late_wildcard_subscription_receives_cached_topic() {
+        let msgbus = get_message_bus();
+        let topic = "data.instrument.POLYMARKET.TEST-SYMBOL";
+
+        let (early_handler, early_saver) =
+            get_any_saving_handler::<String>(Some(Ustr::from("early")));
+        msgbus::subscribe_any("data.*.POLYMARKET.*".into(), early_handler, None);
+
+        msgbus::publish_any(topic.into(), &"ONE".to_string());
+
+        let (late_handler, late_saver) = get_any_saving_handler::<String>(Some(Ustr::from("late")));
+        msgbus::subscribe_any("data.instrument.POLYMARKET.*".into(), late_handler, None);
+
+        msgbus::publish_any(topic.into(), &"TWO".to_string());
+
+        assert_eq!(early_saver.get_messages(), vec!["ONE", "TWO"]);
+        assert_eq!(late_saver.get_messages(), vec!["TWO"]);
+
+        let topic_mstr: MStr<Topic> = topic.into();
+        let cached = msgbus.borrow_mut().matching_subscriptions(topic_mstr);
+        assert_eq!(cached.len(), 2);
+    }
+
+    #[rstest]
+    fn test_late_wildcard_backfills_into_multiple_cached_topics() {
+        let msgbus = get_message_bus();
+        let topics = ["data.A", "data.B", "data.C"];
+
+        let (early_handler, early_saver) =
+            get_any_saving_handler::<String>(Some(Ustr::from("early")));
+        msgbus::subscribe_any("data.*".into(), early_handler, None);
+
+        for topic in &topics {
+            msgbus::publish_any((*topic).into(), &(*topic).to_string());
+        }
+
+        let (late_handler, late_saver) = get_any_saving_handler::<String>(Some(Ustr::from("late")));
+        msgbus::subscribe_any("data.*".into(), late_handler, None);
+
+        for topic in &topics {
+            msgbus::publish_any((*topic).into(), &format!("{topic}-2"));
+        }
+
+        assert_eq!(
+            early_saver.get_messages(),
+            vec![
+                "data.A", "data.B", "data.C", "data.A-2", "data.B-2", "data.C-2"
+            ],
+        );
+        assert_eq!(
+            late_saver.get_messages(),
+            vec!["data.A-2", "data.B-2", "data.C-2"]
+        );
+
+        for topic in &topics {
+            let topic_mstr: MStr<Topic> = (*topic).into();
+            assert_eq!(
+                msgbus.borrow_mut().matching_subscriptions(topic_mstr).len(),
+                2,
+                "topic {topic} should have both subscribers cached",
+            );
+        }
     }
 
     /// A simple reference model for subscription behavior.

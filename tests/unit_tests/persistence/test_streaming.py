@@ -99,7 +99,7 @@ class TestPersistenceStreaming:
         expected = {
             "AccountState": 387,
             "BettingInstrument": 1,
-            "ComponentStateChanged": 34,
+            "ComponentStateChanged": 58,
             "OrderAccepted": 192,
             "OrderBookDelta": 1307,
             "OrderCanceled": 67,
@@ -453,7 +453,7 @@ class TestPersistenceStreaming:
         expected = {
             "AccountState": 387,
             "BettingInstrument": 1,
-            "ComponentStateChanged": 34,
+            "ComponentStateChanged": 58,
             "OrderAccepted": 192,
             "OrderBookDelta": 1307,
             "OrderCanceled": 67,

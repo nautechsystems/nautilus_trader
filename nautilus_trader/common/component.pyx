@@ -2721,7 +2721,8 @@ cdef class MessageBus:
         cdef list subs
 
         for pattern in patterns:
-            if is_matching(topic, pattern):
+            # Match each cached concrete topic against the new (possibly wildcard) subscription
+            if is_matching(pattern, topic):
                 subs = list(self._patterns[pattern])
                 subs.append(sub)
                 subs = sorted(subs, reverse=True)

@@ -535,6 +535,33 @@ mod tests {
     }
 
     #[rstest]
+    fn test_topic_router_late_distinct_wildcard_receives_cached_topic() {
+        let mut router = TopicRouter::<String>::new();
+        let topic: MStr<Topic> = "data.instrument.POLYMARKET.TEST-SYMBOL".into();
+
+        let early = Rc::new(RefCell::new(Vec::new()));
+        let early_clone = early.clone();
+        let early_handler = TypedHandler::from_with_id("early", move |msg: &String| {
+            early_clone.borrow_mut().push(msg.clone());
+        });
+        router.subscribe("data.*.POLYMARKET.*".into(), early_handler, 0);
+
+        router.publish(topic, &"ONE".to_string());
+
+        let late = Rc::new(RefCell::new(Vec::new()));
+        let late_clone = late.clone();
+        let late_handler = TypedHandler::from_with_id("late", move |msg: &String| {
+            late_clone.borrow_mut().push(msg.clone());
+        });
+        router.subscribe("data.instrument.POLYMARKET.*".into(), late_handler, 0);
+
+        router.publish(topic, &"TWO".to_string());
+
+        assert_eq!(*early.borrow(), vec!["ONE", "TWO"]);
+        assert_eq!(*late.borrow(), vec!["TWO"]);
+    }
+
+    #[rstest]
     fn test_topic_router_cache_invalidated_on_unsubscribe() {
         let mut router = TopicRouter::<i32>::new();
         let received = Rc::new(RefCell::new(0));
