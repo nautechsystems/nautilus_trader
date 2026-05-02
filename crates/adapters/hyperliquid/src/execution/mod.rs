@@ -946,6 +946,13 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let client_order_id = cmd.client_order_id;
         let old_venue_order_id = venue_order_id;
 
+        // Mark the old venue_order_id as in-flight before the HTTP await so
+        // the WS cancel handler can suppress the cancel-replace old leg even
+        // when the WS message arrives before the HTTP response. The marker is
+        // cleared on any failure path so a failed modify never leaves stale
+        // race state behind.
+        dispatch_state.mark_pending_modify(client_order_id, old_venue_order_id);
+
         self.spawn_task("modify_order", async move {
             let action = HyperliquidExecAction::Modify {
                 modify: HyperliquidExecModifyOrderRequest {
@@ -959,22 +966,19 @@ impl ExecutionClient for HyperliquidExecutionClient {
                     if response.is_ok() {
                         if let Some(inner_error) = extract_inner_error(&response) {
                             log::warn!("Order modification rejected by exchange: {inner_error}");
+                            dispatch_state.clear_pending_modify(&client_order_id);
                         } else {
-                            // Mark the old venue_order_id as in-flight only
-                            // after a confirmed HTTP success. A failed modify
-                            // never leaves stale race state behind, so the
-                            // cancel-before-accept branch never fires on a
-                            // cancel following an independent failed modify.
-                            dispatch_state.mark_pending_modify(client_order_id, old_venue_order_id);
                             log::info!("Order modified successfully: {response:?}");
                         }
                     } else {
                         let error_msg = extract_error_message(&response);
                         log::warn!("Order modification rejected by exchange: {error_msg}");
+                        dispatch_state.clear_pending_modify(&client_order_id);
                     }
                 }
                 Err(e) => {
                     log::warn!("Order modification HTTP request failed: {e}");
+                    dispatch_state.clear_pending_modify(&client_order_id);
                 }
             }
 

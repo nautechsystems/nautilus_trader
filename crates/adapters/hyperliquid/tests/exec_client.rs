@@ -102,6 +102,12 @@ struct TestServerState {
     /// defaults to `{"balances": []}` when unset.
     spot_clearinghouse_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     rate_limit_after: Arc<AtomicUsize>,
+    /// When set, `handle_exchange` awaits `pause_release` before returning.
+    /// Lets a test hold the response so it can assert on synchronous state
+    /// established by the calling thread before the spawned HTTP task can
+    /// observe the response.
+    pause_next_exchange: Arc<std::sync::atomic::AtomicBool>,
+    pause_release: Arc<tokio::sync::Notify>,
 }
 
 impl Default for TestServerState {
@@ -118,6 +124,8 @@ impl Default for TestServerState {
             order_status_response: Arc::new(tokio::sync::Mutex::new(None)),
             spot_clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
+            pause_next_exchange: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            pause_release: Arc::new(tokio::sync::Notify::new()),
         }
     }
 }
@@ -244,11 +252,17 @@ async fn handle_exchange(
     State(state): State<TestServerState>,
     body: axum::body::Bytes,
 ) -> Response {
-    let mut count = state.exchange_request_count.lock().await;
-    *count += 1;
+    // Increment the counter and release the lock immediately so an
+    // arbitrarily long pause inside this handler (see `pause_next_exchange`)
+    // does not block tests that read the counter.
+    let count_snapshot = {
+        let mut count = state.exchange_request_count.lock().await;
+        *count += 1;
+        *count
+    };
 
     let limit_after = state.rate_limit_after.load(Ordering::Relaxed);
-    if *count > limit_after {
+    if count_snapshot > limit_after {
         return (
             axum::http::StatusCode::TOO_MANY_REQUESTS,
             Json(json!({
@@ -317,11 +331,21 @@ async fn handle_exchange(
         .into_response();
     }
 
+    let action = request_body.get("action").unwrap();
+    let action_type = action.get("type").and_then(|t| t.as_str());
+
     if state.inner_order_error_next.swap(false, Ordering::Relaxed) {
+        // Match the response `type` to the action type so the inner-error
+        // shape mirrors what the venue would actually emit.
+        let response_type = match action_type {
+            Some("modify") => "modify",
+            Some("cancel" | "cancelByCloid") => "cancel",
+            _ => "order",
+        };
         return Json(json!({
             "status": "ok",
             "response": {
-                "type": "order",
+                "type": response_type,
                 "data": {
                     "statuses": [{
                         "error": "Order rejected: insufficient margin"
@@ -332,8 +356,9 @@ async fn handle_exchange(
         .into_response();
     }
 
-    let action = request_body.get("action").unwrap();
-    let action_type = action.get("type").and_then(|t| t.as_str());
+    if state.pause_next_exchange.swap(false, Ordering::Relaxed) {
+        state.pause_release.notified().await;
+    }
 
     match action_type {
         Some("order") => Json(json!({
@@ -1099,6 +1124,86 @@ async fn test_submit_order_inner_error_cleans_up_dispatch_state() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
+async fn test_modify_order_marks_pending_modify_before_http_completes() {
+    // The pending-modify marker must be visible while the modify HTTP call
+    // is still in flight. Otherwise a `CANCELED(old_voi)` arriving via WS
+    // during the HTTP window slips past the cancel-before-accept
+    // suppression and emits a spurious `OrderCanceled`.
+    //
+    // Pause the mock server so the spawned HTTP task is held mid-await
+    // when we assert. A regression that defers the marker until after the
+    // HTTP success path would leave the marker unset under that hold and
+    // fail this test.
+    let state = TestServerState::default();
+    state.pause_next_exchange.store(true, Ordering::Relaxed);
+    let pause_release = state.pause_release.clone();
+    let exchange_request_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let order = make_limit_order("O-MOD-PRE");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let old_voi = VenueOrderId::from("88888");
+    let cmd = ModifyOrder::new(
+        order.trader_id(),
+        Some(ClientId::from("HYPERLIQUID")),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(old_voi),
+        Some(Quantity::from("0.0002")),
+        Some(Price::from("56800.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.modify_order(cmd).unwrap();
+
+    // Wait until the mock server has actually received the modify request,
+    // proving the spawned HTTP task is suspended in `post_action_exec`.
+    // Polling state set synchronously by `modify_order` (such as
+    // `pending_modify`) would not prove the marker is observable while the
+    // HTTP call is in flight: a regression that defers the marker until
+    // after the HTTP success path could still pass on a fast runtime.
+    wait_until_async(
+        move || {
+            let count = exchange_request_count.clone();
+            async move { *count.lock().await >= 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(
+        client
+            .ws_dispatch_state()
+            .pending_modify(&order.client_order_id()),
+        Some(old_voi),
+        "marker must be set while the HTTP modify is still in flight",
+    );
+
+    pause_release.notify_one();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_modify_order_success_marks_pending_modify() {
     // After a successful modify HTTP round-trip, the dispatch state must
     // carry a pending-modify marker keyed on `client_order_id` and pointing
@@ -1210,6 +1315,117 @@ async fn test_modify_order_rejection_does_not_mark_pending_modify() {
             .pending_modify(&order.client_order_id())
             .is_none(),
         "failed modify must not leave a pending-modify marker",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_modify_order_inner_error_clears_pending_modify() {
+    // The exchange returned status="ok" but the inner statuses[0] carries an
+    // error object. The marker is set before the HTTP await, so the
+    // extract_inner_error branch must clear it; otherwise a later legitimate
+    // CANCELED for the same client_order_id is wrongly suppressed.
+    let state = TestServerState::default();
+    state.inner_order_error_next.store(true, Ordering::Relaxed);
+    let addr = start_mock_server(state).await;
+
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let order = make_limit_order("O-MOD-INNER-ERR");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let old_voi = VenueOrderId::from("66666");
+    let cmd = ModifyOrder::new(
+        order.trader_id(),
+        Some(ClientId::from("HYPERLIQUID")),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(old_voi),
+        Some(Quantity::from("0.0002")),
+        Some(Price::from("56800.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.modify_order(cmd).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert!(
+        client
+            .ws_dispatch_state()
+            .pending_modify(&order.client_order_id())
+            .is_none(),
+        "inner-error modify must not leave a pending-modify marker",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_modify_order_transport_failure_clears_pending_modify() {
+    // The HTTP transport itself fails (503). The marker is set before the
+    // HTTP await, so the Err branch must clear it; otherwise a later
+    // legitimate CANCELED for the same client_order_id is wrongly suppressed.
+    let state = TestServerState::default();
+    state.fail_next_exchange.store(true, Ordering::Relaxed);
+    let addr = start_mock_server(state).await;
+
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let order = make_limit_order("O-MOD-TRANSPORT");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let old_voi = VenueOrderId::from("55555");
+    let cmd = ModifyOrder::new(
+        order.trader_id(),
+        Some(ClientId::from("HYPERLIQUID")),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(old_voi),
+        Some(Quantity::from("0.0002")),
+        Some(Price::from("56800.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.modify_order(cmd).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert!(
+        client
+            .ws_dispatch_state()
+            .pending_modify(&order.client_order_id())
+            .is_none(),
+        "transport-failure modify must not leave a pending-modify marker",
     );
 
     client.disconnect().await.unwrap();

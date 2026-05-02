@@ -1561,8 +1561,8 @@ async def test_modify_order_cancel_replace_handles_cancel_before_accept(
     for an in-flight modify, the adapter must suppress the old leg's cancel and still
     route the subsequent ACCEPTED as OrderUpdated.
 
-    The pending-modify marker is populated after the successful modify HTTP call, so the
-    race branch never fires on a failed modify.
+    The pending-modify marker is populated before the modify HTTP call and cleared on
+    failure, so the race branch never fires on a failed modify.
 
     """
     # Arrange
@@ -1623,7 +1623,7 @@ async def test_modify_order_cancel_replace_handles_cancel_before_accept(
     )
 
     try:
-        # Act - successful modify call populates the pending marker
+        # Act - modify call populates the pending marker before the HTTP await
         await client._modify_order(modify_command)
         assert client._pending_modify_keys[order.client_order_id.value] == old_voi.value
 
@@ -1641,6 +1641,178 @@ async def test_modify_order_cancel_replace_handles_cancel_before_accept(
         assert cache.venue_order_id(order.client_order_id) == new_voi
         assert order.client_order_id.value not in client._terminal_orders
         assert order.client_order_id.value not in client._pending_modify_keys
+    finally:
+        await client._disconnect()
+
+
+def _build_canceled_event_pyo3(
+    client,
+    instrument,
+    client_order_id,
+    venue_order_id,
+):
+    event = OrderCanceled(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=client_order_id,
+        venue_order_id=venue_order_id,
+        account_id=client.account_id,
+        event_id=TestIdStubs.uuid(),
+        ts_event=0,
+        ts_init=0,
+    )
+    return nautilus_pyo3.OrderCanceled.from_dict(OrderCanceled.to_dict(event))
+
+
+@pytest.mark.asyncio
+async def test_handle_order_canceled_pyo3_suppresses_cancel_before_accept(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    The WS direct OrderCanceled handler must suppress the old leg of an in-flight
+    cancel-replace modify so a spurious OrderCanceled does not fire while
+    `_pending_modify_keys` still tracks the old venue_order_id.
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-WS-RACE-001"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00020"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    old_voi = VenueOrderId("3000")
+    cache.add_venue_order_id(order.client_order_id, old_voi)
+    client._accepted_orders.add(order.client_order_id.value)
+    client._pending_modify_keys[order.client_order_id.value] = old_voi.value
+
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    pyo3_event = _build_canceled_event_pyo3(client, instrument, order.client_order_id, old_voi)
+
+    try:
+        # Act
+        client._handle_order_canceled_pyo3(pyo3_event)
+
+        # Assert
+        assert captured == []
+        assert order.client_order_id.value not in client._terminal_orders
+        assert client._pending_modify_keys[order.client_order_id.value] == old_voi.value
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_handle_order_canceled_pyo3_suppresses_stale_cancel_after_replacement(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    Once the replacement ACCEPTED has advanced the cached venue_order_id past the WS
+    direct CANCELED's venue_order_id, the handler must drop the stale leg even though
+    `_pending_modify_keys` was already cleared by the OrderUpdated path.
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-WS-STALE-001"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00020"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    old_voi = VenueOrderId("4000")
+    new_voi = VenueOrderId("5000")
+    cache.add_venue_order_id(order.client_order_id, new_voi)
+    client._accepted_orders.add(order.client_order_id.value)
+
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    pyo3_event = _build_canceled_event_pyo3(client, instrument, order.client_order_id, old_voi)
+
+    try:
+        # Act
+        client._handle_order_canceled_pyo3(pyo3_event)
+
+        # Assert
+        assert captured == []
+        assert order.client_order_id.value not in client._terminal_orders
+        assert cache.venue_order_id(order.client_order_id) == new_voi
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_handle_order_canceled_pyo3_emits_for_genuine_cancel(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    A genuine WS CANCELED with no in-flight modify and a matching cached venue_order_id
+    must still emit OrderCanceled and mark the order terminal.
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-WS-CXL-001"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00020"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    voi = VenueOrderId("6000")
+    cache.add_venue_order_id(order.client_order_id, voi)
+    client._accepted_orders.add(order.client_order_id.value)
+
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    pyo3_event = _build_canceled_event_pyo3(client, instrument, order.client_order_id, voi)
+
+    try:
+        # Act
+        client._handle_order_canceled_pyo3(pyo3_event)
+
+        # Assert
+        canceled_events = [e for e in captured if isinstance(e, OrderCanceled)]
+        assert len(canceled_events) == 1
+        assert canceled_events[0].venue_order_id == voi
+        assert order.client_order_id.value in client._terminal_orders
     finally:
         await client._disconnect()
 

@@ -156,10 +156,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._accepted_orders: nautilus_pyo3.FifoCache = nautilus_pyo3.FifoCache()
         self._terminal_orders: nautilus_pyo3.FifoCache = nautilus_pyo3.FifoCache()
         self._pending_filled: set[str] = set()
-        # Cloid to old venue_order_id.value for in-flight Hyperliquid modifies,
-        # populated after a successful modify HTTP call so the WS handler can
-        # suppress the old leg of a cancel-replace when CANCELED(old_voi) arrives
-        # before the replacement ACCEPTED(new_voi). See GH-3827.
+        # client_order_id.value to old venue_order_id.value for in-flight
+        # Hyperliquid modifies, populated before the modify HTTP call and
+        # cleared on either the replacement ACCEPTED(new_voi) or any modify
+        # failure. The WS handler uses it to suppress the old leg of a
+        # cancel-replace when CANCELED(old_voi) arrives before the replacement
+        # ACCEPTED(new_voi). See GH-3827.
         self._pending_modify_keys: dict[str, str] = {}
 
         self._fee_refresh_task: asyncio.Task | None = None
@@ -1024,7 +1026,24 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             self._log.debug(f"Ignoring duplicate OrderCanceled for {event.client_order_id!r}")
             return
 
-        # Suppress cancel-before-accept leg of a Hyperliquid cancel-replace modify
+        # Stale cancel suppression: if the cached venue_order_id has already advanced
+        # past the event's venue_order_id, the CANCELED refers to the old leg of a
+        # Hyperliquid cancel-replace modify already routed through OrderUpdated.
+        cached_voi = self._cache.venue_order_id(event.client_order_id)
+        if (
+            cached_voi is not None
+            and event.venue_order_id is not None
+            and event.venue_order_id != cached_voi
+        ):
+            self._log.debug(
+                f"Skipping stale OrderCanceled for {event.venue_order_id!r} "
+                f"(cached {cached_voi!r}) on {event.client_order_id!r}",
+            )
+            return
+
+        # Cancel-before-accept race: the pending marker is set before the modify HTTP
+        # call and removed on failure, so an in-flight modify suppresses its old leg
+        # CANCELED while a failed modify never falls here.
         pending_old_voi = self._pending_modify_keys.get(key)
         if (
             pending_old_voi is not None
@@ -1212,8 +1231,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             # Cancel-before-accept race: for an in-flight modify, Hyperliquid
             # may deliver CANCELED(old_voi) before the replacement ACCEPTED.
             # Suppress the old leg so the later ACCEPTED can route through the
-            # OrderUpdated path. The pending marker is only set after a
-            # confirmed HTTP success, so a failed modify never falls here.
+            # OrderUpdated path. The pending marker is set before the modify
+            # HTTP call and removed on failure, so a failed modify never falls
+            # here.
             pending_old_voi = self._pending_modify_keys.get(key)
             if (
                 pending_old_voi is not None
