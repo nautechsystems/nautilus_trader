@@ -28,7 +28,8 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            SubscribeBookDeltas, SubscribeInstrumentStatus, SubscribeTrades, UnsubscribeBookDeltas,
+            SubscribeBookDeltas, SubscribeInstrumentClose, SubscribeInstrumentStatus,
+            SubscribeTrades, UnsubscribeBookDeltas, UnsubscribeInstrumentClose,
             UnsubscribeInstrumentStatus, UnsubscribeTrades,
         },
     },
@@ -908,6 +909,27 @@ impl DataClient for BetfairDataClient {
     ) -> anyhow::Result<()> {
         log::info!(
             "Unsubscribe instrument status not supported for Betfair: {}",
+            cmd.instrument_id
+        );
+        Ok(())
+    }
+
+    fn subscribe_instrument_close(&mut self, cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
+        // Close transitions arrive via marketDefinition.status="CLOSED" on the
+        // existing market subscription; no separate venue subscription exists.
+        log::debug!(
+            "Instrument close included in book subscription for {}",
+            cmd.instrument_id
+        );
+        Ok(())
+    }
+
+    fn unsubscribe_instrument_close(
+        &mut self,
+        cmd: &UnsubscribeInstrumentClose,
+    ) -> anyhow::Result<()> {
+        log::info!(
+            "Unsubscribe instrument close not supported for Betfair: {}",
             cmd.instrument_id
         );
         Ok(())
