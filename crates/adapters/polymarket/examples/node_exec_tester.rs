@@ -39,7 +39,6 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
-use nautilus_network::websocket::TransportBackend;
 use nautilus_polymarket::{
     common::enums::SignatureType,
     config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
@@ -71,7 +70,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_config = PolymarketDataClientConfig {
         filters: vec![Arc::new(data_filter)],
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
     let data_factory = PolymarketDataClientFactory;
@@ -81,7 +79,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         account_id,
         signature_type: SignatureType::PolyGnosisSafe,
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
     let exec_factory = PolymarketExecutionClientFactory;
