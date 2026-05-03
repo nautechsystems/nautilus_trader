@@ -60,7 +60,8 @@ Released on TBD (UTC).
 - Improved Interactive Brokers Python 3.14 installation and integration test coverage
 - Improved live exec clients to log ERROR with `timeout_post_stop` hint when cancel tasks abort on disconnect
 - Improved `ExecTester` to refresh tracked orders from cache before modify/cancel-replace so they see venue acks
-- Improved live node biased select to dispatch exec commands ahead of market data
+- Optimized live node biased select to dispatch exec commands ahead of market data
+- Optimized live node loop by collapsing six maintenance timers into one shared maintenance dispatcher (Rust)
 - Upgraded `alloy` crate to v2.0.4
 - Upgraded `databento` crate to v0.49.0
 

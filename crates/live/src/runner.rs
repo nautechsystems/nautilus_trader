@@ -35,9 +35,9 @@
 //! exec branches polled ahead of data branches, so a strategy action
 //! (cancel, submit) is not delayed behind a market-data backlog when the
 //! select polls receivers each iteration. The two loops use slightly
-//! different cmd/evt sub-orders because `LiveNode::run` also folds in
-//! housekeeping timers and signal handling that `AsyncRunner::run` does
-//! not see; check each `select!` block for the exact order at that site.
+//! different cmd/evt sub-orders because `LiveNode::run` also folds in the
+//! maintenance timer and signal handling that `AsyncRunner::run` does not
+//! see; check each `select!` block for the exact order at that site.
 //!
 //! The runner can drive the event loop in two ways:
 //!
@@ -58,8 +58,8 @@
 //!   thread. Senders are cloneable and `Send`, but the `RefCell`-backed
 //!   TLS slots are not accessible from other threads.
 //! - Only one runner at a time should own the TLS slots on a given
-//!   thread. `bind_senders` unconditionally replaces the previous
-//!   contents, so the last caller wins.
+//!   thread. `bind_senders` overwrites any existing TLS contents on the
+//!   thread, so the last caller wins.
 
 use std::{fmt::Debug, sync::Arc};
 
