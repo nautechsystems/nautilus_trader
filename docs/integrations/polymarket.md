@@ -14,8 +14,10 @@ Today the repository exposes two Polymarket implementations:
 - The Rust-native adapter surface in `nautilus_trader.polymarket`, which NautilusTrader is
   consolidating toward.
 
-The two implementations overlap heavily, but they do not yet behave identically in every area.
+:::warning
+The two implementations overlap heavily, but they do not behave identically in every area.
 This guide calls out the current differences where they matter.
+:::
 
 NautilusTrader supports multiple Polymarket signature types for order signing, which gives
 flexibility for different wallet configurations while NautilusTrader handles signing and order
@@ -382,6 +384,25 @@ Polymarket enforces different precision constraints based on tick size and order
 - Tick sizes can change dynamically during market conditions, particularly when markets become one-sided.
 
 :::
+
+### Tick size change handling
+
+When a market's tick size changes (`tick_size_change` WebSocket event), old
+book levels can be invalid on the new grid (for example `0.505` fits a `0.001`
+tick but not a `0.01` tick). To keep old-grid prices out of the new epoch, the
+adapter treats the change as a book epoch transition:
+
+1. Publish the updated `BinaryOption` with the new `price_increment` and `price_precision`.
+2. Drop the local order book for the instrument.
+3. Mark the instrument as awaiting a fresh snapshot.
+4. Drop incremental `price_change` book deltas until the snapshot arrives.
+5. Reseed the book from the snapshot and resume normal processing.
+
+Trade ticks and the instrument update flow through unchanged. The Rust adapter
+keeps emitting `QuoteTick` events through the gap by reading `best_bid` and
+`best_ask` from each `price_change`. The Python adapter derives quotes from
+the local book, so quote subscribers see the same brief gap as the deltas
+(typically sub-second, until the venue snapshot arrives).
 
 ## Trades
 
