@@ -2457,7 +2457,7 @@ fn test_create_synthetic_trade_id_is_deterministic() {
 /// Regression guard: `create_synthetic_order_report` must propagate `fill.px` to
 /// `avg_px` on the resulting report. Without this, downstream
 /// `create_inferred_fill` calls on the synthetic order see both `avg_px` and
-/// `price` as `None` and emit "no avg_px or price available" warnings, producing
+/// `price` as `None` and emit "no `avg_px` or price available" warnings, producing
 /// no reconciliation fill for the position gap.
 #[rstest]
 fn test_create_synthetic_order_report_populates_avg_px() {

@@ -223,7 +223,7 @@ pub fn create_inferred_fill(
     )))
 }
 
-/// Creates an OrderAccepted event for reconciliation.
+/// Creates an `OrderAccepted` event for reconciliation.
 ///
 /// # Panics
 ///
@@ -250,7 +250,7 @@ pub fn create_reconciliation_accepted(
     ))
 }
 
-/// Creates an OrderRejected event for reconciliation.
+/// Creates an `OrderRejected` event for reconciliation.
 #[must_use]
 pub fn create_reconciliation_rejected(
     order: &OrderAny,
@@ -275,7 +275,7 @@ pub fn create_reconciliation_rejected(
     )))
 }
 
-/// Creates an OrderTriggered event for reconciliation.
+/// Creates an `OrderTriggered` event for reconciliation.
 #[must_use]
 pub fn create_reconciliation_triggered(
     order: &OrderAny,
@@ -296,7 +296,7 @@ pub fn create_reconciliation_triggered(
     ))
 }
 
-/// Creates an OrderCanceled event for reconciliation.
+/// Creates an `OrderCanceled` event for reconciliation.
 #[must_use]
 pub fn create_reconciliation_canceled(
     order: &OrderAny,
@@ -317,7 +317,7 @@ pub fn create_reconciliation_canceled(
     ))
 }
 
-/// Creates an OrderExpired event for reconciliation.
+/// Creates an `OrderExpired` event for reconciliation.
 #[must_use]
 pub fn create_reconciliation_expired(
     order: &OrderAny,
@@ -338,7 +338,7 @@ pub fn create_reconciliation_expired(
     ))
 }
 
-/// Creates an OrderUpdated event for reconciliation.
+/// Creates an `OrderUpdated` event for reconciliation.
 #[must_use]
 pub fn create_reconciliation_updated(
     order: &OrderAny,
@@ -855,7 +855,7 @@ fn calculate_incremental_fill_price(
     order.price()
 }
 
-/// Creates an OrderFilled event from a FillReport.
+/// Creates an `OrderFilled` event from a `FillReport`.
 ///
 /// This is used during reconciliation when a fill report is received from the venue.
 /// Returns `None` if the fill is a duplicate or would cause an overfill.

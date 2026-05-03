@@ -613,7 +613,7 @@ impl ExecutionEngine {
         let futures: Vec<_> = self
             .get_clients_mut()
             .into_iter()
-            .map(|client| client.connect())
+            .map(ExecutionClientAdapter::connect)
             .collect();
 
         let results = join_all(futures).await;
@@ -632,7 +632,7 @@ impl ExecutionEngine {
         let futures: Vec<_> = self
             .get_clients_mut()
             .into_iter()
-            .map(|client| client.disconnect())
+            .map(ExecutionClientAdapter::disconnect)
             .collect();
 
         let results = join_all(futures).await;
@@ -641,7 +641,7 @@ impl ExecutionEngine {
         if errors.is_empty() {
             Ok(())
         } else {
-            let error_msgs: Vec<_> = errors.iter().map(|e| e.to_string()).collect();
+            let error_msgs: Vec<_> = errors.iter().map(ToString::to_string).collect();
             anyhow::bail!(
                 "Failed to disconnect execution clients: {}",
                 error_msgs.join("; ")
@@ -1174,7 +1174,7 @@ impl ExecutionEngine {
 
     /// Reconciles a fill report received at runtime.
     ///
-    /// Finds the associated order, validates the fill, and generates an OrderFilled event
+    /// Finds the associated order, validates the fill, and generates an `OrderFilled` event
     /// if the fill is not a duplicate and won't cause an overfill. When the order is not
     /// in cache, an external order is bootstrapped from the fill so that venue-initiated
     /// closures (e.g. Hyperliquid liquidations) that arrive without a companion order
@@ -1388,13 +1388,13 @@ impl ExecutionEngine {
     /// Reconciles a position status report received at runtime.
     ///
     /// Compares the venue-reported position with cached positions and logs any discrepancies.
-    /// Handles both hedging (with venue_position_id) and netting (without) modes.
+    /// Handles both hedging (with `venue_position_id`) and netting (without) modes.
     pub fn reconcile_position_report(&mut self, report: &PositionStatusReport) {
         let cache = self.cache.borrow();
 
         let size_precision = cache
             .instrument(&report.instrument_id)
-            .map(|i| i.size_precision());
+            .map(InstrumentAny::size_precision);
 
         if report.venue_position_id.is_some() {
             self.reconcile_position_report_hedging(report, &cache);
@@ -1529,12 +1529,12 @@ impl ExecutionEngine {
             mass_status
                 .fill_reports()
                 .values()
-                .map(|v| v.len())
+                .map(Vec::len)
                 .sum::<usize>(),
             mass_status
                 .position_reports()
                 .values()
-                .map(|v| v.len())
+                .map(Vec::len)
                 .sum::<usize>()
         );
     }
