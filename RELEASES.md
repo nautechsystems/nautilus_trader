@@ -32,6 +32,7 @@ Released on TBD (UTC).
 - Fixed v2 wrangler timestamp resolution to force nanoseconds before the int64 cast for pandas 3 compatibility (#3970), thanks @gzenz
 - Fixed Betfair Rust adapter dropped fills on reconnect by resyncing the fill tracker from cache
 - Fixed Betfair Rust adapter panic on blank `customerOrderRef`/`rfo` by normalizing empty strings to `None`
+- Fixed Betfair Rust adapter spurious `OrderRejected` after OCM already reported a terminal state
 - Fixed Kraken symbol normalization for WS v2 compatibility (#3961), thanks @mcgrj
 - Fixed OKX missing `post_only` instrument status (#3966), thanks @jhavie
 - Fixed Polymarket V2 BUY overfill rejection via overfill-only `last_qty` snap on WS, REST, and buffered drain paths
@@ -57,7 +58,8 @@ Released on TBD (UTC).
 - Added `cargo-flamegraph` to workspace tools with pinned version
 - Added `simulation` feature on `nautilus-live` so the stress harness runs under `cfg(madsim)` for DST validation
 - Refined data engine request workflow (#3928), thanks @faysou
-- Avoided object materialization in Rust stream Feather to parquet conversion (#3954), thanks @faysou
+- Improved object materialization in Rust stream Feather to parquet conversion (#3954), thanks @faysou
+- Improved `OwnBookLadder` to defer error logging to callers, removing duplicate own-book error noise
 - Improved Betfair Rust adapter to suppress late HTTP acceptance at debug level
 - Improved Betfair Rust adapter to suppress noisy `instrument_close` subscribe/unsubscribe warnings
 - Improved Interactive Brokers Python 3.14 installation and integration test coverage

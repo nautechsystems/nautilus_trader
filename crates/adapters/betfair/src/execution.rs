@@ -1514,15 +1514,18 @@ impl ExecutionClient for BetfairExecutionClient {
                         return Ok(());
                     }
 
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        &format!("submit-order error: {e}"),
-                        ts_event,
-                        false,
-                    );
+                    let reason = format!("submit-order error: {e}");
+                    if should_emit_http_reject(&ocm_state, &client_order_id, &reason) {
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            &reason,
+                            ts_event,
+                            false,
+                        );
+                    }
                     return Ok(());
                 }
             };
@@ -1539,15 +1542,17 @@ impl ExecutionClient for BetfairExecutionClient {
                 if let Some(ir) = instruction_reports.first() {
                     if ir.status == InstructionReportStatus::Failure {
                         let reason = format_place_instruction_reason(ir, &report);
-                        let ts_event = clock.get_time_ns();
-                        emitter.emit_order_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            &reason,
-                            ts_event,
-                            false,
-                        );
+                        if should_emit_http_reject(&ocm_state, &client_order_id, &reason) {
+                            let ts_event = clock.get_time_ns();
+                            emitter.emit_order_rejected_event(
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                &reason,
+                                ts_event,
+                                false,
+                            );
+                        }
                         return Ok(());
                     }
 
@@ -1568,15 +1573,18 @@ impl ExecutionClient for BetfairExecutionClient {
                         None,
                         "unknown error",
                     );
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        &reason,
-                        ts_event,
-                        false,
-                    );
+
+                    if should_emit_http_reject(&ocm_state, &client_order_id, &reason) {
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            &reason,
+                            ts_event,
+                            false,
+                        );
+                    }
                 }
             } else if report.status == ExecutionReportStatus::Failure
                 || report.status == ExecutionReportStatus::ProcessedWithErrors
@@ -1587,15 +1595,18 @@ impl ExecutionClient for BetfairExecutionClient {
                     None,
                     "unknown error",
                 );
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    &reason,
-                    ts_event,
-                    false,
-                );
+
+                if should_emit_http_reject(&ocm_state, &client_order_id, &reason) {
+                    let ts_event = clock.get_time_ns();
+                    emitter.emit_order_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        &reason,
+                        ts_event,
+                        false,
+                    );
+                }
             }
 
             Ok(())
@@ -2302,16 +2313,19 @@ impl ExecutionClient for BetfairExecutionClient {
                     }
 
                     let ts_event = clock.get_time_ns();
+                    let reason = format!("submit-order-list error: {e}");
 
                     for (client_oid, strategy_id, _) in &order_snapshots {
-                        emitter.emit_order_rejected_event(
-                            *strategy_id,
-                            instrument_id,
-                            *client_oid,
-                            &format!("submit-order-list error: {e}"),
-                            ts_event,
-                            false,
-                        );
+                        if should_emit_http_reject(&ocm_state, client_oid, &reason) {
+                            emitter.emit_order_rejected_event(
+                                *strategy_id,
+                                instrument_id,
+                                *client_oid,
+                                &reason,
+                                ts_event,
+                                false,
+                            );
+                        }
                     }
                     return Ok(());
                 }
@@ -2329,14 +2343,16 @@ impl ExecutionClient for BetfairExecutionClient {
                     let ts_event = clock.get_time_ns();
 
                     for (client_oid, strategy_id, _) in &order_snapshots {
-                        emitter.emit_order_rejected_event(
-                            *strategy_id,
-                            instrument_id,
-                            *client_oid,
-                            &reason,
-                            ts_event,
-                            false,
-                        );
+                        if should_emit_http_reject(&ocm_state, client_oid, &reason) {
+                            emitter.emit_order_rejected_event(
+                                *strategy_id,
+                                instrument_id,
+                                *client_oid,
+                                &reason,
+                                ts_event,
+                                false,
+                            );
+                        }
                     }
                     return Ok(());
                 }
@@ -2373,15 +2389,17 @@ impl ExecutionClient for BetfairExecutionClient {
                         }
                         InstructionReportStatus::Failure => {
                             let reason = format_place_instruction_reason(ir, &report);
-                            let ts_event = clock.get_time_ns();
-                            emitter.emit_order_rejected_event(
-                                *strategy_id,
-                                instrument_id,
-                                *client_oid,
-                                &reason,
-                                ts_event,
-                                false,
-                            );
+                            if should_emit_http_reject(&ocm_state, client_oid, &reason) {
+                                let ts_event = clock.get_time_ns();
+                                emitter.emit_order_rejected_event(
+                                    *strategy_id,
+                                    instrument_id,
+                                    *client_oid,
+                                    &reason,
+                                    ts_event,
+                                    false,
+                                );
+                            }
                         }
                     }
                 }
@@ -2535,6 +2553,32 @@ fn should_emit_http_accept(
     {
         log::debug!(
             "Suppressing late HTTP acceptance for {client_order_id}: OCM already reported order state"
+        );
+        return false;
+    }
+
+    true
+}
+
+// Returns `false` if the OCM stream already reported on this order, so the
+// HTTP rejection event should be suppressed to avoid an `InvalidStateTrigger`
+// against the local order state machine. Mirrors `should_emit_http_accept`.
+fn should_emit_http_reject(
+    ocm_state: &Arc<Mutex<OcmState>>,
+    client_order_id: &ClientOrderId,
+    reason: &str,
+) -> bool {
+    let Ok(state) = ocm_state.lock() else {
+        log::error!("OcmState mutex poisoned");
+        return true;
+    };
+
+    if state
+        .stream_reported_client_orders
+        .contains(client_order_id)
+    {
+        log::info!(
+            "Suppressing late HTTP rejection for {client_order_id}: OCM already reported order state ({reason})"
         );
         return false;
     }
@@ -2762,6 +2806,35 @@ mod tests {
         let state = Arc::new(Mutex::new(inner));
 
         assert!(!should_emit_http_accept(&state, &client_oid));
+    }
+
+    #[rstest]
+    fn test_should_emit_http_reject_without_stream_report() {
+        let state = Arc::new(Mutex::new(OcmState::default()));
+        let client_oid = ClientOrderId::from("O-001");
+
+        assert!(should_emit_http_reject(
+            &state,
+            &client_oid,
+            "BetLapsedPriceImprovementTooLarge",
+        ));
+    }
+
+    #[rstest]
+    fn test_should_not_emit_http_reject_after_stream_report() {
+        // OCM-first race: the stream has already moved the order through
+        // a terminal state (e.g. lapsed). A late HTTP rejection would
+        // hit InvalidStateTrigger and pollute the own book audit log.
+        let client_oid = ClientOrderId::from("O-001");
+        let mut inner = OcmState::default();
+        inner.stream_reported_client_orders.insert(client_oid);
+        let state = Arc::new(Mutex::new(inner));
+
+        assert!(!should_emit_http_reject(
+            &state,
+            &client_oid,
+            "BetLapsedPriceImprovementTooLarge",
+        ));
     }
 
     #[rstest]

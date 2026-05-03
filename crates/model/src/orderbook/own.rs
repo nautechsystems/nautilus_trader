@@ -702,18 +702,10 @@ impl OwnBookLadder {
         let client_order_id = order.client_order_id;
 
         let Some(price) = self.cache.get(&order.client_order_id).copied() else {
-            log::error!(
-                "Own book update failed - order {client_order_id} not in cache",
-                client_order_id = order.client_order_id
-            );
             return Err(OwnBookError::OrderNotFoundInCache { client_order_id });
         };
 
         let Some(level) = self.levels.get_mut(&price) else {
-            log::error!(
-                "Own book update failed - order {client_order_id} cached level {price:?} missing",
-                client_order_id = order.client_order_id
-            );
             return Err(OwnBookError::CachedLevelMissing {
                 client_order_id,
                 price,
@@ -759,16 +751,12 @@ impl OwnBookLadder {
     /// Returns an error if the order is not found.
     pub fn remove(&mut self, client_order_id: &ClientOrderId) -> Result<(), OwnBookError> {
         let Some(price) = self.cache.get(client_order_id).copied() else {
-            log::error!("Own book remove failed - order {client_order_id} not in cache");
             return Err(OwnBookError::OrderNotFoundInCache {
                 client_order_id: *client_order_id,
             });
         };
 
         let Some(level) = self.levels.get_mut(&price) else {
-            log::error!(
-                "Own book remove failed - order {client_order_id} cached level {price:?} missing"
-            );
             return Err(OwnBookError::CachedLevelMissing {
                 client_order_id: *client_order_id,
                 price,
