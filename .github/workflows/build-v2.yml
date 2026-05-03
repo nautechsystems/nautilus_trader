@@ -6,6 +6,7 @@ name: build-v2
 #   https://packages.nautechsystems.io/v2/simple/nautilus-trader/
 
 permissions:
+  # Principle of least privilege
   contents: read
   actions: read
 
@@ -64,6 +65,9 @@ jobs:
         || '/home/runner/.cache/cargo-target/pre-commit' }}
       CARGO_CI_PROFILE: >-
         ${{ github.event.pull_request.head.repo.fork && 'ci-pr' || 'nextest' }}
+      # Scopes incremental clippy/doc checks; empty for non-PR/push events.
+      CHANGED_BASE_SHA: >-
+        ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
@@ -76,6 +80,8 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          # Full history so changed-file scripts can resolve CHANGED_BASE_SHA.
+          fetch-depth: 0
 
       # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
       - name: Verify immutable CI inputs (post-checkout)
