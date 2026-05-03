@@ -15,6 +15,11 @@
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 
+#![allow(
+    clippy::unused_self,
+    reason = "PyO3 statistic methods take &self for Python API parity even when stateless"
+)]
+
 pub mod analyzer;
 pub mod statistics;
 
