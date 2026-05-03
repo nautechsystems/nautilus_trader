@@ -33,7 +33,7 @@ const MAX_PERIOD: usize = 1_024;
 ///
 /// - **Ratio**: Original Nautilus method using `100 * SUM(close-LL) / SUM(HH-LL)` over `period_d`.
 ///   This is range-weighted and has less lag than MA-based methods.
-/// - **MovingAverage**: Uses MA of slowed %K values, compatible with
+/// - **`MovingAverage`**: Uses MA of slowed %K values, compatible with
 ///   cTrader/MetaTrader/TradingView implementations.
 #[repr(C)]
 #[derive(
@@ -97,7 +97,7 @@ pub struct Stochastics {
     pub slowing: usize,
     /// The moving average type used for slowing and MA-based %D.
     pub ma_type: MovingAverageType,
-    /// The method for calculating %D (Ratio = Nautilus original method, MovingAverage = MA Smoothed).
+    /// The method for calculating %D (Ratio = Nautilus original method, `MovingAverage` = MA Smoothed).
     pub d_method: StochasticsDMethod,
     /// The current %K value (slowed if slowing > 1).
     pub value_k: f64,
@@ -112,7 +112,7 @@ pub struct Stochastics {
     h_sub_l: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
     /// Moving average for %K slowing (None when slowing == 1).
     slowing_ma: Option<Box<dyn MovingAverage + Send + Sync>>,
-    /// Moving average for %D when d_method == MovingAverage.
+    /// Moving average for %D when `d_method` == `MovingAverage`.
     d_ma: Option<Box<dyn MovingAverage + Send + Sync>>,
 }
 
@@ -133,13 +133,13 @@ impl Debug for Stochastics {
                 &self.slowing_ma.as_ref().map(|_| "MovingAverage"),
             )
             .field("d_ma", &self.d_ma.as_ref().map(|_| "MovingAverage"))
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
 impl Display for Stochastics {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}({},{})", self.name(), self.period_k, self.period_d,)
+        write!(f, "{}({},{})", self.name(), self.period_k, self.period_d)
     }
 }
 
@@ -214,7 +214,7 @@ impl Stochastics {
     /// - `period_d`: The smoothing period for %D.
     /// - `slowing`: MA smoothing period for raw %K (1 = no slowing, > 1 = smoothed).
     /// - `ma_type`: MA type for slowing and MA-based %D (EMA, SMA, Wilder, etc.).
-    /// - `d_method`: %D calculation method (Ratio = Nautilus original, MovingAverage = MA smoothed).
+    /// - `d_method`: %D calculation method (Ratio = Nautilus original, `MovingAverage` = MA smoothed).
     ///
     /// # Panics
     ///
@@ -322,6 +322,7 @@ impl Stochastics {
         }
 
         // Handle division by zero (flat market)
+        #[allow(clippy::float_cmp, reason = "guards divide-by-zero on flat market")]
         if k_max_high == k_min_low {
             return;
         }

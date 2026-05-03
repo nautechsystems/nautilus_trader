@@ -160,7 +160,7 @@ impl KlingerVolumeOscillator {
         self.previous_hlc3 = self.hlc3;
     }
 
-    pub fn _check_initialized(&mut self) {
+    pub fn check_initialized(&mut self) {
         if !self.initialized {
             self.has_inputs = true;
 
