@@ -15,7 +15,15 @@
 
 //! Tests module for `ExecutionEngine`.
 
-use std::{cell::RefCell, collections::HashSet, rc::Rc, str::FromStr};
+use std::{
+    cell::RefCell,
+    collections::HashSet,
+    future::Future,
+    pin::pin,
+    rc::Rc,
+    str::FromStr,
+    task::{Context, Poll, Waker},
+};
 
 use ahash::AHashSet;
 use nautilus_common::{
@@ -37,7 +45,7 @@ use nautilus_execution::engine::{
 use nautilus_model::{
     accounts::CashAccount,
     enums::{
-        LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+        ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
         PositionSideSpecified, TimeInForce, TriggerType,
     },
     events::{OrderCanceled, OrderEventAny, OrderFilled, OrderPendingUpdate, OrderUpdated},
@@ -9588,4 +9596,185 @@ fn test_reconcile_order_with_fills_empty_fills_infers_full_quantity(
     assert_eq!(order.status(), OrderStatus::Filled);
     assert_eq!(order.filled_qty(), Quantity::from(100_000));
     assert_eq!(order.trade_ids().len(), 1);
+}
+
+// Drives a future to completion without an executor. Suitable for futures that
+// are `Ready` on first poll (e.g., `Cache::cache_all` with `database: None`).
+fn poll_to_completion<F: Future>(fut: F) -> F::Output {
+    let mut fut = pin!(fut);
+    let waker = Waker::noop();
+    let mut cx = Context::from_waker(waker);
+    loop {
+        if let Poll::Ready(out) = fut.as_mut().poll(&mut cx) {
+            return out;
+        }
+    }
+}
+
+// Regression: the original `load_cache` panicked at the first nested
+// `self.cache.borrow_mut().cache_all()` call before any later code could run.
+// This test triggers that path and verifies the function now completes.
+// Parameterized over `manage_own_order_books` so both config branches run.
+//
+// The second nested-borrow path (iterating `cache.orders(...)` while invoking
+// `get_or_init_own_order_book`) is not exercised here: with `database: None`,
+// `cache_all` clears `self.orders`, so the loop sees an empty cache. Locking
+// down that path would need a stub `CacheDatabaseAdapter` that returns the
+// staged order from `load_all`; deferred while `load_cache` has no callers.
+#[rstest]
+#[case::own_books_enabled(true)]
+#[case::own_books_disabled(false)]
+fn test_load_cache_no_reentrant_panic(#[case] manage_own_order_books: bool) {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        manage_own_order_books,
+        ..Default::default()
+    };
+    let mut engine = ExecutionEngine::new(clock, cache, Some(config));
+
+    let instrument = audusd_sim();
+    engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::test_default())
+        .strategy_id(StrategyId::test_default())
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-20240101-000000-001-001-1"))
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    engine
+        .cache()
+        .borrow_mut()
+        .add_order(order, None, None, true)
+        .unwrap();
+
+    poll_to_completion(engine.load_cache()).expect("load_cache should not panic");
+
+    // With `database: None`, `cache_all` replaces all orders/positions with empty
+    // maps, so the staged order is wiped and the own-book loop has nothing to
+    // process. Verify the full flow ran end-to-end (the original bug
+    // short-circuited before `cache_all` could clear) and the optional own-book
+    // branch did not produce a book for this instrument.
+    let cache = engine.cache().borrow();
+    assert!(cache.orders(None, None, None, None, None).is_empty());
+    assert!(cache.own_order_book(&instrument.id).is_none());
+}
+
+// Regression for #3981: a parent OTO fill linking `position_id` to a contingent
+// child triggered nested `RefCell` borrows in `handle_order_fill`: the outer
+// `cache.mut_order(...)` borrow was still alive when `add_position_id` took a
+// fresh `borrow_mut`.
+#[rstest]
+fn test_handle_order_fill_oto_links_position_to_contingent_children(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let account_id = AccountId::test_default();
+    let instrument = audusd_sim();
+    let parent_id = ClientOrderId::from("O-20240101-000000-001-001-1");
+    let child_id = ClientOrderId::from("O-20240101-000000-001-001-2");
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        account_id,
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+
+    let parent_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .build();
+
+    let child_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(child_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .trigger_price(Price::from("0.95"))
+        .contingency_type(ContingencyType::Oto)
+        .parent_order_id(parent_id)
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            parent_order.clone(),
+            None,
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(child_order, None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+
+    let submitted = TestOrderEventStubs::submitted(&parent_order, account_id);
+    execution_engine.process(&submitted);
+
+    let filled = TestOrderEventStubs::filled(
+        &parent_order,
+        &instrument.into(),
+        Some(TradeId::new("E-19700101-000000-001-001-0")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(account_id),
+    );
+    execution_engine.process(&filled);
+
+    let cache = execution_engine.cache().borrow();
+    let position_ids = cache.position_ids(None, None, None, None);
+    assert_eq!(position_ids.len(), 1);
+    let position_id = *position_ids.iter().next().unwrap();
+
+    let cached_child = cache.order(&child_id).expect("child order in cache");
+    assert_eq!(
+        cached_child.position_id(),
+        Some(position_id),
+        "OTO child order must inherit the parent's position id",
+    );
+    assert_eq!(
+        cache.position_id(&child_id),
+        Some(&position_id),
+        "Cache index must map the contingent child to the new position id",
+    );
 }

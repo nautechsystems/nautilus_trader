@@ -73,7 +73,7 @@ use nautilus_model::{
         ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
-    orderbook::own::{OwnOrderBook, should_handle_own_book_order},
+    orderbook::own::{OwnBookOrder, OwnOrderBook, should_handle_own_book_order},
     orders::{Order, OrderAny, OrderError},
     position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -855,19 +855,31 @@ impl ExecutionEngine {
             let mut cache = self.cache.borrow_mut();
             cache.clear_index();
             cache.cache_general()?;
-            self.cache.borrow_mut().cache_all().await?;
+        }
+
+        self.cache.borrow_mut().cache_all().await?;
+
+        // Snapshot before iterating: `get_or_init_own_order_book` re-enters `self.cache.borrow_mut()`.
+        let own_book_entries: Vec<(InstrumentId, OwnBookOrder)> = {
+            let mut cache = self.cache.borrow_mut();
             cache.build_index();
             let _ = cache.check_integrity();
 
             if self.config.manage_own_order_books {
-                for order in cache.orders(None, None, None, None, None) {
-                    if order.is_closed() || !should_handle_own_book_order(order) {
-                        continue;
-                    }
-                    let mut own_book = self.get_or_init_own_order_book(&order.instrument_id());
-                    own_book.add(order.to_own_book_order());
-                }
+                cache
+                    .orders(None, None, None, None, None)
+                    .into_iter()
+                    .filter(|o| !o.is_closed() && should_handle_own_book_order(o))
+                    .map(|o| (o.instrument_id(), o.to_own_book_order()))
+                    .collect()
+            } else {
+                Vec::new()
             }
+        };
+
+        for (instrument_id, own_order) in own_book_entries {
+            let mut own_book = self.get_or_init_own_order_book(&instrument_id);
+            own_book.add(own_order);
         }
 
         self.set_position_id_counts();
@@ -2222,21 +2234,33 @@ impl ExecutionEngine {
                 let position_id = pos.id;
 
                 for client_order_id in order.linked_order_ids().unwrap_or_default() {
-                    let mut cache = self.cache.borrow_mut();
-                    let contingent_order = cache.mut_order(client_order_id);
-                    if let Some(contingent_order) = contingent_order
-                        && contingent_order.position_id().is_none()
-                    {
-                        contingent_order.set_position_id(Some(position_id));
-
-                        if let Err(e) = self.cache.borrow_mut().add_position_id(
-                            &position_id,
-                            &contingent_order.instrument_id().venue,
-                            &contingent_order.client_order_id(),
-                            &contingent_order.strategy_id(),
-                        ) {
-                            log::error!("Failed to add position ID: {e}");
+                    // Apply mutation and index update in separate borrows: `mut_order`
+                    // holds `&mut Cache`, so a nested `self.cache.borrow_mut()` would panic.
+                    let link = {
+                        let mut cache = self.cache.borrow_mut();
+                        if let Some(contingent_order) = cache.mut_order(client_order_id)
+                            && contingent_order.position_id().is_none()
+                        {
+                            contingent_order.set_position_id(Some(position_id));
+                            Some((
+                                contingent_order.instrument_id().venue,
+                                contingent_order.client_order_id(),
+                                contingent_order.strategy_id(),
+                            ))
+                        } else {
+                            None
                         }
+                    };
+
+                    if let Some((venue, contingent_id, strategy_id)) = link
+                        && let Err(e) = self.cache.borrow_mut().add_position_id(
+                            &position_id,
+                            &venue,
+                            &contingent_id,
+                            &strategy_id,
+                        )
+                    {
+                        log::error!("Failed to add position ID: {e}");
                     }
                 }
             }
