@@ -97,6 +97,47 @@ fn parse_filter_quantity(filter: &Value, field: &str) -> anyhow::Result<Quantity
         .map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}': {e}"))
 }
 
+/// Parses a venue quantity string into a `Quantity` at the given precision.
+///
+/// Returns `None` for unparsable, zero, or negative values. Goes through
+/// `Decimal` so equality comparisons against domain quantities are exact and
+/// independent of `f64` rounding.
+#[must_use]
+pub(crate) fn parse_quantity_at_precision(raw: &str, precision: u8) -> Option<Quantity> {
+    let decimal = Decimal::from_str(raw).ok()?;
+    if !decimal.is_sign_positive() || decimal.is_zero() {
+        return None;
+    }
+
+    Quantity::from_decimal_dp(decimal, precision).ok()
+}
+
+/// Parses a venue price string into a `Price` at the given precision.
+///
+/// Returns `None` for unparsable, zero, or negative values. Goes through
+/// `Decimal` for exact comparison semantics.
+#[must_use]
+pub(crate) fn parse_price_at_precision(raw: &str, precision: u8) -> Option<Price> {
+    let decimal = Decimal::from_str(raw).ok()?;
+    if !decimal.is_sign_positive() || decimal.is_zero() {
+        return None;
+    }
+
+    Price::from_decimal_dp(decimal, precision).ok()
+}
+
+/// Re-precisions an existing `Quantity` to the given precision via `Decimal`.
+#[must_use]
+pub(crate) fn quantity_at_precision(quantity: Quantity, precision: u8) -> Option<Quantity> {
+    Quantity::from_decimal_dp(quantity.as_decimal(), precision).ok()
+}
+
+/// Re-precisions an existing `Price` to the given precision via `Decimal`.
+#[must_use]
+pub(crate) fn price_at_precision(price: Price, precision: u8) -> Option<Price> {
+    Price::from_decimal_dp(price.as_decimal(), precision).ok()
+}
+
 /// Parses a USD-M Futures symbol definition into a Nautilus CryptoPerpetual instrument.
 ///
 /// # Errors
@@ -1027,6 +1068,51 @@ mod tests {
         consts::BINANCE_NAUTILUS_SPOT_BROKER_ID,
         enums::{BinanceContractStatus, BinanceTradingStatus},
     };
+
+    #[rstest]
+    #[case::positive("0.001", 8, Some(Quantity::from_decimal_dp(Decimal::from_str("0.001").unwrap(), 8).unwrap()))]
+    #[case::trailing_zero("0.00100000", 8, Some(Quantity::from_decimal_dp(Decimal::from_str("0.001").unwrap(), 8).unwrap()))]
+    #[case::zero("0", 8, None)]
+    #[case::negative("-1", 8, None)]
+    #[case::empty("", 8, None)]
+    #[case::garbage("abc", 8, None)]
+    fn test_parse_quantity_at_precision(
+        #[case] raw: &str,
+        #[case] precision: u8,
+        #[case] expected: Option<Quantity>,
+    ) {
+        assert_eq!(parse_quantity_at_precision(raw, precision), expected);
+    }
+
+    #[rstest]
+    #[case::positive("7100.50", 2, Some(Price::from_decimal_dp(Decimal::from_str("7100.50").unwrap(), 2).unwrap()))]
+    #[case::high_precision("0.000000001", 9, Some(Price::from_decimal_dp(Decimal::from_str("0.000000001").unwrap(), 9).unwrap()))]
+    #[case::zero("0", 2, None)]
+    #[case::negative("-100", 2, None)]
+    #[case::empty("", 2, None)]
+    fn test_parse_price_at_precision(
+        #[case] raw: &str,
+        #[case] precision: u8,
+        #[case] expected: Option<Price>,
+    ) {
+        assert_eq!(parse_price_at_precision(raw, precision), expected);
+    }
+
+    #[rstest]
+    fn test_quantity_at_precision_re_precisions_via_decimal() {
+        let original = Quantity::from_decimal_dp(Decimal::from_str("0.001").unwrap(), 3).unwrap();
+        let widened = quantity_at_precision(original, 8).unwrap();
+        let expected = Quantity::from_decimal_dp(Decimal::from_str("0.001").unwrap(), 8).unwrap();
+        assert_eq!(widened, expected);
+    }
+
+    #[rstest]
+    fn test_price_at_precision_re_precisions_via_decimal() {
+        let original = Price::from_decimal_dp(Decimal::from_str("7100.5").unwrap(), 1).unwrap();
+        let widened = price_at_precision(original, 8).unwrap();
+        let expected = Price::from_decimal_dp(Decimal::from_str("7100.5").unwrap(), 8).unwrap();
+        assert_eq!(widened, expected);
+    }
 
     fn sample_usdm_symbol() -> BinanceFuturesUsdSymbol {
         BinanceFuturesUsdSymbol {

@@ -42,7 +42,7 @@ use tokio_util::sync::CancellationToken;
 use super::{
     messages::{
         BinanceExecutionType, BinanceFuturesAlgoUpdateMsg, BinanceFuturesOrderUpdateMsg,
-        BinanceFuturesTradeLiteMsg, BinanceFuturesWsStreamsMessage,
+        BinanceFuturesTradeLiteMsg, BinanceFuturesWsStreamsMessage, OrderUpdateData,
     },
     parse_exec::{
         decode_algo_client_id, parse_futures_account_update,
@@ -53,9 +53,13 @@ use super::{
 use crate::{
     common::{
         consts::BINANCE_NAUTILUS_FUTURES_BROKER_ID,
-        dispatch::{WsDispatchState, ensure_accepted_emitted},
+        dispatch::{OrderIdentity, WsDispatchState, ensure_accepted_emitted},
         encoder::decode_broker_id,
         enums::{BinancePositionSide, BinanceProductType},
+        parse::{
+            parse_price_at_precision, parse_quantity_at_precision, price_at_precision,
+            quantity_at_precision,
+        },
         symbol::format_instrument_id,
     },
     futures::http::client::{BinanceFuturesHttpClient, BinanceFuturesInstrument},
@@ -386,43 +390,19 @@ pub(crate) fn dispatch_order_update(
                 );
                 emitter.send_order_event(OrderEventAny::Accepted(accepted));
 
-                // Detect venue-assigned price changes (e.g. priceMatch orders)
-                if let Some(submitted_price) = identity.price {
-                    let venue_price: f64 = order.original_price.parse().unwrap_or(0.0);
-
-                    if venue_price > 0.0 {
-                        let venue_price = Price::new(venue_price, price_precision);
-                        let submitted_at_precision =
-                            Price::new(submitted_price.as_f64(), price_precision);
-
-                        if venue_price != submitted_at_precision {
-                            let quantity: f64 = order.original_qty.parse().unwrap_or(0.0);
-                            let trigger_price: f64 = order.stop_price.parse().unwrap_or(0.0);
-                            let updated = OrderUpdated::new(
-                                emitter.trader_id(),
-                                identity.strategy_id,
-                                identity.instrument_id,
-                                client_order_id,
-                                Quantity::new(quantity, size_precision),
-                                UUID4::new(),
-                                ts_event,
-                                ts_init,
-                                false,
-                                Some(venue_order_id),
-                                Some(account_id),
-                                Some(venue_price),
-                                if trigger_price > 0.0 {
-                                    Some(Price::new(trigger_price, price_precision))
-                                } else {
-                                    None
-                                },
-                                None,
-                                false,
-                            );
-                            emitter.send_order_event(OrderEventAny::Updated(updated));
-                        }
-                    }
-                }
+                emit_order_delta_if_changed(
+                    order,
+                    &identity,
+                    client_order_id,
+                    venue_order_id,
+                    account_id,
+                    price_precision,
+                    size_precision,
+                    ts_event,
+                    ts_init,
+                    emitter,
+                    dispatch_state,
+                );
             }
             BinanceExecutionType::Trade => {
                 let dedup_key = (order.symbol, order.trade_id);
@@ -448,6 +428,22 @@ pub(crate) fn dispatch_order_update(
                     emitter,
                     dispatch_state,
                     ts_init,
+                );
+
+                // Reconcile any venue-side qty/price adjustment before emitting
+                // the fill: fast-fill paths can deliver TRADE without a prior NEW.
+                emit_order_delta_if_changed(
+                    order,
+                    &identity,
+                    client_order_id,
+                    venue_order_id,
+                    account_id,
+                    price_precision,
+                    size_precision,
+                    ts_event,
+                    ts_init,
+                    emitter,
+                    dispatch_state,
                 );
 
                 // When use_trade_lite is on, the TRADE_LITE handler owns the
@@ -691,6 +687,167 @@ pub(crate) fn dispatch_order_update(
     }
 }
 
+/// Emits an `OrderUpdated` if the venue's reported quantity or price differs
+/// from the submitted identity, then refreshes the identity to suppress further
+/// emissions on subsequent messages for the same order.
+#[expect(clippy::too_many_arguments)]
+fn emit_order_delta_if_changed(
+    order: &OrderUpdateData,
+    identity: &OrderIdentity,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+    price_precision: u8,
+    size_precision: u8,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    emitter: &ExecutionEventEmitter,
+    dispatch_state: &WsDispatchState,
+) {
+    let Some(submitted_qty) = quantity_at_precision(identity.quantity, size_precision) else {
+        return;
+    };
+    let venue_qty = parse_quantity_at_precision(&order.original_qty, size_precision);
+    let qty_changed = matches!(venue_qty, Some(q) if q != submitted_qty);
+
+    let updated_price = identity.price.and_then(|submitted_price| {
+        let venue_price = parse_price_at_precision(&order.original_price, price_precision)?;
+        let submitted = price_at_precision(submitted_price, price_precision)?;
+        (venue_price != submitted).then_some(venue_price)
+    });
+
+    if !qty_changed && updated_price.is_none() {
+        return;
+    }
+
+    let trigger_price_raw: f64 = order.stop_price.parse().unwrap_or(0.0);
+    let trigger_price =
+        (trigger_price_raw > 0.0).then(|| Price::new(trigger_price_raw, price_precision));
+    let event_price = updated_price.or_else(|| {
+        identity
+            .price
+            .and_then(|p| price_at_precision(p, price_precision))
+    });
+    let event_qty = if qty_changed {
+        venue_qty.expect("qty_changed implies venue_qty is Some")
+    } else {
+        submitted_qty
+    };
+    let updated = OrderUpdated::new(
+        emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        client_order_id,
+        event_qty,
+        UUID4::new(),
+        ts_event,
+        ts_init,
+        false,
+        Some(venue_order_id),
+        Some(account_id),
+        event_price,
+        trigger_price,
+        None,
+        false,
+    );
+    emitter.send_order_event(OrderEventAny::Updated(updated));
+
+    refresh_identity(
+        dispatch_state,
+        client_order_id,
+        qty_changed.then(|| venue_qty.unwrap()),
+        updated_price,
+    );
+}
+
+/// TRADE_LITE variant of [`emit_order_delta_if_changed`]. TRADE_LITE messages
+/// carry `q` and `p` only (no stop price), so this detects venue-side qty
+/// deltas (reduce-only auto-reduction) and price deltas (priceMatch) before
+/// the fill.
+#[expect(clippy::too_many_arguments)]
+fn emit_trade_lite_delta_if_changed(
+    msg: &BinanceFuturesTradeLiteMsg,
+    identity: &OrderIdentity,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+    price_precision: u8,
+    size_precision: u8,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    emitter: &ExecutionEventEmitter,
+    dispatch_state: &WsDispatchState,
+) {
+    let Some(submitted_qty) = quantity_at_precision(identity.quantity, size_precision) else {
+        return;
+    };
+    let venue_qty = parse_quantity_at_precision(&msg.original_qty, size_precision);
+    let qty_changed = matches!(venue_qty, Some(q) if q != submitted_qty);
+
+    let updated_price = identity.price.and_then(|submitted_price| {
+        let venue_price = parse_price_at_precision(&msg.original_price, price_precision)?;
+        let submitted = price_at_precision(submitted_price, price_precision)?;
+        (venue_price != submitted).then_some(venue_price)
+    });
+
+    if !qty_changed && updated_price.is_none() {
+        return;
+    }
+
+    let event_price = updated_price.or_else(|| {
+        identity
+            .price
+            .and_then(|p| price_at_precision(p, price_precision))
+    });
+    let event_qty = if qty_changed {
+        venue_qty.expect("qty_changed implies venue_qty is Some")
+    } else {
+        submitted_qty
+    };
+    let updated = OrderUpdated::new(
+        emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        client_order_id,
+        event_qty,
+        UUID4::new(),
+        ts_event,
+        ts_init,
+        false,
+        Some(venue_order_id),
+        Some(account_id),
+        event_price,
+        None,
+        None,
+        false,
+    );
+    emitter.send_order_event(OrderEventAny::Updated(updated));
+
+    refresh_identity(
+        dispatch_state,
+        client_order_id,
+        qty_changed.then(|| venue_qty.unwrap()),
+        updated_price,
+    );
+}
+
+fn refresh_identity(
+    dispatch_state: &WsDispatchState,
+    client_order_id: ClientOrderId,
+    new_quantity: Option<Quantity>,
+    new_price: Option<Price>,
+) {
+    if let Some(mut entry) = dispatch_state.order_identities.get_mut(&client_order_id) {
+        if let Some(qty) = new_quantity {
+            entry.quantity = qty;
+        }
+
+        if let Some(price) = new_price {
+            entry.price = Some(price);
+        }
+    }
+}
+
 /// Dispatches a TRADE_LITE fill.
 ///
 /// TRADE_LITE carries the subset of fields needed to emit `OrderFilled`:
@@ -753,6 +910,23 @@ pub(crate) fn dispatch_trade_lite(
         emitter,
         dispatch_state,
         ts_init,
+    );
+
+    // Reconcile venue-side qty/price deltas (reduce-only auto-reduction or
+    // priceMatch) before the fill: TRADE_LITE can arrive without a prior NEW
+    // for fast fills.
+    emit_trade_lite_delta_if_changed(
+        msg,
+        &identity,
+        client_order_id,
+        venue_order_id,
+        account_id,
+        price_precision,
+        size_precision,
+        ts_event,
+        ts_init,
+        emitter,
+        dispatch_state,
     );
 
     let last_qty: f64 = msg.last_filled_qty.parse().unwrap_or(0.0);
@@ -1253,9 +1427,11 @@ mod tests {
         let msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_trade.json");
         let (emitter, mut rx) = create_test_emitter(clock);
         let http_client = create_test_http_client(clock);
-        let dispatch_state = create_tracked_dispatch_state(
+        let dispatch_state = create_tracked_state_with_price_and_qty(
             ClientOrderId::from("TEST"),
             InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            Some(Price::new(7100.50, 8)),
+            Quantity::new(0.001, 8),
         );
         let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
 
@@ -1487,6 +1663,7 @@ mod tests {
                 order_side: OrderSide::Buy,
                 order_type: OrderType::Limit,
                 price: None,
+                quantity: Quantity::from("1"),
             },
         );
         dispatch_state
@@ -1533,12 +1710,19 @@ mod tests {
     }
 
     fn build_new_order_update_with_price(price: &str) -> BinanceFuturesOrderUpdateMsg {
+        build_new_order_update_with_qty_and_price("0.001", price)
+    }
+
+    fn build_new_order_update_with_qty_and_price(
+        qty: &str,
+        price: &str,
+    ) -> BinanceFuturesOrderUpdateMsg {
         let json = format!(
             r#"{{
                 "e":"ORDER_TRADE_UPDATE","T":1568879465651,"E":1568879465651,
                 "o":{{
                     "s":"BTCUSDT","c":"TEST","S":"BUY","o":"LIMIT","f":"GTC",
-                    "q":"0.001","p":"{price}","ap":"0","sp":"0",
+                    "q":"{qty}","p":"{price}","ap":"0","sp":"0",
                     "x":"NEW","X":"NEW","i":8886774,
                     "l":"0","z":"0","L":"0","N":"USDT","n":"0",
                     "T":1568879465651,"t":0,"b":"0","a":"0","m":false,"R":false,
@@ -1551,10 +1735,37 @@ mod tests {
         serde_json::from_str(&json).unwrap()
     }
 
-    fn create_tracked_state_with_price(
+    fn build_trade_order_update_with_trade_id(
+        qty: &str,
+        last_qty: &str,
+        cum_qty: &str,
+        price: &str,
+        trade_id: i64,
+        order_status: &str,
+    ) -> BinanceFuturesOrderUpdateMsg {
+        let json = format!(
+            r#"{{
+                "e":"ORDER_TRADE_UPDATE","T":1568879465651,"E":1568879465651,
+                "o":{{
+                    "s":"BTCUSDT","c":"TEST","S":"BUY","o":"LIMIT","f":"GTC",
+                    "q":"{qty}","p":"{price}","ap":"{price}","sp":"0",
+                    "x":"TRADE","X":"{order_status}","i":8886774,
+                    "l":"{last_qty}","z":"{cum_qty}","L":"{price}","N":"USDT","n":"0.01",
+                    "T":1568879465651,"t":{trade_id},"b":"0","a":"0","m":false,"R":true,
+                    "wt":"CONTRACT_PRICE","ot":"LIMIT","ps":"LONG","cp":false,
+                    "AP":"0","cr":"0","pP":false,"si":0,"ss":0,"rp":"0",
+                    "V":"EXPIRE_TAKER"
+                }}
+            }}"#
+        );
+        serde_json::from_str(&json).unwrap()
+    }
+
+    fn create_tracked_state_with_price_and_qty(
         client_order_id: ClientOrderId,
         instrument_id: InstrumentId,
         price: Option<Price>,
+        quantity: Quantity,
     ) -> WsDispatchState {
         let dispatch_state = WsDispatchState::default();
         dispatch_state.order_identities.insert(
@@ -1565,6 +1776,7 @@ mod tests {
                 order_side: OrderSide::Buy,
                 order_type: OrderType::Limit,
                 price,
+                quantity,
             },
         );
         dispatch_state
@@ -1675,15 +1887,17 @@ mod tests {
     fn test_dispatch_order_update_new_with_price_match_divergence_emits_updated() {
         let clock = get_atomic_clock_realtime();
 
-        // Submitted with price 7000, venue filled it at 7100.50 (priceMatch).
+        // Submitted with price 7000 and qty 0.001; venue confirmed qty but
+        // adjusted price to 7100.50 (priceMatch).
         let msg = build_new_order_update_with_price("7100.50");
         let (emitter, mut rx) = create_test_emitter(clock);
         let http_client = create_test_http_client(clock);
         let client_order_id = ClientOrderId::from("TEST");
-        let dispatch_state = create_tracked_state_with_price(
+        let dispatch_state = create_tracked_state_with_price_and_qty(
             client_order_id,
             InstrumentId::from("BTCUSDT-PERP.BINANCE"),
             Some(Price::new(7000.0, 8)),
+            Quantity::new(0.001, 8),
         );
         let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
 
@@ -1721,18 +1935,307 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_order_update_new_with_matching_price_skips_updated() {
+    fn test_dispatch_order_update_trade_emits_updated_then_filled_for_reduced_qty() {
+        // Fast-fill scenario: TRADE arrives without a prior NEW. The reduce-only
+        // order was submitted at 0.005 BTC, venue auto-reduced to 0.001 and filled.
+        let clock = get_atomic_clock_realtime();
+        let msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_trade.json");
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = create_tracked_state_with_price_and_qty(
+            ClientOrderId::from("TEST"),
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            Some(Price::new(7100.50, 8)),
+            Quantity::new(0.005, 8),
+        );
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+
+        dispatch_order_update(
+            &msg,
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+            false,
+            Decimal::new(4, 4),
+            false,
+            false,
+            &seen_trade_ids,
+        );
+
+        let events = collect_events(&mut rx);
+        assert_eq!(events.len(), 3, "expected Accepted, Updated, Filled");
+        assert!(matches!(
+            events[0],
+            ExecutionEvent::Order(OrderEventAny::Accepted(_))
+        ));
+
+        match &events[1] {
+            ExecutionEvent::Order(OrderEventAny::Updated(event)) => {
+                assert_eq!(event.quantity, Quantity::new(0.001, 8));
+            }
+            other => panic!("Expected OrderUpdated for reduce-only qty delta, was {other:?}"),
+        }
+        assert!(matches!(
+            events[2],
+            ExecutionEvent::Order(OrderEventAny::Filled(_))
+        ));
+    }
+
+    #[rstest]
+    fn test_dispatch_order_update_new_with_reduced_quantity_emits_updated() {
         let clock = get_atomic_clock_realtime();
 
-        // Submitted with price 7100.50, venue confirmed at 7100.50 (no drift).
+        // Submitted reduce-only at 0.005 BTC; venue auto-reduced to 0.001 (position size).
         let msg = build_new_order_update_with_price("7100.50");
         let (emitter, mut rx) = create_test_emitter(clock);
         let http_client = create_test_http_client(clock);
         let client_order_id = ClientOrderId::from("TEST");
-        let dispatch_state = create_tracked_state_with_price(
+        let dispatch_state = create_tracked_state_with_price_and_qty(
             client_order_id,
             InstrumentId::from("BTCUSDT-PERP.BINANCE"),
             Some(Price::new(7100.50, 8)),
+            Quantity::new(0.005, 8),
+        );
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+
+        dispatch_order_update(
+            &msg,
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+            false,
+            Decimal::new(4, 4),
+            false,
+            false,
+            &seen_trade_ids,
+        );
+
+        let events = collect_events(&mut rx);
+        assert_eq!(events.len(), 2);
+
+        assert!(matches!(
+            events[0],
+            ExecutionEvent::Order(OrderEventAny::Accepted(_))
+        ));
+
+        match &events[1] {
+            ExecutionEvent::Order(OrderEventAny::Updated(event)) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(event.quantity, Quantity::new(0.001, 8));
+                // Price unchanged: event carries the submitted price for completeness.
+                assert_eq!(event.price, Some(Price::new(7100.50, 8)));
+            }
+            other => panic!("Expected OrderUpdated for reduce-only quantity delta, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_dispatch_order_update_trade_does_not_re_emit_updated_after_identity_refresh() {
+        // Two TRADE messages with distinct trade_ids both report the venue's
+        // reduced qty 0.001 (submitted 0.005). The first must emit OrderUpdated
+        // and refresh the cached identity; the second must not re-emit.
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = create_tracked_state_with_price_and_qty(
+            ClientOrderId::from("TEST"),
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            Some(Price::new(7100.50, 8)),
+            Quantity::new(0.005, 8),
+        );
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+
+        let first = build_trade_order_update_with_trade_id(
+            "0.001",
+            "0.0005",
+            "0.0005",
+            "7100.50",
+            1_000_001,
+            "PARTIALLY_FILLED",
+        );
+        let second = build_trade_order_update_with_trade_id(
+            "0.001", "0.0005", "0.001", "7100.50", 1_000_002, "FILLED",
+        );
+
+        for msg in [&first, &second] {
+            dispatch_order_update(
+                msg,
+                &emitter,
+                &http_client,
+                AccountId::from("BINANCE-001"),
+                BinanceProductType::UsdM,
+                clock,
+                &dispatch_state,
+                false,
+                Decimal::new(4, 4),
+                false,
+                false,
+                &seen_trade_ids,
+            );
+        }
+
+        let events = collect_events(&mut rx);
+        let updated_count = events
+            .iter()
+            .filter(|event| matches!(event, ExecutionEvent::Order(OrderEventAny::Updated(_))))
+            .count();
+        let filled_count = events
+            .iter()
+            .filter(|event| matches!(event, ExecutionEvent::Order(OrderEventAny::Filled(_))))
+            .count();
+        let accepted_count = events
+            .iter()
+            .filter(|event| matches!(event, ExecutionEvent::Order(OrderEventAny::Accepted(_))))
+            .count();
+        assert_eq!(
+            accepted_count, 1,
+            "OrderAccepted should be synthesized once"
+        );
+        assert_eq!(updated_count, 1, "OrderUpdated should be emitted only once");
+        assert_eq!(filled_count, 2, "expected one OrderFilled per TRADE");
+    }
+
+    #[rstest]
+    fn test_dispatch_trade_lite_does_not_re_emit_updated_after_identity_refresh() {
+        // Two TRADE_LITE calls report the venue's reduced qty 0.001 (submitted
+        // 0.005). The first must emit Accepted+Updated+Filled; the second must
+        // emit only Filled because the cached identity quantity was refreshed.
+        let clock = get_atomic_clock_realtime();
+        let msg: BinanceFuturesTradeLiteMsg = load_user_data_fixture("trade_lite.json");
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = create_tracked_state_with_price_and_qty(
+            ClientOrderId::from("TEST"),
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            Some(Price::new(7100.50, 8)),
+            Quantity::new(0.005, 8),
+        );
+
+        for _ in 0..2 {
+            dispatch_trade_lite(
+                &msg,
+                &emitter,
+                &http_client,
+                AccountId::from("BINANCE-001"),
+                BinanceProductType::UsdM,
+                clock,
+                &dispatch_state,
+            );
+        }
+
+        let events = collect_events(&mut rx);
+        let updated_count = events
+            .iter()
+            .filter(|event| matches!(event, ExecutionEvent::Order(OrderEventAny::Updated(_))))
+            .count();
+        let filled_count = events
+            .iter()
+            .filter(|event| matches!(event, ExecutionEvent::Order(OrderEventAny::Filled(_))))
+            .count();
+        let accepted_count = events
+            .iter()
+            .filter(|event| matches!(event, ExecutionEvent::Order(OrderEventAny::Accepted(_))))
+            .count();
+        assert_eq!(accepted_count, 1);
+        assert_eq!(updated_count, 1, "TRADE_LITE delta must not re-emit");
+        assert_eq!(filled_count, 2);
+    }
+
+    #[rstest]
+    fn test_dispatch_trade_lite_emits_updated_for_reduced_qty() {
+        // Submitted reduce-only at 0.005 BTC; TRADE_LITE arrives without prior
+        // NEW with q=0.001. The handler must emit Accepted, Updated, Filled.
+        let clock = get_atomic_clock_realtime();
+        let msg: BinanceFuturesTradeLiteMsg = load_user_data_fixture("trade_lite.json");
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = create_tracked_state_with_price_and_qty(
+            ClientOrderId::from("TEST"),
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            Some(Price::new(7100.50, 8)),
+            Quantity::new(0.005, 8),
+        );
+
+        dispatch_trade_lite(
+            &msg,
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+        );
+
+        let events = collect_events(&mut rx);
+        assert_eq!(events.len(), 3, "expected Accepted, Updated, Filled");
+        match &events[1] {
+            ExecutionEvent::Order(OrderEventAny::Updated(event)) => {
+                assert_eq!(event.quantity, Quantity::new(0.001, 8));
+                assert_eq!(event.price, Some(Price::new(7100.50, 8)));
+            }
+            other => panic!("Expected OrderUpdated for TRADE_LITE qty delta, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_dispatch_order_update_new_with_zero_venue_qty_skips_updated() {
+        // A malformed venue payload with q="0" must not emit a zero-quantity
+        // OrderUpdated (which would later trip Quantity::positive invariants).
+        let clock = get_atomic_clock_realtime();
+        let msg = build_new_order_update_with_qty_and_price("0", "7100.50");
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = create_tracked_state_with_price_and_qty(
+            ClientOrderId::from("TEST"),
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            Some(Price::new(7100.50, 8)),
+            Quantity::new(0.005, 8),
+        );
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+
+        dispatch_order_update(
+            &msg,
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+            false,
+            Decimal::new(4, 4),
+            false,
+            false,
+            &seen_trade_ids,
+        );
+
+        let events = collect_events(&mut rx);
+        assert_eq!(events.len(), 1, "only OrderAccepted should be emitted");
+        assert!(matches!(
+            events[0],
+            ExecutionEvent::Order(OrderEventAny::Accepted(_))
+        ));
+    }
+
+    #[rstest]
+    fn test_dispatch_order_update_new_with_matching_price_skips_updated() {
+        let clock = get_atomic_clock_realtime();
+
+        // Submitted with price 7100.50 and qty 0.001, venue confirmed identically (no delta).
+        let msg = build_new_order_update_with_price("7100.50");
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let client_order_id = ClientOrderId::from("TEST");
+        let dispatch_state = create_tracked_state_with_price_and_qty(
+            client_order_id,
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            Some(Price::new(7100.50, 8)),
+            Quantity::new(0.001, 8),
         );
         let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
 

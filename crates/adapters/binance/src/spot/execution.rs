@@ -250,6 +250,7 @@ impl BinanceSpotExecutionClient {
                 order_side,
                 order_type,
                 price,
+                quantity,
             },
         );
 
@@ -2121,6 +2122,7 @@ mod tests {
                 order_side: OrderSide::Buy,
                 order_type: OrderType::Limit,
                 price: None,
+                quantity: Quantity::from("1"),
             },
         );
         dispatch_state

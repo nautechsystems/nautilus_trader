@@ -417,6 +417,7 @@ impl BinanceFuturesExecutionClient {
                 order_side,
                 order_type,
                 price,
+                quantity,
             },
         );
 

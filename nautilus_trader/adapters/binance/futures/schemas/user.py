@@ -472,23 +472,29 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 ts_event=ts_event,
             )
 
-            # Check if price changed (for price_match orders)
-            if order.has_price:
-                binance_price = Price(float(self.p), price_precision)
-                if binance_price != order.price:
-                    # Preserve trigger price for stop orders (priceMatch only affects limit price)
-                    trigger_price = order.trigger_price if order.has_trigger_price else None
-                    exec_client.generate_order_updated(
-                        strategy_id=strategy_id,
-                        instrument_id=instrument_id,
-                        client_order_id=client_order_id,
-                        venue_order_id=venue_order_id,
-                        quantity=order.quantity,
-                        price=binance_price,
-                        trigger_price=trigger_price,
-                        ts_event=ts_event,
-                        venue_order_id_modified=True,  # Setting true to avoid spurious warning log
-                    )
+            # Detect venue-side adjustments at acceptance:
+            # - quantity may be reduced for reduce-only orders that exceed the
+            #   current position size
+            # - price may be adjusted for priceMatch orders
+            binance_qty = Quantity(float(self.q), size_precision)
+            binance_price = Price(float(self.p), price_precision) if order.has_price else None
+            qty_changed = binance_qty != order.quantity
+            price_changed = binance_price is not None and binance_price != order.price
+
+            if qty_changed or price_changed:
+                # Preserve trigger price for stop orders (priceMatch only affects limit price)
+                trigger_price = order.trigger_price if order.has_trigger_price else None
+                exec_client.generate_order_updated(
+                    strategy_id=strategy_id,
+                    instrument_id=instrument_id,
+                    client_order_id=client_order_id,
+                    venue_order_id=venue_order_id,
+                    quantity=binance_qty,
+                    price=binance_price,
+                    trigger_price=trigger_price,
+                    ts_event=ts_event,
+                    venue_order_id_modified=True,  # Setting true to avoid spurious warning log
+                )
         elif self.x == BinanceExecutionType.TRADE or self.x == BinanceExecutionType.CALCULATED:
             if self.x == BinanceExecutionType.CALCULATED:
                 exec_client._log.info(
@@ -576,6 +582,28 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 if self.x == BinanceExecutionType.CALCULATED
                 else (LiquiditySide.MAKER if self.m else LiquiditySide.TAKER)
             )
+
+            # Reconcile any venue-side adjustment (reduce-only auto-reduction
+            # or priceMatch) before the fill: fast-fill paths can deliver TRADE
+            # without a prior NEW execution type for the same order.
+            if self.x == BinanceExecutionType.TRADE:
+                venue_qty = Quantity(float(self.q), size_precision)
+                venue_price = Price(float(self.p), price_precision) if order.has_price else None
+                qty_changed = venue_qty != order.quantity
+                price_changed = venue_price is not None and venue_price != order.price
+                if qty_changed or price_changed:
+                    trigger_price = order.trigger_price if order.has_trigger_price else None
+                    exec_client.generate_order_updated(
+                        strategy_id=strategy_id,
+                        instrument_id=instrument_id,
+                        client_order_id=client_order_id,
+                        venue_order_id=venue_order_id,
+                        quantity=venue_qty,
+                        price=venue_price,
+                        trigger_price=trigger_price,
+                        ts_event=ts_event,
+                        venue_order_id_modified=True,
+                    )
 
             exec_client.generate_order_filled(
                 strategy_id=strategy_id,

@@ -3202,6 +3202,11 @@ class LiveExecutionEngine(ExecutionEngine):
             if order.status != OrderStatus.ACCEPTED:
                 self._generate_order_accepted(order, report)
 
+            # Detect deltas even when already accepted (e.g. venue-side reduce-only
+            # quantity reduction or priceMatch adjustment that we missed).
+            if self._should_update(order, report):
+                self._generate_order_updated(order, report)
+
             return True  # Reconciled
 
         # Order must have been accepted from this point
