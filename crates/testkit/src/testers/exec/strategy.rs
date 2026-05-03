@@ -507,8 +507,7 @@ impl ExecTester {
             if self.config.test_modify_rejected && !self.modify_rejected_attempted {
                 self.modify_rejected_attempted = true;
                 let order_clone = order.clone();
-                let bumped =
-                    instrument.make_price(price.as_f64() + instrument.price_increment().as_f64());
+                let bumped = add_price_ticks(price, increment, 1, precision);
 
                 if let Err(e) = self.modify_order(order_clone, None, Some(bumped), None, client_id)
                 {
@@ -589,8 +588,7 @@ impl ExecTester {
             if self.config.test_modify_rejected && !self.modify_rejected_attempted {
                 self.modify_rejected_attempted = true;
                 let order_clone = order.clone();
-                let bumped =
-                    instrument.make_price(price.as_f64() - instrument.price_increment().as_f64());
+                let bumped = sub_price_ticks(price, increment, 1, precision);
 
                 if let Err(e) = self.modify_order(order_clone, None, Some(bumped), None, client_id)
                 {
