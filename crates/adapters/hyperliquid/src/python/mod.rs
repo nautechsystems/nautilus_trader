@@ -42,6 +42,7 @@ use crate::{
         },
     },
     config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
+    data_types::HyperliquidAllMids,
     factories::{
         HyperliquidDataClientFactory, HyperliquidExecFactoryConfig,
         HyperliquidExecutionClientFactory,
@@ -154,6 +155,7 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<HyperliquidExecFactoryConfig>()?;
     m.add_class::<HyperliquidDataClientFactory>()?;
     m.add_class::<HyperliquidExecutionClientFactory>()?;
+    m.add_class::<HyperliquidAllMids>()?;
 
     let registry = get_global_pyo3_registry();
 

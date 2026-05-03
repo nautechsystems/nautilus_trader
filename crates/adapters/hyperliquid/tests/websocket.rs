@@ -153,6 +153,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
     });
 
     let book_payload = load_json("ws_book_data.json");
+    let allmids_payload = load_json("ws_allmids.json");
 
     while let Some(message) = socket.next().await {
         let Ok(message) = message else { break };
@@ -218,6 +219,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                                 "time": 1703875200000u64
                                             }
                                         }),
+                                        "allMids" => allmids_payload.clone(),
                                         _ => json!({"channel": sub_type, "data": {}}),
                                     };
 
@@ -1363,6 +1365,76 @@ async fn test_candle_subscription_survives_reconnection() {
     for (_, sub) in &candle_subs {
         let has_btc = sub.get("coin").is_some_and(|c| c.as_str() == Some("BTC"));
         assert!(has_btc, "expected candle subscription for BTC coin");
+    }
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_all_mids_subscription() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    client
+        .subscribe_all_mids()
+        .await
+        .expect("subscribe allMids failed");
+
+    // Wait for subscription to be recorded
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscriptions
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|(t, _)| t == "allMids")
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    // Receive allMids data
+    let msg = tokio::time::timeout(Duration::from_secs(5), client.next_event())
+        .await
+        .expect("timeout waiting for allMids message")
+        .expect("no message received");
+
+    match msg {
+        nautilus_hyperliquid::websocket::messages::NautilusWsMessage::CustomData(data) => {
+            if let nautilus_model::data::Data::Custom(custom) = data {
+                let all_mids = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<nautilus_hyperliquid::data_types::HyperliquidAllMids>()
+                    .expect("expected HyperliquidAllMids");
+                assert_eq!(all_mids.mids.len(), 3);
+                assert!(
+                    all_mids
+                        .mids
+                        .contains_key(&InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
+                );
+                assert!(
+                    all_mids
+                        .mids
+                        .contains_key(&InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"))
+                );
+                assert!(
+                    all_mids
+                        .mids
+                        .contains_key(&InstrumentId::from("SOL-USD-PERP.HYPERLIQUID"))
+                );
+            } else {
+                panic!("expected CustomData, got {:?}", data);
+            }
+        }
+        other => panic!("unexpected message type: {other:?}"),
     }
 
     client.disconnect().await.expect("close failed");
