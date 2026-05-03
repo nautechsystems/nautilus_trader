@@ -2222,19 +2222,31 @@ impl ExecutionEngine {
                 let position_id = pos.id;
 
                 for client_order_id in order.linked_order_ids().unwrap_or_default() {
-                    let mut cache = self.cache.borrow_mut();
-                    let contingent_order = cache.mut_order(client_order_id);
-                    if let Some(contingent_order) = contingent_order
-                        && contingent_order.position_id().is_none()
-                    {
-                        contingent_order.set_position_id(Some(position_id));
-
-                        if let Err(e) = self.cache.borrow_mut().add_position_id(
-                            &position_id,
-                            &contingent_order.instrument_id().venue,
-                            &contingent_order.client_order_id(),
-                            &contingent_order.strategy_id(),
-                        ) {
+                    // Apply contingent-order mutation and index update in two borrows: `mut_order`
+                    // holds `&mut Cache`, so a nested `self.cache.borrow_mut()` would panic.
+                    let maybe_link: Option<(Venue, ClientOrderId, StrategyId)> = {
+                        let mut cache = self.cache.borrow_mut();
+                        match cache.mut_order(client_order_id) {
+                            None => None,
+                            Some(contingent_order) => {
+                                if contingent_order.position_id().is_some() {
+                                    None
+                                } else {
+                                    contingent_order.set_position_id(Some(position_id));
+                                    Some((
+                                        contingent_order.instrument_id().venue,
+                                        contingent_order.client_order_id(),
+                                        contingent_order.strategy_id(),
+                                    ))
+                                }
+                            }
+                        }
+                    };
+                    if let Some((venue, coid, sid)) = maybe_link {
+                        let mut cache = self.cache.borrow_mut();
+                        if let Err(e) =
+                            cache.add_position_id(&position_id, &venue, &coid, &sid)
+                        {
                             log::error!("Failed to add position ID: {e}");
                         }
                     }
