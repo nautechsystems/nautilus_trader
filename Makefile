@@ -718,6 +718,73 @@ cargo-test-coverage-crate-html-%: check-nextest-installed check-llvm-cov-install
 cargo-test-coverage-crate-html-%:  #-- Run coverage for specific crate with HTML report (usage: make cargo-test-coverage-crate-html-<crate_name>)
 	cargo llvm-cov nextest --lib $(FAIL_FAST_FLAG) --cargo-profile nextest -p $* $(if $(FEATURES),--features "$(FEATURES)") --html --open
 
+# -----------------------------------------------------------------------------
+# Miri (UB detection)
+# -----------------------------------------------------------------------------
+# Runs library tests under Miri to detect undefined behaviour: invalid pointer
+# operations, aliasing violations (Stacked/Tree Borrows), uninitialised reads,
+# and unsound `unsafe` impls. Requires a nightly toolchain with the `miri`
+# component installed.
+#
+# Features: `ffi`, `python`, `extension-module`, and `defi` are intentionally
+# disabled. Miri cannot execute Python interpreter calls or most foreign FFI,
+# and `defi` pulls in `alloy-primitives`, which is out of scope here. The
+# `--lib` filter keeps doctests out of the run as well.
+#
+# Proptest cases are dialled down via `PROPTEST_CASES` since Miri is roughly
+# 10-100x slower than native execution. `MIRIFLAGS` enables disable-isolation
+# so tests that read environment variables (e.g. PATH probes) work.
+# -----------------------------------------------------------------------------
+
+# Override these on the command line if needed, e.g.:
+#   make cargo-miri-core MIRI_TOOLCHAIN=nightly-2026-04-16
+#   make cargo-miri-core MIRI_CORE_FILTER=  (empty: run every test)
+MIRI_TOOLCHAIN ?= nightly
+MIRI_FLAGS ?= -Zmiri-disable-isolation -Zmiri-strict-provenance
+MIRI_PROPTEST_CASES ?= 4
+
+# Default test filters target modules with `unsafe` blocks or hand-rolled
+# pointer/integer code where Miri provides the most signal. Miri runs ~10-100x
+# slower than native, so we narrow the default scope; pass the override above
+# (or `MIRI_CORE_FILTER=`) to widen it.
+MIRI_CORE_FILTER ?= -E 'test(/^(string::stack_str|nanos|uuid|hex|correctness|datetime|collections)::/)'
+# `test_price_to_order_id_{comprehensive_collision_check,realistic_orderbook_prices}`
+# iterate over the full price space to verify hash uniqueness. They run for
+# multiple hours under the Miri interpreter and exercise no unsafe, so we skip
+# them here while keeping the rest of `orderbook::` in scope.
+MIRI_MODEL_FILTER ?= -E 'test(/^(types::|identifiers::|orderbook::)/) and not test(=orderbook::aggregation::tests::test_price_to_order_id_comprehensive_collision_check) and not test(=orderbook::aggregation::tests::test_price_to_order_id_realistic_orderbook_prices)'
+
+.PHONY: check-miri-installed
+check-miri-installed:
+	@if ! cargo +$(MIRI_TOOLCHAIN) miri --version >/dev/null 2>&1; then \
+		echo "cargo-miri is not installed for toolchain $(MIRI_TOOLCHAIN)"; \
+		echo "Install with: rustup toolchain install $(MIRI_TOOLCHAIN) --component miri"; \
+		exit 1; \
+	fi
+
+.PHONY: cargo-miri-core
+cargo-miri-core: export RUST_BACKTRACE=1
+cargo-miri-core: export MIRIFLAGS=$(MIRI_FLAGS)
+cargo-miri-core: export PROPTEST_CASES=$(MIRI_PROPTEST_CASES)
+cargo-miri-core: check-miri-installed check-nextest-installed
+cargo-miri-core:  #-- Run nautilus-core library tests under Miri to detect UB
+	$(info $(M) Running nautilus-core tests under Miri (filter: $(MIRI_CORE_FILTER))...)
+	cargo +$(MIRI_TOOLCHAIN) miri nextest run -p nautilus-core --no-default-features --lib $(MIRI_CORE_FILTER)
+
+.PHONY: cargo-miri-model
+cargo-miri-model: export RUST_BACKTRACE=1
+cargo-miri-model: export MIRIFLAGS=$(MIRI_FLAGS)
+cargo-miri-model: export PROPTEST_CASES=$(MIRI_PROPTEST_CASES)
+cargo-miri-model: check-miri-installed check-nextest-installed
+cargo-miri-model:  #-- Run nautilus-model library tests under Miri to detect UB
+	$(info $(M) Running nautilus-model tests under Miri (filter: $(MIRI_MODEL_FILTER))...)
+	cargo +$(MIRI_TOOLCHAIN) miri nextest run -p nautilus-model --no-default-features --lib $(MIRI_MODEL_FILTER)
+
+.PHONY: cargo-miri
+cargo-miri:  #-- Run Miri across the in-scope foundational crates (core + model)
+	$(MAKE) cargo-miri-core
+	$(MAKE) cargo-miri-model
+
 #------------------------------------------------------------------------------
 # Benchmarks
 #------------------------------------------------------------------------------
