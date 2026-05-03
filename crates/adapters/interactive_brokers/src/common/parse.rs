@@ -993,6 +993,64 @@ pub fn is_spread_instrument_id(instrument_id: &InstrumentId) -> bool {
     symbol_str.contains('(') && symbol_str.contains('_')
 }
 
+/// Create a spread instrument ID from leg tuples.
+///
+/// This implements the same logic as Python's `InstrumentId.new_spread`:
+/// - Creates a symbol string like `(1)SYMBOL1_((2))SYMBOL2`
+/// - Positive ratios: `(ratio)SYMBOL`
+/// - Negative ratios: `((abs(ratio)))SYMBOL`
+/// - Sorts legs alphabetically by symbol
+/// - All legs must have the same venue
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Less than 2 legs provided
+/// - Any ratio is zero
+/// - Venues don't match across legs
+pub fn create_spread_instrument_id(
+    leg_tuples: &[(InstrumentId, i32)],
+) -> anyhow::Result<InstrumentId> {
+    if leg_tuples.len() < 2 {
+        anyhow::bail!("instrument_ratios list needs to have at least 2 legs");
+    }
+
+    let first_venue = leg_tuples[0].0.venue;
+
+    for (instrument_id, ratio) in leg_tuples {
+        if *ratio == 0 {
+            anyhow::bail!("ratio cannot be zero");
+        }
+
+        if instrument_id.venue != first_venue {
+            anyhow::bail!(
+                "All venues must match. Expected {}, was {}",
+                first_venue,
+                instrument_id.venue
+            );
+        }
+    }
+
+    let mut sorted_ratios = leg_tuples.to_vec();
+    sorted_ratios.sort_by(|a, b| a.0.symbol.as_str().cmp(b.0.symbol.as_str()));
+
+    let symbol_parts = sorted_ratios
+        .iter()
+        .map(|(instrument_id, ratio)| {
+            if *ratio > 0 {
+                format!("({}){}", ratio, instrument_id.symbol.as_str())
+            } else {
+                format!("(({})){}", ratio.abs(), instrument_id.symbol.as_str())
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let composite_symbol = symbol_parts.join("_");
+    let symbol = NautilusSymbol::from(composite_symbol.as_str());
+
+    Ok(InstrumentId::new(symbol, first_venue))
+}
+
 /// Parse a spread instrument ID back into leg tuples.
 ///
 /// This implements the same logic as Python's `InstrumentId.to_list()`:
@@ -1010,13 +1068,9 @@ pub fn parse_spread_instrument_id_to_legs(
     let symbol_str = instrument_id.symbol.as_str();
     let venue = instrument_id.venue;
 
-    // Split by underscore to get individual components
     let components: Vec<&str> = symbol_str.split('_').collect();
     let mut result = Vec::new();
 
-    // Pattern to match (ratio)symbol or ((ratio))symbol
-    // Positive: (ratio)symbol
-    // Negative: ((ratio))symbol
     for component in components {
         if component.is_empty() {
             continue;

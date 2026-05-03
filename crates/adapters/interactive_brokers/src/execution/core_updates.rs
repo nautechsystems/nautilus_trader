@@ -106,6 +106,9 @@ impl InteractiveBrokersExecutionClient {
         accepted_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
         pending_cancel_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
     ) {
+        let pending_live_exec_data = Arc::new(Mutex::new(AHashMap::new()));
+        let pending_terminal_orders = Arc::new(Mutex::new(AHashMap::new()));
+
         while let Some(update_result) = subscription.next().await {
             match update_result {
                 Ok(update) => {
@@ -128,6 +131,8 @@ impl InteractiveBrokersExecutionClient {
                         order_fill_progress,
                         accepted_orders,
                         pending_cancel_orders,
+                        &pending_live_exec_data,
+                        &pending_terminal_orders,
                     )
                     .await
                     {
@@ -161,6 +166,8 @@ impl InteractiveBrokersExecutionClient {
         order_fill_progress: &Arc<Mutex<AHashMap<ClientOrderId, (Decimal, Decimal)>>>,
         accepted_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
         pending_cancel_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
+        pending_live_exec_data: &Arc<Mutex<AHashMap<String, ExecutionData>>>,
+        pending_terminal_orders: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
     ) -> anyhow::Result<()> {
         let ts_init = clock.get_time_ns();
 
@@ -183,10 +190,31 @@ impl InteractiveBrokersExecutionClient {
                     order_fill_progress,
                     accepted_orders,
                     pending_cancel_orders,
+                    spread_fill_tracking,
+                    pending_live_exec_data,
+                    pending_terminal_orders,
                 )
                 .await?;
             }
             OrderUpdate::ExecutionData(exec_data) => {
+                let execution_id = exec_data.execution.execution_id.clone();
+                let has_commission = commission_cache
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("Failed to lock commission cache"))?
+                    .contains_key(&execution_id);
+
+                if !has_commission {
+                    tracing::debug!(
+                        "Buffering execution data {} until commission report arrives",
+                        execution_id
+                    );
+                    pending_live_exec_data
+                        .lock()
+                        .map_err(|_| anyhow::anyhow!("Failed to lock pending live execution data"))?
+                        .insert(execution_id, exec_data.clone());
+                    return Ok(());
+                }
+
                 Self::handle_execution_data(
                     exec_data,
                     order_id_map,
@@ -208,13 +236,68 @@ impl InteractiveBrokersExecutionClient {
                 .await?;
             }
             OrderUpdate::CommissionReport(commission) => {
-                let mut cache = commission_cache
+                let pending_exec_data = pending_live_exec_data
                     .lock()
-                    .map_err(|_| anyhow::anyhow!("Failed to lock commission cache"))?;
-                cache.insert(
-                    commission.execution_id.clone(),
-                    (commission.commission, commission.currency.clone()),
-                );
+                    .map_err(|_| anyhow::anyhow!("Failed to lock pending live execution data"))?
+                    .remove(&commission.execution_id);
+
+                {
+                    let mut cache = commission_cache
+                        .lock()
+                        .map_err(|_| anyhow::anyhow!("Failed to lock commission cache"))?;
+                    cache.insert(
+                        commission.execution_id.clone(),
+                        (commission.commission, commission.currency.clone()),
+                    );
+                }
+
+                if let Some(exec_data) = pending_exec_data {
+                    let order_id = exec_data.execution.order_id;
+                    Self::handle_execution_data(
+                        &exec_data,
+                        order_id_map,
+                        venue_order_id_map,
+                        instrument_provider,
+                        exec_sender,
+                        ts_init,
+                        account_id,
+                        commission_cache,
+                        spread_fill_tracking,
+                        instrument_id_map,
+                        trader_id_map,
+                        strategy_id_map,
+                        order_avg_prices,
+                        pending_combo_fills,
+                        pending_combo_fill_avgs,
+                        order_fill_progress,
+                    )
+                    .await?;
+
+                    let terminal_client_order_id = pending_terminal_orders
+                        .lock()
+                        .map_err(|_| anyhow::anyhow!("Failed to lock pending terminal orders"))?
+                        .remove(&order_id);
+
+                    if let Some(client_order_id) = terminal_client_order_id {
+                        Self::evict_terminal_order_state(
+                            client_order_id,
+                            order_id,
+                            order_id_map,
+                            venue_order_id_map,
+                            instrument_id_map,
+                            trader_id_map,
+                            strategy_id_map,
+                            order_avg_prices,
+                            pending_combo_fills,
+                            pending_combo_fill_avgs,
+                            order_fill_progress,
+                            accepted_orders,
+                            pending_cancel_orders,
+                            spread_fill_tracking,
+                            pending_live_exec_data,
+                        )?;
+                    }
+                }
             }
             OrderUpdate::OpenOrder(order_data) => {
                 if order_data.order.what_if
@@ -323,7 +406,7 @@ impl InteractiveBrokersExecutionClient {
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn handle_order_status(
         status: &IBOrderStatus,
-        _order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
+        order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
         venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
         exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
@@ -338,6 +421,9 @@ impl InteractiveBrokersExecutionClient {
         order_fill_progress: &Arc<Mutex<AHashMap<ClientOrderId, (Decimal, Decimal)>>>,
         accepted_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
         pending_cancel_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
+        spread_fill_tracking: &Arc<Mutex<AHashMap<ClientOrderId, ahash::AHashSet<String>>>>,
+        pending_live_exec_data: &Arc<Mutex<AHashMap<String, ExecutionData>>>,
+        pending_terminal_orders: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
     ) -> anyhow::Result<()> {
         let client_order_id = {
             let map = venue_order_id_map
@@ -371,7 +457,9 @@ impl InteractiveBrokersExecutionClient {
 
         let ib_order_status = IbOrderStatus::from_str(&status.status).ok();
 
-        if ib_order_status.is_some_and(IbOrderStatus::is_terminal) {
+        let is_terminal = ib_order_status.is_some_and(IbOrderStatus::is_terminal);
+
+        if is_terminal {
             Self::flush_pending_combo_fills(
                 client_order_id,
                 pending_combo_fills,
@@ -500,6 +588,113 @@ impl InteractiveBrokersExecutionClient {
             }
         }
 
+        if is_terminal {
+            let has_pending_execution = pending_live_exec_data
+                .lock()
+                .map_err(|_| anyhow::anyhow!("Failed to lock pending live execution data"))?
+                .values()
+                .any(|exec_data| exec_data.execution.order_id == status.order_id);
+
+            if has_pending_execution {
+                pending_terminal_orders
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("Failed to lock pending terminal orders"))?
+                    .insert(status.order_id, client_order_id);
+            } else {
+                Self::evict_terminal_order_state(
+                    client_order_id,
+                    status.order_id,
+                    order_id_map,
+                    venue_order_id_map,
+                    instrument_id_map,
+                    trader_id_map,
+                    strategy_id_map,
+                    order_avg_prices,
+                    pending_combo_fills,
+                    pending_combo_fill_avgs,
+                    order_fill_progress,
+                    accepted_orders,
+                    pending_cancel_orders,
+                    spread_fill_tracking,
+                    pending_live_exec_data,
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn evict_terminal_order_state(
+        client_order_id: ClientOrderId,
+        order_id: i32,
+        order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
+        venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
+        instrument_id_map: &Arc<Mutex<AHashMap<i32, InstrumentId>>>,
+        trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
+        strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
+        order_avg_prices: &Arc<Mutex<AHashMap<ClientOrderId, Price>>>,
+        pending_combo_fills: &Arc<Mutex<AHashMap<ClientOrderId, VecDeque<PendingComboFill>>>>,
+        pending_combo_fill_avgs: &Arc<Mutex<AHashMap<ClientOrderId, VecDeque<(Decimal, Price)>>>>,
+        order_fill_progress: &Arc<Mutex<AHashMap<ClientOrderId, (Decimal, Decimal)>>>,
+        accepted_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
+        pending_cancel_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
+        spread_fill_tracking: &Arc<Mutex<AHashMap<ClientOrderId, ahash::AHashSet<String>>>>,
+        pending_live_exec_data: &Arc<Mutex<AHashMap<String, ExecutionData>>>,
+    ) -> anyhow::Result<()> {
+        order_id_map
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?
+            .remove(&client_order_id);
+        venue_order_id_map
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?
+            .remove(&order_id);
+        instrument_id_map
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock instrument ID map"))?
+            .remove(&order_id);
+        trader_id_map
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock trader ID map"))?
+            .remove(&order_id);
+        strategy_id_map
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock strategy ID map"))?
+            .remove(&order_id);
+        order_avg_prices
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock order avg prices"))?
+            .remove(&client_order_id);
+        pending_combo_fills
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock pending combo fills"))?
+            .remove(&client_order_id);
+        pending_combo_fill_avgs
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock pending combo avg chunks"))?
+            .remove(&client_order_id);
+        order_fill_progress
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock order fill progress"))?
+            .remove(&client_order_id);
+        accepted_orders
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock accepted orders map"))?
+            .remove(&client_order_id);
+        pending_cancel_orders
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock pending cancel orders map"))?
+            .remove(&client_order_id);
+        spread_fill_tracking
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock spread fill tracking"))?
+            .remove(&client_order_id);
+        pending_live_exec_data
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock pending live execution data"))?
+            .retain(|_, exec_data| exec_data.execution.order_id != order_id);
+
         Ok(())
     }
 
@@ -551,13 +746,19 @@ impl InteractiveBrokersExecutionClient {
         };
 
         let (commission, commission_currency) = {
-            let cache = commission_cache
+            let mut cache = commission_cache
                 .lock()
                 .map_err(|_| anyhow::anyhow!("Failed to lock commission cache"))?;
-            cache.get(&exec_data.execution.execution_id).map_or_else(
-                || (0.0, "USD".to_string()),
-                |(comm, curr)| (*comm, curr.clone()),
-            )
+            let Some((commission, commission_currency)) =
+                cache.remove(&exec_data.execution.execution_id)
+            else {
+                tracing::debug!(
+                    "Execution data {} is waiting for commission report",
+                    exec_data.execution.execution_id
+                );
+                return Ok(());
+            };
+            (commission, commission_currency)
         };
 
         let is_bag = matches!(
@@ -674,10 +875,11 @@ impl InteractiveBrokersExecutionClient {
             .map_err(|_| anyhow::anyhow!("Failed to lock order avg prices"))?
             .insert(client_order_id, avg_px);
 
-        let filled_decimal = Decimal::from_str(&filled.to_string())
-            .map_err(|e| anyhow::anyhow!("Failed to convert filled qty to Decimal: {e}"))?;
-        let avg_decimal = Decimal::from_str(&converted_avg_price.to_string())
-            .map_err(|e| anyhow::anyhow!("Failed to convert avg fill price to Decimal: {e}"))?;
+        let filled_decimal = Decimal::from_f64_retain(filled)
+            .ok_or_else(|| anyhow::anyhow!("Failed to convert filled qty to Decimal: {filled}"))?;
+        let avg_decimal = Decimal::from_f64_retain(converted_avg_price).ok_or_else(|| {
+            anyhow::anyhow!("Failed to convert avg fill price to Decimal: {converted_avg_price}")
+        })?;
 
         let mut progress = order_fill_progress
             .lock()
@@ -944,7 +1146,9 @@ impl InteractiveBrokersExecutionClient {
             instrument_provider,
         );
 
-        let spread_n_legs = spread_instrument_id.symbol.as_str().matches('_').count() + 1;
+        let spread_n_legs =
+            crate::common::parse::parse_spread_instrument_id_to_legs(&spread_instrument_id)?.len();
+
         if (fill_count - 1) % spread_n_legs == 0 {
             let pending_combo_fill = Self::build_pending_combo_fill(
                 exec_data,
@@ -1166,31 +1370,29 @@ impl InteractiveBrokersExecutionClient {
         spread_instrument_id: &InstrumentId,
         leg_instrument_id: &InstrumentId,
     ) -> usize {
-        let symbol_str = spread_instrument_id.symbol.as_str();
-        let components: Vec<&str> = symbol_str.split('_').collect();
-
-        for (idx, component) in components.iter().enumerate() {
-            let symbol_part = if component.contains("((") {
-                if let Some(end) = component.find("))") {
-                    &component[end + 2..]
-                } else {
-                    continue;
+        let legs =
+            match crate::common::parse::parse_spread_instrument_id_to_legs(spread_instrument_id) {
+                Ok(legs) => legs,
+                Err(e) => {
+                    log::warn!(
+                        "Failed to parse spread instrument ID {} for leg position: {e}",
+                        spread_instrument_id
+                    );
+                    return 0;
                 }
-            } else if component.starts_with('(') {
-                if let Some(end) = component.find(')') {
-                    &component[end + 1..]
-                } else {
-                    continue;
-                }
-            } else {
-                continue;
             };
 
-            if leg_instrument_id.symbol.as_str() == symbol_part {
+        for (idx, (parsed_leg_id, _)) in legs.iter().enumerate() {
+            if *parsed_leg_id == *leg_instrument_id {
                 return idx;
             }
         }
 
+        log::warn!(
+            "Leg instrument ID {} not found in spread instrument ID {}",
+            leg_instrument_id,
+            spread_instrument_id
+        );
         0
     }
 }

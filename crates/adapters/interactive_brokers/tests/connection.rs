@@ -45,7 +45,6 @@ fn ib_client_id() -> i32 {
 
 #[rstest]
 #[tokio::test]
-#[ignore = "requires a running paper TWS/Gateway and NAUTILUS_IB_LIVE_TESTS=1"]
 async fn test_paper_tws_managed_accounts_smoke() {
     if !live_ib_tests_enabled() {
         eprintln!("Skipping live IB smoke test because NAUTILUS_IB_LIVE_TESTS is not 1");

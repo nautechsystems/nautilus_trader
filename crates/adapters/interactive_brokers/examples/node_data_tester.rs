@@ -15,7 +15,11 @@
 
 //! Example demonstrating live data testing with the Interactive Brokers adapter.
 //!
-//! Run with: `cargo run --example ib-data-tester --package nautilus-interactive-brokers --features examples`
+//! Run live smoke with:
+//! `cargo run --example ib-data-tester --package nautilus-interactive-brokers --features examples`
+//!
+//! Run embedded config unit tests with:
+//! `cargo test --example ib-data-tester --package nautilus-interactive-brokers --features examples`
 //!
 //! Environment variables:
 //! - `NAUTILUS_IB_HOST` defaults to `127.0.0.1`.

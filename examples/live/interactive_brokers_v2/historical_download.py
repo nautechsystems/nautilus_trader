@@ -42,11 +42,11 @@ async def main() -> None:
     client = ib.HistoricalInteractiveBrokersClient(
         provider,
         ib.InteractiveBrokersDataClientConfig(
-            ibg_host=host,
-            ibg_port=port,
-            ibg_client_id=env_int("IB_V2_HIST_CLIENT_ID", 180),
+            host=host,
+            port=port,
+            client_id=env_int("IB_V2_HIST_CLIENT_ID", 180),
             connection_timeout=env_int("IB_V2_CONNECTION_TIMEOUT", 10),
-            request_timeout_secs=env_int("IB_V2_REQUEST_TIMEOUT", 60),
+            request_timeout=env_int("IB_V2_REQUEST_TIMEOUT", 60),
             use_regular_trading_hours=trading_hours.use_rth(),
             instrument_provider=provider_config,
         ),

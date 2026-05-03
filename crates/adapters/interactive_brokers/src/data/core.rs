@@ -179,7 +179,7 @@ fn request_trading_hours(use_regular_trading_hours: bool) -> ibapi::market_data:
 fn retreat_historical_tick_end_datetime(
     min_ts_nanos: u64,
 ) -> Option<chrono::DateTime<chrono::Utc>> {
-    let new_end_nanos = min_ts_nanos.saturating_sub(1_000_000); // 1ms
+    let new_end_nanos = min_ts_nanos.saturating_sub(1);
     let seconds = (new_end_nanos / 1_000_000_000) as i64;
     let nanos = (new_end_nanos % 1_000_000_000) as u32;
     chrono::DateTime::from_timestamp(seconds, nanos)
@@ -295,6 +295,31 @@ impl InteractiveBrokersDataClient {
 
     fn venue_id(&self) -> Venue {
         *IB_VENUE
+    }
+
+    fn cancel_active_subscriptions(&self) -> anyhow::Result<()> {
+        {
+            let mut subscriptions = self
+                .subscriptions
+                .try_lock()
+                .context("Failed to lock IB subscriptions for cancellation")?;
+            for subscription in subscriptions.values() {
+                subscription.cancellation_token.cancel();
+            }
+            subscriptions.clear();
+        }
+        {
+            let mut subscriptions = self
+                .option_greeks_subscriptions
+                .try_lock()
+                .context("Failed to lock IB option greeks subscriptions for cancellation")?;
+            for cancellation_token in subscriptions.values() {
+                cancellation_token.cancel();
+            }
+            subscriptions.clear();
+        }
+
+        Ok(())
     }
 
     /// Get a reference to the IB client if connected.
@@ -543,9 +568,9 @@ impl DataClient for InteractiveBrokersDataClient {
             id = self.client_id
         );
         self.cancellation_token.cancel();
+        self.cancel_active_subscriptions()?;
         self.is_connected.store(false, Ordering::Relaxed);
 
-        // Cancel all tasks
         for task in &self.tasks {
             task.abort();
         }
@@ -560,24 +585,10 @@ impl DataClient for InteractiveBrokersDataClient {
             id = self.client_id
         );
         self.is_connected.store(false, Ordering::Relaxed);
+        self.cancel_active_subscriptions()?;
         self.cancellation_token = CancellationToken::new();
         self.tasks.clear();
 
-        // Clear subscriptions and cache
-        {
-            let mut subscriptions = self
-                .subscriptions
-                .try_lock()
-                .context("Failed to lock IB subscriptions for reset")?;
-            subscriptions.clear();
-        }
-        {
-            let mut subscriptions = self
-                .option_greeks_subscriptions
-                .try_lock()
-                .context("Failed to lock IB option greeks subscriptions for reset")?;
-            subscriptions.clear();
-        }
         {
             let mut cache = self
                 .quote_cache
@@ -653,6 +664,12 @@ impl DataClient for InteractiveBrokersDataClient {
             )
             .await
         {
+            if !self.config.instrument_provider.load_ids.is_empty()
+                || !self.config.instrument_provider.load_contracts.is_empty()
+            {
+                return Err(e).context("Failed to load configured IB instruments on startup");
+            }
+
             tracing::warn!("Failed to load instruments on startup: {}", e);
         }
 
@@ -742,8 +759,7 @@ impl DataClient for InteractiveBrokersDataClient {
         // Get price magnifier from instrument provider
         let price_magnifier = self.instrument_provider.get_price_magnifier(&instrument_id) as f64;
 
-        // Create subscription-specific cancellation token
-        let subscription_token = CancellationToken::new();
+        let subscription_token = self.cancellation_token.child_token();
 
         // Spawn subscription task
         let client_clone = client.as_arc().clone();
@@ -903,7 +919,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let data_sender = self.data_sender.clone();
         let clock = self.clock;
 
-        let subscription_token = CancellationToken::new();
+        let subscription_token = self.cancellation_token.child_token();
 
         let client_clone = client.as_arc().clone();
         let subscription_token_clone = subscription_token.clone();
@@ -991,7 +1007,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let data_sender = self.data_sender.clone();
         let option_greeks_cache = Arc::clone(&self.option_greeks_cache);
         let clock = self.clock;
-        let subscription_token = CancellationToken::new();
+        let subscription_token = self.cancellation_token.child_token();
         let subscription_token_clone = subscription_token.clone();
         let client_clone = client.as_arc().clone();
 
@@ -1138,7 +1154,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let clock = self.clock;
 
         // Create subscription-specific cancellation token
-        let subscription_token = CancellationToken::new();
+        let subscription_token = self.cancellation_token.child_token();
 
         // Spawn subscription task
         let client_clone = client.as_arc().clone();
@@ -1236,7 +1252,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let start_ns = parse_start_ns(cmd.params.as_ref());
 
         // Create subscription-specific cancellation token
-        let subscription_token = CancellationToken::new();
+        let subscription_token = self.cancellation_token.child_token();
 
         // Spawn subscription task
         let client_clone = client.as_arc().clone();
@@ -1360,7 +1376,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let clock = self.clock;
 
         // Create subscription-specific cancellation token
-        let subscription_token = CancellationToken::new();
+        let subscription_token = self.cancellation_token.child_token();
 
         // Get depth from command or default to 20 (Python default)
         let depth_rows = cmd.depth.map_or(20, |d| d.get() as i32);
@@ -2221,15 +2237,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_retreat_historical_tick_end_datetime_subtracts_one_millisecond() {
+    fn test_retreat_historical_tick_end_datetime_subtracts_one_nanosecond() {
         let result = retreat_historical_tick_end_datetime(1_234_567_890).unwrap();
 
-        assert_eq!(result.timestamp_nanos_opt().unwrap() as u64, 1_233_567_890);
+        assert_eq!(result.timestamp_nanos_opt().unwrap() as u64, 1_234_567_889);
     }
 
     #[rstest]
     fn test_retreat_historical_tick_end_datetime_saturates_at_zero() {
-        let result = retreat_historical_tick_end_datetime(500_000).unwrap();
+        let result = retreat_historical_tick_end_datetime(0).unwrap();
 
         assert_eq!(result.timestamp_nanos_opt().unwrap(), 0);
     }

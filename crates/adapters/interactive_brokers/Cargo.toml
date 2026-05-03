@@ -95,14 +95,16 @@ rust_decimal_macros = { workspace = true }
 tempfile = { workspace = true }
 tracing-test = { workspace = true }
 
-# Run with `cargo run --example ib-data-tester --package nautilus-interactive-brokers --features examples`.
+# Run live smoke with `cargo run --example ib-data-tester --package nautilus-interactive-brokers --features examples`.
+# Run embedded config unit tests with `cargo test --example ib-data-tester --package nautilus-interactive-brokers --features examples`.
 [[example]]
 name = "ib-data-tester"
 path = "examples/node_data_tester.rs"
 required-features = ["examples"]
 doc = false
 
-# Run with `cargo run --example ib-exec-tester --package nautilus-interactive-brokers --features examples`.
+# Run live smoke with `cargo run --example ib-exec-tester --package nautilus-interactive-brokers --features examples`.
+# Run embedded config unit tests with `cargo test --example ib-exec-tester --package nautilus-interactive-brokers --features examples`.
 [[example]]
 name = "ib-exec-tester"
 path = "examples/node_exec_tester.rs"

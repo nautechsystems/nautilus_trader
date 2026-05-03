@@ -46,11 +46,11 @@ async def main() -> None:
     )
     provider = ib.InteractiveBrokersInstrumentProvider(provider_config)
     client_config = ib.InteractiveBrokersDataClientConfig(
-        ibg_host=host,
-        ibg_port=port,
-        ibg_client_id=env_int("IB_V2_OPTION_CLIENT_ID", 1401),
+        host=host,
+        port=port,
+        client_id=env_int("IB_V2_OPTION_CLIENT_ID", 1401),
         connection_timeout=env_int("IB_V2_CONNECTION_TIMEOUT", 10),
-        request_timeout_secs=env_int("IB_V2_REQUEST_TIMEOUT", 30),
+        request_timeout=env_int("IB_V2_REQUEST_TIMEOUT", 30),
         market_data_type=ib.MarketDataType.DELAYED,
         instrument_provider=provider_config,
     )

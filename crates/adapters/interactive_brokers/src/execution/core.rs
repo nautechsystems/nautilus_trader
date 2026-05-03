@@ -212,6 +212,12 @@ impl InteractiveBrokersExecutionClient {
         config: InteractiveBrokersExecClientConfig,
         instrument_provider: Arc<InteractiveBrokersInstrumentProvider>,
     ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            !config.client_id.unsigned_abs().is_multiple_of(1000),
+            "Interactive Brokers execution client_id must not be a multiple of 1000 because order ID partitioning uses client_id % 1000; got {}",
+            config.client_id
+        );
+
         // If account_id is provided in config, use it
         if let Some(account_id) = &config.account_id {
             core.account_id = AccountId::from(account_id.clone());
@@ -299,12 +305,8 @@ impl InteractiveBrokersExecutionClient {
         Ok(())
     }
 
-    fn order_for_modify(&self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny> {
-        if let Some(order) = self.core.cache().order(client_order_id).cloned() {
-            return Ok(order);
-        }
-
-        anyhow::bail!("Order not found for modify: {client_order_id}")
+    fn cached_order_for_modify(&self, client_order_id: &ClientOrderId) -> Option<OrderAny> {
+        self.core.cache().order(client_order_id).cloned()
     }
 
     fn reserve_next_local_order_id(next_order_id: &Arc<Mutex<i32>>) -> anyhow::Result<i32> {
@@ -978,15 +980,8 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                         let converted_avg_cost =
                             position.average_cost / (multiplier * price_magnifier);
                         let price_precision = instrument.price_precision();
-                        Some(
-                            rust_decimal::Decimal::from_f64_retain(converted_avg_cost)
-                                .and_then(|d| {
-                                    // Round to price precision
-                                    let rounded = d.round_dp(price_precision as u32);
-                                    Some(rounded)
-                                })
-                                .unwrap_or_default(),
-                        )
+                        rust_decimal::Decimal::from_f64_retain(converted_avg_cost)
+                            .map(|d| d.round_dp(price_precision as u32))
                     } else {
                         None
                     };
@@ -1292,16 +1287,25 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         let client = self.ib_client.as_ref().context("IB client not connected")?;
 
-        let original_order = self.order_for_modify(&cmd.client_order_id)?;
-
         let order_id_map = Arc::clone(&self.order_id_map);
         let venue_order_id_map = Arc::clone(&self.venue_order_id_map);
+        let instrument_id_map = Arc::clone(&self.instrument_id_map);
         let instrument_provider = Arc::clone(&self.instrument_provider);
         let exec_sender = get_exec_event_sender();
         let clock = get_atomic_clock_realtime();
         let account_id = self.core.account_id;
         let client_clone = client.as_arc().clone();
-        let original_order = Arc::new(original_order);
+        let request_timeout_secs = self.config.request_timeout;
+        let original_order = self
+            .cached_order_for_modify(&cmd.client_order_id)
+            .map(Arc::new);
+
+        if original_order.is_none() {
+            tracing::info!(
+                "Order {} not found in cache for modify; querying IB open orders",
+                cmd.client_order_id
+            );
+        }
 
         let handle = get_runtime().spawn(async move {
             if let Err(e) = Self::handle_modify_order_async(
@@ -1309,11 +1313,13 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 &client_clone,
                 &order_id_map,
                 &venue_order_id_map,
+                &instrument_id_map,
                 &instrument_provider,
                 &exec_sender,
                 clock,
                 account_id,
-                &original_order,
+                original_order.as_ref(),
+                request_timeout_secs,
             )
             .await
             {

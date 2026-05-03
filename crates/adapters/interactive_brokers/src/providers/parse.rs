@@ -568,67 +568,6 @@ fn parse_index_contract(
     InstrumentAny::from(instrument)
 }
 
-/// Create a spread instrument ID from leg tuples.
-///
-/// This implements the same logic as Python's `InstrumentId.new_spread`:
-/// - Creates a symbol string like `(1)SYMBOL1_(-2)SYMBOL2`
-/// - Positive ratios: `(ratio)SYMBOL`
-/// - Negative ratios: `((abs(ratio)))SYMBOL`
-/// - Sorts legs alphabetically by symbol
-/// - All legs must have the same venue
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - Less than 2 legs provided
-/// - Any ratio is zero
-/// - Venues don't match across legs
-pub fn create_spread_instrument_id(
-    leg_tuples: &[(InstrumentId, i32)],
-) -> anyhow::Result<InstrumentId> {
-    if leg_tuples.len() < 2 {
-        anyhow::bail!("instrument_ratios list needs to have at least 2 legs");
-    }
-
-    // Validate all ratios are non-zero and venues match
-    let first_venue = leg_tuples[0].0.venue;
-
-    for (instrument_id, ratio) in leg_tuples {
-        if *ratio == 0 {
-            anyhow::bail!("ratio cannot be zero");
-        }
-
-        if instrument_id.venue != first_venue {
-            anyhow::bail!(
-                "All venues must match. Expected {}, was {}",
-                first_venue,
-                instrument_id.venue
-            );
-        }
-    }
-
-    // Sort instrument ratios alphabetically by symbol
-    let mut sorted_ratios = leg_tuples.to_vec();
-    sorted_ratios.sort_by(|a, b| a.0.symbol.as_str().cmp(b.0.symbol.as_str()));
-
-    // Build the composite symbol
-    let mut symbol_parts = Vec::new();
-
-    for (instrument_id, ratio) in &sorted_ratios {
-        let symbol_part = if *ratio > 0 {
-            format!("({}){}", ratio, instrument_id.symbol.as_str())
-        } else {
-            format!("(({})){}", ratio.abs(), instrument_id.symbol.as_str())
-        };
-        symbol_parts.push(symbol_part);
-    }
-
-    let composite_symbol = symbol_parts.join("_");
-    let symbol = Symbol::from(composite_symbol.as_str());
-
-    Ok(InstrumentId::new(symbol, first_venue))
-}
-
 /// Parse a spread instrument ID into an OptionSpread instrument.
 ///
 /// This implements the same logic as Python's `parse_spread_instrument_id`.

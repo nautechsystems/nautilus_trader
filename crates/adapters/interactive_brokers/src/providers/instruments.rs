@@ -31,14 +31,13 @@ use crate::{
     common::{
         enums::IbAction,
         parse::{
-            determine_venue_from_contract, instrument_id_to_ib_contract, is_spread_instrument_id,
+            create_spread_instrument_id, determine_venue_from_contract,
+            instrument_id_to_ib_contract, is_spread_instrument_id,
             parse_spread_instrument_id_to_legs, possible_exchanges_for_venue,
         },
     },
     config::InteractiveBrokersInstrumentProviderConfig,
-    providers::parse::{
-        create_spread_instrument_id, parse_ib_contract_to_instrument, parse_spread_instrument_any,
-    },
+    providers::parse::{parse_ib_contract_to_instrument, parse_spread_instrument_any},
 };
 
 /// Cache structure for persistent instrument caching.

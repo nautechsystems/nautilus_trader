@@ -12,44 +12,43 @@ import pytest
 from nautilus_trader.core import nautilus_pyo3
 
 
-def test_data_config_accepts_python_adapter_connection_aliases() -> None:
+def test_data_config_uses_clean_connection_names() -> None:
     ib = nautilus_pyo3.interactive_brokers
 
     config = ib.InteractiveBrokersDataClientConfig(
-        ibg_host="127.0.0.2",
-        ibg_port=4002,
-        ibg_client_id=12,
-        request_timeout_secs=33,
+        host="127.0.0.2",
+        port=4002,
+        client_id=12,
+        request_timeout=33,
     )
 
     assert config.host == "127.0.0.2"
-    assert config.ibg_host == "127.0.0.2"
     assert config.port == 4002
-    assert config.ibg_port == 4002
     assert config.client_id == 12
-    assert config.ibg_client_id == 12
     assert config.request_timeout == 33
-    assert config.request_timeout_secs == 33
 
 
-def test_exec_config_accepts_python_adapter_connection_aliases() -> None:
+def test_exec_config_uses_clean_connection_names() -> None:
     ib = nautilus_pyo3.interactive_brokers
 
     config = ib.InteractiveBrokersExecClientConfig(
-        ibg_host="127.0.0.3",
-        ibg_port=4003,
-        ibg_client_id=13,
-        request_timeout_secs=34,
+        host="127.0.0.3",
+        port=4003,
+        client_id=13,
+        request_timeout=34,
     )
 
     assert config.host == "127.0.0.3"
-    assert config.ibg_host == "127.0.0.3"
     assert config.port == 4003
-    assert config.ibg_port == 4003
     assert config.client_id == 13
-    assert config.ibg_client_id == 13
     assert config.request_timeout == 34
-    assert config.request_timeout_secs == 34
+
+
+def test_exec_config_rejects_client_id_multiple_of_1000() -> None:
+    ib = nautilus_pyo3.interactive_brokers
+
+    with pytest.raises(ValueError, match="must not be a multiple of 1000"):
+        ib.InteractiveBrokersExecClientConfig(client_id=1000)
 
 
 def test_pyo3_config_rejects_unwired_dockerized_gateway() -> None:

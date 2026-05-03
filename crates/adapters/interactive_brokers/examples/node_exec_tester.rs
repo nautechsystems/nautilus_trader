@@ -15,7 +15,11 @@
 
 //! Example demonstrating live execution testing with the Interactive Brokers adapter.
 //!
-//! Run with: `cargo run --example ib-exec-tester --package nautilus-interactive-brokers --features examples`
+//! Run live smoke with:
+//! `cargo run --example ib-exec-tester --package nautilus-interactive-brokers --features examples`
+//!
+//! Run embedded config unit tests with:
+//! `cargo test --example ib-exec-tester --package nautilus-interactive-brokers --features examples`
 //!
 //! Environment variables:
 //! - `NAUTILUS_IB_ACCOUNT_ID` is required, for example `U1234567`.
