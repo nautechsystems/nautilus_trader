@@ -1257,6 +1257,28 @@ impl DeribitWebSocketClient {
         self.send_unsubscribe(vec![channel]).await
     }
 
+    /// Subscribes to volatility index updates for the given index name.
+    ///
+    /// Channel format: `deribit_volatility_index.{index_name}`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails.
+    pub async fn subscribe_volatility_index(&self, index_name: &str) -> DeribitWsResult<()> {
+        let channel = DeribitWsChannel::VolatilityIndex.format_channel(index_name, None);
+        self.send_subscribe(vec![channel]).await
+    }
+
+    /// Unsubscribes from volatility index updates for the given index name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
+    pub async fn unsubscribe_volatility_index(&self, index_name: &str) -> DeribitWsResult<()> {
+        let channel = DeribitWsChannel::VolatilityIndex.format_channel(index_name, None);
+        self.send_unsubscribe(vec![channel]).await
+    }
+
     /// Subscribes to perpetual interest rates updates.
     ///
     /// Channel format: `perpetual.{instrument_name}.{interval}`

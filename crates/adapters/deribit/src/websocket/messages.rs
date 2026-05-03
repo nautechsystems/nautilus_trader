@@ -799,6 +799,17 @@ pub enum DeribitWsMessage {
     Reconnected,
 }
 
+/// Volatility index message data from Deribit.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeribitVolatilityIndexMsg {
+    /// The timestamp (milliseconds since the Unix epoch).
+    pub timestamp: u64,
+    /// Value of the corresponding volatility.
+    pub volatility: f64,
+    /// Index identifier supported for DVOL.
+    pub index_name: String,
+}
+
 /// Deribit WebSocket error for external consumers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeribitWebSocketError {

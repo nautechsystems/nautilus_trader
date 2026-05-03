@@ -34,13 +34,14 @@ use nautilus_common::{
             BarsResponse, BookResponse, ForwardPricesResponse, InstrumentResponse,
             InstrumentsResponse, RequestBars, RequestBookSnapshot, RequestForwardPrices,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices,
-            SubscribeInstrument, SubscribeInstrumentStatus, SubscribeInstruments,
-            SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
-            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-            UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
-            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates,
+            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentStatus,
+            SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
+            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates,
+            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentStatus,
+            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -1232,6 +1233,60 @@ impl DataClient for DeribitDataClient {
                 log::error!("Failed to unsubscribe from option greeks for {instrument_id}: {e}");
             }
         });
+
+        Ok(())
+    }
+
+    fn subscribe(&mut self, cmd: SubscribeCustomData) -> anyhow::Result<()> {
+        if cmd.data_type.type_name() == "DeribitVolatilityIndex" {
+            let index_name = cmd
+                .data_type
+                .metadata()
+                .as_ref()
+                .and_then(|m| m.get("index_name"))
+                .map_or_else(|| "btc_usd".to_string(), |v| v.as_str().unwrap_or("btc_usd").to_string());
+
+            log::info!("Subscribing to Deribit volatility index: {index_name}");
+
+            let ws = self
+                .ws_client
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+                .clone();
+
+            get_runtime().spawn(async move {
+                if let Err(e) = ws.subscribe_volatility_index(&index_name).await {
+                    log::error!("Failed to subscribe to volatility index {index_name}: {e}");
+                }
+            });
+        }
+
+        Ok(())
+    }
+
+    fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
+        if cmd.data_type.type_name() == "DeribitVolatilityIndex" {
+            let index_name = cmd
+                .data_type
+                .metadata()
+                .as_ref()
+                .and_then(|m| m.get("index_name"))
+                .map_or_else(|| "btc_usd".to_string(), |v| v.as_str().unwrap_or("btc_usd").to_string());
+
+            log::info!("Unsubscribing from Deribit volatility index: {index_name}");
+
+            let ws = self
+                .ws_client
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+                .clone();
+
+            get_runtime().spawn(async move {
+                if let Err(e) = ws.unsubscribe_volatility_index(&index_name).await {
+                    log::error!("Failed to unsubscribe from volatility index {index_name}: {e}");
+                }
+            });
+        }
 
         Ok(())
     }

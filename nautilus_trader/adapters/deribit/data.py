@@ -39,6 +39,7 @@ from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeData
 from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
@@ -50,6 +51,7 @@ from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeData
 from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
@@ -355,6 +357,20 @@ class DeribitDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         interval = self._get_interval(command.params)
         await self._ws_client.unsubscribe_option_greeks(pyo3_instrument_id, interval)
+
+    async def _subscribe(self, command: SubscribeData) -> None:
+        data_type = command.data_type
+        if data_type.type_name == nautilus_pyo3.DeribitVolatilityIndex.__name__:
+            index_name = data_type.metadata.get("index_name", "btc_usd")
+            self._log.info(f"Subscribing to Deribit volatility index: {index_name}")
+            await self._ws_client.subscribe_volatility_index(index_name)
+
+    async def _unsubscribe(self, command: UnsubscribeData) -> None:
+        data_type = command.data_type
+        if data_type.type_name == nautilus_pyo3.DeribitVolatilityIndex.__name__:
+            index_name = data_type.metadata.get("index_name", "btc_usd")
+            self._log.info(f"Unsubscribing from Deribit volatility index: {index_name}")
+            await self._ws_client.unsubscribe_volatility_index(index_name)
 
     async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
         kind = "any"
