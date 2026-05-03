@@ -1909,10 +1909,11 @@ fn handle_execution_report(
                 emitter.send_fill_report(fill_report);
             }
 
-            // If this fill matches a deferred FILLED marker, drop the cloid
-            // mapping now that the fill has landed.
+            // Skip cleanup while a cancel-replace fill is buffered; the
+            // replacement ACCEPTED still needs to resolve the cloid (GH-3972).
             if let Some(id) = client_order_id
                 && pending_filled_cloids.contains(&id)
+                && dispatch_state.buffered_fill_count(&id) == 0
             {
                 pending_filled_cloids.remove(&id);
                 let cloid = Cloid::from_client_order_id(id);
@@ -2398,6 +2399,67 @@ mod tests {
         ));
         // Deferred cleanup fires once the fill lands.
         assert_eq!(ws_client.get_cloid_mapping(&cloid_for("O-HER-FILL")), None);
+    }
+
+    /// GH-3972: when a status-only `FILLED` marker arrives before both the
+    /// buffered fill and the replacement `ACCEPTED(new_voi)`, the cloid
+    /// mapping must NOT be evicted on the buffered fill: otherwise the later
+    /// `ACCEPTED` cannot resolve the cloid and the buffered fill is stranded.
+    #[rstest]
+    fn test_handle_execution_report_buffered_fill_preserves_cloid_under_filled_marker() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = WsDispatchState::new();
+        let mut pending_cloids: FifoCache<ClientOrderId, 10_000> = FifoCache::new();
+
+        let cid = ClientOrderId::from("O-HER-BUF");
+        state.register_identity(cid, test_identity());
+        state.insert_accepted(cid);
+        state.record_venue_order_id(cid, VenueOrderId::new("old-voi"));
+        state.mark_pending_modify(cid, VenueOrderId::new("old-voi"));
+
+        ws_client.cache_cloid_mapping(cloid_for("O-HER-BUF"), cid);
+
+        // Status-only FILLED marker arrives first; defers cloid eviction.
+        let status_marker = make_status_report(Some("O-HER-BUF"), "new-voi", OrderStatus::Filled);
+        handle_execution_report(
+            ExecutionReport::Order(status_marker),
+            &state,
+            &emitter,
+            &ws_client,
+            &mut pending_cloids,
+            UnixNanos::default(),
+        );
+        assert!(pending_cloids.contains(&cid));
+        assert_eq!(
+            ws_client.get_cloid_mapping(&cloid_for("O-HER-BUF")),
+            Some(cid)
+        );
+
+        // Fill carrying the new venue_order_id arrives before ACCEPTED. It is
+        // buffered; the cloid mapping must be preserved so the eventual
+        // ACCEPTED can still resolve and drain the buffer.
+        let fill = make_fill_report(Some("O-HER-BUF"), "new-voi", "trade-buf");
+        handle_execution_report(
+            ExecutionReport::Fill(fill),
+            &state,
+            &emitter,
+            &ws_client,
+            &mut pending_cloids,
+            UnixNanos::default(),
+        );
+
+        assert_eq!(state.buffered_fill_count(&cid), 1);
+        assert!(drain_events(&mut rx).is_empty());
+        assert!(
+            pending_cloids.contains(&cid),
+            "deferred cleanup must remain armed until the buffered fill drains",
+        );
+        assert_eq!(
+            ws_client.get_cloid_mapping(&cloid_for("O-HER-BUF")),
+            Some(cid),
+            "cloid mapping must survive a buffered fill so the later ACCEPTED resolves",
+        );
     }
 
     #[rstest]

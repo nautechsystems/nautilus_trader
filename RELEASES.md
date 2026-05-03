@@ -47,6 +47,8 @@ Released on TBD (UTC).
 - Fixed dYdX Python `_request_instrument(s)` to pass the full `_handle_data_response` argument set
 - Fixed dYdX Python `_subscribe_order_book_depth` to log a graceful warning instead of raising `NotImplementedError`
 - Fixed Hyperliquid spurious `OrderCanceled` on concurrent modifies (Python and Rust) (#3971), thanks @M-Advis
+- Fixed Hyperliquid cancel-replace fill race emitting `OrderFilled` against stale local order state (Python and Rust) (#3972)
+- Bounded the Hyperliquid Rust WebSocket cloid resolution cache via `FifoCacheMap` so missed eviction (e.g. on the cancel-replace drain path) self-recovers instead of leaking
 
 ### Internal Improvements
 - Added `OrderMatchingCore::update_price_increment` primitive for tick-size propagation parity (Rust)

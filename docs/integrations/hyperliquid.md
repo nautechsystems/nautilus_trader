@@ -554,6 +554,19 @@ Under (1) the pending-modify marker is not installed, so the early `CANCELED(old
 cycle restores the correct order state against the exchange.
 :::
 
+A `FillReport` for the replacement leg can also race ahead of `ACCEPTED(new_oid)`. The dispatch
+buffers such fills (when the pending-modify marker is set and the report's `oid` does not match
+the cached value) and drains them on the matching `ACCEPTED`, so `OrderFilled` always follows
+the promoting `OrderUpdated` against up-to-date state. See
+[GH-3972](https://github.com/nautechsystems/nautilus_trader/issues/3972).
+
+:::note
+A chained-modify edge case is deferred: if a delayed fill from a *prior* leg arrives during a
+*new* in-flight modify and that new modify then fails, the buffered fill is stranded until
+terminal cleanup. Reconciliation (`request_fill_reports`) recovers it. Fully closing this
+requires additional design work (retired-VOI tracking or drain on modify-failure paths).
+:::
+
 ## Order books
 
 Order books are maintained via L2 WebSocket subscription. Each message delivers a full-depth

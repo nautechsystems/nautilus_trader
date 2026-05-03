@@ -36,6 +36,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -1954,5 +1955,545 @@ async def test_submit_order_list_converts_to_pyo3(
         assert isinstance(submitted[0], nautilus_pyo3.MarketOrder)
         assert isinstance(submitted[1], nautilus_pyo3.LimitOrder)
         assert isinstance(submitted[2], nautilus_pyo3.StopMarketOrder)
+    finally:
+        await client._disconnect()
+
+
+def _build_fill_report_pyo3(
+    client,
+    instrument,
+    client_order_id,
+    venue_order_id,
+    trade_id,
+    last_qty,
+    last_px,
+):
+    return nautilus_pyo3.FillReport(
+        account_id=nautilus_pyo3.AccountId(client.account_id.value),
+        instrument_id=nautilus_pyo3.InstrumentId.from_str(instrument.id.value),
+        venue_order_id=nautilus_pyo3.VenueOrderId(venue_order_id),
+        trade_id=nautilus_pyo3.TradeId(trade_id),
+        order_side=nautilus_pyo3.OrderSide.BUY,
+        last_qty=nautilus_pyo3.Quantity.from_str(last_qty),
+        last_px=nautilus_pyo3.Price.from_str(last_px),
+        commission=nautilus_pyo3.Money.from_str("0.00 USD"),
+        liquidity_side=nautilus_pyo3.LiquiditySide.TAKER,
+        ts_event=0,
+        client_order_id=nautilus_pyo3.ClientOrderId(client_order_id.value),
+        report_id=nautilus_pyo3.UUID4(),
+        ts_init=0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_fill_report_buffers_during_cancel_replace(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    Reproduces the fill leg of GH-3972.
+
+    A fill carrying the replacement's new venue_order_id can arrive on the WebSocket
+    before the matching ACCEPTED has been promoted to OrderUpdated. The handler must
+    buffer the fill (no OrderFilled, trade_id not consumed by the dedup set) so the
+    engine never sees a fill against stale local order state.
+
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-FILL-RACE-001"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00020"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    old_voi = VenueOrderId("9000")
+    new_voi = VenueOrderId("9001")
+    cache.add_venue_order_id(order.client_order_id, old_voi)
+    client._accepted_orders.add(order.client_order_id.value)
+    client._pending_modify_keys[order.client_order_id.value] = old_voi.value
+
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    fill = _build_fill_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        new_voi.value,
+        "T-RACE-1",
+        "0.00020",
+        "53893.0",
+    )
+
+    try:
+        # Act
+        client._handle_fill_report_pyo3(fill)
+
+        # Assert
+        assert captured == []
+        assert client._buffered_fills[order.client_order_id.value] == [fill]
+        assert "T-RACE-1" not in client._processed_trade_ids
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_cancel_replace_accepted_drains_buffered_fill(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    The replacement ACCEPTED branch must drain any FillReports buffered during the
+    cancel-replace window so OrderFilled is emitted in order after the OrderUpdated that
+    advances the cached venue_order_id (GH-3972).
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-FILL-RACE-002"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00020"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    old_voi = VenueOrderId("9100")
+    new_voi = VenueOrderId("9101")
+    cache.add_venue_order_id(order.client_order_id, old_voi)
+    client._accepted_orders.add(order.client_order_id.value)
+    client._pending_modify_keys[order.client_order_id.value] = old_voi.value
+
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    fill = _build_fill_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        new_voi.value,
+        "T-RACE-2",
+        "0.00020",
+        "53893.0",
+    )
+    accepted_report = _build_status_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        new_voi.value,
+        nautilus_pyo3.OrderStatus.ACCEPTED,
+        price="53893.0",
+        quantity="0.00020",
+    )
+
+    try:
+        # Act - fill arrives first, then the replacement ACCEPTED drains it
+        client._handle_fill_report_pyo3(fill)
+        assert order.client_order_id.value in client._buffered_fills
+        client._handle_order_status_report_pyo3(accepted_report)
+
+        # Assert
+        updated_events = [e for e in captured if isinstance(e, OrderUpdated)]
+        filled_events = [e for e in captured if isinstance(e, OrderFilled)]
+
+        assert len(updated_events) == 1
+        assert updated_events[0].venue_order_id == new_voi
+        assert len(filled_events) == 1
+        assert filled_events[0].venue_order_id == new_voi
+        assert filled_events[0].last_qty == Quantity.from_str("0.00020")
+        assert filled_events[0].last_px == Price.from_str("53893.0")
+
+        # Ordering: OrderUpdated must precede the drained OrderFilled.
+        update_index = next(i for i, e in enumerate(captured) if isinstance(e, OrderUpdated))
+        fill_index = next(i for i, e in enumerate(captured) if isinstance(e, OrderFilled))
+        assert update_index < fill_index
+
+        assert order.client_order_id.value not in client._buffered_fills
+        assert order.client_order_id.value not in client._pending_modify_keys
+        assert cache.venue_order_id(order.client_order_id) == new_voi
+        assert "T-RACE-2" in client._processed_trade_ids
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_handle_fill_report_passes_through_when_voi_matches_cached(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    A fill whose venue_order_id matches the cached value must not be buffered
+    even if a modify is in flight: it belongs to the still-current leg and the
+    engine can apply it against the live local order state (GH-3972).
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-FILL-RACE-003"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00020"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    old_voi = VenueOrderId("9200")
+    cache.add_venue_order_id(order.client_order_id, old_voi)
+    client._accepted_orders.add(order.client_order_id.value)
+    client._pending_modify_keys[order.client_order_id.value] = old_voi.value
+
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    fill = _build_fill_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        old_voi.value,
+        "T-RACE-3",
+        "0.00020",
+        "56730.0",
+    )
+
+    try:
+        # Act
+        client._handle_fill_report_pyo3(fill)
+
+        # Assert
+        filled_events = [e for e in captured if isinstance(e, OrderFilled)]
+        assert len(filled_events) == 1
+        assert filled_events[0].venue_order_id == old_voi
+        assert order.client_order_id.value not in client._buffered_fills
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_stale_old_leg_fill_after_cancel_replace_falls_through(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    GH-3972 regression guard.
+
+    A delayed old-leg fill arriving after the cancel-replace promotion has
+    already advanced the cached venue_order_id must NOT be buffered. Buffering
+    it would strand the fill forever (no further ACCEPTED on this cid would
+    drain it). The `_pending_modify_keys` requirement is what prevents this:
+    the cancel-replace ACCEPTED clears the marker, so the buffer guard does
+    not fire on cached_voi mismatch alone. The fill falls through and emits
+    `OrderFilled` with the (now stale) old VOI; the engine rejects on
+    venue_order_id mismatch and reconciliation recovers from there.
+
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-FILL-STALE"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00020"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    old_voi = VenueOrderId("STALE-OLD")
+    new_voi = VenueOrderId("STALE-NEW")
+    # Cancel-replace already promoted: cached_voi advanced and the marker was
+    # cleared on the ACCEPTED.
+    cache.add_venue_order_id(order.client_order_id, new_voi)
+    client._accepted_orders.add(order.client_order_id.value)
+    assert order.client_order_id.value not in client._pending_modify_keys
+
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    # Delayed old-leg fill arrives via WS reordering across feeds.
+    fill = _build_fill_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        old_voi.value,
+        "T-STALE-1",
+        "0.00020",
+        "56730.0",
+    )
+
+    try:
+        # Act
+        client._handle_fill_report_pyo3(fill)
+
+        # Assert: the fill must not be buffered (would strand forever);
+        # it falls through to normal emission with the old VOI.
+        assert order.client_order_id.value not in client._buffered_fills
+        filled_events = [e for e in captured if isinstance(e, OrderFilled)]
+        assert len(filled_events) == 1
+        assert filled_events[0].venue_order_id == old_voi
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_cancel_replace_drains_multiple_buffered_fills_in_arrival_order(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    Multiple partial fills buffered during the cancel-replace window must be re-
+    dispatched in arrival order so the engine observes the correct cumulative fill
+    sequence on the replacement leg (GH-3972).
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-FILL-RACE-MULTI"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00020"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    old_voi = VenueOrderId("MULTI-OLD")
+    new_voi = VenueOrderId("MULTI-NEW")
+    cache.add_venue_order_id(order.client_order_id, old_voi)
+    client._accepted_orders.add(order.client_order_id.value)
+    client._pending_modify_keys[order.client_order_id.value] = old_voi.value
+
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    fill_a = _build_fill_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        new_voi.value,
+        "T-MULTI-A",
+        "0.00010",
+        "53800.0",
+    )
+    fill_b = _build_fill_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        new_voi.value,
+        "T-MULTI-B",
+        "0.00010",
+        "53850.0",
+    )
+    accepted_report = _build_status_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        new_voi.value,
+        nautilus_pyo3.OrderStatus.ACCEPTED,
+        price="53850.0",
+        quantity="0.00020",
+    )
+
+    try:
+        # Act
+        client._handle_fill_report_pyo3(fill_a)
+        client._handle_fill_report_pyo3(fill_b)
+        assert len(client._buffered_fills[order.client_order_id.value]) == 2
+        client._handle_order_status_report_pyo3(accepted_report)
+
+        # Assert
+        updated_events = [e for e in captured if isinstance(e, OrderUpdated)]
+        filled_events = [e for e in captured if isinstance(e, OrderFilled)]
+        assert len(updated_events) == 1
+        assert len(filled_events) == 2
+
+        # Arrival order: A (53800.0) before B (53850.0). A reversed drain or
+        # single-element overwrite mutation would change this sequence.
+        assert filled_events[0].trade_id.value == "T-MULTI-A"
+        assert filled_events[0].last_px == Price.from_str("53800.0")
+        assert filled_events[1].trade_id.value == "T-MULTI-B"
+        assert filled_events[1].last_px == Price.from_str("53850.0")
+
+        # OrderUpdated must precede both Filled events.
+        update_index = next(i for i, e in enumerate(captured) if isinstance(e, OrderUpdated))
+        first_fill_index = next(i for i, e in enumerate(captured) if isinstance(e, OrderFilled))
+        assert update_index < first_fill_index
+
+        assert order.client_order_id.value not in client._buffered_fills
+        assert "T-MULTI-A" in client._processed_trade_ids
+        assert "T-MULTI-B" in client._processed_trade_ids
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_filled_marker_then_buffered_fill_drain_runs_tail_cleanup(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    GH-3972: when a FILLED status marker for the replacement leg arrived first,
+    the buffer guard returns before the tail cleanup, but the eventual
+    cancel-replace ACCEPTED drain must re-dispatch the fill so the tail cleanup
+    fires and `_pending_filled` / the cloid mapping are evicted.
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-FILL-RACE-TAIL"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00020"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    old_voi = VenueOrderId("TAIL-OLD")
+    new_voi = VenueOrderId("TAIL-NEW")
+    cache.add_venue_order_id(order.client_order_id, old_voi)
+    client._accepted_orders.add(order.client_order_id.value)
+    client._pending_modify_keys[order.client_order_id.value] = old_voi.value
+    # Simulate an earlier FILLED status marker for the replacement leg that
+    # deferred the cloid cleanup to the matching FillReport.
+    client._pending_filled.add(order.client_order_id.value)
+
+    cleanup_calls: list = []
+    original_cleanup = client._cleanup_cloid_mapping
+    monkeypatch.setattr(
+        client,
+        "_cleanup_cloid_mapping",
+        lambda cid: cleanup_calls.append(cid) or original_cleanup(cid),
+    )
+
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    fill = _build_fill_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        new_voi.value,
+        "T-TAIL-1",
+        "0.00020",
+        "53893.0",
+    )
+    accepted_report = _build_status_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        new_voi.value,
+        nautilus_pyo3.OrderStatus.ACCEPTED,
+        price="53893.0",
+        quantity="0.00020",
+    )
+
+    try:
+        # Act 1: fill arrives first; buffer guard fires.
+        client._handle_fill_report_pyo3(fill)
+
+        # Tail cleanup must NOT have fired yet (guard returned early).
+        assert order.client_order_id.value in client._pending_filled
+        assert cleanup_calls == []
+        assert client._buffered_fills[order.client_order_id.value] == [fill]
+
+        # Act 2: cancel-replace ACCEPTED arrives, drains the buffer.
+        client._handle_order_status_report_pyo3(accepted_report)
+
+        # Assert: drained fill ran the full pipeline, including tail cleanup.
+        filled_events = [e for e in captured if isinstance(e, OrderFilled)]
+        assert len(filled_events) == 1
+        assert filled_events[0].venue_order_id == new_voi
+        assert order.client_order_id.value not in client._pending_filled
+        assert order.client_order_id.value not in client._buffered_fills
+        # `_cleanup_cloid_mapping` is called once by the drained fill's tail
+        # (terminal cleanup may also pop the buffered_fills entry, but that is
+        # already empty by then).
+        assert cleanup_calls == [order.client_order_id]
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_buffered_fills_cleared_on_terminal_cleanup(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    Terminal cleanup must drop any buffered fills so a stranded entry cannot outlive the
+    cloid mapping it was keyed on (GH-3972).
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    cid = ClientOrderId("O-FILL-RACE-004")
+    fill = _build_fill_report_pyo3(
+        client,
+        instrument,
+        cid,
+        "9300",
+        "T-RACE-4",
+        "0.00020",
+        "56730.0",
+    )
+    client._buffered_fills[cid.value] = [fill]
+
+    try:
+        # Act
+        client._cleanup_cloid_mapping(cid)
+
+        # Assert
+        assert cid.value not in client._buffered_fills
     finally:
         await client._disconnect()

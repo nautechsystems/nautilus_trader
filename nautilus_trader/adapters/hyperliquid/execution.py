@@ -163,6 +163,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         # cancel-replace when CANCELED(old_voi) arrives before the replacement
         # ACCEPTED(new_voi). See GH-3827.
         self._pending_modify_keys: dict[str, str] = {}
+        # FillReports buffered during an in-flight cancel-replace, drained
+        # from the cancel-replace ACCEPTED branch. See GH-3972.
+        self._buffered_fills: dict[str, list[nautilus_pyo3.FillReport]] = {}
 
         self._fee_refresh_task: asyncio.Task | None = None
 
@@ -258,6 +261,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             self._log.info(f"Cached cloid mappings for {count} existing order(s)", LogColor.BLUE)
 
     def _cleanup_cloid_mapping(self, client_order_id: ClientOrderId) -> None:
+        # Drop the cancel-replace fill buffer to avoid stranded entries (GH-3972).
+        self._buffered_fills.pop(client_order_id.value, None)
         try:
             pyo3_client_order_id = nautilus_pyo3.ClientOrderId(client_order_id.value)
             cloid = nautilus_pyo3.hyperliquid_cloid_from_client_order_id(pyo3_client_order_id)
@@ -1185,6 +1190,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                     ts_event=report.ts_last,
                     venue_order_id_modified=True,
                 )
+
+                # Drain buffered fills against the now-advanced state (GH-3972).
+                buffered = self._buffered_fills.pop(key, None)
+                if buffered:
+                    for pyo3_buffered in buffered:
+                        self._handle_fill_report_pyo3(pyo3_buffered)
                 return
 
             if key in self._accepted_orders or key in self._terminal_orders:
@@ -1361,9 +1372,26 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             )
             return
 
-        self._processed_trade_ids.add(trade_id_str)
-
         key = order.client_order_id.value
+
+        # Buffer fills for an in-flight cancel-replace; the marker requirement
+        # avoids stranding stale old-leg fills after promotion. See GH-3972.
+        cached_voi = self._cache.venue_order_id(order.client_order_id)
+        if (
+            key in self._pending_modify_keys
+            and cached_voi is not None
+            and report.venue_order_id is not None
+            and report.venue_order_id != cached_voi
+        ):
+            self._log.debug(
+                f"Buffering cancel-replace fill for {order.client_order_id!r}: "
+                f"report_voi={report.venue_order_id!r}, cached_voi={cached_voi!r}, "
+                f"trade_id={report.trade_id!r}",
+            )
+            self._buffered_fills.setdefault(key, []).append(pyo3_report)
+            return
+
+        self._processed_trade_ids.add(trade_id_str)
 
         # If order not yet accepted, generate OrderAccepted first to avoid state transition error
         if key not in self._accepted_orders:
