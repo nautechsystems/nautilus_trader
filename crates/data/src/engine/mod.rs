@@ -500,7 +500,7 @@ impl DataEngine {
         let futures: Vec<_> = self
             .get_clients_mut()
             .into_iter()
-            .map(|client| client.connect())
+            .map(DataClientAdapter::connect)
             .collect();
 
         let results = join_all(futures).await;
@@ -519,7 +519,7 @@ impl DataEngine {
         let futures: Vec<_> = self
             .get_clients_mut()
             .into_iter()
-            .map(|client| client.disconnect())
+            .map(DataClientAdapter::disconnect)
             .collect();
 
         let results = join_all(futures).await;
@@ -528,7 +528,7 @@ impl DataEngine {
         if errors.is_empty() {
             Ok(())
         } else {
-            let error_msgs: Vec<_> = errors.iter().map(|e| e.to_string()).collect();
+            let error_msgs: Vec<_> = errors.iter().map(ToString::to_string).collect();
             anyhow::bail!(
                 "Failed to disconnect data clients: {}",
                 error_msgs.join("; ")
@@ -802,7 +802,7 @@ impl DataEngine {
             && self.external_clients.contains(client_id)
         {
             if self.config.debug {
-                log::debug!("Skipping subscribe command for external client {client_id}: {cmd:?}",);
+                log::debug!("Skipping subscribe command for external client {client_id}: {cmd:?}");
             }
             return Ok(());
         }
@@ -1416,7 +1416,7 @@ impl DataEngine {
             && self.external_clients.contains(client_id)
         {
             if self.config.debug {
-                log::debug!("Skipping subscribe command for external client {client_id}: {cmd:?}",);
+                log::debug!("Skipping subscribe command for external client {client_id}: {cmd:?}");
             }
             return Ok(());
         }
@@ -2000,7 +2000,7 @@ impl DataEngine {
         drop(cache);
 
         if let Some(price) = best_price {
-            log::info!("Forward price for {series_id}: {price} (instant bootstrap)",);
+            log::info!("Forward price for {series_id}: {price} (instant bootstrap)");
         } else {
             log::info!(
                 "No matching forward price found for {series_id}, will bootstrap from live data",
@@ -2234,7 +2234,7 @@ impl DataEngine {
         Ok(())
     }
 
-    /// Sets up a bar aggregator, matching Cython _setup_bar_aggregator logic.
+    /// Sets up a bar aggregator, matching Cython `_setup_bar_aggregator` logic.
     ///
     /// This method handles historical mode, message bus subscriptions, and time bar aggregator setup.
     fn setup_bar_aggregator(&self, bar_type: BarType, historical: bool) -> anyhow::Result<()> {

@@ -602,7 +602,7 @@ mod tests {
         UnixNanos::from(1_000_000_000_000_000_000u64)
     }
 
-    /// Sets ATM price on an aggregator via a synthetic OptionGreeks with the given forward price.
+    /// Sets ATM price on an aggregator via a synthetic `OptionGreeks` with the given forward price.
     fn set_atm_via_greeks(agg: &mut OptionChainAggregator, price: f64) {
         let greeks = OptionGreeks {
             instrument_id: InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
@@ -712,7 +712,7 @@ mod tests {
 
     // -- Rebalance tests --
 
-    /// Builds instruments with 5 strike prices (45000..55000 step 2500) and AtmRelative +-1.
+    /// Builds instruments with 5 strike prices (45000..55000 step 2500) and `AtmRelative` +-1.
     /// Hysteresis and cooldown are disabled so existing rebalance tests pass unchanged.
     fn make_multi_strike_aggregator() -> OptionChainAggregator {
         let strikes = [45000, 47500, 50000, 52500, 55000];
