@@ -753,6 +753,12 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 filled_user_order_id=order_id,
             )
 
+            # Apply the same dust snap as the WS path so the engine sees a
+            # consistent fill quantity. Commission stays as the venue computed
+            # it from the on-chain fill: the snap is only an internal
+            # accommodation for engine-side overfill checks.
+            report.last_qty = self._fill_tracker.snap_fill_qty(venue_order_id, report.last_qty)
+
             fill_key = (report.trade_id, report.venue_order_id)
             if fill_key in parsed_fill_keys:
                 self._log.warning(f"Duplicate fill key {fill_key}, skipping")
@@ -2084,16 +2090,19 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._log.warning(f"Order already closed - skipping trade processing: {order}")
             return  # Already closed (only status update)
 
-        last_qty = instrument.make_qty(msg.last_qty(order_id))
-        last_qty = self._fill_tracker.snap_fill_qty(venue_order_id, last_qty)
+        raw_last_qty = instrument.make_qty(msg.last_qty(order_id))
         last_px = instrument.make_price(msg.last_px(order_id))
         liquidity_side = msg.liquidity_side()
+        # Compute commission from the venue-reported quantity, then snap for
+        # engine acceptance. The fee Polymarket actually charged tracks the
+        # on-chain fill, not our local-only dust adjustment.
         commission = calculate_commission(
-            quantity=last_qty.as_decimal(),
+            quantity=raw_last_qty.as_decimal(),
             price=last_px.as_decimal(),
             fee_rate=instrument.taker_fee,
             liquidity_side=liquidity_side,
         )
+        last_qty = self._fill_tracker.snap_fill_qty(venue_order_id, raw_last_qty)
         ts_event = secs_to_nanos(int(msg.match_time))
 
         self.generate_order_filled(

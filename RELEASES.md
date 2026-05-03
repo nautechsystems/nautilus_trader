@@ -12,9 +12,11 @@ Released on TBD (UTC).
 - Added Coinbase liquidation/ADL warning on forced-close order events
 - Added Coinbase CFM liquidation buffer warning when buffer drops below 20%
 - Added dYdX historical funding rate requests via the `request_funding_rates` HTTP method and PyO3 binding
+- Added Polymarket `OrderStatusReport.filled_qty` dust snap at terminal `Filled` status to absorb venue truncation
 
 ### Breaking Changes
 - Removed `From<OrderInitialized>` for order types; use `TryFrom` to surface invariant errors via `try_from`/`try_into`
+- Removed Polymarket `SNAP_UNDERFILL_ULPS` and `SNAP_OVERFILL_ULPS`; reverting to single `DUST_SNAP_THRESHOLD` constant
 - Renamed `time_bars_origins` config param to `time_bars_origin_offset` in Rust `DataEngineConfig`/`LiveDataEngineConfig`
 - Changed JSON log file extension from `.json` to `.jsonl`; update log shippers watching `.json` (#3955), thanks @filipmacek
 - Changed Python order `create()` methods to raise `ValueError` on invalid `OrderInitialized` instead of panicking
@@ -26,11 +28,13 @@ Released on TBD (UTC).
 - Fixed `OrderMatchingEngine` to propagate tick-size to `MatchingCore` (#3942), thanks for reporting @graceyangfan
 - Fixed `Strategy`/`Actor` clock callback leak on dispose (#3967), thanks for reporting @frslvr
 - Fixed `ExecTester` LIT pricing direction so reconciled BUY/SELL LIT orders satisfy the `trigger_price` invariant
+- Fixed `OrderAny::from_events` panic on malformed `OrderInitialized`; reconciliation returns `Err` instead of crashing
 - Fixed v2 wrangler timestamp resolution to force nanoseconds before the int64 cast for pandas 3 compatibility (#3970), thanks @gzenz
 - Fixed Betfair Rust adapter dropped fills on reconnect by resyncing the fill tracker from cache
 - Fixed Kraken symbol normalization for WS v2 compatibility (#3961), thanks @mcgrj
 - Fixed OKX missing `post_only` instrument status (#3966), thanks @jhavie
-- Fixed `OrderAny::from_events` panic on malformed `OrderInitialized`; reconciliation returns `Err` instead of crashing
+- Fixed Polymarket V2 BUY overfill rejection via overfill-only `last_qty` snap on WS, REST, and buffered drain paths
+- Fixed Polymarket REST fill paths bypassing dust normalization, causing engine state to diverge from venue across paths
 - Fixed dYdX FOK and DAY time-in-force orders to reject pre-submission instead of failing at the venue or mapping to GTC
 - Fixed dYdX MIT/LIT round-tripping on reconcile when the Indexer collapses both variants under `TAKE_PROFIT`
 - Fixed dYdX GTD expiry to surface `OrderExpired` on both WS and HTTP reconciliation paths
@@ -61,8 +65,9 @@ Released on TBD (UTC).
 - Upgraded `databento` crate to v0.49.0
 
 ### Documentation Updates
-- Added dYdX adapter notes for FOK deprecation, DAY rejection, equity-tier limit, and MIT/LIT round-tripping
 - Added DST docs caveats for process-global lazy state RNG consumption and `CacheView` factory blocker
+- Added Polymarket fill quantity normalization section explaining the dust snap, deferred dust, and commission semantics
+- Added dYdX adapter notes for FOK deprecation, DAY rejection, equity-tier limit, and MIT/LIT round-tripping
 
 ### Deprecations
 

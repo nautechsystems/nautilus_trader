@@ -1474,13 +1474,18 @@ impl ExecutionClient for PolymarketExecutionClient {
             .context("failed to fetch trades")?;
 
         let ctx = self.fill_context();
-        let (reports, _) = build_fill_reports_from_trades(
+        let (mut reports, _) = build_fill_reports_from_trades(
             &trades,
             &ctx,
             &self.shared_token_instruments,
             cmd.instrument_id,
             self.clock.get_time_ns(),
         );
+
+        // Snap dust drift on REST fills the same way the WS path does, so the
+        // engine sees a consistent quantity regardless of which path delivered
+        // a given fill first. Commission stays as venue-reported.
+        self.fill_tracker.snap_fill_reports(&mut reports);
 
         let reports = apply_fill_filters(reports, cmd.venue_order_id, cmd.start, cmd.end);
 
@@ -1519,6 +1524,7 @@ impl ExecutionClient for PolymarketExecutionClient {
             &self.http_client,
             &self.data_api_client,
             &self.shared_token_instruments,
+            &self.fill_tracker,
             &ctx,
             self.core.client_id,
             self.core.venue,

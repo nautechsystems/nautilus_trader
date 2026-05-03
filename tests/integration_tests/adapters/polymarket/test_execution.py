@@ -373,6 +373,109 @@ class TestPolymarketExecutionClient:
         assert position.entry == OrderSide.BUY
         assert position.quantity.as_double() == 5
 
+    def test_ws_taker_dust_overfill_uses_raw_qty_for_commission(self, mocker):
+        """
+        Dust scenarios on the WS taker path must compute commission from the venue-
+        reported (raw) quantity and only snap last_qty for engine acceptance.
+
+        See `docs/integrations/polymarket.md` (Fill quantity normalization).
+
+        """
+        from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserTrade
+
+        # Arrange: precision-6 instrument with non-zero taker fee
+        market = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
+        asset_id = "21742633143463906290569050155826241533067272736897614950488156847949938836455"
+        instrument_id = get_polymarket_instrument_id(market, asset_id)
+        instrument = BinaryOption(
+            instrument_id=instrument_id,
+            raw_symbol=Symbol(instrument_id.symbol.value),
+            outcome="Yes",
+            description="Dust precision-6 BinaryOption",
+            asset_class=AssetClass.ALTERNATIVE,
+            currency=USDC,
+            price_precision=3,
+            price_increment=Price.from_str("0.001"),
+            size_precision=6,
+            size_increment=Quantity.from_str("0.000001"),
+            activation_ns=0,
+            expiration_ns=0,
+            max_quantity=None,
+            min_quantity=Quantity.from_str("1"),
+            maker_fee=Decimal(0),
+            taker_fee=Decimal("0.03"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(instrument)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=instrument_id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("100.000000"),
+            price=Price.from_str("0.500"),
+        )
+        order.apply(TestEventStubs.order_submitted(order))
+        venue_order_id = VenueOrderId("0xtaker-dust-overfill")
+        self.cache.add_order(order, None)
+        self.cache.add_venue_order_id(order.client_order_id, venue_order_id)
+        self.exec_client._fill_tracker.register(
+            venue_order_id=venue_order_id,
+            submitted_qty=Quantity.from_str("100.000000"),
+            order_side=OrderSide.BUY,
+            instrument_id=instrument_id,
+            size_precision=instrument.size_precision,
+            price_precision=instrument.price_precision,
+        )
+
+        # Raw venue size 100.005 is 0.005 above submitted: within the dust band.
+        decoder = msgspec.json.Decoder(PolymarketUserTrade)
+        msg = decoder.decode(
+            msgspec.json.encode(
+                {
+                    "asset_id": asset_id,
+                    "bucket_index": 0,
+                    "fee_rate_bps": "0",
+                    "id": "trade-dust-overfill",
+                    "last_update": "1700000001",
+                    "maker_address": "0xmaker",
+                    "maker_orders": [],
+                    "market": market,
+                    "match_time": "1700000000",
+                    "outcome": "Yes",
+                    "owner": self.http_client.creds.api_key,
+                    "price": "0.500",
+                    "side": "BUY",
+                    "size": "100.005000",
+                    "status": "MATCHED",
+                    "taker_order_id": venue_order_id.value,
+                    "timestamp": "1700000000000",
+                    "trade_owner": self.http_client.creds.api_key,
+                    "trader_side": "TAKER",
+                    "type": "TRADE",
+                    "event_type": "trade",
+                },
+            ),
+        )
+        spy = mocker.spy(self.exec_client, "generate_order_filled")
+
+        # Act
+        self.exec_client._handle_user_trade_in_ws_trade_msg(
+            msg,
+            TradeId(msg.id),
+            wait_for_ack=False,
+            order_id=venue_order_id.value,
+        )
+
+        # Assert
+        spy.assert_called_once()
+        call_kwargs = spy.call_args.kwargs
+        # Engine sees the snapped quantity (matches submitted_qty exactly).
+        assert call_kwargs["last_qty"] == Quantity.from_str("100.000000")
+        # Commission was computed from the raw venue size 100.005, not the snap.
+        # 100.005 * 0.03 * 0.5 * (1 - 0.5) = 0.7500375 -> round 5dp -> 0.75004
+        assert call_kwargs["commission"] == Money(Decimal("0.75004"), pUSD)
+
     @pytest.mark.asyncio
     async def test_wait_for_ack_order_success(self):
         """
@@ -752,6 +855,98 @@ class TestPolymarketExecutionClient:
         # Assert
         assert len(reports) == 2
         assert len(parsed_fill_keys) == 2
+
+    def test_parse_trades_response_snaps_dust_overfill(self):
+        """
+        REST fill reports must apply the same dust snap as the WS path so the engine
+        sees a consistent quantity regardless of which path delivered the fill first.
+
+        Commission stays at venue truth.
+
+        """
+        # Arrange: precision-6 instrument with non-zero taker fee
+        market = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
+        asset_id = "21742633143463906290569050155826241533067272736897614950488156847949938836455"
+        instrument_id = get_polymarket_instrument_id(market, asset_id)
+        # Replace the size_precision=2 instrument from setup with a precision-6
+        # version so dust at microshare scale survives make_qty.
+        instrument = BinaryOption(
+            instrument_id=instrument_id,
+            raw_symbol=Symbol(instrument_id.symbol.value),
+            outcome="Yes",
+            description="Dust precision-6 BinaryOption",
+            asset_class=AssetClass.ALTERNATIVE,
+            currency=USDC,
+            price_precision=3,
+            price_increment=Price.from_str("0.001"),
+            size_precision=6,
+            size_increment=Quantity.from_str("0.000001"),
+            activation_ns=0,
+            expiration_ns=0,
+            max_quantity=None,
+            min_quantity=Quantity.from_str("1"),
+            maker_fee=Decimal(0),
+            taker_fee=Decimal("0.03"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(instrument)
+
+        venue_order_id = VenueOrderId("0xrest-dust-overfill")
+        self.exec_client._fill_tracker.register(
+            venue_order_id=venue_order_id,
+            submitted_qty=Quantity.from_str("100.000000"),
+            order_side=OrderSide.BUY,
+            instrument_id=instrument_id,
+            size_precision=instrument.size_precision,
+            price_precision=instrument.price_precision,
+        )
+
+        # Raw venue size 100.005 is 0.005 above submitted: within the dust band.
+        rest_data = {
+            "id": "trade-rest-dust",
+            "taker_order_id": venue_order_id.value,
+            "trader_side": "TAKER",
+            "side": "BUY",
+            "asset_id": asset_id,
+            "market": market,
+            "outcome": "Yes",
+            "price": "0.500",
+            "size": "100.005000",
+            "match_time": "1700000000",
+            "last_update": "1700000001",
+            "fee_rate_bps": "0",
+            "status": "MATCHED",
+            "maker_address": "0xmaker",
+            "owner": self.http_client.creds.api_key,
+            "maker_orders": [],
+            "transaction_hash": "0xtx",
+            "bucket_index": 0,
+        }
+
+        command = Mock()
+        command.instrument_id = None
+        command.venue_order_id = None
+        parsed_fill_keys: set[tuple[TradeId, VenueOrderId]] = set()
+        reports: list[FillReport] = []
+
+        # Act
+        self.exec_client._parse_trades_response_object(
+            command=command,
+            json_obj=rest_data,
+            parsed_fill_keys=parsed_fill_keys,
+            reports=reports,
+        )
+
+        # Assert
+        assert len(reports) == 1
+        report = reports[0]
+        # Engine sees the snapped quantity (matches submitted_qty exactly).
+        assert report.last_qty == Quantity.from_str("100.000000")
+        # Commission was computed by parse_to_fill_report from the raw size
+        # 100.005 before the snap fired, so it tracks the venue charge.
+        # 100.005 * 0.03 * 0.5 * 0.5 = 0.7500375 -> round 5dp -> 0.75004
+        assert report.commission == Money(Decimal("0.75004"), pUSD)
 
     def test_parse_trades_response_filters_by_instrument_id(self):
         """

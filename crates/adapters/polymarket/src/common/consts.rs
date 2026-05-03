@@ -39,15 +39,26 @@ pub const LOT_SIZE_SCALE: u32 = 2;
 /// Smaller positions are filtered as dust during reconciliation.
 pub const DUST_POSITION_THRESHOLD: f64 = 0.01;
 
-/// Underfill tolerance for `OrderFillTracker`, in ulps of the instrument
-/// size precision (resolves to `0.01` at size_precision=6).
-/// See `docs/integrations/polymarket.md` (Fill quantity normalization).
-pub const SNAP_UNDERFILL_ULPS: f64 = 10_000.0;
-
-/// Overfill tolerance for `OrderFillTracker`, in ulps of the instrument
-/// size precision (resolves to `0.0001` at size_precision=6).
-/// See `docs/integrations/polymarket.md` (Fill quantity normalization).
-pub const SNAP_OVERFILL_ULPS: f64 = 100.0;
+/// Dust band (in shares) for fill quantity normalization. Set to one
+/// cent-share, matching Polymarket's CLOB tick quantization.
+///
+/// Live-fill snapping is overfill-only: when the venue fill exceeds
+/// `submitted_qty` by less than `DUST_SNAP_THRESHOLD`, the fill is snapped
+/// DOWN to `submitted_qty`. Underfill is preserved on the per-fill path and
+/// resolved at terminal `MATCHED` status by the synthetic dust fill
+/// mechanism. `OrderStatusReport.filled_qty` snapping at terminal `Filled`
+/// status uses this same threshold in both directions.
+///
+/// Two observed drift sources sit within this band:
+///
+/// - CLOB cent-tick truncation (underfill, up to `0.01` shares).
+/// - V2 market-BUY USDC-scale truncation in `adjust_market_buy_amount`
+///   (overfill, microshares; largest reproduced production overage is
+///   `0.000066` shares).
+///
+/// A diff at or above this threshold is left unsnapped and surfaces to the
+/// engine. See `docs/integrations/polymarket.md` (Fill quantity normalization).
+pub const DUST_SNAP_THRESHOLD: f64 = 0.01;
 
 pub const WS_MAX_SUBSCRIPTIONS: usize = 200;
 pub const WS_DEFAULT_SUBSCRIPTIONS: usize = 200;
