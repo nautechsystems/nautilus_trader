@@ -34,6 +34,7 @@ from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeData
 from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
@@ -43,6 +44,7 @@ from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeData
 from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
@@ -190,6 +192,15 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
     # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
+    async def _subscribe(self, command: SubscribeData) -> None:
+        data_type = command.data_type.type_name
+
+        if data_type == "HyperliquidAllMids":
+            await self._ws_client.subscribe_all_mids()
+            return
+
+        self._log.warning(f"Unsupported custom data subscription: {data_type}")
+
     async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
         self._log.info(f"Subscribed to instrument updates for {command.instrument_id}")
 
@@ -223,6 +234,15 @@ class HyperliquidDataClient(LiveMarketDataClient):
     async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_funding_rates(pyo3_instrument_id)
+
+    async def _unsubscribe(self, command: UnsubscribeData) -> None:
+        data_type = command.data_type.type_name
+
+        if data_type == "HyperliquidAllMids":
+            await self._ws_client.unsubscribe_all_mids()
+            return
+
+        self._log.warning(f"Unsupported custom data unsubscription: {data_type}")
 
     async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
         self._log.info(f"Unsubscribed from instrument updates for {command.instrument_id}")

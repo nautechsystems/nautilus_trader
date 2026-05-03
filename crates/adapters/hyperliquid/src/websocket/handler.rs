@@ -20,14 +20,16 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use crate::data_types::HyperliquidAllMids;
 use ahash::{AHashMap, AHashSet};
 use dashmap::DashMap;
 use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{AtomicTime, nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    data::BarType,
+    data::{BarType, CustomData, Data},
     identifiers::{AccountId, ClientOrderId},
     instruments::{Instrument, InstrumentAny},
+    types::Price,
 };
 use nautilus_network::{
     RECONNECTED,
@@ -448,6 +450,31 @@ impl FeedHandler {
             HyperliquidWsMessage::Trades { data } => {
                 if let Some(msg) = Self::handle_trades(&data, instruments, ts_init) {
                     result.push(msg);
+                }
+            }
+            HyperliquidWsMessage::AllMids { data } => {
+                let mut mids = std::collections::HashMap::new();
+                for (coin, mid_str) in &data.mids {
+                    let coin_ustr = Ustr::from(coin.as_str());
+                    if let Some(instrument) = instruments.get(&coin_ustr) {
+                        match mid_str.parse::<Price>() {
+                            Ok(price) => {
+                                mids.insert(instrument.id(), price);
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to parse mid price for {coin}: {e}");
+                            }
+                        }
+                    } else {
+                        log::debug!("No instrument found for coin: {coin}");
+                    }
+                }
+
+                if !mids.is_empty() {
+                    let all_mids = HyperliquidAllMids::new(mids, ts_init, ts_init);
+                    result.push(NautilusWsMessage::CustomData(Data::Custom(
+                        CustomData::from_arc(Arc::new(all_mids)),
+                    )));
                 }
             }
             HyperliquidWsMessage::Bbo { data } => {
