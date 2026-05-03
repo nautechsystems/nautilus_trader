@@ -686,7 +686,7 @@ mod tests {
 
     use proptest::prelude::*;
 
-    /// Operations that can be performed on a FifoCache
+    /// Operations that can be performed on a `FifoCache`
     #[derive(Clone, Debug)]
     enum Op {
         Add(u8),

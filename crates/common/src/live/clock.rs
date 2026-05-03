@@ -265,7 +265,7 @@ impl Clock for LiveClock {
     fn next_time_ns(&self, name: &str) -> Option<UnixNanos> {
         self.timers
             .get(&Ustr::from(name))
-            .map(|timer| timer.next_time_ns())
+            .map(LiveTimer::next_time_ns)
     }
 
     fn cancel_timer(&mut self, name: &str) {

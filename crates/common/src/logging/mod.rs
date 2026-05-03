@@ -20,7 +20,7 @@
 //! active `LogGuard` instances, ensuring the logging thread completes all pending writes before
 //! termination.
 //!
-//! # LogGuard Reference Counting
+//! # `LogGuard` reference counting
 //!
 //! The logging system maintains a global count of active `LogGuard` instances using an atomic
 //! counter (`LOGGING_GUARDS_ACTIVE`). When a `LogGuard` is created, the counter is incremented,

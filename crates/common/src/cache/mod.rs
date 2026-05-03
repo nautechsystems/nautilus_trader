@@ -573,9 +573,7 @@ impl Cache {
     // Calculate the unrealized profit and loss (PnL) for `position`.
     #[must_use]
     pub fn calculate_unrealized_pnl(&self, position: &Position) -> Option<Money> {
-        let quote = if let Some(quote) = self.quote(&position.instrument_id) {
-            quote
-        } else {
+        let Some(quote) = self.quote(&position.instrument_id) else {
             log::warn!(
                 "Cannot calculate unrealized PnL for {}, no quotes for {}",
                 position.id,
@@ -2612,9 +2610,7 @@ impl Cache {
     ///
     /// Returns an error if snapshotting the order state fails.
     pub fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {
-        let database = if let Some(database) = &self.database {
-            database
-        } else {
+        let Some(database) = &self.database else {
             log::warn!(
                 "Cannot snapshot order state for {} (no database configured)",
                 order.client_order_id()
@@ -4188,11 +4184,10 @@ impl Cache {
     ///
     /// This method is used when order event application fails and we need to ensure
     /// terminal orders are properly cleaned up from own books and all relevant indexes.
-    /// Replicates the index cleanup that update_order performs for closed orders.
+    /// Replicates the index cleanup that `update_order` performs for closed orders.
     pub fn force_remove_from_own_order_book(&mut self, client_order_id: &ClientOrderId) {
-        let order = match self.orders.get(client_order_id) {
-            Some(order) => order,
-            None => return,
+        let Some(order) = self.orders.get(client_order_id) else {
+            return;
         };
 
         self.index.orders_open.remove(client_order_id);
@@ -4218,8 +4213,8 @@ impl Cache {
     /// Audit all own order books against open and inflight order indexes.
     ///
     /// Ensures closed orders are removed from own order books. This includes both
-    /// orders tracked in `orders_open` (ACCEPTED, TRIGGERED, PENDING_*, PARTIALLY_FILLED)
-    /// and `orders_inflight` (INITIALIZED, SUBMITTED) to prevent false positives
+    /// orders tracked in `orders_open` (`ACCEPTED`, `TRIGGERED`, `PENDING_*`, `PARTIALLY_FILLED`)
+    /// and `orders_inflight` (`INITIALIZED`, `SUBMITTED`) to prevent false positives
     /// during venue latency windows.
     pub fn audit_own_order_books(&mut self) {
         log::debug!("Starting own books audit");

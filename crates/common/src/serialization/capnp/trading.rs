@@ -28,8 +28,8 @@ use crate::messages::execution::{
     SubmitOrder, SubmitOrderList, TradingCommand,
 };
 
-/// Helper function to populate a StringMap builder from Params (IndexMap<String, Value>).
-fn populate_string_map<'a>(builder: base_capnp::string_map::Builder<'a>, params: &Params) {
+/// Helper function to populate a `StringMap` builder from Params (`IndexMap<String, Value>`).
+fn populate_string_map(builder: base_capnp::string_map::Builder<'_>, params: &Params) {
     let mut entries_builder = builder.init_entries(params.len() as u32);
     for (i, (key, value)) in params.iter().enumerate() {
         let mut entry_builder = entries_builder.reborrow().get(i as u32);
@@ -39,9 +39,9 @@ fn populate_string_map<'a>(builder: base_capnp::string_map::Builder<'a>, params:
     }
 }
 
-/// Helper function to populate a TradingCommandHeader builder
-fn populate_trading_command_header<'a>(
-    mut builder: trading_capnp::trading_command_header::Builder<'a>,
+/// Helper function to populate a `TradingCommandHeader` builder
+fn populate_trading_command_header(
+    mut builder: trading_capnp::trading_command_header::Builder<'_>,
     trader_id: &TraderId,
     client_id: Option<&ClientId>,
     strategy_id: &StrategyId,
