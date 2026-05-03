@@ -106,6 +106,10 @@ impl<T> From<Vec<T>> for CVec {
             let len = data.len();
             let cap = data.capacity();
             let ptr = data.as_mut_ptr();
+            #[allow(
+                clippy::mem_forget,
+                reason = "intentional ownership transfer to C; matching CVec::drop reclaims via Vec::from_raw_parts"
+            )]
             std::mem::forget(data);
             Self {
                 ptr: ptr.cast::<std::ffi::c_void>(),
@@ -162,6 +166,11 @@ mod tests {
         assert_eq!(cap, vec_cap);
 
         let data = ptr.cast::<u64>();
+        // SAFETY: data points to a valid Vec<u64> of length 3 owned by `cvec`
+        #[allow(
+            clippy::multiple_unsafe_ops_per_block,
+            reason = "test asserts on three pointer reads in sequence"
+        )]
         unsafe {
             assert_eq!(*data, test_data[0]);
             assert_eq!(*data.add(1), test_data[1]);
