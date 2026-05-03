@@ -466,6 +466,17 @@ fn py_encode_custom_data_to_record_batch(
     })
 }
 
+#[allow(unsafe_code)]
+#[cfg(feature = "python")]
+fn pyarrow_schema_to_arrow_schema(
+    py_schema: &pyo3::Bound<'_, pyo3::PyAny>,
+) -> PyResult<arrow::datatypes::Schema> {
+    let mut ffi_schema = arrow::ffi::FFI_ArrowSchema::empty();
+    py_schema.call_method1("_export_to_c", ((&raw mut ffi_schema as usize),))?;
+    arrow::datatypes::Schema::try_from(&ffi_schema)
+        .map_err(|e| to_pyvalue_err(format!("Failed to import PyArrow schema: {e}")))
+}
+
 /// Decodes `RecordBatch` to `CustomData` via Python `decode_record_batch_py`.
 #[allow(unsafe_code)]
 #[cfg(feature = "python")]
@@ -606,7 +617,13 @@ pub fn register_custom_data_class(data_class: &Bound<'_, PyAny>) -> PyResult<()>
         ))
     })?;
 
-    let schema = Arc::new(arrow::datatypes::Schema::empty());
+    let schema = if let Ok(py_schema) = data_class.getattr("_schema") {
+        Arc::new(pyarrow_schema_to_arrow_schema(&py_schema)?)
+    } else if let Some(schema) = registry::get_arrow_schema(&type_name) {
+        schema
+    } else {
+        Arc::new(arrow::datatypes::Schema::empty())
+    };
 
     let encoder = Box::new(
         move |items: &[Arc<dyn crate::data::CustomDataTrait>]| -> Result<
