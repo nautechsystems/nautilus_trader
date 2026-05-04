@@ -50,6 +50,19 @@ Released on TBD (UTC).
 - Fixed Betfair Rust adapter panic on blank `customerOrderRef`/`rfo` by normalizing empty strings to `None`
 - Fixed Betfair Rust adapter spurious `OrderRejected` after OCM already reported a terminal state
 - Fixed Betfair Rust adapter `ignore_external_orders` to treat empty `rfo` strings the same as missing
+- Fixed dYdX FOK and DAY time-in-force orders to reject pre-submission instead of failing at the venue or mapping to GTC
+- Fixed dYdX MIT/LIT round-tripping on reconcile when the Indexer collapses both variants under `TAKE_PROFIT`
+- Fixed dYdX GTD expiry to surface `OrderExpired` on both WS and HTTP reconciliation paths
+- Fixed dYdX `TriggerType` default when `condition_type` is unset so reconciliation no longer rejects the report
+- Fixed dYdX `TAKE_PROFIT` order type deserialization (the Indexer omits the `_LIMIT` suffix)
+- Fixed dYdX reconciliation noise by dropping reports for orders already in a terminal state in the local cache
+- Fixed dYdX Python `_request_instrument(s)` to pass the full `_handle_data_response` argument set
+- Fixed dYdX Python `_subscribe_order_book_depth` to log a graceful warning instead of raising `NotImplementedError`
+- Fixed Hyperliquid modify-after-partial-fill sending absolute total quantity to the cancel-replace leg, causing the engine to overfill the order (#3986)
+- Fixed Hyperliquid testnet orders rejected with "Builder fee has not been approved"; testnet orders now omit builder attribution to match the vault-order behavior (#3989)
+- Fixed Hyperliquid spurious `OrderCanceled` on concurrent modifies (Python and Rust) (#3971), thanks @M-Advis
+- Fixed Hyperliquid cancel-replace fill race emitting `OrderFilled` against stale local order state (Python and Rust) (#3972)
+- Fixed Interactive Brokers spread fill races (#3957), thanks @taozle
 - Fixed Kraken symbol normalization for WS v2 compatibility (#3961), thanks @mcgrj
 - Fixed OKX missing `post_only` instrument status (#3966), thanks @jhavie
 - Fixed Polymarket V2 BUY overfill rejection via overfill-only `last_qty` snap on WS, REST, and buffered drain paths
@@ -60,19 +73,6 @@ Released on TBD (UTC).
 - Fixed Polymarket `parse_trades` `ts_event` collisions on same-second fills (Python and Rust)
 - Fixed Polymarket `fetch_trades` aborting on historical-offset ceiling; warns and returns partial (Python and Rust)
 - Fixed Polymarket `load_trades` non-deterministic same-second ordering across pages (Python and Rust)
-- Fixed Hyperliquid modify-after-partial-fill sending absolute total quantity to the cancel-replace leg, causing the engine to overfill the order (#3986)
-- Fixed Hyperliquid testnet orders rejected with "Builder fee has not been approved"; testnet orders now omit builder attribution to match the vault-order behavior (#3989)
-- Fixed dYdX FOK and DAY time-in-force orders to reject pre-submission instead of failing at the venue or mapping to GTC
-- Fixed dYdX MIT/LIT round-tripping on reconcile when the Indexer collapses both variants under `TAKE_PROFIT`
-- Fixed dYdX GTD expiry to surface `OrderExpired` on both WS and HTTP reconciliation paths
-- Fixed dYdX `TriggerType` default when `condition_type` is unset so reconciliation no longer rejects the report
-- Fixed dYdX `TAKE_PROFIT` order type deserialization (the Indexer omits the `_LIMIT` suffix)
-- Fixed dYdX reconciliation noise by dropping reports for orders already in a terminal state in the local cache
-- Fixed dYdX Python `_request_instrument(s)` to pass the full `_handle_data_response` argument set
-- Fixed dYdX Python `_subscribe_order_book_depth` to log a graceful warning instead of raising `NotImplementedError`
-- Fixed Hyperliquid spurious `OrderCanceled` on concurrent modifies (Python and Rust) (#3971), thanks @M-Advis
-- Fixed Hyperliquid cancel-replace fill race emitting `OrderFilled` against stale local order state (Python and Rust) (#3972)
-- Bounded the Hyperliquid Rust WebSocket cloid resolution cache via `FifoCacheMap` so missed eviction (e.g. on the cancel-replace drain path) self-recovers instead of leaking
 
 ### Internal Improvements
 - Added `OrderMatchingCore::update_price_increment` primitive for tick-size propagation parity (Rust)
@@ -107,6 +107,8 @@ Released on TBD (UTC).
 - Optimized live node loop by collapsing six maintenance timers into one shared maintenance dispatcher (Rust)
 - Upgraded `alloy` crate to v2.0.4
 - Upgraded `databento` crate to v0.49.0
+- Upgraded `redis` crate to v1.2.1
+- Upgraded `tokio` crate to v1.52.2 (fixes a performance regression)
 
 ### Documentation Updates
 - Added DST docs caveats for process-global lazy state RNG consumption and `CacheView` factory blocker

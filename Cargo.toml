@@ -122,13 +122,13 @@ alloy-primitives = { version = "1.5.7", default-features = false, features = [
 ] }
 anyhow = "1.0.102"
 arraydeque = "0.5.1"
-arrow = { version = "58.1.0", default-features = false, features = [
+arrow = { version = "58.2.0", default-features = false, features = [
   "csv",
   "json",
   "ipc",
   "ffi",
 ] }
-arrow-row = "58.1.0"
+arrow-row = "58.2.0"
 async-stream = "0.3.6"
 async-trait = "0.1.89"
 aws-lc-rs = { version = "1.16.3", default-features = false, features = [
@@ -182,7 +182,7 @@ madsim = "0.2.34"
 object_store = { version = "0.13.2", default-features = false, features = [
   "fs",
 ] }
-parquet = { version = "58.1.0", default-features = false, features = [
+parquet = { version = "58.2.0", default-features = false, features = [
   "arrow",
   "async",
 ] }
@@ -209,7 +209,7 @@ rand = { version = "0.10.1", default-features = false, features = [
   "std",
   "thread_rng",
 ] }
-redis = { version = "1.2.0", default-features = false, features = [
+redis = { version = "1.2.1", default-features = false, features = [
   "connection-manager",
   "sentinel",
   "streams",
@@ -272,7 +272,7 @@ tabled = { version = "0.20.0", default-features = false, features = [
   "derive",
 ] }
 thiserror = "2.0.18"
-tokio = { version = "1.52.1", default-features = false, features = [
+tokio = { version = "1.52.2", default-features = false, features = [
   "rt-multi-thread",
   "sync",
   "fs",
@@ -334,7 +334,6 @@ itoa = "1.0.18"
 prost = { version = "0.13.5", default-features = false, features = ["std"] }
 ryu = "1.0.23"
 serde_repr = "0.1.20"
-serde_with = "3.18.0"
 time = { version = "0.3.47", default-features = false, features = [
   "macros",
   "parsing",
