@@ -39,6 +39,7 @@ Released on TBD (UTC).
 - Fixed Betfair Rust adapter dropped fills on reconnect by resyncing the fill tracker from cache
 - Fixed Betfair Rust adapter panic on blank `customerOrderRef`/`rfo` by normalizing empty strings to `None`
 - Fixed Betfair Rust adapter spurious `OrderRejected` after OCM already reported a terminal state
+- Fixed Betfair Rust adapter `ignore_external_orders` to treat empty `rfo` strings the same as missing
 - Fixed Kraken symbol normalization for WS v2 compatibility (#3961), thanks @mcgrj
 - Fixed OKX missing `post_only` instrument status (#3966), thanks @jhavie
 - Fixed Polymarket V2 BUY overfill rejection via overfill-only `last_qty` snap on WS, REST, and buffered drain paths
@@ -72,6 +73,11 @@ Released on TBD (UTC).
 - Improved `OwnBookLadder` to defer error logging to callers, removing duplicate own-book error noise
 - Improved Betfair Rust adapter to suppress late HTTP acceptance at debug level
 - Improved Betfair Rust adapter to suppress noisy `instrument_close` subscribe/unsubscribe warnings
+- Improved Betfair Rust HTTP client `connect()` to short-circuit when authenticated and serialise concurrent callers
+- Improved Betfair Rust HTTP client `disconnect()` to cancel in-flight retries and install a fresh cancellation token
+- Improved Betfair Rust `unsubscribe_book_deltas` log level to `warn` to match Python visibility
+- Improved Betfair Rust adapter with explicit info-level no-op overrides for unsupported unsubscribe methods
+- Improved Betfair Rust integration test coverage to cover OCM, replace flow, batch ops, and session recovery
 - Improved Interactive Brokers Python 3.14 installation and integration test coverage
 - Improved live exec clients to log ERROR with `timeout_post_stop` hint when cancel tasks abort on disconnect
 - Improved `ExecTester` to refresh tracked orders from cache before modify/cancel-replace so they see venue acks
