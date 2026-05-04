@@ -56,13 +56,11 @@ _FEE_ENABLED_NON_CRYPTO_LABELS: frozenset[str] = frozenset(
     },
 )
 
-# Fallback classification when category labels are absent
-_CRYPTO_FEE_RATES: frozenset[Decimal] = frozenset({Decimal("0.0072"), Decimal("0.072")})
+# Fallback classification when category labels are absent. Rates match
+# Polymarket's documented schedule at docs.polymarket.com/trading/fees.
+_CRYPTO_FEE_RATES: frozenset[Decimal] = frozenset({Decimal("0.072")})
 _NON_CRYPTO_FEE_RATES: frozenset[Decimal] = frozenset(
     {
-        Decimal("0.003"),
-        Decimal("0.004"),
-        Decimal("0.005"),
         Decimal("0.030"),
         Decimal("0.040"),
         Decimal("0.050"),

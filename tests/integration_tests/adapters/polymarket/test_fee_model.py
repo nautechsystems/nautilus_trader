@@ -235,14 +235,15 @@ def test_factory_path_default_config_enables_rebates():
         ({"category": "crypto"}, Decimal("0.072"), Decimal("0.20")),
         ({"category": "politics"}, Decimal("0.030"), Decimal("0.25")),
         ({"tags": ["sports"]}, Decimal("0.030"), Decimal("0.25")),
+        # Labels still win even when the rate is outside the known set
         ({"tags": [{"label": "crypto"}]}, Decimal("0.0072"), Decimal("0.20")),
         ({"events": [{"category": "crypto"}]}, Decimal("0.072"), Decimal("0.20")),
-        # No labels, fee rate fallback by known set
+        # No labels, fee rate fallback by documented Polymarket rates
         ({}, Decimal("0.072"), Decimal("0.20")),
-        ({}, Decimal("0.0072"), Decimal("0.20")),
         ({}, Decimal("0.040"), Decimal("0.25")),
         # Unknown rate, no labels -> no rebate
         ({}, Decimal("0.999"), Decimal(0)),
+        ({}, Decimal("0.0072"), Decimal(0)),
         # None info -> falls through to fee-rate fallback (0.072 -> crypto)
         (None, Decimal("0.072"), Decimal("0.20")),
         # Zero fee rate -> short-circuits to zero regardless of labels

@@ -423,9 +423,13 @@ with additional trade events stored in the cache as JSON under a custom key to r
 Polymarket does not publish a trade ID on `last_trade_price` market-data events.
 The adapter derives a deterministic `TradeId` by FNV-1a hashing the asset ID,
 side, price, size, and timestamp (`determine_trade_id` in both Rust and Python).
-For CLOB Data API trade history the adapter uses the last 36 characters of the
-transaction hash directly. The same venue event yields the same trade ID across
-replays, keeping downstream dedup intact.
+For CLOB Data API trade history the adapter composes the `TradeId` from a hash
+suffix, an asset suffix, and a per-(transaction, asset) sequence number (format
+`{transactionHash[-24:]}-{asset[-4:]}-{seq:06d}`). A single Polygon transaction
+can settle multiple fills sharing the same `transactionHash`, so the older
+last-36-character form collapsed those fills to a single id and downstream
+catalogs silently dropped duplicates. The same venue event yields the same
+trade ID across replays, keeping downstream dedup intact.
 
 ## Fees
 
@@ -444,6 +448,32 @@ Fees are rounded to 5 decimal places (0.00001 pUSD minimum). Fees are collected 
 :::note
 For the latest rates, see Polymarket's [Fees](https://docs.polymarket.com/trading/fees) documentation.
 :::
+
+### Backtest fee model
+
+For backtests, the adapter ships `PolymarketFeeModel` (a
+`nautilus_trader.backtest.models.FeeModel` subclass) which applies the taker
+fee formula above and credits passive maker fills with a rebate inferred from
+the market category. Polymarket pays a 20% maker rebate on Crypto markets and
+25% on other fee-enabled categories (Sports, Finance, Politics, Economics,
+Culture, Weather, Tech, Mentions, Other), distributed daily from each market's
+rebate pool. Geopolitics markets are fee-free with no rebates and the model
+returns zero for them.
+
+```python
+from nautilus_trader.adapters.polymarket.fee_model import PolymarketFeeModel
+
+# Default: maker rebates enabled
+fee_model = PolymarketFeeModel()
+
+# Or for taker-only strategies
+fee_model = PolymarketFeeModel(maker_rebates_enabled=False)
+```
+
+The model can also be configured through `BacktestVenueConfig.fee_model` via
+`ImportableFeeModelConfig` and `PolymarketFeeModelConfig`. Maker rebate share
+inference uses the instrument's category labels first, then falls back to the
+documented per-category fee rate when labels are absent.
 
 ## Reconciliation
 
@@ -888,6 +918,29 @@ For events with multiple markets (e.g., temperature buckets), use `from_event_sl
 loaders = await PolymarketDataLoader.from_event_slug("highest-temperature-in-nyc-on-january-26")
 ```
 
+#### Look-ahead protection for resolved markets
+
+When constructing a loader for a market that has already resolved at backtest
+build time, the venue payload includes the answer (`closed`, `closedTime`,
+`umaResolutionStatus`, per-token `winner`). A strategy that reads
+`cache.instrument(...).info` from `on_start` can therefore see the outcome
+before the simulation runs.
+
+Pass `sanitize_info=True` to either factory to redact those fields from
+`instrument.info` before the instrument is constructed. The redacted slice is
+stashed on the loader as `resolution_metadata` for post-hoc analytics
+(settlement PnL, Brier scoring) without leaking it into the simulation:
+
+```python
+loader = await PolymarketDataLoader.from_market_slug(
+    "some-resolved-market",
+    sanitize_info=True,
+)
+
+assert "closed" not in loader.instrument.info
+assert loader.resolution_metadata["closed"] is True
+```
+
 ### Discovering markets and events
 
 Use `fetch_markets()` and `fetch_events()` to discover available markets programmatically:
@@ -946,6 +999,13 @@ trades = loader.parse_trades(raw_trades)
 
 Trade data is sourced from the [Polymarket Data API](https://data-api.polymarket.com/trades),
 which provides real execution data including price, size, side, and on-chain transaction hash.
+
+:::note
+The public Data API caps offset-based pagination on high-activity markets. When
+this ceiling is hit the loader emits a `RuntimeWarning` and returns the trades
+fetched up to the cap rather than aborting the load. Use another historical
+data source if you need full coverage of a heavily traded market.
+:::
 
 ### Complete backtest example
 
