@@ -1696,6 +1696,12 @@ impl KrakenSpotHttpClient {
     /// callers attach to `AccountState.info`. In cash mode the metrics map is empty
     /// and `TradeBalance` is not called.
     ///
+    /// In margin mode, the wallet [`AccountBalance`] for the asset matching
+    /// `margin_balance_asset` carries `locked = total - mf` (clamped via
+    /// `from_total_and_free`); all other wallet entries remain unlocked. This wires
+    /// Kraken's venue-authoritative free margin (`mf = e - m`) directly into risk
+    /// checks so they agree with Kraken's own order-acceptance accounting.
+    ///
     /// The single shared fetch keeps Kraken rate-limit usage symmetric with `Balance`
     /// (one request per account update), instead of two as if `request_account_state`
     /// and `request_margin_metrics` were called in sequence.
@@ -1708,6 +1714,17 @@ impl KrakenSpotHttpClient {
         let balances_raw = self.inner.get_balance().await?;
         let ts_init = self.generate_ts_init();
 
+        let (margins, metrics, free_margin) = if account_type == AccountType::Margin {
+            let (margins, metrics, mf) =
+                self.fetch_trade_balance_split(margin_balance_asset).await?;
+            (margins, metrics, Some(mf))
+        } else {
+            (Vec::new(), IndexMap::new(), None)
+        };
+
+        // mf = e - m per https://docs.kraken.com/api/docs/rest-api/get-trade-balance/
+        let target_code = normalize_currency_code(margin_balance_asset.unwrap_or("ZUSD"));
+
         let balances: Vec<AccountBalance> = balances_raw
             .iter()
             .filter_map(|(currency_code, amount_str)| {
@@ -1716,30 +1733,23 @@ impl KrakenSpotHttpClient {
                     return None;
                 }
 
-                // Kraken uses X-prefixed names for some currencies (e.g., XXBT for BTC)
                 let normalized_code = currency_code
                     .strip_prefix("X")
                     .or_else(|| currency_code.strip_prefix("Z"))
                     .unwrap_or(currency_code);
 
-                let currency = Currency::new(
-                    normalized_code,
-                    8, // Default precision
-                    0,
-                    "0",
-                    CurrencyType::Crypto,
-                );
+                let currency = Currency::new(normalized_code, 8, 0, "0", CurrencyType::Crypto);
 
-                // Balance endpoint returns total only, so free = total (no locked info)
-                AccountBalance::from_total_and_locked(amount, Decimal::ZERO, currency).ok()
+                match free_margin {
+                    Some(mf) if normalized_code == target_code => {
+                        AccountBalance::from_total_and_free(amount, mf, currency).ok()
+                    }
+                    _ => {
+                        AccountBalance::from_total_and_locked(amount, Decimal::ZERO, currency).ok()
+                    }
+                }
             })
             .collect();
-
-        let (margins, metrics) = if account_type == AccountType::Margin {
-            self.fetch_trade_balance_split(margin_balance_asset).await?
-        } else {
-            (Vec::new(), IndexMap::new())
-        };
 
         let state = AccountState::new(
             account_id,
@@ -1773,11 +1783,13 @@ impl KrakenSpotHttpClient {
     async fn fetch_trade_balance_split(
         &self,
         asset: Option<&str>,
-    ) -> anyhow::Result<(Vec<MarginBalance>, IndexMap<String, String>)> {
+    ) -> anyhow::Result<(Vec<MarginBalance>, IndexMap<String, String>, Decimal)> {
         let tb = self.inner.get_trade_balance(asset).await?;
 
         let used_margin = Decimal::from_str_exact(&tb.m)
             .with_context(|| format!("Failed to parse TradeBalance 'm' field {:?}", tb.m))?;
+        let free_margin = Decimal::from_str_exact(&tb.mf)
+            .with_context(|| format!("Failed to parse TradeBalance 'mf' field {:?}", tb.mf))?;
 
         let margins = if used_margin.is_zero() {
             Vec::new()
@@ -1807,7 +1819,7 @@ impl KrakenSpotHttpClient {
             normalize_currency_code(asset.unwrap_or("ZUSD")).to_string(),
         );
 
-        Ok((margins, metrics))
+        Ok((margins, metrics, free_margin))
     }
 
     /// Returns a flattened snapshot of Kraken's `TradeBalance` margin metrics.
@@ -1828,7 +1840,7 @@ impl KrakenSpotHttpClient {
     ) -> anyhow::Result<IndexMap<String, String>> {
         self.fetch_trade_balance_split(asset)
             .await
-            .map(|(_, metrics)| metrics)
+            .map(|(_, metrics, _)| metrics)
     }
 
     /// Requests order status reports from Kraken.
