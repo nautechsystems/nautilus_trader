@@ -630,7 +630,11 @@ fn test_cancel_before_accept_is_suppressed() {
     state.record_venue_order_id(cid, VenueOrderId::new("1000"));
 
     // Successful modify HTTP round-trip populated the pending marker.
-    state.mark_pending_modify(cid, VenueOrderId::new("1000"));
+    state.mark_pending_modify(
+        cid,
+        VenueOrderId::new("1000"),
+        identity(OrderType::Limit).quantity,
+    );
 
     let canceled_old = make_status_report(
         Some("O-CR-004"),
@@ -827,7 +831,11 @@ fn test_fill_during_pending_modify_is_buffered() {
     state.register_identity(cid, identity(OrderType::Limit));
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("9000"));
-    state.mark_pending_modify(cid, VenueOrderId::new("9000"));
+    state.mark_pending_modify(
+        cid,
+        VenueOrderId::new("9000"),
+        identity(OrderType::Limit).quantity,
+    );
 
     let fill = make_fill_report(Some("O-FR-001"), "9001", "T-FR-1", "0.00020", "53893.0");
     let outcome = dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
@@ -851,7 +859,11 @@ fn test_cancel_replace_accepted_drains_buffered_fill() {
     state.register_identity(cid, identity(OrderType::Limit));
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("9100"));
-    state.mark_pending_modify(cid, VenueOrderId::new("9100"));
+    state.mark_pending_modify(
+        cid,
+        VenueOrderId::new("9100"),
+        identity(OrderType::Limit).quantity,
+    );
 
     let fill = make_fill_report(Some("O-FR-002"), "9101", "T-FR-2", "0.00020", "53893.0");
     dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
@@ -913,7 +925,11 @@ fn test_cancel_replace_drains_multiple_buffered_fills_in_arrival_order() {
     );
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("MULTI-OLD"));
-    state.mark_pending_modify(cid, VenueOrderId::new("MULTI-OLD"));
+    state.mark_pending_modify(
+        cid,
+        VenueOrderId::new("MULTI-OLD"),
+        Quantity::from("0.00020"),
+    );
 
     // Two fills land on the new leg before the replacement ACCEPTED arrives.
     let fill_a = make_fill_report(
@@ -980,7 +996,11 @@ fn test_fill_on_cached_voi_passes_through_during_pending_modify() {
     state.register_identity(cid, identity(OrderType::Limit));
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("9200"));
-    state.mark_pending_modify(cid, VenueOrderId::new("9200"));
+    state.mark_pending_modify(
+        cid,
+        VenueOrderId::new("9200"),
+        identity(OrderType::Limit).quantity,
+    );
 
     let fill = make_fill_report(Some("O-FR-003"), "9200", "T-FR-3", "0.00020", "56730.0");
     let outcome = dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());

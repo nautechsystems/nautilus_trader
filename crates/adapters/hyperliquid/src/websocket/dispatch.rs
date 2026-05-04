@@ -210,6 +210,10 @@ pub struct WsDispatchState {
     /// race and suppressed so the later `ACCEPTED(new_voi)` can flow through
     /// the `OrderUpdated` path.
     pub pending_modify_keys: DashMap<ClientOrderId, VenueOrderId>,
+    /// User-intended absolute total qty for an in-flight modify; the
+    /// cancel-replace promotion uses it instead of the venue's
+    /// remaining-only `report.quantity`.
+    pub pending_modify_target_qty: DashMap<ClientOrderId, Quantity>,
     /// `FillReport`s buffered while a cancel-replace modify is in flight,
     /// drained by the cancel-replace branch of `handle_accepted`. See
     /// GH-3972.
@@ -229,6 +233,7 @@ impl Default for WsDispatchState {
             emitted_trades: Mutex::new(BoundedDedup::new(DEDUP_CAPACITY)),
             cached_venue_order_ids: DashMap::new(),
             pending_modify_keys: DashMap::new(),
+            pending_modify_target_qty: DashMap::new(),
             buffered_fills: DashMap::new(),
             order_filled_qty: DashMap::new(),
             clearing: AtomicBool::new(false),
@@ -315,25 +320,38 @@ impl WsDispatchState {
         self.cached_venue_order_ids.get(client_order_id).map(|r| *r)
     }
 
-    /// Marks an in-flight modify for cancel-before-accept suppression.
+    /// Marks an in-flight modify for cancel-before-accept suppression and
+    /// records the target absolute total qty for the cancel-replace promotion.
     pub fn mark_pending_modify(
         &self,
         client_order_id: ClientOrderId,
         old_venue_order_id: VenueOrderId,
+        target_qty: Quantity,
     ) {
         self.pending_modify_keys
             .insert(client_order_id, old_venue_order_id);
+        self.pending_modify_target_qty
+            .insert(client_order_id, target_qty);
     }
 
     /// Clears the pending modify marker for a client order id.
     pub fn clear_pending_modify(&self, client_order_id: &ClientOrderId) {
         self.pending_modify_keys.remove(client_order_id);
+        self.pending_modify_target_qty.remove(client_order_id);
     }
 
     /// Returns the pending modify marker for a client order id, if any.
     #[must_use]
     pub fn pending_modify(&self, client_order_id: &ClientOrderId) -> Option<VenueOrderId> {
         self.pending_modify_keys.get(client_order_id).map(|r| *r)
+    }
+
+    /// Returns the recorded target absolute total qty, if any.
+    #[must_use]
+    pub fn pending_modify_target_qty(&self, client_order_id: &ClientOrderId) -> Option<Quantity> {
+        self.pending_modify_target_qty
+            .get(client_order_id)
+            .map(|r| *r)
     }
 
     /// Buffers a `FillReport` arrived during an in-flight cancel-replace.
@@ -381,6 +399,7 @@ impl WsDispatchState {
         self.emitted_accepted.remove(client_order_id);
         self.cached_venue_order_ids.remove(client_order_id);
         self.pending_modify_keys.remove(client_order_id);
+        self.pending_modify_target_qty.remove(client_order_id);
         self.buffered_fills.remove(client_order_id);
         self.order_filled_qty.remove(client_order_id);
     }
@@ -612,8 +631,14 @@ fn handle_accepted(
             return DispatchOutcome::Skip;
         };
 
+        // Prefer user target over venue's remaining-only `report.quantity`;
+        // fall back when no marker (external modify).
+        let updated_quantity = state
+            .pending_modify_target_qty(&client_order_id)
+            .unwrap_or(report.quantity);
+
         state.record_venue_order_id(client_order_id, venue_order_id);
-        state.update_identity_quantity(&client_order_id, report.quantity);
+        state.update_identity_quantity(&client_order_id, updated_quantity);
         state.update_identity_price(&client_order_id, Some(price));
         state.clear_pending_modify(&client_order_id);
 
@@ -622,7 +647,7 @@ fn handle_accepted(
             identity.strategy_id,
             identity.instrument_id,
             client_order_id,
-            report.quantity,
+            updated_quantity,
             UUID4::new(),
             ts_event,
             ts_init,
@@ -986,12 +1011,16 @@ mod tests {
         let state = WsDispatchState::new();
         let cid = ClientOrderId::new("O-010");
         let voi = VenueOrderId::new("v-1");
+        let target_qty = Quantity::from("0.0001");
 
         assert!(state.pending_modify(&cid).is_none());
-        state.mark_pending_modify(cid, voi);
+        assert!(state.pending_modify_target_qty(&cid).is_none());
+        state.mark_pending_modify(cid, voi, target_qty);
         assert_eq!(state.pending_modify(&cid), Some(voi));
+        assert_eq!(state.pending_modify_target_qty(&cid), Some(target_qty));
         state.clear_pending_modify(&cid);
         assert!(state.pending_modify(&cid).is_none());
+        assert!(state.pending_modify_target_qty(&cid).is_none());
     }
 
     #[rstest]
@@ -1000,11 +1029,14 @@ mod tests {
         let cid = ClientOrderId::new("O-020");
         state.register_identity(cid, make_identity());
         state.insert_accepted(cid);
+        state.mark_pending_modify(cid, VenueOrderId::new("v-1"), Quantity::from("0.0001"));
         state.insert_filled(cid);
         state.cleanup_terminal(&cid);
 
         assert!(state.lookup_identity(&cid).is_none());
         assert!(!state.emitted_accepted.contains(&cid));
+        assert!(state.pending_modify(&cid).is_none());
+        assert!(state.pending_modify_target_qty(&cid).is_none());
         // `filled_orders` outlives `cleanup_terminal` so replays stay suppressed.
         assert!(state.filled_orders.contains(&cid));
     }

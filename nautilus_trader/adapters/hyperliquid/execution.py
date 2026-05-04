@@ -71,6 +71,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Quantity
 
 
 class HyperliquidExecutionClient(LiveExecutionClient):
@@ -163,6 +164,10 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         # cancel-replace when CANCELED(old_voi) arrives before the replacement
         # ACCEPTED(new_voi). See GH-3827.
         self._pending_modify_keys: dict[str, str] = {}
+        # User-intended absolute total qty per in-flight modify; used by
+        # the cancel-replace promotion instead of the venue's remaining-only
+        # `report.quantity`.
+        self._pending_modify_target_qty: dict[str, Quantity] = {}
         # FillReports buffered during an in-flight cancel-replace, drained
         # from the cancel-replace ACCEPTED branch. See GH-3972.
         self._buffered_fills: dict[str, list[nautilus_pyo3.FillReport]] = {}
@@ -748,7 +753,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                     due_post_only=due_post_only,
                 )
 
-    async def _modify_order(self, command: ModifyOrder) -> None:
+    async def _modify_order(self, command: ModifyOrder) -> None:  # noqa: C901 (sequence of guard clauses)
         order = self._cache.order(command.client_order_id)
 
         if order is None:
@@ -781,7 +786,22 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         # Use command values if provided, else fall back to current order values
         price = command.price if command.price else (order.price if order.has_price else None)
-        quantity = command.quantity if command.quantity else order.leaves_qty
+        # Hyperliquid modify is cancel-replace; subtract filled to avoid overfill.
+        target_total_qty = command.quantity if command.quantity else order.quantity
+        if target_total_qty <= order.filled_qty:
+            self.generate_order_modify_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=venue_order_id,
+                reason=(
+                    f"MODIFY_QTY_NOT_GREATER_THAN_FILLED "
+                    f"(target={target_total_qty}, filled={order.filled_qty})"
+                ),
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+        quantity = target_total_qty - order.filled_qty
         trigger_price = command.trigger_price
         if not trigger_price and order.has_trigger_price:
             trigger_price = order.trigger_price
@@ -824,6 +844,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             # Mark in-flight BEFORE the await so the WS cancel handler
             # sees it regardless of timing. Cleaned up in except if HTTP fails.
             self._pending_modify_keys[command.client_order_id.value] = venue_order_id.value
+            self._pending_modify_target_qty[command.client_order_id.value] = target_total_qty
             self._log.info(f"Order modification requested for {command.client_order_id}")
 
             await self._client.modify_order(
@@ -842,6 +863,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         except Exception as e:
             self._pending_modify_keys.pop(command.client_order_id.value, None)
+            self._pending_modify_target_qty.pop(command.client_order_id.value, None)
             self.generate_order_modify_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
@@ -1178,13 +1200,17 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                     overwrite=True,
                 )
                 self._pending_modify_keys.pop(key, None)
+                # Prefer user target over venue's remaining-only
+                # `report.quantity`; fall back when no marker (external modify).
+                target_qty = self._pending_modify_target_qty.pop(key, None)
+                update_quantity = target_qty if target_qty is not None else report.quantity
 
                 self.generate_order_updated(
                     strategy_id=order.strategy_id,
                     instrument_id=report.instrument_id,
                     client_order_id=report.client_order_id,
                     venue_order_id=report.venue_order_id,
-                    quantity=report.quantity,
+                    quantity=update_quantity,
                     price=update_price,
                     trigger_price=report.trigger_price,
                     ts_event=report.ts_last,

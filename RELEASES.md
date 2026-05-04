@@ -46,6 +46,8 @@ Released on TBD (UTC).
 - Fixed Polymarket REST fill paths bypassing dust normalization, causing engine state to diverge from venue across paths
 - Fixed Polymarket adapter book resync on `tick_size_change` (#3942), thanks for reporting @graceyangfan
 - Fixed Polymarket WS order parsing of venue cancellations with reason suffix (#3987), thanks for reporting @Javdu10
+- Fixed Hyperliquid modify-after-partial-fill sending absolute total quantity to the cancel-replace leg, causing the engine to overfill the order (#3986)
+- Fixed Hyperliquid testnet orders rejected with "Builder fee has not been approved"; testnet orders now omit builder attribution to match the vault-order behavior (#3989)
 - Fixed dYdX FOK and DAY time-in-force orders to reject pre-submission instead of failing at the venue or mapping to GTC
 - Fixed dYdX MIT/LIT round-tripping on reconcile when the Indexer collapses both variants under `TAKE_PROFIT`
 - Fixed dYdX GTD expiry to surface `OrderExpired` on both WS and HTTP reconciliation paths

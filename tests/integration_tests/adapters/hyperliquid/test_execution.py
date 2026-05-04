@@ -50,6 +50,7 @@ from nautilus_trader.model.orders import MarketIfTouchedOrder
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import OrderList
 from nautilus_trader.model.orders import StopMarketOrder
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.hyperliquid.conftest import _create_ws_mock
 
@@ -1111,6 +1112,151 @@ async def test_modify_limit_order(
 
 
 @pytest.mark.asyncio
+async def test_modify_order_after_partial_fill_sends_remaining_qty(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    Hyperliquid modify is cancel-replace; the new venue order must carry the engine's
+    remaining quantity (target_total - already_filled), not the absolute total.
+    """
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-PF-001"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00100"),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    submitted = TestEventStubs.order_submitted(order=order)
+    order.apply(submitted)
+    accepted = TestEventStubs.order_accepted(
+        order=order,
+        venue_order_id=VenueOrderId("12345"),
+    )
+    order.apply(accepted)
+    fill = TestEventStubs.order_filled(
+        order=order,
+        instrument=instrument,
+        last_qty=Quantity.from_str("0.00040"),
+        last_px=Price.from_str("50000.0"),
+    )
+    order.apply(fill)
+    cache.add_order(order, None)
+    assert order.filled_qty == Quantity.from_str("0.00040")
+
+    command = ModifyOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        # Same absolute total as the original order; the venue must receive
+        # `target_total - filled = 0.00060`, not `0.00100`.
+        quantity=Quantity.from_str("0.00100"),
+        price=Price.from_str("51000.0"),
+        trigger_price=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    try:
+        # Act
+        await client._modify_order(command)
+
+        # Assert
+        http_client.modify_order.assert_awaited_once()
+        sent_quantity = http_client.modify_order.await_args.kwargs["quantity"]
+        assert sent_quantity == nautilus_pyo3.Quantity.from_str("0.00060")
+        # Marker tracks the user-intended absolute total so the WS
+        # cancel-replace promotion can emit OrderUpdated with that value.
+        assert client._pending_modify_target_qty[order.client_order_id.value] == Quantity.from_str(
+            "0.00100",
+        )
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_modify_order_rejected_when_target_qty_not_greater_than_filled(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    The adapter rejects a modify when the target absolute quantity is at or below the
+    order's already-filled quantity, since Hyperliquid cancel-replace cannot represent a
+    non-positive replacement size.
+    """
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-PF-002"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00100"),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    submitted = TestEventStubs.order_submitted(order=order)
+    order.apply(submitted)
+    accepted = TestEventStubs.order_accepted(
+        order=order,
+        venue_order_id=VenueOrderId("12345"),
+    )
+    order.apply(accepted)
+    fill = TestEventStubs.order_filled(
+        order=order,
+        instrument=instrument,
+        last_qty=Quantity.from_str("0.00050"),
+        last_px=Price.from_str("50000.0"),
+    )
+    order.apply(fill)
+    cache.add_order(order, None)
+
+    command = ModifyOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("12345"),
+        quantity=Quantity.from_str("0.00050"),  # equal to filled, not greater
+        price=Price.from_str("51000.0"),
+        trigger_price=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    try:
+        # Act
+        await client._modify_order(command)
+
+        # Assert - rejected, no HTTP call
+        http_client.modify_order.assert_not_awaited()
+        assert order.client_order_id.value not in client._pending_modify_keys
+        assert order.client_order_id.value not in client._pending_modify_target_qty
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
 async def test_modify_order_rejected_when_not_in_cache(
     exec_client_builder,
     monkeypatch,
@@ -1291,6 +1437,7 @@ async def test_modify_order_rejection_on_http_error(
         # Assert - rejection handled internally, no stale in-flight marker
         http_client.modify_order.assert_awaited_once()
         assert order.client_order_id.value not in client._pending_modify_keys
+        assert order.client_order_id.value not in client._pending_modify_target_qty
     finally:
         await client._disconnect()
 
@@ -1401,6 +1548,77 @@ async def test_modify_order_cancel_replace_emits_updated_not_canceled(
 
         assert cache.venue_order_id(order.client_order_id) == new_voi
         assert order.client_order_id.value not in client._terminal_orders
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_modify_order_cancel_replace_uses_target_qty_after_partial_fill(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    The cancel-replace ACCEPTED must emit OrderUpdated with the user's absolute total,
+    not the venue's remaining-quantity view.
+    """
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-PF-CR-001"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00100"),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    old_voi = VenueOrderId("11111")
+    new_voi = VenueOrderId("22222")
+    cache.add_venue_order_id(order.client_order_id, old_voi)
+    client._accepted_orders.add(order.client_order_id.value)
+
+    # Simulate the in-flight modify state set by `_modify_order` for a target
+    # absolute total of 0.00100 with a prior fill of 0.00040.
+    target_total_qty = Quantity.from_str("0.00100")
+    venue_remaining = "0.00060"
+    client._pending_modify_keys[order.client_order_id.value] = old_voi.value
+    client._pending_modify_target_qty[order.client_order_id.value] = target_total_qty
+
+    captured: list = []
+    monkeypatch.setattr(client, "_send_order_event", lambda event: captured.append(event))
+
+    accepted_report = _build_status_report_pyo3(
+        client,
+        instrument,
+        order.client_order_id,
+        new_voi.value,
+        nautilus_pyo3.OrderStatus.ACCEPTED,
+        price="51000.0",
+        quantity=venue_remaining,
+    )
+
+    try:
+        # Act
+        client._handle_order_status_report_pyo3(accepted_report)
+
+        # Assert
+        updated_events = [e for e in captured if isinstance(e, OrderUpdated)]
+        assert len(updated_events) == 1
+        assert updated_events[0].venue_order_id == new_voi
+        # OrderUpdated carries the engine's absolute total, not the venue's
+        # remaining-quantity view (would be 0.00060).
+        assert updated_events[0].quantity == target_total_qty
+
+        assert order.client_order_id.value not in client._pending_modify_keys
+        assert order.client_order_id.value not in client._pending_modify_target_qty
     finally:
         await client._disconnect()
 

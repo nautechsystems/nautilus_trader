@@ -31,13 +31,16 @@ You can find live example scripts [here](https://github.com/nautechsystems/nauti
 
 ## Builder attribution
 
-Orders submitted through the adapter include a NautilusTrader builder address with a zero fee
-rate. This is for attribution only and does not charge any additional fees. No builder code
-approval is required.
+Mainnet orders submitted through the adapter include a NautilusTrader builder address with a
+zero fee rate. This is for attribution only and does not charge any additional fees.
 
-When trading via a vault (`vault_address` configured), the builder address is omitted from
-orders. Hyperliquid does not allow vaults to approve builder fees, so including the builder
-address would cause the exchange to reject the order.
+The builder address is omitted from orders in two cases:
+
+- **Testnet.** Hyperliquid testnet rejects orders that include a builder address the wallet has
+  not explicitly approved (faucet-funded testnet wallets typically have no approval), so testnet
+  orders never include the builder.
+- **Vault trading** (`vault_address` configured). Hyperliquid does not allow vaults to approve
+  builder fees, so including the builder address would cause the exchange to reject the order.
 
 ## Testnet setup
 
