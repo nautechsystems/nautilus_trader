@@ -26,6 +26,7 @@ members = [
   "crates/core",
   "crates/cryptography",
   "crates/data",
+  "crates/event_store",
   "crates/execution",
   "crates/indicators",
   "crates/infrastructure",
@@ -209,6 +210,7 @@ rand = { version = "0.10.1", default-features = false, features = [
   "std",
   "thread_rng",
 ] }
+redb = { version = "4.1.0", default-features = false }
 redis = { version = "1.2.1", default-features = false, features = [
   "connection-manager",
   "sentinel",
