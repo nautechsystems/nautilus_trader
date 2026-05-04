@@ -760,23 +760,57 @@ class KrakenExecutionClient(LiveExecutionClient):
             return value
         return f"O{value[-17:]}"
 
-    async def generate_position_status_reports(  # noqa: C901
+    def _synthesize_flat_spot_margin_reports(
+        self,
+        reported: list[PositionStatusReport],
+    ) -> list[PositionStatusReport]:
+        reported_ids = {r.instrument_id for r in reported if r.position_side != PositionSide.FLAT}
+        ts_now = self._clock.timestamp_ns()
+        flat_reports: list[PositionStatusReport] = []
+
+        for pos in self._cache.positions_open(venue=KRAKEN_VENUE, account_id=self.account_id):
+            if (
+                nautilus_pyo3.kraken_product_type_from_symbol(pos.instrument_id.symbol.value)
+                != KrakenProductType.SPOT
+            ):
+                continue
+            if pos.instrument_id in reported_ids:
+                continue
+            instrument = self._cache.instrument(pos.instrument_id)
+            size_precision = instrument.size_precision if instrument else 0
+            flat_report = PositionStatusReport.create_flat(
+                account_id=self.account_id,
+                instrument_id=pos.instrument_id,
+                size_precision=size_precision,
+                ts_init=ts_now,
+            )
+            self._log.debug(
+                f"Synthetic FLAT for closed margin position {pos.instrument_id}",
+                LogColor.MAGENTA,
+            )
+            flat_reports.append(flat_report)
+        return flat_reports
+
+    async def generate_position_status_reports(
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
         self._log.debug("Requesting PositionStatusReports...")
 
         reports: list[PositionStatusReport] = []
+        pyo3_instrument_id: nautilus_pyo3.InstrumentId | None = None
+        target_product_type: KrakenProductType | None = None
 
-        try:
-            pyo3_instrument_id = None
+        if command.instrument_id:
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+                command.instrument_id.value,
+            )
+            target_product_type = nautilus_pyo3.kraken_product_type_from_symbol(
+                command.instrument_id.symbol.value,
+            )
 
-            if command.instrument_id:
-                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
-                    command.instrument_id.value,
-                )
-
-            if self._http_client_spot is not None:
+        if self._http_client_spot is not None and target_product_type != KrakenProductType.FUTURES:
+            try:
                 pyo3_reports = await self._http_client_spot.request_position_status_reports(
                     account_id=self.pyo3_account_id,
                     instrument_id=pyo3_instrument_id,
@@ -792,40 +826,14 @@ class KrakenExecutionClient(LiveExecutionClient):
 
                 if (
                     self._config.spot_account_type == AccountType.MARGIN
-                    and command.instrument_id is None
+                    and not command.instrument_id
                 ):
-                    reported_ids = {
-                        r.instrument_id for r in reports if r.position_side != PositionSide.FLAT
-                    }
-                    ts_now = self._clock.timestamp_ns()
-                    for pos in self._cache.positions_open(
-                        venue=KRAKEN_VENUE,
-                        account_id=self.account_id,
-                    ):
-                        if (
-                            nautilus_pyo3.kraken_product_type_from_symbol(
-                                pos.instrument_id.symbol.value,
-                            )
-                            != KrakenProductType.SPOT
-                        ):
-                            continue
-                        if pos.instrument_id in reported_ids:
-                            continue
-                        instrument = self._cache.instrument(pos.instrument_id)
-                        size_precision = instrument.size_precision if instrument else 0
-                        flat_report = PositionStatusReport.create_flat(
-                            account_id=self.account_id,
-                            instrument_id=pos.instrument_id,
-                            size_precision=size_precision,
-                            ts_init=ts_now,
-                        )
-                        self._log.debug(
-                            f"Synthetic FLAT for closed margin position {pos.instrument_id}",
-                            LogColor.MAGENTA,
-                        )
-                        reports.append(flat_report)
+                    reports.extend(self._synthesize_flat_spot_margin_reports(reports))
+            except (asyncio.CancelledError, Exception) as e:
+                self._log_report_error(e, "PositionStatusReports (spot)")
 
-            if self._http_client_futures is not None:
+        if self._http_client_futures is not None and target_product_type != KrakenProductType.SPOT:
+            try:
                 pyo3_reports = await self._http_client_futures.request_position_status_reports(
                     account_id=self.pyo3_account_id,
                     instrument_id=pyo3_instrument_id,
@@ -835,9 +843,8 @@ class KrakenExecutionClient(LiveExecutionClient):
                     report = PositionStatusReport.from_pyo3(pyo3_report)
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     reports.append(report)
-
-        except (asyncio.CancelledError, Exception) as e:
-            self._log_report_error(e, "PositionStatusReports")
+            except (asyncio.CancelledError, Exception) as e:
+                self._log_report_error(e, "PositionStatusReports (futures)")
 
         self._log_report_receipt(
             len(reports),
@@ -860,6 +867,8 @@ class KrakenExecutionClient(LiveExecutionClient):
                 None,
                 f"Invalid leverage param: expected int, received {type(raw).__name__} {raw!r}",
             )
+        if not (0 <= raw <= 65535):
+            return None, f"Invalid leverage param: {raw} outside u16 range [0, 65535]"
         return raw, None
 
     async def _submit_order(self, command: SubmitOrder) -> None:  # noqa: C901
