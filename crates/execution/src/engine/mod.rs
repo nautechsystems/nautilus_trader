@@ -1695,6 +1695,16 @@ impl ExecutionEngine {
             return;
         }
 
+        if let Some(reason) = self.check_position_id_against_oms(
+            cmd.instrument_id,
+            cmd.strategy_id,
+            cmd.position_id,
+            client,
+        ) {
+            self.deny_order(&order, &reason);
+            return;
+        }
+
         let instrument_id = order.instrument_id();
 
         if self.config.snapshot_orders {
@@ -1745,6 +1755,18 @@ impl ExecutionEngine {
                     order,
                     &format!("Order list venue {order_list_venue} does not match client venue {client_venue}"),
                 );
+            }
+            return;
+        }
+
+        if let Some(reason) = self.check_position_id_against_oms(
+            cmd.instrument_id,
+            cmd.strategy_id,
+            cmd.position_id,
+            client,
+        ) {
+            for order in &orders {
+                self.deny_order(order, &reason);
             }
             return;
         }
@@ -1923,23 +1945,61 @@ impl ExecutionEngine {
     }
 
     fn determine_oms_type(&self, fill: &OrderFilled) -> OmsType {
-        // Check for strategy OMS override
-        if let Some(oms_type) = self.oms_overrides.get(&fill.strategy_id) {
+        if let Some(oms_type) = self.oms_overrides.get(&fill.strategy_id)
+            && *oms_type != OmsType::Unspecified
+        {
             return *oms_type;
         }
 
-        // Use native venue OMS
         if let Some(client_id) = self.routing_map.get(&fill.instrument_id.venue)
             && let Some(client) = self.clients.get(client_id)
         {
-            return client.oms_type();
+            return client.oms_type;
         }
 
         if let Some(client) = &self.default_client {
-            return client.oms_type();
+            return client.oms_type;
         }
 
         OmsType::Netting // Default fallback
+    }
+
+    fn resolve_oms_type_for_client(
+        &self,
+        strategy_id: StrategyId,
+        client: &dyn ExecutionClient,
+    ) -> OmsType {
+        if let Some(oms_type) = self.oms_overrides.get(&strategy_id)
+            && *oms_type != OmsType::Unspecified
+        {
+            return *oms_type;
+        }
+
+        client.oms_type()
+    }
+
+    fn check_position_id_against_oms(
+        &self,
+        instrument_id: InstrumentId,
+        strategy_id: StrategyId,
+        position_id: Option<PositionId>,
+        client: &dyn ExecutionClient,
+    ) -> Option<String> {
+        let position_id = position_id?;
+
+        if self.resolve_oms_type_for_client(strategy_id, client) != OmsType::Netting {
+            return None;
+        }
+
+        let expected = format!("{instrument_id}-{strategy_id}");
+        if position_id.as_str() == expected {
+            return None;
+        }
+
+        Some(format!(
+            "`position_id` {position_id} is not valid for NETTING OMS; \
+             expected '{expected}' (use HEDGING for custom position IDs)"
+        ))
     }
 
     fn determine_position_id(

@@ -157,6 +157,15 @@ cdef class ExecutionEngine(Component):
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
+    cdef str _check_position_id_against_oms(
+        self,
+        InstrumentId instrument_id,
+        StrategyId strategy_id,
+        PositionId position_id,
+        ExecutionClient client,
+    )
+    cdef OmsType _resolve_oms_type(self, StrategyId strategy_id, ExecutionClient client)
+
     cpdef void _handle_event(self, OrderEvent event)
     cpdef OmsType _determine_oms_type(self, OrderFilled fill)
     cpdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type, Order order=*)

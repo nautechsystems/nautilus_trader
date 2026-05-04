@@ -123,7 +123,7 @@ class TestOrderEmulatorWithOrderLists:
         self.venue = Venue("BINANCE")
         self.exchange = SimulatedExchange(
             venue=self.venue,
-            oms_type=OmsType.NETTING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-asset wallet
             starting_balances=[Money(200, ETH), Money(1_000_000, USDT)],
