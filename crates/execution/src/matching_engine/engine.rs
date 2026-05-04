@@ -2710,8 +2710,8 @@ impl OrderMatchingEngine {
         let orders_bid = self.core.get_orders_bid();
         let orders_ask = self.core.get_orders_ask();
 
-        self.iterate_orders(timestamp_ns, &orders_bid);
-        self.iterate_orders(timestamp_ns, &orders_ask);
+        self.iterate_orders(&orders_bid);
+        self.iterate_orders(&orders_ask);
 
         // Restore core bid/ask to book values after order iteration
         // (during trade execution, transient override was used for matching)
@@ -2872,7 +2872,7 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn iterate_orders(&mut self, timestamp_ns: UnixNanos, orders: &[RestingOrder]) {
+    fn iterate_orders(&mut self, orders: &[RestingOrder]) {
         for match_info in orders {
             let order = match self
                 .cache
@@ -2891,18 +2891,6 @@ impl OrderMatchingEngine {
             };
 
             if order.is_closed() {
-                continue;
-            }
-
-            if self.config.support_gtd_orders
-                && order
-                    .expire_time()
-                    .is_some_and(|expire_timestamp_ns| timestamp_ns >= expire_timestamp_ns)
-            {
-                let _ = self.core.delete_order(match_info.client_order_id);
-                self.cached_filled_qty
-                    .swap_remove(&match_info.client_order_id);
-                self.expire_order(&order);
                 continue;
             }
 
