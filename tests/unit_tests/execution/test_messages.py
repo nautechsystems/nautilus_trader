@@ -128,6 +128,55 @@ class TestCommands:
             == f"SubmitOrder(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, order=LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=VWAP, exec_algorithm_params={{'max_percentage': 100.0, 'start': 0, 'end': 1}}, exec_spawn_id=O-19700101-000000-000-001-1, tags=None), position_id=P-001, command_id={uuid}, correlation_id=None, ts_init=0)"
         )
 
+    def test_submit_order_command_with_params_survives_round_trip(self):
+        # Arrange
+        uuid = UUID4()
+        order = self.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+        command = SubmitOrder(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("S-001"),
+            order=order,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+            params={"leverage": "5"},
+        )
+
+        # Act
+        result = SubmitOrder.from_dict(SubmitOrder.to_dict(command))
+
+        # Assert
+        assert result.params == {"leverage": "5"}
+
+    def test_submit_order_list_command_with_params_survives_round_trip(self):
+        # Arrange
+        uuid = UUID4()
+        bracket = self.order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+        )
+        command = SubmitOrderList(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("S-001"),
+            order_list=bracket,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+            params={"leverage": "5"},
+        )
+
+        # Act
+        result = SubmitOrderList.from_dict(SubmitOrderList.to_dict(command))
+
+        # Assert
+        assert result.params == {"leverage": "5"}
+
     def test_submit_bracket_order_command_to_from_dict_and_str_repr(self):
         # Arrange
         uuid = UUID4()

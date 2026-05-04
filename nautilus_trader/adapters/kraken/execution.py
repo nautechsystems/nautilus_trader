@@ -60,6 +60,7 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import order_side_to_str
@@ -71,6 +72,7 @@ from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.functions import account_type_to_pyo3
 from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.functions import time_in_force_to_pyo3
@@ -127,9 +129,9 @@ class KrakenExecutionClient(LiveExecutionClient):
     ) -> None:
         product_types = list(config.product_types or (KrakenProductType.SPOT,))
 
-        # Determine account type based on product types
+        # Determine account type based on product types and spot_account_type config
         if set(product_types) == {KrakenProductType.SPOT}:
-            self._account_type = AccountType.CASH
+            self._account_type = config.spot_account_type
         else:
             self._account_type = AccountType.MARGIN
 
@@ -169,12 +171,6 @@ class KrakenExecutionClient(LiveExecutionClient):
         # HTTP API clients
         self._http_client_spot = http_client_spot
         self._http_client_futures = http_client_futures
-
-        if self._http_client_spot is not None:
-            self._http_client_spot.set_use_spot_position_reports(self._use_spot_position_reports)
-            self._http_client_spot.set_spot_positions_quote_currency(
-                self._spot_positions_quote_currency,
-            )
 
         # Log API keys for configured clients
         if http_client_spot is not None:
@@ -349,14 +345,21 @@ class KrakenExecutionClient(LiveExecutionClient):
     async def _update_account_state(self) -> None:
         all_balances = []
         all_margins = []
+        info: dict[str, object] = {}
 
         if self._http_client_spot is not None:
-            pyo3_account_state = await self._http_client_spot.request_account_state(
+            (
+                pyo3_account_state,
+                metrics,
+            ) = await self._http_client_spot.request_account_state_with_metrics(
                 self.pyo3_account_id,
+                account_type_to_pyo3(self._config.spot_account_type),
+                self._config.margin_balance_asset,
             )
             account_state = AccountState.from_dict(pyo3_account_state.to_dict())
             all_balances.extend(account_state.balances)
             all_margins.extend(account_state.margins)
+            info.update(metrics)
 
         if self._http_client_futures is not None:
             pyo3_account_state = await self._http_client_futures.request_account_state(
@@ -371,11 +374,19 @@ class KrakenExecutionClient(LiveExecutionClient):
             margins=all_margins,
             reported=True,
             ts_event=self._clock.timestamp_ns(),
+            info=info,
         )
         self._log.info(
             f"Generated account state with {len(all_balances)} balance(s), "
             f"{len(all_margins)} margin(s)",
         )
+
+        if info:
+            self._log.info(
+                f"Margin metrics: equity={info['equity']} {info['asset']}, "
+                f"free_margin={info['free_margin']}, "
+                f"unrealized_pnl={info['unrealized_pnl']}",
+            )
 
     async def generate_order_status_reports(
         self,
@@ -749,7 +760,7 @@ class KrakenExecutionClient(LiveExecutionClient):
             return value
         return f"O{value[-17:]}"
 
-    async def generate_position_status_reports(
+    async def generate_position_status_reports(  # noqa: C901
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
@@ -769,12 +780,50 @@ class KrakenExecutionClient(LiveExecutionClient):
                 pyo3_reports = await self._http_client_spot.request_position_status_reports(
                     account_id=self.pyo3_account_id,
                     instrument_id=pyo3_instrument_id,
+                    account_type=account_type_to_pyo3(self._config.spot_account_type),
+                    use_spot_position_reports=self._use_spot_position_reports,
+                    quote_currency=self._spot_positions_quote_currency,
                 )
 
                 for pyo3_report in pyo3_reports:
                     report = PositionStatusReport.from_pyo3(pyo3_report)
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     reports.append(report)
+
+                if (
+                    self._config.spot_account_type == AccountType.MARGIN
+                    and command.instrument_id is None
+                ):
+                    reported_ids = {
+                        r.instrument_id for r in reports if r.position_side != PositionSide.FLAT
+                    }
+                    ts_now = self._clock.timestamp_ns()
+                    for pos in self._cache.positions_open(
+                        venue=KRAKEN_VENUE,
+                        account_id=self.account_id,
+                    ):
+                        if (
+                            nautilus_pyo3.kraken_product_type_from_symbol(
+                                pos.instrument_id.symbol.value,
+                            )
+                            != KrakenProductType.SPOT
+                        ):
+                            continue
+                        if pos.instrument_id in reported_ids:
+                            continue
+                        instrument = self._cache.instrument(pos.instrument_id)
+                        size_precision = instrument.size_precision if instrument else 0
+                        flat_report = PositionStatusReport.create_flat(
+                            account_id=self.account_id,
+                            instrument_id=pos.instrument_id,
+                            size_precision=size_precision,
+                            ts_init=ts_now,
+                        )
+                        self._log.debug(
+                            f"Synthetic FLAT for closed margin position {pos.instrument_id}",
+                            LogColor.MAGENTA,
+                        )
+                        reports.append(flat_report)
 
             if self._http_client_futures is not None:
                 pyo3_reports = await self._http_client_futures.request_position_status_reports(
@@ -798,7 +847,22 @@ class KrakenExecutionClient(LiveExecutionClient):
 
         return reports
 
-    async def _submit_order(self, command: SubmitOrder) -> None:
+    @staticmethod
+    def _parse_leverage(
+        params: dict | None,
+        default: int | None,
+    ) -> tuple[int | None, str | None]:
+        raw = params.get("leverage") if params else None
+        if raw is None:
+            return default, None
+        if not isinstance(raw, int) or isinstance(raw, bool):
+            return (
+                None,
+                f"Invalid leverage param: expected int, received {type(raw).__name__} {raw!r}",
+            )
+        return raw, None
+
+    async def _submit_order(self, command: SubmitOrder) -> None:  # noqa: C901
         order = command.order
 
         if order.is_closed:
@@ -845,6 +909,31 @@ class KrakenExecutionClient(LiveExecutionClient):
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 reason="UNSUPPORTED_TIME_IN_FORCE: FOK only supported for LIMIT orders on Kraken Spot",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
+        if (
+            product_type == nautilus_pyo3.KrakenProductType.SPOT
+            and order.is_reduce_only
+            and self._config.spot_account_type == AccountType.CASH
+        ):
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason="reduce_only requires spot_account_type=Margin",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
+        leverage, lev_err = self._parse_leverage(command.params, self._config.default_leverage)
+        if lev_err is not None:
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=lev_err,
                 ts_event=self._clock.timestamp_ns(),
             )
             return
@@ -963,6 +1052,8 @@ class KrakenExecutionClient(LiveExecutionClient):
                     post_only=order.is_post_only,
                     quote_quantity=order.is_quote_quantity,
                     display_qty=pyo3_display_qty,
+                    leverage=leverage,
+                    account_type=account_type_to_pyo3(self._config.spot_account_type),
                 )
         except Exception as e:
             error_str = str(e)
@@ -1076,19 +1167,44 @@ class KrakenExecutionClient(LiveExecutionClient):
                 order=order,
                 command_id=command.id,
                 ts_init=command.ts_init,
+                params=command.params,
             ),
         )
 
-    async def _submit_spot_order_list_batch(
+    async def _submit_spot_order_list_batch(  # noqa: C901
         self,
         orders: list[Order],
         command: SubmitOrderList,
     ) -> None:
         spot_client = cast(nautilus_pyo3.KrakenSpotHttpClient, self._http_client_spot)
+        list_leverage, lev_err = self._parse_leverage(command.params, self._config.default_leverage)
+        if lev_err is not None:
+            for order in orders:
+                self.generate_order_denied(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=lev_err,
+                    ts_event=self._clock.timestamp_ns(),
+                )
+            return
         batch_params = []
         valid_orders: list[Order] = []
+        reduce_only_flags: list[bool] = []
+
+        cash_mode = self._config.spot_account_type == AccountType.CASH
 
         for order in orders:
+            if order.is_reduce_only and cash_mode:
+                self.generate_order_denied(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason="reduce_only requires spot_account_type=Margin",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                continue
+
             self.generate_order_submitted(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
@@ -1157,6 +1273,7 @@ class KrakenExecutionClient(LiveExecutionClient):
                     ),
                 )
                 valid_orders.append(order)
+                reduce_only_flags.append(order.is_reduce_only)
             except Exception as e:
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
@@ -1170,7 +1287,12 @@ class KrakenExecutionClient(LiveExecutionClient):
             return
 
         try:
-            statuses = await spot_client.submit_orders_batch(batch_params)
+            statuses = await spot_client.submit_orders_batch(
+                batch_params,
+                list_leverage,
+                account_type_to_pyo3(self._config.spot_account_type),
+                per_order_reduce_only=reduce_only_flags,
+            )
             placed = sum(1 for status in statuses if status == "placed")
             self._log.debug(
                 f"Batch submitted {placed}/{len(valid_orders)} spot orders",

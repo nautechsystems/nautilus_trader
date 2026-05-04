@@ -1,0 +1,20 @@
+{
+  "error": [],
+  "result": {
+    "TF4RHX-FZPAS-ABCDEF": {
+      "ordertxid": "OYVGEW-DQCBM-123456",
+      "pair": "XXBTZUSD",
+      "time": 1714500000.123,
+      "type": "buy",
+      "ordertype": "market",
+      "cost": "50000.00",
+      "fee": "75.00",
+      "vol": "0.50000000",
+      "vol_closed": "0.00000000",
+      "margin": "10000.00",
+      "posstatus": "open",
+      "terms": "0.0200% per 4 hours",
+      "rollovertm": "1714514400"
+    }
+  }
+}
