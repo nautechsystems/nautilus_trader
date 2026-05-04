@@ -318,7 +318,7 @@ mod tests {
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("KRAKEN-TEST", &config, cache);
+        let result = factory.create("KRAKEN-TEST", &config, cache.into());
         let err = match result {
             Ok(_) => panic!("expected validation error, factory returned Ok"),
             Err(e) => e.to_string(),
@@ -340,7 +340,7 @@ mod tests {
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("KRAKEN-TEST", &config, cache);
+        let result = factory.create("KRAKEN-TEST", &config, cache.into());
         assert!(result.is_ok());
     }
 }
