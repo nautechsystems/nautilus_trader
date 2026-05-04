@@ -120,6 +120,7 @@ pub struct OrderMatchingEngine {
     prev_ask_size_raw: QuantityRaw,
     last_quote_bid: Option<Price>,
     last_quote_ask: Option<Price>,
+    precision_mismatch_streak: u32,
     tob_initialized: bool,
     instrument_close: Option<InstrumentClose>,
     settlement_price: Option<Price>,
@@ -202,6 +203,7 @@ impl OrderMatchingEngine {
             prev_ask_size_raw: 0,
             last_quote_bid: None,
             last_quote_ask: None,
+            precision_mismatch_streak: 0,
             tob_initialized: false,
             instrument_close: None,
             settlement_price: None,
@@ -256,6 +258,7 @@ impl OrderMatchingEngine {
         self.prev_ask_size_raw = 0;
         self.last_quote_bid = None;
         self.last_quote_ask = None;
+        self.precision_mismatch_streak = 0;
         self.tob_initialized = false;
         self.instrument_close = None;
         self.settlement_price = None;
@@ -952,6 +955,65 @@ impl OrderMatchingEngine {
         self.fill_at_market = value;
     }
 
+    /// Updates the instrument definition used by this matching engine.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `instrument.id()` does not match this engines instrument ID.
+    pub fn update_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
+        if instrument.id() != self.instrument.id() {
+            anyhow::bail!(
+                "Cannot update instrument {} with {}",
+                self.instrument.id(),
+                instrument.id()
+            );
+        }
+
+        let changed = instrument.price_increment() != self.instrument.price_increment()
+            || instrument.price_precision() != self.instrument.price_precision()
+            || instrument.size_precision() != self.instrument.size_precision();
+
+        if changed {
+            self.core
+                .update_price_increment(instrument.price_increment());
+            self.book.reset();
+            self.bid_consumption.clear();
+            self.ask_consumption.clear();
+            self.trade_consumption = 0;
+            self.queue_ahead.clear();
+            self.queue_excess.clear();
+            self.queue_pending.clear();
+            self.prev_bid_price_raw = 0;
+            self.prev_bid_size_raw = 0;
+            self.prev_ask_price_raw = 0;
+            self.prev_ask_size_raw = 0;
+            self.last_quote_bid = None;
+            self.last_quote_ask = None;
+            self.precision_mismatch_streak = 0;
+            self.tob_initialized = false;
+            self.target_bid = None;
+            self.target_ask = None;
+            self.target_last = None;
+            self.last_bar_bid = None;
+            self.last_bar_ask = None;
+            self.core.bid = None;
+            self.core.ask = None;
+            self.core.last = None;
+            self.core.is_bid_initialized = false;
+            self.core.is_ask_initialized = false;
+            self.core.is_last_initialized = false;
+            log::info!(
+                "Updated instrument {} (price_precision={} size_precision={})",
+                instrument.id(),
+                instrument.price_precision(),
+                instrument.size_precision()
+            );
+        }
+
+        self.instrument = instrument;
+        Ok(())
+    }
+
     fn check_price_precision(&self, actual: u8, field: &str) -> anyhow::Result<()> {
         let expected = self.instrument.price_precision();
         if actual != expected {
@@ -972,6 +1034,30 @@ impl OrderMatchingEngine {
             );
         }
         Ok(())
+    }
+
+    fn log_precision_mismatch(
+        &mut self,
+        data_type: &str,
+        instrument_id: InstrumentId,
+        err: &anyhow::Error,
+    ) {
+        self.precision_mismatch_streak = self.precision_mismatch_streak.saturating_add(1);
+        let streak = self.precision_mismatch_streak;
+
+        if streak <= 3 || streak.is_multiple_of(100) {
+            log::warn!(
+                "Skipping {data_type} for {instrument_id}: {err} \
+                 (consecutive_precision_mismatches={streak})"
+            );
+        }
+
+        if streak == 20 {
+            log::error!(
+                "Precision mismatches reached {streak} consecutive events for \
+                 {instrument_id}; check instrument update flow and upstream market data"
+            );
+        }
     }
 
     /// Process the venues market for the given order book delta.
@@ -1169,19 +1255,30 @@ impl OrderMatchingEngine {
     /// # Panics
     ///
     /// - If updating the order book with the quote tick fails.
-    /// - If bid/ask price precision does not match the instrument.
-    /// - If bid/ask size precision does not match the instrument.
     pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
         log::debug!("Processing {quote}");
 
-        self.check_price_precision(quote.bid_price.precision, "bid_price")
-            .unwrap();
-        self.check_price_precision(quote.ask_price.precision, "ask_price")
-            .unwrap();
-        self.check_size_precision(quote.bid_size.precision, "bid_size")
-            .unwrap();
-        self.check_size_precision(quote.ask_size.precision, "ask_size")
-            .unwrap();
+        if let Err(e) = self.check_price_precision(quote.bid_price.precision, "bid_price") {
+            self.log_precision_mismatch("quote tick", quote.instrument_id, &e);
+            return;
+        }
+
+        if let Err(e) = self.check_price_precision(quote.ask_price.precision, "ask_price") {
+            self.log_precision_mismatch("quote tick", quote.instrument_id, &e);
+            return;
+        }
+
+        if let Err(e) = self.check_size_precision(quote.bid_size.precision, "bid_size") {
+            self.log_precision_mismatch("quote tick", quote.instrument_id, &e);
+            return;
+        }
+
+        if let Err(e) = self.check_size_precision(quote.ask_size.precision, "ask_size") {
+            self.log_precision_mismatch("quote tick", quote.instrument_id, &e);
+            return;
+        }
+
+        self.precision_mismatch_streak = 0;
 
         if self.book_type == BookType::L1_MBP {
             // Stale update: skip book mutation and cache updates
@@ -1475,15 +1572,20 @@ impl OrderMatchingEngine {
     /// # Panics
     ///
     /// - If updating the order book with the trade tick fails.
-    /// - If trade price precision does not match the instrument.
-    /// - If trade size precision does not match the instrument.
     pub fn process_trade_tick(&mut self, trade: &TradeTick) {
         log::debug!("Processing {trade}");
 
-        self.check_price_precision(trade.price.precision, "trade price")
-            .unwrap();
-        self.check_size_precision(trade.size.precision, "trade size")
-            .unwrap();
+        if let Err(e) = self.check_price_precision(trade.price.precision, "trade price") {
+            self.log_precision_mismatch("trade tick", trade.instrument_id, &e);
+            return;
+        }
+
+        if let Err(e) = self.check_size_precision(trade.size.precision, "trade size") {
+            self.log_precision_mismatch("trade tick", trade.instrument_id, &e);
+            return;
+        }
+
+        self.precision_mismatch_streak = 0;
 
         let price_raw = trade.price.raw;
 

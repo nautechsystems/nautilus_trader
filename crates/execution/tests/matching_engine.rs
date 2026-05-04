@@ -8403,3 +8403,96 @@ fn test_trailing_stop_no_recompute_skips_resync(
         "core RestingOrder should be byte-identical when nothing changed",
     );
 }
+
+#[rstest]
+fn test_update_instrument_resets_market_state(instrument_eth_usdt: InstrumentAny) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let mut engine = OrderMatchingEngine::new(
+        instrument_eth_usdt.clone(),
+        1,
+        FillModelAny::default(),
+        FeeModelAny::default(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock,
+        cache,
+        OrderMatchingEngineConfig::default(),
+    );
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1000.00"),
+        Price::from("1001.00"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    engine.process_quote_tick(&quote);
+
+    let updated_instrument = match instrument_eth_usdt {
+        InstrumentAny::CryptoPerpetual(mut crypto_perp) => {
+            crypto_perp.price_precision = 3;
+            crypto_perp.price_increment = Price::from("0.001");
+            InstrumentAny::CryptoPerpetual(crypto_perp)
+        }
+        _ => panic!("Test fixture expected CryptoPerpetual instrument"),
+    };
+
+    engine.update_instrument(updated_instrument).unwrap();
+
+    assert!(engine.best_bid_price().is_none());
+    assert!(engine.best_ask_price().is_none());
+    assert_eq!(engine.get_core().price_increment, Price::from("0.001"));
+}
+
+#[rstest]
+fn test_update_instrument_without_precision_change_keeps_market_state(
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let mut engine = OrderMatchingEngine::new(
+        instrument_eth_usdt.clone(),
+        1,
+        FillModelAny::default(),
+        FeeModelAny::default(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock,
+        cache,
+        OrderMatchingEngineConfig::default(),
+    );
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1000.00"),
+        Price::from("1001.00"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    engine.process_quote_tick(&quote);
+
+    let best_bid_before = engine.best_bid_price();
+    let best_ask_before = engine.best_ask_price();
+    let increment_before = engine.get_core().price_increment;
+
+    let updated_instrument = match instrument_eth_usdt {
+        InstrumentAny::CryptoPerpetual(mut crypto_perp) => {
+            crypto_perp.ts_event = UnixNanos::from(3);
+            InstrumentAny::CryptoPerpetual(crypto_perp)
+        }
+        _ => panic!("Test fixture expected CryptoPerpetual instrument"),
+    };
+
+    engine.update_instrument(updated_instrument).unwrap();
+
+    assert_eq!(engine.best_bid_price(), best_bid_before);
+    assert_eq!(engine.best_ask_price(), best_ask_before);
+    assert_eq!(engine.get_core().price_increment, increment_before);
+}
