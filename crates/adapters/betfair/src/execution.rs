@@ -548,7 +548,10 @@ impl BetfairExecutionClient {
                 };
 
                 for uo in unmatched_orders {
-                    if ignore_external_orders && uo.rfo.is_none() {
+                    // Treat an empty `rfo` string the same as a missing one: parsers
+                    // elsewhere normalise it to `None`, so the skip must too.
+                    let has_customer_ref = uo.rfo.as_deref().is_some_and(|s| !s.is_empty());
+                    if ignore_external_orders && !has_customer_ref {
                         continue;
                     }
 
