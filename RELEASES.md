@@ -41,7 +41,6 @@ Released on TBD (UTC).
 - Fixed `BacktestEngine` not enabling `calculate_account_state` on accounts (#3988), thanks for reporting @magnified103
 - Fixed `MessageBus` late wildcard subscriptions missing events on already-cached topics (#3942), thanks for reporting @graceyangfan
 - Fixed `OrderMatchingEngine` to propagate tick-size to `MatchingCore` (#3942), thanks for reporting @graceyangfan
-- Fixed `OrderMatchingEngine` silently dropping `AT_THE_OPEN`/`AT_THE_CLOSE` orders; now emits `OrderRejected` (Rust)
 - Fixed `ExecutionEngine` reconciliation skipping `OrderUpdated` when both report and order were already `ACCEPTED`
 - Fixed `Strategy`/`Actor` clock callback leak on dispose (#3967), thanks for reporting @frslvr
 - Fixed `ExecTester` LIT pricing direction so reconciled BUY/SELL LIT orders satisfy the `trigger_price` invariant
@@ -90,8 +89,9 @@ Released on TBD (UTC).
 - Refined data engine request workflow (#3928), thanks @faysou
 - Improved object materialization in Rust stream Feather to parquet conversion (#3954), thanks @faysou
 - Improved `OwnBookLadder` to defer error logging to callers, removing duplicate own-book error noise
-- Improved live exec clients to log ERROR with `timeout_post_stop` hint when cancel tasks abort on disconnect
+- Improved `OrderMatchingEngine` trailing-stop activation to use the `OrderMatchingCore` `iter_*` API (Rust)
 - Improved `update_balance_multi_currency` to delegate negative-balance enforcement to per-account `update_balances`
+- Improved live exec clients to log ERROR with `timeout_post_stop` hint when cancel tasks abort on disconnect
 - Improved `ExecTester` to refresh tracked orders from cache before modify/cancel-replace so they see venue acks
 - Improved Betfair Rust adapter to suppress late HTTP acceptance at debug level
 - Improved Betfair Rust adapter to suppress noisy `instrument_close` subscribe/unsubscribe warnings

@@ -2124,6 +2124,311 @@ fn test_process_modify_order_rejected_not_found(
     assert_eq!(rejected.client_order_id, client_order_id);
 }
 
+// Rejected post-only modify must keep FIFO; helper must not re-key.
+#[rstest]
+fn test_rejected_post_only_modify_preserves_fifo_priority(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    // Seed ask so the post-only would-cross check has a value
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+
+    let id_first = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_first = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(id_first)
+        .post_only(true)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut limit_first, account_id);
+
+    let id_second = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut limit_second = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(id_second)
+        .post_only(true)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut limit_second, account_id);
+
+    // Modify into ask: post_only rejects without dispatching OrderUpdated
+    let modify_command = ModifyOrder::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument_eth_usdt.id(),
+        id_first,
+        Some(VenueOrderId::from("V1")),
+        None,
+        Some(Price::from("1500.00")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    engine_l2.process_modify(&modify_command, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let rejected_count = saved_messages
+        .iter()
+        .filter(|e| matches!(e, OrderEventAny::ModifyRejected(_)))
+        .count();
+    assert_eq!(rejected_count, 1, "post-only modify should be rejected");
+    assert!(
+        !saved_messages
+            .iter()
+            .any(|e| matches!(e, OrderEventAny::Updated(_))),
+        "rejected modify must not dispatch OrderUpdated, was {saved_messages:?}",
+    );
+
+    let bids = engine_l2.get_core().get_orders_bid();
+    assert_eq!(bids.len(), 2, "both orders should remain in core");
+    assert_eq!(
+        bids[0].client_order_id, id_first,
+        "first-inserted order must keep FIFO priority after rejected modify",
+    );
+    assert_eq!(bids[1].client_order_id, id_second);
+}
+
+// Rejected modify must not call `snapshot_queue_position`; queue_ahead
+// would otherwise reset and erase the queue progress from prior trades.
+#[rstest]
+fn test_rejected_post_only_modify_preserves_queue_position(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let (mut engine, cache, handler) = get_l1_queue_position_engine(instrument_eth_usdt.clone());
+
+    // BBO bid=100 size=10, ask=101 size=5
+    let quote_initial = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Price::from("101.00"),
+        Quantity::from("10.000"),
+        Quantity::from("5.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote_initial);
+
+    // Pre-add to cache so OrderAccepted applies and the order reaches
+    // is_open=true; otherwise process_modify short-circuits before price_changed.
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .post_only(true)
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    engine.process_order(&mut order, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    // Seller aggressor consumes the full visible bid depth: queue_ahead 10 -> 0
+    let trade_drain = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Quantity::from("10.000"),
+        AggressorSide::Seller,
+        TradeId::new("DRAIN"),
+        UnixNanos::from(1u64),
+        UnixNanos::from(1u64),
+    );
+    engine.process_trade_tick(&trade_drain);
+    assert!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .all(|e| !matches!(e, OrderEventAny::Filled(_))),
+        "drain trade exactly consumes the queue, must not fill the order yet",
+    );
+
+    // Replenish bid_size to 10; price unchanged, so queue_ahead stays at zero
+    let quote_replenish = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Price::from("101.00"),
+        Quantity::from("10.000"),
+        Quantity::from("5.000"),
+        UnixNanos::from(2u64),
+        UnixNanos::from(2u64),
+    );
+    engine.process_quote_tick(&quote_replenish);
+
+    // Post-only modify into ask=101: rejected without OrderUpdated; the
+    // price_changed gate must skip snapshot_queue_position
+    let modify_command = ModifyOrder::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument_eth_usdt.id(),
+        client_order_id,
+        Some(VenueOrderId::from("V1")),
+        None,
+        Some(Price::from("101.00")),
+        None,
+        UUID4::new(),
+        UnixNanos::from(3u64),
+        None,
+    );
+    engine.process_modify(&modify_command, account_id);
+    let after_modify = get_order_event_handler_messages(&handler);
+    assert!(
+        after_modify
+            .iter()
+            .any(|e| matches!(e, OrderEventAny::ModifyRejected(_))),
+        "post-only modify into ask must be rejected, was {after_modify:?}",
+    );
+    clear_order_event_handler_messages(&handler);
+
+    // With queue_ahead preserved at zero, this single-unit trade fills.
+    // A reset to bid_size=10 would have left it queued.
+    let trade_fill = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Seller,
+        TradeId::new("FILL"),
+        UnixNanos::from(4u64),
+        UnixNanos::from(4u64),
+    );
+    engine.process_trade_tick(&trade_fill);
+
+    let messages = get_order_event_handler_messages(&handler);
+    let fill = messages
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "queue_ahead must have stayed at zero across the rejected modify; \
+             single-unit trade should fill the order, was events {messages:?}",
+            )
+        });
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
+}
+
+// Same shape as the post-only FIFO test for a stop-market trigger
+// modified into the market.
+#[rstest]
+fn test_rejected_stop_market_modify_preserves_fifo_priority(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    // Seed ask so BUY stop trigger checks have a value
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+
+    // Two BUY StopMarket at the same trigger above ask: both rest in the
+    // stop bucket in insertion order
+    let id_first = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut stop_first = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1505.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(id_first)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut stop_first, account_id);
+
+    let id_second = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut stop_second = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1505.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(id_second)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut stop_second, account_id);
+
+    // Modify trigger to 1495 (below ask 1500, in the market): rejected
+    // without dispatching OrderUpdated
+    let modify_command = ModifyOrder::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument_eth_usdt.id(),
+        id_first,
+        Some(VenueOrderId::from("V1")),
+        None,
+        None,
+        Some(Price::from("1495.00")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    engine_l2.process_modify(&modify_command, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let rejected_count = saved_messages
+        .iter()
+        .filter(|e| matches!(e, OrderEventAny::ModifyRejected(_)))
+        .count();
+    assert_eq!(
+        rejected_count, 1,
+        "in-market stop modify should be rejected"
+    );
+    assert!(
+        !saved_messages
+            .iter()
+            .any(|e| matches!(e, OrderEventAny::Updated(_))),
+        "rejected stop modify must not dispatch OrderUpdated, was {saved_messages:?}",
+    );
+
+    let bids = engine_l2.get_core().get_orders_bid();
+    assert_eq!(bids.len(), 2, "both stops should remain in core");
+    assert_eq!(
+        bids[0].client_order_id, id_first,
+        "first-inserted stop must keep FIFO priority after rejected modify",
+    );
+    assert_eq!(bids[1].client_order_id, id_second);
+}
+
 #[rstest]
 fn test_update_limit_order_post_only_matched(
     instrument_eth_usdt: InstrumentAny,
@@ -4107,9 +4412,7 @@ fn test_stop_limit_triggered_not_filled_single_accept(
 /// Regression test for order modify persistence bug.
 /// When an order is modified, the new price should persist to the core
 /// and be used for subsequent matching.
-// TODO: Fix after matching engine re-reads from cache post event generation
 #[rstest]
-#[ignore]
 fn test_modify_limit_order_price_persists_to_core(
     instrument_eth_usdt: InstrumentAny,
     account_id: AccountId,
@@ -7894,4 +8197,209 @@ fn test_stale_quote_tick_does_not_mutate_book(instrument_eth_usdt: InstrumentAny
 
     assert_eq!(engine.best_bid_price(), Some(Price::from("1000.00")));
     assert_eq!(engine.best_ask_price(), Some(Price::from("1000.00")));
+}
+
+// Cython-vs-Rust parity: a non-crossing modify must keep the core's
+// `RestingOrder` snapshot in sync so a later quote fills at the new price.
+#[rstest]
+fn test_modify_then_iterate_fills_at_new_limit_price(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Some(cache.clone()),
+        None,
+        None,
+        None,
+    );
+
+    // Ask far above the BUY limit so neither submit nor modify cross
+    let initial_ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("110.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&initial_ask).unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("99.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(limit_order.clone(), None, None, false)
+        .unwrap();
+    engine_l2.process_order(&mut limit_order, account_id);
+
+    // Modify to 100.00; still below ask 110, so does not cross at modify time
+    let modified_limit_price = Price::from("100.00");
+    let modify_order_command = ModifyOrder::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument_eth_usdt.id(),
+        client_order_id,
+        Some(VenueOrderId::from("V1")),
+        None,
+        Some(modified_limit_price),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    engine_l2.process_modify(&modify_order_command, account_id);
+
+    // Drop ask to 99.50: above the stale 99.00 but below the new 100.00
+    let crossing_ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("99.50"),
+            Quantity::from("1.000"),
+            2,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&crossing_ask).unwrap();
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let event_types: Vec<OrderEventType> = saved_messages.iter().map(|e| e.event_type()).collect();
+    assert!(
+        event_types.contains(&OrderEventType::Filled),
+        "expected fill at the modified limit price, was events {event_types:?}",
+    );
+
+    let fill = saved_messages
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .expect("OrderFilled event present");
+    assert_eq!(fill.client_order_id, client_order_id);
+    // Fill at the limit price (resting MAKER); the parity point is that any
+    // fill happens (stale 99.00 snapshot would not cross ask 99.50)
+    assert_eq!(fill.last_px, Price::from("100.00"));
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
+}
+
+// Trailing recompute that yields no new prices must not dispatch a
+// duplicate `OrderUpdated`; the helper's `unchanged` skip handles this.
+// Uses the cache-applying handler so each event mutates the cached order.
+#[rstest]
+fn test_trailing_stop_no_recompute_skips_resync(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), Some(cache), None, None, None);
+
+    // Quote-driven trailing recompute uses ask for BUY trailing stops
+    let initial_ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&initial_ask).unwrap();
+    let initial_bid = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1499.00"),
+            Quantity::from("1.000"),
+            2,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&initial_bid).unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut trailing = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .trigger_price(Price::from("1505.00"))
+        .trigger_type(TriggerType::BidAsk)
+        .trailing_offset(dec!(1))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut trailing, account_id);
+
+    // Add better ask at 1490; trailing recompute lowers trigger to 1491
+    let new_ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1490.00"),
+            Quantity::from("1.000"),
+            3,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&new_ask).unwrap();
+
+    // Sanity: recompute emitted at least one OrderUpdated
+    let after_recompute = get_order_event_handler_messages(&order_event_handler);
+    let updated_after_recompute = after_recompute
+        .iter()
+        .filter(|e| matches!(e, OrderEventAny::Updated(_)))
+        .count();
+    assert!(
+        updated_after_recompute >= 1,
+        "trailing recompute should dispatch at least one OrderUpdated, was {updated_after_recompute}",
+    );
+    let stop_after_recompute = engine_l2
+        .get_core()
+        .get_order(client_order_id)
+        .copied()
+        .expect("trailing stop should still be in the core");
+
+    clear_order_event_handler_messages(&order_event_handler);
+
+    // Add a sell at 1495 above best_ask 1490; best_ask is unchanged, so
+    // the trailing recompute returns (None, None) and dispatches nothing
+    let no_change_ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1495.00"),
+            Quantity::from("1.000"),
+            4,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&no_change_ask).unwrap();
+
+    let after_no_change = get_order_event_handler_messages(&order_event_handler);
+    assert!(
+        !after_no_change
+            .iter()
+            .any(|e| matches!(e, OrderEventAny::Updated(_))),
+        "no-recompute quote must not dispatch OrderUpdated, was {after_no_change:?}",
+    );
+    let stop_after_no_change = engine_l2
+        .get_core()
+        .get_order(client_order_id)
+        .copied()
+        .expect("trailing stop should still be in the core");
+    assert_eq!(
+        stop_after_recompute, stop_after_no_change,
+        "core RestingOrder should be byte-identical when nothing changed",
+    );
 }

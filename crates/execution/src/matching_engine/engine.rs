@@ -2117,25 +2117,26 @@ impl OrderMatchingEngine {
             None,
         );
 
-        // Only persist changes if update succeeded and order is still open
-        if update_success && order.is_open() {
-            let _ = self.core.delete_order(command.client_order_id);
-            let match_info = RestingOrder::new(
-                order.client_order_id(),
-                order.order_side().as_specified(),
-                order.order_type(),
-                order.trigger_price(),
-                order.price(),
-                true,
-            );
-            self.core.add_order(match_info);
+        if !update_success {
+            return;
+        }
 
-            if self.config.queue_position
-                && let Some(new_price) = order.price()
-            {
-                self.snapshot_queue_position(&order, new_price);
-                self.queue_excess.swap_remove(&order.client_order_id());
-            }
+        // Local `order` is pre-event; resync from the cache for fresh state
+        let Some(refreshed) = self.resync_core_entry(command.client_order_id) else {
+            return;
+        };
+
+        // Skip queue reset on rejected modifies to preserve accrued position
+        let price_changed = refreshed.price() != order.price()
+            || refreshed.trigger_price() != order.trigger_price();
+
+        if price_changed
+            && refreshed.is_open()
+            && self.config.queue_position
+            && let Some(new_price) = refreshed.price()
+        {
+            self.snapshot_queue_position(&refreshed, new_price);
+            self.queue_excess.swap_remove(&refreshed.client_order_id());
         }
     }
 
@@ -2212,6 +2213,46 @@ impl OrderMatchingEngine {
             let _ = self.core.delete_order(client_order_id);
         }
         self.cached_filled_qty.swap_remove(&client_order_id);
+    }
+
+    fn resync_core_entry(&mut self, client_order_id: ClientOrderId) -> Option<OrderAny> {
+        let order = self.cache.borrow().order(&client_order_id).cloned()?;
+
+        // Gate on `is_closed`, not `is_open`: cache may transiently hold the
+        // order in `Submitted` (process_limit_order accepts before cache add)
+        if order.is_closed() {
+            let _ = self.core.delete_order(client_order_id);
+            return Some(order);
+        }
+
+        let is_activated = match &order {
+            OrderAny::TrailingStopMarket(o) => o.is_activated,
+            OrderAny::TrailingStopLimit(o) => o.is_activated,
+            _ => true,
+        };
+
+        let new_match_info = RestingOrder::new(
+            order.client_order_id(),
+            order.order_side().as_specified(),
+            order.order_type(),
+            order.trigger_price(),
+            order.price(),
+            is_activated,
+        );
+
+        // Skip the delete+add when unchanged to preserve FIFO at the level
+        let unchanged = self
+            .core
+            .get_order(client_order_id)
+            .is_some_and(|existing| *existing == new_match_info);
+
+        if unchanged {
+            return Some(order);
+        }
+
+        let _ = self.core.delete_order(client_order_id);
+        self.core.add_order(new_match_info);
+        Some(order)
     }
 
     /// Processes a batch cancel orders command.
@@ -2725,13 +2766,9 @@ impl OrderMatchingEngine {
             }
         }
 
-        let orders_bid = self.core.get_orders_bid();
-        let orders_ask = self.core.get_orders_ask();
+        self.activate_trailing_stops();
 
-        self.iterate_orders(&orders_bid);
-        self.iterate_orders(&orders_ask);
-
-        // Restore core bid/ask to book values after order iteration
+        // Restore core bid/ask to book values after trailing-stop activation
         // (during trade execution, transient override was used for matching)
         self.core.bid = self.book.best_bid_price();
         self.core.ask = self.book.best_ask_price();
@@ -2890,19 +2927,39 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn iterate_orders(&mut self, orders: &[RestingOrder]) {
-        for match_info in orders {
-            let order = match self
-                .cache
-                .borrow()
-                .order(&match_info.client_order_id)
-                .cloned()
-            {
+    fn activate_trailing_stops(&mut self) {
+        // Restore market values from any transient overrides set during fill processing
+        if let Some(target_bid) = self.target_bid.take() {
+            self.core.bid = Some(target_bid);
+        }
+
+        if let Some(target_ask) = self.target_ask.take() {
+            self.core.ask = Some(target_ask);
+        }
+
+        if let Some(target_last) = self.target_last.take() {
+            self.core.last = Some(target_last);
+        }
+
+        // Collect ids first to drop the core borrow before the delete+add below
+        let trailing_ids: Vec<ClientOrderId> = self
+            .core
+            .iter_orders()
+            .filter(|m| {
+                matches!(
+                    m.order_type,
+                    OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+                )
+            })
+            .map(|m| m.client_order_id)
+            .collect();
+
+        for client_order_id in trailing_ids {
+            let order = match self.cache.borrow().order(&client_order_id).cloned() {
                 Some(order) => order,
                 None => {
                     log::warn!(
-                        "Order {} not found in cache during iteration, skipping",
-                        match_info.client_order_id
+                        "Order {client_order_id} not found in cache during trailing-stop activation, skipping",
                     );
                     continue;
                 }
@@ -2912,66 +2969,22 @@ impl OrderMatchingEngine {
                 continue;
             }
 
-            if matches!(
-                match_info.order_type,
-                OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+            let mut any = order;
+
+            if !self.maybe_activate_trailing_stop(
+                &mut any,
+                self.core.bid,
+                self.core.ask,
+                self.core.last,
             ) {
-                let mut any = order;
-
-                if !self.maybe_activate_trailing_stop(
-                    &mut any,
-                    self.core.bid,
-                    self.core.ask,
-                    self.core.last,
-                ) {
-                    continue;
-                }
-
-                self.update_trailing_stop_order(&any);
-
-                // Persist the activated/updated trailing stop back to the core
-                let _ = self.core.delete_order(match_info.client_order_id);
-                let updated_match_info = RestingOrder::new(
-                    any.client_order_id(),
-                    any.order_side().as_specified(),
-                    any.order_type(),
-                    any.trigger_price(),
-                    any.price(),
-                    match &any {
-                        OrderAny::TrailingStopMarket(o) => o.is_activated,
-                        OrderAny::TrailingStopLimit(o) => o.is_activated,
-                        _ => true,
-                    },
-                );
-                self.core.add_order(updated_match_info);
+                continue;
             }
 
-            // Move market back to targets
-            if let Some(target_bid) = self.target_bid {
-                self.core.bid = Some(target_bid);
-                self.target_bid = None;
-            }
+            self.update_trailing_stop_order(&any);
 
-            if let Some(target_bid) = self.target_bid.take() {
-                self.core.bid = Some(target_bid);
-                self.target_bid = None;
-            }
-
-            if let Some(target_ask) = self.target_ask.take() {
-                self.core.ask = Some(target_ask);
-                self.target_ask = None;
-            }
-
-            if let Some(target_last) = self.target_last.take() {
-                self.core.last = Some(target_last);
-                self.target_last = None;
-            }
+            // Re-key from the cache so any new trigger/limit shows on next iterate
+            self.resync_core_entry(client_order_id);
         }
-
-        // Reset any targets after iteration
-        self.target_bid = None;
-        self.target_ask = None;
-        self.target_last = None;
     }
 
     fn determine_limit_price_and_volume(&mut self, order: &OrderAny) -> Vec<(Price, Quantity)> {
