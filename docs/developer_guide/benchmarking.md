@@ -1,40 +1,47 @@
 # Benchmarking
 
-This guide explains how NautilusTrader measures Rust performance, when to
-use each tool and the conventions you should follow when adding new benches.
+This document is the practitioner reference for writing and running
+NautilusTrader benchmarks. It covers tooling specifics, directory layout,
+example code, local execution, and flamegraph profiling.
+
+For policy (what we benchmark, when, with what rigor, how it ties into CI),
+see [`/BENCHMARKING.md`](../../BENCHMARKING.md) at the repository root.
 
 ---
 
 ## Tooling overview
 
-NautilusTrader relies on **two complementary benchmarking frameworks**:
+NautilusTrader uses two complementary Rust benchmarking frameworks:
 
-| Framework | What is it? | What it measures | When to prefer it |
-|-----------|-------------|------------------|-------------------|
-| [**Criterion**](https://docs.rs/criterion/latest/criterion/) | Statistical benchmark harness that produces detailed HTML reports and performs outlier detection. | Wall‑clock run time with confidence intervals. | End‑to‑end scenarios, anything slower than ≈100 ns, visual comparisons. |
-| [**iai**](https://docs.rs/iai/latest/iai/) | Deterministic micro‑benchmark harness that counts retired CPU instructions via hardware counters. | Exact instruction counts (noise‑free). | Ultra‑fast functions, CI gating via instruction diff. |
+| Framework                                                    | What it measures                          | When to prefer it                                    |
+|--------------------------------------------------------------|-------------------------------------------|------------------------------------------------------|
+| [**Criterion**](https://docs.rs/criterion/latest/criterion/) | Wall‑clock time with confidence bands     | Anything ≥ 100 ns; absolute measurement; comparison. |
+| [**iai**](https://docs.rs/iai/latest/iai/)                   | Retired CPU instructions (via Cachegrind) | Sub‑100 ns functions; CI regression detection.       |
 
-Most hot code paths benefit from **both** kinds of measurements.
+Most hot code paths benefit from both. Criterion gives the user-visible
+number; iai gives a noise-free regression signal.
 
 :::note
-iai is deterministic (immune to system noise) but results are machine-specific. Use it for regression detection within CI, not for cross-machine comparisons.
+iai is deterministic (immune to system noise) but results are
+machine-specific. Use it for regression detection within CI, not for
+cross-machine comparisons.
 :::
 
 ---
 
 ## Directory layout
 
-Each crate keeps its performance tests in a local `benches/` folder:
+Each crate keeps its benchmarks in a local `benches/` folder:
 
 ```text
 crates/<crate_name>/
 └── benches/
-    ├── foo_criterion.rs   # Criterion group(s)
-    └── foo_iai.rs         # iai micro benches
+    ├── foo_criterion.rs
+    └── foo_iai.rs
 ```
 
-`Cargo.toml` must list every benchmark explicitly so `cargo bench` discovers
-them:
+Register each benchmark explicitly in the crate's `Cargo.toml` so
+`cargo bench` discovers it:
 
 ```toml
 [[bench]]
@@ -48,30 +55,51 @@ path = "benches/foo_iai.rs"
 harness = false
 ```
 
+To opt into the nightly CI performance workflow, add the crate to the
+`cargo-ci-benches` recipe in the workspace `Makefile`.
+
 ---
 
 ## Writing Criterion benchmarks
 
-1. Perform **all expensive set-up outside** the timing loop (`b.iter`).
-2. Wrap inputs/outputs in `black_box` to prevent the optimizer from removing
-   work.
-3. Group related cases with `benchmark_group!` and set `throughput` or
-   `sample_size` when the defaults aren’t ideal.
+1. **Set up outside the timing loop.** All work that doesn't change between
+   iterations belongs in the surrounding code or in `iter_batched_ref`'s
+   setup closure, not in the body passed to `iter`.
+2. **Wrap inputs in `black_box`** so the optimizer doesn't fold them away.
+3. **Use `iter_batched_ref` for mutating benches.** It excludes input
+   `Drop` from the timed region, which otherwise dominates the measurement
+   on benches that own large structures.
+4. **Add `Throughput::Elements(n)`** to size-parameterized groups so
+   Criterion reports per-element throughput.
+5. **Comment intent.** State what the benchmark is measuring (the hot path,
+   the worst case, the cache-cold case) so a future reader understands
+   what regressing it would mean.
 
 ```rust
 use std::hint::black_box;
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
-fn bench_my_algo(c: &mut Criterion) {
-    let data = prepare_data(); // Heavy set-up done once
+const SIZES: &[usize] = &[10, 100, 1_000];
 
-    c.bench_function("my_algo", |b| {
-        b.iter(|| my_algo(black_box(&data)));
-    });
+fn bench_my_op(c: &mut Criterion) {
+    let mut group = c.benchmark_group("module/my_op");
+
+    for &n in SIZES {
+        group.throughput(Throughput::Elements(n as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
+            b.iter_batched_ref(
+                || populate(n),
+                |state| state.run(black_box(n)),
+                BatchSize::SmallInput,
+            );
+        });
+    }
+
+    group.finish();
 }
 
-criterion_group!(benches, bench_my_algo);
+criterion_group!(benches, bench_my_op);
 criterion_main!(benches);
 ```
 
@@ -79,9 +107,9 @@ criterion_main!(benches);
 
 ## Writing iai benchmarks
 
-`iai` requires functions that take **no parameters** and return a value (which
-can be ignored). Keep them as small as possible so the measured instruction
-count is meaningful.
+`iai` requires functions that take no parameters. Keep them small so the
+instruction count is meaningful and so changes outside the function don't
+leak into the measurement.
 
 ```rust
 use std::hint::black_box;
@@ -95,78 +123,89 @@ fn bench_add() -> i64 {
 iai::main!(bench_add);
 ```
 
+Setup that varies between runs (allocations, randomness, system calls)
+will inflate instruction counts in misleading ways. iai is best for pure,
+allocation-free functions.
+
 ---
 
 ## Running benches locally
 
-- **Single crate**: `cargo bench -p nautilus-core`.
-- **Single benchmark module**: `cargo bench -p nautilus-core --bench time`.
-- **CI performance benches**: `make cargo-ci-benches` (runs the crates included
-  in the CI performance workflow one at a time to avoid the mixed-panic-strategy
-  linker issue).
+| Goal                                | Command                                                              |
+|-------------------------------------|----------------------------------------------------------------------|
+| All benches in one crate            | `cargo bench -p nautilus-execution`                                  |
+| One bench module                    | `cargo bench -p nautilus-execution --bench matching_core`            |
+| One specific bench by name pattern  | `cargo bench -p nautilus-execution --bench matching_core -- iterate` |
+| Quick smoke run (low sample count)  | `cargo bench ... -- --quick`                                         |
+| All CI-tracked benches              | `make cargo-ci-benches`                                              |
 
-Criterion writes HTML reports to `target/criterion/`; open `target/criterion/report/index.html` in your browser.
+Criterion writes HTML reports to `target/criterion/`. Open
+`target/criterion/report/index.html`. The report includes per-bench violin
+plots, confidence intervals, and comparisons against the previous run's
+saved baseline.
 
-### Generating a flamegraph
+---
 
-`cargo-flamegraph` lets you see a sampled call-stack profile of a single
-benchmark. On Linux it uses `perf`, and on macOS it uses `DTrace`.
+## Generating a flamegraph
 
-1. Install `cargo-flamegraph` once per machine (it installs a `cargo flamegraph`
-   subcommand automatically).
+`cargo-flamegraph` produces a sampled call-stack profile for one bench.
+Useful when a bench shows a regression but it's not obvious which inner
+call is responsible.
+
+1. Install once per machine:
 
    ```bash
    cargo install flamegraph
    ```
 
-2. Run a specific bench with the symbol-rich `bench` profile.
+2. Run a specific bench with the `bench` profile:
 
    ```bash
-   # example: the matching benchmark in nautilus-common
    cargo flamegraph --bench matching -p nautilus-common --profile bench
    ```
 
-3. Open the generated `flamegraph.svg` in your browser and zoom into hot paths.
+3. Open `flamegraph.svg` in a browser and zoom into hot paths.
 
-#### Linux
+### Linux
 
-On Linux, `perf` must be available. On Debian/Ubuntu, you can install it with:
+`perf` must be available. On Debian/Ubuntu:
 
 ```bash
 sudo apt install linux-tools-common linux-tools-$(uname -r)
 ```
 
-If you see an error mentioning `perf_event_paranoid` you need to relax the
-kernel’s perf restrictions for the current session (root required):
+If `perf_event_paranoid` blocks the run:
 
 ```bash
 sudo sh -c 'echo 1 > /proc/sys/kernel/perf_event_paranoid'
 ```
 
-A value of `1` is typically enough; set it back to `2` (default) or make
-the change permanent via `/etc/sysctl.conf` if desired.
+A value of `1` is usually enough. Set it back to `2` (default) afterwards
+or persist via `/etc/sysctl.conf`.
 
-#### macOS
+### macOS
 
-On macOS, `DTrace` requires root permissions, so you must run `cargo flamegraph`
-with `sudo`.
+`DTrace` requires root, so `cargo flamegraph` must be run with `sudo`.
 
 :::warning
-Running with `sudo` creates files in `target/` owned by root, causing permission errors with subsequent `cargo` commands. You may need to remove root-owned files manually or run `sudo cargo clean`.
+Running with `sudo` creates files in `target/` owned by root, causing
+permission errors with subsequent `cargo` commands. You may need to remove
+root-owned files manually or run `sudo cargo clean`.
 :::
 
 ```bash
 sudo cargo flamegraph --bench matching -p nautilus-common --profile bench
 ```
 
-Because `[profile.bench]` keeps full debug symbols the SVG will show readable
-function names without bloating production binaries (which still use
-`panic = "abort"` and are built via `[profile.release]`).
+The `bench` profile keeps full debug symbols, so flamegraphs render with
+readable function names without bloating production binaries (which still
+use `panic = "abort"` and are built via `[profile.release]`).
 
 > **Note** Benchmark binaries are compiled with the custom `[profile.bench]`
-> defined in the workspace `Cargo.toml`.  That profile inherits from
-> `release-debugging`, preserving full optimisation *and* debug symbols so that
-> tools like `cargo flamegraph` or `perf` produce human-readable stack traces.
+> defined in the workspace `Cargo.toml`. That profile inherits from
+> `release` and sets `debug = "full"`, preserving full optimisation *and*
+> debug symbols so tools like `cargo flamegraph` or `perf` produce
+> human-readable stack traces.
 
 ---
 
@@ -177,4 +216,5 @@ Ready-to-copy starter files live in [`docs/dev_templates/`](../dev_templates/):
 - **Criterion**: [`criterion_template.rs`](../dev_templates/criterion_template.rs)
 - **iai**: [`iai_template.rs`](../dev_templates/iai_template.rs)
 
-Copy the template into `benches/`, adjust imports and names, and start measuring!
+Copy the template into the target crate's `benches/`, adjust imports and
+group names, register in `Cargo.toml`, and start measuring.
