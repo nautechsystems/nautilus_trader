@@ -1,0 +1,97 @@
+# Prometheus alerting rules for the Binance collectors.
+# Install on the observability VM under /etc/prometheus/rules.d/collectors.yaml,
+# referenced from prometheus.yml via:
+#
+#   rule_files:
+#     - /etc/prometheus/rules.d/*.yaml
+#
+# Reload: kill -HUP $(pgrep prometheus)
+
+groups:
+  - name: collector_freshness
+    interval: 15s
+    rules:
+      - alert: CollectorStreamStale
+        expr: time() - collector_last_event_ts > 60
+        for: 0s
+        labels:
+          severity: page
+          team: trading
+        annotations:
+          summary: 'Collector {{ $labels.venue }}/{{ $labels.stream }} silent {{ $value | humanizeDuration }}'
+          description: |
+            No events received from Binance {{ $labels.venue }} {{ $labels.stream }}
+            stream for more than 60 seconds. Either the WS is hung or Binance is
+            having a problem. Investigate via SSM Session Manager:
+              aws ssm start-session --target <observability-vm-id>
+              journalctl -u "binance-collector@*" --since "5 min ago"
+          runbook: 'prod-config/runbooks/collector-stale.md'
+
+      - alert: CollectorStreamGoneLong
+        expr: time() - collector_last_event_ts > 300
+        for: 1m
+        labels:
+          severity: page-loud
+          team: trading
+        annotations:
+          summary: 'Collector {{ $labels.venue }}/{{ $labels.stream }} silent > 5 minutes — DATA LOSS'
+          description: |
+            Continuous data gap > 5 minutes on {{ $labels.venue }}/{{ $labels.stream }}.
+            This is a real archive gap that will affect backtests. Page on-call.
+
+  - name: collector_health
+    interval: 30s
+    rules:
+      - alert: CollectorDisconnectRateHigh
+        expr: rate(collector_disconnects_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warn
+          team: trading
+        annotations:
+          summary: '{{ $labels.venue }} collector disconnecting > 6/min sustained'
+          description: 'Likely network issue or Binance throttling. Check journal logs.'
+
+      - alert: CollectorUploadFailing
+        expr: increase(collector_upload_failures_total[5m]) > 3
+        for: 0s
+        labels:
+          severity: warn
+          team: trading
+        annotations:
+          summary: 'S3 upload failing on {{ $labels.venue }} collector'
+          description: |
+            {{ $value }} upload failures in 5 min. Check IAM role permissions,
+            S3 bucket policy, and /var/lib/binance-collector/<instance>/failed/
+            for the unsent shards.
+
+      - alert: CollectorQueueBackpressure
+        expr: collector_queue_depth > 10000
+        for: 1m
+        labels:
+          severity: warn
+          team: trading
+        annotations:
+          summary: '{{ $labels.venue }} collector queue depth > 10k'
+          description: |
+            Internal queue is backing up — writer cannot keep up with stream.
+            Likely S3 latency or disk slowness. Check uploader thread health.
+
+  - name: collector_systemd
+    interval: 30s
+    rules:
+      - alert: CollectorUnitFailedRestarts
+        expr: |
+          increase(node_systemd_unit_state{state="failed",
+                   name=~"binance-collector@.*"}[1h]) > 0
+        for: 5m
+        labels:
+          severity: page
+          team: trading
+        annotations:
+          summary: 'systemd unit {{ $labels.name }} entered failed state'
+          description: |
+            systemd has given up restarting the collector. Manual intervention
+            required:
+              systemctl status {{ $labels.name }}
+              journalctl -u {{ $labels.name }} -n 200

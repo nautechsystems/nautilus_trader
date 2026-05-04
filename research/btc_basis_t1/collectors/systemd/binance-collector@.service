@@ -1,0 +1,58 @@
+[Unit]
+Description=Binance market-data collector (%i)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=collector
+Group=collector
+EnvironmentFile=/etc/binance-collector/%i.env
+WorkingDirectory=/opt/binance-collector
+ExecStart=/opt/binance-collector/venv/bin/python -u /opt/binance-collector/binance_collector.py \
+    --venue ${VENUE} \
+    --symbols ${SYMBOLS} \
+    --bucket ${BUCKET} \
+    --key-prefix ${KEY_PREFIX} \
+    --prom-port ${PROM_PORT} \
+    --region ${AWS_REGION} \
+    --buffer-dir /var/lib/binance-collector/%i/buffer \
+    --failed-dir /var/lib/binance-collector/%i/failed
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# IAM access via instance profile
+Environment=AWS_DEFAULT_REGION=ap-northeast-1
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/binance-collector
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=64
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
