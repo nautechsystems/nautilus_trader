@@ -39,12 +39,14 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_core::{AtomicSet, UnixNanos};
 use nautilus_deribit::{
     common::enums::DeribitEnvironment,
+    data_types::DeribitVolatilityIndex,
     websocket::{
         auth::DERIBIT_DATA_SESSION_NAME, client::DeribitWebSocketClient,
         enums::DeribitUpdateInterval, messages::NautilusWsMessage,
     },
 };
 use nautilus_model::{
+    data::Data,
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{CryptoPerpetual, InstrumentAny},
     types::{Currency, Price, Quantity},
@@ -162,6 +164,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
     let ticker_payload = load_json("ws_ticker.json");
     let quote_payload = load_json("ws_quote.json");
     let chart_payload = load_json("ws_chart.json");
+    let volatility_index_payload = load_json("ws_volatility_index.json");
 
     // Create a second chart payload with a later timestamp for emit-on-next pattern
     let mut chart_payload_next = chart_payload.clone();
@@ -261,6 +264,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                     Some(&ticker_payload)
                                 } else if channel.starts_with("quote.") {
                                     Some(&quote_payload)
+                                } else if channel.starts_with("deribit_volatility_index.") {
+                                    Some(&volatility_index_payload)
                                 } else if channel.starts_with("chart.trades.") {
                                     // For chart subscriptions, send two bars to trigger emit-on-next
                                     if socket
@@ -1891,6 +1896,77 @@ async fn test_user_subscription_failure_leaves_state_clean_for_retry() {
         subs.contains(&"user.portfolio.any".to_string()),
         "user.portfolio should be subscribed on retry"
     );
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_volatility_index_subscription() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/api/v2");
+
+    let mut client = create_test_client(&ws_url);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_volatility_index("btc_usd")
+        .await
+        .expect("subscribe failed");
+
+    // Verify subscription event recorded
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events()
+                    .await
+                    .iter()
+                    .any(|(ch, ok)| ch.starts_with("deribit_volatility_index.") && *ok)
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    // Receive volatility index data from stream
+    let stream = client.stream().unwrap();
+    pin_mut!(stream);
+    let message = tokio::time::timeout(Duration::from_secs(5), stream.next())
+        .await
+        .expect("no message received")
+        .expect("stream ended unexpectedly");
+
+    match message {
+        NautilusWsMessage::Data(data) => {
+            assert_eq!(data.len(), 1);
+            if let Data::Custom(custom) = &data[0] {
+                let dvol = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<DeribitVolatilityIndex>()
+                    .expect("expected DeribitVolatilityIndex");
+                assert_eq!(dvol.index_name, "btc_usd");
+                assert_eq!(dvol.value, 129.36);
+                let metadata = custom
+                    .data_type
+                    .metadata()
+                    .expect("expected metadata for DeribitVolatilityIndex");
+                assert_eq!(
+                    metadata.get("index_name").and_then(|value| value.as_str()),
+                    Some("btc_usd"),
+                );
+            } else {
+                panic!("expected CustomData, found {:?}", data[0]);
+            }
+        }
+        other => panic!("unexpected message: {other:?}"),
+    }
 
     client.close().await.expect("close failed");
 }

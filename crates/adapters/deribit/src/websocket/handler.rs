@@ -29,9 +29,11 @@ use std::{
 
 use ahash::AHashMap;
 use nautilus_common::cache::fifo::FifoCache;
-use nautilus_core::{AtomicSet, AtomicTime, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    AtomicSet, AtomicTime, UUID4, UnixNanos, params::Params, time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
-    data::{Bar, Data, InstrumentStatus},
+    data::{Bar, CustomData, Data, DataType, InstrumentStatus},
     enums::MarketStatusAction,
     events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
     identifiers::{
@@ -55,8 +57,8 @@ use super::{
         DeribitChartMsg, DeribitEditParams, DeribitHeartbeatParams, DeribitInstrumentStateMsg,
         DeribitJsonRpcRequest, DeribitOrderMsg, DeribitOrderParams, DeribitOrderResponse,
         DeribitPerpetualMsg, DeribitPortfolioMsg, DeribitQuoteMsg, DeribitSubscribeParams,
-        DeribitTickerMsg, DeribitTradeMsg, DeribitUserTradeMsg, DeribitWsMessage,
-        NautilusWsMessage, parse_raw_message,
+        DeribitTickerMsg, DeribitTradeMsg, DeribitUserTradeMsg, DeribitVolatilityIndexMsg,
+        DeribitWsMessage, NautilusWsMessage, parse_raw_message,
     },
     parse::{
         OrderEventType, determine_order_event_type, parse_book_msg, parse_chart_msg,
@@ -66,10 +68,13 @@ use super::{
         parse_user_order_msg, parse_user_trade_msg, resolution_to_bar_type,
     },
 };
-use crate::common::{
-    consts::{DERIBIT_POST_ONLY_ERROR_CODE, DERIBIT_RATE_LIMIT_KEY_ORDER, DERIBIT_VENUE},
-    enums::DeribitInstrumentState,
-    parse::parse_portfolio_to_account_state,
+use crate::{
+    common::{
+        consts::{DERIBIT_POST_ONLY_ERROR_CODE, DERIBIT_RATE_LIMIT_KEY_ORDER, DERIBIT_VENUE},
+        enums::DeribitInstrumentState,
+        parse::parse_portfolio_to_account_state,
+    },
+    data_types::DeribitVolatilityIndex,
 };
 
 /// Type of pending request for request ID correlation.
@@ -1794,6 +1799,36 @@ impl DeribitWsFeedHandler {
                                     Err(e) => {
                                         log::warn!("Failed to parse quote message: {e}");
                                     }
+                                }
+                            }
+                        }
+                        DeribitWsChannel::VolatilityIndex => {
+                            match serde_json::from_value::<DeribitVolatilityIndexMsg>(data.clone())
+                            {
+                                Ok(msg) => {
+                                    let ts_event = UnixNanos::from(msg.timestamp * 1_000_000);
+                                    let mut metadata = Params::new();
+                                    metadata.insert(
+                                        "index_name".to_string(),
+                                        serde_json::Value::String(msg.index_name.clone()),
+                                    );
+                                    let data_type = DataType::new(
+                                        "DeribitVolatilityIndex",
+                                        Some(metadata),
+                                        None,
+                                    );
+                                    let dvol = DeribitVolatilityIndex::new(
+                                        msg.index_name,
+                                        msg.volatility,
+                                        ts_event,
+                                        ts_init,
+                                    );
+                                    return Some(NautilusWsMessage::Data(vec![Data::Custom(
+                                        CustomData::new(Arc::new(dvol), data_type),
+                                    )]));
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to deserialize volatility index: {e}");
                                 }
                             }
                         }
