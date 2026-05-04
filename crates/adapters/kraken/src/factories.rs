@@ -161,9 +161,11 @@ impl ExecutionClientFactory for KrakenExecutionClientFactory {
             })?
             .clone();
 
+        kraken_config.validate()?;
+
         let oms_type = OmsType::Netting;
         let account_type = match kraken_config.product_type {
-            KrakenProductType::Spot => AccountType::Cash,
+            KrakenProductType::Spot => kraken_config.spot_account_type,
             KrakenProductType::Futures => AccountType::Margin,
         };
 
@@ -303,5 +305,42 @@ mod tests {
         assert_eq!(client.client_id(), ClientId::from("KRAKEN-TEST"));
         assert_eq!(client.account_id(), config.account_id);
         assert_eq!(client.oms_type(), OmsType::Netting);
+    }
+
+    #[rstest]
+    fn test_kraken_execution_client_factory_rejects_leverage_on_cash_account() {
+        let factory = KrakenExecutionClientFactory::new();
+        let config = KrakenExecClientConfig {
+            product_type: KrakenProductType::Spot,
+            spot_account_type: AccountType::Cash,
+            default_leverage: Some(3),
+            ..Default::default()
+        };
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let result = factory.create("KRAKEN-TEST", &config, cache.into());
+        let err = match result {
+            Ok(_) => panic!("expected validation error, factory returned Ok"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err.contains("default_leverage requires spot_account_type=Margin"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_kraken_execution_client_factory_accepts_leverage_on_margin_account() {
+        let factory = KrakenExecutionClientFactory::new();
+        let config = KrakenExecClientConfig {
+            product_type: KrakenProductType::Spot,
+            spot_account_type: AccountType::Margin,
+            default_leverage: Some(3),
+            ..Default::default()
+        };
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let result = factory.create("KRAKEN-TEST", &config, cache.into());
+        assert!(result.is_ok());
     }
 }

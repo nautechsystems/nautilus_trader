@@ -71,7 +71,10 @@ use crate::{
         },
         urls::get_kraken_http_base_url,
     },
-    http::{error::KrakenHttpError, models::OhlcData},
+    http::{
+        error::{KrakenHttpError, kraken_http_should_retry},
+        models::OhlcData,
+    },
 };
 
 /// Default Kraken Futures REST API rate limit (requests per second).
@@ -373,8 +376,7 @@ impl KrakenFuturesRawHttpClient {
             }
         };
 
-        let should_retry =
-            |error: &KrakenHttpError| -> bool { matches!(error, KrakenHttpError::NetworkError(_)) };
+        let should_retry = kraken_http_should_retry;
         let create_error = |msg: String| -> KrakenHttpError { KrakenHttpError::NetworkError(msg) };
 
         self.retry_manager

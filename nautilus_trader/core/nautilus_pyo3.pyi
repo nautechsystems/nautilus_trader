@@ -9283,8 +9283,6 @@ class KrakenSpotHttpClient:
     def api_key_masked(self) -> str | None: ...
     def cache_instrument(self, instrument: Instrument) -> None: ...
     def cancel_all_requests(self) -> None: ...
-    def set_use_spot_position_reports(self, value: bool) -> None: ...
-    def set_spot_positions_quote_currency(self, currency: str) -> None: ...
     async def get_server_time(self) -> str: ...
     async def request_instruments(
         self,
@@ -9313,7 +9311,22 @@ class KrakenSpotHttpClient:
         end: dt.datetime | None = None,
         limit: int | None = None,
     ) -> list[Bar]: ...
-    async def request_account_state(self, account_id: AccountId) -> AccountState: ...
+    async def request_account_state(
+        self,
+        account_id: AccountId,
+        account_type: AccountType = ...,
+        margin_balance_asset: str | None = None,
+    ) -> AccountState: ...
+    async def request_margin_metrics(
+        self,
+        asset: str | None = None,
+    ) -> dict[str, str]: ...
+    async def request_account_state_with_metrics(
+        self,
+        account_id: AccountId,
+        account_type: AccountType = ...,
+        margin_balance_asset: str | None = None,
+    ) -> tuple[AccountState, dict[str, str]]: ...
     async def request_order_status_reports(
         self,
         account_id: AccountId,
@@ -9333,6 +9346,9 @@ class KrakenSpotHttpClient:
         self,
         account_id: AccountId,
         instrument_id: InstrumentId | None = None,
+        account_type: AccountType = ...,
+        use_spot_position_reports: bool = False,
+        quote_currency: str = "USDT",
     ) -> list[PositionStatusReport]: ...
     async def submit_order(
         self,
@@ -9353,6 +9369,8 @@ class KrakenSpotHttpClient:
         post_only: bool = False,
         quote_quantity: bool = False,
         display_qty: Quantity | None = None,
+        leverage: int | None = None,
+        account_type: AccountType = ...,
     ) -> VenueOrderId: ...
     async def submit_orders_batch(
         self,
@@ -9372,6 +9390,10 @@ class KrakenSpotHttpClient:
                 Quantity | None,
             ]
         ],
+        leverage: int | None = None,
+        account_type: AccountType = ...,
+        per_order_leverages: list[int | None] | None = None,
+        per_order_reduce_only: list[bool] | None = None,
     ) -> list[str]: ...
     async def modify_order(
         self,
