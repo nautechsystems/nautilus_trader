@@ -101,6 +101,8 @@ pub struct MockState {
     pub betting_methods: Arc<Mutex<Vec<String>>>,
     /// Records the `params` payload of each betting request, indexed by call order.
     pub betting_request_params: Arc<Mutex<Vec<(String, Value)>>>,
+    /// Per-method response delay; lets tests widen reconciliation windows.
+    pub betting_response_delays: Arc<Mutex<HashMap<String, Duration>>>,
     pub accounts_overrides: Arc<Mutex<HashMap<String, Value>>>,
     pub login_response_override: Arc<Mutex<Option<String>>>,
     pub keep_alive_response_override: Arc<Mutex<Option<String>>>,
@@ -160,6 +162,17 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
             .lock()
             .unwrap()
             .push((method.to_string(), params));
+    }
+
+    let delay = state
+        .betting_response_delays
+        .lock()
+        .unwrap()
+        .get(method)
+        .copied();
+
+    if let Some(delay) = delay {
+        tokio::time::sleep(delay).await;
     }
 
     if let Some(status) = state

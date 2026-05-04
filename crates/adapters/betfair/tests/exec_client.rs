@@ -3365,3 +3365,481 @@ async fn test_ocm_duplicate_terminal_event_is_deduped() {
     client.disconnect().await.unwrap();
     let _ = server.await;
 }
+
+const RECONNECT_CONNECTION_MSG: &[u8] =
+    b"{\"op\":\"connection\",\"connectionId\":\"reconnect\"}\r\n";
+
+#[rstest]
+#[tokio::test]
+async fn test_post_reconnect_dispatches_mass_status() {
+    let (addr, state) = start_mock_http().await;
+
+    let fixture = load_fixture("rest/list_current_orders_empty.json");
+    let v: Value = serde_json::from_str(&fixture).unwrap();
+    state
+        .betting_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+
+        // A second `Connection` message is what the OCM handler treats as a reconnect.
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    let mut saw_mass_status = false;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        if let Ok(Some(ExecutionEvent::Report(ExecutionReport::MassStatus(_)))) =
+            tokio::time::timeout(Duration::from_millis(500), rx.recv()).await
+        {
+            saw_mass_status = true;
+            break;
+        }
+    }
+    assert!(
+        saw_mass_status,
+        "expected ExecutionReport::MassStatus dispatch after reconnect",
+    );
+
+    wait_until_async(
+        || {
+            let halted = client.is_reconciling();
+            async move { !halted }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(!client.is_reconciling());
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_denied_during_reconciliation() {
+    let (addr, state) = start_mock_http().await;
+
+    let fixture = load_fixture("rest/list_current_orders_empty.json");
+    let v: Value = serde_json::from_str(&fixture).unwrap();
+    state
+        .betting_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
+    // Wide window so a submit can land while `is_reconciling` is still set.
+    state.betting_response_delays.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        Duration::from_millis(800),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let halted = client.is_reconciling();
+            async move { halted }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(client.is_reconciling());
+
+    while rx.try_recv().is_ok() {}
+
+    let order = make_test_order("1.181005744-86362-0.BETFAIR", "O-HALT-001", "2.58", "10");
+    add_order_to_cache(&cache, order.clone());
+    client.submit_order(make_submit_order_cmd(&order)).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_millis(500), rx.recv())
+        .await
+        .expect("timeout waiting for denied event")
+        .expect("channel closed");
+
+    match event {
+        ExecutionEvent::Order(OrderEventAny::Denied(denied)) => {
+            assert_eq!(denied.client_order_id, ClientOrderId::from("O-HALT-001"));
+            assert!(
+                denied.reason.as_str().contains("STREAM_RECONCILING"),
+                "Expected STREAM_RECONCILING reason, found: {}",
+                denied.reason,
+            );
+        }
+        other => panic!("Expected OrderDenied event, found: {other:?}"),
+    }
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_queued_reconnect_re_asserts_halt() {
+    // Without the per-iteration store(true), iter#2 runs with the flag cleared
+    // by iter#1 and submits slip through during the second reconciliation.
+    let (addr, state) = start_mock_http().await;
+
+    let fixture = load_fixture("rest/list_current_orders_empty.json");
+    let v: Value = serde_json::from_str(&fixture).unwrap();
+    state
+        .betting_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
+    // Slow each reconcile so the second Connection lands while iter#1 runs.
+    state.betting_response_delays.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        Duration::from_millis(500),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
+
+        // Land the second reconnect mid-flight to exercise the queue race.
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        tokio::io::AsyncWriteExt::write_all(
+            &mut write_half,
+            b"{\"op\":\"connection\",\"connectionId\":\"reconnect-2\"}\r\n",
+        )
+        .await
+        .unwrap();
+
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    let mut mass_status_count = 0usize;
+    let mut iter1_dispatched_at_halt_state: Option<bool> = None;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while mass_status_count < 2 && tokio::time::Instant::now() < deadline {
+        match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
+            Ok(Some(ExecutionEvent::Report(ExecutionReport::MassStatus(_)))) => {
+                mass_status_count += 1;
+                if mass_status_count == 1 {
+                    // iter#2 should re-assert the halt at the top of its iteration.
+                    wait_until_async(
+                        || {
+                            let halted = client.is_reconciling();
+                            async move { halted }
+                        },
+                        Duration::from_secs(1),
+                    )
+                    .await;
+                    iter1_dispatched_at_halt_state = Some(client.is_reconciling());
+                }
+            }
+            Ok(Some(_)) => {}
+            _ => {}
+        }
+    }
+
+    assert_eq!(
+        mass_status_count, 2,
+        "expected one MassStatus per queued reconnect signal, found {mass_status_count}",
+    );
+    assert_eq!(
+        iter1_dispatched_at_halt_state,
+        Some(true),
+        "expected iter#2 to re-assert is_reconciling after iter#1 cleared it",
+    );
+
+    wait_until_async(
+        || {
+            let halted = client.is_reconciling();
+            async move { !halted }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(!client.is_reconciling());
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_denied_during_reconciliation() {
+    // The list path has its own halt branch and must emit one OrderDenied per leg.
+    let (addr, state) = start_mock_http().await;
+
+    let fixture = load_fixture("rest/list_current_orders_empty.json");
+    let v: Value = serde_json::from_str(&fixture).unwrap();
+    state
+        .betting_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
+    state.betting_response_delays.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        Duration::from_millis(800),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let halted = client.is_reconciling();
+            async move { halted }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(client.is_reconciling());
+
+    while rx.try_recv().is_ok() {}
+
+    let order1 = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(InstrumentId::from("1.181005744-86362-0.BETFAIR"))
+        .client_order_id(ClientOrderId::from("O-HLT-LIST-001"))
+        .order_list_id(OrderListId::from("OL-HLT"))
+        .side(OrderSide::Sell)
+        .price(Price::from("2.58"))
+        .quantity(Quantity::from("10"))
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    let order2 = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(InstrumentId::from("1.181005744-86362-0.BETFAIR"))
+        .client_order_id(ClientOrderId::from("O-HLT-LIST-002"))
+        .order_list_id(OrderListId::from("OL-HLT"))
+        .side(OrderSide::Sell)
+        .price(Price::from("3.00"))
+        .quantity(Quantity::from("5"))
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+
+    add_order_to_cache(&cache, order1.clone());
+    add_order_to_cache(&cache, order2.clone());
+
+    let (cmd, _order_list) = make_submit_order_list_cmd(
+        "1.181005744-86362-0.BETFAIR",
+        &[order1.clone(), order2.clone()],
+    );
+    client.submit_order_list(cmd).unwrap();
+
+    let mut denied_ids: Vec<ClientOrderId> = Vec::new();
+    while denied_ids.len() < 2 {
+        match tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::Denied(denied)))) => {
+                assert!(
+                    denied.reason.as_str().contains("STREAM_RECONCILING"),
+                    "expected STREAM_RECONCILING reason, found: {}",
+                    denied.reason,
+                );
+                denied_ids.push(denied.client_order_id);
+            }
+            Ok(Some(_)) => {}
+            _ => break,
+        }
+    }
+
+    assert_eq!(denied_ids.len(), 2, "expected one OrderDenied per leg");
+    assert!(denied_ids.contains(&ClientOrderId::from("O-HLT-LIST-001")));
+    assert!(denied_ids.contains(&ClientOrderId::from("O-HLT-LIST-002")));
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_disconnect_during_reconciliation_clears_halt() {
+    // If the client disconnects while the reconnect task is still in flight,
+    // clear_resync_state must reset is_reconciling so a future connect/submit
+    // cycle isn't permanently halted with STREAM_RECONCILING.
+    let (addr, state) = start_mock_http().await;
+
+    let fixture = load_fixture("rest/list_current_orders_empty.json");
+    let v: Value = serde_json::from_str(&fixture).unwrap();
+    state
+        .betting_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
+    // Slow enough that the disconnect aborts an in-flight reconciliation.
+    state.betting_response_delays.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        Duration::from_secs(5),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let halted = client.is_reconciling();
+            async move { halted }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(client.is_reconciling());
+
+    // Disconnecting mid-reconcile aborts the reconnect task before it can clear
+    // the flag itself; the cleanup in clear_resync_state must do it.
+    client.disconnect().await.unwrap();
+
+    assert!(
+        !client.is_reconciling(),
+        "is_reconciling must be cleared on disconnect even when reconnect task is aborted",
+    );
+
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_allowed_during_reconciliation() {
+    let (addr, state) = start_mock_http().await;
+
+    let list_fixture = load_fixture("rest/list_current_orders_empty.json");
+    let list_v: Value = serde_json::from_str(&list_fixture).unwrap();
+    state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        list_v["result"].clone(),
+    );
+    let cancel_fixture = load_fixture("rest/betting_cancel_orders_success.json");
+    let cancel_v: Value = serde_json::from_str(&cancel_fixture).unwrap();
+    state
+        .betting_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), cancel_v["result"].clone());
+    state.betting_response_delays.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        Duration::from_millis(800),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || {
+            let halted = client.is_reconciling();
+            async move { halted }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(client.is_reconciling());
+
+    while rx.try_recv().is_ok() {}
+
+    let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-CANCEL-001", "1");
+    client.cancel_order(cmd).unwrap();
+
+    // Allow the HTTP cancel round-trip to complete, then assert no halt-denied
+    // event was emitted (cancels must pass through during reconciliation).
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    while let Ok(event) = rx.try_recv() {
+        if let ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) = event {
+            assert!(
+                !rejected.reason.as_str().contains("STREAM_RECONCILING"),
+                "Cancel must not be denied with STREAM_RECONCILING during reconciliation",
+            );
+        }
+    }
+
+    client.disconnect().await.unwrap();
+    let _ = server.await;
+}

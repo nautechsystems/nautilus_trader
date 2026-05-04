@@ -333,6 +333,11 @@ pub struct BetfairExecConfig {
     /// When true, attach the latest market version to placeOrders and replaceOrders requests.
     #[builder(default)]
     pub use_market_version: bool,
+    /// Lookback window in minutes for the post-reconnect mass-status reconciliation
+    /// that recovers fills which terminated during the disconnect gap. Should
+    /// comfortably exceed the longest expected reconnect duration.
+    #[builder(default = 10)]
+    pub stream_gap_recovery_lookback_mins: u64,
 }
 
 impl Default for BetfairExecConfig {

@@ -14,6 +14,22 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Live execution client for the Betfair adapter.
+//!
+//! # Stream reconnect lifecycle
+//!
+//! On every reconnect (second `Connection` message), the OCM handler raises
+//! both `pending_resync` (drains buffered OCMs on the next command) and
+//! `is_reconciling` (halts exposure-increasing commands). The reconnect
+//! background task then refreshes the session, fetches account state, and
+//! pulls a `list_current_orders` mass status to recover any fills that
+//! completed and rolled off the unmatched book during the gap. Once the
+//! mass status is dispatched the halt clears.
+//!
+//! While `is_reconciling` is set, `submit_order` and `submit_order_list`
+//! emit `OrderDenied` with `STREAM_RECONCILING`; cancels and modifies
+//! pass through unchanged. The halt is fail-open: a transient reconnect
+//! failure clears the flag rather than locking trading indefinitely,
+//! consistent with the rest of Nautilus.
 
 use std::{
     fmt,
@@ -24,7 +40,7 @@ use std::{
     },
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
 use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
@@ -33,7 +49,7 @@ use nautilus_common::{
         runner::{get_data_event_sender, get_exec_event_sender},
     },
     messages::{
-        DataEvent,
+        DataEvent, ExecutionReport,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
             GenerateFillReportsBuilder, GenerateOrderStatusReports,
@@ -100,120 +116,10 @@ use crate::{
         client::BetfairStreamClient,
         config::BetfairStreamConfig,
         messages::{OCM, StreamMessage, stream_decode},
-        parse::{FillTracker, has_cancel_quantity, parse_order_status_report},
+        ocm::OcmState,
+        parse::{has_cancel_quantity, parse_order_status_report},
     },
 };
-
-/// Keep-alive interval in seconds (10 hours, matching Python default).
-const KEEP_ALIVE_INTERVAL_SECS: u64 = 36_000;
-
-/// Delay in seconds before retrying after a rate limit error.
-const RATE_LIMIT_RETRY_DELAY_SECS: u64 = 5;
-
-/// Shared mutable state for the OCM stream handler.
-///
-/// Accessed by both the TCP reader closure and the execution client methods
-/// (submit, modify, connect/disconnect). All access goes through `Arc<Mutex<>>`.
-#[derive(Debug, Default)]
-pub struct OcmState {
-    pub fill_tracker: FillTracker,
-    /// Maps customer_order_ref (rfo) to ClientOrderId for stream resolution.
-    pub customer_order_refs: AHashMap<String, ClientOrderId>,
-    /// Client order IDs that already received an OCM order status update.
-    pub stream_reported_client_orders: AHashSet<ClientOrderId>,
-    /// Bet IDs that have received a terminal event (cancel, lapse, fill-complete).
-    pub terminal_orders: AHashSet<String>,
-    /// Old bet IDs from replace operations, to suppress late stream updates.
-    pub replaced_venue_order_ids: AHashSet<String>,
-    /// (client_order_id, old_bet_id) pairs for in-flight replace operations.
-    pub pending_update_keys: AHashSet<(ClientOrderId, String)>,
-}
-
-impl OcmState {
-    /// Registers a customer_order_ref mapping for a new order.
-    pub fn register_customer_order_ref(&mut self, client_order_id: ClientOrderId) {
-        let rfo = make_customer_order_ref(client_order_id.as_str());
-        self.customer_order_refs.insert(rfo, client_order_id);
-    }
-
-    /// Registers both current and legacy customer_order_ref truncations.
-    ///
-    /// Used during reconnect sync for pre-existing orders that may
-    /// have been placed with either truncation format.
-    pub fn register_customer_order_ref_with_legacy(&mut self, client_order_id: ClientOrderId) {
-        let rfo = make_customer_order_ref(client_order_id.as_str());
-        let rfo_legacy = make_customer_order_ref_legacy(client_order_id.as_str());
-        self.customer_order_refs.insert(rfo, client_order_id);
-        if rfo_legacy != client_order_id.as_str() {
-            self.customer_order_refs.insert(rfo_legacy, client_order_id);
-        }
-    }
-
-    /// Removes customer_order_ref mappings for a client_order_id.
-    pub fn remove_customer_order_refs(&mut self, client_order_id: &ClientOrderId) {
-        let rfo = make_customer_order_ref(client_order_id.as_str());
-        let rfo_legacy = make_customer_order_ref_legacy(client_order_id.as_str());
-        self.customer_order_refs.remove(&rfo);
-        self.customer_order_refs.remove(&rfo_legacy);
-    }
-
-    /// Resolves a client_order_id from the unmatched order's rfo field.
-    pub fn resolve_client_order_id(&self, rfo: Option<&str>) -> Option<ClientOrderId> {
-        rfo.and_then(|r| self.customer_order_refs.get(r).copied())
-    }
-
-    /// Returns `true` if the bet_id already has a terminal event and should be skipped.
-    /// Otherwise marks it as terminal and returns `false`.
-    pub fn try_mark_terminal(&mut self, bet_id: &str) -> bool {
-        !self.terminal_orders.insert(bet_id.to_string())
-    }
-
-    /// Returns `true` if a cancel/lapse for this bet should be suppressed
-    /// because a replace operation is pending or the bet was already replaced.
-    pub fn should_suppress_cancel(&self, client_order_id: &ClientOrderId, bet_id: &str) -> bool {
-        if self.replaced_venue_order_ids.contains(bet_id) {
-            return true;
-        }
-        self.pending_update_keys
-            .contains(&(*client_order_id, bet_id.to_string()))
-    }
-
-    /// Cleans up customer_order_ref mappings for a terminal order,
-    /// unless a pending replace exists for this client_order_id.
-    pub fn cleanup_terminal_order(&mut self, client_order_id: &ClientOrderId) {
-        let has_pending = self
-            .pending_update_keys
-            .iter()
-            .any(|(cid, _)| cid == client_order_id);
-
-        if !has_pending {
-            self.remove_customer_order_refs(client_order_id);
-        }
-    }
-
-    /// Anchors the fill tracker against cached orders so the post-reconnect
-    /// image neither treats cumulative size as a new fill nor re-emits a
-    /// fill that was published via another channel.
-    pub fn sync_from_orders(&mut self, orders: &[OrderSyncEntry]) {
-        for entry in orders {
-            if entry.is_closed {
-                self.terminal_orders.insert(entry.bet_id.clone());
-            } else {
-                self.register_customer_order_ref_with_legacy(entry.client_order_id);
-            }
-
-            if entry.filled_qty > Decimal::ZERO {
-                self.fill_tracker
-                    .sync_order(&entry.bet_id, entry.filled_qty, entry.avg_px);
-            }
-
-            if !entry.trade_ids.is_empty() {
-                self.fill_tracker
-                    .seed_published_trade_ids(entry.trade_ids.iter().cloned());
-            }
-        }
-    }
-}
 
 /// Betfair live execution client.
 #[derive(Debug)]
@@ -229,6 +135,7 @@ pub struct BetfairExecutionClient {
     currency: Currency,
     ocm_state: Arc<Mutex<OcmState>>,
     pending_resync: Arc<AtomicBool>,
+    is_reconciling: Arc<AtomicBool>,
     replay_buffer: Arc<Mutex<Vec<OCM>>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
     keep_alive_handle: Option<JoinHandle<()>>,
@@ -237,6 +144,9 @@ pub struct BetfairExecutionClient {
 }
 
 impl BetfairExecutionClient {
+    const RECONCILING_REASON: &'static str =
+        "STREAM_RECONCILING: post-reconnect reconciliation in progress, retry once it completes";
+
     /// Creates a new [`BetfairExecutionClient`] instance.
     #[must_use]
     pub fn new(
@@ -268,12 +178,19 @@ impl BetfairExecutionClient {
             currency,
             ocm_state: Arc::new(Mutex::new(OcmState::default())),
             pending_resync: Arc::new(AtomicBool::new(false)),
+            is_reconciling: Arc::new(AtomicBool::new(false)),
             replay_buffer: Arc::new(Mutex::new(Vec::new())),
             pending_tasks: Mutex::new(Vec::new()),
             keep_alive_handle: None,
             account_state_handle: None,
             reconnect_handle: None,
         }
+    }
+
+    /// Returns true while post-reconnect reconciliation is in flight.
+    #[must_use]
+    pub fn is_reconciling(&self) -> bool {
+        self.is_reconciling.load(Ordering::Acquire)
     }
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -415,6 +332,8 @@ impl BetfairExecutionClient {
         let mut buf = self.replay_buffer.lock().expect(MUTEX_POISONED);
         buf.clear();
         self.pending_resync.store(false, Ordering::Release);
+        // An aborted reconnect must not leave submits permanently halted.
+        self.is_reconciling.store(false, Ordering::Release);
     }
 
     fn abort_pending_tasks(&self) {
@@ -449,6 +368,7 @@ impl BetfairExecutionClient {
         ignore_external_orders: bool,
         reconnect_tx: tokio::sync::mpsc::UnboundedSender<()>,
         pending_resync: Arc<AtomicBool>,
+        is_reconciling: Arc<AtomicBool>,
         replay_buffer: Arc<Mutex<Vec<OCM>>>,
     ) -> TcpMessageHandler {
         let has_initial_connection = Arc::new(AtomicBool::new(false));
@@ -492,6 +412,7 @@ impl BetfairExecutionClient {
                     if has_initial_connection.swap(true, Ordering::SeqCst) {
                         log::info!("Betfair execution stream reconnected");
                         pending_resync.store(true, Ordering::Release);
+                        is_reconciling.store(true, Ordering::Release);
                         let _ = reconnect_tx.send(());
                     } else {
                         log::info!("Betfair execution stream connected");
@@ -843,6 +764,7 @@ impl ExecutionClient for BetfairExecutionClient {
             self.config.ignore_external_orders,
             reconnect_tx,
             Arc::clone(&self.pending_resync),
+            Arc::clone(&self.is_reconciling),
             Arc::clone(&self.replay_buffer),
         );
 
@@ -870,6 +792,8 @@ impl ExecutionClient for BetfairExecutionClient {
         let keep_alive_app_key = self.credential.app_key().to_string();
 
         self.keep_alive_handle = Some(get_runtime().spawn(async move {
+            // 10 hours, matching the Python adapter default.
+            const KEEP_ALIVE_INTERVAL_SECS: u64 = 36_000;
             let interval = tokio::time::Duration::from_secs(KEEP_ALIVE_INTERVAL_SECS);
             loop {
                 tokio::time::sleep(interval).await;
@@ -937,60 +861,110 @@ impl ExecutionClient for BetfairExecutionClient {
 
         let reconnect_http = Arc::clone(&self.http_client);
         let reconnect_stream = Arc::clone(self.stream_client.as_ref().unwrap());
-        let reconnect_app_key = self.credential.app_key().to_string();
         let reconnect_emitter = self.emitter.clone();
+        let reconnect_app_key = self.credential.app_key().to_string();
         let reconnect_clock = self.clock;
+        let reconnect_client_id = self.core.client_id;
         let reconnect_acct_id = self.core.account_id;
         let reconnect_currency = self.currency;
+        let reconnect_market_ids = self.reconcile_market_ids();
+        let reconnect_lookback_mins = self.config.stream_gap_recovery_lookback_mins;
+        let reconnect_ocm_state = Arc::clone(&self.ocm_state);
+        let reconnect_is_reconciling = Arc::clone(&self.is_reconciling);
 
         self.reconnect_handle = Some(get_runtime().spawn(async move {
             while reconnect_rx.recv().await.is_some() {
                 log::info!("Handling execution stream reconnection");
 
-                match reconnect_http.keep_alive().await {
-                    Ok(()) => {}
-                    Err(ref e) if e.is_login_failed() => {
-                        log::warn!("Session expired on reconnect, attempting re-login: {e}");
-                        if let Err(e) = reconnect_http.reconnect().await {
-                            log::error!("Re-login failed on reconnect: {e}");
-                            continue;
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("Keep-alive failed on reconnect (transient): {e}");
-                        continue;
-                    }
-                }
+                // Re-assert so a queued reconnect doesn't run with the halt cleared
+                // by the previous iteration.
+                reconnect_is_reconciling.store(true, Ordering::Release);
 
-                if let Some(token) = reconnect_http.session_token().await {
-                    reconnect_stream.update_auth(&reconnect_app_key, token);
-                }
-
-                match reconnect_http
-                    .send_accounts::<AccountFundsResponse, _>(
-                        METHOD_GET_ACCOUNT_FUNDS,
-                        serde_json::json!({}),
-                    )
-                    .await
-                {
-                    Ok(funds) => {
-                        let ts_init = reconnect_clock.get_time_ns();
-
-                        match parse_account_state(
-                            &funds,
-                            reconnect_acct_id,
-                            reconnect_currency,
-                            ts_init,
-                            ts_init,
-                        ) {
-                            Ok(state) => reconnect_emitter.send_account_state(state),
-                            Err(e) => {
-                                log::warn!("Failed to parse account state on reconnect: {e}");
+                // Inner async block so early returns still hit the clear below.
+                let () = async {
+                    match reconnect_http.keep_alive().await {
+                        Ok(()) => {}
+                        Err(ref e) if e.is_login_failed() => {
+                            log::warn!("Session expired on reconnect, attempting re-login: {e}",);
+                            if let Err(e) = reconnect_http.reconnect().await {
+                                log::error!("Re-login failed on reconnect: {e}");
+                                return;
                             }
                         }
+                        Err(e) => {
+                            log::warn!("Keep-alive failed on reconnect (transient): {e}");
+                            return;
+                        }
                     }
-                    Err(e) => log::warn!("Failed to fetch account state on reconnect: {e}"),
+
+                    if let Some(token) = reconnect_http.session_token().await {
+                        reconnect_stream.update_auth(&reconnect_app_key, token);
+                    }
+
+                    match reconnect_http
+                        .send_accounts::<AccountFundsResponse, _>(
+                            METHOD_GET_ACCOUNT_FUNDS,
+                            serde_json::json!({}),
+                        )
+                        .await
+                    {
+                        Ok(funds) => {
+                            let ts_init = reconnect_clock.get_time_ns();
+
+                            match parse_account_state(
+                                &funds,
+                                reconnect_acct_id,
+                                reconnect_currency,
+                                ts_init,
+                                ts_init,
+                            ) {
+                                Ok(state) => reconnect_emitter.send_account_state(state),
+                                Err(e) => {
+                                    log::warn!("Failed to parse account state on reconnect: {e}");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to fetch account state on reconnect: {e}");
+                        }
+                    }
+
+                    match fetch_post_reconnect_mass_status(
+                        &reconnect_http,
+                        reconnect_client_id,
+                        reconnect_acct_id,
+                        reconnect_currency,
+                        reconnect_clock,
+                        reconnect_market_ids.clone(),
+                        reconnect_lookback_mins,
+                        &reconnect_ocm_state,
+                    )
+                    .await
+                    {
+                        Ok(mass_status) => {
+                            let order_count = mass_status.order_reports().len();
+                            let fill_count: usize = mass_status
+                                .fill_reports()
+                                .values()
+                                .map(|fills| fills.len())
+                                .sum();
+                            reconnect_emitter.send_execution_report(ExecutionReport::MassStatus(
+                                Box::new(mass_status),
+                            ));
+                            log::info!(
+                                "Post-reconnect reconciliation submitted: \
+                                 orders={order_count}, fills={fill_count}",
+                            );
+                        }
+                        Err(e) => {
+                            log::warn!("Post-reconnect reconciliation failed: {e}");
+                        }
+                    }
                 }
+                .await;
+
+                // Fail-open: a failed iteration must not deny submits indefinitely.
+                reconnect_is_reconciling.store(false, Ordering::Release);
             }
         }));
 
@@ -1171,87 +1145,15 @@ impl ExecutionClient for BetfairExecutionClient {
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         self.process_pending_resync();
 
-        let order_projection = if cmd.open_only {
-            Some(OrderProjection::Executable)
-        } else {
-            Some(OrderProjection::All)
-        };
-
-        let ts_init = self.clock.get_time_ns();
-        let mut reports = Vec::new();
-        let mut from_record: u32 = 0;
-
-        loop {
-            let params = ListCurrentOrdersParams {
-                bet_ids: None,
-                market_ids: self.reconcile_market_ids(),
-                order_projection,
-                customer_order_refs: None,
-                customer_strategy_refs: None,
-                date_range: None,
-                order_by: None,
-                sort_dir: None,
-                from_record: if from_record > 0 {
-                    Some(from_record)
-                } else {
-                    None
-                },
-                record_count: None,
-            };
-
-            let response: CurrentOrderSummaryReport = match self
-                .http_client
-                .send_betting(METHOD_LIST_CURRENT_ORDERS, &params)
-                .await
-            {
-                Ok(r) => r,
-                Err(e) if e.is_session_error() || e.is_rate_limit_error() => {
-                    if e.is_rate_limit_error() {
-                        log::warn!("Rate limited, retrying in {RATE_LIMIT_RETRY_DELAY_SECS}s");
-                        tokio::time::sleep(tokio::time::Duration::from_secs(
-                            RATE_LIMIT_RETRY_DELAY_SECS,
-                        ))
-                        .await;
-                    } else {
-                        log::warn!("Session error, refreshing session");
-
-                        if self.http_client.keep_alive().await.is_err() {
-                            let _ = self.http_client.reconnect().await;
-                        }
-                    }
-                    self.http_client
-                        .send_betting(METHOD_LIST_CURRENT_ORDERS, &params)
-                        .await
-                        .map_err(|e| anyhow::anyhow!("{e}"))?
-                }
-                Err(e) => anyhow::bail!("{e}"),
-            };
-
-            let page_size = response.current_orders.len() as u32;
-
-            for order in &response.current_orders {
-                match parse_current_order_report(order, self.core.account_id, ts_init) {
-                    Ok(mut r) => {
-                        if let Some(ref rfo) = order.customer_order_ref
-                            && let Ok(state) = self.ocm_state.lock()
-                            && let Some(full_id) = state.resolve_client_order_id(Some(rfo.as_str()))
-                        {
-                            r.client_order_id = Some(full_id);
-                        }
-                        reports.push(r);
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to parse order report for {}: {e}", order.bet_id);
-                    }
-                }
-            }
-
-            if !response.more_available {
-                break;
-            }
-
-            from_record += page_size;
-        }
+        let reports = fetch_order_status_reports_via_http(
+            &self.http_client,
+            self.core.account_id,
+            self.clock.get_time_ns(),
+            self.reconcile_market_ids(),
+            cmd.open_only,
+            &self.ocm_state,
+        )
+        .await?;
 
         log::info!("Generated {} order status reports", reports.len());
         Ok(reports)
@@ -1279,91 +1181,16 @@ impl ExecutionClient for BetfairExecutionClient {
             (None, None) => None,
         };
 
-        let ts_init = self.clock.get_time_ns();
-        let mut reports = Vec::new();
-        let mut from_record: u32 = 0;
-
-        loop {
-            let params = ListCurrentOrdersParams {
-                bet_ids: None,
-                market_ids: self.reconcile_market_ids(),
-                order_projection: Some(OrderProjection::All),
-                customer_order_refs: None,
-                customer_strategy_refs: None,
-                date_range: date_range.clone(),
-                order_by: None,
-                sort_dir: None,
-                from_record: if from_record > 0 {
-                    Some(from_record)
-                } else {
-                    None
-                },
-                record_count: None,
-            };
-
-            let response: CurrentOrderSummaryReport = match self
-                .http_client
-                .send_betting(METHOD_LIST_CURRENT_ORDERS, &params)
-                .await
-            {
-                Ok(r) => r,
-                Err(e) if e.is_session_error() || e.is_rate_limit_error() => {
-                    if e.is_rate_limit_error() {
-                        log::warn!("Rate limited, retrying in {RATE_LIMIT_RETRY_DELAY_SECS}s");
-                        tokio::time::sleep(tokio::time::Duration::from_secs(
-                            RATE_LIMIT_RETRY_DELAY_SECS,
-                        ))
-                        .await;
-                    } else {
-                        log::warn!("Session error, refreshing session");
-
-                        if self.http_client.keep_alive().await.is_err() {
-                            let _ = self.http_client.reconnect().await;
-                        }
-                    }
-                    self.http_client
-                        .send_betting(METHOD_LIST_CURRENT_ORDERS, &params)
-                        .await
-                        .map_err(|e| anyhow::anyhow!("{e}"))?
-                }
-                Err(e) => anyhow::bail!("{e}"),
-            };
-
-            let page_size = response.current_orders.len() as u32;
-
-            for order in &response.current_orders {
-                let size_matched = order.size_matched.unwrap_or(Decimal::ZERO);
-                if size_matched == Decimal::ZERO {
-                    continue;
-                }
-
-                match parse_current_order_fill_report(
-                    order,
-                    self.core.account_id,
-                    self.currency,
-                    ts_init,
-                ) {
-                    Ok(mut r) => {
-                        if let Some(ref rfo) = order.customer_order_ref
-                            && let Ok(state) = self.ocm_state.lock()
-                            && let Some(full_id) = state.resolve_client_order_id(Some(rfo.as_str()))
-                        {
-                            r.client_order_id = Some(full_id);
-                        }
-                        reports.push(r);
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to parse fill report for {}: {e}", order.bet_id);
-                    }
-                }
-            }
-
-            if !response.more_available {
-                break;
-            }
-
-            from_record += page_size;
-        }
+        let reports = fetch_fill_reports_via_http(
+            &self.http_client,
+            self.core.account_id,
+            self.currency,
+            self.clock.get_time_ns(),
+            self.reconcile_market_ids(),
+            date_range,
+            &self.ocm_state,
+        )
+        .await?;
 
         log::info!("Generated {} fill reports", reports.len());
         Ok(reports)
@@ -1373,6 +1200,16 @@ impl ExecutionClient for BetfairExecutionClient {
         self.process_pending_resync();
 
         let order = self.core.get_order(&cmd.client_order_id)?;
+
+        if self.is_reconciling.load(Ordering::Acquire) {
+            log::warn!(
+                "Halting submit for {} during post-reconnect reconciliation",
+                order.client_order_id(),
+            );
+            self.emitter
+                .emit_order_denied(&order, Self::RECONCILING_REASON);
+            return Ok(());
+        }
 
         if order.is_closed() {
             log::warn!("Cannot submit closed order {}", order.client_order_id());
@@ -2161,6 +1998,21 @@ impl ExecutionClient for BetfairExecutionClient {
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         self.process_pending_resync();
 
+        if self.is_reconciling.load(Ordering::Acquire) {
+            log::warn!(
+                "Halting submit_order_list ({} orders) during post-reconnect reconciliation",
+                cmd.order_list.client_order_ids.len(),
+            );
+
+            for client_order_id in &cmd.order_list.client_order_ids {
+                if let Ok(order) = self.core.get_order(client_order_id) {
+                    self.emitter
+                        .emit_order_denied(&order, Self::RECONCILING_REASON);
+                }
+            }
+            return Ok(());
+        }
+
         let instrument_id = cmd.instrument_id;
         let market_id = extract_market_id(&instrument_id)?;
         let (selection_id, handicap) = extract_selection_id(&instrument_id)?;
@@ -2415,6 +2267,186 @@ impl ExecutionClient for BetfairExecutionClient {
     }
 }
 
+/// Paginates `list_current_orders` into `OrderStatusReport`s without touching
+/// the engine cache, so it is callable from any tokio task.
+async fn fetch_order_status_reports_via_http(
+    http_client: &Arc<BetfairHttpClient>,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+    market_ids: Option<Vec<String>>,
+    open_only: bool,
+    ocm_state: &Arc<Mutex<OcmState>>,
+) -> anyhow::Result<Vec<OrderStatusReport>> {
+    let order_projection = if open_only {
+        Some(OrderProjection::Executable)
+    } else {
+        Some(OrderProjection::All)
+    };
+
+    let mut reports = Vec::new();
+    let mut from_record: u32 = 0;
+
+    loop {
+        let params = ListCurrentOrdersParams {
+            bet_ids: None,
+            market_ids: market_ids.clone(),
+            order_projection,
+            customer_order_refs: None,
+            customer_strategy_refs: None,
+            date_range: None,
+            order_by: None,
+            sort_dir: None,
+            from_record: if from_record > 0 {
+                Some(from_record)
+            } else {
+                None
+            },
+            record_count: None,
+        };
+
+        let response = list_current_orders_with_retry(http_client, &params).await?;
+        let page_size = response.current_orders.len() as u32;
+
+        for order in &response.current_orders {
+            match parse_current_order_report(order, account_id, ts_init) {
+                Ok(mut r) => {
+                    if let Some(ref rfo) = order.customer_order_ref
+                        && let Ok(state) = ocm_state.lock()
+                        && let Some(full_id) = state.resolve_client_order_id(Some(rfo.as_str()))
+                    {
+                        r.client_order_id = Some(full_id);
+                    }
+                    reports.push(r);
+                }
+                Err(e) => log::warn!("Failed to parse order report for {}: {e}", order.bet_id),
+            }
+        }
+
+        if !response.more_available {
+            break;
+        }
+
+        from_record += page_size;
+    }
+
+    Ok(reports)
+}
+
+/// Paginates `list_current_orders` into `FillReport`s without touching the
+/// engine cache, so it is callable from any tokio task.
+async fn fetch_fill_reports_via_http(
+    http_client: &Arc<BetfairHttpClient>,
+    account_id: AccountId,
+    currency: Currency,
+    ts_init: UnixNanos,
+    market_ids: Option<Vec<String>>,
+    date_range: Option<TimeRange>,
+    ocm_state: &Arc<Mutex<OcmState>>,
+) -> anyhow::Result<Vec<FillReport>> {
+    let mut reports = Vec::new();
+    let mut from_record: u32 = 0;
+
+    loop {
+        let params = ListCurrentOrdersParams {
+            bet_ids: None,
+            market_ids: market_ids.clone(),
+            order_projection: Some(OrderProjection::All),
+            customer_order_refs: None,
+            customer_strategy_refs: None,
+            date_range: date_range.clone(),
+            order_by: None,
+            sort_dir: None,
+            from_record: if from_record > 0 {
+                Some(from_record)
+            } else {
+                None
+            },
+            record_count: None,
+        };
+
+        let response = list_current_orders_with_retry(http_client, &params).await?;
+        let page_size = response.current_orders.len() as u32;
+
+        for order in &response.current_orders {
+            let size_matched = order.size_matched.unwrap_or(Decimal::ZERO);
+            if size_matched == Decimal::ZERO {
+                continue;
+            }
+
+            match parse_current_order_fill_report(order, account_id, currency, ts_init) {
+                Ok(mut r) => {
+                    if let Some(ref rfo) = order.customer_order_ref
+                        && let Ok(state) = ocm_state.lock()
+                        && let Some(full_id) = state.resolve_client_order_id(Some(rfo.as_str()))
+                    {
+                        r.client_order_id = Some(full_id);
+                    }
+                    reports.push(r);
+                }
+                Err(e) => log::warn!("Failed to parse fill report for {}: {e}", order.bet_id),
+            }
+        }
+
+        if !response.more_available {
+            break;
+        }
+
+        from_record += page_size;
+    }
+
+    Ok(reports)
+}
+
+/// Builds an [`ExecutionMassStatus`] over `lookback_mins` of REST history.
+#[expect(clippy::too_many_arguments)]
+async fn fetch_post_reconnect_mass_status(
+    http_client: &Arc<BetfairHttpClient>,
+    client_id: ClientId,
+    account_id: AccountId,
+    currency: Currency,
+    clock: &'static AtomicTime,
+    market_ids: Option<Vec<String>>,
+    lookback_mins: u64,
+    ocm_state: &Arc<Mutex<OcmState>>,
+) -> anyhow::Result<ExecutionMassStatus> {
+    let ts_now = clock.get_time_ns();
+    let lookback_ns = lookback_mins
+        .saturating_mul(60)
+        .saturating_mul(NANOSECONDS_IN_SECOND);
+    let start = UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns));
+
+    let date_range = TimeRange {
+        from: Some(start.to_rfc3339()),
+        to: None,
+    };
+
+    let (order_reports, fill_reports) = tokio::try_join!(
+        fetch_order_status_reports_via_http(
+            http_client,
+            account_id,
+            ts_now,
+            market_ids.clone(),
+            false,
+            ocm_state,
+        ),
+        fetch_fill_reports_via_http(
+            http_client,
+            account_id,
+            currency,
+            ts_now,
+            market_ids,
+            Some(date_range),
+            ocm_state,
+        ),
+    )?;
+
+    let mut mass_status =
+        ExecutionMassStatus::new(client_id, account_id, *BETFAIR_VENUE, ts_now, None);
+    mass_status.add_order_reports(order_reports);
+    mass_status.add_fill_reports(fill_reports);
+    Ok(mass_status)
+}
+
 fn list_current_orders_filter_bet_id(bet_id: String) -> ListCurrentOrdersParams {
     ListCurrentOrdersParams {
         bet_ids: Some(vec![bet_id]),
@@ -2513,6 +2545,8 @@ async fn list_current_orders_with_retry(
     http_client: &Arc<BetfairHttpClient>,
     params: &ListCurrentOrdersParams,
 ) -> anyhow::Result<CurrentOrderSummaryReport> {
+    const RATE_LIMIT_RETRY_DELAY_SECS: u64 = 5;
+
     match http_client
         .send_betting(METHOD_LIST_CURRENT_ORDERS, params)
         .await
@@ -2980,6 +3014,32 @@ mod tests {
         // Third connection: signal sent again
         handler(br#"{"op":"connection","connectionId":"ghi"}"#);
         assert!(reconnect_rx.try_recv().is_ok());
+    }
+
+    #[rstest]
+    fn test_reconnect_sets_is_reconciling_flag() {
+        // Mirrors the production handler: a second Connection raises both flags.
+        let has_initial_connection = Arc::new(AtomicBool::new(false));
+        let pending_resync = Arc::new(AtomicBool::new(false));
+        let is_reconciling = Arc::new(AtomicBool::new(false));
+
+        let has_initial = Arc::clone(&has_initial_connection);
+        let pending = Arc::clone(&pending_resync);
+        let reconciling = Arc::clone(&is_reconciling);
+        let handler = move |_data: &[u8]| {
+            if has_initial.swap(true, Ordering::SeqCst) {
+                pending.store(true, Ordering::Release);
+                reconciling.store(true, Ordering::Release);
+            }
+        };
+
+        handler(br#"{"op":"connection","connectionId":"first"}"#);
+        assert!(!pending_resync.load(Ordering::Acquire));
+        assert!(!is_reconciling.load(Ordering::Acquire));
+
+        handler(br#"{"op":"connection","connectionId":"second"}"#);
+        assert!(pending_resync.load(Ordering::Acquire));
+        assert!(is_reconciling.load(Ordering::Acquire));
     }
 
     #[rstest]
