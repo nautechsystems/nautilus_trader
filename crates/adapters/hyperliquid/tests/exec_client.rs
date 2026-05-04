@@ -48,13 +48,14 @@ use nautilus_common::{
     messages::{
         ExecutionEvent, ExecutionReport,
         execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateOrderStatusReport,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+            GenerateOrderStatusReport, GenerateOrderStatusReports, ModifyOrder, QueryAccount,
+            QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_hyperliquid::{
     common::enums::HyperliquidEnvironment, config::HyperliquidExecClientConfig,
     execution::HyperliquidExecutionClient, http::models::Cloid,
@@ -62,14 +63,21 @@ use nautilus_hyperliquid::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    enums::{AccountType, OmsType, OrderSide, OrderStatus, TimeInForce},
-    events::{AccountState, OrderAccepted, OrderEventAny, OrderSubmitted},
-    identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
+    data::QuoteTick,
+    enums::{
+        AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
+        TimeInForce, TriggerType,
     },
-    orders::{LimitOrder, Order, OrderAny},
+    events::{
+        AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderInitialized, OrderSubmitted,
+    },
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId,
+        TraderId, Venue, VenueOrderId,
+    },
+    orders::{LimitOrder, MarketOrder, Order, OrderAny, OrderList, StopMarketOrder},
     reports::OrderStatusReport,
-    types::{AccountBalance, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::{HttpClient, Method};
 use rstest::rstest;
@@ -88,6 +96,9 @@ struct TestServerState {
     /// Optional override for the `cancel` response payload on the next
     /// exchange call (e.g. to simulate per-item errors in batch cancel).
     cancel_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
+    /// Optional override for the `order` response payload on the next
+    /// exchange call (e.g. to simulate per-order mixed status arrays).
+    order_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
     /// Fail the next exchange call with a transport error (503).
     fail_next_exchange: Arc<std::sync::atomic::AtomicBool>,
     /// Fail `frontendOpenOrders` info calls with a transport error (503) while
@@ -101,6 +112,13 @@ struct TestServerState {
     /// Optional override for `spotClearinghouseState` info responses;
     /// defaults to `{"balances": []}` when unset.
     spot_clearinghouse_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    /// Optional override for `clearinghouseState` (perp) info responses.
+    perp_clearinghouse_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    /// Captures the `user` field from the most recent `clearinghouseState`
+    /// request so tests can verify the address sent to the venue.
+    last_clearinghouse_user: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// Optional override for `userFills` info responses; defaults to `[]`.
+    user_fills_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     rate_limit_after: Arc<AtomicUsize>,
     /// When set, `handle_exchange` awaits `pause_release` before returning.
     /// Lets a test hold the response so it can assert on synchronous state
@@ -118,11 +136,15 @@ impl Default for TestServerState {
             reject_next_order: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             inner_order_error_next: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             cancel_response_override: Arc::new(tokio::sync::Mutex::new(None)),
+            order_response_override: Arc::new(tokio::sync::Mutex::new(None)),
             fail_next_exchange: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fail_frontend_open_orders_count: Arc::new(AtomicUsize::new(0)),
             frontend_open_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             order_status_response: Arc::new(tokio::sync::Mutex::new(None)),
             spot_clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
+            perp_clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
+            last_clearinghouse_user: Arc::new(tokio::sync::Mutex::new(None)),
+            user_fills_response: Arc::new(tokio::sync::Mutex::new(None)),
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
             pause_next_exchange: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             pause_release: Arc::new(tokio::sync::Notify::new()),
@@ -213,30 +235,46 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
                 Json(json!({"status": "unknownOid"})).into_response()
             }
         }
-        "userFills" => Json(json!([])).into_response(),
+        "userFills" => {
+            if let Some(body) = state.user_fills_response.lock().await.clone() {
+                Json(body).into_response()
+            } else {
+                Json(json!([])).into_response()
+            }
+        }
         "userFees" => Json(json!({
             "userCrossRate": "0.00045",
             "userAddRate": "0.00015"
         }))
         .into_response(),
-        "clearinghouseState" => Json(json!({
-            "marginSummary": {
-                "accountValue": "10000.0",
-                "totalMarginUsed": "0.0",
-                "totalNtlPos": "0.0",
-                "totalRawUsd": "10000.0"
-            },
-            "crossMarginSummary": {
-                "accountValue": "10000.0",
-                "totalMarginUsed": "0.0",
-                "totalNtlPos": "0.0",
-                "totalRawUsd": "10000.0"
-            },
-            "crossMaintenanceMarginUsed": "0.0",
-            "withdrawable": "10000.0",
-            "assetPositions": []
-        }))
-        .into_response(),
+        "clearinghouseState" => {
+            if let Some(user) = request_body.get("user").and_then(|u| u.as_str()) {
+                *state.last_clearinghouse_user.lock().await = Some(user.to_string());
+            }
+
+            if let Some(body) = state.perp_clearinghouse_response.lock().await.clone() {
+                return Json(body).into_response();
+            }
+
+            Json(json!({
+                "marginSummary": {
+                    "accountValue": "10000.0",
+                    "totalMarginUsed": "0.0",
+                    "totalNtlPos": "0.0",
+                    "totalRawUsd": "10000.0"
+                },
+                "crossMarginSummary": {
+                    "accountValue": "10000.0",
+                    "totalMarginUsed": "0.0",
+                    "totalNtlPos": "0.0",
+                    "totalRawUsd": "10000.0"
+                },
+                "crossMaintenanceMarginUsed": "0.0",
+                "withdrawable": "10000.0",
+                "assetPositions": []
+            }))
+            .into_response()
+        }
         "spotClearinghouseState" => {
             if let Some(body) = state.spot_clearinghouse_response.lock().await.clone() {
                 Json(body).into_response()
@@ -361,20 +399,25 @@ async fn handle_exchange(
     }
 
     match action_type {
-        Some("order") => Json(json!({
-            "status": "ok",
-            "response": {
-                "type": "order",
-                "data": {
-                    "statuses": [{
-                        "resting": {
-                            "oid": 12345
-                        }
-                    }]
-                }
+        Some("order") => {
+            if let Some(body) = state.order_response_override.lock().await.take() {
+                return Json(body).into_response();
             }
-        }))
-        .into_response(),
+            Json(json!({
+                "status": "ok",
+                "response": {
+                    "type": "order",
+                    "data": {
+                        "statuses": [{
+                            "resting": {
+                                "oid": 12345
+                            }
+                        }]
+                    }
+                }
+            }))
+            .into_response()
+        }
         Some("cancel" | "cancelByCloid") => {
             if let Some(body) = state.cancel_response_override.lock().await.take() {
                 return Json(body).into_response();
@@ -2535,4 +2578,1293 @@ async fn test_query_order_unknown_returns_silently() {
     );
 
     client.disconnect().await.unwrap();
+}
+
+async fn drain_denied_events(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    timeout: Duration,
+) -> Vec<(ClientOrderId, String)> {
+    let mut out = Vec::new();
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        match tokio::time::timeout_at(deadline, rx.recv()).await {
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::Denied(denied)))) => {
+                out.push((denied.client_order_id, denied.reason.to_string()));
+            }
+            Ok(Some(_)) => {}
+            Ok(None) | Err(_) => break,
+        }
+    }
+    out
+}
+
+async fn drain_rejected_events(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    timeout: Duration,
+) -> Vec<(ClientOrderId, String)> {
+    let mut out = Vec::new();
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        match tokio::time::timeout_at(deadline, rx.recv()).await {
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::Rejected(rejected)))) => {
+                out.push((rejected.client_order_id, rejected.reason.to_string()));
+            }
+            Ok(Some(_)) => {}
+            Ok(None) | Err(_) => break,
+        }
+    }
+    out
+}
+
+async fn drain_modify_rejected_events(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    timeout: Duration,
+) -> Vec<(ClientOrderId, String)> {
+    let mut out = Vec::new();
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        match tokio::time::timeout_at(deadline, rx.recv()).await {
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)))) => {
+                out.push((rejected.client_order_id, rejected.reason.to_string()));
+            }
+            Ok(Some(_)) => {}
+            Ok(None) | Err(_) => break,
+        }
+    }
+    out
+}
+
+fn make_limit_order_on_instrument(id: &str, instrument_id: InstrumentId) -> OrderAny {
+    OrderAny::Limit(LimitOrder::new(
+        TraderId::from("TESTER-001"),
+        StrategyId::from("S-001"),
+        instrument_id,
+        ClientOrderId::from(id),
+        OrderSide::Buy,
+        Quantity::from("0.0001"),
+        Price::from("56730.0"),
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ))
+}
+
+fn make_market_order(id: &str) -> OrderAny {
+    OrderAny::Market(MarketOrder::new(
+        TraderId::from("TESTER-001"),
+        StrategyId::from("S-001"),
+        InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+        ClientOrderId::from(id),
+        OrderSide::Buy,
+        Quantity::from("0.0001"),
+        TimeInForce::Gtc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ))
+}
+
+fn make_submit_cmd(order: &OrderAny) -> SubmitOrder {
+    SubmitOrder::from_order(
+        order,
+        order.trader_id(),
+        Some(ClientId::from("HYPERLIQUID")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    )
+}
+
+fn make_submit_cmd_with_params(order: &OrderAny, params: Params) -> SubmitOrder {
+    SubmitOrder::new(
+        order.trader_id(),
+        Some(ClientId::from("HYPERLIQUID")),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        OrderInitialized::from(order),
+        order.exec_algorithm_id(),
+        None,
+        Some(params),
+        UUID4::new(),
+        UnixNanos::default(),
+    )
+}
+
+#[rstest]
+#[case::unsupported_symbol("BTC-USD-FUT.HYPERLIQUID", "expected -PERP or -SPOT")]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_unsupported_symbol_emits_denied(
+    #[case] instrument_str: &str,
+    #[case] reason_substr: &str,
+) {
+    // Symbol does not end in -PERP or -SPOT, so `validate_order_submission`
+    // bails before any HTTP work and the client emits OrderDenied. A regression
+    // that drops the suffix check would land orders on a venue that cannot
+    // route them.
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let order = make_limit_order_on_instrument("O-BAD-SYMBOL", InstrumentId::from(instrument_str));
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let result = client.submit_order(make_submit_cmd(&order));
+    assert!(
+        result.is_err(),
+        "validate_order_submission should bubble up"
+    );
+
+    let events = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].0, order.client_order_id());
+    assert!(
+        events[0].1.contains(reason_substr),
+        "reason: {}",
+        events[0].1,
+    );
+    assert_eq!(*exchange_count.lock().await, 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_closed_order_returns_silently() {
+    // Submitting an already-closed order is a no-op: no events, no HTTP. A
+    // regression that drops the `is_closed` early-return would re-submit
+    // canceled or filled orders.
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    // start() wires the emitter sender; without it, drain_denied_events would
+    // be vacuous because no event could ever reach `rx`.
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let mut order = make_limit_order("O-CLOSED");
+    let account_id = AccountId::from("HYPERLIQUID-001");
+    let submitted = OrderSubmitted::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account_id,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+    let accepted = OrderAccepted::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        VenueOrderId::from("123"),
+        account_id,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+    );
+    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+    let filled = OrderFilled::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        VenueOrderId::from("123"),
+        account_id,
+        TradeId::new("trade-1"),
+        order.order_side(),
+        OrderType::Limit,
+        order.quantity(),
+        Price::from("56730.0"),
+        Currency::USD(),
+        LiquiditySide::Taker,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        None,
+        Some(Money::new(0.0, Currency::USD())),
+    );
+    order.apply(OrderEventAny::Filled(filled)).unwrap();
+    assert!(order.is_closed(), "order should be terminal before submit");
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client.submit_order(make_submit_cmd(&order)).unwrap();
+
+    let events = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
+    assert!(events.is_empty(), "closed order must not emit any denial");
+    assert_eq!(*exchange_count.lock().await, 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_asset_index_missing_emits_denied() {
+    // Order on an instrument the asset-index map does not know about.
+    // `submit_order` must emit OrderDenied with the specific reason and not
+    // dispatch to the venue.
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let order = make_limit_order_on_instrument(
+        "O-NO-ASSET",
+        InstrumentId::from("NOPE-USD-PERP.HYPERLIQUID"),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client.submit_order(make_submit_cmd(&order)).unwrap();
+
+    let events = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].0, order.client_order_id());
+    assert!(
+        events[0].1.contains("Asset index not found"),
+        "reason: {}",
+        events[0].1,
+    );
+    assert_eq!(*exchange_count.lock().await, 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_market_no_quote_emits_denied() {
+    // A MARKET order requires a cached quote to derive the slippage-adjusted
+    // limit price. Without one, the client must deny so the strategy gets a
+    // clear "subscribe to quote data" signal instead of a silent failure.
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let order = make_market_order("O-MARKET-NO-QUOTE");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client.submit_order(make_submit_cmd(&order)).unwrap();
+
+    let events = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].0, order.client_order_id());
+    assert!(
+        events[0].1.contains("subscribe to quote data"),
+        "reason: {}",
+        events[0].1,
+    );
+    assert_eq!(*exchange_count.lock().await, 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_market_order_uses_resolved_slippage_from_params() {
+    // Submitting a MARKET order with `Params{"market_order_slippage_bps": 50}`
+    // overrides the config default (50 in test config; pick a value clearly
+    // distinct so the action's price reflects the override). The action sent
+    // to the mock should derive the limit price from the cached quote using
+    // the overridden bps. This closes the only weak branch in
+    // `resolve_slippage_bps`.
+    let state = TestServerState::default();
+    let last_action = state.last_exchange_action.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+    let bid = Price::from("50000.0");
+    let ask = Price::from("50100.0");
+    let quote = QuoteTick::new(
+        instrument_id,
+        bid,
+        ask,
+        Quantity::from("1.0"),
+        Quantity::from("1.0"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    cache.borrow_mut().add_quote(quote).unwrap();
+
+    let order = make_market_order("O-MARKET-PARAMS");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let mut params = Params::new();
+    params.insert("market_order_slippage_bps".to_string(), json!(2000u64));
+    client
+        .submit_order(make_submit_cmd_with_params(&order, params))
+        .unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let action = last_action
+        .lock()
+        .await
+        .clone()
+        .expect("an order action should have been sent");
+    let price = action["orders"][0]["p"]
+        .as_str()
+        .expect("price field on order action")
+        .parse::<f64>()
+        .expect("parse price");
+
+    // Buy with 2000 bps slippage on ask 50100 produces a limit far above ask.
+    // 50000 (default 50 bps) would be ~50125; 2000 bps yields ~61122 after
+    // rounding. The exact value depends on price-precision rounding, but it
+    // must be substantially higher than the 50-bps default.
+    assert!(
+        price > 55_000.0,
+        "params override should produce a much wider limit; got {price}",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+fn open_limit_order_with_filled_qty(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: &str,
+    venue_order_id: &str,
+    filled_qty: Quantity,
+) -> OrderAny {
+    let account_id = AccountId::from("HYPERLIQUID-001");
+    let mut order = make_limit_order(client_order_id);
+
+    let submitted = OrderSubmitted::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account_id,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    order
+        .apply(OrderEventAny::Submitted(submitted))
+        .expect("submitted transition");
+
+    let accepted = OrderAccepted::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        VenueOrderId::from(venue_order_id),
+        account_id,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+    );
+    order
+        .apply(OrderEventAny::Accepted(accepted))
+        .expect("accepted transition");
+
+    if filled_qty.raw > 0 {
+        let filled = OrderFilled::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            VenueOrderId::from(venue_order_id),
+            account_id,
+            TradeId::new("trade-partial"),
+            order.order_side(),
+            OrderType::Limit,
+            filled_qty,
+            Price::from("56730.0"),
+            Currency::USD(),
+            LiquiditySide::Taker,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            None,
+            Some(Money::new(0.0, Currency::USD())),
+        );
+        order.apply(OrderEventAny::Filled(filled)).unwrap();
+    }
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    cache.borrow_mut().update_order(&order).unwrap();
+    order
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_modify_order_qty_at_filled_emits_modify_rejected() {
+    // Modify command with `target_total <= filled` must be rejected without
+    // dispatching any HTTP. A regression that drops the guard would amend a
+    // venue order to `quantity = 0`, which the venue interprets as a cancel
+    // and would race the legitimate modify path.
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let voi = VenueOrderId::from("44444");
+    let order = open_limit_order_with_filled_qty(
+        &cache,
+        "O-MOD-AT-FILLED",
+        voi.as_str(),
+        Quantity::from("0.0001"),
+    );
+
+    let cmd = ModifyOrder::new(
+        order.trader_id(),
+        Some(ClientId::from("HYPERLIQUID")),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(voi),
+        Some(Quantity::from("0.0001")),
+        Some(Price::from("56800.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.modify_order(cmd).unwrap();
+
+    let events = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(events.len(), 1, "expected one OrderModifyRejected");
+    assert_eq!(events[0].0, order.client_order_id());
+    assert!(
+        events[0].1.contains("not greater than filled"),
+        "reason: {}",
+        events[0].1,
+    );
+
+    assert_eq!(*exchange_count.lock().await, 0);
+    assert!(
+        client
+            .ws_dispatch_state()
+            .pending_modify(&order.client_order_id())
+            .is_none(),
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_modify_order_subtracts_filled_from_target_total() {
+    // Modify on a partially filled order must send `target_total - filled` to
+    // the venue. A regression that skips the subtraction would re-open the
+    // entire target quantity and double-count the already-filled portion.
+    let state = TestServerState::default();
+    let last_action = state.last_exchange_action.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let voi = VenueOrderId::from("55001");
+    // Order quantity is 0.0001; partially fill 0.00006 so 0.00004 remains
+    // open. With target_total = 0.00009, modify should send 0.00003.
+    let order = open_limit_order_with_filled_qty(
+        &cache,
+        "O-MOD-SUBTRACT",
+        voi.as_str(),
+        Quantity::from("0.00006"),
+    );
+
+    let cmd = ModifyOrder::new(
+        order.trader_id(),
+        Some(ClientId::from("HYPERLIQUID")),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(voi),
+        Some(Quantity::from("0.00009")),
+        Some(Price::from("56800.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.modify_order(cmd).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let action = last_action
+        .lock()
+        .await
+        .clone()
+        .expect("modify action should have been sent");
+    assert_eq!(action.get("type").and_then(|t| t.as_str()), Some("modify"));
+    let size_str = action["order"]["s"]
+        .as_str()
+        .expect("size field on modify action");
+    let size: f64 = size_str.parse().unwrap();
+    assert!(
+        (size - 0.00003).abs() < 1e-9,
+        "modify size must be target_total - filled = 0.00003; got {size_str}",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_list_per_order_inner_error_rejects_only_failing() {
+    // Two-order list where the venue returns one status per order: the first
+    // is a success and the second carries an inline `error`. The execution
+    // client must emit OrderRejected for the failing entry only and leave
+    // the successful order's identity in place.
+    let state = TestServerState::default();
+    *state.order_response_override.lock().await = Some(json!({
+        "status": "ok",
+        "response": {
+            "type": "order",
+            "data": {
+                "statuses": [
+                    {"resting": {"oid": 70001u64}},
+                    {"error": "Order rejected: insufficient margin"},
+                ]
+            }
+        }
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("S-001");
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+    let cid_a = ClientOrderId::new("O-LIST-A");
+    let cid_b = ClientOrderId::new("O-LIST-B");
+
+    let order_a = make_limit_order(cid_a.as_str());
+    let order_b = make_limit_order(cid_b.as_str());
+    let init_a = order_a.init_event().clone();
+    let init_b = order_b.init_event().clone();
+
+    cache
+        .borrow_mut()
+        .add_order(order_a.clone(), None, None, false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order(order_b.clone(), None, None, false)
+        .unwrap();
+
+    let order_list = OrderList::new(
+        OrderListId::from("test-list-1"),
+        instrument_id,
+        strategy_id,
+        vec![cid_a, cid_b],
+        UnixNanos::default(),
+    );
+
+    let cmd = SubmitOrderList::new(
+        trader_id,
+        Some(ClientId::from("HYPERLIQUID")),
+        strategy_id,
+        order_list,
+        vec![init_a, init_b],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order_list(cmd).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let rejected = drain_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(
+        rejected.len(),
+        1,
+        "only the failing order should be rejected"
+    );
+    assert_eq!(rejected[0].0, cid_b);
+    assert!(
+        rejected[0].1.contains("insufficient margin"),
+        "reason: {}",
+        rejected[0].1,
+    );
+
+    // Successful leg keeps its identity; failed leg is cleaned up.
+    assert!(
+        client.ws_dispatch_state().lookup_identity(&cid_a).is_some(),
+        "successful order identity must remain",
+    );
+    assert!(
+        client.ws_dispatch_state().lookup_identity(&cid_b).is_none(),
+        "failed order identity must be cleaned up",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_list_grouped_error_broadcast_to_all() {
+    // When the venue returns fewer statuses than orders (NormalTpsl/PositionTpsl
+    // grouping behavior) and one carries an error, the client must broadcast
+    // OrderRejected to every order in the group and clean up all dispatch
+    // identities and cloid mappings.
+    let state = TestServerState::default();
+    state.inner_order_error_next.store(true, Ordering::Relaxed);
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("S-001");
+    let instrument_id = InstrumentId::from("ETH-USD-PERP.HYPERLIQUID");
+    let cid_p = ClientOrderId::new("O-GRP-P");
+    let cid_tp = ClientOrderId::new("O-GRP-TP");
+    let cid_sl = ClientOrderId::new("O-GRP-SL");
+
+    let parent = OrderAny::Limit(LimitOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        cid_p,
+        OrderSide::Buy,
+        Quantity::from(1),
+        Price::from("3000.00"),
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        false,
+        None,
+        None,
+        None,
+        Some(ContingencyType::Oto),
+        None,
+        Some(vec![cid_tp, cid_sl]),
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+    let take_profit = OrderAny::Limit(LimitOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        cid_tp,
+        OrderSide::Sell,
+        Quantity::from(1),
+        Price::from("3200.00"),
+        TimeInForce::Gtc,
+        None,
+        false,
+        true,
+        false,
+        None,
+        None,
+        None,
+        Some(ContingencyType::Oco),
+        None,
+        Some(vec![cid_sl]),
+        Some(cid_p),
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+    let stop_loss = OrderAny::StopMarket(StopMarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        cid_sl,
+        OrderSide::Sell,
+        Quantity::from(1),
+        Price::from("2800.00"),
+        TriggerType::LastPrice,
+        TimeInForce::Gtc,
+        None,
+        true,
+        false,
+        None,
+        None,
+        None,
+        Some(ContingencyType::Oco),
+        None,
+        Some(vec![cid_tp]),
+        Some(cid_p),
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+
+    let init_p = parent.init_event().clone();
+    let init_tp = take_profit.init_event().clone();
+    let init_sl = stop_loss.init_event().clone();
+
+    cache
+        .borrow_mut()
+        .add_order(parent.clone(), None, None, false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order(take_profit.clone(), None, None, false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order(stop_loss.clone(), None, None, false)
+        .unwrap();
+
+    let order_list = OrderList::new(
+        OrderListId::from("bracket-1"),
+        instrument_id,
+        strategy_id,
+        vec![cid_p, cid_tp, cid_sl],
+        UnixNanos::default(),
+    );
+
+    let cmd = SubmitOrderList::new(
+        trader_id,
+        Some(ClientId::from("HYPERLIQUID")),
+        strategy_id,
+        order_list,
+        vec![init_p, init_tp, init_sl],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order_list(cmd).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let rejected = drain_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let cids: std::collections::HashSet<_> = rejected.iter().map(|(c, _)| *c).collect();
+    assert!(
+        cids.contains(&cid_p) && cids.contains(&cid_tp) && cids.contains(&cid_sl),
+        "every order in the group must be rejected; got {cids:?}",
+    );
+
+    for cid in [cid_p, cid_tp, cid_sl] {
+        assert!(
+            client.ws_dispatch_state().lookup_identity(&cid).is_none(),
+            "{cid} identity should be cleaned up after grouped rejection",
+        );
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_account_perp_endpoint_failure_emits_no_state() {
+    // Mirror of the existing spot-failure test but the perp clearinghouse
+    // returns a malformed payload. The spawned task must bail before emitting
+    // an AccountState. A regression that swallows the perp parse error would
+    // emit a partially-populated state derived only from the spot side.
+    let state = TestServerState::default();
+    // ClearinghouseState defaults most fields, so provide a value with the
+    // wrong type on a field whose default cannot absorb it.
+    *state.perp_clearinghouse_response.lock().await = Some(json!({
+        "assetPositions": "this-should-be-an-array"
+    }));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    client.start().unwrap();
+
+    let cmd = QueryAccount::new(
+        TraderId::from("TESTER-001"),
+        Some(ClientId::from("HYPERLIQUID")),
+        AccountId::from("HYPERLIQUID-001"),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.query_account(cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await;
+    assert!(
+        event.is_err(),
+        "no AccountState should be emitted on perp parse failure; got {event:?}",
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_order_status_reports_filters_open_only_and_time_range() {
+    // Mock a frontendOpenOrders payload with 3 orders so the path's open_only
+    // filter has work to do; assert open_only=true keeps every entry the
+    // venue returns (frontendOpenOrders only ever returns open orders).
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([
+        {
+            "coin": "BTC", "side": "B", "limitPx": "95000.0", "sz": "0.001",
+            "oid": 100001u64, "timestamp": 1700000000000u64, "origSz": "0.001",
+        },
+        {
+            "coin": "BTC", "side": "B", "limitPx": "95100.0", "sz": "0.002",
+            "oid": 100002u64, "timestamp": 1700000010000u64, "origSz": "0.002",
+        },
+        {
+            "coin": "BTC", "side": "B", "limitPx": "95200.0", "sz": "0.003",
+            "oid": 100003u64, "timestamp": 1700000020000u64, "origSz": "0.003",
+        },
+    ]));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let cmd_all = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT)),
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = client
+        .generate_order_status_reports(&cmd_all)
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), 3);
+
+    // Filter by `start` only: keep orders with ts_last >= start. Since
+    // timestamps are converted from ms to ns, choose a cutoff between the
+    // first and second order: 1700000005000 ms == 1700000005000 * 1e6 ns.
+    let cutoff = UnixNanos::from(1_700_000_005_000_000_000u64);
+    let cmd_start = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT)),
+        Some(cutoff),
+        None,
+        None,
+        None,
+    );
+    let reports = client
+        .generate_order_status_reports(&cmd_start)
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), 2);
+
+    // Filter by `end` only: keep orders with ts_last <= end. Set end before
+    // the third order's timestamp.
+    let end = UnixNanos::from(1_700_000_015_000_000_000u64);
+    let cmd_end = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT)),
+        None,
+        Some(end),
+        None,
+        None,
+    );
+    let reports = client
+        .generate_order_status_reports(&cmd_end)
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), 2);
+
+    // Both bounds: keep only the middle order.
+    let cmd_both = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT)),
+        Some(cutoff),
+        Some(end),
+        None,
+        None,
+    );
+    let reports = client
+        .generate_order_status_reports(&cmd_both)
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].venue_order_id, VenueOrderId::from("100002"));
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_fill_reports_filters_time_range() {
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([
+        {
+            "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
+            "time": 1_700_000_000_000u64, "startPosition": "0",
+            "dir": "Open Long", "closedPnl": "0", "hash": "0xaaaa",
+            "oid": 1u64, "crossed": true, "fee": "0.01", "tid": 1u64,
+            "feeToken": "USDC",
+        },
+        {
+            "coin": "BTC", "px": "50100.0", "sz": "0.002", "side": "B",
+            "time": 1_700_000_010_000u64, "startPosition": "0",
+            "dir": "Open Long", "closedPnl": "0", "hash": "0xbbbb",
+            "oid": 2u64, "crossed": true, "fee": "0.02", "tid": 2u64,
+            "feeToken": "USDC",
+        },
+        {
+            "coin": "BTC", "px": "50200.0", "sz": "0.003", "side": "B",
+            "time": 1_700_000_020_000u64, "startPosition": "0",
+            "dir": "Open Long", "closedPnl": "0", "hash": "0xcccc",
+            "oid": 3u64, "crossed": true, "fee": "0.03", "tid": 3u64,
+            "feeToken": "USDC",
+        },
+    ]));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let cutoff = UnixNanos::from(1_700_000_005_000_000_000u64);
+    let end = UnixNanos::from(1_700_000_015_000_000_000u64);
+
+    let cmd_none = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = client.generate_fill_reports(cmd_none).await.unwrap();
+    assert_eq!(reports.len(), 3, "no filter must return every fill");
+
+    let cmd_start = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        Some(cutoff),
+        None,
+        None,
+        None,
+    );
+    let reports = client.generate_fill_reports(cmd_start).await.unwrap();
+    assert_eq!(reports.len(), 2);
+
+    let cmd_end = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        None,
+        Some(end),
+        None,
+        None,
+    );
+    let reports = client.generate_fill_reports(cmd_end).await.unwrap();
+    assert_eq!(reports.len(), 2);
+
+    let cmd_both = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        Some(cutoff),
+        Some(end),
+        None,
+        None,
+    );
+    let reports = client.generate_fill_reports(cmd_both).await.unwrap();
+    assert_eq!(reports.len(), 1);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_mass_status_lookback_filters_only_fills() {
+    // generate_mass_status applies the lookback only to fills. Open orders and
+    // positions must always be returned in full so reconciliation has the
+    // complete current state. A regression that applies the cutoff to other
+    // report types would silently drop orders or positions and mask drift.
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([
+        {
+            "coin": "BTC", "side": "B", "limitPx": "95000.0", "sz": "0.001",
+            "oid": 200001u64, "timestamp": 1u64, "origSz": "0.001",
+        },
+    ]));
+    *state.user_fills_response.lock().await = Some(json!([
+        {
+            "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
+            "time": 1u64, "startPosition": "0",
+            "dir": "Open Long", "closedPnl": "0", "hash": "0xaaaa",
+            "oid": 200001u64, "crossed": true, "fee": "0.01", "tid": 1u64,
+            "feeToken": "USDC",
+        },
+    ]));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    // Lookback of 1 minute: the seeded fill at time=1ms is far older than the
+    // cutoff, so the fill must be filtered out while the open order survives.
+    let mass = client
+        .generate_mass_status(Some(1))
+        .await
+        .unwrap()
+        .expect("mass status payload");
+
+    assert_eq!(
+        mass.order_reports().len(),
+        1,
+        "open orders must not be filtered by lookback",
+    );
+    assert!(
+        mass.fill_reports().is_empty(),
+        "old fills must be excluded from the lookback window",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_get_account_address_uses_explicit_account_address() {
+    // When `config.account_address` is set, the client must use it for info
+    // requests instead of the user_address derived from the private key.
+    // The mock captures the `user` field of the most recent `clearinghouseState`
+    // request so we can assert the override actually flowed through.
+    let state = TestServerState::default();
+    let last_user = state.last_clearinghouse_user.clone();
+    let addr = start_mock_server(state).await;
+
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("HYPERLIQUID-001");
+    let client_id = ClientId::from("HYPERLIQUID");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        Venue::from("HYPERLIQUID"),
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+
+    let explicit_address = "0xcafebabedeadbeef000000000000000000000001";
+    let config = HyperliquidExecClientConfig {
+        private_key: Some(TEST_PRIVATE_KEY.to_string()),
+        base_url_http: Some(format!("http://{addr}/info")),
+        base_url_exchange: Some(format!("http://{addr}/exchange")),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        account_address: Some(explicit_address.to_string()),
+        environment: HyperliquidEnvironment::Mainnet,
+        ..HyperliquidExecClientConfig::default()
+    };
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = HyperliquidExecutionClient::new(core, config).unwrap();
+    add_test_account_to_cache(&cache, account_id);
+
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+
+    let captured = last_user
+        .lock()
+        .await
+        .clone()
+        .expect("clearinghouseState request must have been issued during connect");
+    assert_eq!(
+        captured.to_lowercase(),
+        explicit_address,
+        "config.account_address must be the user supplied to clearinghouseState",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_stop_aborts_ws_stream_and_pending_tasks() {
+    // stop() is the lifecycle counterpart to start(): it must abort the WS
+    // stream handle, drain pending HTTP tasks, mark the core disconnected and
+    // stopped. Hold a submit task open with `pause_next_exchange` so the
+    // pending-tasks assertion has something concrete to observe; an empty
+    // tasks vec would satisfy `pending_tasks_all_finished()` vacuously.
+    let state = TestServerState::default();
+    state.pause_next_exchange.store(true, Ordering::Relaxed);
+    let pause_release = state.pause_release.clone();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+
+    let order = make_limit_order("O-STOP-PEND");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    client.submit_order(make_submit_cmd(&order)).unwrap();
+
+    // Wait until the mock has actually received the request, proving the
+    // spawned task is parked at the HTTP await before we call stop().
+    wait_until_async(
+        move || {
+            let count = exchange_count.clone();
+            async move { *count.lock().await >= 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert!(
+        !client.pending_tasks_all_finished(),
+        "submit_order task must be pending while the mock holds the response",
+    );
+
+    client.stop().unwrap();
+    assert!(!client.is_connected());
+    assert!(
+        client.pending_tasks_all_finished(),
+        "stop() must abort the pending HTTP task",
+    );
+
+    // Idempotent: a second stop() is a no-op.
+    client.stop().unwrap();
+
+    // Release the held mock so its handler can return cleanly.
+    pause_release.notify_one();
+}
+
+// `await_account_registered` hard-codes a 30s timeout inside `connect()`,
+// so exercising the timeout path costs ~30s per test run. The cheap,
+// deterministic version requires plumbing an injectable timeout through
+// `HyperliquidExecClientConfig` or `connect()` -- a public-API change
+// that does not belong inside a test-only patch. The test stays here as
+// documentation of the production gap and runs only when invoked by name
+// (`cargo test ... -- --ignored`).
+#[ignore = "blocks ~30s on hard-coded await_account_registered timeout; revisit once timeout is injectable"]
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_connect_times_out_when_account_never_registers() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, _cache) = create_test_execution_client(addr);
+
+    let result = tokio::time::timeout(Duration::from_secs(40), client.connect()).await;
+    let inner = result.expect("connect should not exceed harness timeout");
+    assert!(
+        inner.is_err(),
+        "connect must fail when account never registers"
+    );
+
+    assert!(!client.is_connected());
+    assert!(client.pending_tasks_all_finished());
 }
