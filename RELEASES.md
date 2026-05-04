@@ -13,6 +13,8 @@ Released on TBD (UTC).
 - Added Coinbase CFM liquidation buffer warning when buffer drops below 20%
 - Added dYdX historical funding rate requests via the `request_funding_rates` HTTP method and PyO3 binding
 - Added Polymarket `OrderStatusReport.filled_qty` dust snap at terminal `Filled` status to absorb venue truncation
+- Added Polymarket `PolymarketFeeModel` backtest fee model with maker-rebate inference
+- Added Polymarket `PolymarketDataLoader.sanitize_info` flag to strip resolution fields on resolved markets
 
 ### Breaking Changes
 - Removed `From<OrderInitialized>` for order types; use `TryFrom` to surface invariant errors via `try_from`/`try_into`
@@ -53,6 +55,10 @@ Released on TBD (UTC).
 - Fixed Polymarket REST fill paths bypassing dust normalization, causing engine state to diverge from venue across paths
 - Fixed Polymarket adapter book resync on `tick_size_change` (#3942), thanks for reporting @graceyangfan
 - Fixed Polymarket WS order parsing of venue cancellations with reason suffix (#3987), thanks for reporting @Javdu10
+- Fixed Polymarket `parse_trades` TradeId collisions on multi-fill `transactionHash` (Python and Rust)
+- Fixed Polymarket `parse_trades` `ts_event` collisions on same-second fills (Python and Rust)
+- Fixed Polymarket `fetch_trades` aborting on historical-offset ceiling; warns and returns partial (Python and Rust)
+- Fixed Polymarket `load_trades` non-deterministic same-second ordering across pages (Python and Rust)
 - Fixed Hyperliquid modify-after-partial-fill sending absolute total quantity to the cancel-replace leg, causing the engine to overfill the order (#3986)
 - Fixed Hyperliquid testnet orders rejected with "Builder fee has not been approved"; testnet orders now omit builder attribution to match the vault-order behavior (#3989)
 - Fixed dYdX FOK and DAY time-in-force orders to reject pre-submission instead of failing at the venue or mapping to GTC

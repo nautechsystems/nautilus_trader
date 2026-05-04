@@ -10322,6 +10322,15 @@ class LongRatio:
     def calculate_from_positions(self, positions: list[Position]) -> float | None: ...
 
 ###################################################################################################
+# Polymarket
+###################################################################################################
+
+def polymarket_trade_sort_key(
+    trade: dict[str, Any],
+) -> tuple[int, str, str, str, str, str]: ...
+def polymarket_trade_id(transaction_hash: str, asset: str, seq: int) -> str: ...
+
+###################################################################################################
 # Binance
 ###################################################################################################
 
