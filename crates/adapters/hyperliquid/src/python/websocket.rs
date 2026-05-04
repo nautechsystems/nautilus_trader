@@ -33,6 +33,13 @@ use crate::{
     },
 };
 
+fn ws_data_to_pyobject(py: Python<'_>, data: Data) -> PyResult<Py<PyAny>> {
+    match data {
+        Data::Custom(custom) => Py::new(py, custom).map(|obj| obj.into_any()),
+        other => Ok(data_to_pycapsule(py, other)),
+    }
+}
+
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HyperliquidWebSocketClient {
@@ -226,6 +233,18 @@ impl HyperliquidWebSocketClient {
                                         }
                                     });
                                 }
+                                NautilusWsMessage::CustomData(data) => {
+                                    Python::attach(|py| match ws_data_to_pyobject(py, data) {
+                                        Ok(py_obj) => {
+                                            call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                        }
+                                        Err(e) => {
+                                            log::error!(
+                                                "Error converting CustomData to Python object: {e}"
+                                            );
+                                        }
+                                    });
+                                }
                                 NautilusWsMessage::ExecutionReports(reports) => {
                                     Python::attach(|py| {
                                         for report in reports {
@@ -354,6 +373,38 @@ impl HyperliquidWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .unsubscribe_trades(instrument_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Subscribe to all mid prices across markets.
+    #[pyo3(name = "subscribe_all_mids")]
+    fn py_subscribe_all_mids<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_all_mids()
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Subscribe to all mid prices across markets for a specific dex.
+    #[pyo3(name = "subscribe_all_mids_with_dex")]
+    fn py_subscribe_all_mids_with_dex<'py>(
+        &self,
+        py: Python<'py>,
+        dex: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_all_mids_with_dex(dex.as_deref())
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())
@@ -517,6 +568,38 @@ impl HyperliquidWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .unsubscribe_bars(bar_type)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Unsubscribe from all mid prices across markets.
+    #[pyo3(name = "unsubscribe_all_mids")]
+    fn py_unsubscribe_all_mids<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_all_mids()
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Unsubscribe from all mid prices across markets for a specific dex.
+    #[pyo3(name = "unsubscribe_all_mids_with_dex")]
+    fn py_unsubscribe_all_mids_with_dex<'py>(
+        &self,
+        py: Python<'py>,
+        dex: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_all_mids_with_dex(dex.as_deref())
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())

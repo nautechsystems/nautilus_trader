@@ -30,11 +30,11 @@ use nautilus_common::{
             BarsResponse, BookResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
             InstrumentsResponse, RequestBars, RequestBookSnapshot, RequestFundingRates,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices,
-            SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
-            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeMarkPrices,
-            UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates,
+            SubscribeIndexPrices, SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes,
+            SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+            UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -278,6 +278,11 @@ impl HyperliquidDataClient {
                                         .send(DataEvent::FundingRate(update))
                                     {
                                         log::error!("Failed to send funding rate update: {e}");
+                                    }
+                                }
+                                NautilusWsMessage::CustomData(data) => {
+                                    if let Err(e) = data_sender.send(DataEvent::Data(data)) {
+                                        log::error!("Failed to send custom data: {e}");
                                     }
                                 }
                                 NautilusWsMessage::Reconnected => {
@@ -565,6 +570,66 @@ impl DataClient for HyperliquidDataClient {
         self.is_connected.store(false, Ordering::Relaxed);
         log::info!("Disconnected: client_id={}", self.client_id);
 
+        Ok(())
+    }
+
+    fn subscribe(&mut self, cmd: SubscribeCustomData) -> anyhow::Result<()> {
+        let data_type = cmd.data_type.type_name();
+
+        if data_type == "HyperliquidAllMids" {
+            let ws = self.ws_client.clone();
+            let dex = cmd
+                .data_type
+                .metadata()
+                .as_ref()
+                .and_then(|m| m.get("dex"))
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string);
+
+            log::debug!("Subscribing to all mids (dex: {:?})", dex.as_deref());
+
+            get_runtime().spawn(async move {
+                if let Err(e) = ws.subscribe_all_mids_with_dex(dex.as_deref()).await {
+                    log::error!("Failed to subscribe to all mids (dex: {dex:?}): {e:?}");
+                }
+            });
+
+            return Ok(());
+        }
+
+        log::warn!("Unsupported custom data subscription: {data_type}");
+        Ok(())
+    }
+
+    fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
+        let data_type = cmd.data_type.type_name();
+
+        if data_type == "HyperliquidAllMids" {
+            let ws = self.ws_client.clone();
+            let dex = cmd
+                .data_type
+                .metadata()
+                .as_ref()
+                .and_then(|m| m.get("dex"))
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string);
+
+            log::debug!("Unsubscribing from all mids (dex: {:?})", dex.as_deref());
+
+            get_runtime().spawn(async move {
+                if let Err(e) = ws.unsubscribe_all_mids_with_dex(dex.as_deref()).await {
+                    log::error!("Failed to unsubscribe from all mids (dex: {dex:?}): {e:?}");
+                }
+            });
+
+            return Ok(());
+        }
+
+        log::warn!("Unsupported custom data unsubscription: {data_type}");
         Ok(())
     }
 

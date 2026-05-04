@@ -1798,7 +1798,8 @@ impl HyperliquidExecutionClient {
                         | NautilusWsMessage::Candle(_)
                         | NautilusWsMessage::MarkPrice(_)
                         | NautilusWsMessage::IndexPrice(_)
-                        | NautilusWsMessage::FundingRate(_) => {}
+                        | NautilusWsMessage::FundingRate(_)
+                        | NautilusWsMessage::CustomData(_) => {}
                     },
                     None => {
                         log::debug!("WebSocket next_event returned None, stream closed");

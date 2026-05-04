@@ -26,6 +26,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.nautilus_pyo3 import HyperliquidEnvironment
 from nautilus_trader.data.messages import RequestBars
@@ -34,6 +35,7 @@ from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeData
 from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
@@ -43,6 +45,7 @@ from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeData
 from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
@@ -53,9 +56,40 @@ from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.identifiers import ClientId
+
+
+class HyperliquidAllMidsData(Data):
+    """
+    Python data object for Hyperliquid allMids custom payload.
+    """
+
+    def __init__(self, mids: dict[str, str], ts_event: int, ts_init: int) -> None:
+        self.mids = mids
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    @property
+    def ts_event(self) -> int:
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        return self._ts_init
+
+    @staticmethod
+    def from_pyo3(pyo3_all_mids: Any) -> HyperliquidAllMidsData:
+        mids_list = pyo3_all_mids.mids  # list[(instrument_id, price)]
+        mids = dict(mids_list)
+        return HyperliquidAllMidsData(
+            mids=mids,
+            ts_event=pyo3_all_mids.ts_event,
+            ts_init=pyo3_all_mids.ts_init,
+        )
 
 
 class HyperliquidDataClient(LiveMarketDataClient):
@@ -180,6 +214,17 @@ class HyperliquidDataClient(LiveMarketDataClient):
                 # to `Data` is still owned and managed by Rust.
                 data = capsule_to_data(msg)
                 self._handle_data(data)
+            elif isinstance(msg, nautilus_pyo3.CustomData):
+                all_mids_cls: Any = getattr(nautilus_pyo3, "HyperliquidAllMids", None)
+                if all_mids_cls is None or not isinstance(msg.data, all_mids_cls):
+                    self._log.warning(
+                        f"Unsupported Hyperliquid custom payload type: {type(msg.data).__name__}",
+                    )
+                    return
+
+                inner = HyperliquidAllMidsData.from_pyo3(msg.data)
+                data_type = DataType(type(msg.data), metadata=msg.data_type.metadata)
+                self._handle_data(CustomData(data_type=data_type, data=inner))
             elif isinstance(msg, nautilus_pyo3.FundingRateUpdate):
                 data = FundingRateUpdate.from_pyo3(msg)
                 self._handle_data(data)
@@ -189,6 +234,42 @@ class HyperliquidDataClient(LiveMarketDataClient):
             self._log.exception("Error handling websocket message", e)
 
     # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    async def _subscribe(self, command: SubscribeData) -> None:
+        data_type = command.data_type
+        data_type_name = data_type.type.__name__
+
+        if data_type_name == "HyperliquidAllMids":
+            metadata = data_type.metadata or {}
+            dex_raw = metadata.get("dex")
+            dex = str(dex_raw).strip() if dex_raw is not None else ""
+
+            if dex:
+                subscribe_all_mids_with_dex: Any = getattr(
+                    self._ws_client,
+                    "subscribe_all_mids_with_dex",
+                    None,
+                )
+
+                if subscribe_all_mids_with_dex is None:
+                    self._log.warning(
+                        "Unsupported Hyperliquid allMids subscription: "
+                        "WebSocket client does not expose subscribe_all_mids_with_dex",
+                    )
+                    return
+                await subscribe_all_mids_with_dex(dex)
+            else:
+                subscribe_all_mids: Any = getattr(self._ws_client, "subscribe_all_mids", None)
+                if subscribe_all_mids is None:
+                    self._log.warning(
+                        "Unsupported Hyperliquid allMids subscription: "
+                        "WebSocket client does not expose subscribe_all_mids",
+                    )
+                    return
+                await subscribe_all_mids()
+            return
+
+        self._log.warning(f"Unsupported custom data subscription: {data_type_name}")
 
     async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
         self._log.info(f"Subscribed to instrument updates for {command.instrument_id}")
@@ -223,6 +304,47 @@ class HyperliquidDataClient(LiveMarketDataClient):
     async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_funding_rates(pyo3_instrument_id)
+
+    async def _unsubscribe(self, command: UnsubscribeData) -> None:
+        data_type = command.data_type
+        data_type_name = data_type.type.__name__
+
+        if data_type_name == "HyperliquidAllMids":
+            metadata = data_type.metadata or {}
+            dex_raw = metadata.get("dex")
+            dex = str(dex_raw).strip() if dex_raw is not None else ""
+
+            if dex:
+                unsubscribe_all_mids_with_dex: Any = getattr(
+                    self._ws_client,
+                    "unsubscribe_all_mids_with_dex",
+                    None,
+                )
+
+                if unsubscribe_all_mids_with_dex is None:
+                    self._log.warning(
+                        "Unsupported Hyperliquid allMids unsubscription: "
+                        "WebSocket client does not expose unsubscribe_all_mids_with_dex",
+                    )
+                    return
+                await unsubscribe_all_mids_with_dex(dex)
+            else:
+                unsubscribe_all_mids: Any = getattr(
+                    self._ws_client,
+                    "unsubscribe_all_mids",
+                    None,
+                )
+
+                if unsubscribe_all_mids is None:
+                    self._log.warning(
+                        "Unsupported Hyperliquid allMids unsubscription: "
+                        "WebSocket client does not expose unsubscribe_all_mids",
+                    )
+                    return
+                await unsubscribe_all_mids()
+            return
+
+        self._log.warning(f"Unsupported custom data unsubscription: {data_type_name}")
 
     async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
         self._log.info(f"Unsubscribed from instrument updates for {command.instrument_id}")

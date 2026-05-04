@@ -668,6 +668,48 @@ impl HyperliquidWebSocketClient {
         Ok(())
     }
 
+    /// Subscribe to all mid prices across markets.
+    pub async fn subscribe_all_mids(&self) -> anyhow::Result<()> {
+        self.subscribe_all_mids_with_dex(None).await
+    }
+
+    /// Subscribe to all mid prices across markets, optionally scoped to a specific dex.
+    pub async fn subscribe_all_mids_with_dex(&self, dex: Option<&str>) -> anyhow::Result<()> {
+        let cmd_tx = self.cmd_tx.read().await;
+
+        let subscription = SubscriptionRequest::AllMids {
+            dex: dex.map(ToString::to_string),
+        };
+
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                subscriptions: vec![subscription],
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
+        Ok(())
+    }
+
+    /// Unsubscribe from all mid prices across markets.
+    pub async fn unsubscribe_all_mids(&self) -> anyhow::Result<()> {
+        self.unsubscribe_all_mids_with_dex(None).await
+    }
+
+    /// Unsubscribe from all mid prices across markets, optionally scoped to a specific dex.
+    pub async fn unsubscribe_all_mids_with_dex(&self, dex: Option<&str>) -> anyhow::Result<()> {
+        let cmd_tx = self.cmd_tx.read().await;
+
+        let subscription = SubscriptionRequest::AllMids {
+            dex: dex.map(ToString::to_string),
+        };
+
+        cmd_tx
+            .send(HandlerCommand::Unsubscribe {
+                subscriptions: vec![subscription],
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send unsubscribe command: {e}"))?;
+        Ok(())
+    }
+
     /// Subscribe to trades for an instrument.
     pub async fn subscribe_trades(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
         let instrument = self
