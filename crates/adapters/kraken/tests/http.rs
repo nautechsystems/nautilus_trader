@@ -2755,12 +2755,13 @@ async fn test_spot_request_account_state_margin_does_not_lock_free_margin() {
         .balances
         .iter()
         .find(|b| b.currency.code.as_str() == "USD")
-        .expect("expected USD wallet balance");
+        .expect("expected USD balance (equity-based synthetic entry)");
     {
         use rust_decimal_macros::dec;
-        assert_eq!(usd_balance.total.as_decimal().normalize(), dec!(200000));
+        // total=e, free=mf, locked=m from fixture (e=198499.67, mf=185999.67, m=12500.00)
+        assert_eq!(usd_balance.total.as_decimal().normalize(), dec!(198499.67));
         assert_eq!(usd_balance.free.as_decimal().normalize(), dec!(185999.67));
-        assert_eq!(usd_balance.locked.as_decimal().normalize(), dec!(14000.33));
+        assert_eq!(usd_balance.locked.as_decimal().normalize(), dec!(12500));
     }
 }
 
@@ -2832,7 +2833,7 @@ async fn test_spot_request_account_state_margin_with_gbp_asset_tags_currency() {
 #[rstest]
 #[tokio::test]
 async fn test_spot_request_account_state_margin_locked_from_free_margin() {
-    // USD wallet (ZUSD=200000.00) carries locked = total - mf per
+    // Synthetic USD balance: total=e, free=mf, locked=m per
     // https://docs.kraken.com/api/docs/rest-api/get-trade-balance/ (mf = e - m).
     use nautilus_model::{enums::AccountType, identifiers::AccountId};
 
@@ -2872,12 +2873,12 @@ async fn test_spot_request_account_state_margin_locked_from_free_margin() {
         .balances
         .iter()
         .find(|b| b.currency.code.as_str() == "USD")
-        .expect("expected USD wallet balance");
+        .expect("expected USD balance (equity-based synthetic entry)");
     {
         use rust_decimal_macros::dec;
-        assert_eq!(usd.total.as_decimal().normalize(), dec!(200000));
+        assert_eq!(usd.total.as_decimal().normalize(), dec!(198499.67));
         assert_eq!(usd.free.as_decimal().normalize(), dec!(185999.67));
-        assert_eq!(usd.locked.as_decimal().normalize(), dec!(14000.33));
+        assert_eq!(usd.locked.as_decimal().normalize(), dec!(12500));
     }
 }
 
