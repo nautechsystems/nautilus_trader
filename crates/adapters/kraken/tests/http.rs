@@ -2750,6 +2750,18 @@ async fn test_spot_request_account_state_margin_does_not_lock_free_margin() {
         "maintenance must be zero — Kraken's TradeBalance reports a single used-margin value (`m`); duplicating it would double-lock equity"
     );
     assert_eq!(mb.currency.code.as_str(), "USD");
+
+    let usd_balance = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code.as_str() == "USD")
+        .expect("expected USD wallet balance");
+    {
+        use rust_decimal_macros::dec;
+        assert_eq!(usd_balance.total.as_decimal().normalize(), dec!(200000));
+        assert_eq!(usd_balance.free.as_decimal().normalize(), dec!(185999.67));
+        assert_eq!(usd_balance.locked.as_decimal().normalize(), dec!(14000.33));
+    }
 }
 
 #[rstest]
@@ -2806,6 +2818,120 @@ async fn test_spot_request_account_state_margin_with_gbp_asset_tags_currency() {
         body.contains("asset=ZGBP"),
         "request body should propagate asset=ZGBP, received: {body}"
     );
+
+    // Target is GBP; fixture has no GBP wallet, so mf must NOT lock the USD entry.
+    if let Some(usd) = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code.as_str() == "USD")
+    {
+        assert_eq!(usd.locked.as_f64(), 0.0);
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_account_state_margin_locked_from_free_margin() {
+    // USD wallet (ZUSD=200000.00) carries locked = total - mf per
+    // https://docs.kraken.com/api/docs/rest-api/get-trade-balance/ (mf = e - m).
+    use nautilus_model::{enums::AccountType, identifiers::AccountId};
+
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Mainnet,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let account_id = AccountId::new("KRAKEN-001");
+    let state = client
+        .request_account_state(account_id, AccountType::Margin, None)
+        .await
+        .unwrap();
+
+    let usd = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code.as_str() == "USD")
+        .expect("expected USD wallet balance");
+    {
+        use rust_decimal_macros::dec;
+        assert_eq!(usd.total.as_decimal().normalize(), dec!(200000));
+        assert_eq!(usd.free.as_decimal().normalize(), dec!(185999.67));
+        assert_eq!(usd.locked.as_decimal().normalize(), dec!(14000.33));
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_account_state_margin_other_wallets_unlocked() {
+    // Non-margin-asset wallets (XBT, ETH) must remain fully unlocked.
+    use nautilus_model::{enums::AccountType, identifiers::AccountId};
+
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Mainnet,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let account_id = AccountId::new("KRAKEN-001");
+    let state = client
+        .request_account_state(account_id, AccountType::Margin, None)
+        .await
+        .unwrap();
+
+    for balance in state
+        .balances
+        .iter()
+        .filter(|b| b.currency.code.as_str() != "USD")
+    {
+        assert_eq!(
+            balance.locked.as_f64(),
+            0.0,
+            "non-margin-asset wallet {} must have locked=0",
+            balance.currency.code
+        );
+        assert_eq!(balance.free.as_f64(), balance.total.as_f64());
+    }
 }
 
 #[rstest]
