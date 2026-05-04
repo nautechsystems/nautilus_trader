@@ -28,7 +28,12 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed `RefCell` reentrancy panic in `ExecutionEngine::handle_order_fill` for OTO parent fills (#3981), thanks for reporting @GreatLandmark
 - Fixed `RefCell` reentrancy in `ExecutionEngine::load_cache` nested `borrow_mut` calls
+- Fixed `RefCell` double-borrow panic in `Portfolio::update_position` when `calculate_account_state` is true
+- Fixed `AccountsManager::update_balances` discarding recalculated balances by mutating a dropped clone
+- Fixed margin `AccountState` events emitting empty balances when balances were populated
+- Fixed `allow_cash_borrowing` not applied to cached cash accounts during simulated venue initialization
 - Fixed `OrderAny::from_events` panic on malformed `OrderInitialized`; reconciliation returns `Err` instead of crashing
+- Fixed `BacktestEngine` not enabling `calculate_account_state` on accounts (#3988), thanks for reporting @magnified103
 - Fixed `MessageBus` late wildcard subscriptions missing events on already-cached topics (#3942), thanks for reporting @graceyangfan
 - Fixed `OrderMatchingEngine` to propagate tick-size to `MatchingCore` (#3942), thanks for reporting @graceyangfan
 - Fixed `ExecutionEngine` reconciliation skipping `OrderUpdated` when both report and order were already `ACCEPTED`
@@ -75,6 +80,9 @@ Released on TBD (UTC).
 - Refined data engine request workflow (#3928), thanks @faysou
 - Improved object materialization in Rust stream Feather to parquet conversion (#3954), thanks @faysou
 - Improved `OwnBookLadder` to defer error logging to callers, removing duplicate own-book error noise
+- Improved live exec clients to log ERROR with `timeout_post_stop` hint when cancel tasks abort on disconnect
+- Improved `update_balance_multi_currency` to delegate negative-balance enforcement to per-account `update_balances`
+- Improved `ExecTester` to refresh tracked orders from cache before modify/cancel-replace so they see venue acks
 - Improved Betfair Rust adapter to suppress late HTTP acceptance at debug level
 - Improved Betfair Rust adapter to suppress noisy `instrument_close` subscribe/unsubscribe warnings
 - Improved Betfair Rust HTTP client `connect()` to short-circuit when authenticated and serialise concurrent callers
@@ -83,8 +91,7 @@ Released on TBD (UTC).
 - Improved Betfair Rust adapter with explicit info-level no-op overrides for unsupported unsubscribe methods
 - Improved Betfair Rust integration test coverage to cover OCM, replace flow, batch ops, and session recovery
 - Improved Interactive Brokers Python 3.14 installation and integration test coverage
-- Improved live exec clients to log ERROR with `timeout_post_stop` hint when cancel tasks abort on disconnect
-- Improved `ExecTester` to refresh tracked orders from cache before modify/cancel-replace so they see venue acks
+- Improved `make build` to leave the venv able to import `nautilus_trader` from any cwd via a local editable `.pth`
 - Optimized `OrderMatchingCore` storage to split `BTreeMap` limit/stop books per side for price-time priority (Rust)
 - Optimized live node biased select to dispatch exec commands ahead of market data (Rust)
 - Optimized live node loop by collapsing six maintenance timers into one shared maintenance dispatcher (Rust)

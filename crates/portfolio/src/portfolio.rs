@@ -2020,12 +2020,17 @@ fn update_order(
     };
 
     // No cache borrow held: AccountsManager borrows cache internally for xrate lookups
+    let mut working_account = account;
+    let mut balances_updated = false;
+
     if let OrderEventAny::Filled(order_filled) = event {
-        let _ =
+        let (post_balance, _state) =
             inner
                 .borrow()
                 .accounts
-                .update_balances(account.clone(), &instrument, *order_filled);
+                .update_balances(working_account, &instrument, *order_filled);
+        working_account = post_balance;
+        balances_updated = true;
 
         let portfolio_clone = Portfolio {
             clock: clock.clone(),
@@ -2051,7 +2056,7 @@ fn update_order(
     }
 
     let account_state = inner.borrow().accounts.update_orders(
-        &account,
+        &working_account,
         &instrument,
         orders_open.iter().collect(),
         clock.borrow().timestamp_ns(),
@@ -2060,10 +2065,13 @@ fn update_order(
     if let Some((updated_account, account_state)) = account_state {
         cache.borrow_mut().update_account(&updated_account).unwrap();
         msgbus::publish_account_state(
-            format!("events.account.{}", account.id()).into(),
+            format!("events.account.{}", updated_account.id()).into(),
             &account_state,
         );
     } else {
+        if balances_updated {
+            cache.borrow_mut().update_account(&working_account).unwrap();
+        }
         log::debug!("Added pending calculation for {}", instrument.id());
         inner.borrow_mut().pending_calcs.insert(instrument.id());
     }
@@ -2137,40 +2145,43 @@ fn update_position(
             .insert(event.instrument_id());
     }
 
-    let cache_ref = cache.borrow();
-    let account = cache_ref.account(&event.account_id());
+    let account = cache.borrow().account(&event.account_id()).cloned();
 
-    if let Some(AccountAny::Margin(margin_account)) = account {
-        if !margin_account.calculate_account_state {
-            return; // Nothing to calculate
+    match account {
+        Some(AccountAny::Margin(margin_account)) => {
+            if !margin_account.calculate_account_state {
+                return; // Nothing to calculate
+            }
+
+            let instrument = match cache.borrow().instrument(&instrument_id).cloned() {
+                Some(instrument) => instrument,
+                None => {
+                    log::error!("Cannot update position: no instrument found for {instrument_id}");
+                    return;
+                }
+            };
+
+            let result = inner.borrow_mut().accounts.update_positions(
+                &margin_account,
+                &instrument,
+                positions_open.iter().collect(),
+                clock.borrow().timestamp_ns(),
+            );
+
+            if let Some((margin_account, _)) = result {
+                cache
+                    .borrow_mut()
+                    .update_account(&AccountAny::Margin(margin_account))
+                    .unwrap();
+            }
         }
-
-        let cache_ref = cache.borrow();
-        let instrument = if let Some(instrument) = cache_ref.instrument(&instrument_id) {
-            instrument
-        } else {
-            log::error!("Cannot update position: no instrument found for {instrument_id}");
-            return;
-        };
-
-        let result = inner.borrow_mut().accounts.update_positions(
-            margin_account,
-            instrument,
-            positions_open.iter().collect(),
-            clock.borrow().timestamp_ns(),
-        );
-        let mut cache_ref = cache.borrow_mut();
-
-        if let Some((margin_account, _)) = result {
-            cache_ref
-                .update_account(&AccountAny::Margin(margin_account))
-                .unwrap();
+        Some(_) => {}
+        None => {
+            log::error!(
+                "Cannot update position: no account registered for {}",
+                event.account_id()
+            );
         }
-    } else if account.is_none() {
-        log::error!(
-            "Cannot update position: no account registered for {}",
-            event.account_id()
-        );
     }
 }
 
