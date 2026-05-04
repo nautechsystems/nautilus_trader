@@ -62,6 +62,8 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Added `OrderMatchingCore::update_price_increment` primitive for tick-size propagation parity (Rust)
+- Added `iter_*` API on `OrderMatchingCore` for zero-allocation read-only iteration of resting orders (Rust)
+- Added Criterion bench suite for `OrderMatchingCore` covering add/get/delete/iterate hot paths (Rust)
 - Added `ContinuousFutureAdjustmentType` enum and `BarBuilder` price adjustment pipeline (Rust)
 - Added native `is_externally_aggregated`/`is_internally_aggregated` methods on `BarType` (Rust)
 - Added live node stress harness with `trade_burst` and `cancel_starvation` scenarios (Rust)
@@ -83,7 +85,8 @@ Released on TBD (UTC).
 - Improved Interactive Brokers Python 3.14 installation and integration test coverage
 - Improved live exec clients to log ERROR with `timeout_post_stop` hint when cancel tasks abort on disconnect
 - Improved `ExecTester` to refresh tracked orders from cache before modify/cancel-replace so they see venue acks
-- Optimized live node biased select to dispatch exec commands ahead of market data
+- Optimized `OrderMatchingCore` storage to split `BTreeMap` limit/stop books per side for price-time priority (Rust)
+- Optimized live node biased select to dispatch exec commands ahead of market data (Rust)
 - Optimized live node loop by collapsing six maintenance timers into one shared maintenance dispatcher (Rust)
 - Upgraded `alloy` crate to v2.0.4
 - Upgraded `databento` crate to v0.49.0

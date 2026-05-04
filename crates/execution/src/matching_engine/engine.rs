@@ -61,7 +61,7 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use crate::{
-    matching_core::{MatchAction, OrderMatchInfo, OrderMatchingCore},
+    matching_core::{MatchAction, OrderMatchingCore, RestingOrder},
     matching_engine::{config::OrderMatchingEngineConfig, ids_generator::IdsGenerator},
     models::{
         fee::{FeeModel, FeeModelAny},
@@ -921,23 +921,20 @@ impl OrderMatchingEngine {
 
     #[must_use]
     /// Returns all open bid orders managed by the matching core.
-    pub const fn get_open_bid_orders(&self) -> &[OrderMatchInfo] {
+    pub fn get_open_bid_orders(&self) -> Vec<RestingOrder> {
         self.core.get_orders_bid()
     }
 
     #[must_use]
     /// Returns all open ask orders managed by the matching core.
-    pub const fn get_open_ask_orders(&self) -> &[OrderMatchInfo] {
+    pub fn get_open_ask_orders(&self) -> Vec<RestingOrder> {
         self.core.get_orders_ask()
     }
 
     #[must_use]
     /// Returns all open orders from both bid and ask sides.
-    pub fn get_open_orders(&self) -> Vec<OrderMatchInfo> {
-        let mut orders = Vec::new();
-        orders.extend_from_slice(self.core.get_orders_bid());
-        orders.extend_from_slice(self.core.get_orders_ask());
-        orders
+    pub fn get_open_orders(&self) -> Vec<RestingOrder> {
+        self.core.get_orders()
     }
 
     #[must_use]
@@ -1694,7 +1691,7 @@ impl OrderMatchingEngine {
         let close = self.instrument_close.take().unwrap();
         log::info!("{} reached expiration", self.instrument.id());
 
-        let open_orders: Vec<OrderMatchInfo> = self.get_open_orders();
+        let open_orders: Vec<RestingOrder> = self.get_open_orders();
         for order_info in &open_orders {
             let order = {
                 let cache = self.cache.borrow();
@@ -2123,7 +2120,7 @@ impl OrderMatchingEngine {
         // Only persist changes if update succeeded and order is still open
         if update_success && order.is_open() {
             let _ = self.core.delete_order(command.client_order_id);
-            let match_info = OrderMatchInfo::new(
+            let match_info = RestingOrder::new(
                 order.client_order_id(),
                 order.order_side().as_specified(),
                 order.order_type(),
@@ -2710,8 +2707,8 @@ impl OrderMatchingEngine {
             }
         }
 
-        let orders_bid = self.core.get_orders_bid().to_vec();
-        let orders_ask = self.core.get_orders_ask().to_vec();
+        let orders_bid = self.core.get_orders_bid();
+        let orders_ask = self.core.get_orders_ask();
 
         self.iterate_orders(timestamp_ns, &orders_bid);
         self.iterate_orders(timestamp_ns, &orders_ask);
@@ -2843,34 +2840,39 @@ impl OrderMatchingEngine {
     }
 
     fn expire_gtd_orders(&mut self, timestamp_ns: UnixNanos) {
-        for match_info in self.core.get_orders() {
-            let order = match self
-                .cache
-                .borrow()
-                .order(&match_info.client_order_id)
-                .cloned()
-            {
-                Some(order) => order,
-                None => continue,
-            };
+        // Collect just the orders to expire by borrowing the core's iterator
+        // (avoids the per-tick clone of every resting order). The cache lookup
+        // through `RefCell::borrow` is compatible with the `&self.core` borrow.
+        let to_expire: Vec<OrderAny> = self
+            .core
+            .iter_orders()
+            .filter_map(|match_info| {
+                let order = self
+                    .cache
+                    .borrow()
+                    .order(&match_info.client_order_id)
+                    .cloned()?;
 
-            if order.is_closed() {
-                continue;
-            }
+                if order.is_closed() {
+                    return None;
+                }
 
-            if order
-                .expire_time()
-                .is_some_and(|expire_ns| timestamp_ns >= expire_ns)
-            {
-                let _ = self.core.delete_order(match_info.client_order_id);
-                self.cached_filled_qty
-                    .swap_remove(&match_info.client_order_id);
-                self.expire_order(&order);
-            }
+                order
+                    .expire_time()
+                    .filter(|expire_ns| timestamp_ns >= *expire_ns)
+                    .map(|_| order)
+            })
+            .collect();
+
+        for order in to_expire {
+            let id = order.client_order_id();
+            let _ = self.core.delete_order(id);
+            self.cached_filled_qty.swap_remove(&id);
+            self.expire_order(&order);
         }
     }
 
-    fn iterate_orders(&mut self, timestamp_ns: UnixNanos, orders: &[OrderMatchInfo]) {
+    fn iterate_orders(&mut self, timestamp_ns: UnixNanos, orders: &[RestingOrder]) {
         for match_info in orders {
             let order = match self
                 .cache
@@ -2923,7 +2925,7 @@ impl OrderMatchingEngine {
 
                 // Persist the activated/updated trailing stop back to the core
                 let _ = self.core.delete_order(match_info.client_order_id);
-                let updated_match_info = OrderMatchInfo::new(
+                let updated_match_info = RestingOrder::new(
                     any.client_order_id(),
                     any.order_side().as_specified(),
                     any.order_type(),
@@ -4160,7 +4162,7 @@ impl OrderMatchingEngine {
             }
         }
 
-        let match_info = OrderMatchInfo::new(
+        let match_info = RestingOrder::new(
             order.client_order_id(),
             order.order_side().as_specified(),
             order.order_type(),

@@ -46,7 +46,7 @@ use nautilus_model::{
 };
 
 use crate::{
-    matching_core::{MatchAction, OrderMatchInfo, OrderMatchingCore},
+    matching_core::{MatchAction, OrderMatchingCore, RestingOrder},
     order_manager::{
         handlers::{CancelOrderHandlerAny, ModifyOrderHandlerAny, SubmitOrderHandlerAny},
         manager::OrderManager,
@@ -459,7 +459,7 @@ impl OrderEmulator {
         self.manager.cache_submit_order_command(command);
 
         // Check if immediately marketable
-        let match_info = OrderMatchInfo::new(
+        let match_info = RestingOrder::new(
             order.client_order_id(),
             order.order_side().as_specified(),
             order.order_type(),
@@ -608,7 +608,7 @@ impl OrderEmulator {
                 .unwrap_or_else(|| order.instrument_id());
 
             if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
-                let match_info = OrderMatchInfo::new(
+                let match_info = RestingOrder::new(
                     order.client_order_id(),
                     order.order_side().as_specified(),
                     order.order_type(),
@@ -660,31 +660,30 @@ impl OrderEmulator {
 
     fn handle_cancel_all_orders(&mut self, command: &CancelAllOrders) {
         let instrument_id = command.instrument_id;
-        let matching_core = match self.matching_cores.get(&instrument_id) {
-            Some(core) => core,
-            None => return, // No orders to cancel
+        let Some(matching_core) = self.matching_cores.get(&instrument_id) else {
+            return; // No orders to cancel
         };
 
-        let orders_to_cancel = match command.order_side {
-            OrderSide::NoOrderSide => {
-                // Get both bid and ask orders
-                let mut all_orders = Vec::new();
-                all_orders.extend(matching_core.get_orders_bid().iter().cloned());
-                all_orders.extend(matching_core.get_orders_ask().iter().cloned());
-                all_orders
-            }
-            OrderSide::Buy => matching_core.get_orders_bid().to_vec(),
-            OrderSide::Sell => matching_core.get_orders_ask().to_vec(),
+        // Borrow the iterator and collect just the IDs (8 bytes each) instead
+        // of full RestingOrder snapshots (72 bytes each). The borrow on
+        // matching_core ends here so the manager mutation can proceed.
+        let ids_to_cancel: Vec<ClientOrderId> = match command.order_side {
+            OrderSide::NoOrderSide => matching_core
+                .iter_orders()
+                .map(|o| o.client_order_id)
+                .collect(),
+            OrderSide::Buy => matching_core
+                .iter_bid_orders()
+                .map(|o| o.client_order_id)
+                .collect(),
+            OrderSide::Sell => matching_core
+                .iter_ask_orders()
+                .map(|o| o.client_order_id)
+                .collect(),
         };
 
-        // Process all orders in a single iteration
-        for match_info in orders_to_cancel {
-            if let Some(order) = self
-                .cache
-                .borrow()
-                .order(&match_info.client_order_id)
-                .cloned()
-            {
+        for id in ids_to_cancel {
+            if let Some(order) = self.cache.borrow().order(&id).cloned() {
                 self.manager.cancel_order(&order);
             }
         }

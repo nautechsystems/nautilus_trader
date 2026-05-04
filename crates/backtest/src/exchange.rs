@@ -35,7 +35,7 @@ use nautilus_core::{
     correctness::{CorrectnessResultExt, FAILED, check_equal},
 };
 use nautilus_execution::{
-    matching_core::OrderMatchInfo,
+    matching_core::RestingOrder,
     matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
     models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModel},
 };
@@ -436,7 +436,7 @@ impl SimulatedExchange {
 
     /// Returns all open orders, optionally filtered by instrument ID.
     #[must_use]
-    pub fn get_open_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<OrderMatchInfo> {
+    pub fn get_open_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<RestingOrder> {
         instrument_id
             .and_then(|id| {
                 self.matching_engines
@@ -453,34 +453,34 @@ impl SimulatedExchange {
 
     /// Returns all open bid orders, optionally filtered by instrument ID.
     #[must_use]
-    pub fn get_open_bid_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<OrderMatchInfo> {
+    pub fn get_open_bid_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<RestingOrder> {
         instrument_id
             .and_then(|id| {
                 self.matching_engines
                     .get(&id)
-                    .map(|engine| engine.get_open_bid_orders().to_vec())
+                    .map(|engine| engine.get_open_bid_orders())
             })
             .unwrap_or_else(|| {
                 self.matching_engines
                     .values()
-                    .flat_map(|engine| engine.get_open_bid_orders().to_vec())
+                    .flat_map(|engine| engine.get_open_bid_orders())
                     .collect()
             })
     }
 
     /// Returns all open ask orders, optionally filtered by instrument ID.
     #[must_use]
-    pub fn get_open_ask_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<OrderMatchInfo> {
+    pub fn get_open_ask_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<RestingOrder> {
         instrument_id
             .and_then(|id| {
                 self.matching_engines
                     .get(&id)
-                    .map(|engine| engine.get_open_ask_orders().to_vec())
+                    .map(|engine| engine.get_open_ask_orders())
             })
             .unwrap_or_else(|| {
                 self.matching_engines
                     .values()
-                    .flat_map(|engine| engine.get_open_ask_orders().to_vec())
+                    .flat_map(|engine| engine.get_open_ask_orders())
                     .collect()
             })
     }
