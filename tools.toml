@@ -5,10 +5,10 @@
 # uv:             pyproject.toml [tool.uv]
 
 [prek]
-version = "0.3.8"
+version = "0.3.11"
 
 [osv-scanner]
-version = "2.3.5"
+version = "2.3.6"
 
 [capnp]
 version = "1.4.0"
