@@ -2225,9 +2225,13 @@ impl OrderMatchingEngine {
         if order.time_in_force() == TimeInForce::AtTheOpen
             || order.time_in_force() == TimeInForce::AtTheClose
         {
-            log::error!(
-                "Market auction for the time in force {} is currently not supported",
-                order.time_in_force()
+            self.generate_order_rejected(
+                order,
+                format!(
+                    "time in force {} is not currently supported",
+                    order.time_in_force()
+                )
+                .into(),
             );
             return;
         }
@@ -2261,6 +2265,20 @@ impl OrderMatchingEngine {
     }
 
     fn process_limit_order(&mut self, order: &mut OrderAny) {
+        if order.time_in_force() == TimeInForce::AtTheOpen
+            || order.time_in_force() == TimeInForce::AtTheClose
+        {
+            self.generate_order_rejected(
+                order,
+                format!(
+                    "time in force {} is not currently supported",
+                    order.time_in_force()
+                )
+                .into(),
+            );
+            return;
+        }
+
         let limit_px = order.price().expect("Limit order must have a price");
         if order.is_post_only()
             && self

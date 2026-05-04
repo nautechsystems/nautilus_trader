@@ -686,6 +686,73 @@ fn test_process_market_order_no_market_rejected(
 }
 
 #[rstest]
+#[case::at_the_open(TimeInForce::AtTheOpen, "AT_THE_OPEN")]
+#[case::at_the_close(TimeInForce::AtTheClose, "AT_THE_CLOSE")]
+fn test_process_market_order_at_the_open_or_close_rejected(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+    #[case] time_in_force: TimeInForce,
+    #[case] tif_str: &str,
+) {
+    let mut engine = get_order_matching_engine(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(time_in_force)
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+
+    engine.process_order(&mut market_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+    let first = saved_messages.first().unwrap();
+    assert_eq!(first.event_type(), OrderEventType::Rejected);
+    assert_eq!(
+        first.message().unwrap(),
+        Ustr::from(format!("time in force {tif_str} is not currently supported").as_str())
+    );
+}
+
+#[rstest]
+#[case::at_the_open(TimeInForce::AtTheOpen, "AT_THE_OPEN")]
+#[case::at_the_close(TimeInForce::AtTheClose, "AT_THE_CLOSE")]
+fn test_process_limit_order_at_the_open_or_close_rejected(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+    #[case] time_in_force: TimeInForce,
+    #[case] tif_str: &str,
+) {
+    let mut engine = get_order_matching_engine(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(time_in_force)
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+
+    engine.process_order(&mut limit_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert_eq!(saved_messages.len(), 1);
+    let first = saved_messages.first().unwrap();
+    assert_eq!(first.event_type(), OrderEventType::Rejected);
+    assert_eq!(
+        first.message().unwrap(),
+        Ustr::from(format!("time in force {tif_str} is not currently supported").as_str())
+    );
+}
+
+#[rstest]
 fn test_bid_ask_initialized(instrument_es: InstrumentAny) {
     let mut engine_l2 = get_order_matching_engine_l2(instrument_es.clone(), None, None, None, None);
     // Create bid and ask orderbook delta and check if
@@ -1178,9 +1245,12 @@ fn test_process_stop_market_order_valid_trigger_filled(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
 ) {
-    // Create normal l2 engine without reject_stop_orders config param
+    let config = OrderMatchingEngineConfig {
+        reject_stop_orders: false,
+        ..Default::default()
+    };
     let mut engine_l2 =
-        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
 
     let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
         .book_action(BookAction::Add)
@@ -1273,8 +1343,12 @@ fn test_process_stop_limit_order_triggered_not_filled(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
 ) {
+    let config = OrderMatchingEngineConfig {
+        reject_stop_orders: false,
+        ..Default::default()
+    };
     let mut engine_l2 =
-        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
 
     let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
         .book_action(BookAction::Add)
@@ -1327,9 +1401,12 @@ fn test_process_stop_limit_order_triggered_filled(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
 ) {
-    // Create normal l2 engine without reject_stop_orders config param
+    let config = OrderMatchingEngineConfig {
+        reject_stop_orders: false,
+        ..Default::default()
+    };
     let mut engine_l2 =
-        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
 
     let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
         .book_action(BookAction::Add)
@@ -2347,8 +2424,12 @@ fn test_process_market_if_touched_order_already_triggered(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
 ) {
+    let config = OrderMatchingEngineConfig {
+        reject_stop_orders: false,
+        ..Default::default()
+    };
     let mut engine_l2 =
-        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
 
     // Add SELL limit orderbook delta to have ask initialized
     let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
@@ -2453,8 +2534,12 @@ fn test_process_limit_if_touched_order_immediate_trigger_and_fill(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
 ) {
+    let config = OrderMatchingEngineConfig {
+        reject_stop_orders: false,
+        ..Default::default()
+    };
     let mut engine_l2 =
-        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
 
     // Add SELL limit orderbook delta to have ask initialized
     let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
@@ -3954,8 +4039,12 @@ fn test_stop_limit_triggered_not_filled_single_accept(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
 ) {
+    let config = OrderMatchingEngineConfig {
+        reject_stop_orders: false,
+        ..Default::default()
+    };
     let mut engine_l2 =
-        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
 
     // Add sell order at 1500
     let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
