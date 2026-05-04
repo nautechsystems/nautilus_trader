@@ -10,7 +10,7 @@
 |------|------|
 | [01-overview.md](./01-overview.md) | Hyperliquid 预测市场概述、USDH、KYC、地区限制 |
 | [02-paper-trading-implementation.md](./02-paper-trading-implementation.md) | 纸面交易实现方案、代码改造清单 |
-| [03-technical-notes.md](./03-technical-notes.md) | 技术细节、API 参考、常见问题（本文件） |
+| [03-development-plan.md](./03-development-plan.md) | 详细开发计划、代码规范、任务分解 |
 
 ## 关键发现摘要
 
