@@ -1696,11 +1696,12 @@ impl KrakenSpotHttpClient {
     /// callers attach to `AccountState.info`. In cash mode the metrics map is empty
     /// and `TradeBalance` is not called.
     ///
-    /// In margin mode, the wallet [`AccountBalance`] for the asset matching
-    /// `margin_balance_asset` carries `locked = total - mf` (clamped via
-    /// `from_total_and_free`); all other wallet entries remain unlocked. This wires
-    /// Kraken's venue-authoritative free margin (`mf = e - m`) directly into risk
-    /// checks so they agree with Kraken's own order-acceptance accounting.
+    /// In margin mode, a synthetic [`AccountBalance`] for `margin_balance_asset`
+    /// replaces its raw wallet entry: `total = e` (equity across all collateral
+    /// assets), `free = mf`, `locked = m` (`= e - mf` per Kraken docs). This
+    /// exposes Kraken's venue-authoritative free margin to risk checks regardless
+    /// of how many assets contribute to equity — avoiding the multi-asset clamp
+    /// that occurs when `mf > single-currency wallet`.
     ///
     /// The single shared fetch keeps Kraken rate-limit usage symmetric with `Balance`
     /// (one request per account update), instead of two as if `request_account_state`
@@ -1714,16 +1715,24 @@ impl KrakenSpotHttpClient {
         let balances_raw = self.inner.get_balance().await?;
         let ts_init = self.generate_ts_init();
 
-        let (margins, metrics, free_margin) = if account_type == AccountType::Margin {
-            let (margins, metrics, mf) =
+        let (margins, metrics, free_margin, target_code) = if account_type == AccountType::Margin {
+            let (margins, metrics, mf, equity) =
                 self.fetch_trade_balance_split(margin_balance_asset).await?;
-            (margins, metrics, Some(mf))
+            let target = normalize_currency_code(margin_balance_asset.unwrap_or("ZUSD"));
+            (margins, metrics, Some((mf, equity)), target)
         } else {
-            (Vec::new(), IndexMap::new(), None)
+            (Vec::new(), IndexMap::new(), None, "")
         };
 
-        // mf = e - m per https://docs.kraken.com/api/docs/rest-api/get-trade-balance/
-        let target_code = normalize_currency_code(margin_balance_asset.unwrap_or("ZUSD"));
+        // Synthetic entry: total=e, free=mf, locked=m — replaces the raw wallet
+        // entry for target_code. A single-currency wallet (e.g., ZUSD) only reflects
+        // cash; e is the USD value of all collateral assets, which is what Kraken uses
+        // for order acceptance (mf = e - m per
+        // https://docs.kraken.com/api/docs/rest-api/get-trade-balance/).
+        let margin_entry: Option<AccountBalance> = free_margin.and_then(|(mf, equity)| {
+            let currency = Currency::new(target_code, 8, 0, "0", CurrencyType::Crypto);
+            AccountBalance::from_total_and_free(equity, mf, currency).ok()
+        });
 
         let balances: Vec<AccountBalance> = balances_raw
             .iter()
@@ -1738,17 +1747,15 @@ impl KrakenSpotHttpClient {
                     .or_else(|| currency_code.strip_prefix("Z"))
                     .unwrap_or(currency_code);
 
-                let currency = Currency::new(normalized_code, 8, 0, "0", CurrencyType::Crypto);
-
-                match free_margin {
-                    Some(mf) if normalized_code == target_code => {
-                        AccountBalance::from_total_and_free(amount, mf, currency).ok()
-                    }
-                    _ => {
-                        AccountBalance::from_total_and_locked(amount, Decimal::ZERO, currency).ok()
-                    }
+                // Replaced by the equity-based margin_entry chained below.
+                if free_margin.is_some() && normalized_code == target_code {
+                    return None;
                 }
+
+                let currency = Currency::new(normalized_code, 8, 0, "0", CurrencyType::Crypto);
+                AccountBalance::from_total_and_locked(amount, Decimal::ZERO, currency).ok()
             })
+            .chain(margin_entry)
             .collect();
 
         let state = AccountState::new(
@@ -1783,13 +1790,20 @@ impl KrakenSpotHttpClient {
     async fn fetch_trade_balance_split(
         &self,
         asset: Option<&str>,
-    ) -> anyhow::Result<(Vec<MarginBalance>, IndexMap<String, String>, Decimal)> {
+    ) -> anyhow::Result<(
+        Vec<MarginBalance>,
+        IndexMap<String, String>,
+        Decimal,
+        Decimal,
+    )> {
         let tb = self.inner.get_trade_balance(asset).await?;
 
         let used_margin = Decimal::from_str_exact(&tb.m)
             .with_context(|| format!("Failed to parse TradeBalance 'm' field {:?}", tb.m))?;
         let free_margin = Decimal::from_str_exact(&tb.mf)
             .with_context(|| format!("Failed to parse TradeBalance 'mf' field {:?}", tb.mf))?;
+        let equity = Decimal::from_str_exact(&tb.e)
+            .with_context(|| format!("Failed to parse TradeBalance 'e' field {:?}", tb.e))?;
 
         let margins = if used_margin.is_zero() {
             Vec::new()
@@ -1819,7 +1833,7 @@ impl KrakenSpotHttpClient {
             normalize_currency_code(asset.unwrap_or("ZUSD")).to_string(),
         );
 
-        Ok((margins, metrics, free_margin))
+        Ok((margins, metrics, free_margin, equity))
     }
 
     /// Returns a flattened snapshot of Kraken's `TradeBalance` margin metrics.
@@ -1840,7 +1854,7 @@ impl KrakenSpotHttpClient {
     ) -> anyhow::Result<IndexMap<String, String>> {
         self.fetch_trade_balance_split(asset)
             .await
-            .map(|(_, metrics, _)| metrics)
+            .map(|(_, metrics, _, _)| metrics)
     }
 
     /// Requests order status reports from Kraken.
