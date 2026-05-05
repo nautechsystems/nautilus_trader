@@ -1459,7 +1459,7 @@ impl ExecutionClient for PolymarketExecutionClient {
             reports
         };
 
-        log::info!("Generated {} order status reports", reports.len());
+        log::debug!("Generated {} order status reports", reports.len());
         Ok(reports)
     }
 
@@ -1489,7 +1489,7 @@ impl ExecutionClient for PolymarketExecutionClient {
 
         let reports = apply_fill_filters(reports, cmd.venue_order_id, cmd.start, cmd.end);
 
-        log::info!("Generated {} fill reports", reports.len());
+        log::debug!("Generated {} fill reports", reports.len());
         Ok(reports)
     }
 
@@ -1511,7 +1511,7 @@ impl ExecutionClient for PolymarketExecutionClient {
             reports.retain(|r| &r.instrument_id == filter_id);
         }
 
-        log::info!("Generated {} position status reports", reports.len());
+        log::debug!("Generated {} position status reports", reports.len());
         Ok(reports)
     }
 

@@ -1155,7 +1155,7 @@ impl ExecutionClient for BetfairExecutionClient {
         )
         .await?;
 
-        log::info!("Generated {} order status reports", reports.len());
+        log::debug!("Generated {} order status reports", reports.len());
         Ok(reports)
     }
 
@@ -1192,7 +1192,7 @@ impl ExecutionClient for BetfairExecutionClient {
         )
         .await?;
 
-        log::info!("Generated {} fill reports", reports.len());
+        log::debug!("Generated {} fill reports", reports.len());
         Ok(reports)
     }
 

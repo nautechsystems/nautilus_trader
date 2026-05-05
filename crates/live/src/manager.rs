@@ -985,7 +985,7 @@ impl ExecutionManager {
                 {
                     let elapsed_ms = nanos_to_millis((ts_now - last_activity).as_u64());
                     let threshold_ms = nanos_to_millis(self.config.open_check_threshold_ns);
-                    log::info!(
+                    log::debug!(
                         "Deferring reconciliation for {client_order_id}: recent local activity ({elapsed_ms}ms < threshold={threshold_ms}ms)",
                     );
                     continue;

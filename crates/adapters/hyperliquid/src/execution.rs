@@ -1588,7 +1588,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             (None, None) => reports,
         };
 
-        log::info!("Generated {} order status reports", reports.len());
+        log::debug!("Generated {} order status reports", reports.len());
         Ok(reports)
     }
 
@@ -1621,7 +1621,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             reports
         };
 
-        log::info!("Generated {} fill reports", reports.len());
+        log::debug!("Generated {} fill reports", reports.len());
         Ok(reports)
     }
 
@@ -1638,7 +1638,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .await
             .context("failed to generate position status reports")?;
 
-        log::info!("Generated {} position status reports", reports.len());
+        log::debug!("Generated {} position status reports", reports.len());
         Ok(reports)
     }
 
