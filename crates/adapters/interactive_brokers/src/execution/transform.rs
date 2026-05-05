@@ -99,7 +99,7 @@ pub fn nautilus_order_to_ib_order(
     // which is handled at the execution client layer.
     let _parent_order_id = order.parent_order_id();
 
-    apply_ib_order_tags(&mut ib_order, order.tags());
+    apply_ib_order_tags(&mut ib_order, order.tags())?;
     apply_order_list_policy(&mut ib_order, order);
 
     Ok(ib_order)
@@ -204,7 +204,7 @@ mod tests {
 
     #[rstest]
     fn test_active_start_time_encoding() {
-        let tags_json = r#"{"activeStartTime": "20250101 09:30:00 EST"}"#;
+        let tags_json = r#"{"activeStartTime": "20250101 09:30:00 UTC"}"#;
         let order = create_test_order_with_tags(tags_json);
         let contract = Contract {
             contract_id: 0,
@@ -221,20 +221,12 @@ mod tests {
         assert!(result.is_ok());
         let ib_order = result.unwrap();
 
-        assert!(!ib_order.order_misc_options.is_empty());
-        let has_active_start = ib_order
-            .order_misc_options
-            .iter()
-            .any(|tv| tv.tag == "activeStartTime" && tv.value == "20250101 09:30:00 EST");
-        assert!(
-            has_active_start,
-            "activeStartTime should be encoded in order_misc_options"
-        );
+        assert_eq!(ib_order.active_start_time, "20250101 09:30:00 UTC");
     }
 
     #[rstest]
     fn test_active_stop_time_encoding() {
-        let tags_json = r#"{"activeStopTime": "20250101 16:00:00 EST"}"#;
+        let tags_json = r#"{"activeStopTime": "20250101 16:00:00 UTC"}"#;
         let order = create_test_order_with_tags(tags_json);
         let contract = Contract {
             contract_id: 0,
@@ -251,20 +243,12 @@ mod tests {
         assert!(result.is_ok());
         let ib_order = result.unwrap();
 
-        assert!(!ib_order.order_misc_options.is_empty());
-        let has_active_stop = ib_order
-            .order_misc_options
-            .iter()
-            .any(|tv| tv.tag == "activeStopTime" && tv.value == "20250101 16:00:00 EST");
-        assert!(
-            has_active_stop,
-            "activeStopTime should be encoded in order_misc_options"
-        );
+        assert_eq!(ib_order.active_stop_time, "20250101 16:00:00 UTC");
     }
 
     #[rstest]
     fn test_both_active_times_encoding() {
-        let tags_json = r#"{"activeStartTime": "20250101 09:30:00 EST", "activeStopTime": "20250101 16:00:00 EST"}"#;
+        let tags_json = r#"{"activeStartTime": "20250101 09:30:00 UTC", "activeStopTime": "20250101 16:00:00 UTC"}"#;
         let order = create_test_order_with_tags(tags_json);
         let contract = Contract {
             contract_id: 0,
@@ -281,19 +265,8 @@ mod tests {
         assert!(result.is_ok());
         let ib_order = result.unwrap();
 
-        assert_eq!(ib_order.order_misc_options.len(), 2);
-        let has_active_start = ib_order
-            .order_misc_options
-            .iter()
-            .any(|tv| tv.tag == "activeStartTime");
-        let has_active_stop = ib_order
-            .order_misc_options
-            .iter()
-            .any(|tv| tv.tag == "activeStopTime");
-        assert!(
-            has_active_start && has_active_stop,
-            "Both activeStartTime and activeStopTime should be encoded"
-        );
+        assert_eq!(ib_order.active_start_time, "20250101 09:30:00 UTC");
+        assert_eq!(ib_order.active_stop_time, "20250101 16:00:00 UTC");
     }
 
     #[rstest]
@@ -323,6 +296,300 @@ mod tests {
             .expect("order transform should succeed");
 
         assert_eq!(ib_order.tif, TimeInForce::OnOpen);
+    }
+
+    #[rstest]
+    fn test_tags_apply_market_on_open_alias() {
+        let tags_json = r#"{"orderType":"MarketOnOpen"}"#;
+        let order = create_test_order_with_tags(tags_json);
+        let contract = Contract {
+            contract_id: 0,
+            symbol: Symbol::from("AAPL"),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("NASDAQ"),
+            currency: Currency::from("USD"),
+            ..Default::default()
+        };
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+
+        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+            .expect("order transform should succeed");
+
+        assert_eq!(ib_order.order_type, "MKT");
+        assert_eq!(ib_order.tif, TimeInForce::OnOpen);
+    }
+
+    #[rstest]
+    fn test_tags_apply_at_auction_alias() {
+        let tags_json = r#"{"orderType":"AtAuction","limitPrice":150.0}"#;
+        let order = create_test_order_with_tags(tags_json);
+        let contract = Contract {
+            contract_id: 0,
+            symbol: Symbol::from("AAPL"),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("NASDAQ"),
+            currency: Currency::from("USD"),
+            ..Default::default()
+        };
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+
+        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+            .expect("order transform should succeed");
+
+        assert_eq!(ib_order.order_type, "MTL");
+        assert_eq!(ib_order.tif, TimeInForce::Auction);
+        assert_eq!(ib_order.limit_price, Some(150.0));
+    }
+
+    #[rstest]
+    fn test_tags_apply_auction_limit_fields() {
+        let tags_json = r#"{
+            "orderType": "AuctionLimit",
+            "auctionStrategy": "Improvement",
+            "startingPrice": 1.25,
+            "stockRefPrice": 150.25,
+            "delta": 0.5,
+            "stockRangeLower": 145.0,
+            "stockRangeUpper": 155.0
+        }"#;
+        let order = create_test_order_with_tags(tags_json);
+        let contract = Contract {
+            contract_id: 0,
+            symbol: Symbol::from("AAPL"),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("NASDAQ"),
+            currency: Currency::from("USD"),
+            ..Default::default()
+        };
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+
+        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+            .expect("order transform should succeed");
+
+        assert_eq!(ib_order.order_type, "LMT");
+        assert_eq!(
+            ib_order.auction_strategy,
+            Some(ibapi::orders::AuctionStrategy::Improvement)
+        );
+        assert_eq!(ib_order.starting_price, Some(1.25));
+        assert_eq!(ib_order.stock_ref_price, Some(150.25));
+        assert_eq!(ib_order.delta, Some(0.5));
+        assert_eq!(ib_order.stock_range_lower, Some(145.0));
+        assert_eq!(ib_order.stock_range_upper, Some(155.0));
+    }
+
+    #[rstest]
+    fn test_tags_apply_auction_relative_fields() {
+        let tags_json = r#"{"orderType":"AuctionRelative","auxPrice":0.01}"#;
+        let order = create_test_order_with_tags(tags_json);
+        let contract = Contract {
+            contract_id: 0,
+            symbol: Symbol::from("AAPL"),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("NASDAQ"),
+            currency: Currency::from("USD"),
+            ..Default::default()
+        };
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+
+        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+            .expect("order transform should succeed");
+
+        assert_eq!(ib_order.order_type, "REL");
+        assert_eq!(ib_order.aux_price, Some(0.01));
+    }
+
+    #[rstest]
+    fn test_tags_apply_generic_ib_order_fields() {
+        let tags_json = r#"{
+            "displaySize": 25,
+            "triggerMethod": 2,
+            "overridePercentageConstraints": true,
+            "rule80A": "A",
+            "openClose": "O",
+            "origin": 1,
+            "shortSaleSlot": 2,
+            "designatedLocation": "SLB",
+            "discretionaryAmt": 0.12,
+            "optOutSmartRouting": true,
+            "volatility": 23.5,
+            "volatilityType": 2,
+            "continuousUpdate": true,
+            "referencePriceType": 2,
+            "deltaNeutralOrderType": "MKT",
+            "deltaNeutralAuxPrice": 1.25,
+            "scaleInitLevelSize": 10,
+            "scaleAutoReset": true,
+            "hedgeType": "D",
+            "hedgeParam": "0.5",
+            "algoStrategy": "Adaptive",
+            "algoParams": [{"tag": "adaptivePriority", "value": "Normal"}],
+            "notHeld": true,
+            "cashQty": 1000.0,
+            "mifid2DecisionMaker": "maker",
+            "autoCancelParent": true,
+            "minTradeQty": 5,
+            "competeAgainstBestOffset": 0.01,
+            "midOffsetAtWhole": 0.02,
+            "referenceContractId": 123,
+            "referenceExchange": "SMART",
+            "adjustedOrderType": "STP",
+            "triggerPrice": 149.0,
+            "conditionsIgnoreRth": true,
+            "usePriceMgmtAlgo": true,
+            "duration": 30,
+            "postToAts": 10,
+            "includeOvernight": true,
+            "manualOrderIndicator": 1,
+            "submitter": "SUB",
+            "NonGuaranteed": true,
+            "orderComboLegs": [{"price": 1.23}],
+            "softDollarTier": {"name": "tier", "value": "val", "display_name": "display"}
+        }"#;
+        let order = create_test_order_with_tags(tags_json);
+        let contract = Contract {
+            contract_id: 0,
+            symbol: Symbol::from("AAPL"),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("NASDAQ"),
+            currency: Currency::from("USD"),
+            ..Default::default()
+        };
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+
+        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+            .expect("order transform should succeed");
+
+        assert_eq!(ib_order.display_size, Some(25));
+        assert_eq!(
+            ib_order.trigger_method,
+            ibapi::orders::conditions::TriggerMethod::Last
+        );
+        assert!(ib_order.override_percentage_constraints);
+        assert_eq!(ib_order.rule_80_a, Some(ibapi::orders::Rule80A::Agency));
+        assert_eq!(
+            ib_order.open_close,
+            Some(ibapi::orders::OrderOpenClose::Open)
+        );
+        assert_eq!(ib_order.origin, ibapi::orders::OrderOrigin::Firm);
+        assert_eq!(
+            ib_order.short_sale_slot,
+            ibapi::orders::ShortSaleSlot::ThirdParty
+        );
+        assert_eq!(ib_order.designated_location, "SLB");
+        assert_eq!(ib_order.discretionary_amt, 0.12);
+        assert!(ib_order.opt_out_smart_routing);
+        assert_eq!(ib_order.volatility, Some(23.5));
+        assert_eq!(
+            ib_order.volatility_type,
+            Some(ibapi::orders::VolatilityType::Annual)
+        );
+        assert!(ib_order.continuous_update);
+        assert_eq!(
+            ib_order.reference_price_type,
+            Some(ibapi::orders::ReferencePriceType::NBBO)
+        );
+        assert_eq!(ib_order.delta_neutral_order_type, "MKT");
+        assert_eq!(ib_order.delta_neutral_aux_price, Some(1.25));
+        assert_eq!(ib_order.scale_init_level_size, Some(10));
+        assert!(ib_order.scale_auto_reset);
+        assert_eq!(ib_order.hedge_type, "D");
+        assert_eq!(ib_order.hedge_param, "0.5");
+        assert_eq!(ib_order.algo_strategy, "Adaptive");
+        assert_eq!(ib_order.algo_params[0].tag, "adaptivePriority");
+        assert_eq!(ib_order.algo_params[0].value, "Normal");
+        assert!(ib_order.not_held);
+        assert_eq!(ib_order.cash_qty, Some(1000.0));
+        assert_eq!(ib_order.mifid2_decision_maker, "maker");
+        assert!(ib_order.auto_cancel_parent);
+        assert_eq!(ib_order.min_trade_qty, Some(5));
+        assert_eq!(ib_order.compete_against_best_offset, Some(0.01));
+        assert_eq!(ib_order.mid_offset_at_whole, Some(0.02));
+        assert_eq!(ib_order.reference_contract_id, 123);
+        assert_eq!(ib_order.reference_exchange, "SMART");
+        assert_eq!(ib_order.adjusted_order_type, "STP");
+        assert_eq!(ib_order.trigger_price, Some(149.0));
+        assert!(ib_order.conditions_ignore_rth);
+        assert!(ib_order.use_price_mgmt_algo);
+        assert_eq!(ib_order.duration, Some(30));
+        assert_eq!(ib_order.post_to_ats, Some(10));
+        assert!(ib_order.include_overnight);
+        assert_eq!(ib_order.manual_order_indicator, Some(1));
+        assert_eq!(ib_order.submitter, "SUB");
+        assert_eq!(ib_order.order_combo_legs[0].price, Some(1.23));
+        assert_eq!(ib_order.soft_dollar_tier.name, "tier");
+        assert_eq!(ib_order.soft_dollar_tier.value, "val");
+        assert_eq!(ib_order.soft_dollar_tier.display_name, "display");
+        assert!(
+            ib_order
+                .smart_combo_routing_params
+                .iter()
+                .any(|tag| tag.tag == "NonGuaranteed" && tag.value == "1")
+        );
+    }
+
+    #[rstest]
+    fn test_invalid_tag_set_rejects_order_transform() {
+        let tags_json = r#"{"whatIf": true, "displaySize": "invalid"}"#;
+        let order = create_test_order_with_tags(tags_json);
+        let contract = Contract {
+            contract_id: 0,
+            symbol: Symbol::from("AAPL"),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("NASDAQ"),
+            currency: Currency::from("USD"),
+            ..Default::default()
+        };
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+
+        let result = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001");
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .expect_err("invalid tag set should reject the order")
+                .to_string()
+                .contains("Invalid IBOrderTags field display_size")
+        );
+    }
+
+    #[rstest]
+    fn test_non_utc_datetime_tag_rejects_order_transform() {
+        let tags_json = r#"{"activeStartTime": "20250101 09:30:00 EST"}"#;
+        let order = create_test_order_with_tags(tags_json);
+        let contract = Contract {
+            contract_id: 0,
+            symbol: Symbol::from("AAPL"),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("NASDAQ"),
+            currency: Currency::from("USD"),
+            ..Default::default()
+        };
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+
+        let result = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001");
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .expect_err("non-UTC datetime tag should reject the order")
+                .to_string()
+                .contains("Invalid IBOrderTags field active_start_time")
+        );
     }
 
     #[rstest]

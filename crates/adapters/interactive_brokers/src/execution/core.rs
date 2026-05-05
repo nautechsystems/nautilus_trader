@@ -564,6 +564,12 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             )
             .await
         {
+            if !self.config.instrument_provider.load_ids.is_empty()
+                || !self.config.instrument_provider.load_contracts.is_empty()
+            {
+                return Err(e).context("Failed to load configured IB instruments on startup");
+            }
+
             tracing::warn!("Failed to load instruments on startup: {}", e);
         }
 

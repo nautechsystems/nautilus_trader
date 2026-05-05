@@ -575,6 +575,7 @@ impl DataClient for InteractiveBrokersDataClient {
             task.abort();
         }
         self.tasks.clear();
+        self.cancellation_token = CancellationToken::new();
 
         Ok(())
     }
@@ -2284,5 +2285,23 @@ mod tests {
         let dt = chrono::DateTime::from_timestamp(1, 2).unwrap();
 
         assert_eq!(datetime_to_unix_nanos(dt), UnixNanos::from(1_000_000_002));
+    }
+
+    #[rstest]
+    fn test_stop_refreshes_cancellation_token_for_restart() {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        nautilus_common::live::runner::replace_data_event_sender(sender);
+
+        let config = InteractiveBrokersDataClientConfig::default();
+        let provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
+            config.instrument_provider.clone(),
+        ));
+        let mut client =
+            InteractiveBrokersDataClient::new(ClientId::from("IB"), config, provider).unwrap();
+
+        client.stop().unwrap();
+
+        assert!(!client.cancellation_token.is_cancelled());
+        assert!(!client.cancellation_token.child_token().is_cancelled());
     }
 }

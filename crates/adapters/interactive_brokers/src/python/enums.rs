@@ -102,12 +102,6 @@ impl IbOrderType {
     #[classattr]
     const MARKET_TO_LIMIT: Self = Self::MarketToLimit;
     #[classattr]
-    const MARKET_ON_OPEN: Self = Self::MarketOnOpen;
-    #[classattr]
-    const LIMIT_ON_OPEN: Self = Self::LimitOnOpen;
-    #[classattr]
-    const AT_AUCTION: Self = Self::AtAuction;
-    #[classattr]
     const MARKET_WITH_PROTECTION: Self = Self::MarketWithProtection;
     #[classattr]
     const STOP_WITH_PROTECTION: Self = Self::StopWithProtection;
@@ -131,14 +125,6 @@ impl IbOrderType {
     const VOLATILITY: Self = Self::Volatility;
     #[classattr]
     const BOX_TOP: Self = Self::BoxTop;
-    #[classattr]
-    const AUCTION_LIMIT: Self = Self::AuctionLimit;
-    #[classattr]
-    const AUCTION_RELATIVE: Self = Self::AuctionRelative;
-    #[classattr]
-    const COMBO_LIMIT: Self = Self::ComboLimit;
-    #[classattr]
-    const COMBO_MARKET: Self = Self::ComboMarket;
     #[classattr]
     const RELATIVE_LIMIT_COMBO: Self = Self::RelativeLimitCombo;
     #[classattr]

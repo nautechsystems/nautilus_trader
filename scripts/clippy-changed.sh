@@ -6,6 +6,7 @@ set -euo pipefail
 
 DESIRED_FEATURES=(ffi python high-precision defi)
 PROFILE="${CARGO_CI_PROFILE:-nextest}"
+export HIGH_PRECISION="${HIGH_PRECISION:-1}"
 
 run_full() {
   echo "Running full workspace clippy"

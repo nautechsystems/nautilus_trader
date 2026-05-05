@@ -523,7 +523,7 @@ class SimpleConditionsStrategy(IbV2OrderStrategy):
 
     def submit_example_orders(self) -> None:
         ib = pyo3.interactive_brokers
-        time_str = (dt.datetime.now() + dt.timedelta(minutes=5)).strftime("%Y%m%d-%H:%M:%S")
+        time_str = (dt.datetime.now(dt.UTC) + dt.timedelta(minutes=5)).strftime("%Y%m%d-%H:%M:%S")
         time_condition = {
             "type": ib.IbConditionKind.TIME.as_str(),
             "time": time_str,

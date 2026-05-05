@@ -142,7 +142,7 @@ def print_conditions_details(node: Any) -> None:
     ib = pyo3.interactive_brokers
     time_condition: dict[str, Any] = {
         "type": ib.IbConditionKind.TIME.as_str(),
-        "time": (dt.datetime.now() + dt.timedelta(minutes=5)).strftime("%Y%m%d-%H:%M:%S"),
+        "time": (dt.datetime.now(dt.UTC) + dt.timedelta(minutes=5)).strftime("%Y%m%d-%H:%M:%S"),
         "isMore": True,
         "conjunction": ib.IbConditionConjunction.AND.as_str(),
     }

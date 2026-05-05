@@ -244,12 +244,6 @@ pub enum IbOrderType {
     LimitIfTouched,
     /// Market-to-limit order.
     MarketToLimit,
-    /// Market-on-open order.
-    MarketOnOpen,
-    /// Limit-on-open order.
-    LimitOnOpen,
-    /// Auction order routed to an exchange auction.
-    AtAuction,
     /// Market order with price protection.
     MarketWithProtection,
     /// Stop order with price protection.
@@ -274,14 +268,6 @@ pub enum IbOrderType {
     Volatility,
     /// Box-top order.
     BoxTop,
-    /// Auction limit order.
-    AuctionLimit,
-    /// Auction relative order.
-    AuctionRelative,
-    /// Combo limit order.
-    ComboLimit,
-    /// Combo market order.
-    ComboMarket,
     /// Relative plus limit combo order.
     RelativeLimitCombo,
     /// Relative plus market combo order.
@@ -304,9 +290,6 @@ impl IbOrderType {
             Self::MarketIfTouched => "MIT",
             Self::LimitIfTouched => "LIT",
             Self::MarketToLimit => "MTL",
-            Self::MarketOnOpen => "MKT",
-            Self::LimitOnOpen => "LMT",
-            Self::AtAuction => "MTL",
             Self::MarketWithProtection => "MKT PRT",
             Self::StopWithProtection => "STP PRT",
             Self::Midprice => "MIDPRICE",
@@ -319,10 +302,6 @@ impl IbOrderType {
             Self::PassiveRelative => "PASSV REL",
             Self::Volatility => "VOL",
             Self::BoxTop => "BOX TOP",
-            Self::AuctionLimit => "LMT",
-            Self::AuctionRelative => "REL",
-            Self::ComboLimit => "LMT",
-            Self::ComboMarket => "MKT",
             Self::RelativeLimitCombo => "REL + LMT",
             Self::RelativeMarketCombo => "REL + MKT",
         }
@@ -340,9 +319,8 @@ impl IbOrderType {
             Self::TrailingStopLimit => NautilusOrderType::TrailingStopLimit,
             Self::MarketIfTouched => NautilusOrderType::MarketIfTouched,
             Self::LimitIfTouched => NautilusOrderType::LimitIfTouched,
-            Self::MarketToLimit | Self::AtAuction => NautilusOrderType::MarketToLimit,
-            Self::MarketOnOpen
-            | Self::MarketWithProtection
+            Self::MarketToLimit => NautilusOrderType::MarketToLimit,
+            Self::MarketWithProtection
             | Self::Midprice
             | Self::PeggedToMarket
             | Self::PeggedToStock
@@ -353,14 +331,9 @@ impl IbOrderType {
             | Self::PassiveRelative
             | Self::Volatility
             | Self::BoxTop
-            | Self::ComboMarket
             | Self::RelativeMarketCombo => NautilusOrderType::Market,
-            Self::LimitOnOpen
-            | Self::AuctionLimit
-            | Self::ComboLimit
-            | Self::RelativeLimitCombo => NautilusOrderType::Limit,
+            Self::RelativeLimitCombo => NautilusOrderType::Limit,
             Self::StopWithProtection => NautilusOrderType::StopMarket,
-            Self::AuctionRelative => NautilusOrderType::Market,
         }
     }
 
