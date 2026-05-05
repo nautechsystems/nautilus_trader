@@ -36,7 +36,12 @@ use databento::{
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_databento::live::{DatabentoMessage, HandlerCommand};
-use nautilus_model::{data::Data, instruments::Instrument};
+use nautilus_model::{
+    data::Data,
+    identifiers::Symbol,
+    instruments::Instrument,
+    types::{Price, Quantity},
+};
 use rstest::rstest;
 
 const INSTRUMENT_ID: u32 = 1;
@@ -124,11 +129,17 @@ async fn test_subscribe_trades() {
     server.expect_subscription();
     server.start();
     server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
-    server.send_record(trade_msg(INSTRUMENT_ID, 100_000_000_000, 50));
+    server.send_record(trade_msg(INSTRUMENT_ID, 1_170_400_000, 50));
     server.disconnect();
 
     let handle = tokio::spawn(async move { handler.run().await });
 
+    cmd_tx
+        .send(HandlerCommand::SetPricePrecision(
+            Symbol::from(RAW_SYMBOL),
+            5,
+        ))
+        .unwrap();
     cmd_tx
         .send(HandlerCommand::Subscribe(subscription(dbn::Schema::Trades)))
         .unwrap();
@@ -138,8 +149,9 @@ async fn test_subscribe_trades() {
     match msg {
         DatabentoMessage::Data(Data::Trade(trade)) => {
             assert_eq!(trade.instrument_id.symbol.as_str(), RAW_SYMBOL);
-            assert!(trade.price.as_f64() > 0.0);
-            assert!(trade.size.as_f64() > 0.0);
+            assert_eq!(trade.price, Price::from("1.17040"));
+            assert_eq!(trade.price.precision, 5);
+            assert_eq!(trade.size, Quantity::from(50));
         }
         other => panic!("expected Data::Trade, was {other:?}"),
     }
@@ -161,14 +173,20 @@ async fn test_subscribe_quotes_mbp1() {
     server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
     server.send_record(mbp1_msg(
         INSTRUMENT_ID,
-        100_000_000_000, // bid 100.00
-        101_000_000_000, // ask 101.00
-        b'A',            // Add action
+        1_170_350_000, // bid 1.17035
+        1_170_400_000, // ask 1.17040
+        b'A',          // Add action
     ));
     server.disconnect();
 
     let handle = tokio::spawn(async move { handler.run().await });
 
+    cmd_tx
+        .send(HandlerCommand::SetPricePrecision(
+            Symbol::from(RAW_SYMBOL),
+            5,
+        ))
+        .unwrap();
     cmd_tx
         .send(HandlerCommand::Subscribe(subscription(dbn::Schema::Mbp1)))
         .unwrap();
@@ -178,7 +196,10 @@ async fn test_subscribe_quotes_mbp1() {
     match msg {
         DatabentoMessage::Data(Data::Quote(quote)) => {
             assert_eq!(quote.instrument_id.symbol.as_str(), RAW_SYMBOL);
-            assert!(quote.bid_price.as_f64() < quote.ask_price.as_f64());
+            assert_eq!(quote.bid_price, Price::from("1.17035"));
+            assert_eq!(quote.bid_price.precision, 5);
+            assert_eq!(quote.ask_price, Price::from("1.17040"));
+            assert_eq!(quote.ask_price.precision, 5);
         }
         other => panic!("expected Data::Quote, was {other:?}"),
     }

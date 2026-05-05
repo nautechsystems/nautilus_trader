@@ -7826,6 +7826,7 @@ class DatabentoLiveClient:
         stype_in: str | None = None,
         start: int | None = None,
         snapshot: bool | None = False,
+        price_precisions: list[int | None] | None = None,
     ) -> dict[str, str]: ...
     def start(
         self,

@@ -208,7 +208,7 @@ impl DatabentoLiveClient {
     }
 
     #[pyo3(name = "subscribe")]
-    #[pyo3(signature = (schema, instrument_ids, start=None, snapshot=None))]
+    #[pyo3(signature = (schema, instrument_ids, start=None, snapshot=None, price_precisions=None))]
     #[expect(clippy::needless_pass_by_value)]
     fn py_subscribe(
         &mut self,
@@ -216,12 +216,32 @@ impl DatabentoLiveClient {
         instrument_ids: Vec<InstrumentId>,
         start: Option<u64>,
         snapshot: Option<bool>,
+        price_precisions: Option<Vec<Option<u8>>>,
     ) -> PyResult<()> {
         self.symbol_venue_map.rcu(|m| {
             for id in &instrument_ids {
                 m.entry(id.symbol).or_insert(id.venue);
             }
         });
+
+        if let Some(precisions) = price_precisions {
+            if precisions.len() != instrument_ids.len() {
+                return Err(to_pyvalue_err(format!(
+                    "`price_precisions` length ({}) must match `instrument_ids` length ({})",
+                    precisions.len(),
+                    instrument_ids.len()
+                )));
+            }
+
+            for (instrument_id, precision) in instrument_ids.iter().zip(precisions) {
+                if let Some(precision) = precision {
+                    self.send_command(HandlerCommand::SetPricePrecision(
+                        instrument_id.symbol,
+                        precision,
+                    ))?;
+                }
+            }
+        }
         let symbols: Vec<String> = instrument_ids
             .iter()
             .map(|id| id.symbol.to_string())
