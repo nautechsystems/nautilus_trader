@@ -32,6 +32,11 @@ from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
 from nautilus_trader.adapters.hyperliquid.factories import HyperliquidLiveDataClientFactory
 from nautilus_trader.adapters.hyperliquid.factories import HyperliquidLiveExecClientFactory
+from nautilus_trader.adapters.hyperliquid.paper import OUTCOME_MAX_PRICE
+from nautilus_trader.adapters.hyperliquid.paper import OUTCOME_MIN_PRICE
+from nautilus_trader.adapters.hyperliquid.paper import is_outcome_instrument_id
+from nautilus_trader.adapters.hyperliquid.paper import select_outcome_instrument_id
+from nautilus_trader.adapters.hyperliquid.paper import validate_outcome_price
 from nautilus_trader.adapters.hyperliquid.providers import HyperliquidInstrumentProvider
 
 
@@ -45,4 +50,9 @@ __all__ = [
     "HyperliquidLiveDataClientFactory",
     "HyperliquidLiveExecClientFactory",
     "HyperliquidProductType",
+    "OUTCOME_MIN_PRICE",
+    "OUTCOME_MAX_PRICE",
+    "is_outcome_instrument_id",
+    "validate_outcome_price",
+    "select_outcome_instrument_id",
 ]

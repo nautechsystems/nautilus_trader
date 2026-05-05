@@ -70,6 +70,7 @@ use crate::{
             HyperliquidExecGrouping, HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind,
             SpotClearinghouseState,
         },
+        outcome_validation::validate_outcome_order,
     },
     websocket::{
         ExecutionReport, NautilusWsMessage,
@@ -134,14 +135,18 @@ impl HyperliquidExecutionClient {
             .map_or(self.config.market_order_slippage_bps, |v| v as u32)
     }
 
-    fn validate_order_submission(&self, order: &OrderAny) -> anyhow::Result<()> {
+    fn validate_order_submission(order: &OrderAny) -> anyhow::Result<()> {
         // Check if instrument symbol is supported
-        // Hyperliquid instruments: {base}-USD-PERP or {base}-{quote}-SPOT
+        // Hyperliquid instruments:
+        // - Perps: {base}-USD-PERP
+        // - Spot: {base}-{quote}-SPOT
+        // - Outcomes: OUTCOME-{id}-{YES|NO}-OUTCOME
         let instrument_id = order.instrument_id();
         let symbol = instrument_id.symbol.as_str();
-        if !symbol.ends_with("-PERP") && !symbol.ends_with("-SPOT") {
+        if !symbol.ends_with("-PERP") && !symbol.ends_with("-SPOT") && !symbol.ends_with("-OUTCOME")
+        {
             anyhow::bail!(
-                "Unsupported instrument symbol format for Hyperliquid: {symbol} (expected -PERP or -SPOT suffix)"
+                "Unsupported instrument symbol format for Hyperliquid: {symbol} (expected -PERP, -SPOT, or -OUTCOME suffix)"
             );
         }
 
@@ -185,6 +190,9 @@ impl HyperliquidExecutionClient {
                 order.order_type()
             );
         }
+
+        // Apply outcome-specific guardrails (price bounds, order-shape checks).
+        validate_outcome_order(order, &instrument_id).map_err(anyhow::Error::msg)?;
 
         Ok(())
     }
@@ -503,7 +511,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
-        if let Err(e) = self.validate_order_submission(&order) {
+        if let Err(e) = Self::validate_order_submission(&order) {
             self.emitter
                 .emit_order_denied(&order, &format!("Validation failed: {e}"));
             return Err(e);
@@ -659,6 +667,12 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let mut hyperliquid_orders = Vec::new();
 
         for order in &orders {
+            if let Err(e) = Self::validate_order_submission(order) {
+                self.emitter
+                    .emit_order_denied(order, &format!("Validation failed: {e}"));
+                continue;
+            }
+
             let symbol = order.instrument_id().symbol.to_string();
             let asset = match http_client.get_asset_index(&symbol) {
                 Some(a) => a,
@@ -1948,8 +1962,8 @@ mod tests {
     use ustr::Ustr;
 
     use super::{
-        Cloid, ExecutionReport, FifoCache, HyperliquidWebSocketClient, OrderIdentity,
-        WsDispatchState, determine_order_list_grouping, handle_execution_report,
+        Cloid, ExecutionReport, FifoCache, HyperliquidExecutionClient, HyperliquidWebSocketClient,
+        OrderIdentity, WsDispatchState, determine_order_list_grouping, handle_execution_report,
         register_order_identity_into,
     };
     use crate::{common::enums::HyperliquidEnvironment, http::models::HyperliquidExecGrouping};
@@ -2230,6 +2244,53 @@ mod tests {
             Default::default(),
             Default::default(),
         ))
+    }
+
+    fn outcome_limit_order(id: &str, price: &str) -> OrderAny {
+        OrderAny::Limit(LimitOrder::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from("OUTCOME-2-YES-OUTCOME.HYPERLIQUID"),
+            ClientOrderId::from(id),
+            OrderSide::Buy,
+            Quantity::from("10"),
+            Price::from(price),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            Some(ContingencyType::NoContingency),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Default::default(),
+            Default::default(),
+        ))
+    }
+
+    #[rstest]
+    fn test_validate_order_submission_accepts_outcome_limit_in_range() {
+        let order = outcome_limit_order("O-OUT-OK", "0.750");
+        assert!(HyperliquidExecutionClient::validate_order_submission(&order).is_ok());
+    }
+
+    #[rstest]
+    fn test_validate_order_submission_rejects_outcome_limit_above_max() {
+        let order = outcome_limit_order("O-OUT-BAD", "1.001");
+        let err = HyperliquidExecutionClient::validate_order_submission(&order)
+            .expect_err("outcome price above max should be rejected");
+        assert!(
+            err.to_string().contains("Outcome market price"),
+            "error should come from outcome validation, got: {err}",
+        );
     }
 
     #[rstest]

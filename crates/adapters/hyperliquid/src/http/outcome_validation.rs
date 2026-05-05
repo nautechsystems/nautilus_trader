@@ -144,11 +144,21 @@ pub fn validate_price_range(price: &Price) -> Result<(), String> {
 ///
 /// A tuple of (min_price, max_price) for outcome markets.
 pub fn get_outcome_price_range() -> (Price, Price) {
-    (Price::from(OUTCOME_MIN_PRICE), Price::from(OUTCOME_MAX_PRICE))
+    (
+        Price::from(OUTCOME_MIN_PRICE),
+        Price::from(OUTCOME_MAX_PRICE),
+    )
 }
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::{
+        enums::{OrderSide, TimeInForce},
+        identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
+        orders::{OrderAny, limit::LimitOrder},
+        types::{Price, Quantity},
+    };
+
     use super::*;
     use rstest::rstest;
 
@@ -163,9 +173,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case("0.001", true)]  // Minimum valid
-    #[case("0.500", true)]  // Middle
-    #[case("0.999", true)]  // Maximum valid
+    #[case("0.001", true)] // Minimum valid
+    #[case("0.500", true)] // Middle
+    #[case("0.999", true)] // Maximum valid
     #[case("0.000", false)] // Below minimum
     #[case("1.000", false)] // At 1.0 (settled)
     #[case("1.500", false)] // Above maximum
@@ -185,5 +195,49 @@ mod tests {
         let (min, max) = get_outcome_price_range();
         assert_eq!(min.to_string(), "0.001");
         assert_eq!(max.to_string(), "0.999");
+    }
+
+    fn make_limit_order(price: &str) -> OrderAny {
+        OrderAny::Limit(LimitOrder::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from("OUTCOME-2-YES-OUTCOME.HYPERLIQUID"),
+            ClientOrderId::from("O-VAL-001"),
+            OrderSide::Buy,
+            Quantity::from("10"),
+            Price::from(price),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Default::default(),
+            Default::default(),
+        ))
+    }
+
+    #[test]
+    fn test_validate_outcome_order_passes_for_valid_outcome_price() {
+        let order = make_limit_order("0.650");
+        let instrument_id = InstrumentId::from("OUTCOME-2-YES-OUTCOME.HYPERLIQUID");
+        assert!(validate_outcome_order(&order, &instrument_id).is_ok());
+    }
+
+    #[test]
+    fn test_validate_outcome_order_rejects_invalid_outcome_price() {
+        let order = make_limit_order("1.100");
+        let instrument_id = InstrumentId::from("OUTCOME-2-YES-OUTCOME.HYPERLIQUID");
+        assert!(validate_outcome_order(&order, &instrument_id).is_err());
     }
 }

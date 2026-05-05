@@ -19,7 +19,7 @@
 //! execution for paper trading prediction markets.
 //!
 //! Run with:
-//! `cargo run --example hyperliquid-outcome-paper --package nautilus-hyperliquid --features examples`
+//! `cargo run --example hyperliquid-outcome-paper --package nautilus-hyperliquid --features example-outcome-paper`
 //!
 //! # Overview
 //!
@@ -41,6 +41,7 @@ use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_hyperliquid::{
     HyperliquidDataClientConfig, HyperliquidDataClientFactory,
     common::enums::HyperliquidEnvironment,
+    http::{client::HyperliquidHttpClient, parse::HyperliquidMarketType},
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
@@ -63,9 +64,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let node_name = "HYPERLIQUID-OUTCOME-PAPER-001".to_string();
     let client_id = ClientId::new("SANDBOX");
 
-    // Outcome market instrument IDs
-    // Format: OUTCOME-{outcome_id}-{YES|NO}-OUTCOME.HYPERLIQUID
-    let outcome_instrument = InstrumentId::from("OUTCOME-2-YES-OUTCOME.HYPERLIQUID");
+    // Discover a currently listed outcome market instrument at runtime to
+    // avoid hard-coding a potentially stale symbol.
+    let discovery_client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 30, None)?;
+    let outcome_defs = discovery_client.request_instrument_defs().await?;
+    let outcome_symbol = outcome_defs
+        .iter()
+        .find(|def| {
+            def.market_type == HyperliquidMarketType::Outcome
+                && def.symbol.as_str().ends_with("-YES-OUTCOME")
+        })
+        .or_else(|| {
+            outcome_defs
+                .iter()
+                .find(|def| def.market_type == HyperliquidMarketType::Outcome)
+        })
+        .ok_or("No outcome market instrument found on Hyperliquid")?;
+    let outcome_id = format!("{}.HYPERLIQUID", outcome_symbol.symbol.as_str());
+    let outcome_instrument = InstrumentId::from(outcome_id.as_str());
 
     // Configure Hyperliquid data client (live data)
     let hyperliquid_data_config = HyperliquidDataClientConfig {
@@ -75,18 +91,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Configure sandbox execution client (simulated execution)
-    let usdh_currency = Currency::try_from_str("USDH").unwrap_or(
-        Currency::new("USDH", 6, 0, "USDH", CurrencyType::Crypto)
-    );
+    let usdh_currency = Currency::try_from_str("USDH").unwrap_or(Currency::new(
+        "USDH",
+        6,
+        0,
+        "USDH",
+        CurrencyType::Crypto,
+    ));
 
     let sandbox_exec_config = SandboxExecutionClientConfig::builder()
         .trader_id(trader_id)
         .account_id(account_id)
         .venue(Venue::new("HYPERLIQUID"))
         .base_currency(usdh_currency)
-        .starting_balances(vec![
-            Money::new(10_000.0, Currency::new("USDH", 6, 0, "USDH", CurrencyType::Crypto)),
-        ])
+        .starting_balances(vec![Money::new(
+            10_000.0,
+            Currency::new("USDH", 6, 0, "USDH", CurrencyType::Crypto),
+        )])
         .build();
 
     // Create factories

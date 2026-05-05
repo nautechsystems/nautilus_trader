@@ -28,6 +28,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
@@ -94,11 +95,24 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
 
     async def _load_instruments(self) -> list[Instrument]:
         try:
-            pyo3_instruments = await self._client.load_instrument_definitions(
-                include_spot=HyperliquidProductType.SPOT in self._product_types,
-                include_perps=HyperliquidProductType.PERP in self._product_types,
-                include_perps_hip3=HyperliquidProductType.PERP_HIP3 in self._product_types,
-            )
+            try:
+                pyo3_instruments = await self._client.load_instrument_definitions(
+                    include_spot=HyperliquidProductType.SPOT in self._product_types,
+                    include_perps=HyperliquidProductType.PERP in self._product_types,
+                    include_perps_hip3=HyperliquidProductType.PERP_HIP3 in self._product_types,
+                    include_outcomes=HyperliquidProductType.OUTCOME in self._product_types,
+                )
+            except TypeError:
+                if HyperliquidProductType.OUTCOME in self._product_types:
+                    raise RuntimeError(
+                        "Outcome instrument loading requires an updated Hyperliquid PyO3 client "
+                        "with include_outcomes support",
+                    )
+                pyo3_instruments = await self._client.load_instrument_definitions(
+                    include_spot=HyperliquidProductType.SPOT in self._product_types,
+                    include_perps=HyperliquidProductType.PERP in self._product_types,
+                    include_perps_hip3=HyperliquidProductType.PERP_HIP3 in self._product_types,
+                )
             # Store PyO3 instruments for WebSocket client
             self._instruments_pyo3 = pyo3_instruments
 
@@ -154,6 +168,8 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
             return HyperliquidProductType.PERP
         if isinstance(instrument, CurrencyPair):
             return HyperliquidProductType.SPOT
+        if isinstance(instrument, BinaryOption):
+            return HyperliquidProductType.OUTCOME
 
         self._log.warning(
             f"Ignoring Hyperliquid instrument {instrument.id.value} (unsupported type {type(instrument).__name__})",
@@ -183,6 +199,8 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
 
         if isinstance(instrument, CryptoPerpetual):
             market_type = "perp_hip3" if ":" in instrument.id.symbol.value else "perp"
+        elif isinstance(instrument, BinaryOption):
+            market_type = "outcome"
         else:
             market_type = "spot"
         kinds = _normalize(filters.get("market_types") or filters.get("kinds"), to_lower=True)

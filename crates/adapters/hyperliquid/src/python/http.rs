@@ -162,13 +162,14 @@ impl HyperliquidHttpClient {
         })
     }
 
-    #[pyo3(name = "load_instrument_definitions", signature = (include_spot=true, include_perps=true, include_perps_hip3=false))]
+    #[pyo3(name = "load_instrument_definitions", signature = (include_spot=true, include_perps=true, include_perps_hip3=false, include_outcomes=false))]
     fn py_load_instrument_definitions<'py>(
         &self,
         py: Python<'py>,
         include_spot: bool,
         include_perps: bool,
         include_perps_hip3: bool,
+        include_outcomes: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -187,6 +188,7 @@ impl HyperliquidHttpClient {
                     }
                 }
                 HyperliquidMarketType::Spot => include_spot,
+                HyperliquidMarketType::Outcome => include_outcomes,
             });
 
             let mut instruments = client.convert_defs(defs);

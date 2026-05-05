@@ -22,7 +22,8 @@ crate-type = ["rlib"]
 
 [features]
 default = ["high-precision"]
-examples = ["nautilus-live/node", "nautilus-network/transport-sockudo", "dep:nautilus-sandbox"]
+examples = ["nautilus-live/node", "nautilus-network/transport-sockudo"]
+example-outcome-paper = ["examples", "dep:nautilus-sandbox"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
@@ -154,9 +155,9 @@ path = "examples/node_exec_tester.rs"
 required-features = ["examples"]
 doc = false
 
-# Run with `cargo run --example hyperliquid-outcome-paper --package nautilus-hyperliquid --features examples`.
+# Run with `cargo run --example hyperliquid-outcome-paper --package nautilus-hyperliquid --features example-outcome-paper`.
 [[example]]
 name = "hyperliquid-outcome-paper"
 path = "examples/outcome_paper.rs"
-required-features = ["examples"]
+required-features = ["example-outcome-paper"]
 doc = false

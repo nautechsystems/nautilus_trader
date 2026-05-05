@@ -55,6 +55,18 @@ class TestHyperliquidInstrumentProvider:
         assert provider is not None
         assert HyperliquidProductType.SPOT in provider._product_types
 
+    def test_provider_with_outcome_only(self, mock_http_client):
+        # Arrange & Act
+        provider = HyperliquidInstrumentProvider(
+            client=mock_http_client,
+            config=InstrumentProviderConfig(),
+            product_types=[HyperliquidProductType.OUTCOME],
+        )
+
+        # Assert
+        assert provider is not None
+        assert HyperliquidProductType.OUTCOME in provider._product_types
+
     def test_provider_with_both_product_types(self, mock_http_client):
         # Arrange & Act
         provider = HyperliquidInstrumentProvider(
