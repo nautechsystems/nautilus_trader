@@ -162,6 +162,28 @@ impl OrderSigner {
     }
 }
 
+/// Computes the EIP-712 signing hash used by Polymarket as the order ID.
+///
+/// The `neg_risk` flag selects which exchange contract to use as the
+/// EIP-712 `verifyingContract`.
+pub fn order_hash(order: &PolymarketOrder, neg_risk: bool) -> Result<B256> {
+    let eip712_order = build_eip712_order(order)?;
+    let contract = if neg_risk {
+        NEG_RISK_CTF_EXCHANGE
+    } else {
+        CTF_EXCHANGE
+    };
+
+    let domain = eip712_domain! {
+        name: DOMAIN_NAME,
+        version: DOMAIN_VERSION,
+        chain_id: POLYGON_CHAIN_ID,
+        verifying_contract: contract,
+    };
+
+    Ok(eip712_order.eip712_signing_hash(&domain))
+}
+
 /// Signs a ClobAuth EIP-712 message for L1 API authentication.
 ///
 /// Used to create or derive API credentials via the CLOB `/auth/api-key`
@@ -526,22 +548,6 @@ mod tests {
         }
     }
 
-    fn expected_signing_hash(order: &PolymarketOrder, neg_risk: bool) -> B256 {
-        let eip712_order = build_eip712_order(order).unwrap();
-        let contract = if neg_risk {
-            NEG_RISK_CTF_EXCHANGE
-        } else {
-            CTF_EXCHANGE
-        };
-        let domain = eip712_domain! {
-            name: DOMAIN_NAME,
-            version: DOMAIN_VERSION,
-            chain_id: POLYGON_CHAIN_ID,
-            verifying_contract: contract,
-        };
-        eip712_order.eip712_signing_hash(&domain)
-    }
-
     #[rstest]
     #[case::buy_standard_eoa(
         parity_order(
@@ -625,7 +631,7 @@ mod tests {
     ) {
         let signer = test_signer();
 
-        let hash = expected_signing_hash(&order, neg_risk);
+        let hash = order_hash(&order, neg_risk).unwrap();
         assert_eq!(format!("{hash:#x}"), expected_hash_hex, "signing hash");
 
         let signature = signer.sign_order(&order, neg_risk).unwrap();

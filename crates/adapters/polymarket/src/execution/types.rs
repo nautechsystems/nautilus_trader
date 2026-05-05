@@ -18,6 +18,7 @@
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
+    identifiers::VenueOrderId,
     orders::OrderAny,
     types::{Price, Quantity},
 };
@@ -61,6 +62,7 @@ pub(crate) struct SignedLimitOrderSubmission {
     pub(crate) order: PolymarketOrder,
     pub(crate) order_type: PolymarketOrderType,
     pub(crate) post_only: bool,
+    pub(crate) expected_venue_order_id: VenueOrderId,
 }
 
 #[derive(Clone, Debug)]

@@ -328,6 +328,28 @@ sequential 15‑order chunks.
   idempotency key.
 - `BatchCancelOrders` is dispatched to `DELETE /orders` in one shot.
 
+### Submit error handling
+
+Polymarket's public documentation describes successful
+[`POST /order`](https://docs.polymarket.com/api-reference/trade/post-a-new-order) responses
+with `success`, `orderID`, `status`, and `errorMsg`, and documents
+[API errors](https://docs.polymarket.com/resources/error-codes) as structured error responses.
+It does not document statusless `py-clob-client` exceptions or transport failures as
+venue rejections.
+
+The adapter rejects only when the response proves the order was not accepted, such as
+`success=false`, a documented order processing error, or another non-retryable client/API
+error. Transport failures, timeouts, ambiguous retry exhaustion, statusless `PolyApiException`,
+malformed responses, and server-side failures keep the order submitted.
+
+For unknown outcomes, both adapters derive the expected Polymarket order hash from the signed
+EIP-712 order when possible and cache it as the `VenueOrderId`. Later WebSocket or reconciliation
+reports then attach to the local `ClientOrderId` instead of becoming external orders.
+
+Quote-quantity market BUY orders still apply the signed quote-to-base quantity update on the
+unknown path. Cancels requested while submit outcome is unknown are deferred until the expected
+venue order ID is known, and fill tracking is registered under that ID.
+
 ### Position management
 
 | Feature          | Binary Options | Notes                             |

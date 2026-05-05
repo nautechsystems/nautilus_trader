@@ -27,15 +27,24 @@ import msgspec
 import pytest
 from py_clob_client_v2.client import ClobClient
 from py_clob_client_v2.client import OrderPayload
+from py_clob_client_v2.config import get_contract_config
+from py_clob_client_v2.exceptions import PolyApiException
+from py_clob_client_v2.order_utils import ExchangeOrderBuilderV2
+from py_clob_client_v2.order_utils import OrderDataV2
+from py_clob_client_v2.order_utils import Side
+from py_clob_client_v2.order_utils import SignatureTypeV2
+from py_clob_client_v2.signer import Signer
 
 from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trades_key
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_CANCEL_ALREADY_DONE
+from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_NAUTILUS_BUILDER_CODE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWebSocketAuth
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.config import PolymarketExecClientConfig
 from nautilus_trader.adapters.polymarket.execution import PolymarketExecutionClient
+from nautilus_trader.adapters.polymarket.http.errors import should_retry
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -77,6 +86,10 @@ from nautilus_trader.trading.strategy import Strategy
 
 # Test instrument for Polymarket
 ELECTION_INSTRUMENT = TestInstrumentProvider.binary_option()
+
+
+def test_should_retry_statusless_poly_api_exception():
+    assert should_retry(PolyApiException(error_msg="Request exception!"))
 
 
 class TestPolymarketExecutionClient:
@@ -1268,6 +1281,202 @@ class TestPolymarketExecutionClient:
         venue_order_id = VenueOrderId("test_order_id")
         cached_client_order_id = self.cache.client_order_id(venue_order_id)
         assert cached_client_order_id is None
+
+    @pytest.mark.asyncio
+    async def test_submit_order_statusless_poly_api_exception_is_unknown(self, mocker):
+        """
+        Status-less PolyApiException after posting has an unknown venue outcome, so it
+        must not emit OrderRejected.
+        """
+        # Arrange
+        expected_venue_order_id = VenueOrderId("0xexpected_order_id")
+        mock_create_order = mocker.patch.object(self.http_client, "create_order")
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+        mocker.patch.object(
+            self.exec_client,
+            "_expected_venue_order_id",
+            return_value=expected_venue_order_id,
+        )
+        rejected_spy = mocker.spy(self.exec_client, "generate_order_rejected")
+
+        mock_create_order.return_value = {"signed_order": "mock_signed"}
+        mock_post_order.side_effect = PolyApiException(error_msg="Request exception!")
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),
+            price=Price.from_str("0.50"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        await self.exec_client._submit_order(submit_order)
+
+        # Assert
+        mock_create_order.assert_called_once()
+        mock_post_order.assert_called_once()
+        rejected_spy.assert_not_called()
+        assert self.cache.client_order_id(expected_venue_order_id) == order.client_order_id
+
+    @pytest.mark.asyncio
+    async def test_submit_market_order_statusless_poly_api_exception_updates_quote_quantity(
+        self,
+        mocker,
+    ):
+        """
+        Unknown market BUY submit results still need the signed quote-to-base update.
+        """
+        # Arrange
+        expected_venue_order_id = VenueOrderId("0xexpected_market_order_id")
+        mock_create_market_order = mocker.patch.object(self.http_client, "create_market_order")
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+        mocker.patch.object(
+            self.exec_client,
+            "_expected_venue_order_id",
+            return_value=expected_venue_order_id,
+        )
+        rejected_spy = mocker.spy(self.exec_client, "generate_order_rejected")
+        send_spy = mocker.spy(self.exec_client, "_send_order_event")
+
+        mock_signed = MagicMock()
+        mock_signed.takerAmount = "20000000"
+        mock_create_market_order.return_value = mock_signed
+        mock_post_order.side_effect = PolyApiException(error_msg="Request exception!")
+
+        order = self.strategy.order_factory.market(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10.00"),
+            quote_quantity=True,
+            time_in_force=TimeInForce.FOK,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        await self.exec_client._submit_order(submit_order)
+
+        # Assert
+        mock_create_market_order.assert_called_once()
+        mock_post_order.assert_called_once()
+        rejected_spy.assert_not_called()
+        assert self.cache.client_order_id(expected_venue_order_id) == order.client_order_id
+        assert self.exec_client._fill_tracker.contains(expected_venue_order_id)
+
+        updated_calls = [
+            call
+            for call in send_spy.call_args_list
+            if type(call.args[0]).__name__ == "OrderUpdated"
+        ]
+        assert len(updated_calls) == 1
+
+        updated_event = updated_calls[0].args[0]
+        assert updated_event.venue_order_id == expected_venue_order_id
+        assert updated_event.quantity == Quantity.from_str("20.00")
+        assert not updated_event.is_quote_quantity
+
+    def test_expected_venue_order_id_derives_v2_order_hash(self):
+        """
+        Expected venue order IDs must match the py-clob-client V2 order hash.
+        """
+        # Arrange
+        private_key = f"0x{1:064x}"
+        chain_id = 137
+        signer = Signer(private_key, chain_id)
+        self.http_client.signer = signer
+
+        contract_config = get_contract_config(chain_id)
+        builder = ExchangeOrderBuilderV2(
+            contract_config.exchange_v2,
+            chain_id,
+            signer,
+            generate_salt=lambda: "123456789",
+        )
+        signed_order = builder.build_signed_order(
+            OrderDataV2(
+                maker=signer.address(),
+                signer=signer.address(),
+                tokenId="123456789",
+                makerAmount="5000000",
+                takerAmount="10000000",
+                side=Side.BUY,
+                signatureType=SignatureTypeV2.EOA,
+                timestamp="1713398400000",
+                metadata="0x" + "0" * 64,
+                builder=POLYMARKET_NAUTILUS_BUILDER_CODE,
+                expiration="0",
+            ),
+        )
+        expected_order_id = VenueOrderId(
+            builder.build_order_hash(builder.build_order_typed_data(signed_order)),
+        )
+
+        # Act
+        venue_order_id = self.exec_client._expected_venue_order_id(
+            signed_order,
+            neg_risk=False,
+        )
+
+        # Assert
+        assert venue_order_id == expected_order_id
+
+    def test_unknown_submit_cached_expected_id_recovers_ws_order(self, mocker):
+        """
+        Unknown submits must let a later WS order update resolve as local.
+        """
+        # Arrange
+        raw_message = pkgutil.get_data(
+            package="tests.integration_tests.adapters.polymarket.resources.ws_messages",
+            resource="order_placement.json",
+        )
+        msg = msgspec.json.decode(raw_message)
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
+
+        instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
+        order = self.strategy.order_factory.limit(
+            instrument_id=instrument_id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("5"),
+            price=Price.from_str("0.513"),
+        )
+        order.apply(TestEventStubs.order_submitted(order))
+        self.cache.add_order(order, None)
+
+        venue_order_id = msg.venue_order_id()
+        accepted_spy = mocker.spy(self.exec_client, "generate_order_accepted")
+
+        # Act
+        self.exec_client._handle_unknown_submit_result(
+            order,
+            venue_order_id,
+            "Request exception!",
+        )
+        self.exec_client._handle_ws_order_msg(msg, wait_for_ack=False)
+
+        # Assert
+        assert self.cache.client_order_id(venue_order_id) == order.client_order_id
+        accepted_spy.assert_called_once()
+        call_kwargs = accepted_spy.call_args.kwargs
+        assert call_kwargs["client_order_id"] == order.client_order_id
+        assert call_kwargs["venue_order_id"] == venue_order_id
 
     @pytest.mark.asyncio
     async def test_submit_market_buy_without_quote_quantity_denied(self, mocker):
@@ -3141,6 +3350,67 @@ class TestPolymarketBatchOrderSubmission:
         assert "Insufficient balance" in reject_call.kwargs["reason"]
 
     @pytest.mark.asyncio
+    async def test_submit_order_list_statusless_poly_api_exception_is_unknown(self, mocker):
+        """
+        Status-less PolyApiException after batch posting has an unknown venue outcome,
+        so it must not reject the whole batch.
+        """
+        # Arrange
+        expected_venue_order_id_1 = VenueOrderId("0xexpected_batch_order_1")
+        expected_venue_order_id_2 = VenueOrderId("0xexpected_batch_order_2")
+        mock_create_order = mocker.patch.object(self.http_client, "create_order")
+        mock_post_orders = mocker.patch.object(self.http_client, "post_orders")
+        mocker.patch.object(
+            self.exec_client,
+            "_expected_venue_order_id",
+            side_effect=[expected_venue_order_id_1, expected_venue_order_id_2],
+        )
+        rejected_spy = mocker.spy(self.exec_client, "generate_order_rejected")
+
+        mock_create_order.return_value = {"signed_order": "mock_signed"}
+        mock_post_orders.side_effect = PolyApiException(error_msg="Request exception!")
+
+        order1 = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),
+            price=Price.from_str("0.50"),
+        )
+        order2 = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_str("5"),
+            price=Price.from_str("0.60"),
+        )
+
+        self.cache.add_order(order1, None)
+        self.cache.add_order(order2, None)
+
+        order_list = OrderList(
+            order_list_id=OrderListId("BATCH-UNKNOWN"),
+            orders=[order1, order2],
+        )
+
+        submit_order_list = SubmitOrderList(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            order_list=order_list,
+            position_id=None,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        await self.exec_client._submit_order_list(submit_order_list)
+
+        # Assert
+        assert mock_create_order.call_count == 2
+        mock_post_orders.assert_called_once()
+        rejected_spy.assert_not_called()
+        assert self.cache.client_order_id(expected_venue_order_id_1) == order1.client_order_id
+        assert self.cache.client_order_id(expected_venue_order_id_2) == order2.client_order_id
+
+    @pytest.mark.asyncio
     async def test_submit_order_list_with_market_order_denied(self, mocker):
         """
         Test that market orders in batch are denied.
@@ -3983,6 +4253,41 @@ class TestPolymarketGenerateCancelEvent:
 
         # Assert
         mock_cancel.assert_called_once_with(OrderPayload(orderID="0xdeferred_cancel_id"))
+
+    @pytest.mark.asyncio
+    async def test_unknown_submit_result_triggers_deferred_cancel(self, mocker):
+        """
+        Unknown submit results issue a deferred cancel once the expected order ID is
+        known.
+        """
+        # Arrange
+        expected_venue_order_id = VenueOrderId("0xunknown_deferred_cancel_id")
+        mock_cancel = mocker.patch.object(self.http_client, "cancel_order")
+        mock_cancel.return_value = {
+            "canceled": ["0xunknown_deferred_cancel_id"],
+            "not_canceled": {},
+        }
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("5"),
+            price=Price.from_str("0.50"),
+        )
+        self.cache.add_order(order, None)
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_pending_cancel(order))
+
+        # Act
+        self.exec_client._handle_unknown_submit_result(
+            order,
+            expected_venue_order_id,
+            "Request exception!",
+        )
+        await asyncio.sleep(0.1)
+
+        # Assert
+        mock_cancel.assert_called_once_with(OrderPayload(orderID="0xunknown_deferred_cancel_id"))
 
     @pytest.mark.asyncio
     async def test_deferred_cancel_handles_rejection(self, mocker):
