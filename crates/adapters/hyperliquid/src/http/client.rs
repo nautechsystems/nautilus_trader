@@ -82,12 +82,12 @@ use crate::{
             HyperliquidExecOrderKind, HyperliquidExecOrderResponseData, HyperliquidExecOrderStatus,
             HyperliquidExecPlaceOrderRequest, HyperliquidExecTif, HyperliquidExecTpSl,
             HyperliquidExecTriggerParams, HyperliquidFills, HyperliquidFundingHistoryEntry,
-            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus, PerpMeta, PerpMetaAndCtxs,
+            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus, OutcomeMetaResponse, PerpMeta, PerpMetaAndCtxs,
             RESPONSE_STATUS_OK, SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
         },
         parse::{
             HyperliquidInstrumentDef, instruments_from_defs_owned, parse_fill_report,
-            parse_order_status_report_from_basic, parse_perp_instruments,
+            parse_order_status_report_from_basic, parse_outcome_instruments, parse_perp_instruments,
             parse_position_status_report, parse_spot_instruments,
             parse_spot_position_status_report,
         },
@@ -407,6 +407,13 @@ impl HyperliquidRawHttpClient {
     pub async fn info_user_fees(&self, user: &str) -> Result<Value> {
         let request = InfoRequest::user_fees(user);
         self.send_info_request(&request).await
+    }
+
+    /// Get outcome (prediction) market metadata.
+    pub async fn info_outcome_meta(&self) -> Result<OutcomeMetaResponse> {
+        let request = InfoRequest::outcome_meta();
+        let response = self.send_info_request(&request).await?;
+        serde_json::from_value(response).map_err(Error::Serde)
     }
 
     /// Get candle/bar data for a coin.
@@ -1295,6 +1302,25 @@ impl HyperliquidHttpClient {
             },
             Err(e) => {
                 log::warn!("Failed to load Hyperliquid spot metadata: {e}");
+            }
+        }
+
+        // Load outcome (prediction) markets
+        match self.inner.info_outcome_meta().await {
+            Ok(outcome_meta) => match parse_outcome_instruments(&outcome_meta) {
+                Ok(outcome_defs) => {
+                    log::debug!(
+                        "Loaded Hyperliquid outcome definitions: count={}",
+                        outcome_defs.len(),
+                    );
+                    defs.extend(outcome_defs);
+                }
+                Err(e) => {
+                    log::warn!("Failed to parse Hyperliquid outcome instruments: {e}");
+                }
+            },
+            Err(e) => {
+                log::debug!("No outcome markets available or failed to load: {e}");
             }
         }
 

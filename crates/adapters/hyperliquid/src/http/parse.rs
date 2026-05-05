@@ -17,11 +17,11 @@ use anyhow::Context;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{
-        CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
-        TimeInForce, TriggerType,
+        AssetClass, CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
+        PositionSideSpecified, TimeInForce, TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
-    instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
+    instruments::{BinaryOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
@@ -29,7 +29,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::models::{AssetPosition, HyperliquidFill, PerpMeta, SpotBalance, SpotMeta};
+use super::models::{AssetPosition, HyperliquidFill, OutcomeDescriptor, OutcomeMetaResponse, PerpMeta, SpotBalance, SpotMeta};
 use crate::{
     common::{
         consts::HYPERLIQUID_VENUE,
@@ -49,6 +49,8 @@ pub enum HyperliquidMarketType {
     Perp,
     /// Spot trading pair.
     Spot,
+    /// Outcome (prediction) market.
+    Outcome,
 }
 
 /// Normalized instrument definition produced by this parser.
@@ -251,6 +253,63 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
     Ok(defs)
 }
 
+/// Parse outcome (prediction) market instrument definitions from Hyperliquid `outcomeMeta` response.
+///
+/// Each outcome market generates two instrument definitions (Yes/No sides).
+/// Asset index encoding: `asset = outcome_id * 10 + side`
+/// where side is 0 for first side (Yes), 1 for second side (No).
+pub fn parse_outcome_instruments(
+    meta: &OutcomeMetaResponse,
+) -> Result<Vec<HyperliquidInstrumentDef>, String> {
+    // Outcome markets use 6 decimal places for price precision (0.000001 increments)
+    const OUTCOME_PRICE_DECIMALS: u32 = 6;
+    const OUTCOME_SIZE_DECIMALS: u32 = 6; // USDH precision
+
+    let mut defs = Vec::new();
+
+    for outcome in &meta.outcomes {
+        for (side_idx, side_spec) in outcome.side_specs.iter().enumerate() {
+            let side = side_idx as u8;
+            let asset_index = outcome.outcome * 10 + side as u32;
+
+            // Symbol format: OUTCOME-{outcome_id}-{YES|NO}-OUTCOME
+            let symbol = format!(
+                "OUTCOME-{}-{}-OUTCOME",
+                outcome.outcome,
+                side_spec.name.to_uppercase()
+            );
+
+            // Raw symbol for WebSocket/API: "#<asset_index>"
+            let raw_symbol = format!("#{}", asset_index);
+
+            let tick_size = pow10_neg(OUTCOME_PRICE_DECIMALS);
+            let lot_size = pow10_neg(OUTCOME_SIZE_DECIMALS);
+
+            let def = HyperliquidInstrumentDef {
+                symbol: symbol.into(),
+                raw_symbol: raw_symbol.into(),
+                base: format!("{}-{}", outcome.name, side_spec.name).into(),
+                quote: "USDH".into(),
+                market_type: HyperliquidMarketType::Outcome,
+                asset_index,
+                price_decimals: OUTCOME_PRICE_DECIMALS,
+                size_decimals: OUTCOME_SIZE_DECIMALS,
+                tick_size,
+                lot_size,
+                max_leverage: Some(1), // No leverage for prediction markets
+                only_isolated: false,
+                is_hip3: false,
+                active: true,
+                raw_data: serde_json::to_string(outcome).unwrap_or_default(),
+            };
+
+            defs.push(def);
+        }
+    }
+
+    Ok(defs)
+}
+
 fn pow10_neg(decimals: u32) -> Decimal {
     if decimals == 0 {
         return Decimal::ONE;
@@ -348,6 +407,49 @@ pub fn create_instrument_from_def(
                 ts_init, // Identical to ts_init for now
                 ts_init,
             )))
+        }
+        HyperliquidMarketType::Outcome => {
+            // Outcome markets use USDH for settlement
+            let currency = get_currency("USDH");
+
+            // Parse raw_data to extract outcome metadata
+            let outcome_desc: serde_json::Result<OutcomeDescriptor> = serde_json::from_str(&def.raw_data);
+            
+            let description = outcome_desc
+                .as_ref()
+                .map(|o| o.description.as_str())
+                .unwrap_or("");
+            
+            // For outcome markets, we use BinaryOption instrument
+            let binary_option = BinaryOption::new_checked(
+                instrument_id,
+                raw_symbol,
+                AssetClass::Alternative, // Prediction markets are alternative assets
+                currency,
+                ts_init, // activation_ns - using current time as placeholder
+                ts_init, // expiration_ns - using current time as placeholder
+                def.price_decimals as u8,
+                def.size_decimals as u8,
+                price_increment,
+                size_increment,
+                None, // outcome - determined at settlement
+                Some(Ustr::from(description)),
+                None, // max_quantity
+                None, // min_quantity
+                None, // max_notional
+                None, // min_notional
+                Some(Price::from("0.999")), // max_price
+                Some(Price::from("0.001")), // min_price
+                None, // margin_init - will use default
+                None, // margin_maint - will use default
+                None, // maker_fee
+                None, // taker_fee
+                None, // info
+                ts_init,
+                ts_init,
+            ).ok()?;
+
+            Some(InstrumentAny::BinaryOption(binary_option))
         }
     }
 }

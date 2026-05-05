@@ -20,5 +20,8 @@ pub mod parse;
 pub mod query;
 pub mod rate_limits;
 
+#[cfg(test)]
+mod outcome_tests;
+
 // Re-exports
 pub use client::HyperliquidHttpClient;

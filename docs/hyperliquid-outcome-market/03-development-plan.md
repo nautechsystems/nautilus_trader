@@ -376,27 +376,61 @@ match def.market_type {
     HyperliquidMarketType::Spot => { /* existing */ }
     HyperliquidMarketType::Perp => { /* existing */ }
     HyperliquidMarketType::Outcome => {
-        // For paper trading, map to CryptoPerpetual initially
-        // Consider creating dedicated BinaryOption instrument later
-        let settlement_currency = get_currency("USDH");
+        // 使用 BinaryOption 作为预测市场 Instrument 类型
+        // 参考 Polymarket adapter 的实现方式
+        let currency = Currency::from("USDH");
         
-        Some(InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
+        // 从 raw_data 解析预测市场特有的元数据
+        let asset: OutcomeAsset = serde_json::from_str(&def.raw_data)
+            .unwrap_or_default();
+        
+        let activation_ns = UnixNanos::from(asset.expiry_time * 1_000_000);
+        let expiration_ns = UnixNanos::from(asset.expiry_time * 1_000_000);
+        
+        let binary_option = BinaryOption::new_checked(
             instrument_id,
             raw_symbol,
-            base_currency,
-            quote_currency,
-            settlement_currency,
-            false,  // not_inverse
+            AssetClass::Alternative,        // 预测市场属于 Alternative 资产类别
+            currency,
+            activation_ns,                  // 市场开始时间
+            expiration_ns,                  // 市场到期时间
             def.price_decimals as u8,
             def.size_decimals as u8,
             price_increment,
             size_increment,
-            None, None, None, None, None, None, None, None, None, None, None, None,
-            ts_init, ts_init,
-        )))
+            None,                           // outcome - 结算时确定
+            Some(Ustr::from(def.description.as_str())),  // 市场描述
+            None,                           // max_quantity
+            None,                           // min_quantity
+            None,                           // max_notional
+            None,                           // min_notional
+            Some(Price::from("0.999")),    // max_price - 预测市场价格上限
+            Some(Price::from("0.001")),    // min_price - 预测市场价格下限
+            Some(Decimal::ONE),             // margin_init: 100% (全额抵押)
+            Some(Decimal::ONE),             // margin_maint: 100%
+            Some(Decimal::ZERO),            // maker_fee: 0 (开仓免费)
+            Some(def.taker_fee),            // taker_fee
+            Some(build_info_json(def)),
+            ts_init,
+            ts_init,
+        )?;
+        
+        Some(InstrumentAny::BinaryOption(binary_option))
     }
 }
 ```
+
+**关键设计决策**:
+
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| `AssetClass` | `Alternative` | 预测市场属于非传统另类资产 |
+| `max_price` | `0.999` | 预测市场价格上限（99.9%概率） |
+| `min_price` | `0.001` | 预测市场价格下限（0.1%概率） |
+| `margin_init/maint` | `1.0` (100%) | 全额抵押，无杠杆 |
+| `maker_fee` | `0` | 开仓零费用 |
+| `activation_ns` | 市场开始时间 | 用于控制交易时段 |
+| `expiration_ns` | 市场到期时间 | 用于到期结算 |
 
 ---
 
@@ -974,9 +1008,97 @@ async fn test_paper_trading_full_flow() {
 
 ### 8.1 Phase 5（可选）: 实盘支持
 
-- 添加 EIP-712 签名
-- 实现真实订单提交
-- 处理链上确认
+#### 8.1.1 当前 Execution 模块现状
+
+Hyperliquid adapter 已拥有完善的实盘执行模块（约 2500 行代码，`src/execution/mod.rs`）：
+
+| 功能模块 | 状态 | 代码位置 |
+|---------|------|---------|
+| `ExecutionClient` trait 实现 | ✅ 完整 | `impl ExecutionClient for HyperliquidExecutionClient` |
+| 订单提交 (`submit_order`) | ✅ 完整 | L491-640 |
+| 订单取消 (`cancel_order`) | ✅ 完整 | L991-1060 |
+| 订单修改 (`modify_order`) | ✅ 完整 | L821-960 |
+| 批量操作 (`batch_cancel`, `submit_order_list`) | ✅ 完整 | L1209+ |
+| EIP-712 签名 | ✅ 完整 | `src/signing/` 独立模块 |
+| WebSocket 双通道 | ✅ 完整 | `orderUpdates` + `userEvents` |
+| 订单状态机管理 | ✅ 完整 | `WsDispatchState` 两阶段分发 |
+| 成交报告解析 | ✅ 完整 | `dispatch_fill_report` |
+| 账户状态同步 | ✅ 完整 | 永续+现货交叉保证金 |
+| Builder Fee 支持 | ✅ 完整 | `NAUTILUS_BUILDER_ADDRESS` |
+
+**当前限制**（第 142 行）：
+```rust
+// src/execution/mod.rs:142
+if !symbol.ends_with("-PERP") && !symbol.ends_with("-SPOT") {
+    anyhow::bail!(
+        "Unsupported instrument symbol format for Hyperliquid: {symbol} \
+         (expected -PERP or -SPOT suffix)"
+    );
+}
+```
+
+#### 8.1.2 预测市场实盘扩展任务
+
+| 任务 | 工作量 | 文件 | 说明 |
+|------|--------|------|------|
+| **符号验证扩展** | ~2h | `execution/mod.rs:142` | 添加 `-OUTCOME` 后缀支持 |
+| **价格范围验证** | ~2h | `execution/mod.rs` | 预测市场价格必须在 [0.001, 0.999] |
+| **保证金计算调整** | ~4h | `common/parse.rs` | 全额抵押，禁用杠杆 |
+| **订单类型限制** | ~2h | `execution/mod.rs:137` | 验证预测市场支持的订单类型 |
+| **USDH 余额查询** | ~4h | `http/models.rs` | 确保 clearinghouse_state 支持 USDH |
+| **结算事件处理** | ~8h | `execution/outcome.rs` | 监听预言机结算，自动平仓 |
+| **集成测试** | ~4h | `tests/exec_client.rs` | 预测市场实盘端到端测试 |
+
+**详细改造内容**:
+
+1. **符号验证扩展**:
+```rust
+// 修改位置: src/execution/mod.rs:142
+if !symbol.ends_with("-PERP") && !symbol.ends_with("-SPOT") && !symbol.ends_with("-OUTCOME") {
+    anyhow::bail!("...");
+}
+```
+
+2. **价格范围验证**:
+```rust
+// 在 validate_order_submission 中添加
+if symbol.ends_with("-OUTCOME") {
+    let price = order.price().ok_or("Price required")?;
+    if price < Price::from("0.001") || price > Price::from("0.999") {
+        anyhow::bail!("Outcome market price must be in [0.001, 0.999]");
+    }
+}
+```
+
+3. **保证金计算调整**:
+```rust
+// 预测市场: margin = size × price (100% 全额抵押)
+// 与永续合约的 cross_margin_summary 计算不同
+let margin = order.quantity().as_decimal() * order.price().as_decimal();
+```
+
+4. **结算事件处理（新增模块）**:
+```rust
+// src/execution/outcome.rs（新增）
+pub struct OutcomeSettlementHandler {
+    /// 监听预言机结算结果
+    pub async fn watch_settlement_events(&self) { ... }
+    /// 到期自动平仓
+    pub async fn settle_position(&self, instrument_id: InstrumentId, outcome: bool) { ... }
+}
+```
+
+#### 8.1.3 与 Polymarket 对比
+
+| 特性 | Hyperliquid | Polymarket |
+|------|-------------|------------|
+| 代币机制 | ❌ 无（纯 USDH 现金） | ✅ ERC-1155 SHARE |
+| Redeem/Split/Merge | ❌ 不存在 | ✅ 必需 |
+| 结算复杂度 | 低（直接 USDH 增减） | 高（代币赎回） |
+| 预言机集成 | 内置 | 外部 CTF |
+| 工作量估算 | +30-40h | +60-80h |
+
+**结论**: Hyperliquid 预测市场实盘实现比 Polymarket 更简单，无需处理代币合约交互。
 
 ### 8.2 Phase 6（可选）: 高级功能
 

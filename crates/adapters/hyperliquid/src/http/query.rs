@@ -334,6 +334,14 @@ impl InfoRequest {
             }),
         }
     }
+
+    /// Creates a request to get outcome (prediction) market metadata.
+    pub fn outcome_meta() -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::OutcomeMeta,
+            params: InfoRequestParams::None,
+        }
+    }
 }
 
 /// Exchange action parameters.

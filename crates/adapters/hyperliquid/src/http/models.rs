@@ -1507,3 +1507,106 @@ pub struct CrossMarginSummary {
     )]
     pub withdrawable: Option<Decimal>,
 }
+
+/// Complete outcome (prediction) market metadata response from `POST /info`
+/// with `{ "type": "outcomeMeta" }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutcomeMetaResponse {
+    /// List of available outcome markets.
+    pub outcomes: Vec<OutcomeDescriptor>,
+    /// List of market questions (may be empty).
+    #[serde(default)]
+    pub questions: Vec<OutcomeQuestion>,
+}
+
+/// A single outcome market descriptor from the `outcomeMeta` response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutcomeDescriptor {
+    /// Unique outcome identifier.
+    pub outcome: u32,
+    /// Market name (e.g., "BTC above $80k on May 9").
+    pub name: String,
+    /// Market description.
+    pub description: String,
+    /// Side specifications for this outcome (typically Yes/No).
+    pub side_specs: Vec<OutcomeSideSpec>,
+}
+
+/// Side specification for an outcome market (Yes/No).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutcomeSideSpec {
+    /// Side name (e.g., "Yes", "No").
+    pub name: String,
+}
+
+/// Market question metadata (optional).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutcomeQuestion {
+    /// Question identifier.
+    pub question_id: u32,
+    /// Question text.
+    pub text: String,
+}
+
+/// Represents an outcome market asset with its assigned asset index.
+///
+/// Asset index encoding: `asset = outcome_id * 10 + side`
+/// where side is 0 for first side (Yes), 1 for second side (No).
+#[derive(Debug, Clone)]
+pub struct OutcomeAsset {
+    /// The outcome market identifier.
+    pub outcome_id: u32,
+    /// The side index (0 = Yes, 1 = No).
+    pub side: u8,
+    /// The computed asset index used in API calls.
+    pub asset_index: u32,
+    /// The side name (e.g., "Yes", "No").
+    pub side_name: String,
+    /// The market name.
+    pub market_name: String,
+    /// The market description.
+    pub description: String,
+}
+
+impl OutcomeAsset {
+    /// Creates a new outcome asset from components.
+    #[must_use]
+    pub fn new(
+        outcome_id: u32,
+        side: u8,
+        side_name: String,
+        market_name: String,
+        description: String,
+    ) -> Self {
+        let asset_index = outcome_id * 10 + side as u32;
+        Self {
+            outcome_id,
+            side,
+            asset_index,
+            side_name,
+            market_name,
+            description,
+        }
+    }
+
+    /// Returns the coin symbol for API calls (e.g., "#20" for outcome_id=2, side=0).
+    #[must_use]
+    pub fn coin(&self) -> String {
+        format!("#{}", self.asset_index)
+    }
+
+    /// Returns the raw symbol (e.g., "BTC-80K-2026-05-09-Yes").
+    #[must_use]
+    pub fn raw_symbol(&self) -> String {
+        format!("{}-{}", self.market_name.replace(' ', "-"), self.side_name)
+    }
+
+    /// Returns the instrument symbol for Nautilus (e.g., "OUTCOME-2-YES-OUTCOME").
+    #[must_use]
+    pub fn instrument_symbol(&self) -> String {
+        format!("OUTCOME-{}-{}-OUTCOME", self.outcome_id, self.side_name.to_uppercase())
+    }
+}

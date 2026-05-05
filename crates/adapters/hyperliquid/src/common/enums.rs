@@ -868,6 +868,8 @@ pub enum HyperliquidInfoRequestType {
     UserFees,
     /// Get metadata for all perp dexes (standard + HIP-3).
     AllPerpMetas,
+    /// Get outcome (prediction) market metadata.
+    OutcomeMeta,
 }
 
 impl HyperliquidInfoRequestType {
@@ -903,6 +905,7 @@ impl HyperliquidInfoRequestType {
             Self::ValidatorStats => "validatorStats",
             Self::UserFees => "userFees",
             Self::AllPerpMetas => "allPerpMetas",
+            Self::OutcomeMeta => "outcomeMeta",
         }
     }
 }
