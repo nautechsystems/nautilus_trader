@@ -11,6 +11,7 @@
 | [01-overview.md](./01-overview.md) | Hyperliquid 预测市场概述、USDH、KYC、地区限制 |
 | [02-paper-trading-implementation.md](./02-paper-trading-implementation.md) | 纸面交易实现方案、代码改造清单 |
 | [03-development-plan.md](./03-development-plan.md) | 详细开发计划、代码规范、任务分解 |
+| [04-technical-decisions.md](./04-technical-decisions.md) | 技术决策：BinaryOption vs CryptoPerpetual、Execution 模块分析 |
 
 ## 关键发现摘要
 
