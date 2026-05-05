@@ -5892,6 +5892,7 @@ dependencies = [
  "nautilus-live",
  "nautilus-model",
  "nautilus-network",
+ "nautilus-sandbox",
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
