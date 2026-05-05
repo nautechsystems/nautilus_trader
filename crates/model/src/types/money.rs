@@ -1281,7 +1281,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Overflow")]
+    #[should_panic(expected = "Money::from_mantissa_exponent")]
     fn test_from_mantissa_exponent_overflow_panics() {
         let _ = Money::from_mantissa_exponent(i64::MAX, 9, Currency::USD());
     }
