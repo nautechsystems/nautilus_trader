@@ -43,6 +43,7 @@ def instrument():
 def instrument_provider():
     mock = MagicMock(spec=DatabentoInstrumentProvider)
     mock.initialize = AsyncMock()
+    mock.find = MagicMock(return_value=None)
     mock.get_all = MagicMock(return_value={})
     return mock
 

@@ -13,24 +13,35 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 from datetime import UTC
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 
+from nautilus_trader.adapters.databento.types import DatabentoImbalance
+from nautilus_trader.adapters.databento.types import DatabentoStatistics
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
@@ -43,6 +54,14 @@ GLBX = Venue("GLBX")
 
 ES_CY = InstrumentId.from_str("ESZ21.GLBX")
 NQ_CY = InstrumentId.from_str("NQZ21.GLBX")
+
+
+def _prepare_live_client(databento_client, instrument_provider):
+    live_client = MagicMock()
+    databento_client._live_clients["GLBX.MDP3"] = live_client
+    databento_client._has_subscribed["GLBX.MDP3"] = True
+    instrument_provider.find.return_value = SimpleNamespace(price_precision=5)
+    return live_client
 
 
 def test_resolve_ids_single_instrument_from_command(databento_client):
@@ -126,11 +145,132 @@ def test_resolve_ids_duplicate_instrument_ids_preserved(databento_client):
 
 
 @pytest.mark.asyncio
+async def test_subscribe_imbalance_passes_price_precision(
+    databento_client,
+    instrument_provider,
+):
+    live_client = _prepare_live_client(databento_client, instrument_provider)
+    data_type = DataType(DatabentoImbalance, metadata={"instrument_id": ES_CY})
+
+    await databento_client._subscribe_imbalance(data_type)
+
+    call_kwargs = live_client.subscribe.call_args.kwargs
+    assert call_kwargs["schema"] == "imbalance"
+    assert [str(instrument_id) for instrument_id in call_kwargs["instrument_ids"]] == [str(ES_ID)]
+    assert call_kwargs["price_precisions"] == [5]
+
+
+@pytest.mark.asyncio
+async def test_subscribe_statistics_passes_price_precision(
+    databento_client,
+    instrument_provider,
+):
+    live_client = _prepare_live_client(databento_client, instrument_provider)
+    data_type = DataType(DatabentoStatistics, metadata={"instrument_id": ES_CY})
+
+    await databento_client._subscribe_statistics(data_type)
+
+    call_kwargs = live_client.subscribe.call_args.kwargs
+    assert call_kwargs["schema"] == "statistics"
+    assert [str(instrument_id) for instrument_id in call_kwargs["instrument_ids"]] == [str(ES_ID)]
+    assert call_kwargs["price_precisions"] == [5]
+
+
+@pytest.mark.asyncio
+async def test_subscribe_order_book_deltas_passes_price_precisions(
+    databento_client,
+    instrument_provider,
+):
+    live_client = MagicMock()
+    live_client.start = AsyncMock()
+    databento_client._live_clients_mbo["GLBX.MDP3"] = live_client
+    instrument_provider.find.return_value = SimpleNamespace(price_precision=5)
+
+    await databento_client._subscribe_order_book_deltas_batch([ES_CY, NQ_CY])
+    await asyncio.gather(*databento_client._live_client_futures)
+
+    call_kwargs = live_client.subscribe.call_args.kwargs
+    assert call_kwargs["schema"] == "mbo"
+    assert [str(instrument_id) for instrument_id in call_kwargs["instrument_ids"]] == [
+        str(ES_ID),
+        str(NQ_ID),
+    ]
+    assert call_kwargs["price_precisions"] == [5, 5]
+
+
+@pytest.mark.asyncio
+async def test_subscribe_order_book_snapshots_passes_price_precisions(
+    databento_client,
+    instrument_provider,
+):
+    live_client = _prepare_live_client(databento_client, instrument_provider)
+    databento_client._instrument_ids["GLBX.MDP3"].update([ES_CY, NQ_CY])
+    command = SubscribeOrderBook(
+        instrument_id=ES_CY,
+        book_data_type=OrderBookDepth10,
+        book_type=BookType.L2_MBP,
+        depth=10,
+        client_id=ClientId("DATABENTO"),
+        venue=GLBX,
+        command_id=UUID4(),
+        ts_init=0,
+        params={"instrument_ids": [ES_CY, NQ_CY]},
+    )
+
+    await databento_client._subscribe_order_book_snapshots(command)
+
+    call_kwargs = live_client.subscribe.call_args.kwargs
+    assert call_kwargs["schema"] == "mbp-10"
+    assert [str(instrument_id) for instrument_id in call_kwargs["instrument_ids"]] == [
+        str(ES_ID),
+        str(NQ_ID),
+    ]
+    assert call_kwargs["price_precisions"] == [5, 5]
+
+
+@pytest.mark.asyncio
+async def test_subscribe_bars_passes_price_precisions(
+    databento_client,
+    instrument_provider,
+):
+    live_client = _prepare_live_client(databento_client, instrument_provider)
+    es_bar_type = BarType(
+        ES_CY,
+        BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
+    )
+    nq_bar_type = BarType(
+        NQ_CY,
+        BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
+    )
+    command = SubscribeBars(
+        bar_type=es_bar_type,
+        client_id=ClientId("DATABENTO"),
+        venue=GLBX,
+        command_id=UUID4(),
+        ts_init=0,
+        params={"bar_types": [es_bar_type, nq_bar_type]},
+    )
+
+    await databento_client._subscribe_bars(command)
+
+    call_kwargs = live_client.subscribe.call_args.kwargs
+    assert call_kwargs["schema"] == "ohlcv-1m"
+    assert [str(instrument_id) for instrument_id in call_kwargs["instrument_ids"]] == [
+        str(ES_ID),
+        str(NQ_ID),
+    ]
+    assert call_kwargs["price_precisions"] == [5, 5]
+
+
+@pytest.mark.asyncio
 async def test_request_quote_ticks_single_instrument(
     databento_client,
     mock_http_client,
+    instrument_provider,
     data_responses,
 ):
+    instrument_provider.find.return_value = SimpleNamespace(price_precision=5)
+
     pyo3_quotes = [
         TestDataProviderPyo3.quote_tick(instrument_id=ES_ID),
         TestDataProviderPyo3.quote_tick(instrument_id=ES_ID),
@@ -169,6 +309,102 @@ async def test_request_quote_ticks_single_instrument(
     assert str(call_kwargs["instrument_ids"][0]) == str(ES_ID)
     assert call_kwargs["dataset"] == "GLBX.MDP3"
     assert call_kwargs["schema"] == "mbp-1"
+    assert call_kwargs["price_precision"] == 5
+
+
+@pytest.mark.asyncio
+async def test_request_quote_ticks_groups_by_price_precision(
+    databento_client,
+    mock_http_client,
+    instrument_provider,
+    data_responses,
+):
+    instrument_provider.find.side_effect = [
+        SimpleNamespace(price_precision=2),
+        SimpleNamespace(price_precision=5),
+    ]
+    mock_http_client.get_range_quotes = AsyncMock(
+        side_effect=[
+            [TestDataProviderPyo3.quote_tick(instrument_id=ES_ID, ts_event=2, ts_init=2)],
+            [TestDataProviderPyo3.quote_tick(instrument_id=NQ_ID, ts_event=1, ts_init=1)],
+        ],
+    )
+
+    request = RequestQuoteTicks(
+        instrument_id=ES_CY,
+        start=datetime(2024, 1, 1, tzinfo=UTC),
+        end=datetime(2024, 1, 2, tzinfo=UTC),
+        limit=0,
+        client_id=ClientId("DATABENTO"),
+        venue=GLBX,
+        callback=None,
+        request_id=UUID4(),
+        ts_init=0,
+        params={"instrument_ids": [ES_CY, NQ_CY]},
+    )
+
+    await databento_client._request_quote_ticks(request)
+
+    assert mock_http_client.get_range_quotes.await_count == 2
+    first_call = mock_http_client.get_range_quotes.await_args_list[0].kwargs
+    second_call = mock_http_client.get_range_quotes.await_args_list[1].kwargs
+    assert first_call["price_precision"] == 2
+    assert [str(instrument_id) for instrument_id in first_call["instrument_ids"]] == [str(ES_ID)]
+    assert second_call["price_precision"] == 5
+    assert [str(instrument_id) for instrument_id in second_call["instrument_ids"]] == [
+        str(NQ_ID),
+    ]
+
+    assert len(data_responses) == 1
+    response = data_responses[0]
+    assert [quote.ts_event for quote in response.data] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_request_quote_ticks_uses_resolved_precision_when_one_instrument_missing(
+    databento_client,
+    mock_http_client,
+    instrument_provider,
+    data_responses,
+):
+    instrument_provider.find.side_effect = [
+        None,
+        SimpleNamespace(price_precision=5),
+    ]
+    mock_http_client.get_range_quotes = AsyncMock(
+        side_effect=[
+            [TestDataProviderPyo3.quote_tick(instrument_id=ES_ID)],
+            [TestDataProviderPyo3.quote_tick(instrument_id=NQ_ID)],
+        ],
+    )
+
+    request = RequestQuoteTicks(
+        instrument_id=ES_CY,
+        start=datetime(2024, 1, 1, tzinfo=UTC),
+        end=datetime(2024, 1, 2, tzinfo=UTC),
+        limit=0,
+        client_id=ClientId("DATABENTO"),
+        venue=GLBX,
+        callback=None,
+        request_id=UUID4(),
+        ts_init=0,
+        params={"instrument_ids": [ES_CY, NQ_CY]},
+    )
+
+    await databento_client._request_quote_ticks(request)
+
+    assert mock_http_client.get_range_quotes.await_count == 2
+    missing_call = mock_http_client.get_range_quotes.await_args_list[0].kwargs
+    resolved_call = mock_http_client.get_range_quotes.await_args_list[1].kwargs
+    assert "price_precision" not in missing_call
+    assert [str(instrument_id) for instrument_id in missing_call["instrument_ids"]] == [str(ES_ID)]
+    assert resolved_call["price_precision"] == 5
+    assert [str(instrument_id) for instrument_id in resolved_call["instrument_ids"]] == [
+        str(NQ_ID),
+    ]
+
+    assert len(data_responses) == 1
+    assert len(data_responses[0].data) == 2
 
 
 @pytest.mark.asyncio
