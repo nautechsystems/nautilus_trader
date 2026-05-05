@@ -49,8 +49,8 @@ use super::{
 use crate::common::{
     enums::{BybitOrderStatus, BybitPositionSide, BybitTimeInForce},
     parse::{
-        get_currency, parse_book_level, parse_bybit_order_type, parse_millis_timestamp,
-        parse_price_with_precision, parse_quantity_with_precision,
+        get_currency, make_hedge_venue_position_id, parse_book_level, parse_bybit_order_type,
+        parse_millis_timestamp, parse_price_with_precision, parse_quantity_with_precision,
     },
 };
 
@@ -822,8 +822,10 @@ pub fn parse_ws_order_status_report(
         report = report.with_trigger_type(trigger_type);
     }
 
-    // venue_position_id omitted: in netting mode, non-None values override the
-    // computed netting position ID and break position tracking.
+    if let Some(venue_position_id) = make_hedge_venue_position_id(instrument_id, order.position_idx)
+    {
+        report = report.with_venue_position_id(venue_position_id);
+    }
 
     if order.reduce_only {
         report = report.with_reduce_only(true);
@@ -952,6 +954,8 @@ pub fn parse_ws_position_status_report(
 
     let ts_last = parse_millis_timestamp(&position.updated_time, "position.updatedTime")?;
 
+    let venue_position_id = make_hedge_venue_position_id(instrument_id, position.position_idx);
+
     Ok(PositionStatusReport::new(
         account_id,
         instrument_id,
@@ -959,8 +963,8 @@ pub fn parse_ws_position_status_report(
         quantity,
         ts_last,
         ts_init,
-        None,                 // report_id
-        None, // venue_position_id omitted: non-None triggers hedge-mode reconciliation
+        None, // report_id
+        venue_position_id,
         position.entry_price, // avg_px_open
     ))
 }
@@ -1025,6 +1029,7 @@ mod tests {
         enums::{
             AggregationSource, BarAggregation, OrderType, PositionSide, PriceType, TriggerType,
         },
+        identifiers::PositionId,
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
@@ -1389,6 +1394,24 @@ mod tests {
     }
 
     #[rstest]
+    fn parse_ws_order_status_report_venue_position_id_for_hedge() {
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_account_order_take_profit.json");
+        let msg: crate::websocket::messages::BybitWsAccountOrderMsg =
+            serde_json::from_str(&json).unwrap();
+        let mut order = msg.data[0].clone();
+        order.position_idx = 1;
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_ws_order_status_report(&order, &instrument, account_id, TS).unwrap();
+
+        assert_eq!(
+            report.venue_position_id,
+            Some(PositionId::from("BTCUSDT-LINEAR.BYBIT-LONG"))
+        );
+    }
+
+    #[rstest]
     fn parse_ws_position_into_position_status_report() {
         let instrument = linear_instrument();
         let json = load_test_json("ws_account_position.json");
@@ -1410,6 +1433,25 @@ mod tests {
         );
         assert_eq!(report.ts_last, UnixNanos::new(1_762_199_125_472_000_000));
         assert_eq!(report.ts_init, TS);
+    }
+
+    #[rstest]
+    fn parse_ws_position_status_report_venue_position_id_for_hedge() {
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_account_position.json");
+        let msg: crate::websocket::messages::BybitWsAccountPositionMsg =
+            serde_json::from_str(&json).unwrap();
+        let mut position = msg.data[0].clone();
+        position.position_idx = 2;
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report =
+            parse_ws_position_status_report(&position, account_id, &instrument, TS).unwrap();
+
+        assert_eq!(
+            report.venue_position_id,
+            Some(PositionId::from("BTCUSDT-LINEAR.BYBIT-SHORT"))
+        );
     }
 
     #[rstest]

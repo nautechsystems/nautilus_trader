@@ -265,6 +265,14 @@ config = BybitExecClientConfig(
 On connect the adapter calls `/v5/position/switch-mode` for each entry, then
 derives `positionIdx` for every order: opening BUY -> `1` (long), opening
 SELL -> `2` (short), reduce-only SELL -> `1`, reduce-only BUY -> `2`.
+Bybit documents this in the V5 [switch position mode](https://bybit-exchange.github.io/docs/v5/position/position-mode)
+and [place order](https://bybit-exchange.github.io/docs/v5/order/create-order#request-parameters)
+APIs: `mode=3` enables Both Sides, and hedge-mode orders require `positionIdx`.
+
+Orders and reports with `positionIdx=0` (one-way / Merged Single mode) carry no
+venue position ID. For hedge-mode indexes `1` and `2`, the adapter maps reports
+to venue position IDs ending in `-LONG` and `-SHORT`, and carries the same ID
+onto fills when Bybit execution messages do not include `positionIdx`.
 
 To override, pass `position_idx` via `params`:
 

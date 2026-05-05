@@ -78,6 +78,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 
@@ -213,8 +214,9 @@ class BybitExecutionClient(LiveExecutionClient):
         )
         self._ws_client_futures: set[asyncio.Future] = set()
 
-        # Hot cache for accumulating spot borrow fills (only)
+        # Hot caches for fill-side order context
         self._order_filled_qty: dict[ClientOrderId, Quantity] = {}
+        self._order_position_ids: dict[ClientOrderId, PositionId] = {}
 
         # Repayment queue system: one queue per base currency
         self._repay_queues: dict[str, Queue[Decimal]] = {}
@@ -436,6 +438,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
             for pyo3_report in pyo3_reports:
                 report = OrderStatusReport.from_pyo3(pyo3_report)
+                self._cache_reconciliation_order_position_id(report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
         except ValueError as e:
@@ -507,6 +510,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 return None
 
             report = OrderStatusReport.from_pyo3(pyo3_report)
+            self._cache_reconciliation_order_position_id(report)
             self._log.debug(f"Received {report}", LogColor.MAGENTA)
             return report
         except ValueError as e:
@@ -744,6 +748,23 @@ class BybitExecutionClient(LiveExecutionClient):
             manual_override=override,
         )
 
+    def _cache_order_position_id(
+        self,
+        order: Order,
+        position_idx: BybitPositionIdx | None,
+    ) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+        pyo3_venue_position_id = nautilus_pyo3.bybit_make_hedge_venue_position_id(
+            pyo3_instrument_id,
+            position_idx,
+        )
+
+        if pyo3_venue_position_id is None:
+            self._order_position_ids.pop(order.client_order_id, None)
+            return
+
+        self._order_position_ids[order.client_order_id] = PositionId(str(pyo3_venue_position_id))
+
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     def _check_order_validity(
@@ -966,6 +987,7 @@ class BybitExecutionClient(LiveExecutionClient):
             order.is_reduce_only,
             tp_sl.get("position_idx"),
         )
+        self._cache_order_position_id(order, position_idx)
         try:
             if self._is_demo:
                 await self._http_client.submit_order(
@@ -1048,6 +1070,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 )
         except Exception as e:
             self._log.error(f"Failed to submit order {order.client_order_id}: {e}")
+            self._order_position_ids.pop(order.client_order_id, None)
             error_msg = str(e)
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
@@ -1149,6 +1172,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 order.is_reduce_only,
                 position_idx_override,
             )
+            self._cache_order_position_id(order, position_idx)
             try:
                 await self._http_client.submit_order(
                     account_id=self.pyo3_account_id,
@@ -1173,6 +1197,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 )
             except Exception as e:
                 self._log.error(f"Failed to submit order {order.client_order_id}: {e}")
+                self._order_position_ids.pop(order.client_order_id, None)
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
@@ -1252,6 +1277,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 order.is_reduce_only,
                 tp_sl.get("position_idx"),
             )
+            self._cache_order_position_id(order, position_idx)
             ws_params = self._ws_trade_client.build_place_order_params(
                 product_type=product_type,
                 instrument_id=pyo3_instrument_id,
@@ -1288,6 +1314,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
                 for order in orders:
                     if not order.is_closed:
+                        self._order_position_ids.pop(order.client_order_id, None)
                         self.generate_order_rejected(
                             strategy_id=order.strategy_id,
                             instrument_id=order.instrument_id,
@@ -1645,6 +1672,8 @@ class BybitExecutionClient(LiveExecutionClient):
         if order.linked_order_ids is not None:
             report.linked_order_ids = list(order.linked_order_ids)
 
+        self._cache_report_position_id(report)
+
         if report.order_status == OrderStatus.REJECTED:
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
@@ -1653,7 +1682,6 @@ class BybitExecutionClient(LiveExecutionClient):
                 reason=report.cancel_reason or "Order rejected by exchange",
                 ts_event=report.ts_last,
             )
-            self._order_filled_qty.pop(report.client_order_id, None)
         elif report.order_status == OrderStatus.ACCEPTED:
             if report.is_order_updated(order):
                 self.generate_order_updated(
@@ -1710,7 +1738,6 @@ class BybitExecutionClient(LiveExecutionClient):
                     venue_order_id=report.venue_order_id,
                     ts_event=report.ts_last,
                 )
-            self._order_filled_qty.pop(report.client_order_id, None)
         elif report.order_status == OrderStatus.EXPIRED:
             self.generate_order_expired(
                 strategy_id=order.strategy_id,
@@ -1719,7 +1746,6 @@ class BybitExecutionClient(LiveExecutionClient):
                 venue_order_id=report.venue_order_id,
                 ts_event=report.ts_last,
             )
-            self._order_filled_qty.pop(report.client_order_id, None)
         elif report.order_status == OrderStatus.TRIGGERED:
             if order.order_type in (
                 OrderType.STOP_LIMIT,
@@ -1736,6 +1762,32 @@ class BybitExecutionClient(LiveExecutionClient):
         else:
             # Fills should be handled from FillReports
             self._log.debug(f"Received unhandled OrderStatusReport: {report}")
+
+    def _cache_reconciliation_order_position_id(self, report: OrderStatusReport) -> None:
+        if self._is_external_order(report.client_order_id):
+            return
+
+        self._cache_report_position_id(report)
+
+    def _cache_report_position_id(self, report: OrderStatusReport) -> None:
+        # FILLED is intentionally excluded: hedge-mode cleanup of _order_position_ids
+        # happens via _clear_order_position_id_if_filled after the fill is processed,
+        # and the spot-borrow _order_filled_qty accumulator must survive until the
+        # final fill report drives repayment.
+        if report.order_status in (
+            OrderStatus.REJECTED,
+            OrderStatus.CANCELED,
+            OrderStatus.EXPIRED,
+        ):
+            self._order_position_ids.pop(report.client_order_id, None)
+            self._order_filled_qty.pop(report.client_order_id, None)
+            return
+
+        if report.venue_position_id is None:
+            self._order_position_ids.pop(report.client_order_id, None)
+            return
+
+        self._order_position_ids[report.client_order_id] = report.venue_position_id
 
     def _handle_fill_report_pyo3(self, pyo3_report: nautilus_pyo3.FillReport) -> None:
         report = FillReport.from_pyo3(pyo3_report)
@@ -1764,12 +1816,16 @@ class BybitExecutionClient(LiveExecutionClient):
             )
             return
 
+        venue_position_id = report.venue_position_id or self._order_position_ids.get(
+            order.client_order_id,
+        )
+
         self.generate_order_filled(
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=report.venue_order_id,
-            venue_position_id=report.venue_position_id,
+            venue_position_id=venue_position_id,
             trade_id=report.trade_id,
             order_side=order.side,
             order_type=order.order_type,
@@ -1780,6 +1836,8 @@ class BybitExecutionClient(LiveExecutionClient):
             liquidity_side=report.liquidity_side,
             ts_event=report.ts_event,
         )
+
+        self._clear_order_position_id_if_filled(order, report)
 
         if self._config.auto_repay_spot_borrows and order.side == OrderSide.BUY:
             try:
@@ -1818,6 +1876,15 @@ class BybitExecutionClient(LiveExecutionClient):
                     self._order_filled_qty[order.client_order_id] = filled_new
             except Exception as e:
                 self._log.warning(f"Failed to enqueue spot borrow repayment: {e}")
+
+    def _clear_order_position_id_if_filled(self, order: Order, report: FillReport) -> None:
+        if order.client_order_id not in self._order_position_ids:
+            return
+
+        # generate_order_filled dispatches OrderFilled synchronously, so order.filled_qty
+        # already reflects the current fill by the time this runs.
+        if order.filled_qty >= order.quantity:
+            self._order_position_ids.pop(order.client_order_id, None)
 
     def _handle_position_status_report_pyo3(self, msg: nautilus_pyo3.PositionStatusReport) -> None:
         report = PositionStatusReport.from_pyo3(msg)

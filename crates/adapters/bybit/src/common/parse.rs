@@ -865,10 +865,6 @@ pub fn parse_kline_bar(
 /// Constructs a venue position ID from an instrument and Bybit position index.
 ///
 /// Position index values: 0 = one-way mode, 1 = buy-side hedge, 2 = sell-side hedge.
-///
-/// Not currently wired into reports because Bybit defaults to netting mode where
-/// non-None `venue_position_id` overrides the computed netting position ID.
-/// Ready to activate when hedge-mode support is added.
 #[must_use]
 pub fn make_venue_position_id(instrument_id: InstrumentId, position_idx: i32) -> PositionId {
     let side = match position_idx {
@@ -878,6 +874,18 @@ pub fn make_venue_position_id(instrument_id: InstrumentId, position_idx: i32) ->
         _ => "UNKNOWN",
     };
     PositionId::new(format!("{instrument_id}-{side}"))
+}
+
+/// Constructs a venue position ID only for hedge-mode Bybit position indexes.
+#[must_use]
+pub fn make_hedge_venue_position_id(
+    instrument_id: InstrumentId,
+    position_idx: i32,
+) -> Option<PositionId> {
+    match position_idx {
+        1 | 2 => Some(make_venue_position_id(instrument_id, position_idx)),
+        _ => None,
+    }
 }
 
 /// Parses a Bybit execution into a Nautilus FillReport.
@@ -1022,6 +1030,9 @@ pub fn parse_position_status_report(
         );
     }
 
+    let venue_position_id =
+        make_hedge_venue_position_id(instrument_id, position.position_idx as i32);
+
     Ok(PositionStatusReport::new(
         account_id,
         instrument_id,
@@ -1030,7 +1041,7 @@ pub fn parse_position_status_report(
         ts_last,
         ts_init,
         None, // Will generate a new UUID4
-        None, // venue_position_id omitted: non-None triggers hedge-mode reconciliation
+        venue_position_id,
         avg_px_open,
     ))
 }
@@ -1374,8 +1385,10 @@ pub fn parse_order_status_report(
         report = report.with_trigger_type(trigger_type);
     }
 
-    // venue_position_id omitted: in netting mode, non-None values override the
-    // computed netting position ID and break position tracking.
+    if let Some(venue_position_id) = make_hedge_venue_position_id(instrument_id, order.position_idx)
+    {
+        report = report.with_venue_position_id(venue_position_id);
+    }
 
     if order.reduce_only {
         report = report.with_reduce_only(true);
@@ -1688,7 +1701,8 @@ mod tests {
         http::models::{
             BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
             BybitInstrumentOptionResponse, BybitInstrumentSpotResponse, BybitKlinesResponse,
-            BybitOpenOrdersResponse, BybitTradeHistoryResponse, BybitTradesResponse,
+            BybitOpenOrdersResponse, BybitPositionListResponse, BybitTradeHistoryResponse,
+            BybitTradesResponse,
         },
     };
 
@@ -2475,6 +2489,20 @@ mod tests {
     }
 
     #[rstest]
+    #[case::oneway(0, None)]
+    #[case::long(1, Some("BTCUSDT-LINEAR.BYBIT-LONG"))]
+    #[case::short(2, Some("BTCUSDT-LINEAR.BYBIT-SHORT"))]
+    #[case::unknown(99, None)]
+    fn test_make_hedge_venue_position_id(
+        #[case] position_idx: i32,
+        #[case] expected: Option<&str>,
+    ) {
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let result = make_hedge_venue_position_id(instrument_id, position_idx);
+        assert_eq!(result, expected.map(PositionId::from));
+    }
+
+    #[rstest]
     fn test_parse_fill_report_venue_position_id_is_none() {
         let instrument = linear_instrument();
         let json = load_test_json("http_get_executions.json");
@@ -2485,6 +2513,40 @@ mod tests {
         let report = parse_fill_report(execution, account_id, &instrument, TS).unwrap();
 
         assert_eq!(report.venue_position_id, None);
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_venue_position_id_for_hedge() {
+        let instrument = linear_instrument();
+        let json = load_test_json("http_get_orders_realtime_tp_sl.json");
+        let response: BybitOpenOrdersResponse = serde_json::from_str(&json).unwrap();
+        let mut order = response.result.list[0].clone();
+        order.position_idx = 2;
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_order_status_report(&order, &instrument, account_id, TS).unwrap();
+
+        assert_eq!(
+            report.venue_position_id,
+            Some(PositionId::from("BTCUSDT-LINEAR.BYBIT-SHORT"))
+        );
+    }
+
+    #[rstest]
+    fn test_parse_position_status_report_venue_position_id_for_hedge() {
+        let json = load_test_json("http_get_positions.json");
+        let response: BybitPositionListResponse = serde_json::from_str(&json).unwrap();
+        let mut position = response.result.list[0].clone();
+        position.position_idx = BybitPositionIdx::BuyHedge;
+        let instrument = linear_instrument();
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_position_status_report(&position, account_id, &instrument, TS).unwrap();
+
+        assert_eq!(
+            report.venue_position_id,
+            Some(PositionId::from("BTCUSDT-LINEAR.BYBIT-LONG"))
+        );
     }
 
     #[rstest]

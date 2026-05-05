@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Added `limit_aggressive` and `test_modify_rejected` flags to `ExecTesterConfig` for marketable/modify-rejection tests
 - Added Betfair Rust adapter post-reconnect mass-status reconciliation that halts submits via `STREAM_RECONCILING`
 - Added Betfair Rust adapter `stream_gap_recovery_lookback_mins` config for the reconciliation lookback window
+- Added Bybit hedge-mode venue position IDs for order, position, and fill events
 - Added Coinbase liquidation/ADL warning on forced-close order events
 - Added Coinbase CFM liquidation buffer warning when buffer drops below 20%
 - Added dYdX historical funding rate requests via the `request_funding_rates` HTTP method and PyO3 binding
@@ -118,6 +119,7 @@ Released on TBD (UTC).
 
 ### Documentation Updates
 - Added DST docs caveats for process-global lazy state RNG consumption and `CacheView` factory blocker
+- Added Bybit hedge-mode docs with official `positionIdx` API links
 - Added Polymarket fill quantity normalization section explaining the dust snap, deferred dust, and commission semantics
 - Added dYdX adapter notes for FOK deprecation, DAY rejection, equity-tier limit, and MIT/LIT round-tripping
 - Updated adapter docs and examples to use environment enums instead of legacy test flags
