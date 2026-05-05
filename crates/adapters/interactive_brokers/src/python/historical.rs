@@ -30,7 +30,8 @@ use nautilus_model::{
 use pyo3::{prelude::*, types::PyList};
 
 use crate::{
-    historical::HistoricalInteractiveBrokersClient, python::conversion::py_list_to_contracts,
+    common::enums::IbHistoricalTickType, historical::HistoricalInteractiveBrokersClient,
+    python::conversion::py_list_to_contracts,
 };
 
 #[pymethods]
@@ -130,7 +131,7 @@ impl HistoricalInteractiveBrokersClient {
     ///
     /// # Arguments
     ///
-    /// * `tick_type` - Type of ticks: "TRADES" or "BID_ASK"
+    /// * `tick_type` - Historical tick type.
     /// * `start_date_time` - Start date for ticks
     /// * `end_date_time` - End date for ticks
     /// * `contracts` - Optional list of IB contracts (dicts with symbol, sec_type, exchange, currency, etc.)
@@ -144,7 +145,7 @@ impl HistoricalInteractiveBrokersClient {
     fn py_request_ticks<'py>(
         &self,
         py: Python<'py>,
-        tick_type: String,
+        tick_type: IbHistoricalTickType,
         start_date_time: DateTime<Utc>,
         end_date_time: DateTime<Utc>,
         contracts: Option<Py<PyList>>,
@@ -170,7 +171,7 @@ impl HistoricalInteractiveBrokersClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let data_vec: Vec<Data> = client
                 .request_ticks(
-                    &tick_type,
+                    tick_type,
                     start_date_time,
                     end_date_time,
                     contracts_vec,

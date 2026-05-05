@@ -15,11 +15,13 @@
 
 //! Parsing utilities for converting Interactive Brokers data to Nautilus types.
 
-use std::{collections::HashMap, sync::LazyLock};
+use std::{collections::HashMap, str::FromStr, sync::LazyLock};
 
 use ibapi::contracts::{Contract, Currency, Exchange, SecurityType, Symbol};
 use nautilus_core::UnixNanos;
 use nautilus_model::identifiers::{InstrumentId, Symbol as NautilusSymbol, TradeId, Venue};
+
+use crate::common::enums::{IbOptionRight, IbSecurityType};
 
 /// Generate a unique trade ID for Interactive Brokers trades.
 ///
@@ -244,19 +246,10 @@ pub fn ib_contract_to_instrument_id_raw(
         contract.local_symbol.as_str()
     };
 
-    let sec_type_str = match contract.security_type {
-        SecurityType::Stock => "STK",
-        SecurityType::Option => "OPT",
-        SecurityType::Future => "FUT",
-        SecurityType::FuturesOption => "FOP",
-        SecurityType::ForexPair => "CASH",
-        SecurityType::Crypto => "CRYPTO",
-        SecurityType::Index => "IND",
-        SecurityType::CFD => "CFD",
-        SecurityType::Commodity => "CMDTY",
-        SecurityType::Bond => "BOND",
-        _ => "OTHER",
-    };
+    let sec_type_str = IbSecurityType::try_from(&contract.security_type).map_or_else(
+        |_| "OTHER".to_string(),
+        |security_type| security_type.to_string(),
+    );
 
     let symbol_str = format!("{local_symbol}={sec_type_str}");
     let symbol = NautilusSymbol::from(symbol_str.as_str());
@@ -728,20 +721,9 @@ fn instrument_id_to_ib_contract_raw(
 
     let venue_exchange = instrument_id.venue.as_str().replace('/', ".");
     let exchange_str = exchange.unwrap_or(venue_exchange.as_str());
-    let security_type = match sec_type_code {
-        "STK" => SecurityType::Stock,
-        "OPT" => SecurityType::Option,
-        "FUT" => SecurityType::Future,
-        "FOP" => SecurityType::FuturesOption,
-        "CASH" => SecurityType::ForexPair,
-        "CRYPTO" => SecurityType::Crypto,
-        "CONTFUT" => SecurityType::ContinuousFuture,
-        "IND" => SecurityType::Index,
-        "CFD" => SecurityType::CFD,
-        "CMDTY" => SecurityType::Commodity,
-        "BOND" => SecurityType::Bond,
-        _ => return None,
-    };
+    let security_type = IbSecurityType::from_str(sec_type_code)
+        .ok()
+        .map(IbSecurityType::ibapi_security_type)?;
 
     let contract = match security_type {
         SecurityType::Stock => Contract {
@@ -840,13 +822,7 @@ fn parse_option_symbol(symbol: &str) -> Option<OptionSymbol> {
 
     let expiry = &remaining[..6];
     let right_char = remaining.chars().nth(6)?;
-    let right = if right_char == 'C' || right_char == 'c' {
-        "C"
-    } else if right_char == 'P' || right_char == 'p' {
-        "P"
-    } else {
-        return None;
-    };
+    let right = IbOptionRight::from_str(&right_char.to_string()).ok()?;
 
     let strike_str = &remaining[7..];
     if strike_str.len() < 8 {
@@ -897,11 +873,7 @@ fn parse_named_option_symbol(symbol: &str) -> Option<NamedOptionSymbol> {
         return None;
     }
 
-    let right = match parts[0] {
-        "C" | "c" => "C",
-        "P" | "p" => "P",
-        _ => return None,
-    };
+    let right = IbOptionRight::from_str(parts[0]).ok()?;
 
     let expiry = parts[2];
     if expiry.len() != 8 || !expiry.chars().all(|c| c.is_ascii_digit()) {
@@ -1003,9 +975,7 @@ fn parse_futures_option_symbol(symbol: &str) -> Option<String> {
 
     // Parse right and strike
     let right_char = rest.chars().next()?;
-    if right_char != 'C' && right_char != 'c' && right_char != 'P' && right_char != 'p' {
-        return None;
-    }
+    IbOptionRight::from_str(&right_char.to_string()).ok()?;
 
     let strike_str = &rest[1..];
     strike_str.parse::<f64>().ok()?;
@@ -1021,6 +991,64 @@ pub fn is_spread_instrument_id(instrument_id: &InstrumentId) -> bool {
     let symbol_str = instrument_id.symbol.as_str();
     // Check if symbol contains spread pattern: (ratio) or ((ratio))
     symbol_str.contains('(') && symbol_str.contains('_')
+}
+
+/// Create a spread instrument ID from leg tuples.
+///
+/// This implements the same logic as Python's `InstrumentId.new_spread`:
+/// - Creates a symbol string like `(1)SYMBOL1_((2))SYMBOL2`
+/// - Positive ratios: `(ratio)SYMBOL`
+/// - Negative ratios: `((abs(ratio)))SYMBOL`
+/// - Sorts legs alphabetically by symbol
+/// - All legs must have the same venue
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Less than 2 legs provided
+/// - Any ratio is zero
+/// - Venues don't match across legs
+pub fn create_spread_instrument_id(
+    leg_tuples: &[(InstrumentId, i32)],
+) -> anyhow::Result<InstrumentId> {
+    if leg_tuples.len() < 2 {
+        anyhow::bail!("instrument_ratios list needs to have at least 2 legs");
+    }
+
+    let first_venue = leg_tuples[0].0.venue;
+
+    for (instrument_id, ratio) in leg_tuples {
+        if *ratio == 0 {
+            anyhow::bail!("ratio cannot be zero");
+        }
+
+        if instrument_id.venue != first_venue {
+            anyhow::bail!(
+                "All venues must match. Expected {}, was {}",
+                first_venue,
+                instrument_id.venue
+            );
+        }
+    }
+
+    let mut sorted_ratios = leg_tuples.to_vec();
+    sorted_ratios.sort_by(|a, b| a.0.symbol.as_str().cmp(b.0.symbol.as_str()));
+
+    let symbol_parts = sorted_ratios
+        .iter()
+        .map(|(instrument_id, ratio)| {
+            if *ratio > 0 {
+                format!("({}){}", ratio, instrument_id.symbol.as_str())
+            } else {
+                format!("(({})){}", ratio.abs(), instrument_id.symbol.as_str())
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let composite_symbol = symbol_parts.join("_");
+    let symbol = NautilusSymbol::from(composite_symbol.as_str());
+
+    Ok(InstrumentId::new(symbol, first_venue))
 }
 
 /// Parse a spread instrument ID back into leg tuples.
@@ -1040,13 +1068,9 @@ pub fn parse_spread_instrument_id_to_legs(
     let symbol_str = instrument_id.symbol.as_str();
     let venue = instrument_id.venue;
 
-    // Split by underscore to get individual components
     let components: Vec<&str> = symbol_str.split('_').collect();
     let mut result = Vec::new();
 
-    // Pattern to match (ratio)symbol or ((ratio))symbol
-    // Positive: (ratio)symbol
-    // Negative: ((ratio))symbol
     for component in components {
         if component.is_empty() {
             continue;

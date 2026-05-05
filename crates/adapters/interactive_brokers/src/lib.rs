@@ -79,6 +79,7 @@ pub mod config;
 pub mod data;
 pub mod error;
 pub mod execution;
+pub mod factories;
 pub mod gateway;
 pub mod historical;
 pub mod providers;
