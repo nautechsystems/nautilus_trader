@@ -1011,6 +1011,10 @@ impl OrderMatchingEngine {
         }
 
         self.instrument = instrument;
+
+        if changed {
+            self.drop_incompatible_core_orders();
+        }
         Ok(())
     }
 
@@ -1058,6 +1062,95 @@ impl OrderMatchingEngine {
                  {instrument_id}; check instrument update flow and upstream market data"
             );
         }
+    }
+
+    fn drop_incompatible_core_orders(&mut self) {
+        let client_order_ids: Vec<ClientOrderId> = self
+            .core
+            .iter_orders()
+            .filter(|order| {
+                !self.resting_order_matches_current_instrument(order)
+                    || !self.cached_order_matches_current_instrument(order.client_order_id)
+            })
+            .map(|order| order.client_order_id)
+            .collect();
+
+        for client_order_id in client_order_ids {
+            let order = self.cache.borrow().order(&client_order_id).cloned();
+            if let Some(order) = order
+                && (order.is_inflight() || order.is_open())
+            {
+                log::warn!(
+                    "Canceling order {client_order_id} after instrument update: \
+                     price, trigger price, or quantity is not compatible with {}",
+                    self.instrument.id()
+                );
+                self.cancel_order(&order, None);
+            } else {
+                let _ = self.core.delete_order(client_order_id);
+                self.cached_filled_qty.swap_remove(&client_order_id);
+            }
+        }
+    }
+
+    fn cached_order_matches_current_instrument(&self, client_order_id: ClientOrderId) -> bool {
+        self.cache
+            .borrow()
+            .order(&client_order_id)
+            .is_none_or(|order| {
+                Self::quantity_matches_precision(order.quantity(), self.instrument.size_precision())
+            })
+    }
+
+    fn resting_order_matches_current_instrument(&self, order: &RestingOrder) -> bool {
+        order
+            .limit_price
+            .is_none_or(|price| self.price_matches_current_instrument(price))
+            && order
+                .trigger_price
+                .is_none_or(|price| self.price_matches_current_instrument(price))
+    }
+
+    fn price_matches_current_instrument(&self, price: Price) -> bool {
+        Self::price_matches_precision(price, self.instrument.price_precision())
+            && Self::price_matches_tick(price, self.instrument.price_increment())
+    }
+
+    fn price_matches_precision(price: Price, precision: u8) -> bool {
+        let precision_diff = FIXED_PRECISION.saturating_sub(precision);
+        let scale = PriceRaw::pow(10, u32::from(precision_diff));
+        price.raw % scale == 0
+    }
+
+    fn price_matches_tick(price: Price, increment: Price) -> bool {
+        let increment_raw = increment.raw.abs();
+        increment_raw == 0 || price.raw % increment_raw == 0
+    }
+
+    fn quantity_matches_precision(quantity: Quantity, precision: u8) -> bool {
+        let precision_diff = FIXED_PRECISION.saturating_sub(precision);
+        let scale = QuantityRaw::pow(10, u32::from(precision_diff));
+        quantity.raw.is_multiple_of(scale)
+    }
+
+    fn normalize_price_for_current_instrument(&self, price: Price) -> Option<Price> {
+        if !self.price_matches_current_instrument(price) {
+            return None;
+        }
+
+        Some(Price::from_raw(
+            price.raw,
+            self.instrument.price_precision(),
+        ))
+    }
+
+    fn normalize_quantity_for_current_instrument(&self, quantity: Quantity) -> Option<Quantity> {
+        let precision = self.instrument.size_precision();
+        if !Self::quantity_matches_precision(quantity, precision) {
+            return None;
+        }
+
+        Some(Quantity::from_raw(quantity.raw, precision))
     }
 
     /// Process the venues market for the given order book delta.
@@ -1322,8 +1415,6 @@ impl OrderMatchingEngine {
     /// # Panics
     ///
     /// - If the bar type configuration is missing a time delta.
-    /// - If bar OHLC price precision does not match the instrument.
-    /// - If bar volume precision does not match the instrument.
     pub fn process_bar(&mut self, bar: &Bar) {
         log::debug!("Processing {bar}");
 
@@ -1338,16 +1429,32 @@ impl OrderMatchingEngine {
             return;
         }
 
-        self.check_price_precision(bar.open.precision, "bar open")
-            .unwrap();
-        self.check_price_precision(bar.high.precision, "bar high")
-            .unwrap();
-        self.check_price_precision(bar.low.precision, "bar low")
-            .unwrap();
-        self.check_price_precision(bar.close.precision, "bar close")
-            .unwrap();
-        self.check_size_precision(bar.volume.precision, "bar volume")
-            .unwrap();
+        if let Err(e) = self.check_price_precision(bar.open.precision, "bar open") {
+            self.log_precision_mismatch("bar", bar.instrument_id(), &e);
+            return;
+        }
+
+        if let Err(e) = self.check_price_precision(bar.high.precision, "bar high") {
+            self.log_precision_mismatch("bar", bar.instrument_id(), &e);
+            return;
+        }
+
+        if let Err(e) = self.check_price_precision(bar.low.precision, "bar low") {
+            self.log_precision_mismatch("bar", bar.instrument_id(), &e);
+            return;
+        }
+
+        if let Err(e) = self.check_price_precision(bar.close.precision, "bar close") {
+            self.log_precision_mismatch("bar", bar.instrument_id(), &e);
+            return;
+        }
+
+        if let Err(e) = self.check_size_precision(bar.volume.precision, "bar volume") {
+            self.log_precision_mismatch("bar", bar.instrument_id(), &e);
+            return;
+        }
+
+        self.precision_mismatch_streak = 0;
 
         let execution_bar_type =
             if let Some(execution_bar_type) = self.execution_bar_types.get(&bar.instrument_id()) {
@@ -3654,8 +3761,15 @@ impl OrderMatchingEngine {
     ) {
         if order.time_in_force() == TimeInForce::Fok {
             let mut total_size = Quantity::zero(order.quantity().precision);
-            for (_fill_px, fill_qty) in fills {
-                total_size = total_size.add(*fill_qty);
+
+            for &(fill_px, fill_qty) in fills {
+                if self
+                    .normalize_price_for_current_instrument(fill_px)
+                    .is_some()
+                    && let Some(fill_qty) = self.normalize_quantity_for_current_instrument(fill_qty)
+                {
+                    total_size = total_size.add(fill_qty);
+                }
             }
 
             if order.leaves_qty() > total_size {
@@ -3687,24 +3801,16 @@ impl OrderMatchingEngine {
 
         let mut initial_market_to_limit_fill = false;
 
-        for &(mut fill_px, ref fill_qty) in fills {
-            assert!(
-                (fill_px.precision == self.instrument.price_precision()),
-                "Invalid price precision for fill price {} when instrument price precision is {}.\
-                     Check that the data price precision matches the {} instrument",
-                fill_px.precision,
-                self.instrument.price_precision(),
-                self.instrument.id()
-            );
+        for &(fill_px, fill_qty) in fills {
+            let Some(mut fill_px) = self.normalize_fill_price(fill_px, order.client_order_id())
+            else {
+                continue;
+            };
 
-            assert!(
-                (fill_qty.precision == self.instrument.size_precision()),
-                "Invalid quantity precision for fill quantity {} when instrument size precision is {}.\
-                     Check that the data quantity precision matches the {} instrument",
-                fill_qty.precision,
-                self.instrument.size_precision(),
-                self.instrument.id()
-            );
+            let Some(fill_qty) = self.normalize_fill_quantity(fill_qty, order.client_order_id())
+            else {
+                continue;
+            };
 
             if order.filled_qty() == Quantity::zero(order.filled_qty().precision)
                 && order.order_type() == OrderType::MarketToLimit
@@ -3723,12 +3829,12 @@ impl OrderMatchingEngine {
             // Check reduce only order
             // If the incoming simulated fill would exceed the position when reduce-only is honored,
             // clamp the effective fill size to the adjusted (remaining position) quantity.
-            let mut effective_fill_qty = *fill_qty;
+            let mut effective_fill_qty = fill_qty;
 
             if self.config.use_reduce_only
                 && order.is_reduce_only()
                 && let Some(position) = &position
-                && *fill_qty > position.quantity
+                && fill_qty > position.quantity
             {
                 if position.quantity == Quantity::zero(position.quantity.precision) {
                     // Done
@@ -3794,6 +3900,41 @@ impl OrderMatchingEngine {
             // we will implement more detailed fill modeling.
             todo!("Exhausted simulated book volume")
         }
+    }
+
+    fn normalize_fill_price(
+        &self,
+        fill_px: Price,
+        client_order_id: ClientOrderId,
+    ) -> Option<Price> {
+        let normalized = self.normalize_price_for_current_instrument(fill_px);
+        if normalized.is_none() {
+            log::warn!(
+                "Skipping fill for {client_order_id}: fill price {fill_px} is not compatible \
+                 with {} price_precision={} price_increment={}",
+                self.instrument.id(),
+                self.instrument.price_precision(),
+                self.instrument.price_increment()
+            );
+        }
+        normalized
+    }
+
+    fn normalize_fill_quantity(
+        &self,
+        fill_qty: Quantity,
+        client_order_id: ClientOrderId,
+    ) -> Option<Quantity> {
+        let normalized = self.normalize_quantity_for_current_instrument(fill_qty);
+        if normalized.is_none() {
+            log::warn!(
+                "Skipping fill for {client_order_id}: fill quantity {fill_qty} is not compatible \
+                 with {} size_precision={}",
+                self.instrument.id(),
+                self.instrument.size_precision()
+            );
+        }
+        normalized
     }
 
     fn fill_order(

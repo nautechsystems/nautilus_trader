@@ -40,7 +40,8 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggressorSide, BookAction, BookType, ContingencyType, InstrumentCloseType,
-        LiquiditySide, OmsType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType,
+        LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
+        TriggerType,
     },
     events::{
         OrderEventAny, OrderEventType, OrderFilled, OrderRejected, order::spec::OrderRejectedSpec,
@@ -211,6 +212,36 @@ fn get_order_matching_engine_l2(
         cache,
         config,
     )
+}
+
+fn crypto_perpetual_with_price_precision(
+    instrument: InstrumentAny,
+    price_precision: u8,
+    price_increment: &str,
+) -> InstrumentAny {
+    match instrument {
+        InstrumentAny::CryptoPerpetual(mut crypto_perp) => {
+            crypto_perp.price_precision = price_precision;
+            crypto_perp.price_increment = Price::from(price_increment);
+            InstrumentAny::CryptoPerpetual(crypto_perp)
+        }
+        _ => panic!("Test fixture expected CryptoPerpetual instrument"),
+    }
+}
+
+fn crypto_perpetual_with_size_precision(
+    instrument: InstrumentAny,
+    size_precision: u8,
+    size_increment: &str,
+) -> InstrumentAny {
+    match instrument {
+        InstrumentAny::CryptoPerpetual(mut crypto_perp) => {
+            crypto_perp.size_precision = size_precision;
+            crypto_perp.size_increment = Quantity::from(size_increment);
+            InstrumentAny::CryptoPerpetual(crypto_perp)
+        }
+        _ => panic!("Test fixture expected CryptoPerpetual instrument"),
+    }
 }
 
 fn order_event_handler_with_cache(
@@ -8495,4 +8526,218 @@ fn test_update_instrument_without_precision_change_keeps_market_state(
     assert_eq!(engine.best_bid_price(), best_bid_before);
     assert_eq!(engine.best_ask_price(), best_ask_before);
     assert_eq!(engine.get_core().price_increment, increment_before);
+}
+
+#[rstest]
+fn test_update_instrument_normalizes_tick_compatible_resting_order_fill(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine =
+        get_order_matching_engine(instrument_eth_usdt.clone(), Some(cache), None, None, None);
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1000.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut limit_order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let updated_instrument = crypto_perpetual_with_price_precision(instrument_eth_usdt, 3, "0.001");
+    engine
+        .update_instrument(updated_instrument.clone())
+        .unwrap();
+
+    let trade = TradeTick::new(
+        updated_instrument.id(),
+        Price::from("999.000"),
+        Quantity::from("10.000"),
+        AggressorSide::Seller,
+        TradeId::new("1"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    engine.process_trade_tick(&trade);
+
+    let filled_events: Vec<_> = get_order_event_handler_messages(&order_event_handler)
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(filled) => Some(*filled),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(filled_events.len(), 1);
+    assert_eq!(filled_events[0].client_order_id, client_order_id);
+    assert_eq!(filled_events[0].last_px, Price::from("1000.000"));
+    assert_eq!(filled_events[0].last_qty, Quantity::from("1.000"));
+}
+
+#[rstest]
+fn test_update_instrument_removes_incompatible_resting_order_from_core(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let initial_instrument = crypto_perpetual_with_price_precision(instrument_eth_usdt, 3, "0.001");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine = get_order_matching_engine(
+        initial_instrument.clone(),
+        Some(cache.clone()),
+        None,
+        None,
+        None,
+    );
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(initial_instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1000.005"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut limit_order, account_id);
+    assert!(engine.order_exists(client_order_id));
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let updated_instrument = crypto_perpetual_with_price_precision(initial_instrument, 2, "0.01");
+    engine.update_instrument(updated_instrument).unwrap();
+
+    assert!(!engine.order_exists(client_order_id));
+    assert_eq!(
+        cache.borrow().order(&client_order_id).unwrap().status(),
+        OrderStatus::Canceled
+    );
+    assert!(
+        get_order_event_handler_messages(&order_event_handler)
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Canceled(canceled) if canceled.client_order_id == client_order_id))
+    );
+}
+
+#[rstest]
+fn test_update_instrument_cancels_tick_incompatible_resting_order(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let initial_instrument = crypto_perpetual_with_price_precision(instrument_eth_usdt, 3, "0.001");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine = get_order_matching_engine(
+        initial_instrument.clone(),
+        Some(cache.clone()),
+        None,
+        None,
+        None,
+    );
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(initial_instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1000.005"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut limit_order, account_id);
+    assert!(engine.order_exists(client_order_id));
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let updated_instrument = crypto_perpetual_with_price_precision(initial_instrument, 3, "0.01");
+    engine.update_instrument(updated_instrument).unwrap();
+
+    assert!(!engine.order_exists(client_order_id));
+    assert_eq!(
+        cache.borrow().order(&client_order_id).unwrap().status(),
+        OrderStatus::Canceled
+    );
+    assert!(
+        get_order_event_handler_messages(&order_event_handler)
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Canceled(canceled) if canceled.client_order_id == client_order_id))
+    );
+}
+
+#[rstest]
+fn test_update_instrument_cancels_quantity_incompatible_resting_order(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt.clone(),
+        Some(cache.clone()),
+        None,
+        None,
+        None,
+    );
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1000.00"))
+        .quantity(Quantity::from("1.001"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut limit_order, account_id);
+    assert!(engine.order_exists(client_order_id));
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let updated_instrument = crypto_perpetual_with_size_precision(instrument_eth_usdt, 2, "0.01");
+    engine.update_instrument(updated_instrument).unwrap();
+
+    assert!(!engine.order_exists(client_order_id));
+    assert_eq!(
+        cache.borrow().order(&client_order_id).unwrap().status(),
+        OrderStatus::Canceled
+    );
+    assert!(
+        get_order_event_handler_messages(&order_event_handler)
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Canceled(canceled) if canceled.client_order_id == client_order_id))
+    );
+}
+
+#[rstest]
+fn test_process_bar_drops_precision_mismatch_after_instrument_update(
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let updated_instrument = crypto_perpetual_with_price_precision(instrument_eth_usdt, 3, "0.001");
+    engine.update_instrument(updated_instrument).unwrap();
+
+    let bar_type = BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL");
+    let stale_bar = Bar {
+        bar_type,
+        open: Price::from("1000.00"),
+        high: Price::from("1001.00"),
+        low: Price::from("999.00"),
+        close: Price::from("1000.50"),
+        volume: Quantity::from("100.000"),
+        ts_event: UnixNanos::from(1),
+        ts_init: UnixNanos::from(1),
+    };
+
+    engine.process_bar(&stale_bar);
+
+    assert!(engine.get_core().last.is_none());
 }

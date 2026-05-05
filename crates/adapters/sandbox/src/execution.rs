@@ -87,6 +87,17 @@ fn quote_matches_instrument_precision(quote: &QuoteTick, instrument: &Instrument
         && quote.ask_size.precision == size_precision
 }
 
+fn bar_matches_instrument_precision(bar: &Bar, instrument: &InstrumentAny) -> bool {
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+
+    bar.open.precision == price_precision
+        && bar.high.precision == price_precision
+        && bar.low.precision == price_precision
+        && bar.close.precision == price_precision
+        && bar.volume.precision == size_precision
+}
+
 impl SandboxInner {
     /// Ensures a matching engine exists for the given instrument.
     fn ensure_matching_engine(&mut self, instrument: &InstrumentAny) {
@@ -178,6 +189,22 @@ impl SandboxInner {
 
         let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
         if let Some(instrument) = instrument {
+            if !bar_matches_instrument_precision(bar, &instrument) {
+                log::warn!(
+                    "Dropping bar for {} due to precision mismatch \
+                     (open={}, high={}, low={}, close={}, volume={}, expected_price={}, expected_size={})",
+                    instrument_id,
+                    bar.open.precision,
+                    bar.high.precision,
+                    bar.low.precision,
+                    bar.close.precision,
+                    bar.volume.precision,
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                );
+                return;
+            }
+
             self.ensure_matching_engine(&instrument);
 
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
@@ -512,6 +539,22 @@ impl SandboxExecutionClient {
             .instrument(&instrument_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+
+        if !bar_matches_instrument_precision(bar, &instrument) {
+            log::warn!(
+                "Dropping bar for {} due to precision mismatch \
+                 (open={}, high={}, low={}, close={}, volume={}, expected_price={}, expected_size={})",
+                instrument_id,
+                bar.open.precision,
+                bar.high.precision,
+                bar.low.precision,
+                bar.close.precision,
+                bar.volume.precision,
+                instrument.price_precision(),
+                instrument.size_precision(),
+            );
+            return Ok(());
+        }
 
         let mut inner = self.inner.borrow_mut();
         inner.ensure_matching_engine(&instrument);
