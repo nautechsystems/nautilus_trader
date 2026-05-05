@@ -9109,6 +9109,7 @@ class HyperliquidHttpClient:
         include_spot: bool = True,
         include_perps: bool = True,
         include_perps_hip3: bool = False,
+        include_outcomes: bool = False,
     ) -> list[Instrument]: ...
     async def request_order_status_reports(
         self,

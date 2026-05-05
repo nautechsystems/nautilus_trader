@@ -24,6 +24,8 @@ use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use nautilus_model::data::{CustomDataTrait, HasTsInit};
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 
 /// Deribit volatility index (DVOL) data.
 ///

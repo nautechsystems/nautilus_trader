@@ -25,6 +25,8 @@ use nautilus_model::{data::CustomDataTrait, identifiers::InstrumentId, types::Pr
 use serde::{Deserialize, Serialize};
 
 use nautilus_model::data::HasTsInit;
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 
 /// Hyperliquid all mid prices data.
 ///
