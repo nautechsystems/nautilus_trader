@@ -136,25 +136,31 @@
 - `subscribe_quotes/trades/book` 对 outcome 可直接工作（因 raw_symbol=`#xx`）。
 - `request_bars` 对 outcome 可调用 `candleSnapshot`。
 
-## Phase B（MVP 必做）：接入现有 Sandbox 纸面执行（0.5~1 天）
+## Phase B（MVP 必做）：接入现有 Sandbox 纸面执行（0.5~1 天）✅ 已完成
 
-### B1. 不新增 `outcome_paper` 模块
+### B1. 复用 SandboxExecutionClient ✅
 
 直接复用：
 
 - `SandboxExecutionClient`（`nautilus-sandbox`）
-- 在 `examples/sandbox/` 新增 `hyperliquid_outcome_sandbox.py`
+- 在 `examples/` 新增 `outcome_paper.rs` ✅
   - data client: Hyperliquid live data
-  - exec client: sandbox simulated exec
-  - strategy: 简单下单/撤单/风控例子
+  - exec client: Sandbox simulated exec
+  - venue: HYPERLIQUID with USDH base currency
+  - instrument: OUTCOME-{id}-{YES|NO}-OUTCOME
 
-### B2. 风控与约束（MVP）
+### B2. 风控与约束（MVP）✅
 
-- 在策略层或适配层增加 outcome 下单前校验：
-  - 价格范围 guardrail（默认 `0.001~0.999`，可配置）
-  - 仅限支持的 order type（建议先 `LIMIT`）
+在适配层增加 outcome 下单前校验：
 
-交付结果：
+- `http/outcome_validation.rs` ✅
+  - 价格范围 guardrail `[0.001, 0.999]`
+  - 订单类型建议（`LIMIT` for MVP）
+  - `is_outcome_instrument()` 检测
+  - `validate_price_range()` 验证
+  - `validate_outcome_order()` 综合验证
+
+交付结果：✅
 
 - 完成“live data + simulated execution”的 paper trading 闭环。
 - 不触碰实盘签名/链上提交流程。

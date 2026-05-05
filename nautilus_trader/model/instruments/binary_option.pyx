@@ -269,3 +269,70 @@ cdef class BinaryOption(Instrument):
 
         """
         return BinaryOption.to_dict_c(obj)
+
+    @staticmethod
+    cdef BinaryOption from_pyo3_c(pyo3_instrument):
+        """
+        Create a BinaryOption from a PyO3 instrument object.
+
+        This static method converts a PyO3 BinaryOption instrument (from Rust core)
+        into a Cython BinaryOption instance. Used by the Hyperliquid adapter when
+        loading outcome (prediction) market instruments from the Hyperliquid API.
+
+        Field mappings from PyO3 to Cython:
+        - PyO3 uses 'currency' field for the contract currency (not 'quote_currency')
+        - AssetClass is converted using asset_class_from_str function
+        - Optional fields (outcome, description, etc.) use hasattr checks for safety
+
+        Parameters
+        ----------
+        pyo3_instrument : nautilus_trader.core.nautilus_pyo3.BinaryOption
+            The PyO3 BinaryOption instrument to convert.
+
+        Returns
+        -------
+        BinaryOption
+            The Cython BinaryOption instance.
+
+        """
+        return BinaryOption(
+            instrument_id=InstrumentId.from_str_c(pyo3_instrument.id.value),
+            raw_symbol=Symbol(pyo3_instrument.raw_symbol.value),
+            asset_class=asset_class_from_str(pyo3_instrument.asset_class.name),
+            # Note: PyO3 BinaryOption uses 'currency' field, not 'quote_currency'
+            currency=Currency.from_str_c(pyo3_instrument.currency.code),
+            price_precision=pyo3_instrument.price_precision,
+            size_precision=pyo3_instrument.size_precision,
+            price_increment=Price.from_raw_c(pyo3_instrument.price_increment.raw, pyo3_instrument.price_precision),
+            size_increment=Quantity.from_raw_c(pyo3_instrument.size_increment.raw, pyo3_instrument.size_precision),
+            activation_ns=pyo3_instrument.activation_ns,
+            expiration_ns=pyo3_instrument.expiration_ns,
+            ts_event=pyo3_instrument.ts_event,
+            ts_init=pyo3_instrument.ts_init,
+            max_quantity=Quantity.from_raw_c(pyo3_instrument.max_quantity.raw, pyo3_instrument.max_quantity.precision) if pyo3_instrument.max_quantity is not None else None,
+            min_quantity=Quantity.from_raw_c(pyo3_instrument.min_quantity.raw, pyo3_instrument.min_quantity.precision) if pyo3_instrument.min_quantity is not None else None,
+            maker_fee=Decimal(pyo3_instrument.maker_fee) if pyo3_instrument.maker_fee is not None else None,
+            taker_fee=Decimal(pyo3_instrument.taker_fee) if pyo3_instrument.taker_fee is not None else None,
+            # Optional fields for outcome markets
+            outcome=pyo3_instrument.outcome if hasattr(pyo3_instrument, 'outcome') else None,
+            description=pyo3_instrument.description if hasattr(pyo3_instrument, 'description') else None,
+            tick_scheme_name=pyo3_instrument.tick_scheme_name if hasattr(pyo3_instrument, 'tick_scheme_name') else None,
+            info=pyo3_instrument.info if hasattr(pyo3_instrument, 'info') else None,
+        )
+
+    @staticmethod
+    def from_pyo3(pyo3_instrument):
+        """
+        Public Python interface for from_pyo3_c.
+
+        Parameters
+        ----------
+        pyo3_instrument : nautilus_trader.core.nautilus_pyo3.BinaryOption
+            The PyO3 BinaryOption instrument to convert.
+
+        Returns
+        -------
+        BinaryOption
+
+        """
+        return BinaryOption.from_pyo3_c(pyo3_instrument)
