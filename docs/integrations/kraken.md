@@ -54,7 +54,7 @@ Kraken supports two primary product categories:
 | Product Type             | Supported | Notes                                                     |
 |--------------------------|-----------|-----------------------------------------------------------|
 | Spot                     | ✓         | Standard cryptocurrency pairs with margin support.        |
-| Futures (Perpetual)      | ✓         | Inverse (`PI_`) and USD‑margined (`PF_`) perpetual swaps. |
+| Futures (Perpetual)      | ✓         | Inverse (`PI_`) and USD-margined (`PF_`) perpetual swaps. |
 | Futures (Dated/Flex)     | ✓         | Fixed maturity (`FI_`) and flex (`FF_`) contracts.        |
 
 :::note
@@ -129,15 +129,15 @@ Kraken uses different Bitcoin symbol conventions across their APIs:
 
 | Market  | Symbol Format | Example            | Notes                                       |
 |---------|---------------|--------------------|---------------------------------------------|
-| Spot    | `BTC`         | `BTC/USD.KRAKEN`   | Adapter normalizes XBT → BTC at load time.  |
+| Spot    | `BTC`         | `BTC/USD.KRAKEN`   | Adapter normalizes XBT to BTC at load time. |
 | Futures | `XBT`         | `PI_XBTUSD.KRAKEN` | Uses Kraken's native XBT format.            |
 
 :::note
 Kraken's REST API returns `XBT` for Bitcoin (following ISO 4217 conventions for
 supranational currencies), but their WebSocket v2 API requires the `BTC` format.
 The adapter automatically normalizes spot symbols to `BTC` when loading instruments,
-whether XBT appears as the base currency (e.g., `XBT/USD` → `BTC/USD`) or quote
-currency (e.g., `ETH/XBT` → `ETH/BTC`). Futures retain Kraken's native `XBT` format.
+whether XBT appears as the base currency (e.g., `XBT/USD` to `BTC/USD`) or quote
+currency (e.g., `ETH/XBT` to `ETH/BTC`). Futures retain Kraken's native `XBT` format.
 :::
 
 ### Spot markets
@@ -254,11 +254,11 @@ time rather than silently coercing them.
 
 ### Batch operations
 
-| Operation          | Spot | Futures | Notes                                        |
-|--------------------|------|---------|----------------------------------------------|
-| Batch Submit       | ✓    | ✓       | Spot chunks at 15 orders. Futures chunks at 10. |
-| Batch Modify       | -    | ✓       | Futures HTTP helper only. Execution uses single modify commands. |
-| Batch Cancel       | ✓    | ✓       | Auto‑chunks into batches of 50.              |
+| Operation    | Spot | Futures | Notes                                                   |
+|--------------|------|---------|---------------------------------------------------------|
+| Batch Submit | ✓    | ✓       | Spot chunks at 15 orders. Futures chunks at 10.         |
+| Batch Modify | -    | ✓       | Futures HTTP helper only. Execution sends one command.  |
+| Batch Cancel | ✓    | ✓       | Auto‑chunks into batches of 50.                         |
 
 :::note
 **Cancel all orders**:
@@ -271,12 +271,12 @@ time rather than silently coercing them.
 
 ### Position management
 
-| Feature           | Spot | Futures | Notes                                                                                  |
-|-------------------|------|---------|----------------------------------------------------------------------------------------|
-| Query positions   | ✓    | ✓       | Spot margin: via `OpenPositions`. Spot cash: opt‑in wallet reports (see below).        |
-| Position mode     | -    | -       | Single position per instrument.                                                        |
-| Leverage control  | ✓    | ✓       | Spot: per‑pair tiers from `AssetPairInfo.leverage_buy/_sell`; per‑order `params={"leverage": N}`. |
-| Margin mode       | ✓    | ✓       | Spot: cross margin (Kraken does not expose isolated for spot). Futures: cross margin.  |
+| Feature          | Spot | Futures | Notes                                                                                    |
+|------------------|------|---------|------------------------------------------------------------------------------------------|
+| Query positions  | ✓    | ✓       | Spot margin: via `OpenPositions`. Spot cash: opt‑in wallet reports (see below).          |
+| Position mode    | -    | -       | Single position per instrument.                                                          |
+| Leverage control | ✓    | ✓       | Spot: per‑pair leverage tiers; per‑order `params={"leverage": N}`.                       |
+| Margin mode      | ✓    | ✓       | Spot: cross margin (Kraken does not expose isolated for spot). Futures: cross margin.    |
 
 ### Order querying
 
@@ -446,16 +446,16 @@ matching position exists. Cash orders ignore the flag.
 When `spot_account_type=Margin`, the adapter calls Kraken's `TradeBalance`
 endpoint and surfaces the result in two places:
 
-- `MarginBalance.initial` — used margin (`m`).
-- `AccountState.info` dict — full `TradeBalance` snapshot:
-  - `equity` — net equity
-  - `free_margin` — equity minus used margin
-  - `unrealized_pnl` — open-position P&L
-  - `margin_level` — equity / used margin (%) when positions are open
-  - `trade_balance` — collateral on deposit
-  - `equivalent_balance` — combined-currency wallet equivalent
-  - `cost_basis`, `valuation`, `unexecuted_value`, `used_margin` — raw `TradeBalance` fields
-  - `asset` — resolved denominating asset (e.g. `USD`, `GBP`)
+- `MarginBalance.initial`: used margin (`m`).
+- `AccountState.info` dict: full `TradeBalance` snapshot:
+  - `equity`: net equity
+  - `free_margin`: equity minus used margin
+  - `unrealized_pnl`: open-position P&L
+  - `margin_level`: equity / used margin (%) when positions are open
+  - `trade_balance`: collateral on deposit
+  - `equivalent_balance`: combined-currency wallet equivalent
+  - `cost_basis`, `valuation`, `unexecuted_value`, `used_margin`: raw `TradeBalance` fields
+  - `asset`: resolved denominating asset (e.g. `USD`, `GBP`)
 
 A single INFO log line is emitted on every account state refresh:
 
@@ -563,7 +563,7 @@ The product types for each client must be specified in the configurations.
 | `api_key`                       | `None`    | API key; loaded from environment variables (see below) when omitted.    |
 | `api_secret`                    | `None`    | API secret; loaded from environment variables (see below) when omitted. |
 | `environment`                   | `mainnet` | Trading environment (`mainnet` or `demo`); demo only for Futures.       |
-| `product_types`                 | `(SPOT,)` | Product types tuple; `SPOT` uses `spot_account_type` (default CASH), `FUTURES` uses MARGIN. |
+| `product_types`                 | `(SPOT,)` | Product types; `SPOT` uses `spot_account_type`, `FUTURES` uses MARGIN.  |
 | `base_url_http_spot`            | `None`    | Override for Kraken Spot REST base URL.                                 |
 | `base_url_http_futures`         | `None`    | Override for Kraken Futures REST base URL.                              |
 | `base_url_ws_spot`              | `None`    | Override for Kraken Spot WebSocket URL.                                 |
@@ -575,11 +575,15 @@ The product types for each client must be specified in the configurations.
 | `http_timeout_secs`             | `None`    | HTTP request timeout in seconds.                                        |
 | `ws_heartbeat_secs`             | `30`      | WebSocket heartbeat interval in seconds.                                |
 | `max_requests_per_second`       | `None`    | Override rate limit (default 5 req/s); for higher tier accounts.        |
-| `use_spot_position_reports`     | `False`   | Report wallet balances as positions (cash mode only — see Spot position reports). |
+| `use_spot_position_reports`     | `False`   | Report wallet balances as positions in cash mode.                       |
 | `spot_positions_quote_currency` | `"USDT"`  | Quote currency filter for spot wallet position reports.                 |
-| `spot_account_type`             | `CASH`    | Account type for spot trading. Set to `MARGIN` to enable leverage, margin reporting via `TradeBalance`, and `OpenPositions` reconciliation. |
-| `default_leverage`              | `None`    | Default leverage multiplier for margin orders when not specified per‑order. Sent as `"N:1"`. Requires `spot_account_type=MARGIN`. |
-| `margin_balance_asset`          | `None`    | Summary‑display asset for `TradeBalance` metrics (e.g. `"ZUSD"`, `"ZGBP"`, `"USDT"`). `None` lets Kraken default to `ZUSD`. Display‑only; per‑position figures remain in the pair's quote currency. |
+| `spot_account_type`             | `CASH`    | Spot account type; `MARGIN` enables leverage and margin state.          |
+| `default_leverage`              | `None`    | Default spot margin leverage sent as `"N:1"` when set.                  |
+| `margin_balance_asset`          | `None`    | Summary asset for `TradeBalance`; `None` defaults to `ZUSD`.            |
+
+For spot margin, `default_leverage` applies when an order has no per-order leverage
+param. `margin_balance_asset` only changes the `TradeBalance` summary denomination;
+per-position figures remain in the pair's quote currency.
 
 ### Demo environment setup
 

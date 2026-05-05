@@ -169,7 +169,7 @@ class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):
         ``"ZGBP"``, ``"ZEUR"``, ``"USDT"``). Controls the denomination of equity,
         free margin, used margin, and other summary figures returned by Kraken's
         ``TradeBalance`` endpoint. ``None`` lets Kraken default to ``ZUSD``.
-        Display-only — Kraken converts internally; per-position figures from
+        Display-only: Kraken converts internally; per-position figures from
         ``OpenPositions`` remain in the traded pair's quote currency.
         Only effective when ``spot_account_type=AccountType.MARGIN``.
 

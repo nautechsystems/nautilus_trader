@@ -2201,7 +2201,6 @@ async def test_update_account_state_margin_populates_info_dict(
         await client._update_account_state()
 
         http_client.request_account_state_with_metrics.assert_awaited()
-        # Asset is the third positional arg on the combined call.
         last_call = http_client.request_account_state_with_metrics.call_args
         assert last_call.args[2] == "ZGBP"
 
@@ -2216,8 +2215,6 @@ async def test_update_account_state_cash_skips_margin_metrics(
     monkeypatch,
     msgbus,
 ):
-    # In CASH mode the combined call returns an empty metrics dict and Kraken's
-    # `TradeBalance` endpoint is never hit (the Rust client short-circuits).
     client, _ws_client, http_client, _instrument_provider = exec_client_builder_spot(monkeypatch)
     http_client.request_margin_metrics = AsyncMock(return_value={})
 
@@ -2263,7 +2260,6 @@ async def test_update_account_state_margin_passes_asset_to_request_account_state
         await client._update_account_state()
 
         http_client.request_account_state_with_metrics.assert_awaited_once()
-        # Third positional arg is margin_balance_asset.
         call_args = http_client.request_account_state_with_metrics.call_args
         assert call_args.args[2] == "ZGBP"
     finally:
@@ -3255,11 +3251,6 @@ async def test_submit_gtc_limit_order_spot_no_expire_time(
         await client._disconnect()
 
 
-# ============================================================================
-# ACCOUNT TYPE CONVERSION TESTS
-# ============================================================================
-
-
 def test_account_type_to_pyo3_round_trip():
     assert account_type_to_pyo3(AccountType.CASH).name == "CASH"
     assert account_type_to_pyo3(AccountType.MARGIN).name == "MARGIN"
@@ -3296,11 +3287,6 @@ def test_kraken_exec_config_accepts_default_leverage_with_margin():
         spot_account_type=AccountType.MARGIN,
     )
     assert config.default_leverage == 3
-
-
-# ============================================================================
-# LIST LEVERAGE TESTS
-# ============================================================================
 
 
 @pytest.mark.asyncio

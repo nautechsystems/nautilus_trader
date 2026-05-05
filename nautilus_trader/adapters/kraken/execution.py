@@ -129,7 +129,6 @@ class KrakenExecutionClient(LiveExecutionClient):
     ) -> None:
         product_types = list(config.product_types or (KrakenProductType.SPOT,))
 
-        # Determine account type based on product types and spot_account_type config
         if set(product_types) == {KrakenProductType.SPOT}:
             self._account_type = config.spot_account_type
         else:

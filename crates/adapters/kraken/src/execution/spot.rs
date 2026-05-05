@@ -91,21 +91,6 @@ pub struct KrakenSpotExecutionClient {
     ws_dispatch_state: Arc<WsDispatchState>,
 }
 
-fn resolve_leverage(params: Option<&Params>, default: Option<u16>) -> Result<Option<u16>, String> {
-    let Some(p) = params else {
-        return Ok(default);
-    };
-    let Some(raw) = p.get("leverage") else {
-        return Ok(default);
-    };
-    let n = raw.as_u64().ok_or_else(|| {
-        format!("Invalid leverage param: expected unsigned integer, received {raw}")
-    })?;
-    let lev =
-        u16::try_from(n).map_err(|_| format!("leverage {n} exceeds maximum ({})", u16::MAX))?;
-    Ok(Some(lev))
-}
-
 impl KrakenSpotExecutionClient {
     /// Creates a new [`KrakenSpotExecutionClient`].
     pub fn new(core: ExecutionClientCore, config: KrakenExecClientConfig) -> anyhow::Result<Self> {
@@ -1233,6 +1218,21 @@ impl ExecutionClient for KrakenSpotExecutionClient {
 
         Ok(())
     }
+}
+
+fn resolve_leverage(params: Option<&Params>, default: Option<u16>) -> Result<Option<u16>, String> {
+    let Some(p) = params else {
+        return Ok(default);
+    };
+    let Some(raw) = p.get("leverage") else {
+        return Ok(default);
+    };
+    let n = raw.as_u64().ok_or_else(|| {
+        format!("Invalid leverage param: expected unsigned integer, received {raw}")
+    })?;
+    let lev =
+        u16::try_from(n).map_err(|_| format!("leverage {n} exceeds maximum ({})", u16::MAX))?;
+    Ok(Some(lev))
 }
 
 #[cfg(test)]

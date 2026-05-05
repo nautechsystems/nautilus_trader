@@ -89,49 +89,6 @@ const BATCH_CANCEL_LIMIT: usize = 50;
 /// Maximum orders per batch submit request for Kraken Spot API.
 const BATCH_SUBMIT_LIMIT: usize = 15;
 
-/// Resolves the Nautilus [`Currency`] used to denominate `TradeBalance` margin metrics.
-///
-/// Kraken's `TradeBalance` defaults to `ZUSD` when no asset is supplied. This helper
-/// strips Kraken's legacy `X`/`Z` prefixes via `normalize_currency_code` and looks up
-/// the matching Nautilus currency, falling back to a 2dp fiat currency for unknown
-/// codes so unusual collateral assets still produce a tagged `MarginBalance`.
-fn trade_balance_currency(asset: Option<&str>) -> Currency {
-    let raw = asset.unwrap_or("ZUSD");
-    let normalized = normalize_currency_code(raw);
-    Currency::try_from_str(normalized)
-        .unwrap_or_else(|| Currency::new(normalized, 2, 0, normalized, CurrencyType::Fiat))
-}
-
-/// Computes the time-in-force and expiration time parameters for Kraken Spot orders.
-///
-/// Returns a tuple of (timeinforce, expiretm) for use in order requests.
-/// For limit orders, handles GTC, IOC, and GTD. Market orders return (None, None).
-fn compute_time_in_force(
-    is_limit_order: bool,
-    time_in_force: TimeInForce,
-    expire_time: Option<UnixNanos>,
-) -> anyhow::Result<(Option<String>, Option<String>)> {
-    if is_limit_order {
-        match time_in_force {
-            TimeInForce::Gtc => Ok((None, None)), // Default, no parameter needed
-            TimeInForce::Ioc => Ok((Some("IOC".to_string()), None)),
-            TimeInForce::Fok => Ok((Some("FOK".to_string()), None)),
-            TimeInForce::Gtd => {
-                let expire = expire_time.ok_or_else(|| {
-                    anyhow::anyhow!("GTD time in force requires expire_time parameter")
-                })?;
-                // Convert nanoseconds to seconds for Kraken API
-                let expire_secs = expire.as_u64() / NANOSECONDS_IN_SECOND;
-                Ok((Some("GTD".to_string()), Some(expire_secs.to_string())))
-            }
-            _ => anyhow::bail!("Unsupported time in force: {time_in_force:?}"),
-        }
-    } else {
-        // Market orders are inherently immediate, timeinforce not applicable
-        Ok((None, None))
-    }
-}
-
 /// Raw HTTP client for low-level Kraken Spot API operations.
 ///
 /// This client handles request/response operations with the Kraken Spot API,
@@ -1095,7 +1052,7 @@ impl KrakenSpotRawHttpClient {
     /// Requests margin account summary (requires authentication).
     ///
     /// Unlike `get_balance` which returns per-currency wallet amounts, this returns margin
-    /// accounting metrics — used margin, free margin, equity — all denominated in `asset`
+    /// accounting metrics: used margin, free margin, equity, all denominated in `asset`
     /// (defaults to `"ZUSD"` when `None`). Only meaningful for spot margin accounts.
     pub async fn get_trade_balance(
         &self,
@@ -1150,9 +1107,6 @@ impl KrakenSpotRawHttpClient {
         })
     }
 }
-
-/// Maps raw symbol (altname, e.g. "XBTUSD") → (leverage_buy_tiers, leverage_sell_tiers).
-type LeverageTiersCache = Arc<AtomicMap<Ustr, (Vec<i32>, Vec<i32>)>>;
 
 /// High-level HTTP client for the Kraken Spot REST API.
 ///
@@ -1696,12 +1650,10 @@ impl KrakenSpotHttpClient {
     /// callers attach to `AccountState.info`. In cash mode the metrics map is empty
     /// and `TradeBalance` is not called.
     ///
-    /// In margin mode, a synthetic [`AccountBalance`] for `margin_balance_asset`
-    /// replaces its raw wallet entry: `total = e` (equity across all collateral
-    /// assets), `free = mf`, `locked = m` (`= e - mf` per Kraken docs). This
-    /// exposes Kraken's venue-authoritative free margin to risk checks regardless
-    /// of how many assets contribute to equity — avoiding the multi-asset clamp
-    /// that occurs when `mf > single-currency wallet`.
+    /// In margin mode, replaces the raw `margin_balance_asset` wallet with a
+    /// synthetic [`AccountBalance`] using `total = e` and `free = mf` from
+    /// `TradeBalance`. Kraken reports these values across all collateral, which
+    /// avoids clamping free margin to one wallet bucket in multi-asset accounts.
     ///
     /// The single shared fetch keeps Kraken rate-limit usage symmetric with `Balance`
     /// (one request per account update), instead of two as if `request_account_state`
@@ -1715,24 +1667,30 @@ impl KrakenSpotHttpClient {
         let balances_raw = self.inner.get_balance().await?;
         let ts_init = self.generate_ts_init();
 
-        let (margins, metrics, free_margin, target_code) = if account_type == AccountType::Margin {
-            let (margins, metrics, mf, equity) =
-                self.fetch_trade_balance_split(margin_balance_asset).await?;
-            let target = normalize_currency_code(margin_balance_asset.unwrap_or("ZUSD"));
-            (margins, metrics, Some((mf, equity)), target)
+        let (margins, metrics, margin_entry, target_code) = if account_type == AccountType::Margin {
+            let snapshot = self
+                .fetch_trade_balance_snapshot(margin_balance_asset)
+                .await?;
+            let target_code = normalize_currency_code(margin_balance_asset.unwrap_or("ZUSD"));
+            let currency = Currency::new(target_code, 8, 0, "0", CurrencyType::Crypto);
+            let margin_entry = AccountBalance::from_total_and_free(
+                snapshot.equity,
+                snapshot.free_margin,
+                currency,
+            )
+            .context("Failed to build synthetic margin AccountBalance from TradeBalance")?;
+
+            (
+                snapshot.margins,
+                snapshot.metrics,
+                Some(margin_entry),
+                target_code,
+            )
         } else {
             (Vec::new(), IndexMap::new(), None, "")
         };
 
-        // Synthetic entry: total=e, free=mf, locked=m — replaces the raw wallet
-        // entry for target_code. A single-currency wallet (e.g., ZUSD) only reflects
-        // cash; e is the USD value of all collateral assets, which is what Kraken uses
-        // for order acceptance (mf = e - m per
-        // https://docs.kraken.com/api/docs/rest-api/get-trade-balance/).
-        let margin_entry: Option<AccountBalance> = free_margin.and_then(|(mf, equity)| {
-            let currency = Currency::new(target_code, 8, 0, "0", CurrencyType::Crypto);
-            AccountBalance::from_total_and_free(equity, mf, currency).ok()
-        });
+        let skip_margin_wallet = margin_entry.is_some();
 
         let balances: Vec<AccountBalance> = balances_raw
             .iter()
@@ -1747,8 +1705,7 @@ impl KrakenSpotHttpClient {
                     .or_else(|| currency_code.strip_prefix("Z"))
                     .unwrap_or(currency_code);
 
-                // Replaced by the equity-based margin_entry chained below.
-                if free_margin.is_some() && normalized_code == target_code {
+                if skip_margin_wallet && normalized_code == target_code {
                     return None;
                 }
 
@@ -1787,15 +1744,10 @@ impl KrakenSpotHttpClient {
     /// `initial + maintenance` to compute `locked`, so duplicating `m` into both fields
     /// would double-lock equity and diverge from Kraken's reported `mf = e - m`.
     /// `m` is therefore mapped to `initial`, with `maintenance = Money::zero(currency)`.
-    async fn fetch_trade_balance_split(
+    async fn fetch_trade_balance_snapshot(
         &self,
         asset: Option<&str>,
-    ) -> anyhow::Result<(
-        Vec<MarginBalance>,
-        IndexMap<String, String>,
-        Decimal,
-        Decimal,
-    )> {
+    ) -> anyhow::Result<TradeBalanceSnapshot> {
         let tb = self.inner.get_trade_balance(asset).await?;
 
         let used_margin = Decimal::from_str_exact(&tb.m)
@@ -1833,7 +1785,12 @@ impl KrakenSpotHttpClient {
             normalize_currency_code(asset.unwrap_or("ZUSD")).to_string(),
         );
 
-        Ok((margins, metrics, free_margin, equity))
+        Ok(TradeBalanceSnapshot {
+            margins,
+            metrics,
+            free_margin,
+            equity,
+        })
     }
 
     /// Returns a flattened snapshot of Kraken's `TradeBalance` margin metrics.
@@ -1852,9 +1809,9 @@ impl KrakenSpotHttpClient {
         &self,
         asset: Option<&str>,
     ) -> anyhow::Result<IndexMap<String, String>> {
-        self.fetch_trade_balance_split(asset)
+        self.fetch_trade_balance_snapshot(asset)
             .await
-            .map(|(_, metrics, _, _)| metrics)
+            .map(|snapshot| snapshot.metrics)
     }
 
     /// Requests order status reports from Kraken.
@@ -2847,6 +2804,52 @@ fn collect_spot_statuses(
             (instrument_id, action)
         })
         .collect()
+}
+
+/// Maps raw symbol (altname, e.g. "XBTUSD") to leverage tiers.
+type LeverageTiersCache = Arc<AtomicMap<Ustr, (Vec<i32>, Vec<i32>)>>;
+
+struct TradeBalanceSnapshot {
+    margins: Vec<MarginBalance>,
+    metrics: IndexMap<String, String>,
+    free_margin: Decimal,
+    equity: Decimal,
+}
+
+/// Resolves the Nautilus [`Currency`] used to denominate `TradeBalance` margin metrics.
+///
+/// Kraken's `TradeBalance` defaults to `ZUSD` when no asset is supplied. This strips
+/// Kraken's legacy `X`/`Z` prefixes and falls back to a 2dp fiat currency for unknown
+/// codes so unusual collateral assets still produce a tagged `MarginBalance`.
+fn trade_balance_currency(asset: Option<&str>) -> Currency {
+    let raw = asset.unwrap_or("ZUSD");
+    let normalized = normalize_currency_code(raw);
+    Currency::try_from_str(normalized)
+        .unwrap_or_else(|| Currency::new(normalized, 2, 0, normalized, CurrencyType::Fiat))
+}
+
+fn compute_time_in_force(
+    is_limit_order: bool,
+    time_in_force: TimeInForce,
+    expire_time: Option<UnixNanos>,
+) -> anyhow::Result<(Option<String>, Option<String>)> {
+    if !is_limit_order {
+        return Ok((None, None));
+    }
+
+    match time_in_force {
+        TimeInForce::Gtc => Ok((None, None)),
+        TimeInForce::Ioc => Ok((Some("IOC".to_string()), None)),
+        TimeInForce::Fok => Ok((Some("FOK".to_string()), None)),
+        TimeInForce::Gtd => {
+            let expire = expire_time.ok_or_else(|| {
+                anyhow::anyhow!("GTD time in force requires expire_time parameter")
+            })?;
+            let expire_secs = expire.as_u64() / NANOSECONDS_IN_SECOND;
+            Ok((Some("GTD".to_string()), Some(expire_secs.to_string())))
+        }
+        _ => anyhow::bail!("Unsupported time in force: {time_in_force:?}"),
+    }
 }
 
 #[cfg(test)]

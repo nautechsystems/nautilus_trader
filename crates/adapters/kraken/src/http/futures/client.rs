@@ -2527,7 +2527,7 @@ fn parse_multi_collateral_balances(account: &FuturesAccount, balances: &mut Vec<
 }
 
 // Kraken Futures serves balances as JSON numbers, which serde already parsed to
-// f64. Converting to Decimal here just moves the value into the fixed-point
+// f64. Converting to Decimal here moves the value into the fixed-point
 // constructor; it does not recover any precision lost at the wire parse.
 fn push_balance_from_f64(
     balances: &mut Vec<AccountBalance>,
@@ -2818,10 +2818,9 @@ mod tests {
 
     #[rstest]
     fn test_parse_margin_account_balances_free_is_derived_from_total_minus_locked() {
-        // Regression: `free` must be derived via Money fixed-point subtraction so
-        // the `AccountBalance` invariant `total == locked + free` holds exactly,
-        // rather than using the raw Kraken `af` (available funds) value which
-        // can drift at the currency precision and violate the invariant in
+        // `free` must be derived via Money fixed-point subtraction so the
+        // `AccountBalance` invariant `total == locked + free` holds exactly.
+        // Kraken's raw `af` can drift at currency precision and violate
         // `AccountBalance::new_checked`.
         let mut bals = AHashMap::new();
         // Values chosen so that Kraken's raw `af` rounds independently from

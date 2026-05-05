@@ -136,7 +136,7 @@ pub struct KrakenExecClientConfig {
 
     /// Default leverage multiplier for spot margin orders when not overridden per-order.
     ///
-    /// Sent as `"N:1"` to Kraken (e.g., `3` → `"3:1"`).
+    /// Sent as `"N:1"` to Kraken (e.g., `3` becomes `"3:1"`).
     /// Valid tiers per pair are in `AssetPairInfo.leverage_buy` / `leverage_sell`.
     /// `None` means cash orders (no leverage field sent).
     pub default_leverage: Option<u16>,
@@ -144,7 +144,7 @@ pub struct KrakenExecClientConfig {
     /// Whether to generate `PositionStatusReport`s from spot wallet balances.
     ///
     /// Set `true` for spot-only (cash) accounts that need position tracking from
-    /// balance snapshots. For margin accounts leave `false` — positions are
+    /// balance snapshots. For margin accounts leave `false`; positions are
     /// reconciled via `OpenPositions` instead.
     #[builder(default = false)]
     pub use_spot_position_reports: bool,
@@ -160,7 +160,7 @@ pub struct KrakenExecClientConfig {
     /// Controls the denomination of equity, free margin, used margin, and other
     /// summary figures returned by Kraken's `TradeBalance` endpoint (e.g. `"ZUSD"`,
     /// `"ZGBP"`, `"ZEUR"`, `"USDT"`). `None` lets Kraken default to `ZUSD`.
-    /// Display-only — Kraken converts internally; per-position figures from
+    /// Display-only: Kraken converts internally; per-position figures from
     /// `OpenPositions` remain in the traded pair's quote currency.
     pub margin_balance_asset: Option<String>,
 }

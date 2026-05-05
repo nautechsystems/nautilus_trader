@@ -47,14 +47,16 @@ use nautilus_kraken::{
 use nautilus_model::{
     data::BarType,
     enums::{
-        MarketStatusAction, OrderSide as ModelOrderSide, OrderType as ModelOrderType, TimeInForce,
+        AccountType, MarketStatusAction, OrderSide as ModelOrderSide, OrderType as ModelOrderType,
+        TimeInForce,
     },
-    identifiers::{ClientOrderId, InstrumentId, Symbol, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use serde_json::Value;
 
 #[derive(Clone)]
@@ -67,6 +69,8 @@ struct TestServerState {
     add_order_batch_calls: Arc<AtomicUsize>,
     /// When true, `/0/private/TradeBalance` returns an API error instead of the normal fixture.
     trade_balance_error: Arc<AtomicBool>,
+    /// When set, `/0/private/TradeBalance` returns this JSON string instead of the fixture file.
+    trade_balance_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// Captures the last raw body posted to `/0/private/TradeBalance` for assertion.
     last_trade_balance_body: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When true, `/0/private/OpenPositions` returns an empty positions map.
@@ -85,6 +89,7 @@ impl Default for TestServerState {
             add_order_calls: Arc::new(AtomicUsize::new(0)),
             add_order_batch_calls: Arc::new(AtomicUsize::new(0)),
             trade_balance_error: Arc::new(AtomicBool::new(false)),
+            trade_balance_json: Arc::new(tokio::sync::Mutex::new(None)),
             last_trade_balance_body: Arc::new(tokio::sync::Mutex::new(None)),
             open_positions_empty: Arc::new(AtomicBool::new(false)),
             open_positions_json: Arc::new(tokio::sync::Mutex::new(None)),
@@ -531,6 +536,12 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
                     .status(StatusCode::OK)
                     .header("content-type", "application/json")
                     .body(Body::from(r#"{"error":["EAPI:Invalid key"],"result":{}}"#))
+                    .unwrap()
+            } else if let Some(json) = state.trade_balance_json.lock().await.clone() {
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json))
                     .unwrap()
             } else {
                 mock_spot_trade_balance().await
@@ -2705,8 +2716,6 @@ async fn test_spot_request_account_state_margin_does_not_lock_free_margin() {
     // sums `initial + maintenance` to compute locked, so duplicating `m` would double-lock
     // equity and diverge from Kraken's `mf = e - m`. Map `m` to `initial` and zero
     // `maintenance` so locked equals `m`.
-    use nautilus_model::{enums::AccountType, identifiers::AccountId};
-
     let state = Arc::new(TestServerState::default());
     let app = create_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2742,34 +2751,18 @@ async fn test_spot_request_account_state_margin_does_not_lock_free_margin() {
     assert_eq!(state.account_type, AccountType::Margin);
     assert_eq!(state.margins.len(), 1, "expected one MarginBalance entry");
     let mb = &state.margins[0];
-    // m=12500.00 in fixture — initial mirrors used margin; maintenance is zero
     assert_eq!(mb.initial.as_f64(), 12500.00);
     assert_eq!(
         mb.maintenance.as_f64(),
         0.0,
-        "maintenance must be zero — Kraken's TradeBalance reports a single used-margin value (`m`); duplicating it would double-lock equity"
+        "maintenance must stay zero to avoid double-locking TradeBalance `m`"
     );
     assert_eq!(mb.currency.code.as_str(), "USD");
-
-    let usd_balance = state
-        .balances
-        .iter()
-        .find(|b| b.currency.code.as_str() == "USD")
-        .expect("expected USD balance (equity-based synthetic entry)");
-    {
-        use rust_decimal_macros::dec;
-        // total=e, free=mf, locked=m from fixture (e=198499.67, mf=185999.67, m=12500.00)
-        assert_eq!(usd_balance.total.as_decimal().normalize(), dec!(198499.67));
-        assert_eq!(usd_balance.free.as_decimal().normalize(), dec!(185999.67));
-        assert_eq!(usd_balance.locked.as_decimal().normalize(), dec!(12500));
-    }
 }
 
 #[rstest]
 #[tokio::test]
 async fn test_spot_request_account_state_margin_with_gbp_asset_tags_currency() {
-    use nautilus_model::{enums::AccountType, identifiers::AccountId};
-
     let server_state = Arc::new(TestServerState::default());
     let app = create_router(server_state.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2820,23 +2813,22 @@ async fn test_spot_request_account_state_margin_with_gbp_asset_tags_currency() {
         "request body should propagate asset=ZGBP, received: {body}"
     );
 
-    // Target is GBP; fixture has no GBP wallet, so mf must NOT lock the USD entry.
     if let Some(usd) = state
         .balances
         .iter()
         .find(|b| b.currency.code.as_str() == "USD")
     {
-        assert_eq!(usd.locked.as_f64(), 0.0);
+        assert_eq!(
+            usd.locked.as_f64(),
+            0.0,
+            "USD wallet should stay unlocked when margin target is GBP"
+        );
     }
 }
 
 #[rstest]
 #[tokio::test]
 async fn test_spot_request_account_state_margin_locked_from_free_margin() {
-    // Synthetic USD balance: total=e, free=mf, locked=m per
-    // https://docs.kraken.com/api/docs/rest-api/get-trade-balance/ (mf = e - m).
-    use nautilus_model::{enums::AccountType, identifiers::AccountId};
-
     let state = Arc::new(TestServerState::default());
     let app = create_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2874,20 +2866,14 @@ async fn test_spot_request_account_state_margin_locked_from_free_margin() {
         .iter()
         .find(|b| b.currency.code.as_str() == "USD")
         .expect("expected USD balance (equity-based synthetic entry)");
-    {
-        use rust_decimal_macros::dec;
-        assert_eq!(usd.total.as_decimal().normalize(), dec!(198499.67));
-        assert_eq!(usd.free.as_decimal().normalize(), dec!(185999.67));
-        assert_eq!(usd.locked.as_decimal().normalize(), dec!(12500));
-    }
+    assert_eq!(usd.total.as_decimal().normalize(), dec!(198499.67));
+    assert_eq!(usd.free.as_decimal().normalize(), dec!(185999.67));
+    assert_eq!(usd.locked.as_decimal().normalize(), dec!(12500));
 }
 
 #[rstest]
 #[tokio::test]
 async fn test_spot_request_account_state_margin_other_wallets_unlocked() {
-    // Non-margin-asset wallets (XBT, ETH) must remain fully unlocked.
-    use nautilus_model::{enums::AccountType, identifiers::AccountId};
-
     let state = Arc::new(TestServerState::default());
     let app = create_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -3151,10 +3137,6 @@ async fn test_spot_add_order_with_leverage() {
 #[rstest]
 #[tokio::test]
 async fn test_spot_request_account_state_trade_balance_error() {
-    // G1: When TradeBalance returns an API error in margin mode, request_account_state must
-    // propagate the error — not silently return a healthy AccountState with zero margins.
-    use nautilus_model::{enums::AccountType, identifiers::AccountId};
-
     let state = Arc::new(TestServerState::default());
     state.trade_balance_error.store(true, Ordering::Relaxed);
     let app = create_router(state);
@@ -3193,6 +3175,66 @@ async fn test_spot_request_account_state_trade_balance_error() {
     );
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_account_state_synthetic_margin_balance_error() {
+    let state = Arc::new(TestServerState::default());
+    *state.trade_balance_json.lock().await = Some(
+        r#"{
+            "error": [],
+            "result": {
+                "eb": "20000000000000000.00",
+                "tb": "20000000000000000.00",
+                "m": "1.00",
+                "uv": "0.00",
+                "n": "0.00",
+                "c": "0.00",
+                "v": "0.00",
+                "e": "20000000000000000.00",
+                "mf": "19999999999999999.00",
+                "ml": "2000000000000000000.00"
+            }
+        }"#
+        .to_string(),
+    );
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Mainnet,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let account_id = AccountId::new("KRAKEN-001");
+    let result = client
+        .request_account_state(account_id, AccountType::Margin, None)
+        .await;
+
+    let err = result.expect_err("synthetic margin balance failure must propagate as Err");
+    assert!(
+        err.to_string()
+            .contains("Failed to build synthetic margin AccountBalance"),
+        "unexpected error: {err}"
+    );
+}
+
 fn create_xbtusd_spot_instrument() -> (InstrumentId, InstrumentAny) {
     let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
     let inst = InstrumentAny::CurrencyPair(CurrencyPair::new(
@@ -3226,9 +3268,9 @@ fn create_xbtusd_spot_instrument() -> (InstrumentId, InstrumentAny) {
 #[rstest]
 #[tokio::test]
 async fn test_spot_margin_position_flat_when_fully_closed() {
-    // G2: When a margin position has been fully closed, Kraken removes it from OpenPositions.
-    // request_position_status_reports must emit a FLAT report for the requested instrument
-    // rather than returning nothing — otherwise stale positions in the engine cannot be reconciled.
+    // When a margin position has been fully closed, Kraken removes it from OpenPositions.
+    // request_position_status_reports must emit a FLAT report for the requested instrument.
+    // Otherwise stale positions in the engine cannot be reconciled.
     use nautilus_model::{
         enums::{AccountType, PositionSideSpecified},
         identifiers::AccountId,
@@ -3320,10 +3362,7 @@ async fn test_spot_margin_position_flat_when_fully_closed() {
     );
 }
 
-// Test helpers for margin position tests
-
 fn make_open_positions_json(lots: &[(&str, &str, f64, f64)]) -> String {
-    // lots: (pos_id, side, vol, vol_closed)
     let entries: Vec<String> = lots
         .iter()
         .map(|(pos_id, side, vol, vol_closed)| {
@@ -3502,7 +3541,7 @@ async fn test_spot_margin_position_bails_on_unknown_pair_when_cache_missing() {
     )
     .unwrap();
 
-    // Intentionally do NOT cache any instrument — unknown pair must cause an Err.
+    // Unknown pair must cause an Err when no instrument is cached
     let result = client
         .request_position_status_reports(
             AccountId::new("KRAKEN-001"),

@@ -382,7 +382,8 @@ mod tests {
 
         timer.start();
 
-        // Timer floors next_time_ns to microsecond precision, so compare against floored baseline
+        // `next_time_ns` is floored to microsecond precision, so compare against
+        // the same floor applied to the baseline
         let before_floored = UnixNanos::from(floor_to_nearest_microsecond(before.as_u64()));
         assert!(timer.next_time_ns() >= before_floored);
 

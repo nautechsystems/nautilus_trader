@@ -538,8 +538,6 @@ mod tests {
 
     #[rstest]
     fn test_batch_order_params_from_preserves_leverage() {
-        // Regression: From<KrakenSpotAddOrderParams> must copy leverage so that
-        // AddOrderBatch requests include the leverage field for margin orders.
         let add_params = KrakenSpotAddOrderParamsBuilder::default()
             .pair("XXBTZUSD")
             .side(KrakenOrderSide::Buy)
@@ -561,7 +559,6 @@ mod tests {
 
     #[rstest]
     fn test_batch_order_params_leverage_serializes_to_json() {
-        // Verify the leverage field appears in the JSON body that add_order_batch sends.
         let batch = KrakenSpotBatchOrderParams {
             side: KrakenOrderSide::Buy,
             order_type: KrakenOrderType::Limit,
