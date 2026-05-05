@@ -2335,17 +2335,26 @@ impl HyperliquidHttpClient {
 
         let product_type = HyperliquidProductType::from_symbol(symbol.as_str()).ok();
 
-        // Extract base currency for lookup, then use raw_symbol for the API call
-        let base = Ustr::from(
-            symbol
-                .as_str()
-                .split('-')
-                .next()
-                .ok_or_else(|| Error::bad_request("Invalid instrument symbol"))?,
-        );
-
+        // Prefer exact symbol match to avoid alias collisions (for example
+        // outcome symbols all starting with `OUTCOME-`), then fall back to the
+        // legacy base-segment lookup for compatibility.
+        let symbol_key = Ustr::from(symbol.as_str());
         let instrument = self
-            .get_or_create_instrument(&base, product_type)
+            .instruments
+            .load()
+            .get(&symbol_key)
+            .cloned()
+            .or_else(|| {
+                let base = Ustr::from(
+                    symbol
+                        .as_str()
+                        .split('-')
+                        .next()
+                        .ok_or_else(|| Error::bad_request("Invalid instrument symbol"))
+                        .ok()?,
+                );
+                self.get_or_create_instrument(&base, product_type)
+            })
             .ok_or_else(|| {
                 Error::bad_request(format!("Instrument not found in cache: {instrument_id}"))
             })?;
@@ -2595,12 +2604,18 @@ impl HyperliquidHttpClient {
                 let symbol_str = instrument_id.symbol.as_str();
                 let product_type = HyperliquidProductType::from_symbol(symbol_str).ok();
 
-                // Extract base coin from symbol (first segment before '-')
-                let asset_str = symbol_str.split('-').next().unwrap_or(symbol_str);
+                let symbol_key = Ustr::from(symbol_str);
                 let instrument = self
-                    .get_or_create_instrument(&Ustr::from(asset_str), product_type)
+                    .instruments
+                    .load()
+                    .get(&symbol_key)
+                    .cloned()
+                    .or_else(|| {
+                        let asset_str = symbol_str.split('-').next().unwrap_or(symbol_str);
+                        self.get_or_create_instrument(&Ustr::from(asset_str), product_type)
+                    })
                     .ok_or_else(|| {
-                        Error::bad_request(format!("Instrument not found for {asset_str}"))
+                        Error::bad_request(format!("Instrument not found for {symbol_str}"))
                     })?;
 
                 let account_id = self
@@ -2824,12 +2839,18 @@ impl HyperliquidHttpClient {
                     let symbol = instrument_id.symbol.as_str();
                     let product_type = HyperliquidProductType::from_symbol(symbol).ok();
 
-                    // Extract base coin from symbol (first segment before '-')
-                    let asset = symbol.split('-').next().unwrap_or(symbol);
+                    let symbol_key = Ustr::from(symbol);
                     let instrument = self
-                        .get_or_create_instrument(&Ustr::from(asset), product_type)
+                        .instruments
+                        .load()
+                        .get(&symbol_key)
+                        .cloned()
+                        .or_else(|| {
+                            let asset = symbol.split('-').next().unwrap_or(symbol);
+                            self.get_or_create_instrument(&Ustr::from(asset), product_type)
+                        })
                         .ok_or_else(|| {
-                            Error::bad_request(format!("Instrument not found for {asset}"))
+                            Error::bad_request(format!("Instrument not found for {symbol}"))
                         })?;
 
                     // Create OrderStatusReport based on the order status

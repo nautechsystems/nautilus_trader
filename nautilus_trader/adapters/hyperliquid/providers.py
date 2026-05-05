@@ -102,7 +102,9 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
                     include_perps_hip3=HyperliquidProductType.PERP_HIP3 in self._product_types,
                     include_outcomes=HyperliquidProductType.OUTCOME in self._product_types,
                 )
-            except TypeError:
+            except TypeError as e:
+                if "include_outcomes" not in str(e):
+                    raise
                 if HyperliquidProductType.OUTCOME in self._product_types:
                     raise RuntimeError(
                         "Outcome instrument loading requires an updated Hyperliquid PyO3 client "
