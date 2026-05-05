@@ -189,7 +189,7 @@ impl EmaCross {
             None,
             None,
         );
-        self.submit_order(order, None, None)
+        self.submit_order(order, None, None, None)
     }
 }
 
@@ -267,7 +267,7 @@ impl SnapshotNettingFlip {
             None,
             None,
         );
-        self.submit_order(order, None, None)
+        self.submit_order(order, None, None, None)
     }
 }
 
@@ -1846,7 +1846,7 @@ impl DataActor for CascadingStopStrategy {
                 None,
                 None,
             );
-            self.submit_order(order, None, None)?;
+            self.submit_order(order, None, None, None)?;
         }
         Ok(())
     }
@@ -1873,7 +1873,7 @@ impl DataActor for CascadingStopStrategy {
                 None,
                 None,
             );
-            self.submit_order(order, None, None)?;
+            self.submit_order(order, None, None, None)?;
         }
         Ok(())
     }
@@ -1972,7 +1972,7 @@ impl DataActor for DualTimerStrategy {
             None,
             None,
         );
-        self.submit_order(order, None, None)?;
+        self.submit_order(order, None, None, None)?;
         Ok(())
     }
 }

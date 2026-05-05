@@ -1327,11 +1327,9 @@ impl PyStrategy {
             }
         })?;
         let inner = self.inner_mut();
-        match params_map {
-            Some(p) => Strategy::submit_order_with_params(inner, order, position_id, client_id, p),
-            None => Strategy::submit_order(inner, order, position_id, client_id),
-        }
-        .map_err(to_pyruntime_err)
+
+        Strategy::submit_order(inner, order, position_id, client_id, params_map)
+            .map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "modify_order")]
@@ -1356,18 +1354,15 @@ impl PyStrategy {
         })?;
         let inner = self.inner_mut();
 
-        match params_map {
-            Some(p) => Strategy::modify_order_with_params(
-                inner,
-                order,
-                quantity,
-                price,
-                trigger_price,
-                client_id,
-                p,
-            ),
-            None => Strategy::modify_order(inner, order, quantity, price, trigger_price, client_id),
-        }
+        Strategy::modify_order(
+            inner,
+            order,
+            quantity,
+            price,
+            trigger_price,
+            client_id,
+            params_map,
+        )
         .map_err(to_pyruntime_err)
     }
 
@@ -1388,11 +1383,8 @@ impl PyStrategy {
             }
         })?;
         let inner = self.inner_mut();
-        match params_map {
-            Some(p) => Strategy::cancel_order_with_params(inner, order, client_id, p),
-            None => Strategy::cancel_order(inner, order, client_id),
-        }
-        .map_err(to_pyruntime_err)
+
+        Strategy::cancel_order(inner, order, client_id, params_map).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "cancel_orders")]
@@ -1414,6 +1406,7 @@ impl PyStrategy {
             .into_iter()
             .map(|o| pyobject_to_order_any(py, o))
             .collect::<PyResult<Vec<_>>>()?;
+
         Strategy::cancel_orders(self.inner_mut(), orders, client_id, params_map)
             .map_err(to_pyruntime_err)
     }
@@ -1433,18 +1426,13 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
-        let inner = self.inner_mut();
-
-        match params_map {
-            Some(p) => Strategy::cancel_all_orders_with_params(
-                inner,
-                instrument_id,
-                order_side,
-                client_id,
-                p,
-            ),
-            None => Strategy::cancel_all_orders(inner, instrument_id, order_side, client_id),
-        }
+        Strategy::cancel_all_orders(
+            self.inner_mut(),
+            instrument_id,
+            order_side,
+            client_id,
+            params_map,
+        )
         .map_err(to_pyruntime_err)
     }
 

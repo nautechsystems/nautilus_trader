@@ -140,7 +140,7 @@ impl DataActor for MarketOrderStrategy {
                 None,
                 None,
             );
-            self.submit_order(order, None, None)?;
+            self.submit_order(order, None, None, None)?;
         }
         Ok(())
     }

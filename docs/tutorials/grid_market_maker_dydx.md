@@ -437,7 +437,7 @@ fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         return Ok(()); // Mid hasn't moved enough, keep existing grid
     }
 
-    self.cancel_all_orders(instrument_id, None, None)?;
+    self.cancel_all_orders(instrument_id, None, None, None)?;
 
     let (net_position, worst_long, worst_short) = { /* ... */ };
 

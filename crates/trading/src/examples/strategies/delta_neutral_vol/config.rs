@@ -61,7 +61,7 @@ pub struct DeltaNeutralVolConfig {
     pub entry_iv_offset: f64,
     /// Time-in-force for strangle entry orders.
     pub entry_time_in_force: TimeInForce,
-    /// Param key for implied volatility passed to `submit_order_with_params`.
+    /// Param key for implied volatility passed to `submit_order`.
     /// Adapter-specific: Bybit uses `"order_iv"`, OKX uses `"px_vol"`.
     pub iv_param_key: String,
 }
