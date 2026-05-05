@@ -18,6 +18,7 @@ Provides data loaders for historical Polymarket data from various APIs.
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import msgspec
@@ -26,13 +27,21 @@ import pandas as pd
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_HTTP_RATE_LIMIT
 from nautilus_trader.adapters.polymarket.common.gamma_markets import fetch_fee_schedules
 from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
+from nautilus_trader.adapters.polymarket.common.sanitization import extract_resolution_metadata
+from nautilus_trader.adapters.polymarket.common.sanitization import sanitize_info_for_simulation
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import secs_to_nanos
+from nautilus_trader.core.nautilus_pyo3 import polymarket_trade_id
+from nautilus_trader.core.nautilus_pyo3 import polymarket_trade_sort_key
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments import BinaryOption
+
+
+# Composite sort key lives in Rust so both adapters share one ordering
+_trade_sort_key = polymarket_trade_sort_key
 
 
 class PolymarketDataLoader:
@@ -66,11 +75,27 @@ class PolymarketDataLoader:
         token_id: str | None = None,
         condition_id: str | None = None,
         http_client: nautilus_pyo3.HttpClient | None = None,
+        resolution_metadata: dict[str, Any] | None = None,
     ) -> None:
         self._instrument = instrument
         self._token_id = token_id
         self._condition_id = condition_id
         self._http_client = http_client or self._create_http_client()
+        self._resolution_metadata: dict[str, Any] = dict(resolution_metadata or {})
+
+    @property
+    def resolution_metadata(self) -> dict[str, Any]:
+        """
+        Return the resolution-bearing fields stripped from `instrument.info`.
+
+        Populated by `from_market_slug` / `from_event_slug` when called with
+        `sanitize_info=True` against an already-resolved market. Strategies must
+        not see resolution data during simulation, so it is held on the loader
+        instead. Replay adapters and analytics may read this for settlement PnL
+        and Brier scoring.
+
+        """
+        return dict(self._resolution_metadata)
 
     @staticmethod
     def _create_http_client() -> nautilus_pyo3.HttpClient:
@@ -164,6 +189,7 @@ class PolymarketDataLoader:
         slug: str,
         token_index: int = 0,
         http_client: nautilus_pyo3.HttpClient | None = None,
+        sanitize_info: bool = False,
     ) -> PolymarketDataLoader:
         """
         Create a loader by fetching market data from Polymarket APIs.
@@ -176,6 +202,13 @@ class PolymarketDataLoader:
             The index of the token to use (0 for first outcome, 1 for second).
         http_client : nautilus_pyo3.HttpClient, optional
             The HTTP client to use for requests. If not provided, a new client will be created.
+        sanitize_info : bool, default False
+            If ``True``, strip resolution-bearing fields (``closed``, ``closedTime``,
+            ``umaResolutionStatus``, per-token ``winner``) from ``instrument.info``
+            before constructing the instrument. The stripped fields are still
+            available via :attr:`resolution_metadata`. Use when backtesting a market
+            that has already resolved at construction time so strategies cannot
+            peek at the answer through ``cache.instrument(...).info``.
 
         Returns
         -------
@@ -211,6 +244,11 @@ class PolymarketDataLoader:
         token_id = token["token_id"]
         outcome = token["outcome"]
 
+        resolution_metadata: dict[str, Any] = {}
+        if sanitize_info:
+            resolution_metadata = extract_resolution_metadata(market_details)
+            market_details = sanitize_info_for_simulation(market_details)
+
         instrument = parse_polymarket_instrument(
             market_info=market_details,
             token_id=token_id,
@@ -222,6 +260,7 @@ class PolymarketDataLoader:
             token_id=token_id,
             condition_id=condition_id,
             http_client=client,
+            resolution_metadata=resolution_metadata,
         )
 
     @classmethod
@@ -230,6 +269,7 @@ class PolymarketDataLoader:
         slug: str,
         token_index: int = 0,
         http_client: nautilus_pyo3.HttpClient | None = None,
+        sanitize_info: bool = False,
     ) -> list[PolymarketDataLoader]:
         """
         Create loaders for all markets in an event.
@@ -245,6 +285,9 @@ class PolymarketDataLoader:
             The index of the token to use (0 for first outcome, 1 for second).
         http_client : nautilus_pyo3.HttpClient, optional
             The HTTP client to use for requests. If not provided, a new client will be created.
+        sanitize_info : bool, default False
+            If ``True``, strip resolution-bearing fields from ``instrument.info`` for
+            each loader. See :meth:`from_market_slug` for details.
 
         Returns
         -------
@@ -288,6 +331,11 @@ class PolymarketDataLoader:
             token_id = token["token_id"]
             outcome = token["outcome"]
 
+            resolution_metadata: dict[str, Any] = {}
+            if sanitize_info:
+                resolution_metadata = extract_resolution_metadata(market_details)
+                market_details = sanitize_info_for_simulation(market_details)
+
             instrument = parse_polymarket_instrument(
                 market_info=market_details,
                 token_id=token_id,
@@ -300,6 +348,7 @@ class PolymarketDataLoader:
                     token_id=token_id,
                     condition_id=condition_id,
                     http_client=client,
+                    resolution_metadata=resolution_metadata,
                 ),
             )
 
@@ -473,8 +522,8 @@ class PolymarketDataLoader:
         if end_ts is not None:
             token_trades = [t for t in token_trades if t["timestamp"] <= end_ts]
 
-        # Sort chronologically (API returns newest first)
-        token_trades.sort(key=lambda t: t["timestamp"])
+        # Composite sort to stabilise same-second trades across pages
+        token_trades.sort(key=_trade_sort_key)
 
         return self.parse_trades(token_trades)
 
@@ -737,9 +786,20 @@ class PolymarketDataLoader:
             )
 
             if response.status != 200:
+                body_text = response.body.decode("utf-8")
+                if "max historical activity offset" in body_text:
+                    # Public API caps pagination depth; warn and return partial
+                    warnings.warn(
+                        "Polymarket public trades API hit its historical offset "
+                        "ceiling; returning partial results. High-activity markets "
+                        "may be incomplete; use another historical source for full "
+                        f"coverage. API response: {body_text}",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+                    break
                 raise RuntimeError(
-                    f"HTTP request failed with status {response.status}: "
-                    f"{response.body.decode('utf-8')}",
+                    f"HTTP request failed with status {response.status}: {body_text}",
                 )
 
             data = msgspec.json.decode(response.body)
@@ -786,11 +846,19 @@ class PolymarketDataLoader:
         make_qty = self._instrument.make_qty
         token_id = self._token_id
 
+        # Tiebreakers for second-resolution timestamps and multi-fill txs
+        timestamp_counts: dict[int, int] = {}
+        tx_asset_counts: dict[tuple[str, str], int] = {}
+
         for trade_data in trades_data:
             # Skip trades for other tokens in the same condition
             if trade_data.get("asset") != token_id:
                 continue
-            ts_event = secs_to_nanos(trade_data["timestamp"])
+
+            base_ts_event = secs_to_nanos(trade_data["timestamp"])
+            occurrence_in_second = timestamp_counts.get(base_ts_event, 0)
+            timestamp_counts[base_ts_event] = occurrence_in_second + 1
+            ts_event = base_ts_event + min(occurrence_in_second, 999_999_999)
 
             side_str = trade_data["side"]
             if side_str == "BUY":
@@ -800,12 +868,19 @@ class PolymarketDataLoader:
             else:
                 aggressor_side = AggressorSide.NO_AGGRESSOR
 
+            tx_hash = str(trade_data["transactionHash"])
+            asset = str(trade_data.get("asset", ""))
+            tx_asset_key = (tx_hash, asset)
+            tx_asset_seq = tx_asset_counts.get(tx_asset_key, 0)
+            tx_asset_counts[tx_asset_key] = tx_asset_seq + 1
+            trade_id = TradeId(polymarket_trade_id(tx_hash, asset, tx_asset_seq))
+
             trade = TradeTick(
                 instrument_id=instrument_id,
                 price=make_price(trade_data["price"]),
                 size=make_qty(trade_data["size"]),
                 aggressor_side=aggressor_side,
-                trade_id=TradeId(trade_data["transactionHash"][-36:]),
+                trade_id=trade_id,
                 ts_event=ts_event,
                 ts_init=ts_event,
             )

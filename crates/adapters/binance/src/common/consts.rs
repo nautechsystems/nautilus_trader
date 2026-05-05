@@ -39,17 +39,20 @@ pub const BINANCE_NAUTILUS_SPOT_BROKER_ID: &str = "TD67BGP9";
 /// <https://developers.binance.com/docs/binance_link/link-and-trade>
 pub const BINANCE_NAUTILUS_FUTURES_BROKER_ID: &str = "aHRE4BCj";
 
-/// Binance Spot API base URL (mainnet).
+/// Binance Spot API base URL (live exchange).
 pub const BINANCE_SPOT_HTTP_URL: &str = "https://api.binance.com";
 
-/// Binance USD-M Futures API base URL (mainnet).
+/// Binance USD-M Futures API base URL (live exchange).
 pub const BINANCE_FUTURES_USD_HTTP_URL: &str = "https://fapi.binance.com";
 
-/// Binance COIN-M Futures API base URL (mainnet).
+/// Binance COIN-M Futures API base URL (live exchange).
 pub const BINANCE_FUTURES_COIN_HTTP_URL: &str = "https://dapi.binance.com";
 
-/// Binance European Options API base URL (mainnet).
+/// Binance European Options API base URL (live exchange).
 pub const BINANCE_OPTIONS_HTTP_URL: &str = "https://eapi.binance.com";
+
+/// Binance European Options API base URL (testnet/demo).
+pub const BINANCE_OPTIONS_TESTNET_HTTP_URL: &str = "https://testnet.binancefuture.com";
 
 /// Binance Spot API base URL (testnet).
 pub const BINANCE_SPOT_TESTNET_HTTP_URL: &str = "https://testnet.binance.vision";
@@ -66,35 +69,45 @@ pub const BINANCE_SPOT_DEMO_HTTP_URL: &str = "https://demo-api.binance.com";
 /// Binance USD-M Futures API base URL (demo).
 pub const BINANCE_FUTURES_USD_DEMO_HTTP_URL: &str = "https://demo-fapi.binance.com";
 
-/// Binance COIN-M Futures API base URL (demo, same as COIN-M testnet).
-pub const BINANCE_FUTURES_COIN_DEMO_HTTP_URL: &str = "https://testnet.binancefuture.com";
+/// Binance COIN-M Futures API base URL (demo).
+pub const BINANCE_FUTURES_COIN_DEMO_HTTP_URL: &str = "https://demo-dapi.binance.com";
 
-/// Binance Spot WebSocket base URL (mainnet).
+/// Binance Spot WebSocket base URL (live exchange).
 pub const BINANCE_SPOT_WS_URL: &str = "wss://stream.binance.com:9443/ws";
 
-/// Binance USD-M Futures WebSocket base URL (mainnet).
+/// Binance USD-M Futures WebSocket base URL (live exchange).
 pub const BINANCE_FUTURES_USD_WS_URL: &str = "wss://fstream.binance.com/market/ws";
 
-/// Binance USD-M Futures WebSocket public stream URL (mainnet, high-frequency book data).
+/// Binance USD-M Futures WebSocket public stream URL (live exchange, high-frequency book data).
 pub const BINANCE_FUTURES_USD_WS_PUBLIC_URL: &str = "wss://fstream.binance.com/public/ws";
 
-/// Binance USD-M Futures WebSocket private stream URL (mainnet).
+/// Binance USD-M Futures WebSocket private stream URL (live exchange).
 pub const BINANCE_FUTURES_USD_WS_PRIVATE_URL: &str = "wss://fstream.binance.com/private/ws";
 
-/// Binance COIN-M Futures WebSocket base URL (mainnet).
+/// Binance COIN-M Futures WebSocket base URL (live exchange).
 pub const BINANCE_FUTURES_COIN_WS_URL: &str = "wss://dstream.binance.com/ws";
 
-/// Binance European Options WebSocket base URL (mainnet).
+/// Binance European Options WebSocket base URL (live exchange).
 pub const BINANCE_OPTIONS_WS_URL: &str = "wss://nbstream.binance.com/eoptions";
 
-/// Binance Spot SBE WebSocket stream URL (mainnet).
+/// Binance European Options WebSocket base URL (testnet/demo).
+pub const BINANCE_OPTIONS_TESTNET_WS_URL: &str = "wss://fstream.binancefuture.com/market/ws";
+
+/// Binance European Options WebSocket public stream URL (testnet/demo).
+pub const BINANCE_OPTIONS_TESTNET_WS_PUBLIC_URL: &str = "wss://fstream.binancefuture.com/public/ws";
+
+/// Binance European Options WebSocket private stream URL (testnet/demo).
+pub const BINANCE_OPTIONS_TESTNET_WS_PRIVATE_URL: &str =
+    "wss://fstream.binancefuture.com/private/ws";
+
+/// Binance Spot SBE WebSocket stream URL (live exchange).
 pub const BINANCE_SPOT_SBE_WS_URL: &str = "wss://stream-sbe.binance.com/ws";
 
-/// Binance Spot SBE WebSocket API URL (mainnet).
+/// Binance Spot SBE WebSocket API URL (live exchange).
 pub const BINANCE_SPOT_SBE_WS_API_URL: &str =
     "wss://ws-api.binance.com:443/ws-api/v3?responseFormat=sbe&sbeSchemaId=3&sbeSchemaVersion=3";
 
-/// Binance USD-M Futures WebSocket Trading API URL (mainnet).
+/// Binance USD-M Futures WebSocket Trading API URL (live exchange).
 pub const BINANCE_FUTURES_USD_WS_API_URL: &str = "wss://ws-fapi.binance.com/ws-fapi/v1";
 
 /// Binance USD-M Futures WebSocket Trading API URL (testnet).
@@ -113,6 +126,12 @@ pub const BINANCE_SPOT_TESTNET_WS_URL: &str = "wss://stream.testnet.binance.visi
 
 /// Binance Spot WebSocket base URL (demo).
 pub const BINANCE_SPOT_DEMO_WS_URL: &str = "wss://demo-stream.binance.com/ws";
+
+/// Binance USD-M Futures WebSocket base URL (demo).
+pub const BINANCE_FUTURES_USD_DEMO_WS_URL: &str = "wss://demo-fstream.binance.com/ws";
+
+/// Binance COIN-M Futures WebSocket base URL (demo).
+pub const BINANCE_FUTURES_COIN_DEMO_WS_URL: &str = "wss://demo-dstream.binance.com/ws";
 
 /// Binance USD-M Futures WebSocket base URL (testnet).
 pub const BINANCE_FUTURES_USD_TESTNET_WS_URL: &str = "wss://fstream.binancefuture.com/ws";

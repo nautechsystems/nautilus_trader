@@ -164,11 +164,7 @@ class DeribitLiveDataClientFactory(LiveDataClientFactory):
         DeribitDataClient
 
         """
-        environment = (
-            config.environment
-            if config.environment is not None
-            else (DeribitEnvironment.TESTNET if config.is_testnet else DeribitEnvironment.MAINNET)
-        )
+        environment = config.environment or DeribitEnvironment.MAINNET
         client: nautilus_pyo3.DeribitHttpClient = get_cached_deribit_http_client(
             api_key=config.api_key,
             api_secret=config.api_secret,
@@ -234,11 +230,7 @@ class DeribitLiveExecClientFactory(LiveExecClientFactory):
         DeribitExecutionClient
 
         """
-        environment = (
-            config.environment
-            if config.environment is not None
-            else (DeribitEnvironment.TESTNET if config.is_testnet else DeribitEnvironment.MAINNET)
-        )
+        environment = config.environment or DeribitEnvironment.MAINNET
         http_client: nautilus_pyo3.DeribitHttpClient = get_cached_deribit_http_client(
             api_key=config.api_key,
             api_secret=config.api_secret,

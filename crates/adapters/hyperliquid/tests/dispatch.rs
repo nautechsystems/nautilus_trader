@@ -630,7 +630,11 @@ fn test_cancel_before_accept_is_suppressed() {
     state.record_venue_order_id(cid, VenueOrderId::new("1000"));
 
     // Successful modify HTTP round-trip populated the pending marker.
-    state.mark_pending_modify(cid, VenueOrderId::new("1000"));
+    state.mark_pending_modify(
+        cid,
+        VenueOrderId::new("1000"),
+        identity(OrderType::Limit).quantity,
+    );
 
     let canceled_old = make_status_report(
         Some("O-CR-004"),
@@ -813,4 +817,255 @@ fn test_report_without_client_order_id_is_external() {
     let outcome = dispatch_order_status_report(&report, &state, &emitter, UnixNanos::default());
     assert_eq!(outcome, DispatchOutcome::External);
     assert!(drain_events(&mut rx).is_empty());
+}
+
+/// GH-3972: a `FillReport` carrying the replacement's new venue order id that
+/// arrives before the matching `ACCEPTED(new_voi)` must be buffered (no
+/// `OrderFilled` emitted, trade dedup not consumed) so the engine never sees a
+/// fill against stale local state.
+#[rstest]
+fn test_fill_during_pending_modify_is_buffered() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("O-FR-001");
+    state.register_identity(cid, identity(OrderType::Limit));
+    state.insert_accepted(cid);
+    state.record_venue_order_id(cid, VenueOrderId::new("9000"));
+    state.mark_pending_modify(
+        cid,
+        VenueOrderId::new("9000"),
+        identity(OrderType::Limit).quantity,
+    );
+
+    let fill = make_fill_report(Some("O-FR-001"), "9001", "T-FR-1", "0.00020", "53893.0");
+    let outcome = dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
+
+    assert_eq!(outcome, DispatchOutcome::Tracked);
+    assert!(drain_events(&mut rx).is_empty());
+    assert_eq!(state.buffered_fill_count(&cid), 1);
+    // The trade dedup must NOT have been consumed by the buffer attempt;
+    // otherwise the re-dispatch on drain would be silently skipped.
+    assert!(!state.check_and_insert_trade(TradeId::new("T-FR-1")));
+}
+
+/// GH-3972: the cancel-replace `ACCEPTED(new_voi)` branch must drain the fill
+/// buffer and re-dispatch each fill so an `OrderFilled` follows the
+/// `OrderUpdated` against the now-advanced local state.
+#[rstest]
+fn test_cancel_replace_accepted_drains_buffered_fill() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("O-FR-002");
+    state.register_identity(cid, identity(OrderType::Limit));
+    state.insert_accepted(cid);
+    state.record_venue_order_id(cid, VenueOrderId::new("9100"));
+    state.mark_pending_modify(
+        cid,
+        VenueOrderId::new("9100"),
+        identity(OrderType::Limit).quantity,
+    );
+
+    let fill = make_fill_report(Some("O-FR-002"), "9101", "T-FR-2", "0.00020", "53893.0");
+    dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
+    assert_eq!(state.buffered_fill_count(&cid), 1);
+    assert!(drain_events(&mut rx).is_empty());
+
+    let accepted_new = make_status_report(
+        Some("O-FR-002"),
+        "9101",
+        OrderStatus::Accepted,
+        Some("53893.0"),
+        "0.00020",
+    );
+    let outcome =
+        dispatch_order_status_report(&accepted_new, &state, &emitter, UnixNanos::default());
+    assert_eq!(outcome, DispatchOutcome::Tracked);
+
+    let events = drain_events(&mut rx);
+    // Updated must precede Filled so the engine sees the venue_order_id /
+    // quantity advance before the fill is applied.
+    assert_event_types(&events, &["Updated", "Filled"]);
+
+    if let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = &events[0] {
+        assert_eq!(updated.venue_order_id, Some(VenueOrderId::new("9101")));
+    } else {
+        panic!("expected OrderEventAny::Updated at index 0");
+    }
+
+    if let ExecutionEvent::Order(OrderEventAny::Filled(filled)) = &events[1] {
+        assert_eq!(filled.venue_order_id, VenueOrderId::new("9101"));
+        assert_eq!(filled.last_qty, Quantity::from("0.00020"));
+        assert_eq!(filled.last_px, Price::from("53893.0"));
+    } else {
+        panic!("expected OrderEventAny::Filled at index 1");
+    }
+
+    assert_eq!(state.buffered_fill_count(&cid), 0);
+    assert!(state.pending_modify(&cid).is_none());
+    // Fill quantity matched identity quantity, so the order is terminal.
+    assert!(state.filled_orders.contains(&cid));
+}
+
+/// GH-3972: when multiple partial fills are buffered during the cancel-replace
+/// window, the drain must re-dispatch them in arrival order so the engine
+/// observes the correct cumulative fill sequence on the replacement leg.
+#[rstest]
+fn test_cancel_replace_drains_multiple_buffered_fills_in_arrival_order() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("O-FR-MULTI");
+    // Two partial fills of 0.00010 each will sum to the identity quantity,
+    // so the second drain emits the terminal cleanup.
+    state.register_identity(
+        cid,
+        OrderIdentity {
+            quantity: Quantity::from("0.00020"),
+            ..identity(OrderType::Limit)
+        },
+    );
+    state.insert_accepted(cid);
+    state.record_venue_order_id(cid, VenueOrderId::new("MULTI-OLD"));
+    state.mark_pending_modify(
+        cid,
+        VenueOrderId::new("MULTI-OLD"),
+        Quantity::from("0.00020"),
+    );
+
+    // Two fills land on the new leg before the replacement ACCEPTED arrives.
+    let fill_a = make_fill_report(
+        Some("O-FR-MULTI"),
+        "MULTI-NEW",
+        "T-MULTI-A",
+        "0.00010",
+        "53800.0",
+    );
+    let fill_b = make_fill_report(
+        Some("O-FR-MULTI"),
+        "MULTI-NEW",
+        "T-MULTI-B",
+        "0.00010",
+        "53850.0",
+    );
+    dispatch_fill_report(&fill_a, &state, &emitter, UnixNanos::default());
+    dispatch_fill_report(&fill_b, &state, &emitter, UnixNanos::default());
+
+    assert_eq!(state.buffered_fill_count(&cid), 2);
+    assert!(drain_events(&mut rx).is_empty());
+
+    let accepted_new = make_status_report(
+        Some("O-FR-MULTI"),
+        "MULTI-NEW",
+        OrderStatus::Accepted,
+        Some("53850.0"),
+        "0.00020",
+    );
+    dispatch_order_status_report(&accepted_new, &state, &emitter, UnixNanos::default());
+
+    let events = drain_events(&mut rx);
+    // Updated then both Filled in arrival order. A reversed drain or
+    // single-element overwrite mutation would change this sequence.
+    assert_event_types(&events, &["Updated", "Filled", "Filled"]);
+
+    if let ExecutionEvent::Order(OrderEventAny::Filled(filled)) = &events[1] {
+        assert_eq!(filled.trade_id, TradeId::new("T-MULTI-A"));
+        assert_eq!(filled.last_px, Price::from("53800.0"));
+    } else {
+        panic!("expected OrderEventAny::Filled at index 1");
+    }
+
+    if let ExecutionEvent::Order(OrderEventAny::Filled(filled)) = &events[2] {
+        assert_eq!(filled.trade_id, TradeId::new("T-MULTI-B"));
+        assert_eq!(filled.last_px, Price::from("53850.0"));
+    } else {
+        panic!("expected OrderEventAny::Filled at index 2");
+    }
+
+    assert_eq!(state.buffered_fill_count(&cid), 0);
+    // Cumulative fill matched identity quantity, so the order went terminal.
+    assert!(state.filled_orders.contains(&cid));
+}
+
+/// GH-3972: a fill on the OLD leg arriving while a modify is in flight must
+/// pass through (`venue_order_id` matches the cached value), since it belongs
+/// to the still-current leg.
+#[rstest]
+fn test_fill_on_cached_voi_passes_through_during_pending_modify() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("O-FR-003");
+    state.register_identity(cid, identity(OrderType::Limit));
+    state.insert_accepted(cid);
+    state.record_venue_order_id(cid, VenueOrderId::new("9200"));
+    state.mark_pending_modify(
+        cid,
+        VenueOrderId::new("9200"),
+        identity(OrderType::Limit).quantity,
+    );
+
+    let fill = make_fill_report(Some("O-FR-003"), "9200", "T-FR-3", "0.00020", "56730.0");
+    let outcome = dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
+    assert_eq!(outcome, DispatchOutcome::Tracked);
+
+    let events = drain_events(&mut rx);
+    assert_event_types(&events, &["Filled"]);
+    assert_eq!(state.buffered_fill_count(&cid), 0);
+}
+
+/// GH-3972: a stale old-leg fill arriving after the cancel-replace promotion
+/// has already advanced the cached VOI must NOT be buffered. Buffering it
+/// would strand the fill forever (no further ACCEPTED on this cid would
+/// drain it). The pending-modify marker has been cleared by the cancel-
+/// replace ACCEPTED, so the buffer guard must not fire on cached-VOI
+/// mismatch alone.
+#[rstest]
+fn test_stale_old_leg_fill_after_cancel_replace_falls_through() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("O-FR-STALE");
+    state.register_identity(cid, identity(OrderType::Limit));
+    state.insert_accepted(cid);
+    // Cancel-replace already promoted: cached_voi advanced to the new leg
+    // and the pending-modify marker was cleared on the ACCEPTED.
+    state.record_venue_order_id(cid, VenueOrderId::new("STALE-NEW"));
+    assert!(state.pending_modify(&cid).is_none());
+
+    // A delayed old-leg fill arrives via WS reordering across feeds.
+    let fill = make_fill_report(
+        Some("O-FR-STALE"),
+        "STALE-OLD",
+        "T-STALE-1",
+        "0.00020",
+        "56730.0",
+    );
+    let outcome = dispatch_fill_report(&fill, &state, &emitter, UnixNanos::default());
+
+    assert_eq!(outcome, DispatchOutcome::Tracked);
+    assert_eq!(
+        state.buffered_fill_count(&cid),
+        0,
+        "stale old-leg fills must not be buffered (would strand forever)",
+    );
+    let events = drain_events(&mut rx);
+    // Falls through to normal emission with the (now stale) old VOI; the
+    // engine rejects on venue_order_id mismatch and reconciliation recovers.
+    assert_event_types(&events, &["Filled"]);
+    if let ExecutionEvent::Order(OrderEventAny::Filled(filled)) = &events[0] {
+        assert_eq!(filled.venue_order_id, VenueOrderId::new("STALE-OLD"));
+    } else {
+        panic!("expected OrderEventAny::Filled");
+    }
+}
+
+/// GH-3972: terminal cleanup must drop buffered fills so an order whose
+/// identity has been removed cannot strand a buffered entry.
+#[rstest]
+fn test_buffered_fills_cleared_on_cleanup_terminal() {
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("O-FR-004");
+    let fill = make_fill_report(Some("O-FR-004"), "9300", "T-FR-4", "0.00020", "56730.0");
+    state.buffer_fill(cid, fill);
+    assert_eq!(state.buffered_fill_count(&cid), 1);
+
+    state.cleanup_terminal(&cid);
+    assert_eq!(state.buffered_fill_count(&cid), 0);
 }

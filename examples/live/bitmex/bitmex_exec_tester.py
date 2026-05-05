@@ -74,16 +74,14 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         BITMEX: BitmexDataClientConfig(
-            environment=BitmexEnvironment.TESTNET,
+            environment=BitmexEnvironment.TESTNET if testnet else BitmexEnvironment.MAINNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            testnet=testnet,
         ),
     },
     exec_clients={
         BITMEX: BitmexExecClientConfig(
-            environment=BitmexEnvironment.TESTNET,
+            environment=BitmexEnvironment.TESTNET if testnet else BitmexEnvironment.MAINNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            testnet=testnet,
             submitter_pool_size=1,
             canceller_pool_size=3,
         ),

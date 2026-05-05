@@ -27,16 +27,8 @@ from nautilus_trader.core.nautilus_pyo3 import BybitProductType
 
 def _resolve_environment(
     environment: BybitEnvironment | None,
-    demo: bool,
-    testnet: bool,
 ) -> BybitEnvironment:
-    if environment is not None:
-        return environment
-    if demo:
-        return BybitEnvironment.DEMO
-    if testnet:
-        return BybitEnvironment.TESTNET
-    return BybitEnvironment.MAINNET
+    return environment or BybitEnvironment.MAINNET
 
 
 class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -59,18 +51,11 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     environment : BybitEnvironment, optional
         The Bybit environment for the client (MAINNET, DEMO, or TESTNET).
         If ``None`` then defaults to MAINNET.
-        Takes precedence over ``demo`` and ``testnet`` if set.
     base_url_http : str, optional
         The base URL for Bybit HTTP API.
         If ``None`` then will use the default URL based on environment.
     proxy_url : str, optional
         Optional proxy URL for HTTP and WebSocket transports.
-    demo : bool, default False
-        If the client is connecting to the Bybit demo API.
-        Deprecated: use ``environment=BybitEnvironment.DEMO`` instead.
-    testnet : bool, default False
-        If the client is connecting to the Bybit testnet API.
-        Deprecated: use ``environment=BybitEnvironment.TESTNET`` instead.
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
     max_retries : PositiveInt, optional
@@ -96,8 +81,6 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     environment: BybitEnvironment | None = None
     base_url_http: str | None = None
     proxy_url: str | None = None
-    demo: bool = False
-    testnet: bool = False
     update_instruments_interval_mins: PositiveInt | None = 60
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None
@@ -129,7 +112,6 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     environment : BybitEnvironment, optional
         The Bybit environment for the client (MAINNET, DEMO, or TESTNET).
         If ``None`` then defaults to MAINNET.
-        Takes precedence over ``demo`` and ``testnet`` if set.
     base_url_http : str, optional
         The base URL for Bybit HTTP API.
         If ``None`` then will use the default URL based on environment.
@@ -139,12 +121,6 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         The base URL for the `trade` WebSocket client.
     proxy_url : str, optional
         Optional proxy URL for HTTP and WebSocket transports.
-    demo : bool, default False
-        If the client is connecting to the Bybit demo API.
-        Deprecated: use ``environment=BybitEnvironment.DEMO`` instead.
-    testnet : bool, default False
-        If the client is connecting to the Bybit testnet API.
-        Deprecated: use ``environment=BybitEnvironment.TESTNET`` instead.
     use_gtd : bool, default False
         If False, then GTD time in force will be remapped to GTC
         (this is useful if managing GTD orders locally).
@@ -201,8 +177,6 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws_private: str | None = None
     base_url_ws_trade: str | None = None
     proxy_url: str | None = None
-    demo: bool = False
-    testnet: bool = False
     use_gtd: bool = False  # Not supported on Bybit
     use_ws_execution_fast: bool = False
     use_http_batch_api: bool = False

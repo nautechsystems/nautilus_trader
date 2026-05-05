@@ -430,35 +430,3 @@ async fn websocket_client_reuses_proxy_url_on_reconnect() {
         "expected at least 2 CONNECT requests through proxy after reconnect, was {connects}"
     );
 }
-
-/// The Sockudo backend cannot tunnel through a proxy yet. The dispatcher
-/// must reject `proxy_url` with a clear error rather than silently
-/// connecting direct.
-#[tokio::test]
-async fn sockudo_backend_rejects_proxy_url() {
-    let config = WebSocketConfig {
-        url: "ws://127.0.0.1:1/".to_string(),
-        headers: vec![],
-        heartbeat: None,
-        heartbeat_msg: None,
-        reconnect_timeout_ms: Some(500),
-        reconnect_delay_initial_ms: Some(10),
-        reconnect_delay_max_ms: Some(50),
-        reconnect_backoff_factor: Some(1.5),
-        reconnect_jitter_ms: Some(10),
-        reconnect_max_attempts: Some(0),
-        idle_timeout_ms: None,
-        backend: TransportBackend::Sockudo,
-        proxy_url: Some("http://127.0.0.1:9999".to_string()),
-    };
-
-    let handler: MessageHandler = Arc::new(|_| {});
-    let err = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
-        .await
-        .expect_err("Sockudo + proxy_url should error");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("Sockudo") || msg.contains("sockudo"),
-        "unexpected error: {msg}"
-    );
-}

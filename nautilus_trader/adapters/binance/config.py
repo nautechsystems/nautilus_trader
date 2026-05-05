@@ -101,8 +101,6 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
         The proxy URL for HTTP and WebSocket transports.
     us : bool, default False
         If client is connecting to Binance US.
-    testnet : bool, default False
-        Deprecated: use ``environment`` instead.
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
     use_agg_trade_ticks : bool, default False
@@ -124,7 +122,6 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws: str | None = None
     proxy_url: str | None = None
     us: bool = False
-    testnet: bool = False
     update_instruments_interval_mins: PositiveInt | None = 60
     use_agg_trade_ticks: bool = False
 
@@ -162,8 +159,6 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         The proxy URL for HTTP and WebSocket transports.
     us : bool, default False
         If client is connecting to Binance US.
-    testnet : bool, default False
-        Deprecated: use ``environment`` instead.
     use_gtd : bool, default True
         If GTD orders will use the Binance GTD TIF option.
         If False, then GTD time in force will be remapped to GTC (this is useful if managing GTD orders locally).
@@ -213,7 +208,6 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws_stream: str | None = None
     proxy_url: str | None = None
     us: bool = False
-    testnet: bool = False
     use_gtd: bool = True
     use_reduce_only: bool = True
     use_position_ids: bool = True

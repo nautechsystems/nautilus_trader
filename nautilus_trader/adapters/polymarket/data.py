@@ -28,7 +28,6 @@ from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_ins
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.adapters.polymarket.config import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
-from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookLevel
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookSnapshot
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuote
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuotes
@@ -153,6 +152,8 @@ class PolymarketDataClient(LiveMarketDataClient):
         # Hot caches
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
         self._local_books: dict[InstrumentId, OrderBook] = {}
+
+        self._pending_snapshot_after_tick_change: set[InstrumentId] = set()
 
         # Auto-load coordination
         self._pending_instrument_loads: dict[InstrumentId, asyncio.Future[None]] = {}
@@ -391,10 +392,19 @@ class PolymarketDataClient(LiveMarketDataClient):
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         token_id = get_polymarket_token_id(command.instrument_id)
         await self._ws_client.unsubscribe(token_id)
+        self._discard_pending_tick_change_if_unwanted(command.instrument_id)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         token_id = get_polymarket_token_id(command.instrument_id)
         await self._ws_client.unsubscribe(token_id)
+        self._discard_pending_tick_change_if_unwanted(command.instrument_id)
+
+    def _discard_pending_tick_change_if_unwanted(self, instrument_id: InstrumentId) -> None:
+        if (
+            instrument_id not in self.subscribed_order_book_deltas()
+            and instrument_id not in self.subscribed_quote_ticks()
+        ):
+            self._pending_snapshot_after_tick_change.discard(instrument_id)
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         token_id = get_polymarket_token_id(command.instrument_id)
@@ -520,6 +530,13 @@ class PolymarketDataClient(LiveMarketDataClient):
             # Skip empty snapshots (can occur near market resolution)
             return
 
+        if instrument.id in self._pending_snapshot_after_tick_change:
+            self._pending_snapshot_after_tick_change.discard(instrument.id)
+            self._log.info(
+                f"Resumed book for {instrument.id} after tick size change",
+                LogColor.BLUE,
+            )
+
         self._handle_deltas(instrument, deltas)
 
         if instrument.id in self.subscribed_quote_ticks():
@@ -581,6 +598,12 @@ class PolymarketDataClient(LiveMarketDataClient):
         ws_message: PolymarketQuotes,
         price_change: PolymarketQuote,
     ) -> None:
+        if instrument.id in self._pending_snapshot_after_tick_change:
+            self._log.debug(
+                f"Dropping price_change for {instrument.id}: awaiting snapshot after tick size change",
+            )
+            return
+
         now_ns = self._clock.timestamp_ns()
 
         order = BookOrder(
@@ -677,10 +700,6 @@ class PolymarketDataClient(LiveMarketDataClient):
         ws_message: PolymarketTickSizeChange,
     ) -> None:
         now_ns = self._clock.timestamp_ns()
-
-        old_book = self._local_books.get(instrument.id)
-        old_quote = self._last_quotes.get(instrument.id)
-
         instrument = update_instrument(instrument, change=ws_message, ts_init=now_ns)
 
         # Update local sources immediately so subsequent quotes use the correct precision
@@ -690,86 +709,13 @@ class PolymarketDataClient(LiveMarketDataClient):
         self._log.warning(f"Instrument tick size changed: {instrument}")
         self._handle_data(instrument)
 
-        if old_book is not None:
-            self._reset_local_book_after_tick_size_change(
-                instrument=instrument,
-                change=ws_message,
-                old_book=old_book,
-                old_quote=old_quote,
-                ts_init=now_ns,
-            )
+        # Book epoch transition: see `Tick size change handling` in
+        # docs/integrations/polymarket.md.
+        self._local_books.pop(instrument.id, None)
+        self._last_quotes.pop(instrument.id, None)
 
-    def _reset_local_book_after_tick_size_change(
-        self,
-        instrument: BinaryOption,
-        change: PolymarketTickSizeChange,
-        old_book: OrderBook,
-        old_quote: QuoteTick | None,
-        ts_init: int,
-    ) -> None:
-        snapshot = self._build_snapshot_from_book(
-            instrument=instrument,
-            change=change,
-            book=old_book,
-        )
-
-        deltas = snapshot.parse_to_snapshot(instrument=instrument, ts_init=ts_init)
-
-        if deltas is None:
-            self._local_books.pop(instrument.id, None)
-            self._last_quotes.pop(instrument.id, None)
-            return
-
-        new_book = OrderBook(instrument.id, book_type=BookType.L2_MBP)
-        new_book.apply_deltas(deltas)
-        self._local_books[instrument.id] = new_book
-
-        if self._config.compute_effective_deltas:
-            effective = compute_effective_deltas(old_book, new_book, instrument)
-            if effective:
-                self._handle_data(effective)
-        else:
-            self._handle_data(deltas)
-
-        if instrument.id in self.subscribed_quote_ticks():
-            quote = snapshot.parse_to_quote(
-                instrument=instrument,
-                ts_init=ts_init,
-                drop_quotes_missing_side=self._config.drop_quotes_missing_side,
-            )
-
-            if quote is not None:
-                self._last_quotes[instrument.id] = quote
-                self._handle_data(quote)
-            elif old_quote is None:
-                self._last_quotes.pop(instrument.id, None)
-
-    def _build_snapshot_from_book(
-        self,
-        instrument: BinaryOption,
-        change: PolymarketTickSizeChange,
-        book: OrderBook,
-    ) -> PolymarketBookSnapshot:
-        bids_levels = [
-            PolymarketBookLevel(
-                price=str(instrument.make_price(float(level.price))),
-                size=str(instrument.make_qty(level.size())),
-            )
-            for level in reversed(book.bids())
-        ]
-
-        asks_levels = [
-            PolymarketBookLevel(
-                price=str(instrument.make_price(float(level.price))),
-                size=str(instrument.make_qty(level.size())),
-            )
-            for level in reversed(book.asks())
-        ]
-
-        return PolymarketBookSnapshot(
-            market=change.market,
-            asset_id=change.asset_id,
-            bids=bids_levels,
-            asks=asks_levels,
-            timestamp=change.timestamp,
-        )
+        if (
+            instrument.id in self.subscribed_order_book_deltas()
+            or instrument.id in self.subscribed_quote_ticks()
+        ):
+            self._pending_snapshot_after_tick_change.add(instrument.id)

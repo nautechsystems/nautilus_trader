@@ -134,11 +134,7 @@ class DeribitDataClient(LiveMarketDataClient):
         self._instrument_provider: DeribitInstrumentProvider = instrument_provider
 
         product_types = [k.name for k in config.product_types] if config.product_types else None
-        environment = (
-            config.environment
-            if config.environment is not None
-            else (DeribitEnvironment.TESTNET if config.is_testnet else DeribitEnvironment.MAINNET)
-        )
+        environment = config.environment or DeribitEnvironment.MAINNET
 
         # Configuration
         self._config = config

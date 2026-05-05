@@ -97,7 +97,7 @@ impl KrakenSpotWebSocketClient {
         api_secret: Option<String>,
         proxy_url: Option<String>,
     ) -> Self {
-        let env = environment.unwrap_or(KrakenEnvironment::Mainnet);
+        let env = environment.unwrap_or(KrakenEnvironment::Live);
 
         let (resolved_api_key, resolved_api_secret) =
             crate::common::credential::KrakenCredential::resolve_spot(api_key, api_secret)
@@ -202,6 +202,10 @@ impl KrakenSpotWebSocketClient {
             get_runtime().spawn(async move {
                 tokio::pin!(stream);
                 let order_qty_cache: Arc<AtomicMap<String, f64>> =
+                    Arc::new(AtomicMap::new());
+                // Maps cl_ord_id/order_id to instrument for messages that omit symbol
+                // (e.g. Kraken exec_type="new" confirmation has no symbol field).
+                let order_instrument_cache: Arc<AtomicMap<String, InstrumentAny>> =
                     Arc::new(AtomicMap::new());
 
                 while let Some(msg) = stream.next().await {
@@ -335,28 +339,42 @@ impl KrakenSpotWebSocketClient {
                             };
 
                             for exec in &executions {
-                                let symbol = match &exec.symbol {
-                                    Some(s) => s.as_str(),
-                                    None => {
+                                let inst = if let Some(ref symbol) = exec.symbol {
+                                    let instrument_id = InstrumentId::new(
+                                        Symbol::new(symbol.as_str()),
+                                        *KRAKEN_VENUE,
+                                    );
+                                    let Some(inst) =
+                                        instruments_map.load().get(&instrument_id).cloned()
+                                    else {
+                                        log::warn!("No instrument for symbol: {symbol}");
+                                        continue;
+                                    };
+                                    // Cache for subsequent messages that omit symbol
+                                    if let Some(ref id) = exec.cl_ord_id {
+                                        order_instrument_cache.insert(id.clone(), inst.clone());
+                                    }
+                                    order_instrument_cache
+                                        .insert(exec.order_id.clone(), inst.clone());
+                                    inst
+                                } else {
+                                    // Look up instrument cached from a prior message for this order
+                                    let cache = order_instrument_cache.load();
+                                    let found = exec
+                                        .cl_ord_id
+                                        .as_ref()
+                                        .and_then(|id| cache.get(id).cloned())
+                                        .or_else(|| cache.get(&exec.order_id).cloned());
+                                    let Some(inst) = found else {
                                         log::debug!(
-                                            "Execution without symbol: exec_type={:?}, order_id={}",
+                                            "Execution without symbol and no cached instrument: \
+                                             exec_type={:?}, order_id={}",
                                             exec.exec_type,
                                             exec.order_id
                                         );
                                         continue;
-                                    }
-                                };
-
-                                let instrument_id = InstrumentId::new(
-                                    Symbol::new(symbol),
-                                    *KRAKEN_VENUE,
-                                );
-                                let instrument =
-                                    instruments_map.load().get(&instrument_id).cloned();
-
-                                let Some(ref inst) = instrument else {
-                                    log::warn!("No instrument for symbol: {symbol}");
-                                    continue;
+                                    };
+                                    inst
                                 };
 
                                 let cached_qty = exec.cl_ord_id.as_ref().and_then(|id| {
@@ -370,7 +388,7 @@ impl KrakenSpotWebSocketClient {
                                 }
 
                                 match parse_ws_order_status_report(
-                                    exec, inst, acct_id, cached_qty, ts_init,
+                                    exec, &inst, acct_id, cached_qty, ts_init,
                                 ) {
                                     Ok(mut report) => {
                                         if let Some(ref cl_ord_id) = exec.cl_ord_id {
@@ -391,7 +409,7 @@ impl KrakenSpotWebSocketClient {
                                 }
 
                                 if exec.exec_id.is_some() {
-                                    match parse_ws_fill_report(exec, inst, acct_id, ts_init) {
+                                    match parse_ws_fill_report(exec, &inst, acct_id, ts_init) {
                                         Ok(mut report) => {
                                             if let Some(ref cl_ord_id) = exec.cl_ord_id {
                                                 let full_id = truncated_id_map

@@ -36,6 +36,7 @@ from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
@@ -2196,6 +2197,232 @@ class TestExecutionEngine:
         assert position.quantity == Quantity.from_int(0)
         assert position_flipped.quantity == Quantity.from_int(100_000)
         assert position_flipped.side == PositionSide.LONG
+
+    def test_submit_order_denied_with_custom_position_id_under_netting(self) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        config = StrategyConfig(oms_type="NETTING")
+        strategy = Strategy(config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.exec_engine.register_oms_type(strategy)
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        custom_position_id = PositionId(f"{AUDUSD_SIM.id}-GRID")
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=custom_position_id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order.status == OrderStatus.DENIED
+        assert "NETTING" in order.last_event.reason
+        assert f"{AUDUSD_SIM.id}-{strategy.id}" in order.last_event.reason
+
+    def test_submit_order_list_denied_with_custom_position_id_under_netting(self) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        config = StrategyConfig(oms_type="NETTING")
+        strategy = Strategy(config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.exec_engine.register_oms_type(strategy)
+
+        entry = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        stop_loss = strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("0.50000"),
+        )
+        take_profit = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+
+        bracket = OrderList(
+            order_list_id=OrderListId("L-001"),
+            orders=[entry, stop_loss, take_profit],
+        )
+
+        custom_position_id = PositionId(f"{AUDUSD_SIM.id}-GRID")
+        submit_order_list = SubmitOrderList(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            order_list=bracket,
+            position_id=custom_position_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order_list)
+
+        # Assert
+        assert entry.status == OrderStatus.DENIED
+        assert stop_loss.status == OrderStatus.DENIED
+        assert take_profit.status == OrderStatus.DENIED
+
+    def test_submit_order_denied_with_unspecified_strategy_oms_and_netting_client(self) -> None:
+        # Arrange: register a NETTING client for BINANCE alongside the default
+        # HEDGING SIM client; the strategy is left at UNSPECIFIED so resolution
+        # must fall through to the routed (NETTING) client.
+        self.cache.add_instrument(BTCUSDT_BINANCE)
+
+        netting_client = MockExecutionClient(
+            client_id=ClientId(BTCUSDT_BINANCE.venue.value),
+            venue=BTCUSDT_BINANCE.venue,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            oms_type=OmsType.NETTING,
+        )
+        self.portfolio.update_account(
+            TestEventStubs.margin_account_state(account_id=netting_client.account_id),
+        )
+        self.exec_engine.register_client(netting_client)
+        self.exec_engine.start()
+
+        strategy = Strategy()  # default config: oms_type=UNSPECIFIED
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.exec_engine.register_oms_type(strategy)
+
+        order = strategy.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_int(1),
+        )
+
+        custom_position_id = PositionId(f"{BTCUSDT_BINANCE.id}-GRID")
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=custom_position_id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order.status == OrderStatus.DENIED
+        assert "NETTING" in order.last_event.reason
+
+    def test_submit_order_allowed_with_custom_position_id_under_hedging(self) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        config = StrategyConfig(oms_type="HEDGING")
+        strategy = Strategy(config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.exec_engine.register_oms_type(strategy)
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        custom_position_id = PositionId(f"{AUDUSD_SIM.id}-GRID")
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=custom_position_id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+
+        # Assert
+        assert order.status == OrderStatus.SUBMITTED
+
+    def test_submit_order_allowed_with_deterministic_netting_position_id(self) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        config = StrategyConfig(oms_type="NETTING")
+        strategy = Strategy(config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.exec_engine.register_oms_type(strategy)
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        deterministic_position_id = PositionId(f"{AUDUSD_SIM.id}-{strategy.id}")
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=deterministic_position_id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+
+        # Assert
+        assert order.status == OrderStatus.SUBMITTED
 
     def test_handle_updated_order_event(self) -> None:
         # Arrange

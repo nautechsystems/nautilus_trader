@@ -110,6 +110,7 @@ class BacktestNode:
     def add_strategy_from_config(
         self, run_config_id: str, config: trading.ImportableStrategyConfig
     ) -> None: ...
+    def add_native_strategy(self, run_config_id: str, config: typing.Any) -> None: ...
 
 @typing.final
 class BacktestResult:

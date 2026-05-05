@@ -365,7 +365,7 @@ impl FuzzyCandlesticks {
         let latest_lower = *self.lower_wick_percents.back().unwrap_or(&0.0);
 
         self.value = FuzzyCandle::new(
-            self.fuzzify_direction(open, close),
+            Self::fuzzify_direction(open, close),
             self.fuzzify_size(total, mean_length, sd_length),
             self.fuzzify_body_size(latest_body, mean_body_percent, sd_body),
             self.fuzzify_wick_size(latest_upper, mean_upper_percent, sd_upper),
@@ -402,7 +402,7 @@ impl FuzzyCandlesticks {
         self.initialized = false;
     }
 
-    fn fuzzify_direction(&self, open: f64, close: f64) -> CandleDirection {
+    fn fuzzify_direction(open: f64, close: f64) -> CandleDirection {
         if close > open {
             CandleDirection::Bull
         } else if close < open {

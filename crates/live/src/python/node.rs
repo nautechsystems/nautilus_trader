@@ -479,6 +479,8 @@ impl LiveNode {
     ///
     /// The config type determines which built-in strategy is constructed.
     /// All execution happens in Rust; Python is the configuration layer.
+    ///
+    /// Custom native Rust strategies require the native strategy plugin API.
     #[cfg(feature = "examples")]
     #[pyo3(name = "add_native_strategy")]
     fn py_add_native_strategy(&mut self, config: &Bound<'_, PyAny>) -> PyResult<()> {

@@ -73,7 +73,7 @@ use nautilus_model::{
         ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
-    orderbook::own::{OwnOrderBook, should_handle_own_book_order},
+    orderbook::own::{OwnBookOrder, OwnOrderBook, should_handle_own_book_order},
     orders::{Order, OrderAny, OrderError},
     position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -613,7 +613,7 @@ impl ExecutionEngine {
         let futures: Vec<_> = self
             .get_clients_mut()
             .into_iter()
-            .map(|client| client.connect())
+            .map(ExecutionClientAdapter::connect)
             .collect();
 
         let results = join_all(futures).await;
@@ -632,7 +632,7 @@ impl ExecutionEngine {
         let futures: Vec<_> = self
             .get_clients_mut()
             .into_iter()
-            .map(|client| client.disconnect())
+            .map(ExecutionClientAdapter::disconnect)
             .collect();
 
         let results = join_all(futures).await;
@@ -641,7 +641,7 @@ impl ExecutionEngine {
         if errors.is_empty() {
             Ok(())
         } else {
-            let error_msgs: Vec<_> = errors.iter().map(|e| e.to_string()).collect();
+            let error_msgs: Vec<_> = errors.iter().map(ToString::to_string).collect();
             anyhow::bail!(
                 "Failed to disconnect execution clients: {}",
                 error_msgs.join("; ")
@@ -855,19 +855,31 @@ impl ExecutionEngine {
             let mut cache = self.cache.borrow_mut();
             cache.clear_index();
             cache.cache_general()?;
-            self.cache.borrow_mut().cache_all().await?;
+        }
+
+        self.cache.borrow_mut().cache_all().await?;
+
+        // Snapshot before iterating: `get_or_init_own_order_book` re-enters `self.cache.borrow_mut()`.
+        let own_book_entries: Vec<(InstrumentId, OwnBookOrder)> = {
+            let mut cache = self.cache.borrow_mut();
             cache.build_index();
             let _ = cache.check_integrity();
 
             if self.config.manage_own_order_books {
-                for order in cache.orders(None, None, None, None, None) {
-                    if order.is_closed() || !should_handle_own_book_order(order) {
-                        continue;
-                    }
-                    let mut own_book = self.get_or_init_own_order_book(&order.instrument_id());
-                    own_book.add(order.to_own_book_order());
-                }
+                cache
+                    .orders(None, None, None, None, None)
+                    .into_iter()
+                    .filter(|o| !o.is_closed() && should_handle_own_book_order(o))
+                    .map(|o| (o.instrument_id(), o.to_own_book_order()))
+                    .collect()
+            } else {
+                Vec::new()
             }
+        };
+
+        for (instrument_id, own_order) in own_book_entries {
+            let mut own_book = self.get_or_init_own_order_book(&instrument_id);
+            own_book.add(own_order);
         }
 
         self.set_position_id_counts();
@@ -1174,7 +1186,7 @@ impl ExecutionEngine {
 
     /// Reconciles a fill report received at runtime.
     ///
-    /// Finds the associated order, validates the fill, and generates an OrderFilled event
+    /// Finds the associated order, validates the fill, and generates an `OrderFilled` event
     /// if the fill is not a duplicate and won't cause an overfill. When the order is not
     /// in cache, an external order is bootstrapped from the fill so that venue-initiated
     /// closures (e.g. Hyperliquid liquidations) that arrive without a companion order
@@ -1388,13 +1400,13 @@ impl ExecutionEngine {
     /// Reconciles a position status report received at runtime.
     ///
     /// Compares the venue-reported position with cached positions and logs any discrepancies.
-    /// Handles both hedging (with venue_position_id) and netting (without) modes.
+    /// Handles both hedging (with `venue_position_id`) and netting (without) modes.
     pub fn reconcile_position_report(&mut self, report: &PositionStatusReport) {
         let cache = self.cache.borrow();
 
         let size_precision = cache
             .instrument(&report.instrument_id)
-            .map(|i| i.size_precision());
+            .map(InstrumentAny::size_precision);
 
         if report.venue_position_id.is_some() {
             self.reconcile_position_report_hedging(report, &cache);
@@ -1529,12 +1541,12 @@ impl ExecutionEngine {
             mass_status
                 .fill_reports()
                 .values()
-                .map(|v| v.len())
+                .map(Vec::len)
                 .sum::<usize>(),
             mass_status
                 .position_reports()
                 .values()
-                .map(|v| v.len())
+                .map(Vec::len)
                 .sum::<usize>()
         );
     }
@@ -1683,6 +1695,16 @@ impl ExecutionEngine {
             return;
         }
 
+        if let Some(reason) = self.check_position_id_against_oms(
+            cmd.instrument_id,
+            cmd.strategy_id,
+            cmd.position_id,
+            client,
+        ) {
+            self.deny_order(&order, &reason);
+            return;
+        }
+
         let instrument_id = order.instrument_id();
 
         if self.config.snapshot_orders {
@@ -1733,6 +1755,18 @@ impl ExecutionEngine {
                     order,
                     &format!("Order list venue {order_list_venue} does not match client venue {client_venue}"),
                 );
+            }
+            return;
+        }
+
+        if let Some(reason) = self.check_position_id_against_oms(
+            cmd.instrument_id,
+            cmd.strategy_id,
+            cmd.position_id,
+            client,
+        ) {
+            for order in &orders {
+                self.deny_order(order, &reason);
             }
             return;
         }
@@ -1841,10 +1875,10 @@ impl ExecutionEngine {
             log::debug!("{RECV}{EVT} {event:?}");
         }
 
-        let client_order_id = event.client_order_id();
+        let event_client_order_id = event.client_order_id();
         let cache = self.cache.borrow();
-        let mut order = if let Some(order) = cache.order(&client_order_id) {
-            order.clone()
+        let client_order_id = if cache.order_exists(&event_client_order_id) {
+            event_client_order_id
         } else {
             log::warn!(
                 "Order with {} not found in the cache to apply {}",
@@ -1865,7 +1899,7 @@ impl ExecutionEngine {
 
             // Look up client order ID from venue order ID
             let client_order_id = if let Some(id) = cache.client_order_id(&venue_order_id) {
-                id
+                *id
             } else {
                 log::error!(
                     "Cannot apply event to any order: {} and {venue_order_id} not found in the cache",
@@ -1875,9 +1909,9 @@ impl ExecutionEngine {
             };
 
             // Get order using found client order ID
-            if let Some(order) = cache.order(client_order_id) {
+            if cache.order_exists(&client_order_id) {
                 log::info!("Order with {client_order_id} was found in the cache");
-                order.clone()
+                client_order_id
             } else {
                 log::error!(
                     "Cannot apply event to any order: {client_order_id} and {venue_order_id} not found in cache",
@@ -1885,25 +1919,45 @@ impl ExecutionEngine {
                 return;
             }
         };
+        let order_before_fill = if matches!(event, OrderEventAny::Filled(_)) {
+            cache.order(&client_order_id).cloned()
+        } else {
+            None
+        };
 
         drop(cache);
 
         match event {
             OrderEventAny::Filled(fill) => {
+                let Some(order_before_fill) = order_before_fill else {
+                    log::error!(
+                        "Cannot apply fill: order {} not found in the cache",
+                        fill.client_order_id()
+                    );
+                    return;
+                };
                 let oms_type = self.determine_oms_type(fill);
-                let position_id = self.determine_position_id(*fill, oms_type, Some(&order));
+                let position_id =
+                    self.determine_position_id(*fill, oms_type, Some(&order_before_fill));
 
                 let mut fill = *fill;
                 fill.position_id = Some(position_id);
 
-                if self.apply_fill_to_order(&mut order, fill).is_ok() {
-                    self.handle_order_fill(&order, fill, oms_type);
+                if self
+                    .validate_fill_for_order(&order_before_fill, &fill)
+                    .is_ok()
+                {
                     let event = OrderEventAny::Filled(fill);
+                    let Some(order) = self.update_cached_order(client_order_id, &event) else {
+                        return;
+                    };
+
+                    self.handle_order_fill(&order, fill, oms_type);
                     self.publish_order_event(&event);
                 }
             }
             _ => {
-                if self.apply_event_to_order(&mut order, event).is_ok() {
+                if self.update_cached_order(client_order_id, event).is_some() {
                     self.publish_order_event(event);
                 }
             }
@@ -1911,23 +1965,61 @@ impl ExecutionEngine {
     }
 
     fn determine_oms_type(&self, fill: &OrderFilled) -> OmsType {
-        // Check for strategy OMS override
-        if let Some(oms_type) = self.oms_overrides.get(&fill.strategy_id) {
+        if let Some(oms_type) = self.oms_overrides.get(&fill.strategy_id)
+            && *oms_type != OmsType::Unspecified
+        {
             return *oms_type;
         }
 
-        // Use native venue OMS
         if let Some(client_id) = self.routing_map.get(&fill.instrument_id.venue)
             && let Some(client) = self.clients.get(client_id)
         {
-            return client.oms_type();
+            return client.oms_type;
         }
 
         if let Some(client) = &self.default_client {
-            return client.oms_type();
+            return client.oms_type;
         }
 
         OmsType::Netting // Default fallback
+    }
+
+    fn resolve_oms_type_for_client(
+        &self,
+        strategy_id: StrategyId,
+        client: &dyn ExecutionClient,
+    ) -> OmsType {
+        if let Some(oms_type) = self.oms_overrides.get(&strategy_id)
+            && *oms_type != OmsType::Unspecified
+        {
+            return *oms_type;
+        }
+
+        client.oms_type()
+    }
+
+    fn check_position_id_against_oms(
+        &self,
+        instrument_id: InstrumentId,
+        strategy_id: StrategyId,
+        position_id: Option<PositionId>,
+        client: &dyn ExecutionClient,
+    ) -> Option<String> {
+        let position_id = position_id?;
+
+        if self.resolve_oms_type_for_client(strategy_id, client) != OmsType::Netting {
+            return None;
+        }
+
+        let expected = format!("{instrument_id}-{strategy_id}");
+        if position_id.as_str() == expected {
+            return None;
+        }
+
+        Some(format!(
+            "`position_id` {position_id} is not valid for NETTING OMS; \
+             expected '{expected}' (use HEDGING for custom position IDs)"
+        ))
     }
 
     fn determine_position_id(
@@ -2076,8 +2168,8 @@ impl ExecutionEngine {
         PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id))
     }
 
-    fn apply_fill_to_order(&self, order: &mut OrderAny, fill: OrderFilled) -> anyhow::Result<()> {
-        if order.is_duplicate_fill(&fill) {
+    fn validate_fill_for_order(&self, order: &OrderAny, fill: &OrderFilled) -> anyhow::Result<()> {
+        if order.is_duplicate_fill(fill) {
             log::warn!(
                 "Duplicate fill: {} trade_id={} already applied, skipping",
                 order.client_order_id(),
@@ -2086,59 +2178,55 @@ impl ExecutionEngine {
             anyhow::bail!("Duplicate fill");
         }
 
-        self.check_overfill(order, &fill)?;
-        let event = OrderEventAny::Filled(fill);
-        self.apply_order_event(order, &event)
+        self.check_overfill(order, fill)
     }
 
-    fn apply_event_to_order(
+    fn update_cached_order(
         &self,
-        order: &mut OrderAny,
+        client_order_id: ClientOrderId,
         event: &OrderEventAny,
-    ) -> anyhow::Result<()> {
-        self.apply_order_event(order, event)
-    }
+    ) -> Option<OrderAny> {
+        let result = { self.cache.borrow_mut().update_order(event) };
 
-    fn apply_order_event(&self, order: &mut OrderAny, event: &OrderEventAny) -> anyhow::Result<()> {
-        if let Err(e) = order.apply(event.clone()) {
-            match e {
-                OrderError::InvalidStateTransition => {
-                    // Event already applied to order (e.g., from reconciliation or duplicate processing)
-                    // Log warning and continue with downstream processing (cache update, publishing, etc.)
+        let order = match result {
+            Ok(order) => order,
+            Err(e) => {
+                if matches!(
+                    e.downcast_ref::<OrderError>(),
+                    Some(OrderError::InvalidStateTransition)
+                ) {
                     log::warn!("InvalidStateTrigger: {e}, did not apply {event}");
+                    return self.cache.borrow().order(&client_order_id).cloned();
                 }
-                OrderError::DuplicateFill(trade_id) => {
-                    // Duplicate fill detected at order level (secondary safety check)
+
+                if let Some(OrderError::DuplicateFill(trade_id)) = e.downcast_ref::<OrderError>() {
                     log::warn!(
                         "Duplicate fill rejected at order level: trade_id={trade_id}, did not apply {event}"
                     );
-                    anyhow::bail!("{e}");
+                    return None;
                 }
-                _ => {
-                    // Protection against invalid IDs and other invariants
-                    log::error!("Error applying event: {e}, did not apply {event}");
 
-                    if should_handle_own_book_order(order) {
-                        self.cache.borrow_mut().update_own_order_book(order);
-                    }
-                    anyhow::bail!("{e}");
+                log::error!("Error applying event: {e}, did not apply {event}");
+
+                let order = self.cache.borrow().order(&client_order_id).cloned();
+                if let Some(order) = order
+                    && should_handle_own_book_order(&order)
+                {
+                    self.cache.borrow_mut().update_own_order_book(&order);
                 }
+                return None;
             }
-        }
-
-        if let Err(e) = self.cache.borrow_mut().update_order(order) {
-            log::error!("Error updating order in cache: {e}");
-        }
+        };
 
         if self.config.debug {
             log::debug!("{SEND}{EVT} {event}");
         }
 
         if self.config.snapshot_orders {
-            self.create_order_state_snapshot(order);
+            self.create_order_state_snapshot(&order);
         }
 
-        Ok(())
+        Some(order)
     }
 
     fn publish_order_event(&self, event: &OrderEventAny) {
@@ -2222,21 +2310,33 @@ impl ExecutionEngine {
                 let position_id = pos.id;
 
                 for client_order_id in order.linked_order_ids().unwrap_or_default() {
-                    let mut cache = self.cache.borrow_mut();
-                    let contingent_order = cache.mut_order(client_order_id);
-                    if let Some(contingent_order) = contingent_order
-                        && contingent_order.position_id().is_none()
-                    {
-                        contingent_order.set_position_id(Some(position_id));
-
-                        if let Err(e) = self.cache.borrow_mut().add_position_id(
-                            &position_id,
-                            &contingent_order.instrument_id().venue,
-                            &contingent_order.client_order_id(),
-                            &contingent_order.strategy_id(),
-                        ) {
-                            log::error!("Failed to add position ID: {e}");
+                    // Apply mutation and index update in separate borrows: `mut_order`
+                    // holds `&mut Cache`, so a nested `self.cache.borrow_mut()` would panic.
+                    let link = {
+                        let mut cache = self.cache.borrow_mut();
+                        if let Some(contingent_order) = cache.mut_order(client_order_id)
+                            && contingent_order.position_id().is_none()
+                        {
+                            contingent_order.set_position_id(Some(position_id));
+                            Some((
+                                contingent_order.instrument_id().venue,
+                                contingent_order.client_order_id(),
+                                contingent_order.strategy_id(),
+                            ))
+                        } else {
+                            None
                         }
+                    };
+
+                    if let Some((venue, contingent_id, strategy_id)) = link
+                        && let Err(e) = self.cache.borrow_mut().add_position_id(
+                            &position_id,
+                            &venue,
+                            &contingent_id,
+                            &strategy_id,
+                        )
+                    {
+                        log::error!("Failed to add position ID: {e}");
                     }
                 }
             }
@@ -2554,20 +2654,17 @@ impl ExecutionEngine {
             self.clock.borrow().timestamp_ns(),
         );
 
-        let mut order = order.clone();
-
-        if let Err(e) = order.apply(OrderEventAny::Denied(denied)) {
-            log::error!("Failed to apply denied event to order: {e}");
-            return;
-        }
-
-        if let Err(e) = self.cache.borrow_mut().update_order(&order) {
-            log::error!("Failed to update order in cache: {e}");
-            return;
-        }
+        let event = OrderEventAny::Denied(denied);
+        let order = match self.cache.borrow_mut().update_order(&event) {
+            Ok(order) => order,
+            Err(e) => {
+                log::error!("Failed to apply denied event to order: {e}");
+                return;
+            }
+        };
 
         let topic = switchboard::get_event_orders_topic(order.strategy_id());
-        msgbus::publish_order_event(topic, &OrderEventAny::Denied(denied));
+        msgbus::publish_order_event(topic, &event);
 
         if self.config.snapshot_orders {
             self.create_order_state_snapshot(&order);

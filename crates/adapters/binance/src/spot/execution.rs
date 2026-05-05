@@ -250,6 +250,7 @@ impl BinanceSpotExecutionClient {
                 order_side,
                 order_type,
                 price,
+                quantity,
             },
         );
 
@@ -2096,7 +2097,7 @@ mod tests {
 
     fn create_test_http_client(clock: &'static AtomicTime) -> BinanceSpotHttpClient {
         BinanceSpotHttpClient::new(
-            BinanceEnvironment::Mainnet,
+            BinanceEnvironment::Live,
             clock,
             None,
             None,
@@ -2121,6 +2122,7 @@ mod tests {
                 order_side: OrderSide::Buy,
                 order_type: OrderType::Limit,
                 price: None,
+                quantity: Quantity::from("1"),
             },
         );
         dispatch_state

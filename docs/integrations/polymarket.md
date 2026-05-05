@@ -14,8 +14,10 @@ Today the repository exposes two Polymarket implementations:
 - The Rust-native adapter surface in `nautilus_trader.polymarket`, which NautilusTrader is
   consolidating toward.
 
-The two implementations overlap heavily, but they do not yet behave identically in every area.
+:::warning
+The two implementations overlap heavily, but they do not behave identically in every area.
 This guide calls out the current differences where they matter.
+:::
 
 NautilusTrader supports multiple Polymarket signature types for order signing, which gives
 flexibility for different wallet configurations while NautilusTrader handles signing and order
@@ -326,6 +328,28 @@ sequential 15‑order chunks.
   idempotency key.
 - `BatchCancelOrders` is dispatched to `DELETE /orders` in one shot.
 
+### Submit error handling
+
+Polymarket's public documentation describes successful
+[`POST /order`](https://docs.polymarket.com/api-reference/trade/post-a-new-order) responses
+with `success`, `orderID`, `status`, and `errorMsg`, and documents
+[API errors](https://docs.polymarket.com/resources/error-codes) as structured error responses.
+It does not document statusless `py-clob-client` exceptions or transport failures as
+venue rejections.
+
+The adapter rejects only when the response proves the order was not accepted, such as
+`success=false`, a documented order processing error, or another non-retryable client/API
+error. Transport failures, timeouts, ambiguous retry exhaustion, statusless `PolyApiException`,
+malformed responses, and server-side failures keep the order submitted.
+
+For unknown outcomes, both adapters derive the expected Polymarket order hash from the signed
+EIP-712 order when possible and cache it as the `VenueOrderId`. Later WebSocket or reconciliation
+reports then attach to the local `ClientOrderId` instead of becoming external orders.
+
+Quote-quantity market BUY orders still apply the signed quote-to-base quantity update on the
+unknown path. Cancels requested while submit outcome is unknown are deferred until the expected
+venue order ID is known, and fill tracking is registered under that ID.
+
 ### Position management
 
 | Feature          | Binary Options | Notes                             |
@@ -383,6 +407,25 @@ Polymarket enforces different precision constraints based on tick size and order
 
 :::
 
+### Tick size change handling
+
+When a market's tick size changes (`tick_size_change` WebSocket event), old
+book levels can be invalid on the new grid (for example `0.505` fits a `0.001`
+tick but not a `0.01` tick). To keep old-grid prices out of the new epoch, the
+adapter treats the change as a book epoch transition:
+
+1. Publish the updated `BinaryOption` with the new `price_increment` and `price_precision`.
+2. Drop the local order book for the instrument.
+3. Mark the instrument as awaiting a fresh snapshot.
+4. Drop incremental `price_change` book deltas until the snapshot arrives.
+5. Reseed the book from the snapshot and resume normal processing.
+
+Trade ticks and the instrument update flow through unchanged. The Rust adapter
+keeps emitting `QuoteTick` events through the gap by reading `best_bid` and
+`best_ask` from each `price_change`. The Python adapter derives quotes from
+the local book, so quote subscribers see the same brief gap as the deltas
+(typically sub-second, until the venue snapshot arrives).
+
 ## Trades
 
 Trades on Polymarket can have the following statuses:
@@ -402,9 +445,13 @@ with additional trade events stored in the cache as JSON under a custom key to r
 Polymarket does not publish a trade ID on `last_trade_price` market-data events.
 The adapter derives a deterministic `TradeId` by FNV-1a hashing the asset ID,
 side, price, size, and timestamp (`determine_trade_id` in both Rust and Python).
-For CLOB Data API trade history the adapter uses the last 36 characters of the
-transaction hash directly. The same venue event yields the same trade ID across
-replays, keeping downstream dedup intact.
+For CLOB Data API trade history the adapter composes the `TradeId` from a hash
+suffix, an asset suffix, and a per-(transaction, asset) sequence number (format
+`{transactionHash[-24:]}-{asset[-4:]}-{seq:06d}`). A single Polygon transaction
+can settle multiple fills sharing the same `transactionHash`, so the older
+last-36-character form collapsed those fills to a single id and downstream
+catalogs silently dropped duplicates. The same venue event yields the same
+trade ID across replays, keeping downstream dedup intact.
 
 ## Fees
 
@@ -423,6 +470,32 @@ Fees are rounded to 5 decimal places (0.00001 pUSD minimum). Fees are collected 
 :::note
 For the latest rates, see Polymarket's [Fees](https://docs.polymarket.com/trading/fees) documentation.
 :::
+
+### Backtest fee model
+
+For backtests, the adapter ships `PolymarketFeeModel` (a
+`nautilus_trader.backtest.models.FeeModel` subclass) which applies the taker
+fee formula above and credits passive maker fills with a rebate inferred from
+the market category. Polymarket pays a 20% maker rebate on Crypto markets and
+25% on other fee-enabled categories (Sports, Finance, Politics, Economics,
+Culture, Weather, Tech, Mentions, Other), distributed daily from each market's
+rebate pool. Geopolitics markets are fee-free with no rebates and the model
+returns zero for them.
+
+```python
+from nautilus_trader.adapters.polymarket.fee_model import PolymarketFeeModel
+
+# Default: maker rebates enabled
+fee_model = PolymarketFeeModel()
+
+# Or for taker-only strategies
+fee_model = PolymarketFeeModel(maker_rebates_enabled=False)
+```
+
+The model can also be configured through `BacktestVenueConfig.fee_model` via
+`ImportableFeeModelConfig` and `PolymarketFeeModelConfig`. Maker rebate share
+inference uses the instrument's category labels first, then falls back to the
+documented per-category fee rate when labels are absent.
 
 ## Reconciliation
 
@@ -445,67 +518,27 @@ It is not recommended for production use at this time.
 
 ## Fill quantity normalization
 
-The adapter snaps fill quantities reported by the venue to the locally registered
-order quantity when the difference is dust. Two distinct rounding mechanisms make
-this necessary, so two asymmetric tolerances are applied. Both scale with the
-instrument's `size_precision` (one ulp = `10^-size_precision`).
+Polymarket reports fill quantities that drift slightly from the submitted
+order quantity due to protocol-level rounding: the CLOB rounds matched fills
+to integer cent ticks (underfill) and the V2 SDK truncates `takerAmount` to
+USDC scale on market-BUY quote-quantity orders (overfill, a few microshares).
+Both drift sources are fixed in absolute share terms, so the adapter
+normalizes them with a single threshold of `DUST_SNAP_THRESHOLD = 0.01`
+shares. Anything beyond that surfaces to the engine as a real partial fill or
+overfill.
 
-| Direction | Constant              | Default ulps | At precision 6 | Source of drift                                                            |
-|-----------|-----------------------|--------------|----------------|----------------------------------------------------------------------------|
-| Underfill | `SNAP_UNDERFILL_ULPS` | 10_000       | 0.01           | CLOB rounds fills to integer cent ticks (e.g., `23.69` from `23.696681`).  |
-| Overfill  | `SNAP_OVERFILL_ULPS`  | 100          | 0.0001         | `adjust_market_buy_amount` truncates `submitted_qty` to USDC scale (6 dp). |
+| Direction | Source                                  | Adapter behaviour                         |
+|-----------|-----------------------------------------|-------------------------------------------|
+| Overfill  | V2 USDC‑scale truncation (microshares)  | Snap fill DOWN to `submitted_qty`         |
+| Underfill | CLOB cent‑tick truncation (≤ `0.01`)    | Preserved; synthetic dust fill at MATCHED |
 
-### Why asymmetric
+`FillReport.commission` always reflects the venue-reported size, not the
+snapped quantity. The few-ulp difference is sub-microcent in pUSD.
 
-- **Underfill** comes from CLOB tick rounding and can be up to one cent in
-  share terms. Snapping up lets the order reach `Filled` cleanly when the
-  CLOB truncates the last tick of fill quantity.
-- **Overfill** is a much smaller drift: only V2 market BUYs ever produce
-  it in practice. `adjust_market_buy_amount` truncates the registered base
-  quantity to USDC scale, but the on-chain fill comes back at full
-  precision and may exceed `submitted_qty` by a small number of ulps
-  (4 ulps observed in production). Without the snap, the engine rejects
-  the fill as an overfill (`potential_overfill > 0`) and the local
-  `filled_qty` stays at zero even though the position is on-chain.
-
-The snap function does not gate on order type: overfill drift in any
-tracked order under `SNAP_OVERFILL_ULPS` is absorbed. In practice no other
-order class produces overfill drift (limit and resting-maker orders fill
-at exact submitted base qty), so the broader behavior is a safety net.
-The overfill tolerance is intentionally tighter than the underfill side
-(~25× headroom over the observed drift, 100× below CLOB tick magnitude),
-so a real venue overfill above `SNAP_OVERFILL_ULPS` still surfaces as an
-engine-side error rather than being silently absorbed.
-
-### Where the snap runs
-
-- `OrderFillTracker.snap_fill_qty(...)` is invoked on every WS user-channel
-  fill (both taker fills in `dispatch_taker_fill` and maker fills in
-  `dispatch_maker_fills`) before the fill is emitted to the engine. It also
-  runs when fills are drained from the HTTP-roundtrip buffer in
-  `submit_order`.
-- `OrderFillTracker.check_dust_and_build_fill(...)` (Rust) and
-  `OrderFillTracker.check_dust_residual(...)` (Python) emit a synthetic
-  underfill fill at `Matched` status when `submitted - cumulative_filled`
-  is dust, so the order reaches `Filled` even when the CLOB truncated the
-  last tick. Underfill side only.
-
-### Limitations
-
-- The tracker is keyed by `venue_order_id` and registered after the HTTP
-  accept response. Fills that arrive before the order is registered are
-  buffered and snapped on drain.
-- `size_precision` is captured at registration and not re-read for the
-  lifetime of the entry. On Polymarket this is safe: shares are denominated
-  against pUSD (6-decimal USDC collateral), and `size_precision` is pinned
-  to `6` for every BinaryOption. The `tick_size_change` WS event mutates
-  only `price_precision` / `price_increment`; `rebuild_instrument_with_tick_size`
-  explicitly preserves `size_precision` and `size_increment` from the
-  original instrument. If this invariant ever changes upstream, the
-  tolerances will not re-scale until the order is re-registered.
-- The constants are not configurable per-strategy. They live in
-  `nautilus_polymarket::common::consts` (Rust) and
-  `nautilus_trader.adapters.polymarket.common.constants` (Python).
+The fill tracker is keyed by `venue_order_id` and registered on order
+accept, so fill reports for orders placed in another session pass through
+unchanged. `DUST_SNAP_THRESHOLD` is not configurable per-strategy; it lives
+in `nautilus_polymarket::common::consts`.
 
 ## WebSockets
 
@@ -907,6 +940,29 @@ For events with multiple markets (e.g., temperature buckets), use `from_event_sl
 loaders = await PolymarketDataLoader.from_event_slug("highest-temperature-in-nyc-on-january-26")
 ```
 
+#### Look-ahead protection for resolved markets
+
+When constructing a loader for a market that has already resolved at backtest
+build time, the venue payload includes the answer (`closed`, `closedTime`,
+`umaResolutionStatus`, per-token `winner`). A strategy that reads
+`cache.instrument(...).info` from `on_start` can therefore see the outcome
+before the simulation runs.
+
+Pass `sanitize_info=True` to either factory to redact those fields from
+`instrument.info` before the instrument is constructed. The redacted slice is
+stashed on the loader as `resolution_metadata` for post-hoc analytics
+(settlement PnL, Brier scoring) without leaking it into the simulation:
+
+```python
+loader = await PolymarketDataLoader.from_market_slug(
+    "some-resolved-market",
+    sanitize_info=True,
+)
+
+assert "closed" not in loader.instrument.info
+assert loader.resolution_metadata["closed"] is True
+```
+
 ### Discovering markets and events
 
 Use `fetch_markets()` and `fetch_events()` to discover available markets programmatically:
@@ -965,6 +1021,13 @@ trades = loader.parse_trades(raw_trades)
 
 Trade data is sourced from the [Polymarket Data API](https://data-api.polymarket.com/trades),
 which provides real execution data including price, size, side, and on-chain transaction hash.
+
+:::note
+The public Data API caps offset-based pagination on high-activity markets. When
+this ceiling is hit the loader emits a `RuntimeWarning` and returns the trades
+fetched up to the cap rather than aborting the load. Use another historical
+data source if you need full coverage of a heavily traded market.
+:::
 
 ### Complete backtest example
 

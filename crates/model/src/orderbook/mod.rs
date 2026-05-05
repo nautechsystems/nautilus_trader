@@ -30,7 +30,7 @@ mod tests;
 // Re-exports
 pub use crate::orderbook::{
     book::OrderBook,
-    error::{BookIntegrityError, BookViewError, InvalidBookOperation},
+    error::{BookIntegrityError, BookViewError, InvalidBookOperation, OwnBookError},
     ladder::BookPrice,
     level::BookLevel,
     own::OwnBookOrder,

@@ -47,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Create client (no credentials needed for public endpoints)
     let client = BinanceSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         get_atomic_clock_realtime(),
         None,     // api_key
         None,     // api_secret

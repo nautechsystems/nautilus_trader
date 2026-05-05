@@ -28,15 +28,14 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
     api_key : str, [default=None]
         The BitMEX API public key.
         If ``None`` then will source the `BITMEX_API_KEY` or `BITMEX_TESTNET_API_KEY`
-        environment variable (depending on the `testnet` setting).
+        environment variable based on `environment`.
     api_secret : str, [default=None]
         The BitMEX API secret key.
         If ``None`` then will source the `BITMEX_API_SECRET` or `BITMEX_TESTNET_API_SECRET`
-        environment variable (depending on the `testnet` setting).
+        environment variable based on `environment`.
     environment : BitmexEnvironment, optional
         The BitMEX environment for the client (MAINNET or TESTNET).
         If ``None`` then defaults to MAINNET.
-        Takes precedence over ``testnet`` if set.
     base_url_http : str, optional
         The base url to BitMEX's HTTP API.
         If ``None`` then will use the default production URL.
@@ -45,9 +44,6 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
         If ``None`` then will use the default production URL.
     proxy_url : str, optional
         Optional proxy URL for HTTP and WebSocket transports.
-    testnet : bool, default False
-        If the client is connecting to the BitMEX testnet.
-        Deprecated: use ``environment=BitmexEnvironment.TESTNET`` instead.
     http_timeout_secs : PositiveInt, default 60
         The timeout for HTTP requests in seconds.
     max_retries : PositiveInt, default 3
@@ -78,7 +74,6 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
-    testnet: bool = False
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000
@@ -98,15 +93,14 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     api_key : str, [default=None]
         The BitMEX API public key.
         If ``None`` then will source the `BITMEX_API_KEY` or `BITMEX_TESTNET_API_KEY`
-        environment variable (depending on the `testnet` setting).
+        environment variable based on `environment`.
     api_secret : str, [default=None]
         The BitMEX API secret key.
         If ``None`` then will source the `BITMEX_API_SECRET` or `BITMEX_TESTNET_API_SECRET`
-        environment variable (depending on the `testnet` setting).
+        environment variable based on `environment`.
     environment : BitmexEnvironment, optional
         The BitMEX environment for the client (MAINNET or TESTNET).
         If ``None`` then defaults to MAINNET.
-        Takes precedence over ``testnet`` if set.
     base_url_http : str, optional
         The base url to BitMEX's HTTP API.
         If ``None`` then will use the default production URL.
@@ -115,9 +109,6 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
         If ``None`` then will use the default production URL.
     proxy_url : str, optional
         Optional proxy URL for HTTP and WebSocket transports.
-    testnet : bool, default False
-        If the client is connecting to the BitMEX testnet.
-        Deprecated: use ``environment=BitmexEnvironment.TESTNET`` instead.
     http_timeout_secs : PositiveInt, default 60
         The timeout for HTTP requests in seconds.
     max_retries : PositiveInt, default 3
@@ -168,7 +159,6 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
-    testnet: bool = False
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000

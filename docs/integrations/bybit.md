@@ -265,6 +265,14 @@ config = BybitExecClientConfig(
 On connect the adapter calls `/v5/position/switch-mode` for each entry, then
 derives `positionIdx` for every order: opening BUY -> `1` (long), opening
 SELL -> `2` (short), reduce-only SELL -> `1`, reduce-only BUY -> `2`.
+Bybit documents this in the V5 [switch position mode](https://bybit-exchange.github.io/docs/v5/position/position-mode)
+and [place order](https://bybit-exchange.github.io/docs/v5/order/create-order#request-parameters)
+APIs: `mode=3` enables Both Sides, and hedge-mode orders require `positionIdx`.
+
+Orders and reports with `positionIdx=0` (one-way / Merged Single mode) carry no
+venue position ID. For hedge-mode indexes `1` and `2`, the adapter maps reports
+to venue position IDs ending in `-LONG` and `-SHORT`, and carries the same ID
+onto fills when Bybit execution messages do not include `positionIdx`.
 
 To override, pass `position_idx` via `params`:
 
@@ -746,8 +754,6 @@ The product types for each client must be specified in the configurations.
 | `environment`                    | `None`  | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`. |
 | `base_url_http`                  | `None`  | Override for the REST base URL. |
 | `proxy_url`                      | `None`  | Optional proxy URL for HTTP and WebSocket transports. |
-| `demo`                           | `False` | Deprecated: use `environment=BybitEnvironment.DEMO`. |
-| `testnet`                        | `False` | Deprecated: use `environment=BybitEnvironment.TESTNET`. |
 | `update_instruments_interval_mins` | `60`  | Interval (minutes) between instrument catalogue refreshes. |
 | `recv_window_ms`                 | `5,000` | Receive window (milliseconds) for signed REST requests. |
 | `bars_timestamp_on_close`        | `True`  | Timestamp bars on the close (`True`) or open (`False`) of the interval. |
@@ -767,8 +773,6 @@ The product types for each client must be specified in the configurations.
 | `base_url_ws_private`            | `None`  | Override for the private WebSocket base URL. |
 | `base_url_ws_trade`              | `None`  | Override for the trade WebSocket base URL. |
 | `proxy_url`                      | `None`  | Optional proxy URL for HTTP and WebSocket transports. |
-| `demo`                           | `False` | Deprecated: use `environment=BybitEnvironment.DEMO`. |
-| `testnet`                        | `False` | Deprecated: use `environment=BybitEnvironment.TESTNET`. |
 | `use_gtd`                        | `False` | Remap GTD orders to GTC when `True` (Bybit lacks native GTD support). |
 | `use_ws_execution_fast`          | `False` | Subscribe to the low‑latency execution stream. |
 | `use_http_batch_api`             | `False` | Use Bybit's HTTP batch trading API (deprecated). |

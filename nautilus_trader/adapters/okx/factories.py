@@ -178,11 +178,7 @@ class OKXLiveDataClientFactory(LiveDataClientFactory):
         OKXDataClient
 
         """
-        environment = (
-            config.environment
-            if config.environment is not None
-            else (OKXEnvironment.DEMO if config.is_demo else OKXEnvironment.LIVE)
-        )
+        environment = config.environment or OKXEnvironment.LIVE
         client: nautilus_pyo3.OKXHttpClient = get_cached_okx_http_client(
             api_key=config.api_key,
             api_secret=config.api_secret,
@@ -251,11 +247,7 @@ class OKXLiveExecClientFactory(LiveExecClientFactory):
         OKXExecutionClient
 
         """
-        environment = (
-            config.environment
-            if config.environment is not None
-            else (OKXEnvironment.DEMO if config.is_demo else OKXEnvironment.LIVE)
-        )
+        environment = config.environment or OKXEnvironment.LIVE
         client: nautilus_pyo3.OKXHttpClient = get_cached_okx_http_client(
             api_key=config.api_key,
             api_secret=config.api_secret,

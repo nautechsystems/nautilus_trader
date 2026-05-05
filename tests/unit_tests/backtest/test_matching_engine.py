@@ -170,6 +170,59 @@ class TestOrderMatchingEngine:
         # Assert
         assert exec_messages
 
+    def test_reset_zeroes_book_ts_last(self) -> None:
+        """
+        Regression for the L1 stale-event guard added in #3790.
+
+        ``OrderMatchingEngine.reset`` previously called ``book.clear(0, 0)``,
+        which routes through ``OrderBook.increment`` whose
+        ``ts_last = ts_event.max(self.ts_last)`` is a high-water mark. Calling
+        ``clear(0, 0)`` therefore leaves the prior run's last timestamp in
+        place. The L1 stale-event guard then drops every subsequent
+        quote/trade whose ``ts_event < ts_last``, leaving the matching core's
+        bid/ask uninitialised — every market order on the next run is
+        rejected with ``"no market for {instrument_id}"``.
+
+        The Rust matching engine ``reset`` (``crates/execution/src/
+        matching_engine/engine.rs``) calls ``book.reset()`` (which zeroes
+        ``ts_last``); this test asserts the Cython path does the same so
+        repeated runs (sweep / param-search) on the same engine instance
+        behave identically to a fresh engine.
+
+        """
+        # Arrange — seed the book with a quote so ts_last advances
+        seed_quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            ts_event=100,
+            ts_init=100,
+        )
+        self.matching_engine.process_quote_tick(seed_quote)
+        assert self.matching_engine.get_book().ts_last == 100
+
+        # Act
+        self.matching_engine.reset()
+
+        # Assert — book ts_last must be zero after reset
+        assert self.matching_engine.get_book().ts_last == 0, (
+            "OrderMatchingEngine.reset leaked book.ts_last; subsequent "
+            "quote/trade events with earlier ts_event will be silently "
+            "dropped by the L1 stale-event guard"
+        )
+
+        # And — a quote with an earlier ts_event than the previous run's
+        # last must be accepted (not dropped as stale) and update the book
+        replay_quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=2.0,
+            ask_price=2.0,
+            ts_event=50,  # < the seed quote's ts_event=100
+            ts_init=50,
+        )
+        self.matching_engine.process_quote_tick(replay_quote)
+        assert self.matching_engine.get_book().ts_last == 50
+        assert self.matching_engine.best_bid_price() == self.instrument.make_price(2.0)
+        assert self.matching_engine.best_ask_price() == self.instrument.make_price(2.0)
+
     def test_process_order_book_depth_10(self) -> None:
         # Arrange - Create L2_MBP matching engine for depth10 data
         matching_engine_l2 = OrderMatchingEngine(

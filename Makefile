@@ -10,6 +10,7 @@ IMAGE_FULL?=$(IMAGE):$(GIT_TAG)
 CARGO_AUDIT_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-audit)
 CARGO_DENY_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-deny)
 CARGO_EDIT_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-edit)
+CARGO_FUZZ_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-fuzz)
 CARGO_LLVM_COV_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-llvm-cov)
 CARGO_MACHETE_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-machete)
 CARGO_NEXTEST_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-nextest)
@@ -261,7 +262,7 @@ distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE
 		exit 1; \
 	fi
 	@echo "WARNING: removing all untracked files (git clean -fxd)..."
-	git clean -fxd -e tests/test_data/large/ -e .venv
+	git clean -fxd -e tests/test_data/large/ -e tests/test_data/local/ -e .venv
 
 #== Code Quality
 
@@ -337,7 +338,7 @@ outdated: check-edit-installed  #-- Check for outdated dependencies
 	uv tree --outdated --depth 1 --all-groups
 	@printf "\n$(CYAN)Checking tool versions...$(RESET)\n"
 	@outdated_count=0; \
-	for tool in cargo-audit:$(CARGO_AUDIT_VERSION) cargo-deny:$(CARGO_DENY_VERSION) cargo-edit:$(CARGO_EDIT_VERSION) cargo-llvm-cov:$(CARGO_LLVM_COV_VERSION) cargo-machete:$(CARGO_MACHETE_VERSION) cargo-nextest:$(CARGO_NEXTEST_VERSION) cargo-vet:$(CARGO_VET_VERSION) flamegraph:$(FLAMEGRAPH_VERSION) lychee:$(LYCHEE_VERSION); do \
+	for tool in cargo-audit:$(CARGO_AUDIT_VERSION) cargo-deny:$(CARGO_DENY_VERSION) cargo-edit:$(CARGO_EDIT_VERSION) cargo-fuzz:$(CARGO_FUZZ_VERSION) cargo-llvm-cov:$(CARGO_LLVM_COV_VERSION) cargo-machete:$(CARGO_MACHETE_VERSION) cargo-nextest:$(CARGO_NEXTEST_VERSION) cargo-vet:$(CARGO_VET_VERSION) flamegraph:$(FLAMEGRAPH_VERSION) lychee:$(LYCHEE_VERSION); do \
 		name=$${tool%%:*}; current=$${tool##*:}; \
 		latest=$$(cargo search $$name --limit 1 2>/dev/null | head -1 | awk -F\" '{print $$2}'); \
 		if [ "$$current" != "$$latest" ]; then \
@@ -364,6 +365,7 @@ update-uv:  #-- Install or upgrade uv to the version pinned in pyproject.toml
 install-tools: check-binstall-installed update-uv  #-- Install required development tools (pinned versions from Cargo.toml, tools.toml, pyproject.toml)
 	cargo install cargo-deny --version $(CARGO_DENY_VERSION) --locked \
 	&& cargo install cargo-edit --version $(CARGO_EDIT_VERSION) --locked \
+	&& cargo install cargo-fuzz --version $(CARGO_FUZZ_VERSION) --locked \
 	&& cargo install cargo-machete --version $(CARGO_MACHETE_VERSION) --locked \
 	&& cargo install cargo-nextest --version $(CARGO_NEXTEST_VERSION) --locked \
 	&& cargo install cargo-llvm-cov --version $(CARGO_LLVM_COV_VERSION) --locked \
@@ -717,6 +719,73 @@ cargo-test-coverage-crate-html-%: export RUST_BACKTRACE=1
 cargo-test-coverage-crate-html-%: check-nextest-installed check-llvm-cov-installed
 cargo-test-coverage-crate-html-%:  #-- Run coverage for specific crate with HTML report (usage: make cargo-test-coverage-crate-html-<crate_name>)
 	cargo llvm-cov nextest --lib $(FAIL_FAST_FLAG) --cargo-profile nextest -p $* $(if $(FEATURES),--features "$(FEATURES)") --html --open
+
+# -----------------------------------------------------------------------------
+# Miri (UB detection)
+# -----------------------------------------------------------------------------
+# Runs library tests under Miri to detect undefined behaviour: invalid pointer
+# operations, aliasing violations (Stacked/Tree Borrows), uninitialised reads,
+# and unsound `unsafe` impls. Requires a nightly toolchain with the `miri`
+# component installed.
+#
+# Features: `ffi`, `python`, `extension-module`, and `defi` are intentionally
+# disabled. Miri cannot execute Python interpreter calls or most foreign FFI,
+# and `defi` pulls in `alloy-primitives`, which is out of scope here. The
+# `--lib` filter keeps doctests out of the run as well.
+#
+# Proptest cases are dialled down via `PROPTEST_CASES` since Miri is roughly
+# 10-100x slower than native execution. `MIRIFLAGS` enables disable-isolation
+# so tests that read environment variables (e.g. PATH probes) work.
+# -----------------------------------------------------------------------------
+
+# Override these on the command line if needed, e.g.:
+#   make cargo-miri-core MIRI_TOOLCHAIN=nightly-2026-04-16
+#   make cargo-miri-core MIRI_CORE_FILTER=  (empty: run every test)
+MIRI_TOOLCHAIN ?= nightly
+MIRI_FLAGS ?= -Zmiri-disable-isolation -Zmiri-strict-provenance
+MIRI_PROPTEST_CASES ?= 4
+
+# Default test filters target modules with `unsafe` blocks or hand-rolled
+# pointer/integer code where Miri provides the most signal. Miri runs ~10-100x
+# slower than native, so we narrow the default scope; pass the override above
+# (or `MIRI_CORE_FILTER=`) to widen it.
+MIRI_CORE_FILTER ?= -E 'test(/^(string::stack_str|nanos|uuid|hex|correctness|datetime|collections)::/)'
+# `test_price_to_order_id_{comprehensive_collision_check,realistic_orderbook_prices}`
+# iterate over the full price space to verify hash uniqueness. They run for
+# multiple hours under the Miri interpreter and exercise no unsafe, so we skip
+# them here while keeping the rest of `orderbook::` in scope.
+MIRI_MODEL_FILTER ?= -E 'test(/^(types::|identifiers::|orderbook::)/) and not test(=orderbook::aggregation::tests::test_price_to_order_id_comprehensive_collision_check) and not test(=orderbook::aggregation::tests::test_price_to_order_id_realistic_orderbook_prices)'
+
+.PHONY: check-miri-installed
+check-miri-installed:
+	@if ! cargo +$(MIRI_TOOLCHAIN) miri --version >/dev/null 2>&1; then \
+		echo "cargo-miri is not installed for toolchain $(MIRI_TOOLCHAIN)"; \
+		echo "Install with: rustup toolchain install $(MIRI_TOOLCHAIN) --component miri"; \
+		exit 1; \
+	fi
+
+.PHONY: cargo-miri-core
+cargo-miri-core: export RUST_BACKTRACE=1
+cargo-miri-core: export MIRIFLAGS=$(MIRI_FLAGS)
+cargo-miri-core: export PROPTEST_CASES=$(MIRI_PROPTEST_CASES)
+cargo-miri-core: check-miri-installed check-nextest-installed
+cargo-miri-core:  #-- Run nautilus-core library tests under Miri to detect UB
+	$(info $(M) Running nautilus-core tests under Miri (filter: $(MIRI_CORE_FILTER))...)
+	cargo +$(MIRI_TOOLCHAIN) miri nextest run -p nautilus-core --no-default-features --lib $(MIRI_CORE_FILTER)
+
+.PHONY: cargo-miri-model
+cargo-miri-model: export RUST_BACKTRACE=1
+cargo-miri-model: export MIRIFLAGS=$(MIRI_FLAGS)
+cargo-miri-model: export PROPTEST_CASES=$(MIRI_PROPTEST_CASES)
+cargo-miri-model: check-miri-installed check-nextest-installed
+cargo-miri-model:  #-- Run nautilus-model library tests under Miri to detect UB
+	$(info $(M) Running nautilus-model tests under Miri (filter: $(MIRI_MODEL_FILTER))...)
+	cargo +$(MIRI_TOOLCHAIN) miri nextest run -p nautilus-model --no-default-features --lib $(MIRI_MODEL_FILTER)
+
+.PHONY: cargo-miri
+cargo-miri:  #-- Run Miri across the in-scope foundational crates (core + model)
+	$(MAKE) cargo-miri-core
+	$(MAKE) cargo-miri-model
 
 #------------------------------------------------------------------------------
 # Benchmarks

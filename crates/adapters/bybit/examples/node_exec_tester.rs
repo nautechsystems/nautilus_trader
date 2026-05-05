@@ -28,7 +28,6 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
-use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
@@ -51,7 +50,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: None,    // Will use 'BYBIT_API_KEY' env var
         api_secret: None, // Will use 'BYBIT_API_SECRET' env var
         product_types: vec![BybitProductType::Spot, BybitProductType::Linear],
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -61,7 +59,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_secret: None, // Will use 'BYBIT_API_SECRET' env var
         product_types: vec![BybitProductType::Spot, BybitProductType::Linear],
         account_id: Some(account_id),
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

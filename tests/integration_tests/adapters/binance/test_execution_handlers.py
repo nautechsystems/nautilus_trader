@@ -845,6 +845,188 @@ class TestBinanceFuturesExecutionHandlers:
         )  # Preserved trigger price
         assert update_kwargs["quantity"] == mock_order.quantity
 
+    def test_trade_execution_reduce_only_quantity_reduction_generates_order_updated(
+        self,
+        mocker,
+    ):
+        # Arrange: fast-fill scenario where TRADE arrives without prior NEW.
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_order_update_trade_reduce_only_qty.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceFuturesOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # User submitted qty 2.000 reduce-only, venue auto-reduced to 1.000 and filled.
+        mock_order = mocker.MagicMock()
+        mock_order.price = Price.from_str("2500.00")
+        mock_order.quantity = Quantity.from_str("2.000")
+        mock_order.has_price = True
+        mock_order.has_trigger_price = False
+        mock_order.venue_order_id = VenueOrderId("8765432300")
+        mock_order.order_type = OrderType.LIMIT
+
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._cache.order.return_value = mock_order
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+
+        # Act
+        wrapper.data.o.handle_order_trade_update(exec_client)
+
+        # Assert: OrderUpdated emitted before OrderFilled to reconcile qty delta.
+        exec_client.generate_order_updated.assert_called_once()
+        update_kwargs = exec_client.generate_order_updated.call_args.kwargs
+        assert update_kwargs["quantity"] == Quantity.from_str("1.000")  # venue-reduced
+        assert update_kwargs["price"] == Price.from_str("2500.00")
+
+        exec_client.generate_order_filled.assert_called_once()
+        update_call = call.generate_order_updated(**update_kwargs)
+        fill_kwargs = exec_client.generate_order_filled.call_args.kwargs
+        fill_call = call.generate_order_filled(**fill_kwargs)
+        update_idx = exec_client.mock_calls.index(update_call)
+        fill_idx = exec_client.mock_calls.index(fill_call)
+        assert update_idx < fill_idx, "OrderUpdated must be emitted before OrderFilled"
+
+    def test_new_execution_reduce_only_quantity_reduction_generates_order_updated(self, mocker):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_order_update_new_reduce_only_qty.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceFuturesOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # User submitted qty 2.000 reduce-only, venue auto-reduced to 1.000 (in fixture).
+        mock_order = mocker.MagicMock()
+        mock_order.price = Price.from_str("2500.00")
+        mock_order.quantity = Quantity.from_str("2.000")
+        mock_order.has_price = True
+        mock_order.has_trigger_price = False
+        mock_order.venue_order_id = VenueOrderId("8765432200")
+        mock_order.order_type = OrderType.LIMIT
+
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._cache.order.return_value = mock_order
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+
+        # Act
+        wrapper.data.o.handle_order_trade_update(exec_client)
+
+        # Assert
+        exec_client.generate_order_accepted.assert_called_once()
+        exec_client.generate_order_updated.assert_called_once()
+
+        update_kwargs = exec_client.generate_order_updated.call_args.kwargs
+        assert update_kwargs["quantity"] == Quantity.from_str("1.000")  # venue-reduced
+        assert update_kwargs["price"] == Price.from_str("2500.00")  # unchanged
+        assert update_kwargs["trigger_price"] is None
+
+    def test_new_execution_with_no_delta_skips_order_updated(self, mocker):
+        # Arrange: venue confirmed identical qty and price.
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_order_update_new_price_match.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceFuturesOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        mock_order = mocker.MagicMock()
+        mock_order.price = Price.from_str("2495.50")  # matches fixture `p`
+        mock_order.quantity = Quantity.from_str("1.000")  # matches fixture `q`
+        mock_order.has_price = True
+        mock_order.has_trigger_price = False
+        mock_order.venue_order_id = VenueOrderId("8765432100")
+        mock_order.order_type = OrderType.LIMIT
+
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._cache.order.return_value = mock_order
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+
+        # Act
+        wrapper.data.o.handle_order_trade_update(exec_client)
+
+        # Assert
+        exec_client.generate_order_accepted.assert_called_once()
+        exec_client.generate_order_updated.assert_not_called()
+
+    def test_trade_execution_with_no_delta_skips_order_updated(self, mocker):
+        # Arrange: venue confirmed identical qty and price; only the fill should fire.
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_order_update_trade_reduce_only_qty.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceFuturesOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        mock_order = mocker.MagicMock()
+        mock_order.price = Price.from_str("2500.00")  # matches fixture `p`
+        mock_order.quantity = Quantity.from_str("1.000")  # matches fixture `q`
+        mock_order.has_price = True
+        mock_order.has_trigger_price = False
+        mock_order.venue_order_id = VenueOrderId("8765432300")
+        mock_order.order_type = OrderType.LIMIT
+
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._cache.order.return_value = mock_order
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+
+        # Act
+        wrapper.data.o.handle_order_trade_update(exec_client)
+
+        # Assert
+        exec_client.generate_order_updated.assert_not_called()
+        exec_client.generate_order_filled.assert_called_once()
+
+    def test_trade_execution_price_only_delta_generates_order_updated(self, mocker):
+        # Arrange: priceMatch fast-fill scenario. Venue qty matches the order's
+        # qty but venue price differs from the local price.
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_order_update_trade_reduce_only_qty.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceFuturesOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Fixture has q=1.000 and p=2500.00. Mock order qty matches; price differs.
+        mock_order = mocker.MagicMock()
+        mock_order.price = Price.from_str("2510.00")  # differs from fixture `p`
+        mock_order.quantity = Quantity.from_str("1.000")  # matches fixture `q`
+        mock_order.has_price = True
+        mock_order.has_trigger_price = False
+        mock_order.venue_order_id = VenueOrderId("8765432300")
+        mock_order.order_type = OrderType.LIMIT
+
+        exec_client = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._cache.order.return_value = mock_order
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+
+        # Act
+        wrapper.data.o.handle_order_trade_update(exec_client)
+
+        # Assert: OrderUpdated emitted before OrderFilled with the venue price.
+        exec_client.generate_order_updated.assert_called_once()
+        update_kwargs = exec_client.generate_order_updated.call_args.kwargs
+        assert update_kwargs["price"] == Price.from_str("2500.00")  # venue
+        assert update_kwargs["quantity"] == Quantity.from_str("1.000")  # unchanged
+
+        exec_client.generate_order_filled.assert_called_once()
+        update_call = call.generate_order_updated(**update_kwargs)
+        fill_kwargs = exec_client.generate_order_filled.call_args.kwargs
+        fill_call = call.generate_order_filled(**fill_kwargs)
+        update_idx = exec_client.mock_calls.index(update_call)
+        fill_idx = exec_client.mock_calls.index(fill_call)
+        assert update_idx < fill_idx, "OrderUpdated must precede OrderFilled"
+
 
 class TestBinanceFuturesAlgoOrderHandlers:
     """

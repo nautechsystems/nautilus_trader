@@ -546,6 +546,36 @@ def show_rustanalyzer_settings() -> None:
     print(json.dumps(settings, indent=2))
 
 
+def _ensure_local_editable_pth() -> None:
+    # Make the v1 source tree (with its built `.so` files) importable from any cwd
+    # after `make build`, without requiring a follow-up `uv sync`. This closes the
+    # gap where a bare `make build` leaves the venv unable to resolve `nautilus_trader`
+    # from a tempdir (e.g. the docs tutorial subprocess tests).
+    if not COPY_TO_SOURCE:
+        return
+    if sys.prefix == sys.base_prefix:
+        return  # Not running inside a venv (e.g. PEP 517 build host)
+
+    site_packages = Path(sysconfig.get_paths()["purelib"])
+    try:
+        site_packages.relative_to(Path(sys.prefix))
+    except ValueError:
+        return  # `purelib` is outside the active venv prefix
+
+    if not site_packages.is_dir():
+        return
+
+    repo_root = Path(__file__).resolve().parent
+    pth_file = site_packages / "nautilus-trader-local.pth"
+    contents = f"{repo_root}\n"
+
+    if pth_file.is_file() and pth_file.read_text() == contents:
+        return
+
+    pth_file.write_text(contents)
+    print(f"Wrote local editable .pth: {pth_file}")
+
+
 def build() -> None:
     """
     Construct the extensions and distribution.
@@ -577,6 +607,8 @@ def build() -> None:
     if (BUILD_MODE == "release" or FORCE_STRIP) and (IS_LINUX or IS_MACOS):
         # Strip symbols for release builds or when forced
         _strip_unneeded_symbols()
+
+    _ensure_local_editable_pth()
 
 
 def print_env_var_if_exists(key: str) -> None:

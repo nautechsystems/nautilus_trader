@@ -605,6 +605,13 @@ pub fn parse_order_status_report(
         parse_quantity(&order.filled_size, size_precision).context("failed to parse filled_size")?
     };
 
+    // API has no separate ADL flag, so liquidation and ADL share this branch
+    if order.order_type == CoinbaseOrderType::Liquidation || order.is_liquidation {
+        log::warn!(
+            "Forced-close (liquidation/ADL) order: {instrument_id} venue_order_id={venue_order_id} side={order_side} filled={filled_qty}",
+        );
+    }
+
     // Derive the ordered quantity from the order_configuration. For quote-sized
     // market orders the base quantity is not reported pre-fill; fall back to
     // filled_qty when the order is terminal.
@@ -827,6 +834,23 @@ fn parse_money_field(value: Decimal, field: &str, currency: Currency) -> Option<
     }
 }
 
+// Coinbase reports the CFM buffer as a percentage of `liquidation_threshold`
+// (e.g. "100" = 1x cushion). Warn at <20% so operators can react before the
+// liquidation engine (or, on perps, the deleveraging waterfall) fires.
+const CFM_LIQUIDATION_BUFFER_WARN_PCT: Decimal = Decimal::from_parts(20, 0, 0, false, 0);
+
+fn liquidation_buffer_in_warn_band(buffer_percentage: Decimal) -> bool {
+    buffer_percentage < CFM_LIQUIDATION_BUFFER_WARN_PCT
+}
+
+fn warn_if_liquidation_buffer_low(account_id: AccountId, buffer_percentage: Decimal) {
+    if liquidation_buffer_in_warn_band(buffer_percentage) {
+        log::warn!(
+            "Elevated CFM liquidation risk: {account_id} liquidation_buffer_percentage={buffer_percentage}% (warn threshold {CFM_LIQUIDATION_BUFFER_WARN_PCT}%)",
+        );
+    }
+}
+
 /// Parses a CFM balance summary into a single consolidated [`MarginBalance`].
 ///
 /// Coinbase reports two windows (intraday and overnight) with identical
@@ -880,6 +904,10 @@ pub fn parse_cfm_account_state(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<AccountState> {
+    if let Ok(buffer_pct) = Decimal::from_str(&summary.liquidation_buffer_percentage) {
+        warn_if_liquidation_buffer_low(account_id, buffer_pct);
+    }
+
     let usd_currency = Currency::get_or_create_crypto(summary.total_usd_balance.currency.as_str());
 
     // `total_usd_balance` is the venue's equity figure and includes collateral
@@ -924,6 +952,8 @@ pub fn parse_ws_cfm_account_state(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<AccountState> {
+    warn_if_liquidation_buffer_low(account_id, summary.liquidation_buffer_percentage);
+
     let usd = Currency::USD();
 
     // See `parse_cfm_account_state`: `total_usd_balance` is the venue's
@@ -1803,6 +1833,48 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_order_status_report_handles_liquidation_order_type() {
+        let mut order =
+            make_limit_gtc_order("0.001", "50000.00", "0.001", CoinbaseOrderStatus::Filled);
+        order.order_type = CoinbaseOrderType::Liquidation;
+        let instrument = btc_usd_instrument();
+
+        let report = parse_order_status_report(
+            &order,
+            &instrument,
+            AccountId::new("COINBASE-001"),
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_type, OrderType::Market);
+        assert_eq!(report.order_status, OrderStatus::Filled);
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_handles_is_liquidation_flag() {
+        let mut order =
+            make_limit_gtc_order("0.001", "50000.00", "0.001", CoinbaseOrderStatus::Filled);
+        order.is_liquidation = true;
+        let instrument = btc_usd_instrument();
+
+        let report = parse_order_status_report(
+            &order,
+            &instrument,
+            AccountId::new("COINBASE-001"),
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        // Pin the fields the warn branch reads so a future refactor that drops
+        // the `is_liquidation` arm cannot accept this fixture by accident.
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.filled_qty, Quantity::from("0.001"));
+        assert_eq!(report.instrument_id, instrument.id());
+    }
+
+    #[rstest]
     fn test_parse_order_status_report_rejects_malformed_filled_size() {
         let mut order = make_limit_gtc_order("0.001", "50000.00", "0", CoinbaseOrderStatus::Open);
         order.filled_size = "not-a-number".to_string();
@@ -2343,6 +2415,98 @@ mod tests {
             intraday_margin_window_measure: intraday,
             overnight_margin_window_measure: overnight,
         }
+    }
+
+    #[rstest]
+    #[case::below_threshold("15", true)]
+    #[case::at_threshold("20", false)]
+    #[case::just_above("21", false)]
+    #[case::well_above("100", false)]
+    #[case::zero("0", true)]
+    fn test_liquidation_buffer_in_warn_band(#[case] value: &str, #[case] expected_in_band: bool) {
+        let pct = Decimal::from_str(value).unwrap();
+        assert_eq!(liquidation_buffer_in_warn_band(pct), expected_in_band);
+    }
+
+    #[rstest]
+    #[case::below_threshold("5")]
+    #[case::above_threshold("100")]
+    #[case::empty_string_silently_skips_warn("")]
+    fn test_parse_cfm_account_state_buffer_threshold_paths(#[case] buffer_pct: &str) {
+        use nautilus_model::enums::AccountType;
+
+        let mut summary = cfm_summary_with_windows(
+            Some(cfm_window(
+                CoinbaseMarginWindowType::Intraday,
+                "100.00",
+                "50.00",
+            )),
+            None,
+        );
+        summary.total_usd_balance = cfm_amount("100.00");
+        summary.available_margin = cfm_amount("50.00");
+        summary.liquidation_buffer_percentage = buffer_pct.to_string();
+
+        let state = parse_cfm_account_state(
+            &summary,
+            AccountId::new("COINBASE-001"),
+            true,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(state.account_type, AccountType::Margin);
+        assert!(!state.balances.is_empty());
+    }
+
+    #[rstest]
+    #[case::below_threshold("5")]
+    #[case::above_threshold("100")]
+    fn test_parse_ws_cfm_account_state_buffer_threshold_paths(#[case] buffer_pct: &str) {
+        use nautilus_model::enums::AccountType;
+
+        use crate::websocket::messages::{WsFcmBalanceSummary, WsMarginWindowMeasure};
+
+        fn ws_window(kind: CoinbaseMarginWindowType) -> WsMarginWindowMeasure {
+            WsMarginWindowMeasure {
+                margin_window_type: kind,
+                margin_level: CoinbaseMarginLevel::Base,
+                initial_margin: Decimal::from_str("100.00").unwrap(),
+                maintenance_margin: Decimal::from_str("50.00").unwrap(),
+                liquidation_buffer_percentage: Decimal::ZERO,
+                total_hold: Decimal::ZERO,
+                futures_buying_power: Decimal::ZERO,
+            }
+        }
+
+        let summary = WsFcmBalanceSummary {
+            futures_buying_power: Decimal::ZERO,
+            total_usd_balance: Decimal::from_str("100.00").unwrap(),
+            cbi_usd_balance: Decimal::ZERO,
+            cfm_usd_balance: Decimal::ZERO,
+            total_open_orders_hold_amount: Decimal::ZERO,
+            unrealized_pnl: Decimal::ZERO,
+            daily_realized_pnl: Decimal::ZERO,
+            initial_margin: Decimal::ZERO,
+            available_margin: Decimal::from_str("50.00").unwrap(),
+            liquidation_threshold: Decimal::ZERO,
+            liquidation_buffer_amount: Decimal::ZERO,
+            liquidation_buffer_percentage: Decimal::from_str(buffer_pct).unwrap(),
+            intraday_margin_window_measure: ws_window(CoinbaseMarginWindowType::Intraday),
+            overnight_margin_window_measure: ws_window(CoinbaseMarginWindowType::Overnight),
+        };
+
+        let state = parse_ws_cfm_account_state(
+            &summary,
+            AccountId::new("COINBASE-001"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(state.account_type, AccountType::Margin);
+        assert!(!state.balances.is_empty());
     }
 
     fn cfm_position(

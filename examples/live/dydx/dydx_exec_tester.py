@@ -108,7 +108,6 @@ config_node = TradingNodeConfig(
                 load_all=False,
                 load_ids=frozenset(reconciliation_instrument_ids),
             ),
-            is_testnet=is_testnet,
         ),
     },
     exec_clients={
@@ -118,7 +117,6 @@ config_node = TradingNodeConfig(
                 load_all=False,
                 load_ids=frozenset(reconciliation_instrument_ids),
             ),
-            is_testnet=is_testnet,
         ),
     },
     timeout_connection=20.0,

@@ -32,7 +32,9 @@ use nautilus_model::{
     events::{
         OrderAccepted, OrderCanceled, OrderEventAny, OrderFilled, OrderTriggered, OrderUpdated,
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, VenueOrderId},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, VenueOrderId,
+    },
     instruments::{Instrument, InstrumentAny},
     orders::TRIGGERABLE_ORDER_TYPES,
     types::{Money, Price, Quantity},
@@ -66,6 +68,7 @@ pub struct OrderIdentity {
     pub strategy_id: StrategyId,
     pub order_side: OrderSide,
     pub order_type: OrderType,
+    pub venue_position_id: Option<PositionId>,
 }
 
 /// Tracks which type of WS request is pending for a given req_id.
@@ -633,7 +636,7 @@ fn parse_order_filled(
         ts_event,
         ts_init,
         false,
-        None, // venue_position_id
+        identity.venue_position_id,
         Some(commission),
     ))
 }
@@ -976,7 +979,7 @@ mod tests {
     use nautilus_model::{
         enums::{AccountType, OrderSide, OrderType},
         events::OrderEventAny,
-        identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+        identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
         instruments::{Instrument, InstrumentAny},
     };
     use rstest::rstest;
@@ -1044,6 +1047,7 @@ mod tests {
             strategy_id: StrategyId::from("S-001"),
             order_side: OrderSide::Buy,
             order_type: OrderType::Limit,
+            venue_position_id: None,
         }
     }
 
@@ -1166,6 +1170,52 @@ mod tests {
                 assert_eq!(filled.strategy_id, StrategyId::from("S-001"));
                 assert_eq!(filled.order_side, OrderSide::Buy);
                 assert_eq!(filled.order_type, OrderType::Limit);
+            }
+            other => panic!("Expected Filled event, found {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_dispatch_tracked_execution_preserves_venue_position_id() {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::default();
+
+        let json = load_test_json("ws_account_execution.json");
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_str(&json).unwrap();
+        let venue_position_id = PositionId::from("BTCUSDT-LINEAR.BYBIT-LONG");
+
+        if let Some(exec) = msg.data.first()
+            && !exec.order_link_id.is_empty()
+        {
+            let cid = ClientOrderId::new(exec.order_link_id.as_str());
+            state.order_identities.insert(
+                cid,
+                OrderIdentity {
+                    venue_position_id: Some(venue_position_id),
+                    ..default_identity()
+                },
+            );
+        }
+
+        let ws_msg = BybitWsMessage::AccountExecution(msg);
+        dispatch_ws_message(
+            &ws_msg,
+            &emitter,
+            &state,
+            test_account_id(),
+            &instruments,
+            clock,
+        );
+
+        let _accepted = rx.try_recv().unwrap();
+        let event = rx.try_recv().unwrap();
+        match event {
+            ExecutionEvent::Order(OrderEventAny::Filled(filled)) => {
+                assert_eq!(filled.position_id, Some(venue_position_id));
             }
             other => panic!("Expected Filled event, found {other:?}"),
         }

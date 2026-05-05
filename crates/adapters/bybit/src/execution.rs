@@ -64,8 +64,9 @@ use crate::{
             resolve_trigger_type,
         },
         parse::{
-            BybitTpSlParams, extract_raw_symbol, get_price_str, nanos_to_millis,
-            parse_bybit_tp_sl_params, spot_leverage, spot_market_unit, trigger_direction,
+            BybitTpSlParams, extract_raw_symbol, get_price_str, make_hedge_venue_position_id,
+            nanos_to_millis, parse_bybit_tp_sl_params, spot_leverage, spot_market_unit,
+            trigger_direction,
         },
         symbol::BybitSymbol,
     },
@@ -865,7 +866,12 @@ impl ExecutionClient for BybitExecutionClient {
             reports.retain(|report| report.venue_order_id.as_str() == venue_order_id.as_str());
         }
 
-        Ok(reports.into_iter().next())
+        let report = reports.into_iter().next();
+        if let Some(report) = &report {
+            self.cache_reconciliation_order_identity(report);
+        }
+
+        Ok(report)
     }
 
     async fn generate_order_status_reports(
@@ -913,6 +919,10 @@ impl ExecutionClient for BybitExecutionClient {
 
         if let Some(end) = cmd.end {
             reports.retain(|r| r.ts_last <= end);
+        }
+
+        for report in &reports {
+            self.cache_reconciliation_order_identity(report);
         }
 
         Ok(reports)
@@ -1113,17 +1123,6 @@ impl ExecutionClient for BybitExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
 
-        // Store identity for WS dispatch to produce proper order events
-        self.dispatch_state.order_identities.insert(
-            client_order_id,
-            OrderIdentity {
-                instrument_id,
-                strategy_id,
-                order_side: order.order_side(),
-                order_type: order.order_type(),
-            },
-        );
-
         let bybit_side =
             BybitOrderSide::try_from(order.order_side()).expect("order side validated above");
         let position_idx = self.resolve_position_idx(
@@ -1131,6 +1130,19 @@ impl ExecutionClient for BybitExecutionClient {
             bybit_side,
             order.is_reduce_only(),
             tp_sl.position_idx,
+        );
+        let venue_position_id =
+            position_idx.and_then(|idx| make_hedge_venue_position_id(instrument_id, idx as i32));
+
+        self.dispatch_state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id,
+                strategy_id,
+                order_side: order.order_side(),
+                order_type: order.order_type(),
+                venue_position_id,
+            },
         );
 
         if self.config.environment == BybitEnvironment::Demo {
@@ -1308,6 +1320,16 @@ impl ExecutionClient for BybitExecutionClient {
 
         for order in &valid_orders {
             self.emitter.emit_order_submitted(order);
+            let bybit_side =
+                BybitOrderSide::try_from(order.order_side()).expect("order side validated above");
+            let position_idx = self.resolve_position_idx(
+                instrument_id,
+                bybit_side,
+                order.is_reduce_only(),
+                tp_sl.position_idx,
+            );
+            let venue_position_id = position_idx
+                .and_then(|idx| make_hedge_venue_position_id(instrument_id, idx as i32));
             self.dispatch_state.order_identities.insert(
                 order.client_order_id(),
                 OrderIdentity {
@@ -1315,6 +1337,7 @@ impl ExecutionClient for BybitExecutionClient {
                     strategy_id,
                     order_side: order.order_side(),
                     order_type: order.order_type(),
+                    venue_position_id,
                 },
             );
         }
@@ -1822,12 +1845,188 @@ impl ExecutionClient for BybitExecutionClient {
     }
 }
 
+impl BybitExecutionClient {
+    fn cache_reconciliation_order_identity(&self, report: &OrderStatusReport) {
+        let Some(client_order_id) = report.client_order_id else {
+            return;
+        };
+
+        if report.order_status.is_closed() {
+            self.dispatch_state
+                .order_identities
+                .remove(&client_order_id);
+            return;
+        }
+
+        let cache = self.core.cache();
+        let Some(order) = cache.order(&client_order_id) else {
+            return;
+        };
+
+        let identity = OrderIdentity {
+            instrument_id: report.instrument_id,
+            strategy_id: order.strategy_id(),
+            order_side: order.order_side(),
+            order_type: order.order_type(),
+            venue_position_id: report.venue_position_id,
+        };
+        self.dispatch_state
+            .order_identities
+            .insert(client_order_id, identity);
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::cache::Cache;
+    use nautilus_live::ExecutionClientCore;
+    use nautilus_model::{
+        enums::{AccountType, OrderStatus},
+        identifiers::{ClientOrderId, PositionId, TraderId, VenueOrderId},
+        orders::builder::OrderTestBuilder,
+        types::Quantity,
+    };
     use rstest::rstest;
 
     use super::*;
     use crate::common::enums::BybitMarketUnit;
+
+    fn test_execution_client() -> (BybitExecutionClient, Rc<RefCell<Cache>>) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            ClientId::from("BYBIT"),
+            Venue::from("BYBIT"),
+            OmsType::Netting,
+            AccountId::from("BYBIT-001"),
+            AccountType::Margin,
+            None,
+            cache.clone(),
+        );
+        let config = BybitExecClientConfig {
+            api_key: Some("test_key".to_string()),
+            api_secret: Some("test_secret".to_string()),
+            ..Default::default()
+        };
+
+        (BybitExecutionClient::new(core, config).unwrap(), cache)
+    }
+
+    fn sample_order_status_report(
+        client_order_id: ClientOrderId,
+        instrument_id: InstrumentId,
+        order_status: OrderStatus,
+        venue_position_id: Option<PositionId>,
+    ) -> OrderStatusReport {
+        let mut report = OrderStatusReport::new(
+            AccountId::from("BYBIT-001"),
+            instrument_id,
+            Some(client_order_id),
+            VenueOrderId::from("BYBIT-ORDER-001"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            order_status,
+            Quantity::from("1"),
+            Quantity::from("0"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        report.venue_position_id = venue_position_id;
+        report
+    }
+
+    #[rstest]
+    fn test_cache_reconciliation_order_identity_caches_and_clears_hedge_report() {
+        let (client, cache) = test_execution_client();
+        let client_order_id = ClientOrderId::from("O-HEDGE-RECON");
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let venue_position_id = PositionId::from("BTCUSDT-LINEAR.BYBIT-LONG");
+        let mut builder = OrderTestBuilder::new(OrderType::Limit);
+        let order = builder
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("10000.00"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+
+        let report = sample_order_status_report(
+            client_order_id,
+            instrument_id,
+            OrderStatus::Accepted,
+            Some(venue_position_id),
+        );
+        client.cache_reconciliation_order_identity(&report);
+
+        {
+            let identity = client
+                .dispatch_state
+                .order_identities
+                .get(&client_order_id)
+                .unwrap();
+            assert_eq!(identity.instrument_id, instrument_id);
+            assert_eq!(identity.strategy_id, order.strategy_id());
+            assert_eq!(identity.order_side, order.order_side());
+            assert_eq!(identity.order_type, order.order_type());
+            assert_eq!(identity.venue_position_id, Some(venue_position_id));
+        }
+
+        let terminal_report = sample_order_status_report(
+            client_order_id,
+            instrument_id,
+            OrderStatus::Filled,
+            Some(venue_position_id),
+        );
+        client.cache_reconciliation_order_identity(&terminal_report);
+
+        assert!(
+            client
+                .dispatch_state
+                .order_identities
+                .get(&client_order_id)
+                .is_none()
+        );
+    }
+
+    #[rstest]
+    fn test_cache_reconciliation_order_identity_keeps_one_way_local_report() {
+        let (client, cache) = test_execution_client();
+        let client_order_id = ClientOrderId::from("O-ONEWAY-RECON");
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let mut builder = OrderTestBuilder::new(OrderType::Limit);
+        let order = builder
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("10000.00"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        let report =
+            sample_order_status_report(client_order_id, instrument_id, OrderStatus::Accepted, None);
+        client.cache_reconciliation_order_identity(&report);
+
+        let identity = client
+            .dispatch_state
+            .order_identities
+            .get(&client_order_id)
+            .unwrap();
+        assert_eq!(identity.instrument_id, instrument_id);
+        assert_eq!(identity.venue_position_id, None);
+    }
 
     #[rstest]
     #[case::spot_market_base(

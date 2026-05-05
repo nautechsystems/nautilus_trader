@@ -82,8 +82,7 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
             }
         }
         Value::Array(arr) => {
-            let py_list =
-                PyList::new(py, &[] as &[Py<PyAny>]).expect("Invalid `ExactSizeIterator`");
+            let py_list = PyList::new(py, &[] as &[Py<PyAny>])?;
             for item in arr {
                 let py_item = value_to_pyobject(py, item)?;
                 py_list.append(py_item)?;

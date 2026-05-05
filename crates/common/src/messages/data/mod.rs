@@ -372,6 +372,10 @@ impl UnsubscribeCommand {
     }
 }
 
+#[allow(
+    clippy::ref_option,
+    reason = "callers pass borrowed Option fields directly"
+)]
 fn check_client_id_or_venue(client_id: &Option<ClientId>, venue: &Option<Venue>) {
     assert!(
         client_id.is_some() || venue.is_some(),

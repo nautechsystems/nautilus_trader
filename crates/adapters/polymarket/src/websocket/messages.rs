@@ -407,6 +407,24 @@ mod tests {
         assert_eq!(order.size_matched, "0.0");
     }
 
+    /// Repro for issue #3987: venue cancels a FOK order with a status field
+    /// containing a trailing reason ("CANCELED_<reason>") and empty fields
+    /// on `size_matched`, `outcome`, and `created_at`.
+    #[rstest]
+    fn test_user_order_fok_killed() {
+        let msg: UserWsMessage = load("ws_user_order_fok_killed.json");
+
+        let UserWsMessage::Order(order) = msg else {
+            panic!("Expected UserWsMessage::Order");
+        };
+        assert_eq!(order.event_type, PolymarketEventType::Cancellation);
+        assert_eq!(order.status, PolymarketOrderStatus::Canceled);
+        assert_eq!(order.order_type, PolymarketOrderType::FOK);
+        assert_eq!(order.size_matched, "");
+        assert_eq!(order.created_at, "");
+        assert_eq!(order.outcome.as_str(), "");
+    }
+
     #[rstest]
     fn test_user_trade() {
         let trade: PolymarketUserTrade = load("ws_user_trade.json");

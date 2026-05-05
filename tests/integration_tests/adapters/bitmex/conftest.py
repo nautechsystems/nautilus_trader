@@ -336,7 +336,7 @@ def exec_client(
     config = BitmexExecClientConfig(
         api_key="test_api_key",
         api_secret="test_api_secret",
-        testnet=True,
+        environment=nautilus_pyo3.BitmexEnvironment.TESTNET,
     )
 
     client = BitmexExecutionClient(
@@ -391,7 +391,7 @@ def exec_client_with_dms(
     config = BitmexExecClientConfig(
         api_key="test_api_key",
         api_secret="test_api_secret",
-        testnet=True,
+        environment=nautilus_pyo3.BitmexEnvironment.TESTNET,
         deadmans_switch_timeout_secs=60,
     )
 

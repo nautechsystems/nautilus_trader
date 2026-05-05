@@ -3992,7 +3992,16 @@ cdef class OrderMatchingEngine:
     cpdef void reset(self):
         self._log.debug(f"Resetting OrderMatchingEngine {self.instrument.id}")
 
-        self._book.clear(0, 0)
+        # Use `reset` (not `clear`) so `book.ts_last` is zeroed. `clear(0, 0)`
+        # routes through `OrderBook.increment` whose ts_last/sequence are
+        # high-water marks: `ts_event.max(self.ts_last)` keeps the stale
+        # timestamp, and the L1 stale-event guard added in #3790 then drops
+        # every subsequent quote/trade tick whose ts_event < that residual.
+        # Repeated runs (sweep / param-search) need the engine to accept the
+        # next run's bars even though they predate the previous run's last ts.
+        # The Rust matching engine reset path (`crates/execution/src/
+        # matching_engine/engine.rs::reset`) already calls `book.reset()`.
+        self._book.reset()
         self._account_ids.clear()
         self._execution_bar_types.clear()
         self._execution_bar_deltas.clear()

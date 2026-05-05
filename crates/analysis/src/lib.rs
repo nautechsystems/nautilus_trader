@@ -43,6 +43,7 @@
 //! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
+#![warn(clippy::pedantic)]
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
@@ -50,6 +51,25 @@
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![allow(
+    clippy::similar_names,
+    reason = "domain terms such as returns/realized and pnl/pnls are intentionally parallel"
+)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "analysis math casts between usize/i32/i64/f64 with values bounded by sample counts"
+)]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::float_cmp,
+        clippy::unreadable_literal,
+        reason = "analysis tests assert exact float outputs and reference statistic constants"
+    )
+)]
 
 pub mod analyzer;
 pub mod statistic;

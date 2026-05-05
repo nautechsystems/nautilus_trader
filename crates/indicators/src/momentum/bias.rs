@@ -46,7 +46,7 @@ pub struct Bias {
 
 impl Display for Bias {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}({},{})", self.name(), self.period, self.ma_type,)
+        write!(f, "{}({},{})", self.name(), self.period, self.ma_type)
     }
 }
 
@@ -108,10 +108,10 @@ impl Bias {
         self.count += 1;
         self.ma.update_raw(close);
         self.value = (close / self.ma.value()) - 1.0;
-        self._check_initialized();
+        self.check_initialized();
     }
 
-    pub fn _check_initialized(&mut self) {
+    pub fn check_initialized(&mut self) {
         if !self.initialized {
             self.has_inputs = true;
 

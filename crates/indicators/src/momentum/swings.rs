@@ -52,7 +52,7 @@ pub struct Swings {
 
 impl Display for Swings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}({})", self.name(), self.period,)
+        write!(f, "{}({})", self.name(), self.period)
     }
 }
 

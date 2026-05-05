@@ -95,20 +95,20 @@ pub trait BarAggregator: Any + Debug {
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos);
     /// Stop the aggregator, e.g., cancel timers. Default is no-op.
     fn stop(&mut self) {}
-    /// Sets historical mode (default implementation does nothing, TimeBarAggregator overrides)
+    /// Sets historical mode (default implementation does nothing, `TimeBarAggregator` overrides)
     fn set_historical_mode(&mut self, _historical_mode: bool, _handler: Box<dyn FnMut(Bar)>) {}
-    /// Sets historical events (default implementation does nothing, TimeBarAggregator overrides)
+    /// Sets historical events (default implementation does nothing, `TimeBarAggregator` overrides)
     fn set_historical_events(&mut self, _events: Vec<TimeEvent>) {}
-    /// Sets clock for time bar aggregators (default implementation does nothing, TimeBarAggregator overrides)
+    /// Sets clock for time bar aggregators (default implementation does nothing, `TimeBarAggregator` overrides)
     fn set_clock(&mut self, _clock: Rc<RefCell<dyn Clock>>) {}
-    /// Builds a bar from a time event (default implementation does nothing, TimeBarAggregator overrides)
+    /// Builds a bar from a time event (default implementation does nothing, `TimeBarAggregator` overrides)
     fn build_bar(&mut self, _event: &TimeEvent) {}
     /// Starts the timer for time bar aggregators.
-    /// Default implementation does nothing, TimeBarAggregator overrides.
+    /// Default implementation does nothing, `TimeBarAggregator` overrides.
     /// Takes an optional Rc to create weak reference internally.
     fn start_timer(&mut self, _aggregator_rc: Option<Rc<RefCell<Box<dyn BarAggregator>>>>) {}
     /// Sets the weak reference to the aggregator wrapper (for historical mode).
-    /// Default implementation does nothing, TimeBarAggregator overrides.
+    /// Default implementation does nothing, `TimeBarAggregator` overrides.
     fn set_aggregator_weak(&mut self, _weak: Weak<RefCell<Box<dyn BarAggregator>>>) {}
 }
 
@@ -1222,6 +1222,7 @@ impl BarAggregator for ValueImbalanceBarAggregator {
         while size_remaining > 0.0 {
             let value_remaining = price_f64 * size_remaining;
 
+            #[allow(clippy::float_cmp, reason = "exact-zero check on accumulator")]
             if self.imbalance_value == 0.0 || self.imbalance_value.signum() == side_sign {
                 let needed = self.step_value - self.imbalance_value.abs();
                 if value_remaining <= needed {
@@ -1724,7 +1725,7 @@ impl TimeBarAggregator {
     ///
     /// # Panics
     ///
-    /// Panics if aggregator_rc is None and aggregator_weak hasn't been set, or if timer registration fails.
+    /// Panics if `aggregator_rc` is None and `aggregator_weak` hasn't been set, or if timer registration fails.
     pub fn start_timer_internal(
         &mut self,
         aggregator_rc: Option<Rc<RefCell<Box<dyn BarAggregator>>>>,
@@ -2279,7 +2280,7 @@ impl SpreadQuoteAggregator {
             self.aggregator_weak = Some(weak.clone());
             weak
         } else {
-            self.aggregator_weak.as_ref().cloned().expect(
+            self.aggregator_weak.clone().expect(
                 "SpreadQuoteAggregator: timer mode requires prepare_for_timer_mode(rc) to be \
                  called first with the Rc that wraps this aggregator (before feeding quotes in \
                  historical mode or before start_timer(None)).",
@@ -5715,7 +5716,7 @@ mod tests {
         assert_ne!(results[0], results[1]);
     }
 
-    /// Historical time-bar: event at ts_init is deferred until after the update (Cython parity).
+    /// Historical time-bar: event at `ts_init` is deferred until after the update (Cython parity).
     #[rstest]
     fn test_time_bar_historical_defers_event_at_ts_init_until_after_update(equity_aapl: Equity) {
         let instrument = InstrumentAny::Equity(equity_aapl);

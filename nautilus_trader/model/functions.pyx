@@ -301,6 +301,17 @@ cpdef str trigger_type_to_str(TriggerType value):
     return cstr_to_pystr(trigger_type_to_cstr(value))
 
 
+cpdef account_type_to_pyo3(AccountType value):
+    if value == AccountType.CASH:
+        return nautilus_pyo3.AccountType.CASH
+    if value == AccountType.MARGIN:
+        return nautilus_pyo3.AccountType.MARGIN
+    if value == AccountType.BETTING:
+        return nautilus_pyo3.AccountType.BETTING
+
+    raise ValueError(f"Unsupported `AccountType`, was '{account_type_to_str(value)}'")
+
+
 cpdef order_side_to_pyo3(OrderSide value):
     if value == OrderSide.BUY:
         return nautilus_pyo3.OrderSide.BUY

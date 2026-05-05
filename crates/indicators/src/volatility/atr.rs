@@ -122,11 +122,11 @@ impl AverageTrueRange {
             self.ma.update_raw(high - low);
         }
 
-        self._floor_value();
+        self.apply_floor();
         self.increment_count();
     }
 
-    fn _floor_value(&mut self) {
+    fn apply_floor(&mut self) {
         if self.value_floor == 0.0 || self.value_floor < self.ma.value() {
             self.value = self.ma.value();
         } else {

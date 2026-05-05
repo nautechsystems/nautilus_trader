@@ -26,10 +26,45 @@ use nautilus_model::{
 };
 use nautilus_network::http::{HttpClient, HttpClientError, Method, USER_AGENT};
 
-use crate::http::{
-    error::{Error, Result},
-    models::{DataApiPosition, DataApiTrade},
+use crate::{
+    common::enums::PolymarketOrderSide,
+    http::{
+        error::{Error, Result},
+        models::{DataApiPosition, DataApiTrade},
+    },
 };
+
+// Composite key for stabilising same-second trades across paginated responses
+fn data_api_trade_sort_key(t: &DataApiTrade) -> (i64, &str, &str, &'static str, String, String) {
+    (
+        t.timestamp,
+        t.transaction_hash.as_str(),
+        t.asset.as_str(),
+        match t.side {
+            PolymarketOrderSide::Buy => "BUY",
+            PolymarketOrderSide::Sell => "SELL",
+        },
+        t.price.to_string(),
+        t.size.to_string(),
+    )
+}
+
+// Composite TradeId: tx hashes recur across multi-fill swaps, so a per-(tx,
+// asset) sequence is appended to disambiguate fills that would otherwise
+// collide on the last 36 chars of the transaction hash.
+pub(crate) fn build_polymarket_trade_id(transaction_hash: &str, asset: &str, seq: u32) -> String {
+    let hash_suffix = if transaction_hash.len() > 24 {
+        &transaction_hash[transaction_hash.len() - 24..]
+    } else {
+        transaction_hash
+    };
+    let asset_suffix = if asset.len() > 4 {
+        &asset[asset.len() - 4..]
+    } else {
+        asset
+    };
+    format!("{hash_suffix}-{asset_suffix}-{seq:06}")
+}
 
 const POLYMARKET_DATA_API_URL: &str = "https://data-api.polymarket.com";
 
@@ -153,9 +188,13 @@ impl PolymarketDataApiHttpClient {
     /// Fetches trades and converts them to [`TradeTick`] for the given instrument.
     ///
     /// Automatically paginates through all available results (up to `limit`
-    /// if specified, with a safety cap of 100 pages). Filters by `token_id`
-    /// (since the API returns trades for all outcomes of the condition) and
-    /// returns results in chronological order.
+    /// if specified). Filters by `token_id` (since the API returns trades for
+    /// all outcomes of the condition) and returns results in chronological
+    /// order.
+    ///
+    /// The Polymarket Data API caps offset-based pagination on high-activity
+    /// markets; when this ceiling is hit a warning is logged and the trades
+    /// fetched so far are returned.
     pub async fn request_trade_ticks(
         &self,
         instrument_id: InstrumentId,
@@ -166,7 +205,7 @@ impl PolymarketDataApiHttpClient {
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         const PAGE_SIZE: u32 = 500;
-        // Polymarket Data API rejects offsets >= 3000
+        // Polymarket Data API rejects offsets at or beyond this value
         const MAX_OFFSET: u32 = 3000;
 
         let page_size = limit.map_or(PAGE_SIZE, |l| l.min(PAGE_SIZE));
@@ -174,10 +213,24 @@ impl PolymarketDataApiHttpClient {
         let mut offset: u32 = 0;
 
         loop {
-            let page = self
+            let page = match self
                 .get_trades(condition_id, Some(page_size), Some(offset))
                 .await
-                .map_err(|e| anyhow::anyhow!(e))?;
+            {
+                Ok(page) => page,
+                Err(e) => {
+                    if format!("{e}").contains("max historical activity offset") {
+                        // Public API caps pagination depth; warn and return partial
+                        log::warn!(
+                            "Polymarket public trades API hit its historical offset \
+                             ceiling for condition {condition_id}; returning partial \
+                             results: {e}",
+                        );
+                        break;
+                    }
+                    anyhow::bail!(e);
+                }
+            };
 
             let count = page.len() as u32;
             all_trades.extend(page);
@@ -204,41 +257,70 @@ impl PolymarketDataApiHttpClient {
             all_trades.truncate(target as usize);
         }
 
-        let mut ticks: Vec<TradeTick> = all_trades
-            .into_iter()
-            .filter(|t| t.asset == token_id)
-            .map(|t| {
-                let price = Price::new(t.price, price_precision);
-                let size = Quantity::new(t.size, size_precision);
-                let aggressor_side = AggressorSide::from(t.side);
-                // TradeId max length is 36; tx hash is 66 chars, take last 36
-                let hash = &t.transaction_hash;
-                let trade_id_str = if hash.len() > 36 {
-                    &hash[hash.len() - 36..]
-                } else {
-                    hash.as_str()
-                };
-                let trade_id = TradeId::new(trade_id_str);
-                // Data API timestamp is in epoch seconds
-                let ts_event = nautilus_core::UnixNanos::from(t.timestamp as u64 * 1_000_000_000);
-
-                TradeTick::new(
-                    instrument_id,
-                    price,
-                    size,
-                    aggressor_side,
-                    trade_id,
-                    ts_event,
-                    ts_event,
-                )
-            })
-            .collect();
-
-        // API returns newest-first; reverse for chronological order
-        ticks.reverse();
-
-        Ok(ticks)
+        Ok(parse_trade_ticks(
+            all_trades,
+            instrument_id,
+            token_id,
+            price_precision,
+            size_precision,
+        ))
     }
+}
+
+// Extracted from `request_trade_ticks` so the parse behavior can be
+// unit-tested without HTTP
+fn parse_trade_ticks(
+    mut data_api_trades: Vec<DataApiTrade>,
+    instrument_id: InstrumentId,
+    token_id: &str,
+    price_precision: u8,
+    size_precision: u8,
+) -> Vec<TradeTick> {
+    // Composite sort to stabilise same-second trades across pages
+    data_api_trades.sort_by(|a, b| data_api_trade_sort_key(a).cmp(&data_api_trade_sort_key(b)));
+
+    let mut timestamp_counts: HashMap<u64, u32> = HashMap::new();
+    let mut tx_asset_counts: HashMap<(String, String), u32> = HashMap::new();
+    let mut trades: Vec<TradeTick> = Vec::new();
+
+    for t in data_api_trades {
+        if t.asset != token_id {
+            continue;
+        }
+
+        let price = Price::new(t.price, price_precision);
+        let size = Quantity::new(t.size, size_precision);
+        let aggressor_side = AggressorSide::from(t.side);
+
+        let base_ns = (t.timestamp as u64) * 1_000_000_000;
+        let occurrence = timestamp_counts.entry(base_ns).or_insert(0);
+        let tiebreaker = (*occurrence).min(999_999_999) as u64;
+        *occurrence += 1;
+        let ts_event = nautilus_core::UnixNanos::from(base_ns + tiebreaker);
+
+        let key = (t.transaction_hash.clone(), t.asset.clone());
+        let seq = *tx_asset_counts
+            .entry(key)
+            .and_modify(|n| *n += 1)
+            .or_insert(0);
+        let trade_id = TradeId::new(build_polymarket_trade_id(
+            &t.transaction_hash,
+            &t.asset,
+            seq,
+        ));
+
+        trades.push(TradeTick::new(
+            instrument_id,
+            price,
+            size,
+            aggressor_side,
+            trade_id,
+            ts_event,
+            ts_event,
+        ));
+    }
+
+    trades
 }
 
 #[cfg(test)]
@@ -466,5 +548,275 @@ mod tests {
         assert_eq!(ticks.len(), 2);
         // First tick should be the older one (lower timestamp)
         assert!(ticks[0].ts_event < ticks[1].ts_event);
+    }
+
+    fn make_trade(
+        timestamp: i64,
+        transaction_hash: &str,
+        asset: &str,
+        side: PolymarketOrderSide,
+        price: f64,
+        size: f64,
+    ) -> DataApiTrade {
+        DataApiTrade {
+            asset: asset.to_string(),
+            condition_id: "0xcond".to_string(),
+            side,
+            price,
+            size,
+            timestamp,
+            transaction_hash: transaction_hash.to_string(),
+        }
+    }
+
+    fn test_instrument_id() -> InstrumentId {
+        InstrumentId::from(
+            "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47-71321045863084981365469005770620412523470745398083994982746259498689308907982.POLYMARKET",
+        )
+    }
+
+    #[rstest]
+    fn test_data_api_trade_sort_key_orders_pages_deterministically() {
+        let mut trades = [
+            make_trade(1729000005, "0xZ", "T", PolymarketOrderSide::Buy, 0.5, 1.0),
+            make_trade(1729000000, "0xC", "T", PolymarketOrderSide::Buy, 0.5, 1.0),
+            make_trade(1729000000, "0xA", "T", PolymarketOrderSide::Sell, 0.5, 1.0),
+            make_trade(1729000000, "0xB", "T", PolymarketOrderSide::Buy, 0.5, 1.0),
+        ];
+
+        trades.sort_by(|a, b| data_api_trade_sort_key(a).cmp(&data_api_trade_sort_key(b)));
+
+        let order: Vec<&str> = trades.iter().map(|t| t.transaction_hash.as_str()).collect();
+        assert_eq!(order, ["0xA", "0xB", "0xC", "0xZ"]);
+    }
+
+    #[rstest]
+    fn test_data_api_trade_sort_key_uses_full_composite_for_inner_ties() {
+        // Locks ordering on the (asset, side, price, size) tail of the key
+        let mut trades = [
+            // (ts, hash) all equal; tail differs across asset/side/price/size
+            make_trade(1, "0xH", "Tb", PolymarketOrderSide::Buy, 0.5, 1.0),
+            make_trade(1, "0xH", "Ta", PolymarketOrderSide::Sell, 0.5, 1.0),
+            make_trade(1, "0xH", "Ta", PolymarketOrderSide::Buy, 0.6, 1.0),
+            make_trade(1, "0xH", "Ta", PolymarketOrderSide::Buy, 0.5, 2.0),
+            make_trade(1, "0xH", "Ta", PolymarketOrderSide::Buy, 0.5, 1.0),
+        ];
+
+        trades.sort_by(|a, b| data_api_trade_sort_key(a).cmp(&data_api_trade_sort_key(b)));
+
+        // Sort key composite: (ts, hash, asset, side, price, size)
+        // Expected ordering across the five trades:
+        //   1. asset=Ta side=BUY  price=0.5 size=1.0 (lex-min on side first)
+        //   2. asset=Ta side=BUY  price=0.5 size=2.0 (size breaks tie)
+        //   3. asset=Ta side=BUY  price=0.6 size=1.0 (price breaks tie)
+        //   4. asset=Ta side=SELL price=0.5 size=1.0 (side breaks tie)
+        //   5. asset=Tb side=BUY  price=0.5 size=1.0 (asset breaks tie)
+        let key: Vec<(String, String, f64, f64)> = trades
+            .iter()
+            .map(|t| (t.asset.clone(), t.side.to_string(), t.price, t.size))
+            .collect();
+        assert_eq!(key[0], ("Ta".into(), "BUY".into(), 0.5, 1.0));
+        assert_eq!(key[1], ("Ta".into(), "BUY".into(), 0.5, 2.0));
+        assert_eq!(key[2], ("Ta".into(), "BUY".into(), 0.6, 1.0));
+        assert_eq!(key[3], ("Ta".into(), "SELL".into(), 0.5, 1.0));
+        assert_eq!(key[4], ("Tb".into(), "BUY".into(), 0.5, 1.0));
+    }
+
+    #[rstest]
+    fn test_parse_trade_ticks_filters_other_tokens() {
+        let token_id = "T_KEEP";
+        let trades = vec![
+            make_trade(
+                1729000000,
+                "0xa",
+                token_id,
+                PolymarketOrderSide::Buy,
+                0.5,
+                1.0,
+            ),
+            make_trade(
+                1729000000,
+                "0xb",
+                "T_DROP",
+                PolymarketOrderSide::Sell,
+                0.5,
+                1.0,
+            ),
+        ];
+
+        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2);
+
+        assert_eq!(trades.len(), 1);
+        assert_eq!(trades[0].aggressor_side, AggressorSide::Buyer);
+    }
+
+    #[rstest]
+    fn test_parse_trade_ticks_disambiguates_multi_fill_transaction() {
+        // Two fills sharing tx + asset must produce distinct TradeIds
+        let token_id = "12345token";
+        let same_hash = "0x000000000000000000000000000000000000000000000000000000000000abcdef";
+        let trades = vec![
+            make_trade(
+                1729000000,
+                same_hash,
+                token_id,
+                PolymarketOrderSide::Buy,
+                0.5,
+                1.0,
+            ),
+            make_trade(
+                1729000000,
+                same_hash,
+                token_id,
+                PolymarketOrderSide::Sell,
+                0.5,
+                1.0,
+            ),
+        ];
+
+        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2);
+
+        assert_eq!(trades.len(), 2);
+        assert_ne!(trades[0].trade_id, trades[1].trade_id);
+        // ts_event monotonic: same epoch second + nanosecond tiebreaker
+        assert!(trades[0].ts_event < trades[1].ts_event);
+        assert_eq!(
+            u64::from(trades[1].ts_event) - u64::from(trades[0].ts_event),
+            1
+        );
+        // ID format ends with the per-(tx, asset) sequence
+        assert!(trades[0].trade_id.to_string().ends_with("-000000"));
+        assert!(trades[1].trade_id.to_string().ends_with("-000001"));
+    }
+
+    #[rstest]
+    fn test_parse_trade_ticks_distinct_tx_share_timestamp() {
+        // Different transactions in the same epoch second still get distinct
+        // ts_event values (the tiebreaker is per-second, not per-transaction).
+        let token_id = "T";
+        let trades = vec![
+            make_trade(
+                1729000000,
+                "0xtx1",
+                token_id,
+                PolymarketOrderSide::Buy,
+                0.5,
+                1.0,
+            ),
+            make_trade(
+                1729000000,
+                "0xtx2",
+                token_id,
+                PolymarketOrderSide::Buy,
+                0.5,
+                1.0,
+            ),
+            make_trade(
+                1729000000,
+                "0xtx3",
+                token_id,
+                PolymarketOrderSide::Buy,
+                0.5,
+                1.0,
+            ),
+        ];
+
+        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2);
+
+        assert_eq!(trades.len(), 3);
+        // Strictly increasing ts_event
+        assert!(trades[0].ts_event < trades[1].ts_event);
+        assert!(trades[1].ts_event < trades[2].ts_event);
+        // Each trade is the first fill on its (tx, asset) so all have seq 0
+        for trade in &trades {
+            assert!(trade.trade_id.to_string().ends_with("-000000"));
+        }
+    }
+
+    #[rstest]
+    fn test_parse_trade_ticks_assigns_per_second_tiebreakers() {
+        // Same-second fills get strictly increasing nanosecond tiebreakers
+        // starting at zero, all bounded below 1 second.
+        let token_id = "T";
+        let mut trades = Vec::new();
+
+        for i in 0..3 {
+            let hash = format!("0x{i:064x}");
+            trades.push(make_trade(
+                1729000000,
+                &hash,
+                token_id,
+                PolymarketOrderSide::Buy,
+                0.5,
+                1.0,
+            ));
+        }
+
+        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2);
+
+        assert_eq!(trades.len(), 3);
+        let base_ns = 1_729_000_000u64 * 1_000_000_000;
+
+        for (i, trade) in trades.iter().enumerate() {
+            assert!(u64::from(trade.ts_event) - base_ns < 1_000_000_000);
+            assert_eq!(u64::from(trade.ts_event) - base_ns, i as u64);
+        }
+    }
+
+    #[rstest]
+    fn test_parse_trade_ticks_sorts_inputs_by_composite_key() {
+        // Mirror what the API may return: same-second fills delivered out
+        // of order. parse_trade_ticks must produce a deterministic stream.
+        let token_id = "T";
+        let trades = vec![
+            make_trade(
+                1729000005,
+                "0xZ",
+                token_id,
+                PolymarketOrderSide::Buy,
+                0.5,
+                1.0,
+            ),
+            make_trade(
+                1729000000,
+                "0xC",
+                token_id,
+                PolymarketOrderSide::Buy,
+                0.5,
+                1.0,
+            ),
+            make_trade(
+                1729000000,
+                "0xA",
+                token_id,
+                PolymarketOrderSide::Sell,
+                0.5,
+                1.0,
+            ),
+            make_trade(
+                1729000000,
+                "0xB",
+                token_id,
+                PolymarketOrderSide::Buy,
+                0.5,
+                1.0,
+            ),
+        ];
+
+        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2);
+
+        assert_eq!(trades.len(), 4);
+
+        // Strictly non-decreasing ts_event
+        for i in 1..trades.len() {
+            assert!(trades[i - 1].ts_event <= trades[i].ts_event);
+        }
+
+        // Composite tiebreaker: same-second trades order by transactionHash
+        let trade_ids: Vec<String> = trades.iter().map(|t| t.trade_id.to_string()).collect();
+        assert!(trade_ids[0].contains("0xA"));
+        assert!(trade_ids[1].contains("0xB"));
+        assert!(trade_ids[2].contains("0xC"));
+        assert!(trade_ids[3].contains("0xZ"));
     }
 }

@@ -37,8 +37,8 @@ use crate::reconciliation::{
 
 /// Process mass status for position reconciliation.
 ///
-/// Takes ExecutionMassStatus and Instrument, performs all reconciliation logic in Rust,
-/// and returns tuple of (order_reports, fill_reports) ready for processing.
+/// Takes `ExecutionMassStatus` and `Instrument`, performs all reconciliation logic in Rust,
+/// and returns tuple of (`order_reports`, `fill_reports`) ready for processing.
 ///
 /// # Returns
 ///
@@ -97,9 +97,9 @@ pub fn py_adjust_fills_for_partial_window(
 /// # Notes
 ///
 /// The function handles four scenarios:
-/// 1. Position to flat: reconciliation_px = current_avg_px (close at current average)
-/// 2. Flat to position: reconciliation_px = target_avg_px
-/// 3. Position flip (sign change): reconciliation_px = target_avg_px (due to value reset in simulation)
+/// 1. Position to flat: `reconciliation_px` = `current_avg_px` (close at current average)
+/// 2. Flat to position: `reconciliation_px` = `target_avg_px`
+/// 3. Position flip (sign change): `reconciliation_px` = `target_avg_px` (due to value reset in simulation)
 /// 4. Accumulation/reduction: weighted average formula
 #[pyfunction(name = "calculate_reconciliation_price")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]

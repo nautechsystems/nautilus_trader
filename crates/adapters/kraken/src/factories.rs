@@ -89,6 +89,8 @@ impl DataClientFactory for KrakenDataClientFactory {
             })?
             .clone();
 
+        kraken_config.validate()?;
+
         let client_id = ClientId::from(name);
 
         match kraken_config.product_type {
@@ -161,9 +163,11 @@ impl ExecutionClientFactory for KrakenExecutionClientFactory {
             })?
             .clone();
 
+        kraken_config.validate()?;
+
         let oms_type = OmsType::Netting;
         let account_type = match kraken_config.product_type {
-            KrakenProductType::Spot => AccountType::Cash,
+            KrakenProductType::Spot => kraken_config.spot_account_type,
             KrakenProductType::Futures => AccountType::Margin,
         };
 
@@ -214,7 +218,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::enums::KrakenProductType;
+    use crate::common::enums::{KrakenEnvironment, KrakenProductType};
 
     fn setup_test_env() {
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -303,5 +307,67 @@ mod tests {
         assert_eq!(client.client_id(), ClientId::from("KRAKEN-TEST"));
         assert_eq!(client.account_id(), config.account_id);
         assert_eq!(client.oms_type(), OmsType::Netting);
+    }
+
+    #[rstest]
+    fn test_kraken_execution_client_factory_rejects_leverage_on_cash_account() {
+        let factory = KrakenExecutionClientFactory::new();
+        let config = KrakenExecClientConfig {
+            product_type: KrakenProductType::Spot,
+            spot_account_type: AccountType::Cash,
+            default_leverage: Some(3),
+            ..Default::default()
+        };
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let result = factory.create("KRAKEN-TEST", &config, cache.into());
+        let err = match result {
+            Ok(_) => panic!("expected validation error, factory returned Ok"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err.contains("default_leverage requires spot_account_type=Margin"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_kraken_data_client_factory_rejects_spot_demo() {
+        setup_test_env();
+
+        let factory = KrakenDataClientFactory::new();
+        let config = KrakenDataClientConfig {
+            product_type: KrakenProductType::Spot,
+            environment: KrakenEnvironment::Demo,
+            ..Default::default()
+        };
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let result = factory.create("KRAKEN-TEST", &config, cache.into(), clock);
+        let err = match result {
+            Ok(_) => panic!("expected validation error, factory returned Ok"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err.contains("Kraken Spot does not support the demo environment"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_kraken_execution_client_factory_accepts_leverage_on_margin_account() {
+        let factory = KrakenExecutionClientFactory::new();
+        let config = KrakenExecClientConfig {
+            product_type: KrakenProductType::Spot,
+            spot_account_type: AccountType::Margin,
+            default_leverage: Some(3),
+            ..Default::default()
+        };
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let result = factory.create("KRAKEN-TEST", &config, cache.into());
+        assert!(result.is_ok());
     }
 }

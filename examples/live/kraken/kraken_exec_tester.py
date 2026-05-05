@@ -50,7 +50,7 @@ if product_type == KrakenProductType.SPOT:
     enable_sells = False  # May not own base token when starting fresh
     reduce_only_on_stop = False  # Not supported on spot
     use_spot_position_reports = True
-    environment = KrakenEnvironment.MAINNET
+    environment = KrakenEnvironment.LIVE
 elif product_type == KrakenProductType.FUTURES:
     # Kraken Futures perpetual symbols use PI_ prefix (e.g., PI_XBTUSD, PI_ETHUSD)
     token = token or "XBT"
@@ -59,7 +59,7 @@ elif product_type == KrakenProductType.FUTURES:
     enable_sells = True
     reduce_only_on_stop = True
     use_spot_position_reports = False  # Not applicable
-    environment = KrakenEnvironment.MAINNET
+    environment = KrakenEnvironment.LIVE
     # environment = KrakenEnvironment.DEMO  # Use demo-futures.kraken.com
 else:
     raise ValueError(f"Unsupported product type: {product_type}")

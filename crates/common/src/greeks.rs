@@ -68,7 +68,7 @@ impl GreeksFilterCallback {
         }
     }
 
-    /// Convert to the original GreeksFilter type.
+    /// Convert to the original `GreeksFilter` type.
     pub fn to_greeks_filter(self) -> GreeksFilter {
         match self {
             Self::Function(f) => Box::new(f),
@@ -186,7 +186,7 @@ pub struct PortfolioGreeksParams {
     /// Strategy ID to filter positions by
     #[builder(default)]
     pub strategy_id: Option<StrategyId>,
-    /// Position side to filter by (default: NoPositionSide)
+    /// Position side to filter by (default: `NoPositionSide`)
     #[builder(default)]
     pub side: Option<PositionSide>,
     /// Flat interest rate (default: 0.0425)
@@ -736,8 +736,8 @@ impl GreeksCalculator {
     /// The beta weighting of delta and gamma follows this equation linking the returns of a stock x to the ones of an index I:
     /// (x - x0) / x0 = alpha + beta (I - I0) / I0 + epsilon
     ///
-    /// beta can be obtained by linear regression of stock_return = alpha + beta index_return, it's equal to:
-    /// beta = Covariance(stock_returns, index_returns) / Variance(index_returns)
+    /// beta can be obtained by linear regression of `stock_return` = alpha + beta `index_return`, it's equal to:
+    /// beta = Covariance(`stock_returns`, `index_returns`) / Variance(`index_returns`)
     ///
     /// Considering alpha == 0:
     /// x = x0 + beta x0 / I0 (I-I0)
@@ -747,8 +747,8 @@ impl GreeksCalculator {
     /// are the first and second derivatives respectively of V.
     ///
     /// Also percent greeks assume a change of variable to percent returns by writing:
-    /// V(x = x0 * (1 + stock_percent_return / 100))
-    /// or V(I = I0 * (1 + index_percent_return / 100))
+    /// V(x = x0 * (1 + `stock_percent_return` / 100))
+    /// or V(I = I0 * (1 + `index_percent_return` / 100))
     #[expect(clippy::too_many_arguments)]
     pub fn modify_greeks(
         &self,
@@ -789,6 +789,7 @@ impl GreeksCalculator {
             }
 
             if let Some(ref mut idx_price) = index_price {
+                #[allow(clippy::float_cmp, reason = "exact-equality baseline check")]
                 if underlying_price != unshocked_underlying_price {
                     *idx_price += 1.0 / beta
                         * (*idx_price / unshocked_underlying_price)

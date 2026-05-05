@@ -20,6 +20,7 @@ import pytest
 from nautilus_trader.adapters.bitmex.config import BitmexDataClientConfig
 from nautilus_trader.adapters.bitmex.constants import BITMEX_VENUE
 from nautilus_trader.adapters.bitmex.data import BitmexDataClient
+from nautilus_trader.core.nautilus_pyo3 import BitmexEnvironment
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -44,7 +45,7 @@ def bitmex_data_client(
     config = BitmexDataClientConfig(
         api_key="test_api_key",
         api_secret="test_api_secret",
-        testnet=True,
+        environment=BitmexEnvironment.TESTNET,
         update_instruments_interval_mins=1,
     )
 

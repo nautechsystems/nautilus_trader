@@ -242,3 +242,239 @@ async fn test_send_betting_without_session_returns_error() {
         "Expected MissingCredentials error"
     );
 }
+
+/// A JSON-RPC error envelope must surface as `BetfairError` with the
+/// venue's code and message preserved verbatim so callers can branch on it.
+#[rstest]
+#[tokio::test]
+async fn test_send_betting_jsonrpc_error_returns_betfair_error() {
+    let (addr, state) = start_mock_http().await;
+    state.betting_error_overrides.lock().unwrap().insert(
+        METHOD_LIST_MARKET_CATALOGUE.to_string(),
+        (-32602, "DSC-018".to_string()),
+    );
+
+    let client = create_test_http_client(addr);
+    client.connect().await.unwrap();
+
+    let result: Result<Value, _> = client
+        .send_betting(METHOD_LIST_MARKET_CATALOGUE, &serde_json::json!({}))
+        .await;
+
+    match result {
+        Err(BetfairHttpError::BetfairError { code, message }) => {
+            assert_eq!(code, -32602);
+            assert_eq!(message, "DSC-018");
+        }
+        other => panic!("Expected BetfairError, was {other:?}"),
+    }
+}
+
+/// JSON-RPC errors mentioning `NO_SESSION` (or `INVALID_SESSION_INFORMATION`)
+/// must be classifiable as session errors so callers can trigger a re-login.
+#[rstest]
+#[tokio::test]
+async fn test_send_betting_session_error_classified_as_session() {
+    let (addr, state) = start_mock_http().await;
+    state.betting_error_overrides.lock().unwrap().insert(
+        METHOD_LIST_MARKET_CATALOGUE.to_string(),
+        (-1, "NO_SESSION".to_string()),
+    );
+
+    let client = create_test_http_client(addr);
+    client.connect().await.unwrap();
+
+    let err = client
+        .send_betting::<Value, _>(METHOD_LIST_MARKET_CATALOGUE, &serde_json::json!({}))
+        .await
+        .expect_err("expected NO_SESSION to surface as error");
+
+    assert!(err.is_session_error(), "expected session error: {err}");
+    assert!(
+        !err.is_login_failed(),
+        "session error must not be login-failed"
+    );
+}
+
+/// `TOO_MANY_REQUESTS` JSON-RPC errors must classify as rate-limit so the
+/// caller's retry policy can back off rather than treat it as a hard failure.
+#[rstest]
+#[tokio::test]
+async fn test_send_betting_too_many_requests_classified_as_rate_limit() {
+    let (addr, state) = start_mock_http().await;
+    state.betting_error_overrides.lock().unwrap().insert(
+        METHOD_LIST_MARKET_CATALOGUE.to_string(),
+        (-1, "TOO_MANY_REQUESTS".to_string()),
+    );
+
+    let client = create_test_http_client(addr);
+    client.connect().await.unwrap();
+
+    let err = client
+        .send_betting::<Value, _>(METHOD_LIST_MARKET_CATALOGUE, &serde_json::json!({}))
+        .await
+        .expect_err("expected TOO_MANY_REQUESTS to surface as error");
+
+    assert!(
+        err.is_rate_limit_error(),
+        "expected rate-limit classification: {err}"
+    );
+    assert!(
+        !err.is_session_error(),
+        "rate-limit must not be a session error"
+    );
+}
+
+/// 5xx errors are retryable. With `max_retries=1` (the test fixture default)
+/// a permanently-failing endpoint must hit the server twice: one initial call
+/// plus one retry. Anything fewer means the retry loop is broken.
+#[rstest]
+#[tokio::test]
+async fn test_send_betting_5xx_retries_once_before_giving_up() {
+    let (addr, state) = start_mock_http().await;
+    state
+        .betting_status_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_LIST_MARKET_CATALOGUE.to_string(), 503);
+
+    let client = create_test_http_client(addr);
+    client.connect().await.unwrap();
+
+    let initial_count = state
+        .betting_request_count
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    let _ = client
+        .send_betting::<Value, _>(METHOD_LIST_MARKET_CATALOGUE, &serde_json::json!({}))
+        .await
+        .expect_err("expected 503 to surface as error");
+
+    let final_count = state
+        .betting_request_count
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    assert_eq!(
+        final_count - initial_count,
+        2,
+        "expected 1 initial call + 1 retry under max_retries=1"
+    );
+}
+
+/// `connect()` is idempotent: a second call on an already-connected client
+/// must not trigger a second login. Mirrors Python's `asyncio.Lock` + token
+/// short-circuit so callers can re-issue connect without burning logins.
+#[rstest]
+#[tokio::test]
+async fn test_http_client_connect_is_idempotent() {
+    let (addr, state) = start_mock_http().await;
+    let client = create_test_http_client(addr);
+
+    client.connect().await.unwrap();
+    let after_first = state.login_count.load(std::sync::atomic::Ordering::Relaxed);
+    assert_eq!(after_first, 1);
+
+    client.connect().await.unwrap();
+    let after_second = state.login_count.load(std::sync::atomic::Ordering::Relaxed);
+    assert_eq!(
+        after_second, 1,
+        "second connect on a live client must not re-login"
+    );
+}
+
+/// Concurrent `connect()` calls must serialise under the connect lock so the
+/// venue sees exactly one login regardless of how many tasks raced.
+#[rstest]
+#[tokio::test]
+async fn test_http_client_connect_concurrent_calls_only_login_once() {
+    let (addr, state) = start_mock_http().await;
+    let client = std::sync::Arc::new(create_test_http_client(addr));
+
+    let mut handles = Vec::new();
+
+    for _ in 0..5 {
+        let c = std::sync::Arc::clone(&client);
+        handles.push(tokio::spawn(async move { c.connect().await }));
+    }
+
+    for h in handles {
+        h.await.unwrap().unwrap();
+    }
+
+    assert_eq!(
+        state.login_count.load(std::sync::atomic::Ordering::Relaxed),
+        1,
+        "concurrent connects must serialise to a single login round-trip"
+    );
+}
+
+/// After `disconnect()`, the client's cancellation token must be a fresh
+/// (uncancelled) instance so the next session can run new requests, while
+/// any holders of the prior token observe cancellation.
+#[rstest]
+#[tokio::test]
+async fn test_disconnect_cancels_and_refreshes_cancellation_token() {
+    let (addr, _state) = start_mock_http().await;
+    let client = create_test_http_client(addr);
+
+    client.connect().await.unwrap();
+    let pre = client.cancellation_token();
+    assert!(!pre.is_cancelled(), "fresh token must not be cancelled");
+
+    client.disconnect().await;
+
+    assert!(
+        pre.is_cancelled(),
+        "the pre-disconnect token must now be cancelled so any in-flight retries unblock"
+    );
+
+    let post = client.cancellation_token();
+    assert!(
+        !post.is_cancelled(),
+        "disconnect must install a fresh token for the next session"
+    );
+}
+
+/// `disconnect()` on a never-connected client is a no-op rather than an error
+/// so caller cleanup paths can be unconditional.
+#[rstest]
+#[tokio::test]
+async fn test_http_client_disconnect_when_never_connected_is_noop() {
+    let (addr, _state) = start_mock_http().await;
+    let client = create_test_http_client(addr);
+
+    client.disconnect().await;
+    assert!(!client.is_connected().await);
+    assert!(client.session_token().await.is_none());
+
+    client.disconnect().await;
+    assert!(!client.is_connected().await);
+}
+
+/// Server-side 5xx status codes exhaust retries and surface as
+/// `UnexpectedStatus` rather than being silently swallowed.
+#[rstest]
+#[tokio::test]
+async fn test_send_betting_unexpected_status_surfaces_error() {
+    let (addr, state) = start_mock_http().await;
+    state
+        .betting_status_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_LIST_MARKET_CATALOGUE.to_string(), 503);
+
+    let client = create_test_http_client(addr);
+    client.connect().await.unwrap();
+
+    let err = client
+        .send_betting::<Value, _>(METHOD_LIST_MARKET_CATALOGUE, &serde_json::json!({}))
+        .await
+        .expect_err("expected 5xx to surface as error after retries");
+
+    match err {
+        BetfairHttpError::UnexpectedStatus { status, .. } => {
+            assert_eq!(status, 503);
+        }
+        other => panic!("Expected UnexpectedStatus, was {other:?}"),
+    }
+}

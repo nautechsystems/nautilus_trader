@@ -657,19 +657,21 @@ export OKX_API_PASSPHRASE="your_demo_passphrase"
 
 ### Configuration
 
-Set `is_demo=True` in your client configuration:
+Set `environment=OKXEnvironment.DEMO` in your client configuration:
 
 ```python
+from nautilus_trader.core.nautilus_pyo3 import OKXEnvironment
+
 config = TradingNodeConfig(
     data_clients={
         OKX: OKXDataClientConfig(
-            is_demo=True,  # Enable demo mode
+            environment=OKXEnvironment.DEMO,
             # ... other config
         ),
     },
     exec_clients={
         OKX: OKXExecClientConfig(
-            is_demo=True,  # Enable demo mode
+            environment=OKXEnvironment.DEMO,
             # ... other config
         ),
     },
@@ -755,7 +757,7 @@ The OKX data client provides the following configuration options:
 | `api_key`                            | `None`      | Falls back to `OKX_API_KEY` environment variable when unset. |
 | `api_secret`                         | `None`      | Falls back to `OKX_API_SECRET` environment variable when unset. |
 | `api_passphrase`                     | `None`      | Falls back to `OKX_API_PASSPHRASE` environment variable when unset. |
-| `is_demo`                            | `False`                         | Connects to the OKX demo environment when `True`. |
+| `environment`                        | `None`                          | Environment enum (`LIVE` or `DEMO`). |
 | `http_timeout_secs`                  | `60`                            | Request timeout (seconds) for REST market data calls. |
 | `max_retries`                        | `3`                             | Maximum retry attempts for recoverable REST errors. |
 | `retry_delay_initial_ms`             | `1,000`                         | Initial delay (milliseconds) before retrying a failed request. |
@@ -778,9 +780,9 @@ The OKX execution client provides the following configuration options:
 | `api_key`                  | `None`      | Falls back to `OKX_API_KEY` environment variable when unset. |
 | `api_secret`               | `None`      | Falls back to `OKX_API_SECRET` environment variable when unset. |
 | `api_passphrase`           | `None`      | Falls back to `OKX_API_PASSPHRASE` environment variable when unset. |
+| `environment`              | `None`      | Environment enum (`LIVE` or `DEMO`). |
 | `margin_mode`              | `None`      | Margin mode for derivatives trading (`ISOLATED` or `CROSS`). Only applies to SWAP/FUTURES/OPTIONS. Defaults to `ISOLATED` if not specified. |
 | `use_spot_margin`          | `False`     | Enables margin/leverage for SPOT trading. When `True`, uses `isolated` or `cross` trade mode (determined by `margin_mode`). When `False`, uses `cash` trade mode (no leverage). Only applies to SPOT instruments. |
-| `is_demo`                  | `False`     | Connects to the OKX demo trading environment. |
 | `http_timeout_secs`        | `60`        | Request timeout (seconds) for REST trading calls. |
 | `use_fills_channel`        | `False`     | Subscribes to the dedicated fills channel (VIP5+ required) for lower‑latency fill reports. |
 | `use_mm_mass_cancel`       | `False`     | Uses the market‑maker bulk cancel endpoint when available; otherwise falls back to per‑order cancels. |
@@ -798,6 +800,7 @@ from nautilus_trader.adapters.okx import OKXDataClientConfig, OKXExecClientConfi
 from nautilus_trader.adapters.okx.factories import OKXLiveDataClientFactory, OKXLiveExecClientFactory
 from nautilus_trader.config import InstrumentProviderConfig, TradingNodeConfig
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType
+from nautilus_trader.core.nautilus_pyo3 import OKXEnvironment
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.live.node import TradingNode
@@ -810,10 +813,10 @@ config = TradingNodeConfig(
             api_secret=None,        # Will use OKX_API_SECRET env var
             api_passphrase=None,    # Will use OKX_API_PASSPHRASE env var
             base_url_http=None,
+            environment=OKXEnvironment.LIVE,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_types=(OKXInstrumentType.SWAP,),
             contract_types=(OKXContractType.LINEAR,),
-            is_demo=False,
         ),
     },
     exec_clients={
@@ -823,10 +826,10 @@ config = TradingNodeConfig(
             api_passphrase=None,
             base_url_http=None,
             base_url_ws=None,
+            environment=OKXEnvironment.LIVE,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_types=(OKXInstrumentType.SWAP,),
             contract_types=(OKXContractType.LINEAR,),
-            is_demo=False,
         ),
     },
 )

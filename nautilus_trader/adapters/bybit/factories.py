@@ -182,7 +182,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
 
         """
         product_types = config.product_types or BYBIT_ALL_PRODUCTS
-        env = _resolve_environment(config.environment, config.demo, config.testnet)
+        env = _resolve_environment(config.environment)
         client: nautilus_pyo3.BybitHttpClient = get_cached_bybit_http_client(
             environment=env,
             api_key=config.api_key,
@@ -250,7 +250,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
 
         """
         product_types = config.product_types or BYBIT_ALL_PRODUCTS
-        env = _resolve_environment(config.environment, config.demo, config.testnet)
+        env = _resolve_environment(config.environment)
         client: nautilus_pyo3.BybitHttpClient = get_cached_bybit_http_client(
             environment=env,
             api_key=config.api_key,

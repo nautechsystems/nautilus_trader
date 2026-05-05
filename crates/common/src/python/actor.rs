@@ -11,7 +11,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings for DataActor with complete command and event handler forwarding.
+//! Python bindings for `DataActor` with complete command and event handler forwarding.
 
 use std::{
     any::Any,
@@ -133,7 +133,7 @@ impl ImportableActorConfig {
     }
 }
 
-/// Inner state of PyDataActor, shared between Python wrapper and Rust registries.
+/// Inner state of `PyDataActor`, shared between Python wrapper and Rust registries.
 ///
 /// This type holds the actual actor state and implements all the actor traits.
 /// It is wrapped in `Rc<UnsafeCell<>>` to allow shared ownership between Python
@@ -529,7 +529,7 @@ fn dict_to_params(
     }
 }
 
-/// Python-facing wrapper for DataActor.
+/// Python-facing wrapper for `DataActor`.
 ///
 /// This wrapper holds shared ownership of `PyDataActorInner` via `Rc<UnsafeCell<>>`.
 /// Both Python (through this wrapper) and the global registries share the same
@@ -616,19 +616,19 @@ impl PyDataActor {
 
     /// Sets the Python instance reference for method dispatch.
     ///
-    /// This enables the PyDataActor to forward method calls (like `on_start`, `on_stop`)
-    /// to the original Python instance that contains this PyDataActor. This is essential
+    /// This enables the `PyDataActor` to forward method calls (like `on_start`, `on_stop`)
+    /// to the original Python instance that contains this `PyDataActor`. This is essential
     /// for Python inheritance to work correctly, allowing Python subclasses to override
-    /// DataActor methods and have them called by the Rust system.
+    /// `DataActor` methods and have them called by the Rust system.
     pub fn set_python_instance(&mut self, py_obj: Py<PyAny>) {
         self.inner_mut().py_self = Some(py_obj);
     }
 
-    /// Updates the actor_id in both the core config and the actor_id field.
+    /// Updates the `actor_id` in both the core config and the `actor_id` field.
     ///
     /// This method is only exposed for the Python actor to assist with configuration and should
     /// **never** be called post registration. Calling this after registration will cause
-    /// inconsistent state where the actor is registered under one ID but its internal actor_id
+    /// inconsistent state where the actor is registered under one ID but its internal `actor_id`
     /// field contains another, breaking message routing and lifecycle management.
     pub fn set_actor_id(&mut self, actor_id: ActorId) {
         let inner = self.inner_mut();
@@ -636,12 +636,12 @@ impl PyDataActor {
         inner.core.actor_id = actor_id;
     }
 
-    /// Updates the log_events setting in the core config.
+    /// Updates the `log_events` setting in the core config.
     pub fn set_log_events(&mut self, log_events: bool) {
         self.inner_mut().core.config.log_events = log_events;
     }
 
-    /// Updates the log_commands setting in the core config.
+    /// Updates the `log_commands` setting in the core config.
     pub fn set_log_commands(&mut self, log_commands: bool) {
         self.inner_mut().core.config.log_commands = log_commands;
     }

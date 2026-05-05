@@ -298,6 +298,11 @@ impl PyLogger {
             name: Ustr::from(name),
         }
     }
+
+    fn log_message(&self, level: LogLevel, color: Option<LogColor>, message: &str) {
+        let color = color.unwrap_or(LogColor::Normal);
+        logger::log(level, color, self.name, message);
+    }
 }
 
 #[pymethods]
@@ -319,31 +324,31 @@ impl PyLogger {
     /// Emit a TRACE level record.
     #[pyo3(name = "trace")]
     fn py_trace(&self, message: &str, color: Option<LogColor>) {
-        self._log(LogLevel::Trace, color, message);
+        self.log_message(LogLevel::Trace, color, message);
     }
 
     /// Emit a DEBUG level record.
     #[pyo3(name = "debug")]
     fn py_debug(&self, message: &str, color: Option<LogColor>) {
-        self._log(LogLevel::Debug, color, message);
+        self.log_message(LogLevel::Debug, color, message);
     }
 
     /// Emit an INFO level record.
     #[pyo3(name = "info")]
     fn py_info(&self, message: &str, color: Option<LogColor>) {
-        self._log(LogLevel::Info, color, message);
+        self.log_message(LogLevel::Info, color, message);
     }
 
     /// Emit a WARNING level record.
     #[pyo3(name = "warning")]
     fn py_warning(&self, message: &str, color: Option<LogColor>) {
-        self._log(LogLevel::Warning, color, message);
+        self.log_message(LogLevel::Warning, color, message);
     }
 
     /// Emit an ERROR level record.
     #[pyo3(name = "error")]
     fn py_error(&self, message: &str, color: Option<LogColor>) {
-        self._log(LogLevel::Error, color, message);
+        self.log_message(LogLevel::Error, color, message);
     }
 
     /// Emit an ERROR level record with the active Python exception info.
@@ -363,7 +368,7 @@ impl PyLogger {
             }
         }
 
-        self._log(LogLevel::Error, color, &full_msg);
+        self.log_message(LogLevel::Error, color, &full_msg);
     }
 
     /// Flush buffered log records.
@@ -372,8 +377,9 @@ impl PyLogger {
         log::logger().flush();
     }
 
-    fn _log(&self, level: LogLevel, color: Option<LogColor>, message: &str) {
-        let color = color.unwrap_or(LogColor::Normal);
-        logger::log(level, color, self.name, message);
+    /// Emit a log record at the given level (Python-facing helper).
+    #[pyo3(name = "_log")]
+    fn py_log(&self, level: LogLevel, color: Option<LogColor>, message: &str) {
+        self.log_message(level, color, message);
     }
 }

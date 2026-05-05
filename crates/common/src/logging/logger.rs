@@ -650,7 +650,7 @@ impl LogGuard {
     ///
     /// # Panics
     ///
-    /// Panics if the number of active LogGuards would exceed 255.
+    /// Panics if the number of active `LogGuard`s would exceed 255.
     #[must_use]
     pub fn new() -> Option<Self> {
         LOGGER_TX.get().map(|tx| {

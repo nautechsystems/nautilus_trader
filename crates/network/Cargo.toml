@@ -21,7 +21,7 @@ name = "nautilus_network"
 crate-type = ["rlib"]
 
 [features]
-default = []
+default = ["transport-sockudo"]
 extension-module = [
   "nautilus-core/extension-module",
   "python",
@@ -36,9 +36,10 @@ python = [
 simulation = ["dep:madsim", "nautilus-core/simulation"]
 turmoil = ["dep:turmoil"]
 # Backend selection for the WebSocket transport abstraction.
-# `tokio-tungstenite` is always compiled; `transport-sockudo` adds the
-# alternative `sockudo-ws` backend, selectable at runtime via
-# `WebSocketConfig.backend`.
+# `tokio-tungstenite` is always compiled; `transport-sockudo` (enabled by
+# default) adds the `sockudo-ws` backend, selectable at runtime via
+# `WebSocketConfig.backend`. Disable via `default-features = false` to drop
+# the sockudo dependency.
 transport-sockudo = ["dep:sockudo-ws"]
 
 [package.metadata.docs.rs]

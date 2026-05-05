@@ -23,6 +23,7 @@ import pandas as pd
 from nautilus_trader.adapters.binance import BINANCE_VENUE
 from nautilus_trader.adapters.binance import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -51,7 +52,7 @@ async def create_provider():
     client = get_cached_binance_http_client(
         clock=clock,
         account_type=BinanceAccountType.USDT_FUTURES,
-        is_testnet=True,
+        environment=BinanceEnvironment.TESTNET,
     )
 
     binance_provider = BinanceFuturesInstrumentProvider(

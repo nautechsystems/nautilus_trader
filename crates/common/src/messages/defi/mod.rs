@@ -117,7 +117,7 @@ impl DefiSubscribeCommand {
     /// # Panics
     ///
     /// Panics if the instrument ID's venue cannot be parsed as a valid blockchain venue
-    /// for Pool, PoolSwaps, PoolLiquidityUpdates, PoolFeeCollects, or PoolFlashEvents commands.
+    /// for `Pool`, `PoolSwaps`, `PoolLiquidityUpdates`, `PoolFeeCollects`, or `PoolFlashEvents` commands.
     pub fn blockchain(&self) -> Blockchain {
         match self {
             Self::Blocks(cmd) => cmd.chain,
@@ -204,7 +204,7 @@ impl DefiUnsubscribeCommand {
     /// # Panics
     ///
     /// Panics if the instrument ID's venue cannot be parsed as a valid blockchain venue
-    /// for Pool, PoolSwaps, PoolLiquidityUpdates, PoolFeeCollects, or PoolFlashEvents commands.
+    /// for `Pool`, `PoolSwaps`, `PoolLiquidityUpdates`, `PoolFeeCollects`, or `PoolFlashEvents` commands.
     pub fn blockchain(&self) -> Blockchain {
         match self {
             Self::Blocks(cmd) => cmd.chain,

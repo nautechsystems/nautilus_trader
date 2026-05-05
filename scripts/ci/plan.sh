@@ -11,6 +11,16 @@ set -euo pipefail
 #   EVENT_NAME   - github.event_name (push or pull_request)
 #   BASE_REF     - github.event.pull_request.base.ref (PRs only, e.g. "develop")
 #   BEFORE_SHA   - github.event.before (push only, previous HEAD)
+#
+# Out-of-scope paths (treated as no-ops):
+#   - docs/                                 documentation only
+#   - Makefile                              tooling: CI invokes named targets
+#                                           explicitly, so a broken target
+#                                           fails its caller rather than
+#                                           silently skewing the build
+#   - .github/workflows/<not build*>.yml    scheduled or independent workflows
+#                                           that build.yml never triggers
+#                                           (nightly-*, dst, performance, ...)
 
 run_all() {
   echo "run_tests=true" >> "$GITHUB_OUTPUT"
@@ -50,8 +60,10 @@ code_changed=0
 rust_changed=0
 while IFS= read -r file; do
   [[ -z "$file" ]] && continue
-  # Skip docs subtree
+  # Out-of-scope paths (see header for rationale)
   [[ "$file" =~ ^docs/ ]] && continue
+  [[ "$file" == "Makefile" ]] && continue
+  [[ "$file" =~ ^\.github/workflows/ && ! "$file" =~ ^\.github/workflows/build ]] && continue
   code_changed=1
   # Rust, Cython, cargo config, or build infrastructure means full Rust tests
   [[ "$file" =~ \.(rs|pyx|pxd)$ ]] && rust_changed=1
@@ -60,7 +72,6 @@ while IFS= read -r file; do
   [[ "$file" =~ ^\.cargo/ ]] && rust_changed=1
   [[ "$file" =~ ^crates/ ]] && rust_changed=1
   [[ "$file" =~ ^schema/ ]] && rust_changed=1
-  [[ "$file" == "Makefile" ]] && rust_changed=1
   [[ "$file" =~ ^\.github/ ]] && rust_changed=1
 done <<< "$changed_files"
 

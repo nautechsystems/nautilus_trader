@@ -134,11 +134,11 @@ config = TradingNodeConfig(
     data_clients={
         "BINANCE_SPOT": BinanceDataClientConfig(
             account_type=BinanceAccountType.SPOT,
-            testnet=False,
+            environment=BinanceEnvironment.LIVE,
         ),
         "BINANCE_FUTURES": BinanceDataClientConfig(
             account_type=BinanceAccountType.USDT_FUTURES,
-            testnet=False,
+            environment=BinanceEnvironment.LIVE,
         ),
     },
 
@@ -146,11 +146,11 @@ config = TradingNodeConfig(
     exec_clients={
         "BINANCE_SPOT": BinanceExecClientConfig(
             account_type=BinanceAccountType.SPOT,
-            testnet=False,
+            environment=BinanceEnvironment.LIVE,
         ),
         "BINANCE_FUTURES": BinanceExecClientConfig(
             account_type=BinanceAccountType.USDT_FUTURES,
-            testnet=False,
+            environment=BinanceEnvironment.LIVE,
         ),
     },
 )

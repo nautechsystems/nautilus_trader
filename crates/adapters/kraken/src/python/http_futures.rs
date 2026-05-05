@@ -61,7 +61,7 @@ impl KrakenFuturesHttpClient {
         let environment = if demo {
             KrakenEnvironment::Demo
         } else {
-            KrakenEnvironment::Mainnet
+            KrakenEnvironment::Live
         };
 
         if let Some(cred) = KrakenCredential::resolve_futures(api_key, api_secret, demo) {

@@ -61,7 +61,7 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use crate::{
-    matching_core::{MatchAction, OrderMatchInfo, OrderMatchingCore},
+    matching_core::{MatchAction, OrderMatchingCore, RestingOrder},
     matching_engine::{config::OrderMatchingEngineConfig, ids_generator::IdsGenerator},
     models::{
         fee::{FeeModel, FeeModelAny},
@@ -120,6 +120,7 @@ pub struct OrderMatchingEngine {
     prev_ask_size_raw: QuantityRaw,
     last_quote_bid: Option<Price>,
     last_quote_ask: Option<Price>,
+    precision_mismatch_streak: u32,
     tob_initialized: bool,
     instrument_close: Option<InstrumentClose>,
     settlement_price: Option<Price>,
@@ -202,6 +203,7 @@ impl OrderMatchingEngine {
             prev_ask_size_raw: 0,
             last_quote_bid: None,
             last_quote_ask: None,
+            precision_mismatch_streak: 0,
             tob_initialized: false,
             instrument_close: None,
             settlement_price: None,
@@ -256,6 +258,7 @@ impl OrderMatchingEngine {
         self.prev_ask_size_raw = 0;
         self.last_quote_bid = None;
         self.last_quote_ask = None;
+        self.precision_mismatch_streak = 0;
         self.tob_initialized = false;
         self.instrument_close = None;
         self.settlement_price = None;
@@ -921,23 +924,20 @@ impl OrderMatchingEngine {
 
     #[must_use]
     /// Returns all open bid orders managed by the matching core.
-    pub const fn get_open_bid_orders(&self) -> &[OrderMatchInfo] {
+    pub fn get_open_bid_orders(&self) -> Vec<RestingOrder> {
         self.core.get_orders_bid()
     }
 
     #[must_use]
     /// Returns all open ask orders managed by the matching core.
-    pub const fn get_open_ask_orders(&self) -> &[OrderMatchInfo] {
+    pub fn get_open_ask_orders(&self) -> Vec<RestingOrder> {
         self.core.get_orders_ask()
     }
 
     #[must_use]
     /// Returns all open orders from both bid and ask sides.
-    pub fn get_open_orders(&self) -> Vec<OrderMatchInfo> {
-        let mut orders = Vec::new();
-        orders.extend_from_slice(self.core.get_orders_bid());
-        orders.extend_from_slice(self.core.get_orders_ask());
-        orders
+    pub fn get_open_orders(&self) -> Vec<RestingOrder> {
+        self.core.get_orders()
     }
 
     #[must_use]
@@ -953,6 +953,69 @@ impl OrderMatchingEngine {
 
     pub fn set_fill_at_market(&mut self, value: bool) {
         self.fill_at_market = value;
+    }
+
+    /// Updates the instrument definition used by this matching engine.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `instrument.id()` does not match this engines instrument ID.
+    pub fn update_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
+        if instrument.id() != self.instrument.id() {
+            anyhow::bail!(
+                "Cannot update instrument {} with {}",
+                self.instrument.id(),
+                instrument.id()
+            );
+        }
+
+        let changed = instrument.price_increment() != self.instrument.price_increment()
+            || instrument.price_precision() != self.instrument.price_precision()
+            || instrument.size_precision() != self.instrument.size_precision();
+
+        if changed {
+            self.core
+                .update_price_increment(instrument.price_increment());
+            self.book.reset();
+            self.bid_consumption.clear();
+            self.ask_consumption.clear();
+            self.trade_consumption = 0;
+            self.queue_ahead.clear();
+            self.queue_excess.clear();
+            self.queue_pending.clear();
+            self.prev_bid_price_raw = 0;
+            self.prev_bid_size_raw = 0;
+            self.prev_ask_price_raw = 0;
+            self.prev_ask_size_raw = 0;
+            self.last_quote_bid = None;
+            self.last_quote_ask = None;
+            self.precision_mismatch_streak = 0;
+            self.tob_initialized = false;
+            self.target_bid = None;
+            self.target_ask = None;
+            self.target_last = None;
+            self.last_bar_bid = None;
+            self.last_bar_ask = None;
+            self.core.bid = None;
+            self.core.ask = None;
+            self.core.last = None;
+            self.core.is_bid_initialized = false;
+            self.core.is_ask_initialized = false;
+            self.core.is_last_initialized = false;
+            log::info!(
+                "Updated instrument {} (price_precision={} size_precision={})",
+                instrument.id(),
+                instrument.price_precision(),
+                instrument.size_precision()
+            );
+        }
+
+        self.instrument = instrument;
+
+        if changed {
+            self.drop_incompatible_core_orders();
+        }
+        Ok(())
     }
 
     fn check_price_precision(&self, actual: u8, field: &str) -> anyhow::Result<()> {
@@ -975,6 +1038,119 @@ impl OrderMatchingEngine {
             );
         }
         Ok(())
+    }
+
+    fn log_precision_mismatch(
+        &mut self,
+        data_type: &str,
+        instrument_id: InstrumentId,
+        err: &anyhow::Error,
+    ) {
+        self.precision_mismatch_streak = self.precision_mismatch_streak.saturating_add(1);
+        let streak = self.precision_mismatch_streak;
+
+        if streak <= 3 || streak.is_multiple_of(100) {
+            log::warn!(
+                "Skipping {data_type} for {instrument_id}: {err} \
+                 (consecutive_precision_mismatches={streak})"
+            );
+        }
+
+        if streak == 20 {
+            log::error!(
+                "Precision mismatches reached {streak} consecutive events for \
+                 {instrument_id}; check instrument update flow and upstream market data"
+            );
+        }
+    }
+
+    fn drop_incompatible_core_orders(&mut self) {
+        let client_order_ids: Vec<ClientOrderId> = self
+            .core
+            .iter_orders()
+            .filter(|order| {
+                !self.resting_order_matches_current_instrument(order)
+                    || !self.cached_order_matches_current_instrument(order.client_order_id)
+            })
+            .map(|order| order.client_order_id)
+            .collect();
+
+        for client_order_id in client_order_ids {
+            let order = self.cache.borrow().order(&client_order_id).cloned();
+            if let Some(order) = order
+                && (order.is_inflight() || order.is_open())
+            {
+                log::warn!(
+                    "Canceling order {client_order_id} after instrument update: \
+                     price, trigger price, or quantity is not compatible with {}",
+                    self.instrument.id()
+                );
+                self.cancel_order(&order, None);
+            } else {
+                let _ = self.core.delete_order(client_order_id);
+                self.cached_filled_qty.swap_remove(&client_order_id);
+            }
+        }
+    }
+
+    fn cached_order_matches_current_instrument(&self, client_order_id: ClientOrderId) -> bool {
+        self.cache
+            .borrow()
+            .order(&client_order_id)
+            .is_none_or(|order| {
+                Self::quantity_matches_precision(order.quantity(), self.instrument.size_precision())
+            })
+    }
+
+    fn resting_order_matches_current_instrument(&self, order: &RestingOrder) -> bool {
+        order
+            .limit_price
+            .is_none_or(|price| self.price_matches_current_instrument(price))
+            && order
+                .trigger_price
+                .is_none_or(|price| self.price_matches_current_instrument(price))
+    }
+
+    fn price_matches_current_instrument(&self, price: Price) -> bool {
+        Self::price_matches_precision(price, self.instrument.price_precision())
+            && Self::price_matches_tick(price, self.instrument.price_increment())
+    }
+
+    fn price_matches_precision(price: Price, precision: u8) -> bool {
+        let precision_diff = FIXED_PRECISION.saturating_sub(precision);
+        let scale = PriceRaw::pow(10, u32::from(precision_diff));
+        price.raw % scale == 0
+    }
+
+    fn price_matches_tick(price: Price, increment: Price) -> bool {
+        let increment_raw = increment.raw.abs();
+        increment_raw == 0 || price.raw % increment_raw == 0
+    }
+
+    fn quantity_matches_precision(quantity: Quantity, precision: u8) -> bool {
+        let precision_diff = FIXED_PRECISION.saturating_sub(precision);
+        let scale = QuantityRaw::pow(10, u32::from(precision_diff));
+        quantity.raw.is_multiple_of(scale)
+    }
+
+    fn normalize_price_for_current_instrument(&self, price: Price) -> Option<Price> {
+        if !self.price_matches_current_instrument(price) {
+            return None;
+        }
+
+        Some(Price::from_raw(
+            price.raw,
+            self.instrument.price_precision(),
+        ))
+    }
+
+    fn normalize_quantity_for_current_instrument(&self, quantity: Quantity) -> Option<Quantity> {
+        let precision = self.instrument.size_precision();
+        if !Self::quantity_matches_precision(quantity, precision) {
+            return None;
+        }
+
+        Some(Quantity::from_raw(quantity.raw, precision))
     }
 
     /// Process the venues market for the given order book delta.
@@ -1172,19 +1348,30 @@ impl OrderMatchingEngine {
     /// # Panics
     ///
     /// - If updating the order book with the quote tick fails.
-    /// - If bid/ask price precision does not match the instrument.
-    /// - If bid/ask size precision does not match the instrument.
     pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
         log::debug!("Processing {quote}");
 
-        self.check_price_precision(quote.bid_price.precision, "bid_price")
-            .unwrap();
-        self.check_price_precision(quote.ask_price.precision, "ask_price")
-            .unwrap();
-        self.check_size_precision(quote.bid_size.precision, "bid_size")
-            .unwrap();
-        self.check_size_precision(quote.ask_size.precision, "ask_size")
-            .unwrap();
+        if let Err(e) = self.check_price_precision(quote.bid_price.precision, "bid_price") {
+            self.log_precision_mismatch("quote tick", quote.instrument_id, &e);
+            return;
+        }
+
+        if let Err(e) = self.check_price_precision(quote.ask_price.precision, "ask_price") {
+            self.log_precision_mismatch("quote tick", quote.instrument_id, &e);
+            return;
+        }
+
+        if let Err(e) = self.check_size_precision(quote.bid_size.precision, "bid_size") {
+            self.log_precision_mismatch("quote tick", quote.instrument_id, &e);
+            return;
+        }
+
+        if let Err(e) = self.check_size_precision(quote.ask_size.precision, "ask_size") {
+            self.log_precision_mismatch("quote tick", quote.instrument_id, &e);
+            return;
+        }
+
+        self.precision_mismatch_streak = 0;
 
         if self.book_type == BookType::L1_MBP {
             // Stale update: skip book mutation and cache updates
@@ -1228,8 +1415,6 @@ impl OrderMatchingEngine {
     /// # Panics
     ///
     /// - If the bar type configuration is missing a time delta.
-    /// - If bar OHLC price precision does not match the instrument.
-    /// - If bar volume precision does not match the instrument.
     pub fn process_bar(&mut self, bar: &Bar) {
         log::debug!("Processing {bar}");
 
@@ -1244,16 +1429,32 @@ impl OrderMatchingEngine {
             return;
         }
 
-        self.check_price_precision(bar.open.precision, "bar open")
-            .unwrap();
-        self.check_price_precision(bar.high.precision, "bar high")
-            .unwrap();
-        self.check_price_precision(bar.low.precision, "bar low")
-            .unwrap();
-        self.check_price_precision(bar.close.precision, "bar close")
-            .unwrap();
-        self.check_size_precision(bar.volume.precision, "bar volume")
-            .unwrap();
+        if let Err(e) = self.check_price_precision(bar.open.precision, "bar open") {
+            self.log_precision_mismatch("bar", bar.instrument_id(), &e);
+            return;
+        }
+
+        if let Err(e) = self.check_price_precision(bar.high.precision, "bar high") {
+            self.log_precision_mismatch("bar", bar.instrument_id(), &e);
+            return;
+        }
+
+        if let Err(e) = self.check_price_precision(bar.low.precision, "bar low") {
+            self.log_precision_mismatch("bar", bar.instrument_id(), &e);
+            return;
+        }
+
+        if let Err(e) = self.check_price_precision(bar.close.precision, "bar close") {
+            self.log_precision_mismatch("bar", bar.instrument_id(), &e);
+            return;
+        }
+
+        if let Err(e) = self.check_size_precision(bar.volume.precision, "bar volume") {
+            self.log_precision_mismatch("bar", bar.instrument_id(), &e);
+            return;
+        }
+
+        self.precision_mismatch_streak = 0;
 
         let execution_bar_type =
             if let Some(execution_bar_type) = self.execution_bar_types.get(&bar.instrument_id()) {
@@ -1478,15 +1679,20 @@ impl OrderMatchingEngine {
     /// # Panics
     ///
     /// - If updating the order book with the trade tick fails.
-    /// - If trade price precision does not match the instrument.
-    /// - If trade size precision does not match the instrument.
     pub fn process_trade_tick(&mut self, trade: &TradeTick) {
         log::debug!("Processing {trade}");
 
-        self.check_price_precision(trade.price.precision, "trade price")
-            .unwrap();
-        self.check_size_precision(trade.size.precision, "trade size")
-            .unwrap();
+        if let Err(e) = self.check_price_precision(trade.price.precision, "trade price") {
+            self.log_precision_mismatch("trade tick", trade.instrument_id, &e);
+            return;
+        }
+
+        if let Err(e) = self.check_size_precision(trade.size.precision, "trade size") {
+            self.log_precision_mismatch("trade tick", trade.instrument_id, &e);
+            return;
+        }
+
+        self.precision_mismatch_streak = 0;
 
         let price_raw = trade.price.raw;
 
@@ -1694,7 +1900,7 @@ impl OrderMatchingEngine {
         let close = self.instrument_close.take().unwrap();
         log::info!("{} reached expiration", self.instrument.id());
 
-        let open_orders: Vec<OrderMatchInfo> = self.get_open_orders();
+        let open_orders: Vec<RestingOrder> = self.get_open_orders();
         for order_info in &open_orders {
             let order = {
                 let cache = self.cache.borrow();
@@ -2120,25 +2326,26 @@ impl OrderMatchingEngine {
             None,
         );
 
-        // Only persist changes if update succeeded and order is still open
-        if update_success && order.is_open() {
-            let _ = self.core.delete_order(command.client_order_id);
-            let match_info = OrderMatchInfo::new(
-                order.client_order_id(),
-                order.order_side().as_specified(),
-                order.order_type(),
-                order.trigger_price(),
-                order.price(),
-                true,
-            );
-            self.core.add_order(match_info);
+        if !update_success {
+            return;
+        }
 
-            if self.config.queue_position
-                && let Some(new_price) = order.price()
-            {
-                self.snapshot_queue_position(&order, new_price);
-                self.queue_excess.swap_remove(&order.client_order_id());
-            }
+        // Local `order` is pre-event; resync from the cache for fresh state
+        let Some(refreshed) = self.resync_core_entry(command.client_order_id) else {
+            return;
+        };
+
+        // Skip queue reset on rejected modifies to preserve accrued position
+        let price_changed = refreshed.price() != order.price()
+            || refreshed.trigger_price() != order.trigger_price();
+
+        if price_changed
+            && refreshed.is_open()
+            && self.config.queue_position
+            && let Some(new_price) = refreshed.price()
+        {
+            self.snapshot_queue_position(&refreshed, new_price);
+            self.queue_excess.swap_remove(&refreshed.client_order_id());
         }
     }
 
@@ -2217,6 +2424,46 @@ impl OrderMatchingEngine {
         self.cached_filled_qty.swap_remove(&client_order_id);
     }
 
+    fn resync_core_entry(&mut self, client_order_id: ClientOrderId) -> Option<OrderAny> {
+        let order = self.cache.borrow().order(&client_order_id).cloned()?;
+
+        // Gate on `is_closed`, not `is_open`: cache may transiently hold the
+        // order in `Submitted` (process_limit_order accepts before cache add)
+        if order.is_closed() {
+            let _ = self.core.delete_order(client_order_id);
+            return Some(order);
+        }
+
+        let is_activated = match &order {
+            OrderAny::TrailingStopMarket(o) => o.is_activated,
+            OrderAny::TrailingStopLimit(o) => o.is_activated,
+            _ => true,
+        };
+
+        let new_match_info = RestingOrder::new(
+            order.client_order_id(),
+            order.order_side().as_specified(),
+            order.order_type(),
+            order.trigger_price(),
+            order.price(),
+            is_activated,
+        );
+
+        // Skip the delete+add when unchanged to preserve FIFO at the level
+        let unchanged = self
+            .core
+            .get_order(client_order_id)
+            .is_some_and(|existing| *existing == new_match_info);
+
+        if unchanged {
+            return Some(order);
+        }
+
+        let _ = self.core.delete_order(client_order_id);
+        self.core.add_order(new_match_info);
+        Some(order)
+    }
+
     /// Processes a batch cancel orders command.
     pub fn process_batch_cancel(&mut self, command: &BatchCancelOrders, account_id: AccountId) {
         for order in &command.cancels {
@@ -2228,9 +2475,13 @@ impl OrderMatchingEngine {
         if order.time_in_force() == TimeInForce::AtTheOpen
             || order.time_in_force() == TimeInForce::AtTheClose
         {
-            log::error!(
-                "Market auction for the time in force {} is currently not supported",
-                order.time_in_force()
+            self.generate_order_rejected(
+                order,
+                format!(
+                    "time in force {} is not currently supported",
+                    order.time_in_force()
+                )
+                .into(),
             );
             return;
         }
@@ -2264,6 +2515,20 @@ impl OrderMatchingEngine {
     }
 
     fn process_limit_order(&mut self, order: &mut OrderAny) {
+        if order.time_in_force() == TimeInForce::AtTheOpen
+            || order.time_in_force() == TimeInForce::AtTheClose
+        {
+            self.generate_order_rejected(
+                order,
+                format!(
+                    "time in force {} is not currently supported",
+                    order.time_in_force()
+                )
+                .into(),
+            );
+            return;
+        }
+
         let limit_px = order.price().expect("Limit order must have a price");
         if order.is_post_only()
             && self
@@ -2305,7 +2570,7 @@ impl OrderMatchingEngine {
                 .borrow_mut()
                 .add_order(order.clone(), None, None, false)
                 .is_err()
-                && let Err(e) = self.cache.borrow_mut().update_order(order)
+                && let Err(e) = self.cache.borrow_mut().replace_order(order)
             {
                 log::debug!("Failed to update order in cache: {e}");
             }
@@ -2710,13 +2975,9 @@ impl OrderMatchingEngine {
             }
         }
 
-        let orders_bid = self.core.get_orders_bid().to_vec();
-        let orders_ask = self.core.get_orders_ask().to_vec();
+        self.activate_trailing_stops();
 
-        self.iterate_orders(timestamp_ns, &orders_bid);
-        self.iterate_orders(timestamp_ns, &orders_ask);
-
-        // Restore core bid/ask to book values after order iteration
+        // Restore core bid/ask to book values after trailing-stop activation
         // (during trade execution, transient override was used for matching)
         self.core.bid = self.book.best_bid_price();
         self.core.ask = self.book.best_ask_price();
@@ -2772,7 +3033,7 @@ impl OrderMatchingEngine {
                         inner.activation_price = Some(p);
                         inner.set_activated();
 
-                        if let Err(e) = self.cache.borrow_mut().update_order(order) {
+                        if let Err(e) = self.cache.borrow_mut().replace_order(order) {
                             log::error!("Failed to update order: {e}");
                         }
                         return true;
@@ -2790,7 +3051,7 @@ impl OrderMatchingEngine {
                 if hit {
                     inner.set_activated();
 
-                    if let Err(e) = self.cache.borrow_mut().update_order(order) {
+                    if let Err(e) = self.cache.borrow_mut().replace_order(order) {
                         log::error!("Failed to update order: {e}");
                     }
                 }
@@ -2814,7 +3075,7 @@ impl OrderMatchingEngine {
                         inner.activation_price = Some(p);
                         inner.set_activated();
 
-                        if let Err(e) = self.cache.borrow_mut().update_order(order) {
+                        if let Err(e) = self.cache.borrow_mut().replace_order(order) {
                             log::error!("Failed to update order: {e}");
                         }
                         return true;
@@ -2832,7 +3093,7 @@ impl OrderMatchingEngine {
                 if hit {
                     inner.set_activated();
 
-                    if let Err(e) = self.cache.borrow_mut().update_order(order) {
+                    if let Err(e) = self.cache.borrow_mut().replace_order(order) {
                         log::error!("Failed to update order: {e}");
                     }
                 }
@@ -2843,46 +3104,71 @@ impl OrderMatchingEngine {
     }
 
     fn expire_gtd_orders(&mut self, timestamp_ns: UnixNanos) {
-        for match_info in self.core.get_orders() {
-            let order = match self
-                .cache
-                .borrow()
-                .order(&match_info.client_order_id)
-                .cloned()
-            {
-                Some(order) => order,
-                None => continue,
-            };
+        // Collect just the orders to expire by borrowing the core's iterator
+        // (avoids the per-tick clone of every resting order). The cache lookup
+        // through `RefCell::borrow` is compatible with the `&self.core` borrow.
+        let to_expire: Vec<OrderAny> = self
+            .core
+            .iter_orders()
+            .filter_map(|match_info| {
+                let order = self
+                    .cache
+                    .borrow()
+                    .order(&match_info.client_order_id)
+                    .cloned()?;
 
-            if order.is_closed() {
-                continue;
-            }
+                if order.is_closed() {
+                    return None;
+                }
 
-            if order
-                .expire_time()
-                .is_some_and(|expire_ns| timestamp_ns >= expire_ns)
-            {
-                let _ = self.core.delete_order(match_info.client_order_id);
-                self.cached_filled_qty
-                    .swap_remove(&match_info.client_order_id);
-                self.expire_order(&order);
-            }
+                order
+                    .expire_time()
+                    .filter(|expire_ns| timestamp_ns >= *expire_ns)
+                    .map(|_| order)
+            })
+            .collect();
+
+        for order in to_expire {
+            let id = order.client_order_id();
+            let _ = self.core.delete_order(id);
+            self.cached_filled_qty.swap_remove(&id);
+            self.expire_order(&order);
         }
     }
 
-    fn iterate_orders(&mut self, timestamp_ns: UnixNanos, orders: &[OrderMatchInfo]) {
-        for match_info in orders {
-            let order = match self
-                .cache
-                .borrow()
-                .order(&match_info.client_order_id)
-                .cloned()
-            {
+    fn activate_trailing_stops(&mut self) {
+        // Restore market values from any transient overrides set during fill processing
+        if let Some(target_bid) = self.target_bid.take() {
+            self.core.bid = Some(target_bid);
+        }
+
+        if let Some(target_ask) = self.target_ask.take() {
+            self.core.ask = Some(target_ask);
+        }
+
+        if let Some(target_last) = self.target_last.take() {
+            self.core.last = Some(target_last);
+        }
+
+        // Collect ids first to drop the core borrow before the delete+add below
+        let trailing_ids: Vec<ClientOrderId> = self
+            .core
+            .iter_orders()
+            .filter(|m| {
+                matches!(
+                    m.order_type,
+                    OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+                )
+            })
+            .map(|m| m.client_order_id)
+            .collect();
+
+        for client_order_id in trailing_ids {
+            let order = match self.cache.borrow().order(&client_order_id).cloned() {
                 Some(order) => order,
                 None => {
                     log::warn!(
-                        "Order {} not found in cache during iteration, skipping",
-                        match_info.client_order_id
+                        "Order {client_order_id} not found in cache during trailing-stop activation, skipping",
                     );
                     continue;
                 }
@@ -2892,78 +3178,22 @@ impl OrderMatchingEngine {
                 continue;
             }
 
-            if self.config.support_gtd_orders
-                && order
-                    .expire_time()
-                    .is_some_and(|expire_timestamp_ns| timestamp_ns >= expire_timestamp_ns)
-            {
-                let _ = self.core.delete_order(match_info.client_order_id);
-                self.cached_filled_qty
-                    .swap_remove(&match_info.client_order_id);
-                self.expire_order(&order);
+            let mut any = order;
+
+            if !self.maybe_activate_trailing_stop(
+                &mut any,
+                self.core.bid,
+                self.core.ask,
+                self.core.last,
+            ) {
                 continue;
             }
 
-            if matches!(
-                match_info.order_type,
-                OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
-            ) {
-                let mut any = order;
+            self.update_trailing_stop_order(&any);
 
-                if !self.maybe_activate_trailing_stop(
-                    &mut any,
-                    self.core.bid,
-                    self.core.ask,
-                    self.core.last,
-                ) {
-                    continue;
-                }
-
-                self.update_trailing_stop_order(&any);
-
-                // Persist the activated/updated trailing stop back to the core
-                let _ = self.core.delete_order(match_info.client_order_id);
-                let updated_match_info = OrderMatchInfo::new(
-                    any.client_order_id(),
-                    any.order_side().as_specified(),
-                    any.order_type(),
-                    any.trigger_price(),
-                    any.price(),
-                    match &any {
-                        OrderAny::TrailingStopMarket(o) => o.is_activated,
-                        OrderAny::TrailingStopLimit(o) => o.is_activated,
-                        _ => true,
-                    },
-                );
-                self.core.add_order(updated_match_info);
-            }
-
-            // Move market back to targets
-            if let Some(target_bid) = self.target_bid {
-                self.core.bid = Some(target_bid);
-                self.target_bid = None;
-            }
-
-            if let Some(target_bid) = self.target_bid.take() {
-                self.core.bid = Some(target_bid);
-                self.target_bid = None;
-            }
-
-            if let Some(target_ask) = self.target_ask.take() {
-                self.core.ask = Some(target_ask);
-                self.target_ask = None;
-            }
-
-            if let Some(target_last) = self.target_last.take() {
-                self.core.last = Some(target_last);
-                self.target_last = None;
-            }
+            // Re-key from the cache so any new trigger/limit shows on next iterate
+            self.resync_core_entry(client_order_id);
         }
-
-        // Reset any targets after iteration
-        self.target_bid = None;
-        self.target_ask = None;
-        self.target_last = None;
     }
 
     fn determine_limit_price_and_volume(&mut self, order: &OrderAny) -> Vec<(Price, Quantity)> {
@@ -3531,8 +3761,15 @@ impl OrderMatchingEngine {
     ) {
         if order.time_in_force() == TimeInForce::Fok {
             let mut total_size = Quantity::zero(order.quantity().precision);
-            for (_fill_px, fill_qty) in fills {
-                total_size = total_size.add(*fill_qty);
+
+            for &(fill_px, fill_qty) in fills {
+                if self
+                    .normalize_price_for_current_instrument(fill_px)
+                    .is_some()
+                    && let Some(fill_qty) = self.normalize_quantity_for_current_instrument(fill_qty)
+                {
+                    total_size = total_size.add(fill_qty);
+                }
             }
 
             if order.leaves_qty() > total_size {
@@ -3564,24 +3801,16 @@ impl OrderMatchingEngine {
 
         let mut initial_market_to_limit_fill = false;
 
-        for &(mut fill_px, ref fill_qty) in fills {
-            assert!(
-                (fill_px.precision == self.instrument.price_precision()),
-                "Invalid price precision for fill price {} when instrument price precision is {}.\
-                     Check that the data price precision matches the {} instrument",
-                fill_px.precision,
-                self.instrument.price_precision(),
-                self.instrument.id()
-            );
+        for &(fill_px, fill_qty) in fills {
+            let Some(mut fill_px) = self.normalize_fill_price(fill_px, order.client_order_id())
+            else {
+                continue;
+            };
 
-            assert!(
-                (fill_qty.precision == self.instrument.size_precision()),
-                "Invalid quantity precision for fill quantity {} when instrument size precision is {}.\
-                     Check that the data quantity precision matches the {} instrument",
-                fill_qty.precision,
-                self.instrument.size_precision(),
-                self.instrument.id()
-            );
+            let Some(fill_qty) = self.normalize_fill_quantity(fill_qty, order.client_order_id())
+            else {
+                continue;
+            };
 
             if order.filled_qty() == Quantity::zero(order.filled_qty().precision)
                 && order.order_type() == OrderType::MarketToLimit
@@ -3600,12 +3829,12 @@ impl OrderMatchingEngine {
             // Check reduce only order
             // If the incoming simulated fill would exceed the position when reduce-only is honored,
             // clamp the effective fill size to the adjusted (remaining position) quantity.
-            let mut effective_fill_qty = *fill_qty;
+            let mut effective_fill_qty = fill_qty;
 
             if self.config.use_reduce_only
                 && order.is_reduce_only()
                 && let Some(position) = &position
-                && *fill_qty > position.quantity
+                && fill_qty > position.quantity
             {
                 if position.quantity == Quantity::zero(position.quantity.precision) {
                     // Done
@@ -3671,6 +3900,41 @@ impl OrderMatchingEngine {
             // we will implement more detailed fill modeling.
             todo!("Exhausted simulated book volume")
         }
+    }
+
+    fn normalize_fill_price(
+        &self,
+        fill_px: Price,
+        client_order_id: ClientOrderId,
+    ) -> Option<Price> {
+        let normalized = self.normalize_price_for_current_instrument(fill_px);
+        if normalized.is_none() {
+            log::warn!(
+                "Skipping fill for {client_order_id}: fill price {fill_px} is not compatible \
+                 with {} price_precision={} price_increment={}",
+                self.instrument.id(),
+                self.instrument.price_precision(),
+                self.instrument.price_increment()
+            );
+        }
+        normalized
+    }
+
+    fn normalize_fill_quantity(
+        &self,
+        fill_qty: Quantity,
+        client_order_id: ClientOrderId,
+    ) -> Option<Quantity> {
+        let normalized = self.normalize_quantity_for_current_instrument(fill_qty);
+        if normalized.is_none() {
+            log::warn!(
+                "Skipping fill for {client_order_id}: fill quantity {fill_qty} is not compatible \
+                 with {} size_precision={}",
+                self.instrument.id(),
+                self.instrument.size_precision()
+            );
+        }
+        normalized
     }
 
     fn fill_order(
@@ -4160,7 +4424,7 @@ impl OrderMatchingEngine {
             }
         }
 
-        let match_info = OrderMatchInfo::new(
+        let match_info = RestingOrder::new(
             order.client_order_id(),
             order.order_side().as_specified(),
             order.order_type(),

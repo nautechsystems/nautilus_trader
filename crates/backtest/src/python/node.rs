@@ -18,8 +18,15 @@
 use std::collections::HashMap;
 
 use nautilus_common::{actor::data_actor::ImportableActorConfig, python::actor::PyDataActor};
+#[cfg(feature = "examples")]
+use nautilus_core::python::to_pytype_err;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::identifiers::{ActorId, ComponentId, StrategyId};
+#[cfg(feature = "examples")]
+use nautilus_trading::examples::strategies::{
+    DeltaNeutralVol, DeltaNeutralVolConfig, EmaCross, EmaCrossConfig, GridMarketMaker,
+    GridMarketMakerConfig, HurstVpinDirectional, HurstVpinDirectionalConfig,
+};
 use nautilus_trading::{
     ImportableStrategyConfig,
     python::strategy::{PyStrategy, PyStrategyInner},
@@ -387,6 +394,57 @@ impl BacktestNode {
 
         log::info!("Registered Python strategy {strategy_id}");
         Ok(())
+    }
+
+    /// Adds a native Rust strategy from its config to the engine for the given run config.
+    ///
+    /// The config type determines which built-in strategy is constructed.
+    /// All execution happens in Rust; Python is the configuration layer.
+    ///
+    /// Custom native Rust strategies require the native strategy plugin API.
+    #[pyo3(name = "add_native_strategy")]
+    fn py_add_native_strategy(
+        &mut self,
+        run_config_id: &str,
+        config: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        #[cfg(feature = "examples")]
+        {
+            let engine = self.get_engine_mut(run_config_id).ok_or_else(|| {
+                to_pyruntime_err(format!("No engine for run config '{run_config_id}'"))
+            })?;
+
+            if let Ok(config) = config.extract::<EmaCrossConfig>() {
+                engine
+                    .add_strategy(EmaCross::from_config(config))
+                    .map_err(to_pyruntime_err)
+            } else if let Ok(config) = config.extract::<GridMarketMakerConfig>() {
+                engine
+                    .add_strategy(GridMarketMaker::new(config))
+                    .map_err(to_pyruntime_err)
+            } else if let Ok(config) = config.extract::<DeltaNeutralVolConfig>() {
+                engine
+                    .add_strategy(DeltaNeutralVol::new(config))
+                    .map_err(to_pyruntime_err)
+            } else if let Ok(config) = config.extract::<HurstVpinDirectionalConfig>() {
+                engine
+                    .add_strategy(HurstVpinDirectional::new(config))
+                    .map_err(to_pyruntime_err)
+            } else {
+                let type_name = config.get_type().name()?;
+                Err(to_pytype_err(format!(
+                    "Unsupported native strategy config type: {type_name}",
+                )))
+            }
+        }
+
+        #[cfg(not(feature = "examples"))]
+        {
+            let _ = (run_config_id, config);
+            Err(to_pyruntime_err(
+                "add_native_strategy requires the `examples` feature",
+            ))
+        }
     }
 
     fn __repr__(&self) -> String {

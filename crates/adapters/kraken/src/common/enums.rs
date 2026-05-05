@@ -19,7 +19,7 @@ use nautilus_model::enums::{MarketStatusAction, OrderSide, OrderStatus, OrderTyp
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumString, FromRepr};
 
-/// Kraken API environment (mainnet or demo).
+/// Kraken API environment (live or demo).
 #[derive(
     Clone,
     Copy,
@@ -55,7 +55,7 @@ use strum::{AsRefStr, Display, EnumString, FromRepr};
 #[strum(ascii_case_insensitive, serialize_all = "lowercase")]
 pub enum KrakenEnvironment {
     #[default]
-    Mainnet,
+    Live,
     Demo,
 }
 

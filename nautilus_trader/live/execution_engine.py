@@ -1629,7 +1629,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 # Check for recent local activity to avoid race conditions with in-flight fills
                 local_activity = self._order_local_activity_ns.get(report.client_order_id)
                 if local_activity and (ts_now - local_activity) < self._open_check_threshold_ns:
-                    self._log.info(
+                    self._log.debug(
                         f"Deferring reconciliation for {report.client_order_id!r}: "
                         f"recent local activity ({(ts_now - local_activity) / 1_000_000:.0f}ms < "
                         f"threshold={self.open_check_threshold_ms}ms), "
@@ -3201,6 +3201,11 @@ class LiveExecutionEngine(ExecutionEngine):
         if report.order_status == OrderStatus.ACCEPTED:
             if order.status != OrderStatus.ACCEPTED:
                 self._generate_order_accepted(order, report)
+
+            # Detect deltas even when already accepted (e.g. venue-side reduce-only
+            # quantity reduction or priceMatch adjustment that we missed).
+            if self._should_update(order, report):
+                self._generate_order_updated(order, report)
 
             return True  # Reconciled
 

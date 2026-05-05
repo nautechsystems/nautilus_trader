@@ -34,14 +34,10 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
     environment : HyperliquidEnvironment, optional
         The Hyperliquid environment for the client (MAINNET or TESTNET).
         If ``None`` then defaults to MAINNET.
-        Takes precedence over ``testnet`` if set.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
     proxy_url : str, optional
         Optional proxy URL for HTTP and WebSocket transports.
-    testnet : bool, default False
-        If the client is connecting to the Hyperliquid testnet API.
-        Deprecated: use ``environment=HyperliquidEnvironment.TESTNET`` instead.
     http_timeout_secs : PositiveInt, default 10
         The timeout (seconds) for HTTP requests.
 
@@ -51,7 +47,6 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
     environment: HyperliquidEnvironment | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
-    testnet: bool = False
     http_timeout_secs: PositiveInt = 10
 
 
@@ -64,11 +59,11 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
     private_key : str, optional
         The Hyperliquid EVM private key.
         If ``None`` then will source the `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK`
-        environment variable (depending on the `testnet` setting).
+        environment variable based on `environment`.
     vault_address : str, optional
         The vault address for vault trading.
         If ``None`` then will source the `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT`
-        environment variable (depending on the `testnet` setting).
+        environment variable based on `environment`.
     account_address : str, optional
         The main account address when using an agent wallet (API sub-key).
         When set, this address is used for balance queries, position reports,
@@ -81,14 +76,10 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
     environment : HyperliquidEnvironment, optional
         The Hyperliquid environment for the client (MAINNET or TESTNET).
         If ``None`` then defaults to MAINNET.
-        Takes precedence over ``testnet`` if set.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
     proxy_url : str, optional
         Optional proxy URL for HTTP and WebSocket transports.
-    testnet : bool, default False
-        If the client is connecting to the Hyperliquid testnet API.
-        Deprecated: use ``environment=HyperliquidEnvironment.TESTNET`` instead.
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay_initial_ms : PositiveInt, optional
@@ -117,7 +108,6 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
     environment: HyperliquidEnvironment | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
-    testnet: bool = False
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None

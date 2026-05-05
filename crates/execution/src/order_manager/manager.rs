@@ -909,8 +909,7 @@ mod tests {
 
         let canceled_event =
             TestOrderEventStubs::canceled(&order, AccountId::from("ACCOUNT-001"), None);
-        order.apply(canceled_event).unwrap();
-        cache.borrow_mut().update_order(&order).unwrap();
+        order = cache.borrow_mut().update_order(&canceled_event).unwrap();
 
         assert!(cache.borrow().is_order_closed(&order.client_order_id()));
 

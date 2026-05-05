@@ -22,8 +22,7 @@ import logging
 from collections import OrderedDict
 from dataclasses import dataclass
 
-from nautilus_trader.adapters.polymarket.common.constants import SNAP_OVERFILL_ULPS
-from nautilus_trader.adapters.polymarket.common.constants import SNAP_UNDERFILL_ULPS
+from nautilus_trader.adapters.polymarket.common.constants import DUST_SNAP_THRESHOLD
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -90,7 +89,16 @@ class OrderFillTracker:
 
     def snap_fill_qty(self, venue_order_id: VenueOrderId, fill_qty: Quantity) -> Quantity:
         """
-        Snap a single fill qty to ``submitted_qty`` when the diff is dust.
+        Snap a single fill qty DOWN to ``submitted_qty`` when the venue reports dust
+        overfill (within ``DUST_SNAP_THRESHOLD``).
+
+        Overfill snapping is required because the engine rejects fills past
+        ``submitted_qty``. Underfill is intentionally left alone here: a single
+        partial fill that lands near ``submitted_qty`` might still be followed
+        by more matches, or the order might end up canceled with the dust
+        remaining as legitimate leaves. The ``check_dust_residual`` synthetic
+        fill mechanism handles the CLOB cent-tick truncation case at MATCHED
+        status, where the order's terminal state is known.
 
         See ``docs/integrations/polymarket.md`` (Fill quantity normalization).
 
@@ -99,16 +107,9 @@ class OrderFillTracker:
         if state is None:
             return fill_qty
         diff = float(state.submitted_qty) - float(fill_qty)
-        ulp = 10 ** (-state.size_precision)
-        if diff > 0.0:
-            tolerance = SNAP_UNDERFILL_ULPS * ulp
-        elif diff < 0.0:
-            tolerance = SNAP_OVERFILL_ULPS * ulp
-        else:
-            return fill_qty
-        if abs(diff) < tolerance:
+        if diff < 0.0 and abs(diff) < DUST_SNAP_THRESHOLD:
             log.info(
-                "Snapping fill qty %s -> %s (dust=%.6f)",
+                "Snapping overfill %s -> %s (dust=%+.6f)",
                 fill_qty,
                 state.submitted_qty,
                 diff,
@@ -148,8 +149,7 @@ class OrderFillTracker:
         if state is None:
             return None
         leaves = float(state.submitted_qty) - state.cumulative_filled
-        underfill_tolerance = SNAP_UNDERFILL_ULPS * (10 ** (-state.size_precision))
-        if 0.0 < leaves < underfill_tolerance:
+        if 0.0 < leaves < DUST_SNAP_THRESHOLD:
             log.info(
                 "Order %s MATCHED with dust residual %.6f -- "
                 "emitting synthetic fill to reach FILLED",
@@ -159,10 +159,10 @@ class OrderFillTracker:
             dust_qty = Quantity(leaves, state.size_precision)
             px = max(0.0, state.last_fill_px)
             fill_px = Price(px, state.price_precision)
-            # Remove entry — order is settled, prevents duplicate dust fills
+            # Remove entry: order is settled, prevents duplicate dust fills.
             del self._orders[venue_order_id]
             return dust_qty, fill_px
-        if leaves >= underfill_tolerance:
+        if leaves >= DUST_SNAP_THRESHOLD:
             log.info(
                 "Order %s MATCHED with significant residual %.6f (filled %s/%s)",
                 venue_order_id,

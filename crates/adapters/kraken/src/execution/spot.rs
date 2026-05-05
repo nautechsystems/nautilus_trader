@@ -16,6 +16,7 @@
 //! Kraken Spot execution client implementation.
 
 use std::{
+    collections::HashSet,
     future::Future,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -35,25 +36,30 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, UnixNanos,
+    AtomicMap, MUTEX_POISONED, Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce, TrailingOffsetType},
+    enums::{
+        AccountType, OmsType, OrderSide, OrderType, PositionSideSpecified, TimeInForce,
+        TrailingOffsetType,
+    },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance},
+    types::{AccountBalance, MarginBalance, Quantity},
 };
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use ustr::Ustr;
 
 use crate::{
     common::{
         consts::{KRAKEN_SPOT_POST_ONLY_ERROR, KRAKEN_VENUE},
+        enums::{KrakenProductType, product_type_from_symbol},
         parse::truncate_cl_ord_id,
     },
     config::KrakenExecClientConfig,
@@ -93,7 +99,7 @@ impl KrakenSpotExecutionClient {
             clock,
             core.trader_id,
             core.account_id,
-            AccountType::Cash,
+            config.spot_account_type,
             None,
         );
 
@@ -201,7 +207,12 @@ impl KrakenSpotExecutionClient {
         tasks.push(handle);
     }
 
-    fn submit_single_order(&self, order: &OrderAny, task_name: &'static str) {
+    fn submit_single_order(
+        &self,
+        order: &OrderAny,
+        task_name: &'static str,
+        leverage: Option<u16>,
+    ) {
         if order.is_closed() {
             log::warn!(
                 "Cannot submit closed order: client_order_id={}",
@@ -235,6 +246,12 @@ impl KrakenSpotExecutionClient {
                     "Kraken Spot only supports Price trailing offset type: received {offset_type:?}"
                 ),
             );
+            return;
+        }
+
+        if order.is_reduce_only() && self.config.spot_account_type == AccountType::Cash {
+            self.emitter
+                .emit_order_denied(order, "reduce_only requires spot_account_type=Margin");
             return;
         }
 
@@ -277,6 +294,7 @@ impl KrakenSpotExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let dispatch_state = self.ws_dispatch_state.clone();
+        let spot_account_type = self.config.spot_account_type;
 
         self.spawn_task(task_name, async move {
             let result = http
@@ -298,6 +316,8 @@ impl KrakenSpotExecutionClient {
                     is_post_only,
                     is_quote_quantity,
                     display_qty,
+                    leverage,
+                    spot_account_type,
                 )
                 .await;
 
@@ -521,6 +541,50 @@ impl KrakenSpotExecutionClient {
             | KrakenSpotWsMessage::Ohlc(_) => {}
         }
     }
+
+    fn sweep_stale_margin_positions(
+        &self,
+        account_id: AccountId,
+        reports: &mut Vec<PositionStatusReport>,
+    ) {
+        let reported: HashSet<InstrumentId> = reports
+            .iter()
+            .filter(|r| r.position_side != PositionSideSpecified::Flat)
+            .map(|r| r.instrument_id)
+            .collect();
+
+        let ts_now = self.clock.get_time_ns();
+        let cache = self.core.cache();
+        let open_positions =
+            cache.positions_open(Some(&*KRAKEN_VENUE), None, None, Some(&account_id), None);
+
+        for pos in open_positions {
+            let inst_id = pos.instrument_id;
+
+            if product_type_from_symbol(inst_id.symbol.inner().as_str()) != KrakenProductType::Spot
+            {
+                continue;
+            }
+
+            if reported.contains(&inst_id) {
+                continue;
+            }
+
+            let precision = cache.instrument(&inst_id).map_or(0, |i| i.size_precision());
+            log::debug!("Emitting synthetic FLAT for closed margin position {inst_id}");
+            reports.push(PositionStatusReport::new(
+                account_id,
+                inst_id,
+                PositionSideSpecified::Flat,
+                Quantity::zero(precision),
+                ts_now,
+                ts_now,
+                None,
+                None,
+                None,
+            ));
+        }
+    }
 }
 
 #[async_trait(?Send)]
@@ -626,7 +690,11 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         // complete first.
         let account_state = self
             .http
-            .request_account_state(self.core.account_id)
+            .request_account_state(
+                self.core.account_id,
+                self.config.spot_account_type,
+                self.config.margin_balance_asset.as_deref(),
+            )
             .await
             .context("Failed to request Kraken account state")?;
 
@@ -753,9 +821,22 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         );
 
         let account_id = self.core.account_id;
-        self.http
-            .request_position_status_reports(account_id, cmd.instrument_id)
-            .await
+        let mut reports = self
+            .http
+            .request_position_status_reports(
+                account_id,
+                cmd.instrument_id,
+                self.config.spot_account_type,
+                self.config.use_spot_position_reports,
+                Ustr::from(self.config.spot_positions_quote_currency.as_str()),
+            )
+            .await?;
+
+        if cmd.instrument_id.is_none() && self.config.spot_account_type == AccountType::Margin {
+            self.sweep_stale_margin_positions(account_id, &mut reports);
+        }
+
+        Ok(reports)
     }
 
     async fn generate_mass_status(
@@ -775,10 +856,20 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             .http
             .request_fill_reports(account_id, None, start, None)
             .await?;
-        let position_reports = self
+        let mut position_reports = self
             .http
-            .request_position_status_reports(account_id, None)
+            .request_position_status_reports(
+                account_id,
+                None,
+                self.config.spot_account_type,
+                self.config.use_spot_position_reports,
+                Ustr::from(self.config.spot_positions_quote_currency.as_str()),
+            )
             .await?;
+
+        if self.config.spot_account_type == AccountType::Margin {
+            self.sweep_stale_margin_positions(account_id, &mut position_reports);
+        }
 
         let mut mass_status = ExecutionMassStatus::new(
             self.core.client_id,
@@ -801,8 +892,16 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         let http = self.http.clone();
         let emitter = self.emitter.clone();
 
+        let spot_account_type = self.config.spot_account_type;
+        let margin_balance_asset = self.config.margin_balance_asset.clone();
         self.spawn_task("query_account", async move {
-            let account_state = http.request_account_state(account_id).await?;
+            let account_state = http
+                .request_account_state(
+                    account_id,
+                    spot_account_type,
+                    margin_balance_asset.as_deref(),
+                )
+                .await?;
             emitter.emit_account_state(
                 account_state.balances.clone(),
                 account_state.margins.clone(),
@@ -850,7 +949,14 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             .order(&cmd.client_order_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("Order not found in cache: {}", cmd.client_order_id))?;
-        self.submit_single_order(&order, "submit_order");
+        let leverage = match resolve_leverage(cmd.params.as_ref(), self.config.default_leverage) {
+            Ok(lev) => lev,
+            Err(reason) => {
+                self.emitter.emit_order_denied(&order, &reason);
+                return Ok(());
+            }
+        };
+        self.submit_single_order(&order, "submit_order", leverage);
         Ok(())
     }
 
@@ -898,6 +1004,21 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                 continue;
             }
 
+            if order.is_reduce_only() && self.config.spot_account_type == AccountType::Cash {
+                self.emitter
+                    .emit_order_denied(order, "reduce_only requires spot_account_type=Margin");
+                continue;
+            }
+
+            let leverage = match resolve_leverage(cmd.params.as_ref(), self.config.default_leverage)
+            {
+                Ok(lev) => lev,
+                Err(reason) => {
+                    self.emitter.emit_order_denied(order, &reason);
+                    continue;
+                }
+            };
+
             let client_order_id = order.client_order_id();
             let kraken_cl_ord_id = truncate_cl_ord_id(&client_order_id);
 
@@ -913,7 +1034,6 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                 self.truncated_id_map
                     .insert(kraken_cl_ord_id, client_order_id);
             }
-
             order_tuples.push((
                 order.instrument_id(),
                 client_order_id,
@@ -931,6 +1051,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                 order.is_post_only(),
                 order.is_quote_quantity(),
                 order.display_qty(),
+                leverage,
             ));
 
             order_meta.push((order.strategy_id(), order.instrument_id(), client_order_id));
@@ -944,9 +1065,13 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let dispatch_state = self.ws_dispatch_state.clone();
+        let spot_account_type = self.config.spot_account_type;
 
         self.spawn_task("submit_order_list", async move {
-            match http.submit_orders_batch(order_tuples).await {
+            match http
+                .submit_orders_batch(order_tuples, spot_account_type)
+                .await
+            {
                 Ok(statuses) => {
                     // The HTTP helper returns one status per input tuple, including validation failures
                     for (i, status) in statuses.iter().enumerate() {
@@ -1092,5 +1217,63 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         }
 
         Ok(())
+    }
+}
+
+fn resolve_leverage(params: Option<&Params>, default: Option<u16>) -> Result<Option<u16>, String> {
+    let Some(p) = params else {
+        return Ok(default);
+    };
+    let Some(raw) = p.get("leverage") else {
+        return Ok(default);
+    };
+    let n = raw.as_u64().ok_or_else(|| {
+        format!("Invalid leverage param: expected unsigned integer, received {raw}")
+    })?;
+    let lev =
+        u16::try_from(n).map_err(|_| format!("leverage {n} exceeds maximum ({})", u16::MAX))?;
+    Ok(Some(lev))
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::Params;
+    use rstest::rstest;
+    use serde_json::json;
+
+    use super::resolve_leverage;
+
+    fn params_with(key: &str, val: serde_json::Value) -> Params {
+        let mut map = indexmap::IndexMap::new();
+        map.insert(key.to_owned(), val);
+        Params::from_index_map(map)
+    }
+
+    #[rstest]
+    fn test_resolve_leverage_absent_uses_default() {
+        let p = params_with("other", json!(1));
+        assert_eq!(resolve_leverage(Some(&p), Some(3)).unwrap(), Some(3));
+        assert_eq!(resolve_leverage(None, Some(5)).unwrap(), Some(5));
+        assert_eq!(resolve_leverage(None, None).unwrap(), None);
+    }
+
+    #[rstest]
+    fn test_resolve_leverage_valid_integer() {
+        let p = params_with("leverage", json!(5u64));
+        assert_eq!(resolve_leverage(Some(&p), Some(3)).unwrap(), Some(5));
+    }
+
+    #[rstest]
+    fn test_resolve_leverage_string_value_errors() {
+        let p = params_with("leverage", json!("5"));
+        let err = resolve_leverage(Some(&p), Some(3)).unwrap_err();
+        assert!(err.contains("Invalid leverage param"), "unexpected: {err}");
+    }
+
+    #[rstest]
+    fn test_resolve_leverage_overflow_errors() {
+        let p = params_with("leverage", json!(65539u64));
+        let err = resolve_leverage(Some(&p), None).unwrap_err();
+        assert!(err.contains("exceeds maximum"), "unexpected: {err}");
     }
 }

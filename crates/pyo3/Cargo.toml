@@ -105,7 +105,10 @@ nautilus-indicators = { workspace = true, features = ["python"] }
 nautilus-infrastructure = { workspace = true, features = ["python"] }
 nautilus-live = { workspace = true, features = ["python", "examples"] }
 nautilus-model = { workspace = true, features = ["python"] }
-nautilus-network = { workspace = true, features = ["python"] }
+nautilus-network = { workspace = true, features = [
+  "python",
+  "transport-sockudo",
+] }
 nautilus-persistence = { workspace = true, features = ["python"] }
 nautilus-risk = { workspace = true, features = ["python"] }
 nautilus-serialization = { workspace = true, features = ["python"] }

@@ -1,0 +1,37 @@
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "result": {
+    "order": {
+      "label": "O-19700101-000000-001-001-3",
+      "price": "market_price",
+      "user_id": 96103,
+      "amount": 0.010,
+      "direction": "sell",
+      "time_in_force": "good_til_cancelled",
+      "instrument_name": "BTC_USDC-PERPETUAL",
+      "web": false,
+      "api": true,
+      "order_id": "USDC-SLMB-19641",
+      "creation_timestamp": 1777923420773,
+      "replaced": false,
+      "last_update_timestamp": 1777923420773,
+      "post_only": false,
+      "reduce_only": true,
+      "trigger_price": 2228.0,
+      "trigger": "mark_price",
+      "mmp": false,
+      "contracts": 10.0,
+      "reject_post_only": false,
+      "order_state": "untriggered",
+      "order_type": "stop_market",
+      "is_liquidation": false,
+      "risk_reducing": true
+    },
+    "trades": []
+  },
+  "usIn": 1777923420760000,
+  "usOut": 1777923420770000,
+  "usDiff": 10000,
+  "testnet": true
+}

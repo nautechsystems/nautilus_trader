@@ -120,11 +120,7 @@ class DeribitExecutionClient(LiveExecutionClient):
         product_types = (
             [i.name.upper() for i in config.product_types] if config.product_types else None
         )
-        environment = (
-            config.environment
-            if config.environment is not None
-            else (DeribitEnvironment.TESTNET if config.is_testnet else DeribitEnvironment.MAINNET)
-        )
+        environment = config.environment or DeribitEnvironment.MAINNET
         self._log.info(f"config.product_types={product_types}", LogColor.BLUE)
         self._log.info(f"config.environment={environment}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)

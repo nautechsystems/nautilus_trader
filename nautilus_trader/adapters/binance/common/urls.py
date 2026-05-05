@@ -38,10 +38,9 @@ def get_http_base_url(  # noqa: C901 (URL dispatch)
     if environment == BinanceEnvironment.TESTNET:
         if account_type.is_spot_or_margin:
             return "https://testnet.binance.vision"
-        elif (
-            account_type == BinanceAccountType.USDT_FUTURES
-            or account_type == BinanceAccountType.COIN_FUTURES
-        ):
+        elif account_type == BinanceAccountType.USDT_FUTURES:
+            return "https://demo-fapi.binance.com"
+        elif account_type == BinanceAccountType.COIN_FUTURES:
             return "https://testnet.binancefuture.com"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
@@ -54,7 +53,7 @@ def get_http_base_url(  # noqa: C901 (URL dispatch)
         elif account_type == BinanceAccountType.USDT_FUTURES:
             return "https://demo-fapi.binance.com"
         elif account_type == BinanceAccountType.COIN_FUTURES:
-            return "https://testnet.binancefuture.com"
+            return "https://demo-dapi.binance.com"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
@@ -103,7 +102,6 @@ def get_ws_api_base_url(  # noqa: C901 (URL dispatch)
         if account_type.is_spot_or_margin:
             return "wss://demo-ws-api.binance.com/ws-api/v3"
         elif account_type == BinanceAccountType.USDT_FUTURES:
-            # Futures demo uses same WS API as futures testnet
             return "wss://testnet.binancefuture.com/ws-fapi/v1"
         elif account_type == BinanceAccountType.COIN_FUTURES:
             raise ValueError("no WS API demo for COIN-M futures")
@@ -147,10 +145,9 @@ def get_ws_base_url(  # noqa: C901 (URL dispatch)
         if account_type.is_spot_or_margin:
             return "wss://demo-stream.binance.com"
         elif account_type == BinanceAccountType.USDT_FUTURES:
-            # Futures demo uses same WS URLs as futures testnet
-            return "wss://stream.binancefuture.com"
+            return "wss://demo-fstream.binance.com"
         elif account_type == BinanceAccountType.COIN_FUTURES:
-            return "wss://dstream.binancefuture.com"
+            return "wss://demo-dstream.binance.com"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
@@ -178,7 +175,7 @@ def get_ws_public_base_url(
     """
     Return the WebSocket public stream base URL for high-frequency book data.
 
-    USD-M Futures mainnet uses `wss://fstream.binance.com/public`.
+    USD-M Futures live exchange uses `wss://fstream.binance.com/public`.
     All other account types and environments fall back to `get_ws_base_url`.
 
     """
@@ -200,7 +197,7 @@ def get_ws_private_base_url(
     """
     Return the WebSocket private stream base URL for user data.
 
-    USD-M Futures mainnet uses `wss://fstream.binance.com/private`.
+    USD-M Futures live exchange uses `wss://fstream.binance.com/private`.
     All other account types and environments fall back to `get_ws_base_url`.
 
     """
@@ -218,7 +215,7 @@ def get_usdm_ws_route_base_url(base_url: str, route: str) -> str:
     """
     Return a routed USD-M Futures WebSocket base URL derived from an override.
 
-    Binance now routes USD-M Futures mainnet traffic by category. This helper
+    Binance now routes USD-M Futures live traffic by category. This helper
     accepts either a root override (for example `wss://fstream.binance.com`) or
     a routed/transport-specific override such as `/market`, `/public/ws`, or
     `/private/stream`, then rebuilds the base URL for the requested route.

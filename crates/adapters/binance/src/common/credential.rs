@@ -79,7 +79,7 @@ pub fn resolve_credentials(
 
             // Demo shares API keys across all product types
             BinanceEnvironment::Demo => ("", "", "BINANCE_DEMO_API_KEY", "BINANCE_DEMO_API_SECRET"),
-            BinanceEnvironment::Mainnet => (
+            BinanceEnvironment::Live => (
                 "BINANCE_ED25519_API_KEY",
                 "BINANCE_ED25519_API_SECRET",
                 "BINANCE_API_KEY",

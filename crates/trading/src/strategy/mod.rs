@@ -1596,17 +1596,13 @@ pub trait Strategy: DataActor {
             }
         }
 
-        // Apply event and update cache
-        let mut order_clone = order.clone();
-        if let Err(e) = order_clone.apply(OrderEventAny::Denied(event)) {
-            log::warn!("Failed to apply OrderDenied event: {e}");
-            return;
-        }
-
+        let event = OrderEventAny::Denied(event);
         {
             let cache_rc = core.cache_rc();
             let mut cache = cache_rc.borrow_mut();
-            let _ = cache.update_order(&order_clone);
+            if let Err(e) = cache.update_order(&event) {
+                log::warn!("Failed to apply OrderDenied event: {e}");
+            }
         }
     }
 

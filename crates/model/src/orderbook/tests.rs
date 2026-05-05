@@ -29,7 +29,7 @@ use crate::{
     },
     identifiers::{ClientOrderId, InstrumentId, TradeId, TraderId, VenueOrderId},
     orderbook::{
-        BookIntegrityError, BookPrice, BookViewError, OrderBook, OwnBookOrder,
+        BookIntegrityError, BookPrice, BookViewError, OrderBook, OwnBookError, OwnBookOrder,
         analysis::book_check_integrity,
         own::{OwnBookLadder, OwnBookLevel, OwnOrderBook},
     },
@@ -3872,8 +3872,18 @@ fn test_own_book_update_missing_order_errors() {
         UnixNanos::from(1_u64),
     );
 
-    let result = book.update(missing_order);
-    assert!(result.is_err());
+    let error = book.update(missing_order).unwrap_err();
+
+    assert_eq!(
+        error,
+        OwnBookError::OrderNotFoundInCache {
+            client_order_id: ClientOrderId::from("O-MISSING"),
+        }
+    );
+    assert_eq!(
+        error.to_string(),
+        "Own book order not found in cache: client_order_id=O-MISSING"
+    );
 }
 
 #[rstest]
@@ -3897,8 +3907,18 @@ fn test_own_book_delete_missing_order_errors() {
         UnixNanos::from(1_u64),
     );
 
-    let result = book.delete(missing_order);
-    assert!(result.is_err());
+    let error = book.delete(missing_order).unwrap_err();
+
+    assert_eq!(
+        error,
+        OwnBookError::OrderNotFoundInCache {
+            client_order_id: ClientOrderId::from("O-MISSING"),
+        }
+    );
+    assert_eq!(
+        error.to_string(),
+        "Own book order not found in cache: client_order_id=O-MISSING"
+    );
 }
 
 #[rstest]
@@ -4128,6 +4148,26 @@ fn test_own_book_level_add_update_delete() {
 }
 
 #[rstest]
+fn test_own_book_level_delete_missing_order_errors() {
+    let price = BookPrice::new(Price::from("100.00"), OrderSideSpecified::Buy);
+    let mut level = OwnBookLevel::new(price);
+
+    let error = level.delete(&ClientOrderId::from("O-MISSING")).unwrap_err();
+
+    assert_eq!(
+        error,
+        OwnBookError::OrderNotFoundAtLevel {
+            client_order_id: ClientOrderId::from("O-MISSING"),
+            price,
+        }
+    );
+    assert_eq!(
+        error.to_string(),
+        format!("Own book order not found at level: client_order_id=O-MISSING, price={price:?}")
+    );
+}
+
+#[rstest]
 fn test_own_book_ladder_add_update_delete() {
     let mut ladder = OwnBookLadder::new(OrderSideSpecified::Buy);
     let order1 = OwnBookOrder::new(
@@ -4187,6 +4227,81 @@ fn test_own_book_ladder_add_update_delete() {
     // Delete order1
     ladder.delete(order1).unwrap();
     assert_eq!(ladder.sizes(), 25.0);
+}
+
+#[rstest]
+fn test_own_book_ladder_update_cached_level_missing_errors() {
+    let mut ladder = OwnBookLadder::new(OrderSideSpecified::Buy);
+    let order = OwnBookOrder::new(
+        TraderId::test_default(),
+        ClientOrderId::from("O-1"),
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    let price = order.to_book_price();
+    ladder.add(order);
+    ladder.levels.clear();
+
+    let error = ladder.update(order).unwrap_err();
+
+    assert_eq!(
+        error,
+        OwnBookError::CachedLevelMissing {
+            client_order_id: ClientOrderId::from("O-1"),
+            price,
+        }
+    );
+    assert_eq!(
+        error.to_string(),
+        format!("Own book cached level missing: client_order_id=O-1, price={price:?}")
+    );
+}
+
+#[rstest]
+fn test_own_book_ladder_remove_cached_level_missing_errors() {
+    let mut ladder = OwnBookLadder::new(OrderSideSpecified::Buy);
+    let client_order_id = ClientOrderId::from("O-1");
+    let order = OwnBookOrder::new(
+        TraderId::test_default(),
+        client_order_id,
+        Some(VenueOrderId::from("1")),
+        OrderSideSpecified::Buy,
+        Price::from("100.00"),
+        Quantity::from("10"),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    let price = order.to_book_price();
+    ladder.add(order);
+    ladder.levels.clear();
+
+    let error = ladder.remove(&client_order_id).unwrap_err();
+
+    assert_eq!(
+        error,
+        OwnBookError::CachedLevelMissing {
+            client_order_id,
+            price,
+        }
+    );
+    assert_eq!(
+        error.to_string(),
+        format!("Own book cached level missing: client_order_id=O-1, price={price:?}")
+    );
 }
 
 #[rstest]

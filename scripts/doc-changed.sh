@@ -23,6 +23,17 @@ if [ -z "$changed_files" ]; then
   changed_files=$(git diff --name-only HEAD -- '*.rs' '*.toml' 2> /dev/null || true)
 fi
 
+# CI fallback: clean checkouts have no diff vs HEAD; derive changed files
+# from CHANGED_BASE_SHA (exported by the workflow as the PR base or push before SHA).
+if [ -z "$changed_files" ] &&
+  [ -n "${CHANGED_BASE_SHA:-}" ] &&
+  [ "$CHANGED_BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+  base=$(git merge-base "$CHANGED_BASE_SHA" HEAD 2> /dev/null || true)
+  if [ -n "$base" ]; then
+    changed_files=$(git diff --name-only "$base"..HEAD -- '*.rs' '*.toml' 2> /dev/null || true)
+  fi
+fi
+
 # Clean checkout (CI --all-files) or no Rust/TOML changes at all
 if [ -z "$changed_files" ]; then
   run_full

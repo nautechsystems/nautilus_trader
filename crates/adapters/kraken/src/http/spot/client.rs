@@ -20,12 +20,13 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc, RwLock,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
 };
 
 use ahash::AHashMap;
+use anyhow::Context;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use nautilus_core::{
@@ -43,7 +44,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, Price, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::{
     http::{HttpClient, Method, USER_AGENT},
@@ -74,7 +75,7 @@ use crate::{
         },
         urls::get_kraken_http_base_url,
     },
-    http::error::KrakenHttpError,
+    http::error::{KrakenHttpError, kraken_http_should_retry},
 };
 
 /// Default Kraken Spot REST API rate limit (requests per second).
@@ -87,36 +88,6 @@ const BATCH_CANCEL_LIMIT: usize = 50;
 
 /// Maximum orders per batch submit request for Kraken Spot API.
 const BATCH_SUBMIT_LIMIT: usize = 15;
-
-/// Computes the time-in-force and expiration time parameters for Kraken Spot orders.
-///
-/// Returns a tuple of (timeinforce, expiretm) for use in order requests.
-/// For limit orders, handles GTC, IOC, and GTD. Market orders return (None, None).
-fn compute_time_in_force(
-    is_limit_order: bool,
-    time_in_force: TimeInForce,
-    expire_time: Option<UnixNanos>,
-) -> anyhow::Result<(Option<String>, Option<String>)> {
-    if is_limit_order {
-        match time_in_force {
-            TimeInForce::Gtc => Ok((None, None)), // Default, no parameter needed
-            TimeInForce::Ioc => Ok((Some("IOC".to_string()), None)),
-            TimeInForce::Fok => Ok((Some("FOK".to_string()), None)),
-            TimeInForce::Gtd => {
-                let expire = expire_time.ok_or_else(|| {
-                    anyhow::anyhow!("GTD time in force requires expire_time parameter")
-                })?;
-                // Convert nanoseconds to seconds for Kraken API
-                let expire_secs = expire.as_u64() / NANOSECONDS_IN_SECOND;
-                Ok((Some("GTD".to_string()), Some(expire_secs.to_string())))
-            }
-            _ => anyhow::bail!("Unsupported time in force: {time_in_force:?}"),
-        }
-    } else {
-        // Market orders are inherently immediate, timeinforce not applicable
-        Ok((None, None))
-    }
-}
 
 /// Raw HTTP client for low-level Kraken Spot API operations.
 ///
@@ -136,7 +107,7 @@ pub struct KrakenSpotRawHttpClient {
 impl Default for KrakenSpotRawHttpClient {
     fn default() -> Self {
         Self::new(
-            KrakenEnvironment::Mainnet,
+            KrakenEnvironment::Live,
             None,
             60,
             None,
@@ -443,8 +414,7 @@ impl KrakenSpotRawHttpClient {
             }
         };
 
-        let should_retry =
-            |error: &KrakenHttpError| -> bool { matches!(error, KrakenHttpError::NetworkError(_)) };
+        let should_retry = kraken_http_should_retry;
         let create_error = |msg: String| -> KrakenHttpError { KrakenHttpError::NetworkError(msg) };
 
         self.retry_manager
@@ -1078,6 +1048,64 @@ impl KrakenSpotRawHttpClient {
             KrakenHttpError::ParseError("Missing result in balance response".to_string())
         })
     }
+
+    /// Requests margin account summary (requires authentication).
+    ///
+    /// Unlike `get_balance` which returns per-currency wallet amounts, this returns margin
+    /// accounting metrics: used margin, free margin, equity, all denominated in `asset`
+    /// (defaults to `"ZUSD"` when `None`). Only meaningful for spot margin accounts.
+    pub async fn get_trade_balance(
+        &self,
+        asset: Option<&str>,
+    ) -> anyhow::Result<TradeBalanceResponse, KrakenHttpError> {
+        if self.credential.is_none() {
+            return Err(KrakenHttpError::AuthenticationError(
+                "API credentials required for TradeBalance".to_string(),
+            ));
+        }
+
+        let params = asset.map(|a| SpotTradeBalanceParams {
+            asset: Some(a.to_string()),
+        });
+
+        let body = params
+            .as_ref()
+            .and_then(|p| serde_urlencoded::to_string(p).ok())
+            .map(|s| s.into_bytes());
+
+        let response: KrakenResponse<TradeBalanceResponse> = self
+            .send_request(Method::POST, "/0/private/TradeBalance", body, true)
+            .await?;
+
+        response.result.ok_or_else(|| {
+            KrakenHttpError::ParseError("Missing result in TradeBalance response".to_string())
+        })
+    }
+
+    /// Requests open spot margin positions (requires authentication).
+    pub async fn get_open_positions(
+        &self,
+        params: &SpotOpenPositionsParams,
+    ) -> anyhow::Result<SpotOpenPositionsResponse, KrakenHttpError> {
+        if self.credential.is_none() {
+            return Err(KrakenHttpError::AuthenticationError(
+                "API credentials required for OpenPositions".to_string(),
+            ));
+        }
+
+        let body = serde_urlencoded::to_string(params)
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.into_bytes());
+
+        let response: KrakenResponse<SpotOpenPositionsResponse> = self
+            .send_request(Method::POST, "/0/private/OpenPositions", body, true)
+            .await?;
+
+        response.result.ok_or_else(|| {
+            KrakenHttpError::ParseError("Missing result in OpenPositions response".to_string())
+        })
+    }
 }
 
 /// High-level HTTP client for the Kraken Spot REST API.
@@ -1096,10 +1124,9 @@ impl KrakenSpotRawHttpClient {
 pub struct KrakenSpotHttpClient {
     pub(crate) inner: Arc<KrakenSpotRawHttpClient>,
     pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
+    leverage_tiers_cache: LeverageTiersCache,
     clock: &'static AtomicTime,
     cache_initialized: Arc<AtomicBool>,
-    use_spot_position_reports: Arc<AtomicBool>,
-    spot_positions_quote_currency: Arc<RwLock<Ustr>>,
 }
 
 impl Clone for KrakenSpotHttpClient {
@@ -1107,9 +1134,8 @@ impl Clone for KrakenSpotHttpClient {
         Self {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
+            leverage_tiers_cache: self.leverage_tiers_cache.clone(),
             cache_initialized: self.cache_initialized.clone(),
-            use_spot_position_reports: self.use_spot_position_reports.clone(),
-            spot_positions_quote_currency: self.spot_positions_quote_currency.clone(),
             clock: self.clock,
         }
     }
@@ -1118,7 +1144,7 @@ impl Clone for KrakenSpotHttpClient {
 impl Default for KrakenSpotHttpClient {
     fn default() -> Self {
         Self::new(
-            KrakenEnvironment::Mainnet,
+            KrakenEnvironment::Live,
             None,
             60,
             None,
@@ -1164,9 +1190,8 @@ impl KrakenSpotHttpClient {
                 max_requests_per_second,
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
+            leverage_tiers_cache: Arc::new(AtomicMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
-            use_spot_position_reports: Arc::new(AtomicBool::new(false)),
-            spot_positions_quote_currency: Arc::new(RwLock::new(Ustr::from("USDT"))),
             clock: get_atomic_clock_realtime(),
         })
     }
@@ -1199,9 +1224,8 @@ impl KrakenSpotHttpClient {
                 max_requests_per_second,
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
+            leverage_tiers_cache: Arc::new(AtomicMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
-            use_spot_position_reports: Arc::new(AtomicBool::new(false)),
-            spot_positions_quote_currency: Arc::new(RwLock::new(Ustr::from("USDT"))),
             clock: get_atomic_clock_realtime(),
         })
     }
@@ -1305,18 +1329,6 @@ impl KrakenSpotHttpClient {
         }
     }
 
-    /// Sets whether to generate position reports from wallet balances for SPOT instruments.
-    pub fn set_use_spot_position_reports(&self, value: bool) {
-        self.use_spot_position_reports
-            .store(value, Ordering::Relaxed);
-    }
-
-    /// Sets the quote currency filter for spot position reports.
-    pub fn set_spot_positions_quote_currency(&self, currency: &str) {
-        let mut guard = self.spot_positions_quote_currency.write().expect("lock");
-        *guard = Ustr::from(currency);
-    }
-
     /// Requests an authentication token for WebSocket connections.
     pub async fn get_websockets_token(&self) -> anyhow::Result<WebSocketToken, KrakenHttpError> {
         self.inner.get_websockets_token().await
@@ -1337,12 +1349,23 @@ impl KrakenSpotHttpClient {
             .iter()
             .filter_map(|(pair_name, definition)| {
                 match parse_spot_instrument(pair_name, definition, ts_init, ts_init) {
-                    Ok(instrument) => Some(instrument),
+                    Ok(instrument) => Some((instrument, definition)),
                     Err(e) => {
                         log::warn!("Failed to parse instrument {pair_name}: {e}");
                         None
                     }
                 }
+            })
+            .map(|(instrument, definition)| {
+                let key = Ustr::from(instrument.raw_symbol().as_str());
+                let tiers = (
+                    definition.leverage_buy.clone(),
+                    definition.leverage_sell.clone(),
+                );
+                self.leverage_tiers_cache.rcu(|m| {
+                    m.insert(key, tiers.clone());
+                });
+                instrument
             })
             .collect();
 
@@ -1601,13 +1624,73 @@ impl KrakenSpotHttpClient {
 
     /// Requests account state (balances) from Kraken.
     ///
-    /// Returns an `AccountState` containing all currency balances.
+    /// In cash mode returns wallet balances only.
+    /// In margin mode additionally calls `TradeBalance` to build [`MarginBalance`] entries.
+    /// `margin_balance_asset` selects the summary-display denomination for `TradeBalance`
+    /// (e.g. `"ZUSD"`, `"ZGBP"`); `None` lets Kraken default to `ZUSD`.
+    ///
+    /// Callers that also need the `TradeBalance` metrics dictionary should use
+    /// [`Self::request_account_state_with_metrics`] to avoid issuing two `TradeBalance`
+    /// HTTP requests per account update.
     pub async fn request_account_state(
         &self,
         account_id: AccountId,
+        account_type: AccountType,
+        margin_balance_asset: Option<&str>,
     ) -> anyhow::Result<AccountState> {
+        self.request_account_state_with_metrics(account_id, account_type, margin_balance_asset)
+            .await
+            .map(|(state, _)| state)
+    }
+
+    /// Requests the full margin account snapshot in a single round-trip.
+    ///
+    /// Returns the [`AccountState`] (including `MarginBalance` entries when
+    /// `account_type` is `Margin`) and the `TradeBalance` metrics dictionary that
+    /// callers attach to `AccountState.info`. In cash mode the metrics map is empty
+    /// and `TradeBalance` is not called.
+    ///
+    /// In margin mode, replaces the raw `margin_balance_asset` wallet with a
+    /// synthetic [`AccountBalance`] using `total = e` and `free = mf` from
+    /// `TradeBalance`. Kraken reports these values across all collateral, which
+    /// avoids clamping free margin to one wallet bucket in multi-asset accounts.
+    ///
+    /// The single shared fetch keeps Kraken rate-limit usage symmetric with `Balance`
+    /// (one request per account update), instead of two as if `request_account_state`
+    /// and `request_margin_metrics` were called in sequence.
+    pub async fn request_account_state_with_metrics(
+        &self,
+        account_id: AccountId,
+        account_type: AccountType,
+        margin_balance_asset: Option<&str>,
+    ) -> anyhow::Result<(AccountState, IndexMap<String, String>)> {
         let balances_raw = self.inner.get_balance().await?;
         let ts_init = self.generate_ts_init();
+
+        let (margins, metrics, margin_entry, target_code) = if account_type == AccountType::Margin {
+            let snapshot = self
+                .fetch_trade_balance_snapshot(margin_balance_asset)
+                .await?;
+            let target_code = normalize_currency_code(margin_balance_asset.unwrap_or("ZUSD"));
+            let currency = Currency::new(target_code, 8, 0, "0", CurrencyType::Crypto);
+            let margin_entry = AccountBalance::from_total_and_free(
+                snapshot.equity,
+                snapshot.free_margin,
+                currency,
+            )
+            .context("Failed to build synthetic margin AccountBalance from TradeBalance")?;
+
+            (
+                snapshot.margins,
+                snapshot.metrics,
+                Some(margin_entry),
+                target_code,
+            )
+        } else {
+            (Vec::new(), IndexMap::new(), None, "")
+        };
+
+        let skip_margin_wallet = margin_entry.is_some();
 
         let balances: Vec<AccountBalance> = balances_raw
             .iter()
@@ -1617,36 +1700,118 @@ impl KrakenSpotHttpClient {
                     return None;
                 }
 
-                // Kraken uses X-prefixed names for some currencies (e.g., XXBT for BTC)
                 let normalized_code = currency_code
                     .strip_prefix("X")
                     .or_else(|| currency_code.strip_prefix("Z"))
                     .unwrap_or(currency_code);
 
-                let currency = Currency::new(
-                    normalized_code,
-                    8, // Default precision
-                    0,
-                    "0",
-                    CurrencyType::Crypto,
-                );
+                if skip_margin_wallet && normalized_code == target_code {
+                    return None;
+                }
 
-                // Balance endpoint returns total only, so free = total (no locked info)
+                let currency = Currency::new(normalized_code, 8, 0, "0", CurrencyType::Crypto);
                 AccountBalance::from_total_and_locked(amount, Decimal::ZERO, currency).ok()
             })
+            .chain(margin_entry)
             .collect();
 
-        Ok(AccountState::new(
+        let state = AccountState::new(
             account_id,
-            AccountType::Cash,
+            account_type,
             balances,
-            vec![], // No margins for spot
-            true,   // reported
+            margins,
+            true,
             UUID4::new(),
             ts_init,
             ts_init,
             None,
-        ))
+        );
+
+        Ok((state, metrics))
+    }
+
+    /// Fetches `TradeBalance` once and returns both the parsed [`MarginBalance`] entries
+    /// and the metrics dictionary surfaced through `AccountState.info`.
+    ///
+    /// # Margin mapping rationale
+    ///
+    /// Kraken's `TradeBalance` returns a single used-margin value `m` ("margin amount
+    /// of open positions") and does not split into separate initial- and maintenance-
+    /// margin figures. Kraken's "maintenance margin" is a liquidation-level percentage
+    /// threshold (around 80% margin level), not a collateral money figure.
+    ///
+    /// [`nautilus_model::accounts::MarginAccount::recalculate_balance`] sums
+    /// `initial + maintenance` to compute `locked`, so duplicating `m` into both fields
+    /// would double-lock equity and diverge from Kraken's reported `mf = e - m`.
+    /// `m` is therefore mapped to `initial`, with `maintenance = Money::zero(currency)`.
+    async fn fetch_trade_balance_snapshot(
+        &self,
+        asset: Option<&str>,
+    ) -> anyhow::Result<TradeBalanceSnapshot> {
+        let tb = self.inner.get_trade_balance(asset).await?;
+
+        let used_margin = Decimal::from_str_exact(&tb.m)
+            .with_context(|| format!("Failed to parse TradeBalance 'm' field {:?}", tb.m))?;
+        let free_margin = Decimal::from_str_exact(&tb.mf)
+            .with_context(|| format!("Failed to parse TradeBalance 'mf' field {:?}", tb.mf))?;
+        let equity = Decimal::from_str_exact(&tb.e)
+            .with_context(|| format!("Failed to parse TradeBalance 'e' field {:?}", tb.e))?;
+
+        let margins = if used_margin.is_zero() {
+            Vec::new()
+        } else {
+            let currency = trade_balance_currency(asset);
+            let initial = Money::from_decimal(used_margin, currency)
+                .context("Failed to build initial margin from TradeBalance 'm'")?;
+            let maintenance = Money::zero(currency);
+            vec![MarginBalance::new(initial, maintenance, None)]
+        };
+
+        let mut metrics = IndexMap::new();
+        metrics.insert("equivalent_balance".to_string(), tb.eb);
+        metrics.insert("trade_balance".to_string(), tb.tb);
+        metrics.insert("used_margin".to_string(), tb.m);
+        metrics.insert("unexecuted_value".to_string(), tb.uv);
+        metrics.insert("unrealized_pnl".to_string(), tb.n);
+        metrics.insert("cost_basis".to_string(), tb.c);
+        metrics.insert("valuation".to_string(), tb.v);
+        metrics.insert("equity".to_string(), tb.e);
+        metrics.insert("free_margin".to_string(), tb.mf);
+        if let Some(ml) = tb.ml {
+            metrics.insert("margin_level".to_string(), ml);
+        }
+        metrics.insert(
+            "asset".to_string(),
+            normalize_currency_code(asset.unwrap_or("ZUSD")).to_string(),
+        );
+
+        Ok(TradeBalanceSnapshot {
+            margins,
+            metrics,
+            free_margin,
+            equity,
+        })
+    }
+
+    /// Returns a flattened snapshot of Kraken's `TradeBalance` margin metrics.
+    ///
+    /// Caller is expected to invoke this only when operating in margin mode; consumers
+    /// surface the values via `AccountState.info` (Python-side) for strategy access.
+    /// Strings preserve venue precision exactly. Keys: `equivalent_balance`,
+    /// `trade_balance`, `used_margin`, `unexecuted_value`, `unrealized_pnl`,
+    /// `cost_basis`, `valuation`, `equity`, `free_margin`, `margin_level` (omitted
+    /// when Kraken returns no value, i.e. no open positions), `asset`.
+    ///
+    /// When the metrics are needed alongside the [`AccountState`], prefer
+    /// [`Self::request_account_state_with_metrics`] to share a single `TradeBalance`
+    /// HTTP request between both.
+    pub async fn request_margin_metrics(
+        &self,
+        asset: Option<&str>,
+    ) -> anyhow::Result<IndexMap<String, String>> {
+        self.fetch_trade_balance_snapshot(asset)
+            .await
+            .map(|snapshot| snapshot.metrics)
     }
 
     /// Requests order status reports from Kraken.
@@ -1796,19 +1961,162 @@ impl KrakenSpotHttpClient {
 
     /// Requests position status reports for SPOT instruments.
     ///
-    /// Returns wallet balances as position reports if `use_spot_position_reports` is enabled.
-    /// Otherwise returns an empty vector (spot traditionally has no "positions").
+    /// In margin mode: calls `OpenPositions` and returns reports for each open leveraged position.
+    /// When `use_spot_position_reports` is enabled (cash mode): derives reports from wallet balances.
+    /// Otherwise returns an empty vector.
     pub async fn request_position_status_reports(
         &self,
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
+        account_type: AccountType,
+        use_spot_position_reports: bool,
+        quote_currency: Ustr,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        if self.use_spot_position_reports.load(Ordering::Relaxed) {
-            self.generate_spot_position_reports_from_wallet(account_id, instrument_id)
+        if account_type == AccountType::Margin {
+            self.generate_margin_position_reports(account_id, instrument_id)
                 .await
+        } else if use_spot_position_reports {
+            self.generate_spot_position_reports_from_wallet(
+                account_id,
+                instrument_id,
+                quote_currency,
+            )
+            .await
         } else {
             Ok(Vec::new())
         }
+    }
+
+    /// Generates position reports from Kraken `OpenPositions` (margin mode).
+    async fn generate_margin_position_reports(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let open_positions = self
+            .inner
+            .get_open_positions(&SpotOpenPositionsParams::default())
+            .await?;
+
+        let ts_init = self.generate_ts_init();
+
+        // Aggregate individual lot entries by pair into a signed net quantity.
+        // Kraken returns one entry per order lot (keyed by ordertxid); buy lots add to net
+        // quantity and sell lots subtract. A single signed value per pair is correct for a
+        // NETTING account and avoids emitting conflicting long+short reports for the same
+        // instrument when opposing lots exist on the same pair. Aggregation uses `Decimal`
+        // so opposing lots cancel exactly and partial-close noise does not leave residual
+        // float dust in the reported quantity.
+        let mut agg: IndexMap<String, (Decimal, InstrumentId)> = IndexMap::new();
+
+        let target_pair: Option<Ustr> = match &instrument_id {
+            Some(target_id) => match self.get_cached_instrument(&target_id.symbol.inner()) {
+                Some(inst) => Some(Ustr::from(inst.raw_symbol().as_str())),
+                None => return Ok(Vec::new()),
+            },
+            None => None,
+        };
+
+        for (_pos_id, pos) in open_positions.iter() {
+            if let Some(pair) = target_pair
+                && pair.as_str() != pos.pair
+            {
+                continue;
+            }
+
+            if let Some(status) = pos.posstatus.as_deref()
+                && status != "open"
+            {
+                log::debug!(
+                    "Skipping non-open OpenPositions entry for {}: posstatus={status}",
+                    pos.pair,
+                );
+                continue;
+            }
+
+            let instrument = self
+                .get_instrument_by_raw_symbol(pos.pair.as_str())
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "OpenPositions: instrument not in cache for pair {}",
+                        pos.pair
+                    )
+                })?;
+
+            let vol = Decimal::from_str_exact(&pos.vol)
+                .with_context(|| format!("OpenPositions: failed to parse vol for {}", pos.pair))?;
+            let vol_closed = Decimal::from_str_exact(&pos.vol_closed).with_context(|| {
+                format!("OpenPositions: failed to parse vol_closed for {}", pos.pair)
+            })?;
+
+            let lot_net = (vol - vol_closed).max(Decimal::ZERO);
+            let signed_lot = match pos.side {
+                KrakenOrderSide::Buy => lot_net,
+                KrakenOrderSide::Sell => -lot_net,
+            };
+
+            let entry = agg
+                .entry(pos.pair.clone())
+                .or_insert((Decimal::ZERO, instrument.id()));
+            entry.0 += signed_lot;
+        }
+
+        let mut reports = Vec::new();
+
+        for (_, (signed_qty, inst_id)) in agg {
+            let instrument = self
+                .get_cached_instrument(&inst_id.symbol.inner())
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "OpenPositions: instrument disappeared from cache for {inst_id}"
+                    )
+                })?;
+
+            let side = if signed_qty.is_sign_positive() && !signed_qty.is_zero() {
+                PositionSideSpecified::Long
+            } else if signed_qty.is_sign_negative() && !signed_qty.is_zero() {
+                PositionSideSpecified::Short
+            } else {
+                PositionSideSpecified::Flat
+            };
+            let quantity = Quantity::from_decimal_dp(signed_qty.abs(), instrument.size_precision())
+                .map_err(|e| {
+                    anyhow::anyhow!("OpenPositions: failed to build Quantity for {inst_id}: {e:?}")
+                })?;
+            let report = PositionStatusReport::new(
+                account_id, inst_id, side, quantity, ts_init, ts_init, None, None, None,
+            );
+            reports.push(report);
+        }
+
+        // If a specific instrument was requested but no open position exists for it, emit
+        // a FLAT report so the engine can reconcile a previously-open position to closed.
+        // (Kraken omits fully-closed positions from OpenPositions entirely.)
+        // Only emit for instruments known to this spot client; a missing cache entry means
+        // the target belongs to a different product type (e.g. futures) and must not receive
+        // a spurious FLAT from the spot reconciliation path.
+        if let Some(target_id) = instrument_id {
+            let already_reported = reports.iter().any(|r| r.instrument_id == target_id);
+
+            if !already_reported
+                && let Some(instrument) = self.get_cached_instrument(&target_id.symbol.inner())
+            {
+                let precision = instrument.size_precision();
+                reports.push(PositionStatusReport::new(
+                    account_id,
+                    target_id,
+                    PositionSideSpecified::Flat,
+                    Quantity::zero(precision),
+                    ts_init,
+                    ts_init,
+                    None,
+                    None,
+                    None,
+                ));
+            }
+        }
+
+        Ok(reports)
     }
 
     /// Generates SPOT position reports from wallet balances.
@@ -1820,6 +2128,7 @@ impl KrakenSpotHttpClient {
         &self,
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
+        quote_currency: Ustr,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
         let balances_raw = self.inner.get_balance().await?;
         let ts_init = self.generate_ts_init();
@@ -1874,7 +2183,7 @@ impl KrakenSpotHttpClient {
                 reports.push(report);
             }
         } else {
-            let quote_filter = *self.spot_positions_quote_currency.read().expect("lock");
+            let quote_filter = quote_currency;
 
             let instruments_guard = self.instruments_cache.load();
             for instrument in instruments_guard.values() {
@@ -1960,6 +2269,8 @@ impl KrakenSpotHttpClient {
         post_only: bool,
         quote_quantity: bool,
         display_qty: Option<Quantity>,
+        leverage: Option<u16>,
+        account_type: AccountType,
     ) -> anyhow::Result<VenueOrderId> {
         let params = self.build_add_order_params(
             instrument_id,
@@ -1978,6 +2289,8 @@ impl KrakenSpotHttpClient {
             post_only,
             quote_quantity,
             display_qty,
+            leverage,
+            account_type,
         )?;
         let response = self.inner.add_order(&params).await?;
 
@@ -2013,7 +2326,9 @@ impl KrakenSpotHttpClient {
             bool,
             bool,
             Option<Quantity>,
+            Option<u16>,
         )>,
+        account_type: AccountType,
     ) -> anyhow::Result<Vec<String>> {
         let count = orders.len();
         if count == 0 {
@@ -2042,6 +2357,7 @@ impl KrakenSpotHttpClient {
                 post_only,
                 quote_quantity,
                 display_qty,
+                leverage,
             ),
         ) in orders.into_iter().enumerate()
         {
@@ -2062,6 +2378,8 @@ impl KrakenSpotHttpClient {
                 post_only,
                 quote_quantity,
                 display_qty,
+                leverage,
+                account_type,
             ) {
                 Ok(params) => {
                     grouped.entry(params.pair).or_default().push((idx, params));
@@ -2289,6 +2607,8 @@ impl KrakenSpotHttpClient {
         post_only: bool,
         quote_quantity: bool,
         display_qty: Option<Quantity>,
+        leverage: Option<u16>,
+        account_type: AccountType,
     ) -> anyhow::Result<KrakenSpotAddOrderParams> {
         let instrument = self
             .get_cached_instrument(&instrument_id.symbol.inner())
@@ -2333,10 +2653,6 @@ impl KrakenSpotHttpClient {
 
         if post_only {
             oflags.push(KRAKEN_OFLAG_POST_ONLY);
-        }
-
-        if reduce_only {
-            log::warn!("reduce_only is not supported by Kraken Spot API, ignoring");
         }
 
         if quote_quantity {
@@ -2427,6 +2743,45 @@ impl KrakenSpotHttpClient {
             builder.asset_class(ac);
         }
 
+        if leverage.is_some() && account_type != AccountType::Margin {
+            anyhow::bail!("leverage requires spot_account_type=Margin (current: Cash)");
+        }
+
+        if let Some(n) = leverage {
+            let tiers = self.leverage_tiers_cache.get_cloned(&raw_symbol);
+            let (buy_tiers, sell_tiers) = tiers.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Leverage tiers not loaded for {raw_symbol}; cannot validate leverage {n}:1 (instruments must be initialized before submitting margin orders)"
+                )
+            })?;
+            let valid_tiers = match order_side {
+                OrderSide::Buy => buy_tiers,
+                _ => sell_tiers,
+            };
+            let side_label = match order_side {
+                OrderSide::Buy => "buy",
+                _ => "sell",
+            };
+
+            if valid_tiers.is_empty() {
+                anyhow::bail!("Leverage not supported for {raw_symbol} on {side_label} side");
+            }
+
+            if !valid_tiers.contains(&(n as i32)) {
+                anyhow::bail!(
+                    "Leverage {n}:1 not supported for {raw_symbol} on {side_label} side (valid: {valid_tiers:?})"
+                );
+            }
+            builder.leverage(format!("{n}:1"));
+        }
+
+        if reduce_only {
+            if account_type != AccountType::Margin {
+                anyhow::bail!("reduce_only requires spot_account_type=Margin (current: Cash)");
+            }
+            builder.reduce_only(true);
+        }
+
         builder
             .build()
             .map_err(|e| anyhow::anyhow!("Failed to build order params: {e}"))
@@ -2451,6 +2806,52 @@ fn collect_spot_statuses(
         .collect()
 }
 
+/// Maps raw symbol (altname, e.g. "XBTUSD") to leverage tiers.
+type LeverageTiersCache = Arc<AtomicMap<Ustr, (Vec<i32>, Vec<i32>)>>;
+
+struct TradeBalanceSnapshot {
+    margins: Vec<MarginBalance>,
+    metrics: IndexMap<String, String>,
+    free_margin: Decimal,
+    equity: Decimal,
+}
+
+/// Resolves the Nautilus [`Currency`] used to denominate `TradeBalance` margin metrics.
+///
+/// Kraken's `TradeBalance` defaults to `ZUSD` when no asset is supplied. This strips
+/// Kraken's legacy `X`/`Z` prefixes and falls back to a 2dp fiat currency for unknown
+/// codes so unusual collateral assets still produce a tagged `MarginBalance`.
+fn trade_balance_currency(asset: Option<&str>) -> Currency {
+    let raw = asset.unwrap_or("ZUSD");
+    let normalized = normalize_currency_code(raw);
+    Currency::try_from_str(normalized)
+        .unwrap_or_else(|| Currency::new(normalized, 2, 0, normalized, CurrencyType::Fiat))
+}
+
+fn compute_time_in_force(
+    is_limit_order: bool,
+    time_in_force: TimeInForce,
+    expire_time: Option<UnixNanos>,
+) -> anyhow::Result<(Option<String>, Option<String>)> {
+    if !is_limit_order {
+        return Ok((None, None));
+    }
+
+    match time_in_force {
+        TimeInForce::Gtc => Ok((None, None)),
+        TimeInForce::Ioc => Ok((Some("IOC".to_string()), None)),
+        TimeInForce::Fok => Ok((Some("FOK".to_string()), None)),
+        TimeInForce::Gtd => {
+            let expire = expire_time.ok_or_else(|| {
+                anyhow::anyhow!("GTD time in force requires expire_time parameter")
+            })?;
+            let expire_secs = expire.as_u64() / NANOSECONDS_IN_SECOND;
+            Ok((Some("GTD".to_string()), Some(expire_secs.to_string())))
+        }
+        _ => anyhow::bail!("Unsupported time in force: {time_in_force:?}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::instruments::CurrencyPair;
@@ -2469,7 +2870,7 @@ mod tests {
         let client = KrakenSpotRawHttpClient::with_credentials(
             "test_key".to_string(),
             "test_secret".to_string(),
-            KrakenEnvironment::Mainnet,
+            KrakenEnvironment::Live,
             None,
             60,
             None,
@@ -2493,7 +2894,7 @@ mod tests {
         let client = KrakenSpotHttpClient::with_credentials(
             "test_key".to_string(),
             "test_secret".to_string(),
-            KrakenEnvironment::Mainnet,
+            KrakenEnvironment::Live,
             None,
             60,
             None,
@@ -2600,6 +3001,8 @@ mod tests {
                 false,
                 false,
                 None,
+                None,
+                AccountType::Cash,
             )
             .unwrap();
 
@@ -2630,6 +3033,8 @@ mod tests {
                 false,
                 false,
                 Some(Quantity::from("0.005")),
+                None,
+                AccountType::Cash,
             )
             .unwrap();
 
@@ -2662,6 +3067,8 @@ mod tests {
                 false,
                 false,
                 None,
+                None,
+                AccountType::Cash,
             )
             .unwrap_err();
 
@@ -2702,5 +3109,253 @@ mod tests {
         )));
 
         instrument_id
+    }
+
+    fn cache_test_spot_instrument_with_leverage(
+        client: &KrakenSpotHttpClient,
+        leverage_buy: &[i32],
+        leverage_sell: &[i32],
+    ) -> InstrumentId {
+        let instrument_id = cache_test_spot_instrument(client);
+        let raw_symbol = Ustr::from("XBTUSD");
+        client.leverage_tiers_cache.rcu(|m| {
+            m.insert(raw_symbol, (leverage_buy.to_vec(), leverage_sell.to_vec()));
+        });
+        instrument_id
+    }
+
+    #[rstest]
+    fn test_build_add_order_params_leverage_serialised_as_ratio() {
+        let client = KrakenSpotHttpClient::default();
+        let instrument_id =
+            cache_test_spot_instrument_with_leverage(&client, &[2, 3, 5], &[2, 3, 5]);
+
+        let params = client
+            .build_add_order_params(
+                instrument_id,
+                ClientOrderId::new("spot-margin-buy"),
+                OrderSide::Buy,
+                OrderType::Limit,
+                Quantity::from("0.01"),
+                TimeInForce::Gtc,
+                None,
+                Some(Price::from("50000")),
+                None,
+                None,
+                None,
+                None,
+                false,
+                false,
+                false,
+                None,
+                Some(3),
+                AccountType::Margin,
+            )
+            .unwrap();
+
+        assert_eq!(params.leverage, Some("3:1".to_string()));
+    }
+
+    #[rstest]
+    fn test_build_add_order_params_invalid_leverage_rejected() {
+        let client = KrakenSpotHttpClient::default();
+        let instrument_id =
+            cache_test_spot_instrument_with_leverage(&client, &[2, 3, 5], &[2, 3, 5]);
+
+        let err = client
+            .build_add_order_params(
+                instrument_id,
+                ClientOrderId::new("spot-margin-bad"),
+                OrderSide::Buy,
+                OrderType::Limit,
+                Quantity::from("0.01"),
+                TimeInForce::Gtc,
+                None,
+                Some(Price::from("50000")),
+                None,
+                None,
+                None,
+                None,
+                false,
+                false,
+                false,
+                None,
+                Some(7),
+                AccountType::Margin,
+            )
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("not supported"),
+            "Expected tier-validation error: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_build_add_order_params_no_leverage_is_cash() {
+        let client = KrakenSpotHttpClient::default();
+        let instrument_id =
+            cache_test_spot_instrument_with_leverage(&client, &[2, 3, 5], &[2, 3, 5]);
+
+        let params = client
+            .build_add_order_params(
+                instrument_id,
+                ClientOrderId::new("spot-cash"),
+                OrderSide::Buy,
+                OrderType::Limit,
+                Quantity::from("0.01"),
+                TimeInForce::Gtc,
+                None,
+                Some(Price::from("50000")),
+                None,
+                None,
+                None,
+                None,
+                false,
+                false,
+                false,
+                None,
+                None,
+                AccountType::Cash,
+            )
+            .unwrap();
+
+        assert_eq!(
+            params.leverage, None,
+            "Cash order should not have leverage field"
+        );
+    }
+
+    #[rstest]
+    fn test_build_add_order_params_rejects_per_order_leverage_in_cash_mode() {
+        let client = KrakenSpotHttpClient::default();
+        let instrument_id = cache_test_spot_instrument(&client);
+
+        let err = client
+            .build_add_order_params(
+                instrument_id,
+                ClientOrderId::new("cash-with-leverage"),
+                OrderSide::Buy,
+                OrderType::Limit,
+                Quantity::from("0.01"),
+                TimeInForce::Gtc,
+                None,
+                Some(Price::from("50000")),
+                None,
+                None,
+                None,
+                None,
+                false,
+                false,
+                false,
+                None,
+                Some(3),
+                AccountType::Cash,
+            )
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("Margin"),
+            "Expected Margin mode rejection: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_build_add_order_params_reduce_only_forwarded_in_margin_mode() {
+        let client = KrakenSpotHttpClient::default();
+        let instrument_id = cache_test_spot_instrument(&client);
+
+        let params = client
+            .build_add_order_params(
+                instrument_id,
+                ClientOrderId::new("margin-reduce-only"),
+                OrderSide::Sell,
+                OrderType::Limit,
+                Quantity::from("0.01"),
+                TimeInForce::Gtc,
+                None,
+                Some(Price::from("50000")),
+                None,
+                None,
+                None,
+                None,
+                true,
+                false,
+                false,
+                None,
+                None,
+                AccountType::Margin,
+            )
+            .unwrap();
+
+        assert_eq!(params.reduce_only, Some(true));
+    }
+
+    #[rstest]
+    fn test_build_add_order_params_rejects_reduce_only_in_cash_mode() {
+        let client = KrakenSpotHttpClient::default();
+        let instrument_id = cache_test_spot_instrument(&client);
+
+        let err = client
+            .build_add_order_params(
+                instrument_id,
+                ClientOrderId::new("cash-reduce-only"),
+                OrderSide::Sell,
+                OrderType::Limit,
+                Quantity::from("0.01"),
+                TimeInForce::Gtc,
+                None,
+                Some(Price::from("50000")),
+                None,
+                None,
+                None,
+                None,
+                true,
+                false,
+                false,
+                None,
+                None,
+                AccountType::Cash,
+            )
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("reduce_only requires"),
+            "expected reduce_only Margin rejection: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_build_add_order_params_rejects_leverage_when_tiers_not_loaded() {
+        let client = KrakenSpotHttpClient::default();
+        let instrument_id = cache_test_spot_instrument(&client);
+
+        let err = client
+            .build_add_order_params(
+                instrument_id,
+                ClientOrderId::new("missing-tiers"),
+                OrderSide::Buy,
+                OrderType::Limit,
+                Quantity::from("0.01"),
+                TimeInForce::Gtc,
+                None,
+                Some(Price::from("50000")),
+                None,
+                None,
+                None,
+                None,
+                false,
+                false,
+                false,
+                None,
+                Some(3),
+                AccountType::Margin,
+            )
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("Leverage tiers not loaded"),
+            "expected cache-miss rejection: {err}"
+        );
     }
 }

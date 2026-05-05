@@ -31,7 +31,7 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::{client::core::ExecutionClientCore, engine::ExecutionEngine};
 use nautilus_model::{
-    data::QuoteTick,
+    data::{Bar, BarType, QuoteTick},
     enums::{AccountType, BookType, OmsType, OrderSide, OrderType},
     events::OrderEventAny,
     identifiers::{AccountId, ClientId, InstrumentId, TraderId, Venue},
@@ -143,17 +143,42 @@ fn execution_client(test_context: TestContext) -> SandboxExecutionClient {
     test_context.client
 }
 
-fn create_quote_tick(instrument_id: InstrumentId, bid: f64, ask: f64) -> QuoteTick {
-    // Use precision 2 to match crypto_perpetual_ethusdt fixture
+fn create_quote_tick_with_price_precision(
+    instrument_id: InstrumentId,
+    bid: f64,
+    ask: f64,
+    price_precision: u8,
+) -> QuoteTick {
     QuoteTick::new(
         instrument_id,
-        Price::new(bid, 2),
-        Price::new(ask, 2),
+        Price::new(bid, price_precision),
+        Price::new(ask, price_precision),
         Quantity::new(100.0, 3),
         Quantity::new(100.0, 3),
         UnixNanos::default(),
         UnixNanos::default(),
     )
+}
+
+fn create_quote_tick(instrument_id: InstrumentId, bid: f64, ask: f64) -> QuoteTick {
+    // Use price precision 2 to match crypto_perpetual_ethusdt fixture.
+    create_quote_tick_with_price_precision(instrument_id, bid, ask, 2)
+}
+
+fn create_mismatched_quote_tick(instrument_id: InstrumentId, bid: f64, ask: f64) -> QuoteTick {
+    // Uses price precision 3 (instrument fixture uses 2), should be rejected by sandbox guard.
+    create_quote_tick_with_price_precision(instrument_id, bid, ask, 3)
+}
+
+fn updated_instrument_with_price_precision_3(instrument: InstrumentAny) -> InstrumentAny {
+    match instrument {
+        InstrumentAny::CryptoPerpetual(mut crypto_perp) => {
+            crypto_perp.price_precision = 3;
+            crypto_perp.price_increment = Price::from("0.001");
+            InstrumentAny::CryptoPerpetual(crypto_perp)
+        }
+        _ => panic!("Test fixture expected CryptoPerpetual instrument"),
+    }
 }
 
 fn setup_order_event_handler() {
@@ -389,6 +414,67 @@ fn test_process_quote_tick_reuses_matching_engine(
 }
 
 #[rstest]
+fn test_process_quote_tick_drops_precision_mismatch(
+    test_context: TestContext,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    test_context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let quote = create_mismatched_quote_tick(instrument.id(), 1000.0, 1001.0);
+    let result = test_context.client.process_quote_tick(&quote);
+
+    assert!(result.is_ok());
+    assert_eq!(test_context.client.matching_engine_count(), 0);
+}
+
+#[rstest]
+fn test_on_instrument_updates_engine_precision(
+    mut test_context: TestContext,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    test_context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let quote_before = create_quote_tick(instrument.id(), 1000.0, 1001.0);
+    test_context
+        .client
+        .process_quote_tick(&quote_before)
+        .unwrap();
+    assert_eq!(test_context.client.matching_engine_count(), 1);
+
+    let updated_instrument = updated_instrument_with_price_precision_3(instrument);
+    test_context
+        .cache
+        .borrow_mut()
+        .add_instrument(updated_instrument.clone())
+        .unwrap();
+    test_context
+        .client
+        .on_instrument(updated_instrument.clone());
+
+    let stale_quote = create_quote_tick(updated_instrument.id(), 1000.0, 1001.0);
+    let stale_result = test_context.client.process_quote_tick(&stale_quote);
+    assert!(stale_result.is_ok());
+
+    let updated_quote =
+        create_quote_tick_with_price_precision(updated_instrument.id(), 1000.0, 1001.0, 3);
+    let updated_result = test_context.client.process_quote_tick(&updated_quote);
+    assert!(updated_result.is_ok());
+    assert_eq!(test_context.client.matching_engine_count(), 1);
+}
+
+#[rstest]
 fn test_process_quote_tick_instrument_not_found(execution_client: SandboxExecutionClient) {
     setup_order_event_handler();
 
@@ -459,6 +545,103 @@ fn test_process_bar_disabled(test_context: TestContext, instrument: InstrumentAn
     assert!(result.is_ok());
     // No matching engine created because bar_execution is disabled
     assert_eq!(test_context.client.matching_engine_count(), 0);
+}
+
+#[rstest]
+fn test_process_bar_drops_precision_mismatch(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let mut config = create_config(trader_id, account_id, venue);
+    config.bar_execution = true;
+
+    let core = ExecutionClientCore::new(
+        config.trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id()));
+    let bar = Bar::new(
+        bar_type,
+        Price::new(1000.0, 3),
+        Price::new(1001.0, 3),
+        Price::new(999.0, 3),
+        Price::new(1000.5, 3),
+        Quantity::new(100.0, 3),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let result = client.process_bar(&bar);
+
+    assert!(result.is_ok());
+    assert_eq!(client.matching_engine_count(), 0);
+}
+
+#[rstest]
+fn test_message_handler_drops_precision_mismatched_bar(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let mut config = create_config(trader_id, account_id, instrument.id().venue);
+    config.bar_execution = true;
+
+    let core = ExecutionClientCore::new(
+        config.trader_id,
+        ClientId::new("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    client.start().unwrap();
+
+    let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id()));
+    let bar = Bar::new(
+        bar_type,
+        Price::new(1000.0, 3),
+        Price::new(1001.0, 3),
+        Price::new(999.0, 3),
+        Price::new(1000.5, 3),
+        Quantity::new(100.0, 3),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    msgbus::publish_bar(format!("data.bars.{bar_type}").into(), &bar);
+
+    assert_eq!(client.matching_engine_count(), 0);
+    client.stop().unwrap();
 }
 
 #[rstest]

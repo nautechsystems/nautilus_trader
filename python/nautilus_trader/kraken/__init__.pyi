@@ -78,6 +78,11 @@ class KrakenExecClientConfig:
         timeout_secs: int | None = None,
         heartbeat_interval_secs: int | None = None,
         max_requests_per_second: int | None = None,
+        spot_account_type: model.AccountType | None = None,
+        default_leverage: int | None = None,
+        use_spot_position_reports: bool | None = None,
+        spot_positions_quote_currency: str | None = None,
+        margin_balance_asset: str | None = None,
     ) -> None: ...
 
 @typing.final
@@ -251,7 +256,6 @@ class KrakenSpotHttpClient:
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url: str | None = None,
-        demo: bool = False,
         timeout_secs: int = 60,
         max_retries: int | None = None,
         retry_delay_ms: int | None = None,
@@ -267,8 +271,6 @@ class KrakenSpotHttpClient:
     def api_key_masked(self) -> str | None: ...
     def cache_instrument(self, instrument: typing.Any) -> None: ...
     def cancel_all_requests(self) -> None: ...
-    def set_use_spot_position_reports(self, value: bool) -> None: ...
-    def set_spot_positions_quote_currency(self, currency: str) -> None: ...
     def get_server_time(self) -> typing.Any: ...
     def request_instruments(self, pairs: typing.Sequence[str] | None = ...) -> typing.Any: ...
     def request_instrument_statuses(
@@ -291,7 +293,19 @@ class KrakenSpotHttpClient:
         end: datetime.datetime | None = ...,
         limit: int | None = ...,
     ) -> typing.Any: ...
-    def request_account_state(self, account_id: model.AccountId) -> typing.Any: ...
+    def request_account_state(
+        self,
+        account_id: model.AccountId,
+        account_type: model.AccountType,
+        margin_balance_asset: str | None = ...,
+    ) -> typing.Any: ...
+    def request_margin_metrics(self, asset: str | None = ...) -> typing.Any: ...
+    def request_account_state_with_metrics(
+        self,
+        account_id: model.AccountId,
+        account_type: model.AccountType,
+        margin_balance_asset: str | None = ...,
+    ) -> typing.Any: ...
     def request_order_status_reports(
         self,
         account_id: model.AccountId,
@@ -308,7 +322,12 @@ class KrakenSpotHttpClient:
         end: datetime.datetime | None = ...,
     ) -> typing.Any: ...
     def request_position_status_reports(
-        self, account_id: model.AccountId, instrument_id: model.InstrumentId | None = ...
+        self,
+        account_id: model.AccountId,
+        instrument_id: model.InstrumentId | None,
+        account_type: model.AccountType,
+        use_spot_position_reports: bool,
+        quote_currency: str,
     ) -> typing.Any: ...
     def submit_order(
         self,
@@ -328,7 +347,9 @@ class KrakenSpotHttpClient:
         reduce_only: bool,
         post_only: bool,
         quote_quantity: bool,
-        display_qty: model.Quantity | None = ...,
+        display_qty: model.Quantity | None,
+        leverage: int | None,
+        account_type: model.AccountType,
     ) -> typing.Any: ...
     def cancel_order(
         self,
@@ -414,7 +435,7 @@ class KrakenAssetClass(enum.Enum):
 
 @typing.final
 class KrakenEnvironment(enum.Enum):
-    MAINNET = ...
+    LIVE = ...
     DEMO = ...
 
 @typing.final
