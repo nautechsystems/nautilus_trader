@@ -883,6 +883,33 @@ async fn test_request_position_status_reports_skips_perp_fetch_for_spot_filter()
 
 #[rstest]
 #[tokio::test]
+async fn test_request_position_status_reports_outcome_filter_skips_all_fetches() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    let reports = client
+        .request_position_status_reports(
+            "0x1234567890123456789012345678901234567890",
+            Some("OUTCOME-2-YES-OUTCOME.HYPERLIQUID".into()),
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        reports.is_empty(),
+        "outcome filter should return empty spot/perp position reports",
+    );
+
+    let last = state.last_request_body.lock().await;
+    assert!(
+        last.is_none(),
+        "outcome-filtered query must not hit clearinghouseState or spotClearinghouseState",
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_rate_limit_triggers_429_response() {
     let state = TestServerState::default();
     state.rate_limit_after.store(2, Ordering::Relaxed);

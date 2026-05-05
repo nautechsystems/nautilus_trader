@@ -29,7 +29,10 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::models::{AssetPosition, HyperliquidFill, OutcomeDescriptor, OutcomeMetaResponse, PerpMeta, SpotBalance, SpotMeta};
+use super::models::{
+    AssetPosition, HyperliquidFill, OutcomeDescriptor, OutcomeMetaResponse, PerpMeta, SpotBalance,
+    SpotMeta,
+};
 use crate::{
     common::{
         consts::HYPERLIQUID_VENUE,
@@ -64,6 +67,7 @@ pub struct HyperliquidInstrumentDef {
     /// Raw symbol used in Hyperliquid WebSocket subscriptions/messages.
     /// For perps: base currency (e.g., "BTC").
     /// For spot: `@{pair_index}` format (e.g., "@107" for HYPE-USDC).
+    /// For outcomes: `#{asset}` format (e.g., "#20").
     pub raw_symbol: Ustr,
     /// Base currency/asset (e.g., "BTC", "PURR").
     pub base: Ustr,
@@ -256,11 +260,15 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
 /// Parse outcome (prediction) market instrument definitions from Hyperliquid `outcomeMeta` response.
 ///
 /// Each outcome market generates two instrument definitions (Yes/No sides).
-/// Asset index encoding: `asset = outcome_id * 10 + side`
+/// Data-coin encoding: `asset = outcome_id * 10 + side`
 /// where side is 0 for first side (Yes), 1 for second side (No).
+///
+/// Hyperliquid action asset IDs for outcomes are offset by `100_000_000`:
+/// `action_asset = 100_000_000 + asset`.
 pub fn parse_outcome_instruments(
     meta: &OutcomeMetaResponse,
 ) -> Result<Vec<HyperliquidInstrumentDef>, String> {
+    const OUTCOME_ACTION_ASSET_OFFSET: u32 = 100_000_000;
     // Outcome markets use 6 decimal places for price precision (0.000001 increments)
     const OUTCOME_PRICE_DECIMALS: u32 = 6;
     const OUTCOME_SIZE_DECIMALS: u32 = 6; // USDH precision
@@ -270,7 +278,8 @@ pub fn parse_outcome_instruments(
     for outcome in &meta.outcomes {
         for (side_idx, side_spec) in outcome.side_specs.iter().enumerate() {
             let side = side_idx as u8;
-            let asset_index = outcome.outcome * 10 + side as u32;
+            let data_asset = outcome.outcome * 10 + side as u32;
+            let action_asset = OUTCOME_ACTION_ASSET_OFFSET + data_asset;
 
             // Symbol format: OUTCOME-{outcome_id}-{YES|NO}-OUTCOME
             let symbol = format!(
@@ -280,7 +289,7 @@ pub fn parse_outcome_instruments(
             );
 
             // Raw symbol for WebSocket/API: "#<asset_index>"
-            let raw_symbol = format!("#{}", asset_index);
+            let raw_symbol = format!("#{data_asset}");
 
             let tick_size = pow10_neg(OUTCOME_PRICE_DECIMALS);
             let lot_size = pow10_neg(OUTCOME_SIZE_DECIMALS);
@@ -291,7 +300,8 @@ pub fn parse_outcome_instruments(
                 base: format!("{}-{}", outcome.name, side_spec.name).into(),
                 quote: "USDH".into(),
                 market_type: HyperliquidMarketType::Outcome,
-                asset_index,
+                // Action asset ID used for order submission/cancel paths.
+                asset_index: action_asset,
                 price_decimals: OUTCOME_PRICE_DECIMALS,
                 size_decimals: OUTCOME_SIZE_DECIMALS,
                 tick_size,
@@ -345,39 +355,45 @@ pub fn create_instrument_from_def(
     // - Perps: base currency (e.g., "BTC")
     // - Spot PURR: slash format (e.g., "PURR/USDC")
     // - Spot others: @{index} format (e.g., "@107")
+    // - Outcomes: #{asset} format (e.g., "#20")
     let raw_symbol = Symbol::new(def.raw_symbol);
-    let base_currency = get_currency(&def.base);
-    let quote_currency = get_currency(&def.quote);
     let price_increment = Price::from(def.tick_size.to_string());
     let size_increment = Quantity::from(def.lot_size.to_string());
 
     match def.market_type {
-        HyperliquidMarketType::Spot => Some(InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            raw_symbol,
-            base_currency,
-            quote_currency,
-            def.price_decimals as u8,
-            def.size_decimals as u8,
-            price_increment,
-            size_increment,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            ts_init, // Identical to ts_init for now
-            ts_init,
-        ))),
+        HyperliquidMarketType::Spot => {
+            let base_currency = get_currency(&def.base);
+            let quote_currency = get_currency(&def.quote);
+
+            Some(InstrumentAny::CurrencyPair(CurrencyPair::new(
+                instrument_id,
+                raw_symbol,
+                base_currency,
+                quote_currency,
+                def.price_decimals as u8,
+                def.size_decimals as u8,
+                price_increment,
+                size_increment,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                ts_init, // Identical to ts_init for now
+                ts_init,
+            )))
+        }
         HyperliquidMarketType::Perp => {
+            let base_currency = get_currency(&def.base);
+            let quote_currency = get_currency(&def.quote);
             let settlement_currency = get_currency("USDC");
 
             Some(InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
@@ -413,13 +429,14 @@ pub fn create_instrument_from_def(
             let currency = get_currency("USDH");
 
             // Parse raw_data to extract outcome metadata
-            let outcome_desc: serde_json::Result<OutcomeDescriptor> = serde_json::from_str(&def.raw_data);
-            
+            let outcome_desc: serde_json::Result<OutcomeDescriptor> =
+                serde_json::from_str(&def.raw_data);
+
             let description = outcome_desc
                 .as_ref()
                 .map(|o| o.description.as_str())
                 .unwrap_or("");
-            
+
             // For outcome markets, we use BinaryOption instrument
             let binary_option = BinaryOption::new_checked(
                 instrument_id,
@@ -434,20 +451,21 @@ pub fn create_instrument_from_def(
                 size_increment,
                 None, // outcome - determined at settlement
                 Some(Ustr::from(description)),
-                None, // max_quantity
-                None, // min_quantity
-                None, // max_notional
-                None, // min_notional
+                None,                       // max_quantity
+                None,                       // min_quantity
+                None,                       // max_notional
+                None,                       // min_notional
                 Some(Price::from("0.999")), // max_price
                 Some(Price::from("0.001")), // min_price
-                None, // margin_init - will use default
-                None, // margin_maint - will use default
-                None, // maker_fee
-                None, // taker_fee
-                None, // info
+                None,                       // margin_init - will use default
+                None,                       // margin_maint - will use default
+                None,                       // maker_fee
+                None,                       // taker_fee
+                None,                       // info
                 ts_init,
                 ts_init,
-            ).ok()?;
+            )
+            .ok()?;
 
             Some(InstrumentAny::BinaryOption(binary_option))
         }

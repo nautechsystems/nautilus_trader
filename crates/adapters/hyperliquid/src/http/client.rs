@@ -82,13 +82,14 @@ use crate::{
             HyperliquidExecOrderKind, HyperliquidExecOrderResponseData, HyperliquidExecOrderStatus,
             HyperliquidExecPlaceOrderRequest, HyperliquidExecTif, HyperliquidExecTpSl,
             HyperliquidExecTriggerParams, HyperliquidFills, HyperliquidFundingHistoryEntry,
-            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus, OutcomeMetaResponse, PerpMeta, PerpMetaAndCtxs,
-            RESPONSE_STATUS_OK, SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
+            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus, OutcomeMetaResponse,
+            PerpMeta, PerpMetaAndCtxs, RESPONSE_STATUS_OK, SpotClearinghouseState, SpotMeta,
+            SpotMetaAndCtxs,
         },
         parse::{
             HyperliquidInstrumentDef, instruments_from_defs_owned, parse_fill_report,
-            parse_order_status_report_from_basic, parse_outcome_instruments, parse_perp_instruments,
-            parse_position_status_report, parse_spot_instruments,
+            parse_order_status_report_from_basic, parse_outcome_instruments,
+            parse_perp_instruments, parse_position_status_report, parse_spot_instruments,
             parse_spot_position_status_report,
         },
         query::{ExchangeAction, InfoRequest},
@@ -1093,7 +1094,7 @@ impl HyperliquidHttpClient {
             m.insert(coin, instrument.clone());
         });
 
-        // Composite key allows disambiguating same coin across PERP and SPOT
+        // Composite key allows disambiguating same coin across product types.
         if let Ok(product_type) = HyperliquidProductType::from_symbol(full_symbol.as_str()) {
             self.instruments_by_coin.rcu(|m| {
                 m.insert((coin, product_type), instrument.clone());
@@ -1141,7 +1142,8 @@ impl HyperliquidHttpClient {
             return Some(instrument.clone());
         }
 
-        // HTTP responses lack product type context, try PERP then SPOT
+        // HTTP responses lack product type context, try product types in
+        // descending likelihood for current adapters.
         if product_type.is_none() {
             let guard = self.instruments_by_coin.load();
 
@@ -1150,6 +1152,10 @@ impl HyperliquidHttpClient {
             }
 
             if let Some(instrument) = guard.get(&(*coin, HyperliquidProductType::Spot)) {
+                return Some(instrument.clone());
+            }
+
+            if let Some(instrument) = guard.get(&(*coin, HyperliquidProductType::Outcome)) {
                 return Some(instrument.clone());
             }
         }
@@ -2070,17 +2076,23 @@ impl HyperliquidHttpClient {
 
         let filter_product = instrument_id
             .and_then(|id| HyperliquidProductType::from_symbol(id.symbol.as_str()).ok());
-        let fetch_perp = filter_product != Some(HyperliquidProductType::Spot);
-        let fetch_spot = filter_product != Some(HyperliquidProductType::Perp);
+        let (fetch_perp, fetch_spot) = match filter_product {
+            Some(HyperliquidProductType::Perp) => (true, false),
+            Some(HyperliquidProductType::Spot) => (false, true),
+            Some(HyperliquidProductType::Outcome) => (false, false),
+            None => (true, true),
+        };
 
         let mut reports = Vec::new();
         let ts_init = self.clock.get_time_ns();
 
         if !fetch_perp {
-            let spot_reports = self
-                .request_spot_position_status_reports(user, instrument_id)
-                .await?;
-            reports.extend(spot_reports);
+            if fetch_spot {
+                let spot_reports = self
+                    .request_spot_position_status_reports(user, instrument_id)
+                    .await?;
+                reports.extend(spot_reports);
+            }
             return Ok(reports);
         }
 
@@ -2916,7 +2928,10 @@ mod tests {
             consts::HYPERLIQUID_VENUE,
             enums::{HyperliquidEnvironment, HyperliquidProductType},
         },
-        http::query::InfoRequest,
+        http::{
+            parse::{HyperliquidInstrumentDef, HyperliquidMarketType, create_instrument_from_def},
+            query::InfoRequest,
+        },
     };
 
     #[rstest]
@@ -3204,5 +3219,51 @@ mod tests {
             )
             .expect("get_or_create_instrument must resolve sanitized base for HIP-3");
         assert_eq!(resolved.id(), hip3.id());
+    }
+
+    #[rstest]
+    fn test_cache_instrument_outcome_resolves_by_product_type_and_base_alias() {
+        let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+
+        let def = HyperliquidInstrumentDef {
+            symbol: "OUTCOME-2-YES-OUTCOME".into(),
+            raw_symbol: "#20".into(),
+            base: "Outcome2-Yes".into(),
+            quote: "USDH".into(),
+            market_type: HyperliquidMarketType::Outcome,
+            asset_index: 100_000_020,
+            price_decimals: 6,
+            size_decimals: 6,
+            tick_size: rust_decimal::Decimal::new(1, 6),
+            lot_size: rust_decimal::Decimal::new(1, 6),
+            max_leverage: Some(1),
+            only_isolated: false,
+            is_hip3: false,
+            active: true,
+            raw_data: r#"{"outcome":2,"name":"Recurring","description":"test","sideSpecs":[{"name":"Yes"},{"name":"No"}]}"#.to_string(),
+        };
+
+        let ts = get_atomic_clock_realtime().get_time_ns();
+        let instrument = create_instrument_from_def(&def, ts).expect("outcome instrument");
+        client.cache_instrument(&instrument);
+
+        assert_eq!(
+            HyperliquidProductType::from_symbol("OUTCOME-2-YES-OUTCOME").unwrap(),
+            HyperliquidProductType::Outcome
+        );
+
+        let by_coin = client
+            .get_or_create_instrument(&Ustr::from("#20"), Some(HyperliquidProductType::Outcome))
+            .expect("outcome coin+product lookup must resolve");
+        assert_eq!(by_coin.id(), instrument.id());
+
+        // Matches request_bars symbol split path: base is first component "OUTCOME"
+        let by_base_alias = client
+            .get_or_create_instrument(
+                &Ustr::from("OUTCOME"),
+                Some(HyperliquidProductType::Outcome),
+            )
+            .expect("outcome base alias lookup must resolve");
+        assert_eq!(by_base_alias.id(), instrument.id());
     }
 }

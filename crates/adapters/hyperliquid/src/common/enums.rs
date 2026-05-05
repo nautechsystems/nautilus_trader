@@ -956,6 +956,8 @@ pub enum HyperliquidProductType {
     Perp,
     /// Spot markets.
     Spot,
+    /// Outcome (prediction) markets.
+    Outcome,
 }
 
 impl HyperliquidProductType {
@@ -969,6 +971,8 @@ impl HyperliquidProductType {
             Ok(Self::Perp)
         } else if symbol.ends_with("-SPOT") {
             Ok(Self::Spot)
+        } else if symbol.ends_with("-OUTCOME") {
+            Ok(Self::Outcome)
         } else {
             anyhow::bail!("Invalid Hyperliquid symbol format: {symbol}")
         }

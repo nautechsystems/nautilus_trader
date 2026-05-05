@@ -30,14 +30,20 @@ mod tests {
 
     #[test]
     fn test_parse_outcome_instruments() {
+        const OUTCOME_ACTION_ASSET_OFFSET: u32 = 100_000_000;
+
         let meta = OutcomeMetaResponse {
             outcomes: vec![OutcomeDescriptor {
                 outcome: 2,
                 name: "BTC above $80k on May 9".to_string(),
                 description: "Will BTC be above $80,000 on May 9, 2026?".to_string(),
                 side_specs: vec![
-                    OutcomeSideSpec { name: "Yes".to_string() },
-                    OutcomeSideSpec { name: "No".to_string() },
+                    OutcomeSideSpec {
+                        name: "Yes".to_string(),
+                    },
+                    OutcomeSideSpec {
+                        name: "No".to_string(),
+                    },
                 ],
             }],
             questions: vec![],
@@ -52,7 +58,7 @@ mod tests {
         let yes_def = &defs[0];
         assert_eq!(yes_def.symbol.as_str(), "OUTCOME-2-YES-OUTCOME");
         assert_eq!(yes_def.raw_symbol.as_str(), "#20"); // outcome_id * 10 + side
-        assert_eq!(yes_def.asset_index, 20);
+        assert_eq!(yes_def.asset_index, OUTCOME_ACTION_ASSET_OFFSET + 20);
         assert_eq!(yes_def.market_type, HyperliquidMarketType::Outcome);
         assert_eq!(yes_def.quote.as_str(), "USDH");
         assert_eq!(yes_def.max_leverage, Some(1));
@@ -61,7 +67,7 @@ mod tests {
         let no_def = &defs[1];
         assert_eq!(no_def.symbol.as_str(), "OUTCOME-2-NO-OUTCOME");
         assert_eq!(no_def.raw_symbol.as_str(), "#21"); // outcome_id * 10 + side
-        assert_eq!(no_def.asset_index, 21);
+        assert_eq!(no_def.asset_index, OUTCOME_ACTION_ASSET_OFFSET + 21);
         assert_eq!(no_def.market_type, HyperliquidMarketType::Outcome);
     }
 
@@ -97,7 +103,10 @@ mod tests {
         // Verify BinaryOption properties
         assert_eq!(binary_option.id.symbol.as_str(), "OUTCOME-2-YES-OUTCOME");
         assert_eq!(binary_option.currency.code.as_str(), "USDH");
-        assert_eq!(binary_option.asset_class, nautilus_model::enums::AssetClass::Alternative);
+        assert_eq!(
+            binary_option.asset_class,
+            nautilus_model::enums::AssetClass::Alternative
+        );
         assert_eq!(binary_option.price_precision, 6);
         assert_eq!(binary_option.size_precision, 6);
 
@@ -108,12 +117,16 @@ mod tests {
 
     #[test]
     fn test_outcome_asset_index_encoding() {
-        // Test asset index encoding: asset = outcome_id * 10 + side
+        const OUTCOME_ACTION_ASSET_OFFSET: u32 = 100_000_000;
+
+        // Test data-coin encoding + action asset ID encoding
+        // data asset: outcome_id * 10 + side
+        // action asset: 100_000_000 + data asset
         let test_cases = vec![
-            (2, 0, 20, "#20"),   // outcome 2, Yes side
-            (2, 1, 21, "#21"),   // outcome 2, No side
-            (10, 0, 100, "#100"), // outcome 10, Yes side
-            (10, 1, 101, "#101"), // outcome 10, No side
+            (2, 0, OUTCOME_ACTION_ASSET_OFFSET + 20, "#20"), // outcome 2, Yes side
+            (2, 1, OUTCOME_ACTION_ASSET_OFFSET + 21, "#21"), // outcome 2, No side
+            (10, 0, OUTCOME_ACTION_ASSET_OFFSET + 100, "#100"), // outcome 10, Yes side
+            (10, 1, OUTCOME_ACTION_ASSET_OFFSET + 101, "#101"), // outcome 10, No side
         ];
 
         for (outcome_id, side, expected_index, expected_coin) in test_cases {
@@ -123,8 +136,12 @@ mod tests {
                     name: format!("Test outcome {}", outcome_id),
                     description: "Test description".to_string(),
                     side_specs: vec![
-                        OutcomeSideSpec { name: "Yes".to_string() },
-                        OutcomeSideSpec { name: "No".to_string() },
+                        OutcomeSideSpec {
+                            name: "Yes".to_string(),
+                        },
+                        OutcomeSideSpec {
+                            name: "No".to_string(),
+                        },
                     ],
                 }],
                 questions: vec![],
@@ -139,9 +156,11 @@ mod tests {
                 outcome_id, side
             );
             assert_eq!(
-                target_def.raw_symbol.as_str(), expected_coin,
+                target_def.raw_symbol.as_str(),
+                expected_coin,
                 "outcome_id={}, side={}",
-                outcome_id, side
+                outcome_id,
+                side
             );
         }
     }
