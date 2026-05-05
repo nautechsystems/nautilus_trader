@@ -24,8 +24,9 @@ use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::identifiers::{ActorId, ComponentId, StrategyId};
 #[cfg(feature = "examples")]
 use nautilus_trading::examples::strategies::{
-    DeltaNeutralVol, DeltaNeutralVolConfig, EmaCross, EmaCrossConfig, GridMarketMaker,
-    GridMarketMakerConfig, HurstVpinDirectional, HurstVpinDirectionalConfig,
+    CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol, DeltaNeutralVolConfig,
+    EmaCross, EmaCrossConfig, GridMarketMaker, GridMarketMakerConfig, HurstVpinDirectional,
+    HurstVpinDirectionalConfig,
 };
 use nautilus_trading::{
     ImportableStrategyConfig,
@@ -421,6 +422,10 @@ impl BacktestNode {
             } else if let Ok(config) = config.extract::<GridMarketMakerConfig>() {
                 engine
                     .add_strategy(GridMarketMaker::new(config))
+                    .map_err(to_pyruntime_err)
+            } else if let Ok(config) = config.extract::<CompositeMarketMakerConfig>() {
+                engine
+                    .add_strategy(CompositeMarketMaker::new(config))
                     .map_err(to_pyruntime_err)
             } else if let Ok(config) = config.extract::<DeltaNeutralVolConfig>() {
                 engine

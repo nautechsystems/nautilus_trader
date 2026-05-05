@@ -573,7 +573,8 @@ impl PyBacktestEngine {
     #[pyo3(name = "add_native_strategy")]
     fn py_add_native_strategy(&mut self, config: &Bound<'_, PyAny>) -> PyResult<()> {
         use nautilus_trading::examples::strategies::{
-            DeltaNeutralVol, DeltaNeutralVolConfig, EmaCross, EmaCrossConfig, GridMarketMaker,
+            CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol,
+            DeltaNeutralVolConfig, EmaCross, EmaCrossConfig, GridMarketMaker,
             GridMarketMakerConfig, HurstVpinDirectional, HurstVpinDirectionalConfig,
         };
 
@@ -584,6 +585,10 @@ impl PyBacktestEngine {
         } else if let Ok(config) = config.extract::<GridMarketMakerConfig>() {
             self.0
                 .add_strategy(GridMarketMaker::new(config))
+                .map_err(to_pyruntime_err)
+        } else if let Ok(config) = config.extract::<CompositeMarketMakerConfig>() {
+            self.0
+                .add_strategy(CompositeMarketMaker::new(config))
                 .map_err(to_pyruntime_err)
         } else if let Ok(config) = config.extract::<DeltaNeutralVolConfig>() {
             self.0
