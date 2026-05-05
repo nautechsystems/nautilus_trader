@@ -47,7 +47,7 @@ use nautilus_model::{
     instruments::{CurrencyPair, Instrument, InstrumentAny, SyntheticInstrument, stubs::*},
     orderbook::OrderBook,
     orders::{
-        Order, OrderList,
+        Order, OrderAny, OrderError, OrderList,
         builder::OrderTestBuilder,
         stubs::{TestOrderEventStubs, TestOrdersGenerator},
     },
@@ -476,9 +476,8 @@ fn test_order_when_submitted(mut cache: Cache, audusd_sim: CurrencyPair) {
     let client_order_id = order.client_order_id();
     cache.add_order(order.clone(), None, None, false).unwrap();
 
-    let submitted = OrderSubmitted::default();
-    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
-    cache.update_order(&order).unwrap();
+    let submitted = OrderEventAny::Submitted(OrderSubmitted::default());
+    update_order_with_event(&mut cache, &mut order, submitted);
 
     // check the status change of the cached order
     let cached_order = cache.order(&client_order_id).unwrap();
@@ -525,6 +524,139 @@ fn test_order_when_submitted(mut cache: Cache, audusd_sim: CurrencyPair) {
     assert_eq!(cache.venue_order_id(&order.client_order_id()), None);
 }
 
+#[rstest]
+fn test_update_order_applies_event_to_cached_order(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    let client_order_id = order.client_order_id();
+    cache.add_order(order, None, None, false).unwrap();
+
+    let submitted = OrderEventAny::Submitted(OrderSubmitted::default());
+    let applied = cache.update_order(&submitted).unwrap();
+    let cached_order = cache.order(&client_order_id).unwrap();
+
+    assert_eq!(applied.status(), OrderStatus::Submitted);
+    assert_eq!(cached_order.status(), OrderStatus::Submitted);
+    assert!(
+        cache
+            .orders_active_local(None, None, None, None, None)
+            .is_empty()
+    );
+    assert_eq!(cache.orders_inflight(None, None, None, None, None).len(), 1);
+    assert!(cache.is_order_inflight(&client_order_id));
+}
+
+#[rstest]
+fn test_update_order_returns_not_found_for_missing_order(mut cache: Cache) {
+    let event = OrderEventAny::Submitted(OrderSubmitted::default());
+    let client_order_id = event.client_order_id();
+
+    let err = cache.update_order(&event).unwrap_err();
+
+    match err.downcast_ref::<OrderError>() {
+        Some(OrderError::NotFound(id)) => assert_eq!(*id, client_order_id),
+        other => panic!("Expected OrderError::NotFound, was {other:?}"),
+    }
+}
+
+#[rstest]
+fn test_update_order_rejects_invalid_transition_without_mutating(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order, None, None, false).unwrap();
+
+    let submitted = OrderEventAny::Submitted(OrderSubmitted::default());
+    cache.update_order(&submitted).unwrap();
+    let event_count = cache.order(&client_order_id).unwrap().event_count();
+
+    let err = cache.update_order(&submitted).unwrap_err();
+    let cached_order = cache.order(&client_order_id).unwrap();
+
+    assert!(matches!(
+        err.downcast_ref::<OrderError>(),
+        Some(OrderError::InvalidStateTransition)
+    ));
+    assert_eq!(cached_order.status(), OrderStatus::Submitted);
+    assert_eq!(
+        cached_order.previous_status(),
+        Some(OrderStatus::Initialized)
+    );
+    assert_eq!(cached_order.event_count(), event_count);
+    assert!(cache.is_order_inflight(&client_order_id));
+}
+
+#[rstest]
+fn test_update_order_rejects_venue_fallback_when_event_client_id_differs(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let account_id = AccountId::from("SIM-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let submitted = TestOrderEventStubs::submitted(&order, account_id);
+    update_order_with_event(&mut cache, &mut order, submitted);
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+    update_order_with_event(&mut cache, &mut order, accepted);
+    let event_count = cache.order(&client_order_id).unwrap().event_count();
+
+    let canceled = OrderEventAny::Canceled(OrderCanceled::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        ClientOrderId::from("UNKNOWN"),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(venue_order_id),
+        Some(account_id),
+    ));
+
+    let err = cache.update_order(&canceled).unwrap_err();
+    let cached_order = cache.order(&client_order_id).unwrap();
+
+    assert!(matches!(
+        err.downcast_ref::<OrderError>(),
+        Some(OrderError::Invariant(_))
+    ));
+    assert_eq!(cached_order.status(), OrderStatus::Accepted);
+    assert_eq!(cached_order.event_count(), event_count);
+    assert_eq!(
+        cache.client_order_id(&venue_order_id),
+        Some(&client_order_id)
+    );
+}
+
+fn update_order_with_event(
+    cache: &mut Cache,
+    order: &mut OrderAny,
+    event: impl Into<OrderEventAny>,
+) {
+    let event = event.into();
+    *order = cache.update_order(&event).unwrap();
+}
+
 // Test order state transitions and cache queries when an order is rejected.
 //
 // This test verifies cache behavior for the complete lifecycle: initialized -> submitted -> rejected.
@@ -547,13 +679,11 @@ fn test_order_when_rejected(mut cache: Cache, audusd_sim: CurrencyPair) {
         .build();
     cache.add_order(order.clone(), None, None, false).unwrap();
 
-    let submitted = OrderSubmitted::default();
-    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
-    cache.update_order(&order).unwrap();
+    let submitted = OrderEventAny::Submitted(OrderSubmitted::default());
+    update_order_with_event(&mut cache, &mut order, submitted);
 
-    let rejected = OrderRejected::default();
-    order.apply(OrderEventAny::Rejected(rejected)).unwrap();
-    cache.update_order(&order).unwrap();
+    let rejected = OrderEventAny::Rejected(OrderRejected::default());
+    update_order_with_event(&mut cache, &mut order, rejected);
 
     // check the status change of the cached order
     let cached_order = cache.order(&order.client_order_id()).unwrap();
@@ -603,13 +733,11 @@ fn test_order_when_accepted(mut cache: Cache, audusd_sim: CurrencyPair) {
 
     cache.add_order(order.clone(), None, None, false).unwrap();
 
-    let submitted = OrderSubmitted::default();
-    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
-    cache.update_order(&order).unwrap();
+    let submitted = OrderEventAny::Submitted(OrderSubmitted::default());
+    update_order_with_event(&mut cache, &mut order, submitted);
 
-    let accepted = OrderAccepted::default();
-    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
-    cache.update_order(&order).unwrap();
+    let accepted = OrderEventAny::Accepted(OrderAccepted::default());
+    update_order_with_event(&mut cache, &mut order, accepted);
 
     let result = cache.order(&order.client_order_id()).unwrap();
 
@@ -851,13 +979,11 @@ fn test_order_when_filled(mut cache: Cache, audusd_sim: CurrencyPair) {
         .build();
     cache.add_order(order.clone(), None, None, false).unwrap();
 
-    let submitted = OrderSubmitted::default();
-    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
-    cache.update_order(&order).unwrap();
+    let submitted = OrderEventAny::Submitted(OrderSubmitted::default());
+    update_order_with_event(&mut cache, &mut order, submitted);
 
-    let accepted = OrderAccepted::default();
-    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
-    cache.update_order(&order).unwrap();
+    let accepted = OrderEventAny::Accepted(OrderAccepted::default());
+    update_order_with_event(&mut cache, &mut order, accepted);
 
     let filled = TestOrderEventStubs::filled(
         &order,
@@ -871,8 +997,7 @@ fn test_order_when_filled(mut cache: Cache, audusd_sim: CurrencyPair) {
         None,
         None,
     );
-    order.apply(filled).unwrap();
-    cache.update_order(&order).unwrap();
+    update_order_with_event(&mut cache, &mut order, filled);
 
     let result = cache.order(&order.client_order_id()).unwrap();
 
@@ -2047,13 +2172,11 @@ fn test_purge_open_order_skips_purge() {
     let client_order_id = order.client_order_id();
     cache.add_order(order.clone(), None, None, false).unwrap();
 
-    let submitted = OrderSubmitted::default();
-    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
-    cache.update_order(&order).unwrap();
+    let submitted = OrderEventAny::Submitted(OrderSubmitted::default());
+    update_order_with_event(&mut cache, &mut order, submitted);
 
-    let accepted = OrderAccepted::default();
-    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
-    cache.update_order(&order).unwrap();
+    let accepted = OrderEventAny::Accepted(OrderAccepted::default());
+    update_order_with_event(&mut cache, &mut order, accepted);
 
     // Verify order is open
     assert!(order.is_open());
@@ -2066,7 +2189,7 @@ fn test_purge_open_order_skips_purge() {
     // Verify the order still exists (guard prevented purge)
     assert!(cache.order_exists(&client_order_id));
     assert_eq!(cache.orders_total_count(None, None, None, None, None), 1);
-    assert!(cache.order(&client_order_id).is_some());
+    assert!(cache.order_exists(&client_order_id));
 }
 
 #[rstest]
@@ -2274,18 +2397,11 @@ fn test_purge_instrument_removes_from_cache_and_indices() {
     cache
         .add_order(order_open.clone(), None, None, false)
         .unwrap();
-    order_open
-        .apply(TestOrderEventStubs::submitted(&order_open, account_id))
-        .unwrap();
-    cache.update_order(&order_open).unwrap();
-    order_open
-        .apply(TestOrderEventStubs::accepted(
-            &order_open,
-            account_id,
-            VenueOrderId::new("V-1"),
-        ))
-        .unwrap();
-    cache.update_order(&order_open).unwrap();
+    let submitted_open = TestOrderEventStubs::submitted(&order_open, account_id);
+    update_order_with_event(&mut cache, &mut order_open, submitted_open);
+    let accepted_open =
+        TestOrderEventStubs::accepted(&order_open, account_id, VenueOrderId::new("V-1"));
+    update_order_with_event(&mut cache, &mut order_open, accepted_open);
     let filled_open = TestOrderEventStubs::filled(
         &order_open,
         &instrument,
@@ -2298,8 +2414,7 @@ fn test_purge_instrument_removes_from_cache_and_indices() {
         None,
         None,
     );
-    order_open.apply(filled_open.clone()).unwrap();
-    cache.update_order(&order_open).unwrap();
+    update_order_with_event(&mut cache, &mut order_open, filled_open.clone());
     assert!(order_open.is_closed());
 
     let mut position = Position::new(&instrument, filled_open.into());
@@ -2314,18 +2429,11 @@ fn test_purge_instrument_removes_from_cache_and_indices() {
     cache
         .add_order(order_close.clone(), Some(position_id), None, false)
         .unwrap();
-    order_close
-        .apply(TestOrderEventStubs::submitted(&order_close, account_id))
-        .unwrap();
-    cache.update_order(&order_close).unwrap();
-    order_close
-        .apply(TestOrderEventStubs::accepted(
-            &order_close,
-            account_id,
-            VenueOrderId::new("V-2"),
-        ))
-        .unwrap();
-    cache.update_order(&order_close).unwrap();
+    let submitted_close = TestOrderEventStubs::submitted(&order_close, account_id);
+    update_order_with_event(&mut cache, &mut order_close, submitted_close);
+    let accepted_close =
+        TestOrderEventStubs::accepted(&order_close, account_id, VenueOrderId::new("V-2"));
+    update_order_with_event(&mut cache, &mut order_close, accepted_close);
     let filled_close = TestOrderEventStubs::filled(
         &order_close,
         &instrument,
@@ -2338,8 +2446,7 @@ fn test_purge_instrument_removes_from_cache_and_indices() {
         None,
         None,
     );
-    order_close.apply(filled_close.clone()).unwrap();
-    cache.update_order(&order_close).unwrap();
+    update_order_with_event(&mut cache, &mut order_close, filled_close.clone());
     assert!(order_close.is_closed());
 
     position.apply(&filled_close.into());
@@ -2405,14 +2512,16 @@ fn test_purge_instrument_refuses_when_orders_open() {
         .build();
     cache.add_order(order.clone(), None, None, false).unwrap();
 
-    order
-        .apply(OrderEventAny::Submitted(OrderSubmitted::default()))
-        .unwrap();
-    cache.update_order(&order).unwrap();
-    order
-        .apply(OrderEventAny::Accepted(OrderAccepted::default()))
-        .unwrap();
-    cache.update_order(&order).unwrap();
+    update_order_with_event(
+        &mut cache,
+        &mut order,
+        OrderEventAny::Submitted(OrderSubmitted::default()),
+    );
+    update_order_with_event(
+        &mut cache,
+        &mut order,
+        OrderEventAny::Accepted(OrderAccepted::default()),
+    );
     assert!(order.is_open());
 
     cache.purge_instrument(instrument_id);
@@ -2470,18 +2579,10 @@ fn test_purge_instrument_refuses_when_positions_open() {
     cache
         .add_order(order.clone(), Some(position_id), None, false)
         .unwrap();
-    order
-        .apply(TestOrderEventStubs::submitted(&order, account_id))
-        .unwrap();
-    cache.update_order(&order).unwrap();
-    order
-        .apply(TestOrderEventStubs::accepted(
-            &order,
-            account_id,
-            VenueOrderId::new("V-1"),
-        ))
-        .unwrap();
-    cache.update_order(&order).unwrap();
+    let submitted = TestOrderEventStubs::submitted(&order, account_id);
+    update_order_with_event(&mut cache, &mut order, submitted);
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::new("V-1"));
+    update_order_with_event(&mut cache, &mut order, accepted);
     let filled = TestOrderEventStubs::filled(
         &order,
         &instrument,
@@ -2494,8 +2595,7 @@ fn test_purge_instrument_refuses_when_positions_open() {
         None,
         None,
     );
-    order.apply(filled.clone()).unwrap();
-    cache.update_order(&order).unwrap();
+    update_order_with_event(&mut cache, &mut order, filled.clone());
     assert!(order.is_closed());
 
     let position = Position::new(&instrument, filled.into());
@@ -2692,13 +2792,11 @@ fn test_purge_order_cleans_up_strategy_orders_index() {
 
     cache.add_order(order.clone(), None, None, false).unwrap();
 
-    let submitted = OrderSubmitted::default();
-    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
-    cache.update_order(&order).unwrap();
+    let submitted = OrderEventAny::Submitted(OrderSubmitted::default());
+    update_order_with_event(&mut cache, &mut order, submitted);
 
-    let accepted = OrderAccepted::default();
-    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
-    cache.update_order(&order).unwrap();
+    let accepted = OrderEventAny::Accepted(OrderAccepted::default());
+    update_order_with_event(&mut cache, &mut order, accepted);
 
     let filled = TestOrderEventStubs::filled(
         &order,
@@ -2712,8 +2810,7 @@ fn test_purge_order_cleans_up_strategy_orders_index() {
         None,
         None,
     );
-    order.apply(filled).unwrap();
-    cache.update_order(&order).unwrap();
+    update_order_with_event(&mut cache, &mut order, filled);
 
     // Verify order is in strategy index
     assert!(cache.index.strategy_orders.contains_key(&strategy_id));
@@ -2769,17 +2866,11 @@ fn test_purge_order_cleans_up_exec_spawn_orders_index() {
         .add_order(child_order.clone(), None, None, false)
         .unwrap();
 
-    let submitted = OrderSubmitted::default();
-    child_order
-        .apply(OrderEventAny::Submitted(submitted))
-        .unwrap();
-    cache.update_order(&child_order).unwrap();
+    let submitted = OrderEventAny::Submitted(OrderSubmitted::default());
+    update_order_with_event(&mut cache, &mut child_order, submitted);
 
-    let accepted = OrderAccepted::default();
-    child_order
-        .apply(OrderEventAny::Accepted(accepted))
-        .unwrap();
-    cache.update_order(&child_order).unwrap();
+    let accepted = OrderEventAny::Accepted(OrderAccepted::default());
+    update_order_with_event(&mut cache, &mut child_order, accepted);
 
     let filled = TestOrderEventStubs::filled(
         &child_order,
@@ -2793,8 +2884,7 @@ fn test_purge_order_cleans_up_exec_spawn_orders_index() {
         None,
         None,
     );
-    child_order.apply(filled).unwrap();
-    cache.update_order(&child_order).unwrap();
+    update_order_with_event(&mut cache, &mut child_order, filled);
 
     // Verify child is in parent's spawn set
     assert!(cache.index.exec_spawn_orders.contains_key(&parent_id));
@@ -2880,12 +2970,10 @@ fn test_purge_order_cleans_up_account_orders_index() {
     cache.add_order(order.clone(), None, None, false).unwrap();
 
     let submitted = TestOrderEventStubs::submitted(&order, account_id);
-    order.apply(submitted).unwrap();
-    cache.update_order(&order).unwrap();
+    update_order_with_event(&mut cache, &mut order, submitted);
 
     let accepted = TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::new("V-001"));
-    order.apply(accepted).unwrap();
-    cache.update_order(&order).unwrap();
+    update_order_with_event(&mut cache, &mut order, accepted);
 
     let filled = TestOrderEventStubs::filled(
         &order,
@@ -2899,8 +2987,7 @@ fn test_purge_order_cleans_up_account_orders_index() {
         None,
         None,
     );
-    order.apply(filled).unwrap();
-    cache.update_order(&order).unwrap();
+    update_order_with_event(&mut cache, &mut order, filled);
 
     // Verify order is in account index (populated by update_order)
     assert!(cache.index.account_orders.contains_key(&account_id));
@@ -2941,12 +3028,10 @@ fn test_purge_position_cleans_up_account_positions_index() {
     cache.add_order(order.clone(), None, None, false).unwrap();
 
     let submitted = TestOrderEventStubs::submitted(&order, account_id);
-    order.apply(submitted).unwrap();
-    cache.update_order(&order).unwrap();
+    update_order_with_event(&mut cache, &mut order, submitted);
 
     let accepted = TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::new("V-001"));
-    order.apply(accepted).unwrap();
-    cache.update_order(&order).unwrap();
+    update_order_with_event(&mut cache, &mut order, accepted);
 
     let filled = TestOrderEventStubs::filled(
         &order,
@@ -2960,8 +3045,7 @@ fn test_purge_position_cleans_up_account_positions_index() {
         None,
         None,
     );
-    order.apply(filled.clone()).unwrap();
-    cache.update_order(&order).unwrap();
+    update_order_with_event(&mut cache, &mut order, filled.clone());
 
     let position = Position::new(&instrument, filled.into());
     let position_id = position.id;
@@ -3121,12 +3205,10 @@ fn test_purge_closed_orders_also_purges_order_lists() {
 
     // Transition order1: Initialized -> Submitted -> Accepted -> Filled
     let submitted1 = TestOrderEventStubs::submitted(&order1, account_id);
-    order1.apply(submitted1).unwrap();
-    cache.update_order(&order1).unwrap();
+    update_order_with_event(&mut cache, &mut order1, submitted1);
 
     let accepted1 = TestOrderEventStubs::accepted(&order1, account_id, VenueOrderId::new("V-001"));
-    order1.apply(accepted1).unwrap();
-    cache.update_order(&order1).unwrap();
+    update_order_with_event(&mut cache, &mut order1, accepted1);
 
     let filled1 = TestOrderEventStubs::filled(
         &order1,
@@ -3140,22 +3222,18 @@ fn test_purge_closed_orders_also_purges_order_lists() {
         None,
         None,
     );
-    order1.apply(filled1).unwrap();
-    cache.update_order(&order1).unwrap();
+    update_order_with_event(&mut cache, &mut order1, filled1);
 
     // Transition order2: Initialized -> Submitted -> Accepted -> Canceled
     let submitted2 = TestOrderEventStubs::submitted(&order2, account_id);
-    order2.apply(submitted2).unwrap();
-    cache.update_order(&order2).unwrap();
+    update_order_with_event(&mut cache, &mut order2, submitted2);
 
     let accepted2 = TestOrderEventStubs::accepted(&order2, account_id, VenueOrderId::new("V-002"));
-    order2.apply(accepted2).unwrap();
-    cache.update_order(&order2).unwrap();
+    update_order_with_event(&mut cache, &mut order2, accepted2);
 
     let canceled2 =
         TestOrderEventStubs::canceled(&order2, account_id, Some(VenueOrderId::new("V-002")));
-    order2.apply(canceled2).unwrap();
-    cache.update_order(&order2).unwrap();
+    update_order_with_event(&mut cache, &mut order2, canceled2);
 
     assert!(order1.is_closed());
     assert!(order2.is_closed());
@@ -3209,12 +3287,10 @@ fn test_purge_closed_orders_does_not_purge_order_list_with_open_orders() {
 
     // Close order1, leave order2 open
     let submitted1 = TestOrderEventStubs::submitted(&order1, account_id);
-    order1.apply(submitted1).unwrap();
-    cache.update_order(&order1).unwrap();
+    update_order_with_event(&mut cache, &mut order1, submitted1);
 
     let accepted1 = TestOrderEventStubs::accepted(&order1, account_id, VenueOrderId::new("V-001"));
-    order1.apply(accepted1).unwrap();
-    cache.update_order(&order1).unwrap();
+    update_order_with_event(&mut cache, &mut order1, accepted1);
 
     let filled1 = TestOrderEventStubs::filled(
         &order1,
@@ -3228,16 +3304,13 @@ fn test_purge_closed_orders_does_not_purge_order_list_with_open_orders() {
         None,
         None,
     );
-    order1.apply(filled1).unwrap();
-    cache.update_order(&order1).unwrap();
+    update_order_with_event(&mut cache, &mut order1, filled1);
 
     let submitted2 = TestOrderEventStubs::submitted(&order2, account_id);
-    order2.apply(submitted2).unwrap();
-    cache.update_order(&order2).unwrap();
+    update_order_with_event(&mut cache, &mut order2, submitted2);
 
     let accepted2 = TestOrderEventStubs::accepted(&order2, account_id, VenueOrderId::new("V-002"));
-    order2.apply(accepted2).unwrap();
-    cache.update_order(&order2).unwrap();
+    update_order_with_event(&mut cache, &mut order2, accepted2);
 
     assert!(order1.is_closed());
     assert!(order2.is_open());
@@ -3272,8 +3345,7 @@ fn test_force_remove_from_own_order_book(mut cache: Cache) {
 
     let submitted = TestOrderEventStubs::submitted(&limit_order, AccountId::new("SIM-001"));
     let mut limit_order_mut = limit_order;
-    limit_order_mut.apply(submitted).unwrap();
-    cache.update_order(&limit_order_mut).unwrap();
+    update_order_with_event(&mut cache, &mut limit_order_mut, submitted);
 
     assert!(cache.order_exists(&limit_order_mut.client_order_id()));
     assert!(
@@ -3339,8 +3411,7 @@ fn test_audit_own_order_books_with_inflight_orders(mut cache: Cache) {
 
     let submitted = TestOrderEventStubs::submitted(&limit_order, AccountId::new("SIM-001"));
     let mut limit_order_mut = limit_order;
-    limit_order_mut.apply(submitted).unwrap();
-    cache.update_order(&limit_order_mut).unwrap();
+    update_order_with_event(&mut cache, &mut limit_order_mut, submitted);
 
     let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
     assert!(own_book.bids().count() > 0);
@@ -3372,16 +3443,14 @@ fn test_audit_own_order_books_removes_closed(mut cache: Cache) {
 
     let submitted = TestOrderEventStubs::submitted(&limit_order, AccountId::new("SIM-001"));
     let mut limit_order_mut = limit_order;
-    limit_order_mut.apply(submitted).unwrap();
-    cache.update_order(&limit_order_mut).unwrap();
+    update_order_with_event(&mut cache, &mut limit_order_mut, submitted);
 
     let accepted = TestOrderEventStubs::accepted(
         &limit_order_mut,
         AccountId::new("SIM-001"),
         VenueOrderId::new("V-001"),
     );
-    limit_order_mut.apply(accepted).unwrap();
-    cache.update_order(&limit_order_mut).unwrap();
+    update_order_with_event(&mut cache, &mut limit_order_mut, accepted);
 
     let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
     assert!(own_book.bids().count() > 0);
@@ -3391,8 +3460,7 @@ fn test_audit_own_order_books_removes_closed(mut cache: Cache) {
         AccountId::new("SIM-001"),
         Some(VenueOrderId::new("V-001")),
     );
-    limit_order_mut.apply(canceled).unwrap();
-    cache.update_order(&limit_order_mut).unwrap();
+    update_order_with_event(&mut cache, &mut limit_order_mut, canceled);
 
     cache.update_own_order_book(&limit_order_mut);
 
@@ -3422,14 +3490,12 @@ fn test_own_order_book_lifecycle_sequence(mut cache: Cache) {
     let mut live_order = limit_order;
 
     let submitted = TestOrderEventStubs::submitted(&live_order, AccountId::new("SIM-001"));
-    live_order.apply(submitted).unwrap();
-    cache.update_order(&live_order).unwrap();
+    update_order_with_event(&mut cache, &mut live_order, submitted);
 
     let venue_order_id = VenueOrderId::new("V-LCYCLE");
     let accepted =
         TestOrderEventStubs::accepted(&live_order, AccountId::new("SIM-001"), venue_order_id);
-    live_order.apply(accepted).unwrap();
-    cache.update_order(&live_order).unwrap();
+    update_order_with_event(&mut cache, &mut live_order, accepted);
 
     let own_book = cache.own_order_book(&instrument.id()).unwrap();
     assert!(own_book.bids().count() > 0);
@@ -3446,8 +3512,7 @@ fn test_own_order_book_lifecycle_sequence(mut cache: Cache) {
         None,
         None,
     );
-    live_order.apply(partial_fill).unwrap();
-    cache.update_order(&live_order).unwrap();
+    update_order_with_event(&mut cache, &mut live_order, partial_fill);
 
     let own_book = cache.own_order_book(&instrument.id()).unwrap();
     assert!(own_book.bids().count() > 0);
@@ -3457,8 +3522,7 @@ fn test_own_order_book_lifecycle_sequence(mut cache: Cache) {
         AccountId::new("SIM-001"),
         Some(VenueOrderId::new("V-LCYCLE")),
     );
-    live_order.apply(canceled).unwrap();
-    cache.update_order(&live_order).unwrap();
+    update_order_with_event(&mut cache, &mut live_order, canceled);
     cache.update_own_order_book(&live_order);
 
     let own_book = cache.own_order_book(&instrument.id()).unwrap();
@@ -3488,8 +3552,7 @@ fn test_own_order_book_pending_cancel_persists_until_final(mut cache: Cache) {
         AccountId::new("SIM-001"),
         VenueOrderId::new("V-PENDING"),
     );
-    live_order.apply(accepted).unwrap();
-    cache.update_order(&live_order).unwrap();
+    update_order_with_event(&mut cache, &mut live_order, accepted);
 
     cache.update_order_pending_cancel_local(&live_order);
     cache.audit_own_order_books();
@@ -3502,8 +3565,7 @@ fn test_own_order_book_pending_cancel_persists_until_final(mut cache: Cache) {
         AccountId::new("SIM-001"),
         Some(VenueOrderId::new("V-PENDING")),
     );
-    live_order.apply(canceled).unwrap();
-    cache.update_order(&live_order).unwrap();
+    update_order_with_event(&mut cache, &mut live_order, canceled);
     cache.update_own_order_book(&live_order);
 
     let own_book = cache.own_order_book(&instrument.id()).unwrap();
@@ -3533,8 +3595,7 @@ fn test_update_own_order_book_reinserts_missing_levels(mut cache: Cache) {
         AccountId::new("SIM-001"),
         VenueOrderId::new("V-REINSERT"),
     );
-    live_order.apply(accepted).unwrap();
-    cache.update_order(&live_order).unwrap();
+    update_order_with_event(&mut cache, &mut live_order, accepted);
 
     {
         let own_book = cache
@@ -4061,9 +4122,8 @@ fn test_initialized_order_indexes_in_orders_active_local(
         1
     );
 
-    let submitted = OrderSubmitted::default();
-    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
-    cache.update_order(&order).unwrap();
+    let submitted = OrderEventAny::Submitted(OrderSubmitted::default());
+    update_order_with_event(&mut cache, &mut order, submitted);
 
     assert!(
         !cache
@@ -4101,8 +4161,7 @@ fn test_released_order_indexes_in_orders_active_local(mut cache: Cache, audusd_s
         UnixNanos::default(),
     );
     let mut order = order;
-    order.apply(OrderEventAny::Released(released)).unwrap();
-    cache.update_order(&order).unwrap();
+    update_order_with_event(&mut cache, &mut order, OrderEventAny::Released(released));
 
     assert!(
         cache
@@ -4140,8 +4199,7 @@ fn test_emulated_order_indexes_in_orders_active_local(mut cache: Cache, audusd_s
         UnixNanos::default(),
     );
     let mut order = order;
-    order.apply(OrderEventAny::Emulated(emulated)).unwrap();
-    cache.update_order(&order).unwrap();
+    update_order_with_event(&mut cache, &mut order, OrderEventAny::Emulated(emulated));
 
     assert!(
         cache
@@ -4192,8 +4250,7 @@ fn test_update_released_order_removes_from_orders_emulated(
         UnixNanos::default(),
     );
     let mut order = order;
-    order.apply(OrderEventAny::Released(released)).unwrap();
-    cache.update_order(&order).unwrap();
+    update_order_with_event(&mut cache, &mut order, OrderEventAny::Released(released));
 
     assert!(
         !cache
@@ -4239,8 +4296,7 @@ fn test_update_closed_emulated_order_removes_from_orders_emulated(
         UnixNanos::default(),
     );
     let mut order = order;
-    order.apply(OrderEventAny::Emulated(emulated)).unwrap();
-    cache.update_order(&order).unwrap();
+    update_order_with_event(&mut cache, &mut order, OrderEventAny::Emulated(emulated));
 
     // Order should still be emulated
     assert!(
@@ -4264,8 +4320,7 @@ fn test_update_closed_emulated_order_removes_from_orders_emulated(
         None,
         None,
     );
-    order.apply(OrderEventAny::Canceled(canceled)).unwrap();
-    cache.update_order(&order).unwrap();
+    update_order_with_event(&mut cache, &mut order, OrderEventAny::Canceled(canceled));
 
     assert!(
         !cache

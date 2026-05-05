@@ -255,14 +255,10 @@ fn order_event_handler_with_cache(
     msgbus::register_order_event_endpoint(
         MessagingSwitchboard::exec_engine_process(),
         TypedIntoHandler::from(move |event: OrderEventAny| {
-            // Apply event to cached order (simulates exec engine)
-            let client_order_id = event.client_order_id();
-
-            if let Ok(mut cache_ref) = cache.try_borrow_mut()
-                && let Some(order) = cache_ref.mut_order(&client_order_id)
-            {
-                let _ = order.apply(event.clone());
+            if let Ok(mut cache_ref) = cache.try_borrow_mut() {
+                let _ = cache_ref.update_order(&event);
             }
+
             // Save the event for test assertions
             messages_for_handler.borrow_mut().push(event);
         }),
@@ -1642,7 +1638,6 @@ fn test_process_cancel_all_command(instrument_eth_usdt: InstrumentAny, account_i
         .add_order(limit_order_1.clone(), None, None, false)
         .unwrap();
     engine_l2.process_order(&mut limit_order_1, account_id);
-    cache.borrow_mut().update_order(&limit_order_1).unwrap();
 
     let client_order_id_2 = ClientOrderId::from("O-19700101-000000-001-001-2");
     let mut limit_order_2 = OrderTestBuilder::new(OrderType::Limit)
@@ -1658,7 +1653,6 @@ fn test_process_cancel_all_command(instrument_eth_usdt: InstrumentAny, account_i
         .add_order(limit_order_2.clone(), None, None, false)
         .unwrap();
     engine_l2.process_order(&mut limit_order_2, account_id);
-    cache.borrow_mut().update_order(&limit_order_2).unwrap();
 
     let client_order_id_3 = ClientOrderId::from("O-19700101-000000-001-001-3");
     let mut limit_order_3 = OrderTestBuilder::new(OrderType::Limit)
@@ -1674,7 +1668,6 @@ fn test_process_cancel_all_command(instrument_eth_usdt: InstrumentAny, account_i
         .add_order(limit_order_3.clone(), None, None, false)
         .unwrap();
     engine_l2.process_order(&mut limit_order_3, account_id);
-    cache.borrow_mut().update_order(&limit_order_3).unwrap();
 
     // Create cancel all order which related to only ETHUSDT-PERP.BINANCE instrument
     let cancel_all_command = CancelAllOrders::new(
@@ -1992,13 +1985,6 @@ fn test_process_cancel_all_skips_orders_closed_by_contingent_cascade(
 
     engine_l2.process_order(&mut limit_order_1, account_id);
     engine_l2.process_order(&mut limit_order_2, account_id);
-
-    // Sync the orders_open index from the cached (Accepted) state so that
-    // process_cancel_all's snapshot finds both legs.
-    let cached_1 = cache.borrow().order(&client_order_id_1).unwrap().clone();
-    let cached_2 = cache.borrow().order(&client_order_id_2).unwrap().clone();
-    cache.borrow_mut().update_order(&cached_1).unwrap();
-    cache.borrow_mut().update_order(&cached_2).unwrap();
 
     clear_order_event_handler_messages(&order_event_handler);
 

@@ -1966,6 +1966,10 @@ fn open_limit_order_in_cache(
 ) -> OrderAny {
     let account_id = AccountId::from("HYPERLIQUID-001");
     let mut order = make_limit_order(client_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .expect("add order");
 
     let submitted = OrderSubmitted::new(
         order.trader_id(),
@@ -1977,8 +1981,9 @@ fn open_limit_order_in_cache(
         UnixNanos::default(),
         UnixNanos::default(),
     );
-    order
-        .apply(OrderEventAny::Submitted(submitted))
+    order = cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted))
         .expect("submitted transition");
 
     let accepted = OrderAccepted::new(
@@ -1993,18 +1998,10 @@ fn open_limit_order_in_cache(
         UnixNanos::default(),
         false,
     );
-    order
-        .apply(OrderEventAny::Accepted(accepted))
+    order = cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
         .expect("accepted transition");
-
-    cache
-        .borrow_mut()
-        .add_order(order.clone(), None, None, false)
-        .expect("add order");
-    cache
-        .borrow_mut()
-        .update_order(&order)
-        .expect("update order");
 
     order
 }
@@ -2183,7 +2180,14 @@ async fn test_cancel_all_orders_missing_asset_index_rejects_all() {
             UnixNanos::default(),
             UnixNanos::default(),
         );
-        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        order = cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Submitted(submitted))
+            .unwrap();
 
         let accepted = OrderAccepted::new(
             order.trader_id(),
@@ -2197,13 +2201,10 @@ async fn test_cancel_all_orders_missing_asset_index_rejects_all() {
             UnixNanos::default(),
             false,
         );
-        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
-
-        cache
+        let _order = cache
             .borrow_mut()
-            .add_order(order.clone(), None, None, false)
+            .update_order(&OrderEventAny::Accepted(accepted))
             .unwrap();
-        cache.borrow_mut().update_order(&order).unwrap();
     }
 
     client
@@ -2991,6 +2992,10 @@ fn open_limit_order_with_filled_qty(
 ) -> OrderAny {
     let account_id = AccountId::from("HYPERLIQUID-001");
     let mut order = make_limit_order(client_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
 
     let submitted = OrderSubmitted::new(
         order.trader_id(),
@@ -3002,8 +3007,9 @@ fn open_limit_order_with_filled_qty(
         UnixNanos::default(),
         UnixNanos::default(),
     );
-    order
-        .apply(OrderEventAny::Submitted(submitted))
+    order = cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted))
         .expect("submitted transition");
 
     let accepted = OrderAccepted::new(
@@ -3018,8 +3024,9 @@ fn open_limit_order_with_filled_qty(
         UnixNanos::default(),
         false,
     );
-    order
-        .apply(OrderEventAny::Accepted(accepted))
+    order = cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
         .expect("accepted transition");
 
     if filled_qty.raw > 0 {
@@ -3044,14 +3051,11 @@ fn open_limit_order_with_filled_qty(
             None,
             Some(Money::new(0.0, Currency::USD())),
         );
-        order.apply(OrderEventAny::Filled(filled)).unwrap();
+        order = cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Filled(filled))
+            .unwrap();
     }
-
-    cache
-        .borrow_mut()
-        .add_order(order.clone(), None, None, false)
-        .unwrap();
-    cache.borrow_mut().update_order(&order).unwrap();
     order
 }
 

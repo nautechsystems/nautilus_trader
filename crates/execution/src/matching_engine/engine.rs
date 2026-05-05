@@ -2570,7 +2570,7 @@ impl OrderMatchingEngine {
                 .borrow_mut()
                 .add_order(order.clone(), None, None, false)
                 .is_err()
-                && let Err(e) = self.cache.borrow_mut().update_order(order)
+                && let Err(e) = self.cache.borrow_mut().replace_order(order)
             {
                 log::debug!("Failed to update order in cache: {e}");
             }
@@ -3033,7 +3033,7 @@ impl OrderMatchingEngine {
                         inner.activation_price = Some(p);
                         inner.set_activated();
 
-                        if let Err(e) = self.cache.borrow_mut().update_order(order) {
+                        if let Err(e) = self.cache.borrow_mut().replace_order(order) {
                             log::error!("Failed to update order: {e}");
                         }
                         return true;
@@ -3051,7 +3051,7 @@ impl OrderMatchingEngine {
                 if hit {
                     inner.set_activated();
 
-                    if let Err(e) = self.cache.borrow_mut().update_order(order) {
+                    if let Err(e) = self.cache.borrow_mut().replace_order(order) {
                         log::error!("Failed to update order: {e}");
                     }
                 }
@@ -3075,7 +3075,7 @@ impl OrderMatchingEngine {
                         inner.activation_price = Some(p);
                         inner.set_activated();
 
-                        if let Err(e) = self.cache.borrow_mut().update_order(order) {
+                        if let Err(e) = self.cache.borrow_mut().replace_order(order) {
                             log::error!("Failed to update order: {e}");
                         }
                         return true;
@@ -3093,7 +3093,7 @@ impl OrderMatchingEngine {
                 if hit {
                     inner.set_activated();
 
-                    if let Err(e) = self.cache.borrow_mut().update_order(order) {
+                    if let Err(e) = self.cache.borrow_mut().replace_order(order) {
                         log::error!("Failed to update order: {e}");
                     }
                 }

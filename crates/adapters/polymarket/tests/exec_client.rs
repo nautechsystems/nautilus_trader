@@ -1514,11 +1514,9 @@ fn submit_and_accept_order(cache: &Rc<RefCell<Cache>>, order: &mut OrderAny, ven
     let account_id = AccountId::from("POLYMARKET-001");
     let vid = VenueOrderId::from(venue_order_id);
     let submitted = TestOrderEventStubs::submitted(order, account_id);
-    order.apply(submitted).unwrap();
-    cache.borrow_mut().update_order(order).unwrap();
+    *order = cache.borrow_mut().update_order(&submitted).unwrap();
     let accepted = TestOrderEventStubs::accepted(order, account_id, vid);
-    order.apply(accepted).unwrap();
-    cache.borrow_mut().update_order(order).unwrap();
+    *order = cache.borrow_mut().update_order(&accepted).unwrap();
 }
 
 fn assert_order_event(event: ExecutionEvent, expected: &str) -> OrderEventAny {
@@ -2874,8 +2872,7 @@ async fn test_batch_cancel_orders_with_partial_failure() {
 fn submit_and_pending_cancel(cache: &Rc<RefCell<Cache>>, order: &mut OrderAny) {
     let account_id = AccountId::from("POLYMARKET-001");
     let submitted = TestOrderEventStubs::submitted(order, account_id);
-    order.apply(submitted).unwrap();
-    cache.borrow_mut().update_order(order).unwrap();
+    *order = cache.borrow_mut().update_order(&submitted).unwrap();
 
     let pending_cancel = OrderPendingCancel::new(
         order.trader_id(),
@@ -2889,10 +2886,10 @@ fn submit_and_pending_cancel(cache: &Rc<RefCell<Cache>>, order: &mut OrderAny) {
         false,
         None, // No venue_order_id yet
     );
-    order
-        .apply(OrderEventAny::PendingCancel(pending_cancel))
+    *order = cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::PendingCancel(pending_cancel))
         .unwrap();
-    cache.borrow_mut().update_order(order).unwrap();
 }
 
 #[rstest]

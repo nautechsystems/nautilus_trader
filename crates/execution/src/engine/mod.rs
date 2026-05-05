@@ -1875,10 +1875,10 @@ impl ExecutionEngine {
             log::debug!("{RECV}{EVT} {event:?}");
         }
 
-        let client_order_id = event.client_order_id();
+        let event_client_order_id = event.client_order_id();
         let cache = self.cache.borrow();
-        let mut order = if let Some(order) = cache.order(&client_order_id) {
-            order.clone()
+        let client_order_id = if cache.order_exists(&event_client_order_id) {
+            event_client_order_id
         } else {
             log::warn!(
                 "Order with {} not found in the cache to apply {}",
@@ -1899,7 +1899,7 @@ impl ExecutionEngine {
 
             // Look up client order ID from venue order ID
             let client_order_id = if let Some(id) = cache.client_order_id(&venue_order_id) {
-                id
+                *id
             } else {
                 log::error!(
                     "Cannot apply event to any order: {} and {venue_order_id} not found in the cache",
@@ -1909,9 +1909,9 @@ impl ExecutionEngine {
             };
 
             // Get order using found client order ID
-            if let Some(order) = cache.order(client_order_id) {
+            if cache.order_exists(&client_order_id) {
                 log::info!("Order with {client_order_id} was found in the cache");
-                order.clone()
+                client_order_id
             } else {
                 log::error!(
                     "Cannot apply event to any order: {client_order_id} and {venue_order_id} not found in cache",
@@ -1919,25 +1919,45 @@ impl ExecutionEngine {
                 return;
             }
         };
+        let order_before_fill = if matches!(event, OrderEventAny::Filled(_)) {
+            cache.order(&client_order_id).cloned()
+        } else {
+            None
+        };
 
         drop(cache);
 
         match event {
             OrderEventAny::Filled(fill) => {
+                let Some(order_before_fill) = order_before_fill else {
+                    log::error!(
+                        "Cannot apply fill: order {} not found in the cache",
+                        fill.client_order_id()
+                    );
+                    return;
+                };
                 let oms_type = self.determine_oms_type(fill);
-                let position_id = self.determine_position_id(*fill, oms_type, Some(&order));
+                let position_id =
+                    self.determine_position_id(*fill, oms_type, Some(&order_before_fill));
 
                 let mut fill = *fill;
                 fill.position_id = Some(position_id);
 
-                if self.apply_fill_to_order(&mut order, fill).is_ok() {
-                    self.handle_order_fill(&order, fill, oms_type);
+                if self
+                    .validate_fill_for_order(&order_before_fill, &fill)
+                    .is_ok()
+                {
                     let event = OrderEventAny::Filled(fill);
+                    let Some(order) = self.update_cached_order(client_order_id, &event) else {
+                        return;
+                    };
+
+                    self.handle_order_fill(&order, fill, oms_type);
                     self.publish_order_event(&event);
                 }
             }
             _ => {
-                if self.apply_event_to_order(&mut order, event).is_ok() {
+                if self.update_cached_order(client_order_id, event).is_some() {
                     self.publish_order_event(event);
                 }
             }
@@ -2148,8 +2168,8 @@ impl ExecutionEngine {
         PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id))
     }
 
-    fn apply_fill_to_order(&self, order: &mut OrderAny, fill: OrderFilled) -> anyhow::Result<()> {
-        if order.is_duplicate_fill(&fill) {
+    fn validate_fill_for_order(&self, order: &OrderAny, fill: &OrderFilled) -> anyhow::Result<()> {
+        if order.is_duplicate_fill(fill) {
             log::warn!(
                 "Duplicate fill: {} trade_id={} already applied, skipping",
                 order.client_order_id(),
@@ -2158,59 +2178,55 @@ impl ExecutionEngine {
             anyhow::bail!("Duplicate fill");
         }
 
-        self.check_overfill(order, &fill)?;
-        let event = OrderEventAny::Filled(fill);
-        self.apply_order_event(order, &event)
+        self.check_overfill(order, fill)
     }
 
-    fn apply_event_to_order(
+    fn update_cached_order(
         &self,
-        order: &mut OrderAny,
+        client_order_id: ClientOrderId,
         event: &OrderEventAny,
-    ) -> anyhow::Result<()> {
-        self.apply_order_event(order, event)
-    }
+    ) -> Option<OrderAny> {
+        let result = { self.cache.borrow_mut().update_order(event) };
 
-    fn apply_order_event(&self, order: &mut OrderAny, event: &OrderEventAny) -> anyhow::Result<()> {
-        if let Err(e) = order.apply(event.clone()) {
-            match e {
-                OrderError::InvalidStateTransition => {
-                    // Event already applied to order (e.g., from reconciliation or duplicate processing)
-                    // Log warning and continue with downstream processing (cache update, publishing, etc.)
+        let order = match result {
+            Ok(order) => order,
+            Err(e) => {
+                if matches!(
+                    e.downcast_ref::<OrderError>(),
+                    Some(OrderError::InvalidStateTransition)
+                ) {
                     log::warn!("InvalidStateTrigger: {e}, did not apply {event}");
+                    return self.cache.borrow().order(&client_order_id).cloned();
                 }
-                OrderError::DuplicateFill(trade_id) => {
-                    // Duplicate fill detected at order level (secondary safety check)
+
+                if let Some(OrderError::DuplicateFill(trade_id)) = e.downcast_ref::<OrderError>() {
                     log::warn!(
                         "Duplicate fill rejected at order level: trade_id={trade_id}, did not apply {event}"
                     );
-                    anyhow::bail!("{e}");
+                    return None;
                 }
-                _ => {
-                    // Protection against invalid IDs and other invariants
-                    log::error!("Error applying event: {e}, did not apply {event}");
 
-                    if should_handle_own_book_order(order) {
-                        self.cache.borrow_mut().update_own_order_book(order);
-                    }
-                    anyhow::bail!("{e}");
+                log::error!("Error applying event: {e}, did not apply {event}");
+
+                let order = self.cache.borrow().order(&client_order_id).cloned();
+                if let Some(order) = order
+                    && should_handle_own_book_order(&order)
+                {
+                    self.cache.borrow_mut().update_own_order_book(&order);
                 }
+                return None;
             }
-        }
-
-        if let Err(e) = self.cache.borrow_mut().update_order(order) {
-            log::error!("Error updating order in cache: {e}");
-        }
+        };
 
         if self.config.debug {
             log::debug!("{SEND}{EVT} {event}");
         }
 
         if self.config.snapshot_orders {
-            self.create_order_state_snapshot(order);
+            self.create_order_state_snapshot(&order);
         }
 
-        Ok(())
+        Some(order)
     }
 
     fn publish_order_event(&self, event: &OrderEventAny) {
@@ -2638,20 +2654,17 @@ impl ExecutionEngine {
             self.clock.borrow().timestamp_ns(),
         );
 
-        let mut order = order.clone();
-
-        if let Err(e) = order.apply(OrderEventAny::Denied(denied)) {
-            log::error!("Failed to apply denied event to order: {e}");
-            return;
-        }
-
-        if let Err(e) = self.cache.borrow_mut().update_order(&order) {
-            log::error!("Failed to update order in cache: {e}");
-            return;
-        }
+        let event = OrderEventAny::Denied(denied);
+        let order = match self.cache.borrow_mut().update_order(&event) {
+            Ok(order) => order,
+            Err(e) => {
+                log::error!("Failed to apply denied event to order: {e}");
+                return;
+            }
+        };
 
         let topic = switchboard::get_event_orders_topic(order.strategy_id());
-        msgbus::publish_order_event(topic, &OrderEventAny::Denied(denied));
+        msgbus::publish_order_event(topic, &event);
 
         if self.config.snapshot_orders {
             self.create_order_state_snapshot(&order);

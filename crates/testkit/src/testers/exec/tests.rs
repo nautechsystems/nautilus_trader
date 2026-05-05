@@ -1512,15 +1512,10 @@ fn ack_buy_order_in_cache(tester: &ExecTester, cache: &Rc<RefCell<Cache>>) {
         false,
     );
 
-    let mut cache_mut = cache.borrow_mut();
-    let mut order_in_cache = cache_mut
-        .order(&cid)
-        .expect("order should be in cache after submit")
-        .clone();
-    order_in_cache
-        .apply(OrderEventAny::Accepted(accepted))
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
         .unwrap();
-    cache_mut.update_order(&order_in_cache).unwrap();
 }
 
 // Once a real `OrderAccepted` event has been applied to the cache, the next

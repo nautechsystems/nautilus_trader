@@ -609,6 +609,7 @@ fn test_update_orders_open_margin_account(
 
     // Create Order
     let mut order1 = OrderTestBuilder::new(OrderType::StopMarket)
+        .client_order_id(ClientOrderId::new("O-001"))
         .instrument_id(instrument_btcusdt.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from("100.000"))
@@ -617,6 +618,7 @@ fn test_update_orders_open_margin_account(
         .build();
 
     let order2 = OrderTestBuilder::new(OrderType::StopMarket)
+        .client_order_id(ClientOrderId::new("O-002"))
         .instrument_id(instrument_btcusdt.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from("1000.000"))
@@ -637,20 +639,18 @@ fn test_update_orders_open_margin_account(
         .unwrap();
 
     let submitted = submit_order(&order1);
-    order1.apply(OrderEventAny::Submitted(submitted)).unwrap();
-    portfolio
+    order1 = portfolio
         .cache()
         .borrow_mut()
-        .update_order(&order1)
+        .update_order(&OrderEventAny::Submitted(submitted))
         .unwrap();
 
     // Push status to Accepted
     let accepted = accept_order(&order1);
-    order1.apply(OrderEventAny::Accepted(accepted)).unwrap();
-    portfolio
+    order1 = portfolio
         .cache()
         .borrow_mut()
-        .update_order(&order1)
+        .update_order(&OrderEventAny::Accepted(accepted))
         .unwrap();
 
     // TODO: Replace with Execution Engine once implemented.
@@ -705,18 +705,24 @@ fn test_order_accept_updates_margin_init(
         .unwrap();
 
     let submitted = submit_order(&order);
-    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
-    portfolio.cache().borrow_mut().update_order(&order).unwrap();
+    order = portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted))
+        .unwrap();
 
     let accepted = accept_order(&order);
-    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
-    portfolio.cache().borrow_mut().update_order(&order).unwrap();
+    order = portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
+        .unwrap();
 
     // TODO: Replace with Execution Engine once implemented.
     portfolio
         .cache()
         .borrow_mut()
-        .add_order(order.clone(), None, None, true)
+        .add_order(order, None, None, true)
         .unwrap();
 
     portfolio.initialize_orders();
@@ -780,12 +786,16 @@ fn test_initialize_orders_cash_account_with_base_currency() {
         .unwrap();
 
     let submitted = submit_order(&order);
-    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
-    cache.borrow_mut().update_order(&order).unwrap();
+    order = cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted))
+        .unwrap();
 
     let accepted = accept_order(&order);
-    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
-    cache.borrow_mut().update_order(&order).unwrap();
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
+        .unwrap();
 
     // This previously panicked with "RefCell already mutably borrowed"
     portfolio.initialize_orders();
@@ -1413,17 +1423,6 @@ fn test_opening_several_positions_updates_portfolio(
         Some(PositionId::new("SSD")),
         Some(Money::from("12.2 USD")),
     );
-
-    portfolio
-        .cache()
-        .borrow_mut()
-        .update_order(&order1)
-        .unwrap();
-    portfolio
-        .cache()
-        .borrow_mut()
-        .update_order(&order2)
-        .unwrap();
 
     let position1 = Position::new(&instrument_audusd, fill1);
     let position2 = Position::new(&instrument_gbpusd, fill2);

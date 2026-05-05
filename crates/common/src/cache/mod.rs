@@ -58,6 +58,7 @@ use nautilus_model::{
         AggregationSource, ContingencyType, OmsType, OrderSide, PositionSide, PriceType,
         TriggerType,
     },
+    events::OrderEventAny,
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
         OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
@@ -67,7 +68,7 @@ use nautilus_model::{
         OrderBook,
         own::{OwnOrderBook, should_handle_own_book_order},
     },
-    orders::{Order, OrderAny, OrderList},
+    orders::{Order, OrderAny, OrderError, OrderList},
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };
@@ -2316,12 +2317,59 @@ impl Cache {
         Ok(())
     }
 
-    /// Updates the `order` in the cache.
+    /// Replaces the cached `order` from a non-event snapshot.
+    ///
+    /// Prefer [`Self::update_order`] for lifecycle state changes. Use this only for order state
+    /// that is not represented by [`OrderEventAny`].
     ///
     /// # Errors
     ///
-    /// Returns an error if updating the order in the database fails.
-    pub fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+    /// Returns an error if updating the order indexes or database fails.
+    pub fn replace_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+        self.refresh_order(order)?;
+
+        self.orders.insert(order.client_order_id(), order.clone());
+
+        Ok(())
+    }
+
+    /// Updates the cached order by applying an event and refreshing derived cache state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order is not found or rejects the event.
+    pub fn update_order(&mut self, event: &OrderEventAny) -> anyhow::Result<OrderAny> {
+        let event_client_order_id = event.client_order_id();
+        let client_order_id = if self.order_exists(&event_client_order_id) {
+            event_client_order_id
+        } else if let Some(venue_order_id) = event.venue_order_id() {
+            self.index
+                .venue_order_ids
+                .get(&venue_order_id)
+                .copied()
+                .ok_or(OrderError::NotFound(event_client_order_id))?
+        } else {
+            return Err(OrderError::NotFound(event_client_order_id).into());
+        };
+
+        let mut order = self
+            .orders
+            .get(&client_order_id)
+            .ok_or(OrderError::NotFound(client_order_id))?
+            .clone();
+
+        order.apply(event.clone())?;
+
+        if let Err(e) = self.refresh_order(&order) {
+            log::error!("Error updating order in cache: {e}");
+        }
+
+        self.orders.insert(client_order_id, order.clone());
+
+        Ok(order)
+    }
+
+    fn refresh_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
         let client_order_id = order.client_order_id();
 
         if order.is_active_local() {
@@ -2390,9 +2438,6 @@ impl Cache {
             //     database.snapshot_order_state(order)?;
             // }
         }
-
-        // update the order in the cache
-        self.orders.insert(client_order_id, order.clone());
 
         Ok(())
     }

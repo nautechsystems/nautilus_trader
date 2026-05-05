@@ -6703,15 +6703,16 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected() 
     let mut ctx = TestContext::with_config(config);
     ctx.add_instrument(test_instrument());
 
-    let order = create_submitted_order(
+    let order = create_limit_order(
         "O-001",
         test_instrument_id(),
         OrderSide::Buy,
         "10.0",
         "100.0",
     );
-    ctx.add_order(order.clone());
-    ctx.cache.borrow_mut().update_order(&order).unwrap();
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    ctx.add_order(order);
+    ctx.cache.borrow_mut().update_order(&submitted).unwrap();
 
     // Venue returns no reports, order was never placed
     let mock_client = MockExecutionClient::new(vec![]);
