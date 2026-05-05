@@ -165,7 +165,7 @@ impl BinanceFuturesDataClient {
 
         let market_url = config.base_url_ws.clone().map(|url| {
             if product_type == BinanceProductType::UsdM
-                && config.environment == BinanceEnvironment::Mainnet
+                && config.environment == BinanceEnvironment::Live
             {
                 get_usdm_ws_route_base_url(&url, "market")
             } else {
@@ -187,7 +187,7 @@ impl BinanceFuturesDataClient {
             || get_ws_public_base_url(product_type, config.environment).to_string(),
             |url| {
                 if product_type == BinanceProductType::UsdM
-                    && config.environment == BinanceEnvironment::Mainnet
+                    && config.environment == BinanceEnvironment::Live
                 {
                     get_usdm_ws_route_base_url(&url, "public")
                 } else {

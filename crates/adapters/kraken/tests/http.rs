@@ -675,7 +675,7 @@ async fn test_spot_raw_get_server_time() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -710,7 +710,7 @@ async fn test_spot_raw_get_system_status() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -744,7 +744,7 @@ async fn test_spot_raw_get_asset_pairs() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -779,7 +779,7 @@ async fn test_spot_raw_get_asset_pairs_tokenized() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -817,7 +817,7 @@ async fn test_spot_domain_request_instruments() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -861,7 +861,7 @@ async fn test_spot_domain_request_instrument_statuses() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -900,7 +900,7 @@ async fn test_spot_raw_get_ticker() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -934,7 +934,7 @@ async fn test_spot_raw_get_book_depth() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -968,7 +968,7 @@ async fn test_spot_raw_get_trades() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1002,7 +1002,7 @@ async fn test_spot_raw_get_ohlc() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1036,7 +1036,7 @@ async fn test_spot_raw_get_trades_with_since() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1078,7 +1078,7 @@ async fn test_spot_raw_get_ohlc_with_interval() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1118,7 +1118,7 @@ async fn test_spot_raw_get_websockets_token_requires_credentials() {
 
     // Client without credentials
     let client = KrakenSpotRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1156,7 +1156,7 @@ async fn test_spot_raw_get_websockets_token_with_credentials() {
     let client = KrakenSpotRawHttpClient::with_credentials(
         "test_api_key".to_string(),
         "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1191,7 +1191,7 @@ async fn test_spot_domain_request_trades() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1232,7 +1232,7 @@ async fn test_spot_domain_request_bars() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1273,7 +1273,7 @@ async fn test_futures_raw_get_instruments() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenFuturesRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1314,7 +1314,7 @@ async fn test_futures_domain_request_instrument_statuses() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenFuturesHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1349,7 +1349,7 @@ async fn test_futures_raw_get_tickers() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenFuturesRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1391,7 +1391,7 @@ async fn test_futures_raw_get_ohlc_trade() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenFuturesRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1436,7 +1436,7 @@ async fn test_futures_raw_get_ohlc_mark() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenFuturesRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1478,7 +1478,7 @@ async fn test_futures_raw_get_ohlc_spot() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenFuturesRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1520,7 +1520,7 @@ async fn test_futures_raw_get_public_executions() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenFuturesRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1568,7 +1568,7 @@ async fn test_spot_raw_get_open_orders() {
     let client = KrakenSpotRawHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1611,7 +1611,7 @@ async fn test_spot_raw_get_closed_orders() {
     let client = KrakenSpotRawHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1655,7 +1655,7 @@ async fn test_spot_raw_get_trades_history() {
     let client = KrakenSpotRawHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1693,7 +1693,7 @@ async fn test_futures_raw_get_open_orders() {
     let client = KrakenFuturesRawHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1737,7 +1737,7 @@ async fn test_futures_raw_get_order_events() {
     let client = KrakenFuturesRawHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1786,7 +1786,7 @@ async fn test_futures_raw_get_fills() {
     let client = KrakenFuturesRawHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1828,7 +1828,7 @@ async fn test_futures_raw_get_open_positions() {
     let client = KrakenFuturesRawHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1872,7 +1872,7 @@ async fn test_spot_raw_add_order() {
     let client = KrakenSpotRawHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1918,7 +1918,7 @@ async fn test_spot_raw_cancel_order() {
     let client = KrakenSpotRawHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -1959,7 +1959,7 @@ async fn test_futures_raw_send_order() {
     let client = KrakenFuturesRawHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2003,7 +2003,7 @@ async fn test_futures_raw_cancel_order() {
     let client = KrakenFuturesRawHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2049,7 +2049,7 @@ async fn test_spot_raw_rate_limit_error() {
     let client = KrakenSpotRawHttpClient::with_credentials(
         "test_key".to_string(),
         api_secret,
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2097,7 +2097,7 @@ async fn test_spot_raw_api_error_response() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotRawHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2134,7 +2134,7 @@ async fn test_futures_domain_request_trades() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenFuturesHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2175,7 +2175,7 @@ async fn test_futures_domain_request_instruments_includes_tokenized_contract() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenFuturesHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2220,7 +2220,7 @@ async fn test_futures_domain_request_bars() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenFuturesHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2259,7 +2259,7 @@ async fn test_spot_domain_request_book_snapshot() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenSpotHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2304,7 +2304,7 @@ async fn test_futures_domain_request_book_snapshot() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenFuturesHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2349,7 +2349,7 @@ async fn test_futures_domain_request_funding_rates() {
     wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenFuturesHttpClient::new(
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2401,7 +2401,7 @@ async fn test_spot_domain_submit_orders_batch_preserves_status_order() {
     let client = KrakenSpotHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2531,7 +2531,7 @@ async fn test_spot_domain_submit_orders_batch_singleton_falls_back_to_add_order(
     let client = KrakenSpotHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2618,7 +2618,7 @@ async fn test_futures_domain_edit_orders_batch_preserves_status_order() {
     let client = KrakenFuturesHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2687,7 +2687,7 @@ async fn test_spot_raw_get_trade_balance() {
     let client = KrakenSpotRawHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2731,7 +2731,7 @@ async fn test_spot_request_account_state_margin_does_not_lock_free_margin() {
     let client = KrakenSpotHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2778,7 +2778,7 @@ async fn test_spot_request_account_state_margin_with_gbp_asset_tags_currency() {
     let client = KrakenSpotHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2844,7 +2844,7 @@ async fn test_spot_request_account_state_margin_locked_from_free_margin() {
     let client = KrakenSpotHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2889,7 +2889,7 @@ async fn test_spot_request_account_state_margin_other_wallets_unlocked() {
     let client = KrakenSpotHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -2939,7 +2939,7 @@ async fn test_spot_request_margin_metrics_returns_full_snapshot() {
     let client = KrakenSpotHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -3012,7 +3012,7 @@ async fn test_spot_request_margin_metrics_passes_asset_param() {
     let client = KrakenSpotHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -3059,7 +3059,7 @@ async fn test_spot_raw_get_open_positions() {
     let client = KrakenSpotRawHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -3103,7 +3103,7 @@ async fn test_spot_add_order_with_leverage() {
     let client = KrakenSpotRawHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -3153,7 +3153,7 @@ async fn test_spot_request_account_state_trade_balance_error() {
     let client = KrakenSpotHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -3211,7 +3211,7 @@ async fn test_spot_request_account_state_synthetic_margin_balance_error() {
     let client = KrakenSpotHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -3292,7 +3292,7 @@ async fn test_spot_margin_position_flat_when_fully_closed() {
     let client = KrakenSpotHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -3391,7 +3391,7 @@ async fn setup_margin_position_test(json: String) -> (KrakenSpotHttpClient, Inst
     let client = KrakenSpotHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,
@@ -3530,7 +3530,7 @@ async fn test_spot_margin_position_bails_on_unknown_pair_when_cache_missing() {
     let client = KrakenSpotHttpClient::with_credentials(
         "test".to_string(),
         "test".to_string(),
-        KrakenEnvironment::Mainnet,
+        KrakenEnvironment::Live,
         Some(base_url),
         10,
         None,

@@ -40,8 +40,8 @@ pub struct BinanceDataClientConfig {
     /// Product types to subscribe to.
     #[builder(default = vec![BinanceProductType::Spot])]
     pub product_types: Vec<BinanceProductType>,
-    /// Environment (mainnet or testnet).
-    #[builder(default = BinanceEnvironment::Mainnet)]
+    /// Environment (live, testnet, or demo).
+    #[builder(default = BinanceEnvironment::Live)]
     pub environment: BinanceEnvironment,
     /// Optional base URL override for HTTP API.
     pub base_url_http: Option<String>,
@@ -99,8 +99,8 @@ pub struct BinanceExecClientConfig {
     /// Product types to trade.
     #[builder(default = vec![BinanceProductType::Spot])]
     pub product_types: Vec<BinanceProductType>,
-    /// Environment (mainnet or testnet).
-    #[builder(default = BinanceEnvironment::Mainnet)]
+    /// Environment (live, testnet, or demo).
+    #[builder(default = BinanceEnvironment::Live)]
     pub environment: BinanceEnvironment,
     /// Optional base URL override for HTTP API.
     pub base_url_http: Option<String>,

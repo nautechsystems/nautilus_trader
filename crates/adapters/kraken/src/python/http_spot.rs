@@ -49,13 +49,12 @@ impl KrakenSpotHttpClient {
     /// It maintains an instrument cache and uses it to parse venue responses
     /// into Nautilus domain objects.
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, timeout_secs=60, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, proxy_url=None, max_requests_per_second=5))]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, timeout_secs=60, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, proxy_url=None, max_requests_per_second=5))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url: Option<String>,
-        demo: bool,
         timeout_secs: u64,
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
@@ -63,11 +62,7 @@ impl KrakenSpotHttpClient {
         proxy_url: Option<String>,
         max_requests_per_second: u32,
     ) -> PyResult<Self> {
-        let environment = if demo {
-            KrakenEnvironment::Demo
-        } else {
-            KrakenEnvironment::Mainnet
-        };
+        let environment = KrakenEnvironment::Live;
 
         if let Some(cred) = KrakenCredential::resolve_spot(api_key, api_secret) {
             let (k, s) = cred.into_parts();
@@ -296,9 +291,14 @@ impl KrakenSpotHttpClient {
 
     /// Requests account state (balances) from Kraken.
     ///
-    /// Returns an `AccountState` containing all currency balances.
+    /// In cash mode returns wallet balances only.
+    /// In margin mode additionally calls `TradeBalance` to build `MarginBalance` entries.
     /// `margin_balance_asset` selects the summary-display denomination for `TradeBalance`
-    /// when `account_type` is `Margin`; `None` lets Kraken default to `ZUSD`.
+    /// (e.g. `"ZUSD"`, `"ZGBP"`); `None` lets Kraken default to `ZUSD`.
+    ///
+    /// Callers that also need the `TradeBalance` metrics dictionary should use
+    /// `Self.request_account_state_with_metrics` to avoid issuing two `TradeBalance`
+    /// HTTP requests per account update.
     #[pyo3(name = "request_account_state")]
     #[pyo3(signature = (account_id, account_type = AccountType::Cash, margin_balance_asset = None))]
     fn py_request_account_state<'py>(
@@ -320,16 +320,18 @@ impl KrakenSpotHttpClient {
         })
     }
 
-    /// Requests Kraken's `TradeBalance` margin metrics as a flat string-keyed map.
+    /// Returns a flattened snapshot of Kraken's `TradeBalance` margin metrics.
     ///
-    /// Intended for use only when operating in margin mode. Strings preserve venue
-    /// precision exactly. Keys: `equivalent_balance`, `trade_balance`, `used_margin`,
-    /// `unexecuted_value`, `unrealized_pnl`, `cost_basis`, `valuation`, `equity`,
-    /// `free_margin`, `margin_level` (omitted when no positions are open), `asset`.
+    /// Caller is expected to invoke this only when operating in margin mode; consumers
+    /// surface the values via `AccountState.info` (Python-side) for strategy access.
+    /// Strings preserve venue precision exactly. Keys: `equivalent_balance`,
+    /// `trade_balance`, `used_margin`, `unexecuted_value`, `unrealized_pnl`,
+    /// `cost_basis`, `valuation`, `equity`, `free_margin`, `margin_level` (omitted
+    /// when Kraken returns no value, i.e. no open positions), `asset`.
     ///
     /// When the metrics are needed alongside the `AccountState`, prefer
-    /// `request_account_state_with_metrics` to share a single `TradeBalance` HTTP
-    /// request between both.
+    /// `Self.request_account_state_with_metrics` to share a single `TradeBalance`
+    /// HTTP request between both.
     #[pyo3(name = "request_margin_metrics")]
     #[pyo3(signature = (asset = None))]
     fn py_request_margin_metrics<'py>(
@@ -355,15 +357,23 @@ impl KrakenSpotHttpClient {
         })
     }
 
-    /// Requests the full margin account snapshot in a single HTTP round-trip.
+    /// Requests the full margin account snapshot in a single round-trip.
     ///
-    /// Returns a tuple `(AccountState, dict[str, str])`. In cash mode the metrics dict
-    /// is empty and `TradeBalance` is not called. In margin mode `TradeBalance` is
-    /// fetched once and used to build both the `MarginBalance` entries on the
-    /// `AccountState` and the metrics dictionary surfaced via `AccountState.info`.
+    /// Returns the `AccountState` (including `MarginBalance` entries when
+    /// `account_type` is `Margin`) and the `TradeBalance` metrics dictionary that
+    /// callers attach to `AccountState.info`. In cash mode the metrics map is empty
+    /// and `TradeBalance` is not called.
     ///
-    /// `margin_balance_asset` selects the summary-display denomination (e.g. `"ZUSD"`,
-    /// `"ZGBP"`); `None` lets Kraken default to `ZUSD`.
+    /// In margin mode, a synthetic `AccountBalance` for `margin_balance_asset`
+    /// replaces its raw wallet entry: `total = e` (equity across all collateral
+    /// assets), `free = mf`, `locked = m` (`= e - mf` per Kraken docs). This
+    /// exposes Kraken's venue-authoritative free margin to risk checks regardless
+    /// of how many assets contribute to equity — avoiding the multi-asset clamp
+    /// that occurs when `mf > single-currency wallet`.
+    ///
+    /// The single shared fetch keeps Kraken rate-limit usage symmetric with `Balance`
+    /// (one request per account update), instead of two as if `request_account_state`
+    /// and `request_margin_metrics` were called in sequence.
     #[pyo3(name = "request_account_state_with_metrics")]
     #[pyo3(signature = (account_id, account_type = AccountType::Cash, margin_balance_asset = None))]
     fn py_request_account_state_with_metrics<'py>(
@@ -463,9 +473,9 @@ impl KrakenSpotHttpClient {
 
     /// Requests position status reports for SPOT instruments.
     ///
-    /// In margin mode returns open leveraged position reports.
-    /// When `use_spot_position_reports` is `True` returns wallet balances as reports.
-    /// Otherwise returns an empty list.
+    /// In margin mode: calls `OpenPositions` and returns reports for each open leveraged position.
+    /// When `use_spot_position_reports` is enabled (cash mode): derives reports from wallet balances.
+    /// Otherwise returns an empty vector.
     #[pyo3(name = "request_position_status_reports")]
     #[pyo3(signature = (account_id, instrument_id=None, account_type=AccountType::Cash, use_spot_position_reports=false, quote_currency="USDT"))]
     fn py_request_position_status_reports<'py>(
@@ -675,11 +685,6 @@ impl KrakenSpotHttpClient {
     ///
     /// Automatically groups orders by pair and chunks batch requests at the venue
     /// limit. Single-order groups fall back to `AddOrder`.
-    ///
-    /// `leverage` is the list-level default; `per_order_leverages` (if provided) overrides
-    /// it per-order. `per_order_reduce_only` carries the reduce-only flag per order. PyO3
-    /// `FromPyObject` is only derived for tuples up to 12 elements, so the Python-facing
-    /// tuple stays at 12 and leverage/reduce_only are carried as separate parameters.
     #[pyo3(name = "submit_orders_batch", signature = (orders, leverage=None, account_type=AccountType::Cash, per_order_leverages=None, per_order_reduce_only=None))]
     #[expect(clippy::type_complexity)]
     fn py_submit_orders_batch<'py>(

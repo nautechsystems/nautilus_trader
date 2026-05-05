@@ -54,7 +54,7 @@ impl BinanceEnvironment {
         format!(
             "BinanceEnvironment.{}",
             match self {
-                Self::Mainnet => "MAINNET",
+                Self::Live => "LIVE",
                 Self::Testnet => "TESTNET",
                 Self::Demo => "DEMO",
             }
@@ -63,7 +63,7 @@ impl BinanceEnvironment {
 
     fn __str__(&self) -> String {
         match self {
-            Self::Mainnet => "MAINNET",
+            Self::Live => "LIVE",
             Self::Testnet => "TESTNET",
             Self::Demo => "DEMO",
         }

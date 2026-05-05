@@ -106,7 +106,7 @@ pub struct KrakenFuturesRawHttpClient {
 impl Default for KrakenFuturesRawHttpClient {
     fn default() -> Self {
         Self::new(
-            KrakenEnvironment::Mainnet,
+            KrakenEnvironment::Live,
             None,
             60,
             None,
@@ -998,7 +998,7 @@ impl Clone for KrakenFuturesHttpClient {
 impl Default for KrakenFuturesHttpClient {
     fn default() -> Self {
         Self::new(
-            KrakenEnvironment::Mainnet,
+            KrakenEnvironment::Live,
             None,
             60,
             None,
@@ -1084,7 +1084,7 @@ impl KrakenFuturesHttpClient {
 
     /// Creates a new [`KrakenFuturesHttpClient`] loading credentials from environment variables.
     ///
-    /// Looks for `KRAKEN_FUTURES_API_KEY` and `KRAKEN_FUTURES_API_SECRET` (mainnet)
+    /// Looks for `KRAKEN_FUTURES_API_KEY` and `KRAKEN_FUTURES_API_SECRET` (live)
     /// or `KRAKEN_FUTURES_DEMO_API_KEY` and `KRAKEN_FUTURES_DEMO_API_SECRET` (demo).
     ///
     /// Falls back to unauthenticated client if credentials are not set.
@@ -2649,7 +2649,7 @@ mod tests {
         let client = KrakenFuturesRawHttpClient::with_credentials(
             "test_key".to_string(),
             "test_secret".to_string(),
-            KrakenEnvironment::Mainnet,
+            KrakenEnvironment::Live,
             None,
             60,
             None,
@@ -2673,7 +2673,7 @@ mod tests {
         let client = KrakenFuturesHttpClient::with_credentials(
             "test_key".to_string(),
             "test_secret".to_string(),
-            KrakenEnvironment::Mainnet,
+            KrakenEnvironment::Live,
             None,
             60,
             None,

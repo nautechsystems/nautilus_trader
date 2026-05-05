@@ -762,8 +762,8 @@ BitMEX API credentials can be provided either directly in the configuration or v
 
 - `BITMEX_API_KEY`: Your BitMEX API key for production.
 - `BITMEX_API_SECRET`: Your BitMEX API secret for production.
-- `BITMEX_TESTNET_API_KEY`: Your BitMEX API key for testnet (when `testnet=True`).
-- `BITMEX_TESTNET_API_SECRET`: Your BitMEX API secret for testnet (when `testnet=True`).
+- `BITMEX_TESTNET_API_KEY`: Your BitMEX API key for testnet.
+- `BITMEX_TESTNET_API_SECRET`: Your BitMEX API secret for testnet.
 
 To generate API keys:
 
@@ -778,7 +778,8 @@ To generate API keys:
 - REST API: `https://testnet.bitmex.com/api/v1`
 - WebSocket: `wss://ws.testnet.bitmex.com/realtime`
 
-The adapter automatically routes requests to the correct endpoints when `testnet=True` is configured.
+The adapter automatically routes requests to the correct endpoints when
+`environment=BitmexEnvironment.TESTNET` is configured.
 :::
 
 ### Data client configuration options
@@ -787,11 +788,11 @@ The BitMEX data client provides the following configuration options:
 
 | Option                            | Default  | Description |
 |-----------------------------------|----------|-------------|
-| `api_key`                         | `None`   | Optional API key; if `None`, loaded from `BITMEX_API_KEY` or `BITMEX_TESTNET_API_KEY` (when `testnet=True`). |
-| `api_secret`                      | `None`   | Optional API secret; if `None`, loaded from `BITMEX_API_SECRET` or `BITMEX_TESTNET_API_SECRET` (when `testnet=True`). |
+| `api_key`                         | `None`   | Optional API key; if `None`, loaded from the environment selected by `environment`. |
+| `api_secret`                      | `None`   | Optional API secret; if `None`, loaded from the environment selected by `environment`. |
+| `environment`                     | `None`   | Environment enum (`MAINNET` or `TESTNET`). |
 | `base_url_http`                   | `None`   | Override for the REST base URL (defaults to production). |
 | `base_url_ws`                     | `None`   | Override for the WebSocket base URL (defaults to production). |
-| `testnet`                     | `False`  | Route requests to the BitMEX testnet when `True`. |
 | `http_timeout_secs`               | `60`     | Request timeout applied to HTTP calls. |
 | `max_retries`                     | `3`      | Maximum retry attempts for HTTP calls. |
 | `retry_delay_initial_ms`          | `1,000`  | Initial backoff delay (milliseconds) between retries. |
@@ -808,11 +809,11 @@ The BitMEX execution client provides the following configuration options:
 
 | Option                   | Default  | Description |
 |--------------------------|----------|-------------|
-| `api_key`                | `None`   | Optional API key; if `None`, loaded from `BITMEX_API_KEY` or `BITMEX_TESTNET_API_KEY` (when `testnet=True`). |
-| `api_secret`             | `None`   | Optional API secret; if `None`, loaded from `BITMEX_API_SECRET` or `BITMEX_TESTNET_API_SECRET` (when `testnet=True`). |
+| `api_key`                | `None`   | Optional API key; if `None`, loaded from the environment selected by `environment`. |
+| `api_secret`             | `None`   | Optional API secret; if `None`, loaded from the environment selected by `environment`. |
+| `environment`            | `None`   | Environment enum (`MAINNET` or `TESTNET`). |
 | `base_url_http`          | `None`   | Override for the REST base URL (defaults to production). |
 | `base_url_ws`            | `None`   | Override for the WebSocket base URL (defaults to production). |
-| `testnet`                | `False`  | Route orders to the BitMEX testnet when `True`. |
 | `http_timeout_secs`      | `60`     | Request timeout applied to HTTP calls. |
 | `max_retries`            | `3`      | Maximum retry attempts for HTTP calls. |
 | `retry_delay_initial_ms` | `1,000`  | Initial backoff delay (milliseconds) between retries. |
@@ -834,23 +835,24 @@ A typical BitMEX configuration for live trading includes both testnet and mainne
 ```python
 from nautilus_trader.adapters.bitmex.config import BitmexDataClientConfig
 from nautilus_trader.adapters.bitmex.config import BitmexExecClientConfig
+from nautilus_trader.core.nautilus_pyo3 import BitmexEnvironment
 
 # Using environment variables (recommended)
 testnet_data_config = BitmexDataClientConfig(
-    testnet=True,  # API credentials loaded from BITMEX_TESTNET_API_KEY and BITMEX_TESTNET_API_SECRET
+    environment=BitmexEnvironment.TESTNET,
 )
 
 # Using explicit credentials
 mainnet_data_config = BitmexDataClientConfig(
     api_key="YOUR_API_KEY",  # Or use os.getenv("BITMEX_API_KEY")
     api_secret="YOUR_API_SECRET",  # Or use os.getenv("BITMEX_API_SECRET")
-    testnet=False,
+    environment=BitmexEnvironment.MAINNET,
 )
 
 mainnet_exec_config = BitmexExecClientConfig(
     api_key="YOUR_API_KEY",
     api_secret="YOUR_API_SECRET",
-    testnet=False,
+    environment=BitmexEnvironment.MAINNET,
 )
 ```
 

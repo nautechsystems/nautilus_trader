@@ -39,8 +39,8 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
         - Futures: `KRAKEN_FUTURES_API_SECRET` or `KRAKEN_FUTURES_DEMO_API_SECRET`
     environment : KrakenEnvironment, optional
         The Kraken environment to connect to.
-        If ``None`` then defaults to ``KrakenEnvironment.Mainnet``.
-        Note: testnet is only available for Futures.
+        If ``None`` then defaults to ``KrakenEnvironment.LIVE``.
+        Note: demo is only available for Futures.
     product_types : tuple[KrakenProductType, ...], optional
         The Kraken product types for the client.
         If ``None`` then defaults to ``(KrakenProductType.SPOT,)``.
@@ -112,8 +112,8 @@ class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):
         - Futures: `KRAKEN_FUTURES_API_SECRET` or `KRAKEN_FUTURES_DEMO_API_SECRET`
     environment : KrakenEnvironment, optional
         The Kraken environment to connect to.
-        If ``None`` then defaults to ``KrakenEnvironment.Mainnet``.
-        Note: testnet is only available for Futures.
+        If ``None`` then defaults to ``KrakenEnvironment.LIVE``.
+        Note: demo is only available for Futures.
     product_types : tuple[KrakenProductType, ...], optional
         The Kraken product types for the client.
         If ``None`` then defaults to ``(KrakenProductType.SPOT,)``.

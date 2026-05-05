@@ -493,19 +493,21 @@ create a read-only key without `trade:read_write`.
 ## Testnet
 
 Deribit provides a testnet environment for testing strategies without real funds.
-To use the testnet, set `is_testnet=True` in your client configuration:
+To use the testnet, set `environment=DeribitEnvironment.TESTNET` in your client configuration:
 
 ```python
+from nautilus_trader.core.nautilus_pyo3 import DeribitEnvironment
+
 config = TradingNodeConfig(
     data_clients={
         DERIBIT: DeribitDataClientConfig(
-            is_testnet=True,  # Enable testnet mode
+            environment=DeribitEnvironment.TESTNET,
             # ... other config
         ),
     },
     exec_clients={
         DERIBIT: DeribitExecClientConfig(
-            is_testnet=True,  # Enable testnet mode
+            environment=DeribitEnvironment.TESTNET,
             # ... other config
         ),
     },
@@ -532,10 +534,10 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 | `api_key`                          | `None`     | Deribit API key; loads from environment variables when omitted. |
 | `api_secret`                       | `None`     | Deribit API secret; loads from environment variables when omitted. |
 | `product_types`                    | `None`     | Product types to load (Future, Option, Spot, etc.). If `None`, defaults to Future. |
+| `environment`                      | `None`     | Environment enum (`MAINNET` or `TESTNET`). |
 | `base_url_http`                    | `None`     | Override for the HTTP REST base URL. |
 | `base_url_ws`                      | `None`     | Override for the WebSocket base URL. |
 | `proxy_url`                        | `None`     | Optional proxy URL for HTTP and WebSocket transports. |
-| `is_testnet`                       | `False`    | Use Deribit testnet endpoints when `True`. |
 | `http_timeout_secs`                | `60`       | Request timeout (seconds) for REST calls. |
 | `max_retries`                      | `3`        | Maximum retry attempts for recoverable errors. |
 | `retry_delay_initial_ms`           | `1,000`    | Initial delay (milliseconds) before retrying. |
@@ -549,10 +551,10 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 | `api_key`                | `None`     | Deribit API key; loads from environment variables when omitted. |
 | `api_secret`             | `None`     | Deribit API secret; loads from environment variables when omitted. |
 | `product_types`          | `None`     | Product types to load (Future, Option, Spot, etc.). If `None`, defaults to Future. |
+| `environment`            | `None`     | Environment enum (`MAINNET` or `TESTNET`). |
 | `base_url_http`          | `None`     | Override for the HTTP REST base URL. |
 | `base_url_ws`            | `None`     | Override for the WebSocket base URL. |
 | `proxy_url`              | `None`     | Optional proxy URL for HTTP and WebSocket transports. |
-| `is_testnet`             | `False`    | Use Deribit testnet endpoints when `True`. |
 | `http_timeout_secs`      | `60`       | Request timeout (seconds) for REST calls. |
 | `max_retries`            | `3`        | Maximum retry attempts for recoverable errors. |
 | `retry_delay_initial_ms` | `1,000`    | Initial delay (milliseconds) before retrying. |
@@ -570,6 +572,7 @@ from nautilus_trader.adapters.deribit import DeribitLiveDataClientFactory
 from nautilus_trader.adapters.deribit import DeribitLiveExecClientFactory
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.core.nautilus_pyo3 import DeribitEnvironment
 from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.live.node import TradingNode
 
@@ -580,8 +583,8 @@ config = TradingNodeConfig(
             api_key=None,           # Uses DERIBIT_API_KEY env var
             api_secret=None,        # Uses DERIBIT_API_SECRET env var
             product_types=(DeribitProductType.Future,),
+            environment=DeribitEnvironment.MAINNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=False,
         ),
     },
     exec_clients={
@@ -589,8 +592,8 @@ config = TradingNodeConfig(
             api_key=None,
             api_secret=None,
             product_types=(DeribitProductType.Future,),
+            environment=DeribitEnvironment.MAINNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=False,
         ),
     },
 )

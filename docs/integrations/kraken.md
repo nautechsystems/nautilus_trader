@@ -541,7 +541,7 @@ The product types for each client must be specified in the configurations.
 |---------------------------------|-----------|-------------------------------------------------------------------------|
 | `api_key`                       | `None`    | API key; loaded from environment variables (see below) when omitted.    |
 | `api_secret`                    | `None`    | API secret; loaded from environment variables (see below) when omitted. |
-| `environment`                   | `mainnet` | Trading environment (`mainnet` or `demo`); demo only for Futures.       |
+| `environment`                   | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures.          |
 | `product_types`                 | `(SPOT,)` | Product types tuple (e.g., `(KrakenProductType.SPOT,)`).                |
 | `base_url_http_spot`            | `None`    | Override for Kraken Spot REST base URL.                                 |
 | `base_url_http_futures`         | `None`    | Override for Kraken Futures REST base URL.                              |
@@ -562,8 +562,8 @@ The product types for each client must be specified in the configurations.
 |---------------------------------|-----------|-------------------------------------------------------------------------|
 | `api_key`                       | `None`    | API key; loaded from environment variables (see below) when omitted.    |
 | `api_secret`                    | `None`    | API secret; loaded from environment variables (see below) when omitted. |
-| `environment`                   | `mainnet` | Trading environment (`mainnet` or `demo`); demo only for Futures.       |
-| `product_types`                 | `(SPOT,)` | Product types; `SPOT` uses `spot_account_type`, `FUTURES` uses MARGIN.  |
+| `environment`                   | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures.          |
+| `product_types`                 | `(SPOT,)` | Product types tuple; `SPOT` uses `spot_account_type` (default CASH), `FUTURES` uses MARGIN. |
 | `base_url_http_spot`            | `None`    | Override for Kraken Spot REST base URL.                                 |
 | `base_url_http_futures`         | `None`    | Override for Kraken Futures REST base URL.                              |
 | `base_url_ws_spot`              | `None`    | Override for Kraken Spot WebSocket URL.                                 |
@@ -575,9 +575,9 @@ The product types for each client must be specified in the configurations.
 | `http_timeout_secs`             | `None`    | HTTP request timeout in seconds.                                        |
 | `ws_heartbeat_secs`             | `30`      | WebSocket heartbeat interval in seconds.                                |
 | `max_requests_per_second`       | `None`    | Override rate limit (default 5 req/s); for higher tier accounts.        |
-| `use_spot_position_reports`     | `False`   | Report wallet balances as positions in cash mode.                       |
+| `use_spot_position_reports`     | `False`   | Report wallet balances as positions; cash mode only.                    |
 | `spot_positions_quote_currency` | `"USDT"`  | Quote currency filter for spot wallet position reports.                 |
-| `spot_account_type`             | `CASH`    | Spot account type; `MARGIN` enables leverage and margin state.          |
+| `spot_account_type`             | `CASH`    | Account type for spot trading; `MARGIN` enables leverage and reporting. |
 | `default_leverage`              | `None`    | Default spot margin leverage sent as `"N:1"` when set.                  |
 | `margin_balance_asset`          | `None`    | Summary asset for `TradeBalance`; `None` defaults to `ZUSD`.            |
 
@@ -635,13 +635,13 @@ config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
         KRAKEN: {
-            "environment": KrakenEnvironment.MAINNET,
+            "environment": KrakenEnvironment.LIVE,
             "product_types": (KrakenProductType.SPOT,),
         },
     },
     exec_clients={
         KRAKEN: {
-            "environment": KrakenEnvironment.MAINNET,
+            "environment": KrakenEnvironment.LIVE,
             "product_types": (KrakenProductType.SPOT,),
         },
     },
@@ -657,13 +657,13 @@ config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
         KRAKEN: {
-            "environment": KrakenEnvironment.MAINNET,
+            "environment": KrakenEnvironment.LIVE,
             "product_types": (KrakenProductType.SPOT, KrakenProductType.FUTURES),
         },
     },
     exec_clients={
         KRAKEN: {
-            "environment": KrakenEnvironment.MAINNET,
+            "environment": KrakenEnvironment.LIVE,
             "product_types": (KrakenProductType.SPOT, KrakenProductType.FUTURES),
         },
     },
@@ -697,18 +697,17 @@ configuration objects, or set the following environment variables:
 
 | Environment Variable             | Description                              |
 |----------------------------------|------------------------------------------|
-| `KRAKEN_SPOT_API_KEY`            | API key for Kraken Spot (mainnet).       |
-| `KRAKEN_SPOT_API_SECRET`         | API secret for Kraken Spot (mainnet).    |
-| `KRAKEN_FUTURES_API_KEY`         | API key for Kraken Futures (mainnet).    |
-| `KRAKEN_FUTURES_API_SECRET`      | API secret for Kraken Futures (mainnet). |
+| `KRAKEN_SPOT_API_KEY`            | API key for Kraken Spot live trading.    |
+| `KRAKEN_SPOT_API_SECRET`         | API secret for Kraken Spot live trading. |
+| `KRAKEN_FUTURES_API_KEY`         | Kraken Futures live API key.             |
+| `KRAKEN_FUTURES_API_SECRET`      | Kraken Futures live API secret.          |
 | `KRAKEN_FUTURES_DEMO_API_KEY`    | API key for Kraken Futures (demo).       |
 | `KRAKEN_FUTURES_DEMO_API_SECRET` | API secret for Kraken Futures (demo).    |
 
 :::note
 **Demo environment**: Only Kraken Futures offers a demo environment
 (`https://demo-futures.kraken.com`) for testing without real funds. Kraken Spot
-does not have a testnet - the `environment` setting only affects Futures
-connections.
+does not have a demo or testnet environment.
 :::
 
 :::tip

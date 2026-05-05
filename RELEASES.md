@@ -19,8 +19,10 @@ Released on TBD (UTC).
 - Added Polymarket `PolymarketDataLoader.sanitize_info` flag to strip resolution fields on resolved markets
 
 ### Breaking Changes
+- Removed legacy adapter environment flags per previous deprecation; use `environment` enum
 - Removed `From<OrderInitialized>` for order types; use `TryFrom` to surface invariant errors via `try_from`/`try_into`
 - Removed Polymarket `SNAP_UNDERFILL_ULPS` and `SNAP_OVERFILL_ULPS`; reverting to single `DUST_SNAP_THRESHOLD` constant
+- Renamed Binance and Kraken environments from `Mainnet`/`MAINNET` to `Live`/`LIVE`
 - Renamed `time_bars_origins` config param to `time_bars_origin_offset` in Rust `DataEngineConfig`/`LiveDataEngineConfig`
 - Changed to deny `submit_order`/`submit_order_list` with a custom `position_id` under `NETTING` OMS; use `HEDGING` for custom position IDs
 - Changed JSON log file extension from `.json` to `.jsonl`; update log shippers watching `.json` (#3955), thanks @filipmacek
@@ -28,6 +30,8 @@ Released on TBD (UTC).
 - Changed default `TransportBackend` to `Sockudo`; set `backend = Tungstenite` to keep the previous default
 - Changed `nautilus-network` default Cargo features to include `transport-sockudo`
 - Changed `OrderMatchingEngineConfig` defaults to match the Cython per-engine constructor (Rust)
+- Changed Binance Futures to prefer `DEMO` endpoints for simulated trading
+- Changed Kraken Spot to reject `DEMO`; demo remains Futures-only
 
 ### Security
 
@@ -116,6 +120,7 @@ Released on TBD (UTC).
 - Added DST docs caveats for process-global lazy state RNG consumption and `CacheView` factory blocker
 - Added Polymarket fill quantity normalization section explaining the dust snap, deferred dust, and commission semantics
 - Added dYdX adapter notes for FOK deprecation, DAY rejection, equity-tier limit, and MIT/LIT round-tripping
+- Updated adapter docs and examples to use environment enums instead of legacy test flags
 
 ### Deprecations
 

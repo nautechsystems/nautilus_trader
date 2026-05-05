@@ -256,7 +256,6 @@ class KrakenSpotHttpClient:
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url: str | None = None,
-        demo: bool = False,
         timeout_secs: int = 60,
         max_retries: int | None = None,
         retry_delay_ms: int | None = None,
@@ -436,7 +435,7 @@ class KrakenAssetClass(enum.Enum):
 
 @typing.final
 class KrakenEnvironment(enum.Enum):
-    MAINNET = ...
+    LIVE = ...
     DEMO = ...
 
 @typing.final

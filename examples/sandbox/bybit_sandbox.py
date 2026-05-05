@@ -18,6 +18,7 @@ import asyncio
 from decimal import Decimal
 
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
+from nautilus_trader.adapters.bybit import BybitEnvironment
 from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit import BybitProductType
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
@@ -68,9 +69,9 @@ async def main():
         ),
         data_clients={
             "BYBIT": BybitDataClientConfig(
+                environment=BybitEnvironment.MAINNET,
                 instrument_provider=instrument_provider_config,
                 product_types=(BybitProductType.LINEAR,),
-                testnet=False,  # If client uses the testnet
             ),
         },
         exec_clients=exec_clients,

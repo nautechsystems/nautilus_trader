@@ -107,7 +107,7 @@ pub struct KrakenSpotRawHttpClient {
 impl Default for KrakenSpotRawHttpClient {
     fn default() -> Self {
         Self::new(
-            KrakenEnvironment::Mainnet,
+            KrakenEnvironment::Live,
             None,
             60,
             None,
@@ -1144,7 +1144,7 @@ impl Clone for KrakenSpotHttpClient {
 impl Default for KrakenSpotHttpClient {
     fn default() -> Self {
         Self::new(
-            KrakenEnvironment::Mainnet,
+            KrakenEnvironment::Live,
             None,
             60,
             None,
@@ -2870,7 +2870,7 @@ mod tests {
         let client = KrakenSpotRawHttpClient::with_credentials(
             "test_key".to_string(),
             "test_secret".to_string(),
-            KrakenEnvironment::Mainnet,
+            KrakenEnvironment::Live,
             None,
             60,
             None,
@@ -2894,7 +2894,7 @@ mod tests {
         let client = KrakenSpotHttpClient::with_credentials(
             "test_key".to_string(),
             "test_secret".to_string(),
-            KrakenEnvironment::Mainnet,
+            KrakenEnvironment::Live,
             None,
             60,
             None,

@@ -29,6 +29,7 @@ from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.nautilus_pyo3 import DeribitEnvironment
 from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
@@ -191,7 +192,7 @@ def data_client_builder(
         config = DeribitDataClientConfig(
             product_types=product_types or (DeribitProductType.FUTURE,),
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=True,
+            environment=DeribitEnvironment.TESTNET,
             http_timeout_secs=30,
         )
 

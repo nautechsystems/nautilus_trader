@@ -179,7 +179,9 @@ class KrakenExecutionClient(LiveExecutionClient):
             masked_key = http_client_futures.api_key_masked
             self._log.info(f"Futures REST API key {masked_key}", LogColor.BLUE)
 
-        environment = config.environment or KrakenEnvironment.MAINNET
+        environment = config.environment or KrakenEnvironment.LIVE
+        if environment == KrakenEnvironment.DEMO and KrakenProductType.SPOT in product_types:
+            raise ValueError("Kraken Spot does not support the demo environment")
 
         # WebSocket API - Spot (Kraken v2 API)
         # Uses private/authenticated WebSocket endpoint for execution events

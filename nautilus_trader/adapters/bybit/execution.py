@@ -152,7 +152,7 @@ class BybitExecutionClient(LiveExecutionClient):
         # Configuration
         self._config = config
         self._product_types = list(product_types)
-        environment = _resolve_environment(config.environment, config.demo, config.testnet)
+        environment = _resolve_environment(config.environment)
         self._is_demo = environment == nautilus_pyo3.BybitEnvironment.DEMO
         self._use_gtd = config.use_gtd
         self._use_ws_execution_fast = config.use_ws_execution_fast
@@ -165,8 +165,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         self._log.info(f"Account type: {self._account_type.name}", LogColor.BLUE)
         self._log.info(f"Product types: {[str(p) for p in self._product_types]}", LogColor.BLUE)
-        self._log.info(f"{config.demo=}", LogColor.BLUE)
-        self._log.info(f"{config.testnet=}", LogColor.BLUE)
+        self._log.info(f"config.environment={environment}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
         self._log.info(f"{config.use_ws_execution_fast=}", LogColor.BLUE)
         self._log.info(f"{config.use_http_batch_api=}", LogColor.BLUE)
@@ -190,7 +189,7 @@ class BybitExecutionClient(LiveExecutionClient):
         # Configure HTTP client settings
         self._http_client.set_use_spot_position_reports(self._use_spot_position_reports)
 
-        environment = _resolve_environment(config.environment, config.demo, config.testnet)
+        environment = _resolve_environment(config.environment)
 
         # WebSocket API - Private channel
         self._ws_private_client = nautilus_pyo3.BybitWebSocketClient.new_private(

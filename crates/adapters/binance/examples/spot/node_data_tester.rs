@@ -19,7 +19,7 @@
 //!
 //! Requires environment variables based on the configured environment
 //! (Ed25519 keys are auto-detected):
-//! - Mainnet: `BINANCE_API_KEY` / `BINANCE_API_SECRET`
+//! - Live: `BINANCE_API_KEY` / `BINANCE_API_SECRET`
 //! - Testnet: `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`
 //! - Demo: `BINANCE_DEMO_API_KEY` / `BINANCE_DEMO_API_SECRET`
 
@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let binance_config = BinanceDataClientConfig {
         product_types: vec![BinanceProductType::Spot],
-        environment: BinanceEnvironment::Mainnet,
+        environment: BinanceEnvironment::Live,
         api_key: None,
         api_secret: None,
         ..Default::default()

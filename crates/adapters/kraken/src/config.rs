@@ -41,7 +41,7 @@ pub struct KrakenDataClientConfig {
     pub api_secret: Option<String>,
     #[builder(default = KrakenProductType::Spot)]
     pub product_type: KrakenProductType,
-    #[builder(default = KrakenEnvironment::Mainnet)]
+    #[builder(default = KrakenEnvironment::Live)]
     pub environment: KrakenEnvironment,
     pub base_url: Option<String>,
     pub ws_public_url: Option<String>,
@@ -64,6 +64,15 @@ impl Default for KrakenDataClientConfig {
 }
 
 impl KrakenDataClientConfig {
+    /// Validates config invariants.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the demo environment is used for Spot.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        validate_product_environment(self.product_type, self.environment)
+    }
+
     /// Returns true if both API key and secret are set.
     pub fn has_api_credentials(&self) -> bool {
         self.api_key.is_some() && self.api_secret.is_some()
@@ -112,7 +121,7 @@ pub struct KrakenExecClientConfig {
     pub api_secret: String,
     #[builder(default = KrakenProductType::Spot)]
     pub product_type: KrakenProductType,
-    #[builder(default = KrakenEnvironment::Mainnet)]
+    #[builder(default = KrakenEnvironment::Live)]
     pub environment: KrakenEnvironment,
     pub base_url: Option<String>,
     pub ws_url: Option<String>,
@@ -190,11 +199,24 @@ impl KrakenExecClientConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error if `default_leverage` is set on a Cash account.
+    /// Returns an error if `default_leverage` is set on a Cash account or the demo environment is
+    /// used for Spot.
     pub fn validate(&self) -> anyhow::Result<()> {
+        validate_product_environment(self.product_type, self.environment)?;
+
         if self.default_leverage.is_some() && self.spot_account_type == AccountType::Cash {
             anyhow::bail!("default_leverage requires spot_account_type=Margin");
         }
         Ok(())
     }
+}
+
+fn validate_product_environment(
+    product_type: KrakenProductType,
+    environment: KrakenEnvironment,
+) -> anyhow::Result<()> {
+    if product_type == KrakenProductType::Spot && environment == KrakenEnvironment::Demo {
+        anyhow::bail!("Kraken Spot does not support the demo environment");
+    }
+    Ok(())
 }

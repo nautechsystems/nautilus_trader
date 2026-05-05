@@ -56,13 +56,13 @@ async fn main() -> anyhow::Result<()> {
     let (api_key, api_secret) = resolve_credentials(
         None,
         None,
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         BinanceProductType::Spot,
     )?;
 
     log::info!("Fetching instruments from Binance Spot API...");
     let http_client = BinanceSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         get_atomic_clock_realtime(),
         None, // api_key (not needed for public endpoints)
         None, // api_secret

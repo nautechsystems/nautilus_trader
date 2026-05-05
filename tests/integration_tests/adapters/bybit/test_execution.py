@@ -961,7 +961,7 @@ async def test_submit_order_with_tp_sl_in_demo_mode_emits_order_denied(
 ):
     client, ws_client, http_client, instrument_provider = exec_client_builder(
         monkeypatch,
-        config_kwargs={"demo": True},
+        config_kwargs={"environment": nautilus_pyo3.BybitEnvironment.DEMO},
     )
 
     ws_trade_client = client._ws_trade_client

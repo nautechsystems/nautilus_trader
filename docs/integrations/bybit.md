@@ -746,8 +746,6 @@ The product types for each client must be specified in the configurations.
 | `environment`                    | `None`  | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`. |
 | `base_url_http`                  | `None`  | Override for the REST base URL. |
 | `proxy_url`                      | `None`  | Optional proxy URL for HTTP and WebSocket transports. |
-| `demo`                           | `False` | Deprecated: use `environment=BybitEnvironment.DEMO`. |
-| `testnet`                        | `False` | Deprecated: use `environment=BybitEnvironment.TESTNET`. |
 | `update_instruments_interval_mins` | `60`  | Interval (minutes) between instrument catalogue refreshes. |
 | `recv_window_ms`                 | `5,000` | Receive window (milliseconds) for signed REST requests. |
 | `bars_timestamp_on_close`        | `True`  | Timestamp bars on the close (`True`) or open (`False`) of the interval. |
@@ -767,8 +765,6 @@ The product types for each client must be specified in the configurations.
 | `base_url_ws_private`            | `None`  | Override for the private WebSocket base URL. |
 | `base_url_ws_trade`              | `None`  | Override for the trade WebSocket base URL. |
 | `proxy_url`                      | `None`  | Optional proxy URL for HTTP and WebSocket transports. |
-| `demo`                           | `False` | Deprecated: use `environment=BybitEnvironment.DEMO`. |
-| `testnet`                        | `False` | Deprecated: use `environment=BybitEnvironment.TESTNET`. |
 | `use_gtd`                        | `False` | Remap GTD orders to GTC when `True` (Bybit lacks native GTD support). |
 | `use_ws_execution_fast`          | `False` | Subscribe to the low‑latency execution stream. |
 | `use_http_batch_api`             | `False` | Use Bybit's HTTP batch trading API (deprecated). |

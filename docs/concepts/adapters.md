@@ -63,6 +63,7 @@ import asyncio
 import os
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.common.component import LiveClock
@@ -76,7 +77,7 @@ async def main():
         account_type=BinanceAccountType.USDT_FUTURES,
         api_key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
         api_secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
-        is_testnet=True,
+        environment=BinanceEnvironment.TESTNET,
     )
 
     provider = BinanceFuturesInstrumentProvider(

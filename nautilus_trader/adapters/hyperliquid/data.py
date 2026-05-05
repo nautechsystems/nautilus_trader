@@ -27,7 +27,6 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
-from nautilus_trader.core.nautilus_pyo3 import HyperliquidEnvironment
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
@@ -108,13 +107,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
         # Configuration
         self._config = config
-        environment = (
-            config.environment
-            if config.environment is not None
-            else (
-                HyperliquidEnvironment.TESTNET if config.testnet else HyperliquidEnvironment.MAINNET
-            )
-        )
+        environment = config.environment or nautilus_pyo3.HyperliquidEnvironment.MAINNET
         self._log.info(f"config.environment={environment}", LogColor.BLUE)
         self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
         self._log.info(f"{config.proxy_url=}", LogColor.BLUE)

@@ -1637,7 +1637,7 @@ mod tests {
     fn create_test_http_client(clock: &'static AtomicTime) -> BinanceFuturesHttpClient {
         BinanceFuturesHttpClient::new(
             BinanceProductType::UsdM,
-            BinanceEnvironment::Mainnet,
+            BinanceEnvironment::Live,
             clock,
             None,
             None,

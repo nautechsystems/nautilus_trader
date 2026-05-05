@@ -815,7 +815,7 @@ where
     I: IntoIterator<Item = String>,
 {
     let mut config = CaptureConfig {
-        environment: BinanceEnvironment::Mainnet,
+        environment: BinanceEnvironment::Live,
         output_dir: Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("test_data")
             .join("spot")
@@ -900,7 +900,7 @@ fn validate_config(config: &CaptureConfig) -> anyhow::Result<()> {
     }
 
     if config.include_order_flow {
-        if matches!(config.environment, BinanceEnvironment::Mainnet) {
+        if matches!(config.environment, BinanceEnvironment::Live) {
             anyhow::bail!("--include-order-flow is only allowed on testnet or demo");
         }
 
@@ -914,7 +914,7 @@ fn validate_config(config: &CaptureConfig) -> anyhow::Result<()> {
 
 fn parse_environment(value: &str) -> anyhow::Result<BinanceEnvironment> {
     match value.to_ascii_lowercase().as_str() {
-        "mainnet" | "live" => Ok(BinanceEnvironment::Mainnet),
+        "mainnet" | "live" => Ok(BinanceEnvironment::Live),
         "testnet" | "test" => Ok(BinanceEnvironment::Testnet),
         "demo" => Ok(BinanceEnvironment::Demo),
         _ => anyhow::bail!("Unsupported environment: {value}"),
@@ -929,7 +929,7 @@ fn value_at(args: &[String], index: usize, flag: &str) -> anyhow::Result<String>
 
 fn environment_name(environment: BinanceEnvironment) -> &'static str {
     match environment {
-        BinanceEnvironment::Mainnet => "mainnet",
+        BinanceEnvironment::Live => "live",
         BinanceEnvironment::Testnet => "testnet",
         BinanceEnvironment::Demo => "demo",
     }
@@ -953,7 +953,7 @@ fn print_usage() {
         "Usage: cargo run --bin binance-spot-http-capture-fixtures --package nautilus-binance -- [OPTIONS]\n\
          \n\
          Options:\n\
-           --environment, --env <mainnet|testnet|demo>\n\
+           --environment, --env <live|testnet|demo>\n\
            --output-dir <PATH>\n\
            --symbol <SYMBOL>\n\
            --interval <INTERVAL>\n\

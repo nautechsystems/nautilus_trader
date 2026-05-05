@@ -106,8 +106,8 @@ impl HyperliquidWebSocketClient {
 
     /// Removes a cloid mapping from the cache.
     ///
-    /// Should be called when an order reaches a terminal state (filled, canceled, expired)
-    /// to prevent unbounded memory growth in long-running sessions.
+    /// Called on terminal order state. The cache is FIFO-bounded so missed
+    /// removals self-evict (see GH-3972 cancel-replace drain).
     #[pyo3(name = "remove_cloid_mapping")]
     fn py_remove_cloid_mapping(&self, cloid: &str) {
         self.remove_cloid_mapping(&ustr::Ustr::from(cloid));

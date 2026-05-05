@@ -33,7 +33,6 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.nautilus_pyo3 import HyperliquidEnvironment
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
@@ -129,13 +128,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._instrument_provider: HyperliquidInstrumentProvider = instrument_provider
 
         # Log configuration details
-        environment = (
-            config.environment
-            if config.environment is not None
-            else (
-                HyperliquidEnvironment.TESTNET if config.testnet else HyperliquidEnvironment.MAINNET
-            )
-        )
+        environment = config.environment or nautilus_pyo3.HyperliquidEnvironment.MAINNET
         self._log.info(f"config.environment={environment}", LogColor.BLUE)
         self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
         self._log.info(f"config.normalize_prices={config.normalize_prices}", LogColor.BLUE)

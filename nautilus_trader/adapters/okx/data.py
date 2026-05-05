@@ -141,12 +141,7 @@ class OKXDataClient(LiveMarketDataClient):
             [c.name.upper() for c in config.contract_types] if config.contract_types else None
         )
 
-        # Resolve environment: explicit setting takes precedence over is_demo
-        self._environment = (
-            config.environment
-            if config.environment is not None
-            else (OKXEnvironment.DEMO if config.is_demo else OKXEnvironment.LIVE)
-        )
+        self._environment = config.environment or OKXEnvironment.LIVE
 
         # Configuration
         self._config = config

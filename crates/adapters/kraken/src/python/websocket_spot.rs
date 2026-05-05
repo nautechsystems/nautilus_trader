@@ -97,7 +97,7 @@ impl KrakenSpotWebSocketClient {
         api_secret: Option<String>,
         proxy_url: Option<String>,
     ) -> Self {
-        let env = environment.unwrap_or(KrakenEnvironment::Mainnet);
+        let env = environment.unwrap_or(KrakenEnvironment::Live);
 
         let (resolved_api_key, resolved_api_secret) =
             crate::common::credential::KrakenCredential::resolve_spot(api_key, api_secret)

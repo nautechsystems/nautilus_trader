@@ -89,7 +89,6 @@ def exec_client_builder(
         mock_instrument_provider.instruments_pyo3.return_value = []
 
         config = HyperliquidExecClientConfig(
-            testnet=False,
             private_key="0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
             **(config_kwargs or {}),
         )

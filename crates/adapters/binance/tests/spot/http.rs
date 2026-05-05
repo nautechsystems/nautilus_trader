@@ -1103,7 +1103,7 @@ async fn test_ping_returns_success() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1124,7 +1124,7 @@ async fn test_server_time_returns_valid_timestamp() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1145,7 +1145,7 @@ async fn test_depth_returns_order_book() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1175,7 +1175,7 @@ async fn test_trades_returns_recent_trades() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1201,7 +1201,7 @@ async fn test_exchange_info_returns_symbols() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1228,7 +1228,7 @@ async fn test_account_requires_credentials() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1253,7 +1253,7 @@ async fn test_account_with_credentials_succeeds() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         Some(base_url),
@@ -1283,7 +1283,7 @@ async fn test_open_orders_requires_credentials() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1305,7 +1305,7 @@ async fn test_open_orders_with_credentials_succeeds() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         Some(base_url),
@@ -1331,7 +1331,7 @@ async fn test_my_trades_requires_credentials() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1355,7 +1355,7 @@ async fn test_my_trades_with_credentials_succeeds() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         Some(base_url),
@@ -1388,7 +1388,7 @@ async fn test_rate_limit_triggers_after_threshold() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1412,7 +1412,7 @@ async fn test_domain_client_request_instruments() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         get_atomic_clock_realtime(),
         None,
         None,
@@ -1435,7 +1435,7 @@ async fn test_new_order_requires_credentials() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1468,7 +1468,7 @@ async fn test_new_order_with_credentials_succeeds() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         Some(base_url),
@@ -1504,7 +1504,7 @@ async fn test_cancel_order_requires_credentials() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1526,7 +1526,7 @@ async fn test_cancel_order_with_credentials_succeeds() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         Some(base_url),
@@ -1552,7 +1552,7 @@ async fn test_cancel_all_orders_requires_credentials() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(base_url),
@@ -1574,7 +1574,7 @@ async fn test_cancel_all_orders_with_credentials_succeeds() {
     let base_url = format!("http://{addr}");
 
     let client = BinanceRawSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         Some(base_url),
@@ -1597,7 +1597,7 @@ async fn create_domain_client_with_instruments(
     api_secret: Option<String>,
 ) -> BinanceSpotHttpClient {
     let client = BinanceSpotHttpClient::new(
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         get_atomic_clock_realtime(),
         api_key,
         api_secret,

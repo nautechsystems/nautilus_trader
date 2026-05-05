@@ -108,7 +108,6 @@ config_node = TradingNodeConfig(
             if testnet
             else HyperliquidEnvironment.MAINNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            testnet=testnet,
         ),
     },
     exec_clients={
@@ -117,7 +116,6 @@ config_node = TradingNodeConfig(
             if testnet
             else HyperliquidEnvironment.MAINNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            testnet=testnet,
             normalize_prices=True,  # Rounds prices to 5 significant figures (required for HL)
         ),
     },

@@ -89,6 +89,8 @@ impl DataClientFactory for KrakenDataClientFactory {
             })?
             .clone();
 
+        kraken_config.validate()?;
+
         let client_id = ClientId::from(name);
 
         match kraken_config.product_type {
@@ -216,7 +218,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::enums::KrakenProductType;
+    use crate::common::enums::{KrakenEnvironment, KrakenProductType};
 
     fn setup_test_env() {
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -325,6 +327,31 @@ mod tests {
         };
         assert!(
             err.contains("default_leverage requires spot_account_type=Margin"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_kraken_data_client_factory_rejects_spot_demo() {
+        setup_test_env();
+
+        let factory = KrakenDataClientFactory::new();
+        let config = KrakenDataClientConfig {
+            product_type: KrakenProductType::Spot,
+            environment: KrakenEnvironment::Demo,
+            ..Default::default()
+        };
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let result = factory.create("KRAKEN-TEST", &config, cache.into(), clock);
+        let err = match result {
+            Ok(_) => panic!("expected validation error, factory returned Ok"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err.contains("Kraken Spot does not support the demo environment"),
             "unexpected error: {err}"
         );
     }

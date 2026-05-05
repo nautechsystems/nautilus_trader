@@ -91,7 +91,6 @@ config_node = TradingNodeConfig(
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
             ),
-            is_testnet=USE_TESTNET,
             http_timeout_secs=30,
         ),
     },

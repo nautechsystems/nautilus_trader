@@ -2097,7 +2097,7 @@ mod tests {
 
     fn create_test_http_client(clock: &'static AtomicTime) -> BinanceSpotHttpClient {
         BinanceSpotHttpClient::new(
-            BinanceEnvironment::Mainnet,
+            BinanceEnvironment::Live,
             clock,
             None,
             None,

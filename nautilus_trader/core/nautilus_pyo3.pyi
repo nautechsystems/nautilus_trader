@@ -9254,7 +9254,7 @@ class DydxNetwork(Enum):
 # Kraken
 
 class KrakenEnvironment(Enum):
-    MAINNET = "mainnet"
+    LIVE = "live"
     DEMO = "demo"
 
 class KrakenProductType(Enum):
@@ -9267,7 +9267,6 @@ class KrakenSpotHttpClient:
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url: str | None = None,
-        demo: bool = False,
         timeout_secs: int = 60,
         max_retries: int | None = None,
         retry_delay_ms: int | None = None,
@@ -10364,6 +10363,6 @@ class BinanceProductType(Enum):
     OPTIONS = "OPTIONS"
 
 class BinanceEnvironment(Enum):
-    MAINNET = "MAINNET"
+    LIVE = "LIVE"
     TESTNET = "TESTNET"
     DEMO = "DEMO"
