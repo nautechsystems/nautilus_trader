@@ -7,7 +7,6 @@ Released on TBD (UTC).
 - Added `purge_instrument` cache method for trimming unused instruments (#3945), thanks for reporting @fedoraiver
 - Added `LoggerConfig.file_config` and `clear_log_file` support to the Rust `LiveNode` runtime (#3955), thanks @filipmacek
 - Added `LoggerConfig` Python constructor for direct construction without `from_spec` (#3955), thanks @filipmacek
-- Added Interactive Brokers PyO3 live client config support in `TradingNodeConfig` (#3964), thanks @faysou
 - Added `limit_aggressive` and `test_modify_rejected` flags to `ExecTesterConfig` for marketable/modify-rejection tests
 - Added `CompositeMarketMaker` example strategy with book-mid quoting and synthetic-signal skew (Rust)
 - Added Betfair Rust adapter post-reconnect mass-status reconciliation that halts submits via `STREAM_RECONCILING`
@@ -16,6 +15,7 @@ Released on TBD (UTC).
 - Added Coinbase liquidation/ADL warning on forced-close order events
 - Added Coinbase CFM liquidation buffer warning when buffer drops below 20%
 - Added dYdX historical funding rate requests via the `request_funding_rates` HTTP method and PyO3 binding
+- Added Kraken Spot margin trading support (#3965), thanks @mcgrj
 - Added Polymarket `OrderStatusReport.filled_qty` dust snap at terminal `Filled` status to absorb venue truncation
 - Added Polymarket `PolymarketFeeModel` backtest fee model with maker-rebate inference
 - Added Polymarket `PolymarketDataLoader.sanitize_info` flag to strip resolution fields on resolved markets
@@ -49,6 +49,8 @@ Released on TBD (UTC).
 - Fixed `BacktestEngine` not enabling `calculate_account_state` on accounts (#3988), thanks for reporting @magnified103
 - Fixed `MessageBus` late wildcard subscriptions missing events on already-cached topics (#3942), thanks for reporting @graceyangfan
 - Fixed `OrderMatchingEngine` to propagate tick-size to `MatchingCore` (#3942), thanks for reporting @graceyangfan
+- Fixed Cython `OrderMatchingEngine.reset` leaking `OrderBook.ts_last` across resets (#3992), thanks @YeeTsai
+- Fixed sandbox tick-size precision race that could panic on stale ticks (#3994), thanks @graceyangfan
 - Fixed `ExecutionEngine` reconciliation skipping `OrderUpdated` when both report and order were already `ACCEPTED`
 - Fixed `Strategy`/`Actor` clock callback leak on dispose (#3967), thanks for reporting @frslvr
 - Fixed `Strategy` pending cancel and pending update events before order commands (Rust)
@@ -73,8 +75,12 @@ Released on TBD (UTC).
 - Fixed Hyperliquid spurious `OrderCanceled` on concurrent modifies (Python and Rust) (#3971), thanks @M-Advis
 - Fixed Hyperliquid cancel-replace fill race emitting `OrderFilled` against stale local order state (Python and Rust) (#3972)
 - Fixed Interactive Brokers spread fill races (#3957), thanks @taozle
+- Fixed Interactive Brokers callback ordering races (#3976), thanks @faysou
+- Fixed Interactive Brokers market data farm reconnects not resubscribing feeds (#3968), thanks @onixenix
+- Fixed Kraken Spot margin wallet balances for multi-asset collateral (#3997), thanks @mcgrj
 - Fixed Kraken symbol normalization for WS v2 compatibility (#3961), thanks @mcgrj
 - Fixed OKX missing `post_only` instrument status (#3966), thanks @jhavie
+- Fixed OKX missing `rebase` instrument status (#3998), thanks @jhavie
 - Fixed Polymarket V2 BUY overfill rejection via overfill-only `last_qty` snap on WS, REST, and buffered drain paths
 - Fixed Polymarket REST fill paths bypassing dust normalization, causing engine state to diverge from venue across paths
 - Fixed Polymarket adapter book resync on `tick_size_change` (#3942), thanks for reporting @graceyangfan
@@ -96,6 +102,8 @@ Released on TBD (UTC).
 - Added `cargo-flamegraph` to workspace tools with pinned version
 - Added `simulation` feature on `nautilus-live` so the stress harness runs under `cfg(madsim)` for DST validation
 - Added automatic `Tungstenite` fallback when `WebSocketConfig.proxy_url` is set with Sockudo selected (Rust)
+- Added Interactive Brokers PyO3 live client config support in `TradingNodeConfig` (#3964), thanks @faysou
+- Added Interactive Brokers Rust adapter support for v2 live trading (#3974), thanks @faysou
 - Refined data engine request workflow (#3928), thanks @faysou
 - Improved object materialization in Rust stream Feather to parquet conversion (#3954), thanks @faysou
 - Improved `OwnBookLadder` to defer error logging to callers, removing duplicate own-book error noise
@@ -116,7 +124,7 @@ Released on TBD (UTC).
 - Optimized live node biased select to dispatch exec commands ahead of market data (Rust)
 - Optimized live node loop by collapsing six maintenance timers into one shared maintenance dispatcher (Rust)
 - Upgraded `alloy` crate to v2.0.4
-- Upgraded `databento` crate to v0.49.0
+- Upgraded `databento` crate to v0.50.0
 - Upgraded `redis` crate to v1.2.1
 - Upgraded `tokio` crate to v1.52.2 (fixes a performance regression)
 
