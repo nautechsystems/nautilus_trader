@@ -39,7 +39,6 @@ from nautilus_trader.adapters.hyperliquid import HYPERLIQUID
 from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidLiveDataClientFactory
 from nautilus_trader.adapters.hyperliquid import HyperliquidProductType
-from nautilus_trader.adapters.hyperliquid.factories import get_cached_hyperliquid_http_client
 from nautilus_trader.adapters.hyperliquid.paper import is_outcome_instrument_id
 from nautilus_trader.adapters.hyperliquid.paper import validate_outcome_price
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
@@ -55,15 +54,12 @@ from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders import LimitOrder
-from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.strategy import Strategy
 
