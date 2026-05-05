@@ -258,6 +258,7 @@ pub fn okx_status_to_market_action(status: OKXInstrumentStatus) -> MarketStatusA
         OKXInstrumentStatus::Preopen => MarketStatusAction::PreOpen,
         OKXInstrumentStatus::Test => MarketStatusAction::NotAvailableForTrading,
         OKXInstrumentStatus::PostOnly => MarketStatusAction::Quoting,
+        OKXInstrumentStatus::Rebase => MarketStatusAction::NotAvailableForTrading,
     }
 }
 
@@ -2811,6 +2812,17 @@ mod tests {
     }
 
     #[rstest]
+    fn test_deserialize_swap_instrument_with_rebase_state() {
+        let json_data = load_test_json("http_get_instruments_swap.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        value["data"][0]["state"] = serde_json::Value::String("rebase".to_string());
+
+        let response: OKXResponse<OKXInstrument> = serde_json::from_value(value).unwrap();
+
+        assert_eq!(response.data[0].inst_id, "BTC-USD-SWAP");
+    }
+
+    #[rstest]
     fn test_parse_linear_swap_instrument() {
         let json_data = load_test_json("http_get_instruments_swap.json");
         let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
@@ -5063,6 +5075,10 @@ mod tests {
     #[case(OKXInstrumentStatus::Preopen, MarketStatusAction::PreOpen)]
     #[case(OKXInstrumentStatus::Test, MarketStatusAction::NotAvailableForTrading)]
     #[case(OKXInstrumentStatus::PostOnly, MarketStatusAction::Quoting)]
+    #[case(
+        OKXInstrumentStatus::Rebase,
+        MarketStatusAction::NotAvailableForTrading
+    )]
     fn test_okx_status_to_market_action(
         #[case] status: OKXInstrumentStatus,
         #[case] expected: MarketStatusAction,
