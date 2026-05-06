@@ -353,11 +353,18 @@ Individual orders can be customized using the `params` dictionary when submittin
 | `sl_trigger_price` | `str` or `float`       | Custom SL trigger price (overrides `stop_loss`).                        |
 | `close_on_trigger` | `bool`                 | Close the position when TP/SL triggers. Default: `False`.               |
 | `position_idx`     | `int`                  | Hedge‑mode position index. See [Hedge mode](#hedge-mode-bothsides).     |
+| `bbo_side_type`    | `str`                  | Linear/inverse BBO side: `"Queue"` or `"Counterparty"`.                 |
+| `bbo_level`        | `str` or `int`         | Linear/inverse BBO book level: `"1"` through `"5"`.                     |
 
 :::note
 Native TP/SL params are not supported in demo mode. The `is_leverage` param applies to
 Spot products only. See [Bybit's isLeverage documentation](https://bybit-exchange.github.io/docs/v5/order/create-order#request-parameters).
 :::
+
+When `bbo_side_type` and `bbo_level` are set, Nautilus sends Bybit's
+`bboSideType` and `bboLevel` fields and omits the order price from the API
+request. BBO orders are supported for linear and inverse limit, stop-limit, and
+limit-if-touched orders.
 
 #### Example: Order with native TP/SL
 
@@ -373,6 +380,19 @@ order = strategy.order_factory.limit(
         "tp_trigger_by": "LastPrice",
         "sl_trigger_by": "LastPrice",
     },
+)
+strategy.submit_order(order)
+```
+
+#### Example: BBO order
+
+```python
+order = strategy.order_factory.limit(
+    instrument_id=InstrumentId.from_str("BTCUSDT-LINEAR.BYBIT"),
+    order_side=OrderSide.BUY,
+    quantity=Quantity.from_str("0.01"),
+    price=Price.from_str("60000.0"),
+    params={"bbo_side_type": "Queue", "bbo_level": 1},
 )
 strategy.submit_order(order)
 ```

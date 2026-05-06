@@ -22,8 +22,8 @@ use ustr::Ustr;
 use crate::{
     common::{
         enums::{
-            BybitCancelType, BybitCreateType, BybitExecType, BybitMarketUnit, BybitOrderSide,
-            BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionSide,
+            BybitBboSideType, BybitCancelType, BybitCreateType, BybitExecType, BybitMarketUnit,
+            BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionSide,
             BybitPositionStatus, BybitProductType, BybitSmpType, BybitStopOrderType,
             BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
             BybitWsOrderRequestOp,
@@ -301,6 +301,10 @@ pub struct BybitWsPlaceOrderParams {
     pub mmp: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position_idx: Option<BybitPositionIdx>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bbo_side_type: Option<BybitBboSideType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bbo_level: Option<String>,
 }
 
 /// Parameters for amending an order via WebSocket.
@@ -417,6 +421,10 @@ pub struct BybitWsBatchPlaceItem {
     pub mmp: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position_idx: Option<BybitPositionIdx>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bbo_side_type: Option<BybitBboSideType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bbo_level: Option<String>,
 }
 
 /// Arguments for batch place order operation via WebSocket.
@@ -1008,6 +1016,8 @@ mod tests {
             order_iv: Some("0.80".to_string()),
             mmp: Some(true),
             position_idx: None,
+            bbo_side_type: None,
+            bbo_level: None,
         };
 
         let json = serde_json::to_string(&params).unwrap();
@@ -1047,12 +1057,56 @@ mod tests {
             order_iv: None,
             mmp: None,
             position_idx: None,
+            bbo_side_type: None,
+            bbo_level: None,
         };
 
         let json = serde_json::to_string(&params).unwrap();
         assert!(!json.contains("orderIv"));
         assert!(!json.contains("mmp"));
         assert!(!json.contains("positionIdx"));
+    }
+
+    #[rstest]
+    fn serialize_place_params_includes_bbo_when_set() {
+        let params = BybitWsPlaceOrderParams {
+            category: BybitProductType::Linear,
+            symbol: Ustr::from("BTCUSDT"),
+            side: BybitOrderSide::Buy,
+            order_type: BybitOrderType::Limit,
+            qty: "0.01".to_string(),
+            is_leverage: None,
+            market_unit: None,
+            price: None,
+            time_in_force: Some(BybitTimeInForce::Gtc),
+            order_link_id: None,
+            reduce_only: None,
+            close_on_trigger: None,
+            trigger_price: None,
+            trigger_by: None,
+            trigger_direction: None,
+            tpsl_mode: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+            sl_trigger_price: None,
+            tp_trigger_price: None,
+            sl_order_type: None,
+            tp_order_type: None,
+            sl_limit_price: None,
+            tp_limit_price: None,
+            order_iv: None,
+            mmp: None,
+            position_idx: None,
+            bbo_side_type: Some(BybitBboSideType::Queue),
+            bbo_level: Some("2".to_string()),
+        };
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("\"bboSideType\":\"Queue\""));
+        assert!(json.contains("\"bboLevel\":\"2\""));
+        assert!(!json.contains("\"price\""));
     }
 
     #[rstest]
@@ -1092,6 +1146,8 @@ mod tests {
             order_iv: None,
             mmp: None,
             position_idx: Some(idx),
+            bbo_side_type: None,
+            bbo_level: None,
         };
 
         let json = serde_json::to_string(&params).unwrap();
@@ -1134,6 +1190,8 @@ mod tests {
             order_iv: None,
             mmp: None,
             position_idx: idx,
+            bbo_side_type: None,
+            bbo_level: None,
         };
 
         let json = serde_json::to_string(&params).unwrap();

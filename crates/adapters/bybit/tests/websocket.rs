@@ -35,7 +35,8 @@ use axum::{
 };
 use nautilus_bybit::{
     common::enums::{
-        BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce,
+        BybitBboSideType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType,
+        BybitTimeInForce,
     },
     websocket::{
         client::BybitWebSocketClient,
@@ -1968,6 +1969,8 @@ mod conditional_order_tests {
                 None,  // take_profit
                 None,  // stop_loss
                 None,  // position_idx
+                None,  // bbo_side_type
+                None,  // bbo_level
             )
             .unwrap()
     }
@@ -2027,6 +2030,8 @@ mod conditional_order_tests {
                 order_iv: None,
                 mmp: None,
                 position_idx: None,
+                bbo_side_type: None,
+                bbo_level: None,
             }
         } else {
             BybitWsPlaceOrderParams {
@@ -2059,6 +2064,8 @@ mod conditional_order_tests {
                 order_iv: None,
                 mmp: None,
                 position_idx: None,
+                bbo_side_type: None,
+                bbo_level: None,
             }
         }
     }
@@ -2343,6 +2350,8 @@ async fn test_batch_place_orders_with_cache_keys() {
         order_iv: None,
         mmp: None,
         position_idx: None,
+        bbo_side_type: None,
+        bbo_level: None,
     }];
 
     let result = client.batch_place_orders(orders).await;
@@ -2745,12 +2754,18 @@ async fn test_batch_place_order_with_order_iv_and_mmp() {
         order_iv: Some("0.80".to_string()),
         mmp: Some(true),
         position_idx: None,
+        bbo_side_type: None,
+        bbo_level: None,
     }];
 
     let result = client.batch_place_orders(orders).await;
     result.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait_until_async(
+        || async { !state.captured_messages.lock().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
 
     let messages = state.captured_messages.lock().await;
     assert_eq!(messages.len(), 1);
@@ -2763,6 +2778,87 @@ async fn test_batch_place_order_with_order_iv_and_mmp() {
     assert_eq!(request["mmp"], true);
     assert_eq!(request["symbol"], "BTC-30JUN25-100000-C");
     assert_eq!(request["orderLinkId"], "option-test-1");
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_batch_place_order_with_bbo_serializes_bbo_and_omits_price() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v5/private");
+
+    let mut client = BybitWebSocketClient::new_private(
+        BybitEnvironment::Mainnet,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(ws_url),
+        20,
+        TransportBackend::default(),
+        None,
+    );
+
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || async { state.authenticated.load(Ordering::Relaxed) },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let orders = vec![BybitWsPlaceOrderParams {
+        category: BybitProductType::Linear,
+        symbol: Ustr::from("BTCUSDT"),
+        side: BybitOrderSide::Buy,
+        order_type: BybitOrderType::Limit,
+        qty: "0.001".to_string(),
+        is_leverage: None,
+        market_unit: None,
+        price: None,
+        time_in_force: Some(BybitTimeInForce::Gtc),
+        order_link_id: Some("linear-bbo-1".to_string()),
+        reduce_only: None,
+        close_on_trigger: None,
+        trigger_price: None,
+        trigger_by: None,
+        trigger_direction: None,
+        tpsl_mode: None,
+        take_profit: None,
+        stop_loss: None,
+        tp_trigger_by: None,
+        sl_trigger_by: None,
+        sl_trigger_price: None,
+        tp_trigger_price: None,
+        sl_order_type: None,
+        tp_order_type: None,
+        sl_limit_price: None,
+        tp_limit_price: None,
+        order_iv: None,
+        mmp: None,
+        position_idx: None,
+        bbo_side_type: Some(BybitBboSideType::Counterparty),
+        bbo_level: Some("5".to_string()),
+    }];
+
+    let result = client.batch_place_orders(orders).await;
+    result.unwrap();
+
+    wait_until_async(
+        || async { !state.captured_messages.lock().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let messages = state.captured_messages.lock().await;
+    assert_eq!(messages.len(), 1);
+
+    let msg = &messages[0];
+    let args = msg.get("args").unwrap().as_array().unwrap();
+    let request = &args[0]["request"][0];
+
+    assert_eq!(request["bboSideType"], "Counterparty");
+    assert_eq!(request["bboLevel"], "5");
+    assert!(request.get("price").is_none());
 
     client.close().await.unwrap();
 }
@@ -2821,6 +2917,8 @@ async fn test_batch_place_order_omits_order_iv_when_none() {
         order_iv: None,
         mmp: None,
         position_idx: None,
+        bbo_side_type: None,
+        bbo_level: None,
     }];
 
     let result = client.batch_place_orders(orders).await;

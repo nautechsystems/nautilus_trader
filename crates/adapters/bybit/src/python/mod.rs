@@ -37,11 +37,13 @@ use crate::{
     common::{
         consts::BYBIT_NAUTILUS_BROKER_ID,
         enums::{BybitOrderSide, BybitPositionIdx, BybitPositionMode},
-        parse::{bar_spec_to_bybit_interval, extract_raw_symbol, make_hedge_venue_position_id},
+        parse::{
+            bar_spec_to_bybit_interval, extract_raw_symbol, make_hedge_venue_position_id,
+            resolve_position_idx,
+        },
         symbol::BybitSymbol,
     },
     config::{BybitDataClientConfig, BybitExecClientConfig},
-    execution::resolve_position_idx,
     factories::{BybitDataClientFactory, BybitExecutionClientFactory},
 };
 

@@ -7216,6 +7216,8 @@ class BybitHttpClient:
         is_quote_quantity: bool = False,
         is_leverage: bool = False,
         position_idx: BybitPositionIdx | None = None,
+        bbo_side_type: str | None = None,
+        bbo_level: str | None = None,
     ) -> OrderStatusReport: ...
     async def cancel_order(
         self,
@@ -7318,6 +7320,8 @@ class BybitWebSocketClient:
         reduce_only: bool | None = None,
         is_leverage: bool = False,
         position_idx: BybitPositionIdx | None = None,
+        bbo_side_type: str | None = None,
+        bbo_level: str | None = None,
     ) -> None: ...
     async def modify_order(
         self,
@@ -7376,6 +7380,8 @@ class BybitWebSocketClient:
         take_profit: Price | None = None,
         stop_loss: Price | None = None,
         position_idx: BybitPositionIdx | None = None,
+        bbo_side_type: str | None = None,
+        bbo_level: str | None = None,
     ) -> BybitWsPlaceOrderParams: ...
     def build_amend_order_params(
         self,

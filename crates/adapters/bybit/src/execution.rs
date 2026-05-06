@@ -65,7 +65,8 @@ use crate::{
         },
         parse::{
             BybitTpSlParams, extract_raw_symbol, get_price_str, make_hedge_venue_position_id,
-            nanos_to_millis, parse_bybit_tp_sl_params, spot_leverage, spot_market_unit,
+            nanos_to_millis, parse_bybit_tp_sl_params,
+            resolve_position_idx as resolve_bybit_position_idx, spot_leverage, spot_market_unit,
             trigger_direction,
         },
         symbol::BybitSymbol,
@@ -78,64 +79,6 @@ use crate::{
         messages::{BybitWsAmendOrderParams, BybitWsCancelOrderParams, BybitWsPlaceOrderParams},
     },
 };
-
-/// Resolves the `positionIdx` to send with an order under a given position mode.
-///
-/// In hedge mode `positionIdx` identifies the position being affected (1 = long,
-/// 2 = short), not the trade direction. A reduce-only sell closes a long position
-/// and a reduce-only buy closes a short position. A manual override always wins.
-#[must_use]
-pub fn resolve_position_idx(
-    position_mode: Option<BybitPositionMode>,
-    order_side: BybitOrderSide,
-    is_reduce_only: bool,
-    manual_override: Option<BybitPositionIdx>,
-) -> Option<BybitPositionIdx> {
-    if manual_override.is_some() {
-        return manual_override;
-    }
-    let mode = position_mode?;
-    match mode {
-        BybitPositionMode::BothSides => Some(match (order_side, is_reduce_only) {
-            (BybitOrderSide::Buy, false) | (BybitOrderSide::Sell, true) => {
-                BybitPositionIdx::BuyHedge
-            }
-            (BybitOrderSide::Sell, false) | (BybitOrderSide::Buy, true) => {
-                BybitPositionIdx::SellHedge
-            }
-            (BybitOrderSide::Unknown, _) => BybitPositionIdx::OneWay,
-        }),
-        BybitPositionMode::MergedSingle => Some(BybitPositionIdx::OneWay),
-    }
-}
-
-fn parse_derivative_symbol(symbol_str: &str) -> Option<BybitSymbol> {
-    let symbol = match BybitSymbol::new(symbol_str) {
-        Ok(s) => s,
-        Err(e) => {
-            log::warn!("Failed to parse symbol {symbol_str}: {e}");
-            return None;
-        }
-    };
-    matches!(
-        symbol.product_type(),
-        BybitProductType::Linear | BybitProductType::Inverse
-    )
-    .then_some(symbol)
-}
-
-fn is_unchanged_error<E: std::fmt::Display>(err: &E, code: &str) -> bool {
-    let msg = err.to_string().to_lowercase();
-    if msg.contains("not been modified") {
-        return true;
-    }
-    !code.is_empty() && msg.contains(code)
-}
-
-fn is_low_margin_error<E: std::fmt::Display>(err: &E) -> bool {
-    err.to_string()
-        .contains("needs to be equal to or greater than")
-}
 
 /// Live execution client for Bybit.
 #[derive(Debug)]
@@ -323,7 +266,7 @@ impl BybitExecutionClient {
             .position_mode
             .as_ref()
             .and_then(|map| map.get(instrument_id.symbol.as_str()).copied());
-        resolve_position_idx(mode, order_side, is_reduce_only, manual_override)
+        resolve_bybit_position_idx(mode, order_side, is_reduce_only, manual_override)
     }
 
     async fn apply_account_configuration(&self) -> anyhow::Result<()> {
@@ -343,7 +286,7 @@ impl BybitExecutionClient {
     }
 
     async fn apply_leverage_entry(&self, symbol_str: &str, leverage: u32) {
-        let Some(symbol) = parse_derivative_symbol(symbol_str) else {
+        let Some(symbol) = Self::parse_derivative_symbol(symbol_str) else {
             return;
         };
         let lev = leverage.to_string();
@@ -354,7 +297,7 @@ impl BybitExecutionClient {
 
         match result {
             Ok(_) => log::info!("Set leverage for {symbol_str} to {leverage}"),
-            Err(e) if is_unchanged_error(&e, "110043") => {
+            Err(e) if Self::is_unchanged_error(&e, "110043") => {
                 log::info!("Leverage already set for {symbol_str} to {leverage}");
             }
             Err(e) => log::error!("Failed to set leverage for {symbol_str}: {e}"),
@@ -372,7 +315,7 @@ impl BybitExecutionClient {
     }
 
     async fn apply_position_mode_entry(&self, symbol_str: &str, mode: BybitPositionMode) {
-        let Some(symbol) = parse_derivative_symbol(symbol_str) else {
+        let Some(symbol) = Self::parse_derivative_symbol(symbol_str) else {
             return;
         };
         let result = self
@@ -387,7 +330,7 @@ impl BybitExecutionClient {
 
         match result {
             Ok(_) => log::info!("Set symbol `{symbol_str}` position mode to `{mode:?}`"),
-            Err(e) if is_unchanged_error(&e, "110025") => {
+            Err(e) if Self::is_unchanged_error(&e, "110025") => {
                 log::info!("Symbol `{symbol_str}` position mode already set to `{mode:?}`");
             }
             Err(e) => log::error!("Failed to set position mode for {symbol_str}: {e}"),
@@ -406,16 +349,44 @@ impl BybitExecutionClient {
                 log::info!("Set account margin mode to {margin_mode:?}");
                 Ok(())
             }
-            Err(e) if is_unchanged_error(&e, "") => {
+            Err(e) if Self::is_unchanged_error(&e, "") => {
                 log::info!("Margin mode already set to {margin_mode:?}");
                 Ok(())
             }
-            Err(e) if is_low_margin_error(&e) => {
+            Err(e) if Self::is_low_margin_error(&e) => {
                 log::warn!("Cannot set margin mode: {e}");
                 Ok(())
             }
             Err(e) => Err(anyhow::Error::from(e).context("failed to set margin mode")),
         }
+    }
+
+    fn parse_derivative_symbol(symbol_str: &str) -> Option<BybitSymbol> {
+        let symbol = match BybitSymbol::new(symbol_str) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("Failed to parse symbol {symbol_str}: {e}");
+                return None;
+            }
+        };
+        matches!(
+            symbol.product_type(),
+            BybitProductType::Linear | BybitProductType::Inverse
+        )
+        .then_some(symbol)
+    }
+
+    fn is_unchanged_error<E: std::fmt::Display>(err: &E, code: &str) -> bool {
+        let msg = err.to_string().to_lowercase();
+        if msg.contains("not been modified") {
+            return true;
+        }
+        !code.is_empty() && msg.contains(code)
+    }
+
+    fn is_low_margin_error<E: std::fmt::Display>(err: &E) -> bool {
+        err.to_string()
+            .contains("needs to be equal to or greater than")
     }
 
     fn map_order_type(order_type: OrderType) -> anyhow::Result<(BybitOrderType, bool)> {
@@ -443,6 +414,35 @@ impl BybitExecutionClient {
         }
     }
 
+    fn validate_bbo_params(
+        order: &OrderAny,
+        product_type: BybitProductType,
+        tp_sl: &BybitTpSlParams,
+    ) -> anyhow::Result<()> {
+        if !tp_sl.has_bbo() {
+            return Ok(());
+        }
+
+        anyhow::ensure!(
+            matches!(
+                product_type,
+                BybitProductType::Linear | BybitProductType::Inverse
+            ),
+            "`bbo_side_type` and `bbo_level` are only supported for Bybit linear and inverse products"
+        );
+
+        let order_type = order.order_type();
+        anyhow::ensure!(
+            matches!(
+                order_type,
+                OrderType::Limit | OrderType::StopLimit | OrderType::LimitIfTouched
+            ),
+            "`bbo_side_type` and `bbo_level` are not supported for order type {order_type:?}"
+        );
+
+        Ok(())
+    }
+
     fn build_ws_place_params(
         order: &OrderAny,
         product_type: BybitProductType,
@@ -467,7 +467,11 @@ impl BybitExecutionClient {
                 bybit_order_type,
                 order.is_quote_quantity(),
             ),
-            price: order.price().map(|p: Price| p.to_string()),
+            price: if tp_sl.has_bbo() {
+                None
+            } else {
+                order.price().map(|p: Price| p.to_string())
+            },
             time_in_force: if bybit_order_type == BybitOrderType::Market {
                 None
             } else {
@@ -512,6 +516,8 @@ impl BybitExecutionClient {
             order_iv: tp_sl.order_iv.clone(),
             mmp: tp_sl.mmp,
             position_idx,
+            bbo_side_type: tp_sl.bbo_side_type,
+            bbo_level: tp_sl.bbo_level.clone(),
         })
     }
 }
@@ -1083,6 +1089,8 @@ impl ExecutionClient for BybitExecutionClient {
 
             order.clone()
         };
+        let instrument_id = order.instrument_id();
+        let product_type = self.get_product_type_for_instrument(instrument_id);
 
         // Validate order params before emitting submitted event
         if let Err(e) = BybitOrderSide::try_from(order.order_side()) {
@@ -1103,6 +1111,11 @@ impl ExecutionClient for BybitExecutionClient {
             }
         };
 
+        if let Err(e) = Self::validate_bbo_params(&order, product_type, &tp_sl) {
+            self.emitter.emit_order_denied(&order, &e.to_string());
+            return Ok(());
+        }
+
         if self.config.environment == BybitEnvironment::Demo
             && (tp_sl.has_tp_sl() || tp_sl.order_iv.is_some() || tp_sl.mmp.is_some())
         {
@@ -1116,8 +1129,6 @@ impl ExecutionClient for BybitExecutionClient {
         log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
         self.emitter.emit_order_submitted(&order);
 
-        let instrument_id = order.instrument_id();
-        let product_type = self.get_product_type_for_instrument(instrument_id);
         let client_order_id = order.client_order_id();
         let strategy_id = order.strategy_id();
         let emitter = self.emitter.clone();
@@ -1158,6 +1169,8 @@ impl ExecutionClient for BybitExecutionClient {
             let reduce_only = order.is_reduce_only();
             let is_quote_quantity = order.is_quote_quantity();
             let is_leverage = tp_sl.is_leverage;
+            let bbo_side_type = tp_sl.bbo_side_type;
+            let bbo_level = tp_sl.bbo_level;
 
             self.spawn_task("submit_order_http", async move {
                 let result = http_client
@@ -1177,6 +1190,8 @@ impl ExecutionClient for BybitExecutionClient {
                         is_quote_quantity,
                         is_leverage,
                         position_idx,
+                        bbo_side_type,
+                        bbo_level,
                     )
                     .await;
 
@@ -1254,6 +1269,9 @@ impl ExecutionClient for BybitExecutionClient {
             }
         };
 
+        let instrument_id = cmd.instrument_id;
+        let product_type = self.get_product_type_for_instrument(instrument_id);
+
         if self.config.environment == BybitEnvironment::Demo
             && (tp_sl.has_tp_sl() || tp_sl.order_iv.is_some() || tp_sl.mmp.is_some())
         {
@@ -1270,8 +1288,6 @@ impl ExecutionClient for BybitExecutionClient {
             return Ok(());
         }
 
-        let instrument_id = cmd.instrument_id;
-        let product_type = self.get_product_type_for_instrument(instrument_id);
         let strategy_id = cmd.strategy_id;
 
         let mut valid_orders = Vec::with_capacity(cmd.order_list.client_order_ids.len());
@@ -1296,6 +1312,11 @@ impl ExecutionClient for BybitExecutionClient {
                 }
 
                 if let Err(e) = Self::map_order_type(order.order_type()) {
+                    deny_reason = Some(e.to_string());
+                    break;
+                }
+
+                if let Err(e) = Self::validate_bbo_params(order, product_type, &tp_sl) {
                     deny_reason = Some(e.to_string());
                     break;
                 }
@@ -1350,6 +1371,8 @@ impl ExecutionClient for BybitExecutionClient {
             let http_client = self.http_client.clone();
             let account_id = self.core.account_id;
             let is_leverage = tp_sl.is_leverage;
+            let bbo_side_type = tp_sl.bbo_side_type;
+            let bbo_level = tp_sl.bbo_level.clone();
 
             let order_data: Vec<_> = valid_orders
                 .iter()
@@ -1410,6 +1433,8 @@ impl ExecutionClient for BybitExecutionClient {
                             quote_qty,
                             is_leverage,
                             position_idx,
+                            bbo_side_type,
+                            bbo_level.clone(),
                         )
                         .await
                     {
@@ -2079,6 +2104,8 @@ mod tests {
             order_iv: None,
             mmp: None,
             position_idx: None,
+            bbo_side_type: None,
+            bbo_level: None,
         };
 
         assert_eq!(params.market_unit, expected);
@@ -2107,53 +2134,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case::buy_open(BybitOrderSide::Buy, false, BybitPositionIdx::BuyHedge)]
-    #[case::sell_open(BybitOrderSide::Sell, false, BybitPositionIdx::SellHedge)]
-    #[case::sell_close_long(BybitOrderSide::Sell, true, BybitPositionIdx::BuyHedge)]
-    #[case::buy_close_short(BybitOrderSide::Buy, true, BybitPositionIdx::SellHedge)]
-    fn test_resolve_position_idx_hedge_mode(
-        #[case] side: BybitOrderSide,
-        #[case] is_reduce_only: bool,
-        #[case] expected: BybitPositionIdx,
-    ) {
-        let idx = resolve_position_idx(
-            Some(BybitPositionMode::BothSides),
-            side,
-            is_reduce_only,
-            None,
-        );
-        assert_eq!(idx, Some(expected));
-    }
-
-    #[rstest]
-    fn test_resolve_position_idx_one_way_mode() {
-        let idx = resolve_position_idx(
-            Some(BybitPositionMode::MergedSingle),
-            BybitOrderSide::Buy,
-            false,
-            None,
-        );
-        assert_eq!(idx, Some(BybitPositionIdx::OneWay));
-    }
-
-    #[rstest]
-    fn test_resolve_position_idx_manual_override_wins() {
-        let idx = resolve_position_idx(
-            Some(BybitPositionMode::BothSides),
-            BybitOrderSide::Buy,
-            false,
-            Some(BybitPositionIdx::SellHedge),
-        );
-        assert_eq!(idx, Some(BybitPositionIdx::SellHedge));
-    }
-
-    #[rstest]
-    fn test_resolve_position_idx_returns_none_when_unconfigured() {
-        let idx = resolve_position_idx(None, BybitOrderSide::Buy, false, None);
-        assert!(idx.is_none());
-    }
-
-    #[rstest]
     #[case::linear("BTCUSDT-LINEAR", true)]
     #[case::inverse("BTCUSD-INVERSE", true)]
     #[case::spot("BTCUSDT-SPOT", false)]
@@ -2162,13 +2142,13 @@ mod tests {
         #[case] symbol_str: &str,
         #[case] keeps: bool,
     ) {
-        let result = parse_derivative_symbol(symbol_str);
+        let result = BybitExecutionClient::parse_derivative_symbol(symbol_str);
         assert_eq!(result.is_some(), keeps);
     }
 
     #[rstest]
     fn test_parse_derivative_symbol_rejects_malformed() {
-        assert!(parse_derivative_symbol("not-a-real-symbol").is_none());
+        assert!(BybitExecutionClient::parse_derivative_symbol("not-a-real-symbol").is_none());
     }
 
     #[rstest]
@@ -2179,7 +2159,10 @@ mod tests {
     #[case::empty_no_modified_msg("retCode 99999", "", false)]
     fn test_is_unchanged_error(#[case] msg: &str, #[case] code: &str, #[case] expected: bool) {
         let err = anyhow::anyhow!("{msg}");
-        assert_eq!(is_unchanged_error(&err, code), expected);
+        assert_eq!(
+            BybitExecutionClient::is_unchanged_error(&err, code),
+            expected
+        );
     }
 
     #[rstest]
@@ -2187,6 +2170,6 @@ mod tests {
     #[case::no_match("Some other error", false)]
     fn test_is_low_margin_error(#[case] msg: &str, #[case] expected: bool) {
         let err = anyhow::anyhow!("{msg}");
-        assert_eq!(is_low_margin_error(&err), expected);
+        assert_eq!(BybitExecutionClient::is_low_margin_error(&err), expected);
     }
 }
