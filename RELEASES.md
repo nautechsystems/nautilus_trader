@@ -96,6 +96,7 @@ Released on TBD (UTC).
 - Added `OrderMatchingCore::update_price_increment` primitive for tick-size propagation parity (Rust)
 - Added `iter_*` API on `OrderMatchingCore` for zero-allocation read-only iteration of resting orders (Rust)
 - Added Criterion bench suite for `OrderMatchingCore` covering add/get/delete/iterate hot paths (Rust)
+- Added `OwnOrderBook` property tests for Rust model invariants
 - Added `ContinuousFutureAdjustmentType` enum and `BarBuilder` price adjustment pipeline (Rust)
 - Added native `is_externally_aggregated`/`is_internally_aggregated` methods on `BarType` (Rust)
 - Added live node stress harness with `trade_burst` and `cancel_starvation` scenarios (Rust)
