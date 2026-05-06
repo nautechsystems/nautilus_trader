@@ -238,6 +238,13 @@ impl PolymarketOrderBuilder {
             }
         }
 
+        if PolymarketOrderType::from_market_time_in_force(order.time_in_force()).is_err() {
+            return Err(format!(
+                "Unsupported time in force for Polymarket market order: {:?}; use IOC or FOK",
+                order.time_in_force()
+            ));
+        }
+
         Ok(())
     }
 

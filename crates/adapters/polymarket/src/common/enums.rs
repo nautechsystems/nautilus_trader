@@ -305,6 +305,16 @@ impl TryFrom<TimeInForce> for PolymarketOrderType {
     }
 }
 
+impl PolymarketOrderType {
+    pub(crate) fn from_market_time_in_force(value: TimeInForce) -> anyhow::Result<Self> {
+        match value {
+            TimeInForce::Fok => Ok(Self::FOK),
+            TimeInForce::Ioc => Ok(Self::FAK),
+            _ => anyhow::bail!("Unsupported `TimeInForce` for Polymarket market order: {value:?}"),
+        }
+    }
+}
+
 impl From<PolymarketOrderStatus> for OrderStatus {
     fn from(value: PolymarketOrderStatus) -> Self {
         match value {
@@ -483,6 +493,26 @@ mod tests {
         #[case] expected: PolymarketOrderType,
     ) {
         assert_eq!(PolymarketOrderType::try_from(tif).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case(TimeInForce::Ioc, PolymarketOrderType::FAK)]
+    #[case(TimeInForce::Fok, PolymarketOrderType::FOK)]
+    fn test_market_time_in_force_to_order_type(
+        #[case] tif: TimeInForce,
+        #[case] expected: PolymarketOrderType,
+    ) {
+        assert_eq!(
+            PolymarketOrderType::from_market_time_in_force(tif).unwrap(),
+            expected,
+        );
+    }
+
+    #[rstest]
+    #[case(TimeInForce::Gtc)]
+    #[case(TimeInForce::Gtd)]
+    fn test_market_time_in_force_to_order_type_rejects_non_market_tif(#[case] tif: TimeInForce) {
+        assert!(PolymarketOrderType::from_market_time_in_force(tif).is_err());
     }
 
     #[rstest]

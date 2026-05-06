@@ -37,6 +37,11 @@ VALID_POLYMARKET_TIME_IN_FORCE: Final[set[TimeInForce]] = {
     TimeInForce.IOC,
 }
 
+VALID_POLYMARKET_MARKET_TIME_IN_FORCE: Final[set[TimeInForce]] = {
+    TimeInForce.FOK,
+    TimeInForce.IOC,
+}
+
 POLYMARKET_INVALID_API_KEY: Final[str] = "Unauthorized/Invalid api key"
 POLYMARKET_CANCEL_ALREADY_DONE: Final[str] = "already canceled or matched"
 POLYMARKET_NAUTILUS_BUILDER_CODE: Final[str] = (

@@ -24,7 +24,11 @@
 use std::{error::Error as StdError, fmt::Display, sync::Arc};
 
 use nautilus_core::UnixNanos;
-use nautilus_model::{enums::OrderSide, identifiers::VenueOrderId, types::Quantity};
+use nautilus_model::{
+    enums::{OrderSide, TimeInForce},
+    identifiers::VenueOrderId,
+    types::Quantity,
+};
 use nautilus_network::retry::{RetryConfig, RetryManager};
 use rust_decimal::Decimal;
 
@@ -55,6 +59,17 @@ pub(crate) struct MarketBuyFeeContext {
     pub fee_rate: Decimal,
     pub fee_exponent: f64,
     pub builder_taker_fee_rate: Decimal,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct MarketOrderSubmitRequest {
+    pub(crate) token_id: String,
+    pub(crate) side: OrderSide,
+    pub(crate) amount: Quantity,
+    pub(crate) time_in_force: TimeInForce,
+    pub(crate) neg_risk: bool,
+    pub(crate) tick_decimals: u32,
+    pub(crate) fee_context: Option<MarketBuyFeeContext>,
 }
 
 #[derive(Debug, Clone)]
@@ -115,7 +130,7 @@ impl OrderSubmitter {
     /// Fetches order book, calculates crossing price, builds and posts a market order.
     ///
     /// Converts Nautilus side to Polymarket side, walks the appropriate book side
-    /// to find the crossing price, then builds and submits a FOK order.
+    /// to find the crossing price, then builds and submits a FAK or FOK order.
     /// The book fetch is not retried (stale on retry); only the final POST is retried.
     ///
     /// The second return value is the order's signed base quantity (shares for
@@ -123,25 +138,31 @@ impl OrderSubmitter {
     /// signed `taker_amount` so quote-to-base conversion matches what the venue
     /// can fill (single crossing price), not the multi-level book walk total.
     ///
-    /// `fee_context`, when supplied with `OrderSide::Buy`, is used to shrink
+    /// `request.fee_context`, when supplied with `OrderSide::Buy`, is used to shrink
     /// `amount` for taker fees before signing so balance-sized BUYs are not
     /// rejected by the venue. SELL ignores the context.
     pub async fn submit_market_order(
         &self,
-        token_id: &str,
-        side: OrderSide,
-        amount: Quantity,
-        neg_risk: bool,
-        tick_decimals: u32,
-        fee_context: Option<MarketBuyFeeContext>,
+        request: MarketOrderSubmitRequest,
     ) -> anyhow::Result<MarketOrderSubmitResult> {
+        let MarketOrderSubmitRequest {
+            token_id,
+            side,
+            amount,
+            time_in_force,
+            neg_risk,
+            tick_decimals,
+            fee_context,
+        } = request;
         let poly_side = PolymarketOrderSide::try_from(side)
             .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
+        let order_type = PolymarketOrderType::from_market_time_in_force(time_in_force)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
         let amount_dec = amount.as_decimal();
 
         let book = self
             .http_client
-            .get_book(token_id)
+            .get_book(&token_id)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to fetch order book: {e}"))?;
 
@@ -171,7 +192,7 @@ impl OrderSubmitter {
         let poly_order = self
             .order_builder
             .build_market_order(
-                token_id,
+                &token_id,
                 poly_side,
                 result.crossing_price,
                 signed_amount,
@@ -202,11 +223,7 @@ impl OrderSubmitter {
                 || {
                     let http_client = http_client.clone();
                     let poly_order = poly_order.clone();
-                    async move {
-                        http_client
-                            .post_order(&poly_order, PolymarketOrderType::FOK, false)
-                            .await
-                    }
+                    async move { http_client.post_order(&poly_order, order_type, false).await }
                 },
                 |e| e.is_retryable(),
                 Error::transport,

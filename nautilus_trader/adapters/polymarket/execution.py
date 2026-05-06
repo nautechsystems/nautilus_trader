@@ -30,7 +30,6 @@ from py_clob_client_v2.client import PartialCreateOrderOptions
 from py_clob_client_v2.client import TradeParams
 from py_clob_client_v2.clob_types import AssetType
 from py_clob_client_v2.clob_types import OrderMarketCancelParams
-from py_clob_client_v2.clob_types import OrderType as PolyOrderType
 from py_clob_client_v2.clob_types import PostOrdersV2Args
 from py_clob_client_v2.config import get_contract_config
 from py_clob_client_v2.exceptions import PolyApiException
@@ -44,6 +43,9 @@ from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_FINA
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_INVALID_API_KEY
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_NAUTILUS_BUILDER_CODE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
+from nautilus_trader.adapters.polymarket.common.constants import (
+    VALID_POLYMARKET_MARKET_TIME_IN_FORCE,
+)
 from nautilus_trader.adapters.polymarket.common.constants import VALID_POLYMARKET_TIME_IN_FORCE
 from nautilus_trader.adapters.polymarket.common.conversion import pusd_from_units
 from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWebSocketAuth
@@ -1592,18 +1594,35 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 )
                 return
 
+        if order.time_in_force not in VALID_POLYMARKET_MARKET_TIME_IN_FORCE:
+            self._log.error(
+                f"Cannot submit order {order.client_order_id}: "
+                f"Market order time in force {order.tif_string()} not supported on Polymarket; "
+                "use either IOC or FOK",
+                LogColor.RED,
+            )
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason="UNSUPPORTED_MARKET_TIME_IN_FORCE",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         amount = float(order.quantity)
         user_usdc_balance = (
             await self._get_collateral_balance_pusd()
             if order.side == OrderSide.BUY and order.is_quote_quantity
             else 0.0
         )
+        market_order_type = convert_tif_to_polymarket_order_type(order.time_in_force)
 
         market_order_args = MarketOrderArgsV2(
             token_id=get_polymarket_token_id(order.instrument_id),
             amount=amount,
             side=order_side_to_str(order.side),
-            order_type=PolyOrderType.FOK,
+            order_type=market_order_type,
             user_usdc_balance=user_usdc_balance,
             builder_code=POLYMARKET_NAUTILUS_BUILDER_CODE,
         )
@@ -1639,7 +1658,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         await self._post_signed_order(
             order,
             signed_order,
-            order_type_override=PolyOrderType.FOK,
+            order_type_override=market_order_type,
             base_quantity=base_quantity,
             expected_venue_order_id=expected_venue_order_id,
         )

@@ -76,7 +76,9 @@ use self::{
     reconciliation::{
         FillContext, apply_fill_filters, build_fill_reports_from_trades, build_position_reports,
     },
-    submitter::{MarketBuyFeeContext, OrderSubmitter, UnknownSubmitError},
+    submitter::{
+        MarketBuyFeeContext, MarketOrderSubmitRequest, OrderSubmitter, UnknownSubmitError,
+    },
     types::{BatchLimitOrderContext, CancelOutcome, LimitOrderSubmitRequest},
 };
 use crate::{
@@ -546,6 +548,7 @@ impl PolymarketExecutionClient {
         let tick_decimals = instrument.price_precision() as u32;
         let side = order.order_side();
         let amount = order.quantity();
+        let time_in_force = order.time_in_force();
         let is_quote_qty = order.is_quote_quantity();
 
         // Quote-quantity BUYs are sized in pUSD; the venue computes taker
@@ -602,14 +605,15 @@ impl PolymarketExecutionClient {
             };
 
             match submitter
-                .submit_market_order(
-                    &token_id,
+                .submit_market_order(MarketOrderSubmitRequest {
+                    token_id,
                     side,
                     amount,
+                    time_in_force,
                     neg_risk,
                     tick_decimals,
                     fee_context,
-                )
+                })
                 .await
             {
                 Ok(result) => {
@@ -642,7 +646,7 @@ impl PolymarketExecutionClient {
                         .response
                         .order_id
                         .as_ref()
-                        .filter(|_| result.response.success)
+                        .filter(|_| result.response.success && time_in_force == TimeInForce::Fok)
                         .cloned();
 
                     if let Some((order_id_str, venue_order_id)) = handle_order_response(
@@ -2414,7 +2418,7 @@ async fn check_fok_status(
         venue_order_id,
         order_side,
         OrderType::Limit,
-        TimeInForce::Ioc,
+        TimeInForce::Fok,
         order_status,
         quantity,
         filled_qty,

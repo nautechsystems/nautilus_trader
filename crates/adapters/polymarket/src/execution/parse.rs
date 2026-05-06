@@ -542,7 +542,8 @@ pub fn calculate_market_price(
         }
     }
 
-    // Insufficient liquidity: return what we have (FOK will reject at venue)
+    // Insufficient liquidity: return what we have. FOK may reject at the venue;
+    // FAK can fill the immediately available size and cancel the remainder.
     Ok(MarketPriceResult {
         crossing_price: last_price,
         expected_base_qty: total_base_qty,

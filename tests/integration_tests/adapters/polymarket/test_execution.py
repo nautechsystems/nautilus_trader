@@ -1551,6 +1551,56 @@ class TestPolymarketExecutionClient:
         assert denied_kwargs["client_order_id"] == order.client_order_id
         assert "base-denominated quantities" in denied_kwargs["reason"]
 
+    @pytest.mark.asyncio
+    async def test_submit_market_order_unsupported_time_in_force_denied(self, mocker):
+        """
+        Market orders only support IOC/FAK and FOK on Polymarket.
+        """
+        mock_create_market_order = mocker.patch.object(self.http_client, "create_market_order")
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+
+        order = self.strategy.order_factory.market(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),
+            quote_quantity=True,
+            time_in_force=TimeInForce.GTC,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        denied_spy = mocker.spy(self.exec_client, "generate_order_denied")
+
+        await self.exec_client._submit_order(submit_order)
+
+        mock_create_market_order.assert_not_called()
+        mock_post_order.assert_not_called()
+        denied_spy.assert_called_once()
+        denied_kwargs = denied_spy.call_args.kwargs
+        assert denied_kwargs["client_order_id"] == order.client_order_id
+        assert denied_kwargs["reason"] == "UNSUPPORTED_MARKET_TIME_IN_FORCE"
+
+    def test_market_order_gtd_rejected_by_order_factory(self):
+        """
+        Market GTD orders are rejected before adapter submission.
+        """
+        with pytest.raises(ValueError, match=r"time_in_force.*GTD"):
+            self.strategy.order_factory.market(
+                instrument_id=ELECTION_INSTRUMENT.id,
+                order_side=OrderSide.BUY,
+                quantity=Quantity.from_str("10"),
+                quote_quantity=True,
+                time_in_force=TimeInForce.GTD,
+            )
+
     def test_handle_unknown_instrument_gracefully(self):
         """
         Test handling websocket messages for unknown instruments gracefully.
@@ -1637,7 +1687,7 @@ class TestPolymarketExecutionClient:
         assert call_args.amount == 10.0
         assert call_args.side == "BUY"
         assert call_args.price == 0  # Market order should have price 0 (calculated server-side)
-        assert call_args.order_type == "FOK"  # Market orders always use FOK
+        assert call_args.order_type == "FOK"
         assert call_args.user_usdc_balance == 1000.0
 
         # Check that venue order ID was cached
@@ -1808,7 +1858,51 @@ class TestPolymarketExecutionClient:
         assert call_args.amount == 5.0
         assert call_args.side == "SELL"
         assert call_args.price == 0
-        assert call_args.order_type == "FOK"  # Market orders always use FOK
+        assert call_args.order_type == "FOK"
+
+    @pytest.mark.asyncio
+    async def test_submit_market_order_with_ioc_uses_fak(self, mocker):
+        """
+        Test market order submission with IOC time in force.
+        """
+        mock_create_market_order = mocker.patch.object(self.http_client, "create_market_order")
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+        mocker.patch.object(
+            self.exec_client,
+            "_expected_venue_order_id",
+            return_value=VenueOrderId("test_ioc_market_order_id"),
+        )
+
+        mock_signed = MagicMock()
+        mock_create_market_order.return_value = mock_signed
+        mock_post_order.return_value = {"success": True, "orderID": "test_ioc_market_order_id"}
+
+        market_order = self.strategy.order_factory.market(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_str("5"),
+            time_in_force=TimeInForce.IOC,
+        )
+        self.cache.add_order(market_order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=market_order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        await self.exec_client._submit_order(submit_order)
+
+        mock_create_market_order.assert_called_once()
+        call_args = mock_create_market_order.call_args[0][0]
+        assert call_args.amount == 5.0
+        assert call_args.side == "SELL"
+        assert call_args.price == 0
+        assert call_args.order_type == "FAK"
+        assert mock_post_order.call_args[0][1] == "FAK"
 
     @pytest.mark.asyncio
     async def test_submit_limit_order_still_works(self, mocker):
