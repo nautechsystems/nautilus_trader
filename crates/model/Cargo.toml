@@ -22,6 +22,7 @@ crate-type = ["rlib", "staticlib"]
 
 [features]
 default = []
+arrow = ["dep:arrow"]
 extension-module = [
   "nautilus-core/extension-module",
   "python",
@@ -29,6 +30,7 @@ extension-module = [
 ]
 ffi = ["cbindgen", "nautilus-core/ffi"]
 python = ["nautilus-core/python", "pyo3", "pyo3-stub-gen"]
+python-arrow = ["python", "arrow"]
 stubs = ["bon", "rstest"]
 high-precision = []
 # DeFi domain model requires 18-decimal wei precision, implying `high-precision`
@@ -44,7 +46,7 @@ nautilus-core = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
-arrow = { workspace = true }
+arrow = { workspace = true, optional = true }
 chrono = { workspace = true }
 derive_builder = { workspace = true }
 enum_dispatch = { workspace = true }
