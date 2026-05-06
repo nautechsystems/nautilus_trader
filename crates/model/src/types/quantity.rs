@@ -851,8 +851,8 @@ impl<'de> Deserialize<'de> for Quantity {
     where
         D: Deserializer<'de>,
     {
-        let qty_str: &str = Deserialize::deserialize(deserializer)?;
-        let qty: Self = qty_str.into();
+        let qty_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        let qty: Self = qty_str.as_ref().into();
         Ok(qty)
     }
 }
@@ -1566,6 +1566,17 @@ mod tests {
         assert_eq!(json_str, "\"123.456\"");
 
         let deserialized: Quantity = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(deserialized, original);
+        assert_eq!(deserialized.precision, 3);
+    }
+
+    #[rstest]
+    fn test_quantity_serde_json_from_value_round_trip() {
+        let original = Quantity::new(123.456, 3);
+        let value = serde_json::to_value(original).unwrap();
+        assert_eq!(value, serde_json::json!("123.456"));
+
+        let deserialized: Quantity = serde_json::from_value(value).unwrap();
         assert_eq!(deserialized, original);
         assert_eq!(deserialized.precision, 3);
     }

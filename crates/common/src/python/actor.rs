@@ -524,7 +524,7 @@ fn dict_to_params(
     params: Option<Py<PyDict>>,
 ) -> PyResult<Option<nautilus_core::Params>> {
     match params {
-        Some(dict) => from_pydict(py, dict),
+        Some(dict) => from_pydict(py, &dict),
         None => Ok(None),
     }
 }

@@ -39,9 +39,15 @@ pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     ensure_custom_data_registered::<crate::test_data::RustTestCustomData>();
     ensure_custom_data_registered::<crate::test_data::MacroYieldCurveData>();
     ensure_custom_data_registered::<crate::test_data::RustTestParamsCustomData>();
+    ensure_custom_data_registered::<crate::test_data::RustTestPriceMapCustomData>();
+    ensure_custom_data_registered::<crate::test_data::RustTestTypedMapCustomData>();
     let _result = ensure_rust_extractor_registered::<crate::test_data::RustTestCustomData>();
     let _result = ensure_rust_extractor_registered::<crate::test_data::MacroYieldCurveData>();
     let _result = ensure_rust_extractor_registered::<crate::test_data::RustTestParamsCustomData>();
+    let _result =
+        ensure_rust_extractor_registered::<crate::test_data::RustTestPriceMapCustomData>();
+    let _result =
+        ensure_rust_extractor_registered::<crate::test_data::RustTestTypedMapCustomData>();
 
     // Test/example types (RustTestCustomData, MacroYieldCurveData) are exposed so Python tests
     // and examples can use them; they are not gated behind cfg(test) to keep the extension build simple.
@@ -58,5 +64,7 @@ pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::test_data::RustTestCustomData>()?;
     m.add_class::<crate::test_data::MacroYieldCurveData>()?;
     m.add_class::<crate::test_data::RustTestParamsCustomData>()?;
+    m.add_class::<crate::test_data::RustTestPriceMapCustomData>()?;
+    m.add_class::<crate::test_data::RustTestTypedMapCustomData>()?;
     Ok(())
 }

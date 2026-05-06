@@ -858,8 +858,8 @@ impl<'de> Deserialize<'de> for BarType {
     where
         D: Deserializer<'de>,
     {
-        let s: String = Deserialize::deserialize(deserializer)?;
-        Self::from_str(&s).map_err(serde::de::Error::custom)
+        let s: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        Self::from_str(s.as_ref()).map_err(serde::de::Error::custom)
     }
 }
 

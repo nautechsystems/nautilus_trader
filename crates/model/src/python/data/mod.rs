@@ -68,7 +68,7 @@ impl DataType {
     ) -> PyResult<Self> {
         let params = match metadata {
             None => None,
-            Some(d) => pydict_to_params(py, d)?,
+            Some(d) => pydict_to_params(py, &d)?,
         };
         Ok(Self::new(type_name, params, identifier))
     }

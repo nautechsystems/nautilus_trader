@@ -776,8 +776,8 @@ impl<'de> Deserialize<'de> for Price {
     where
         D: Deserializer<'de>,
     {
-        let price_str: &str = Deserialize::deserialize(deserializer)?;
-        let price: Self = price_str.into();
+        let price_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        let price: Self = price_str.as_ref().into();
         Ok(price)
     }
 }
@@ -1479,6 +1479,16 @@ mod tests {
         let json = serde_json::to_string(&price).unwrap();
         let deserialized: Price = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, price);
+    }
+
+    #[rstest]
+    fn test_price_serde_json_from_value_round_trip() {
+        let price = Price::new(1.0500, 4);
+        let value = serde_json::to_value(price).unwrap();
+
+        let deserialized: Price = serde_json::from_value(value).unwrap();
+        assert_eq!(deserialized, price);
+        assert_eq!(deserialized.precision, 4);
     }
 
     #[rstest]

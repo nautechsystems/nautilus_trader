@@ -716,8 +716,8 @@ impl<'de> Deserialize<'de> for Money {
     where
         D: Deserializer<'de>,
     {
-        let money_str: String = Deserialize::deserialize(deserializer)?;
-        Ok(Self::from(money_str.as_str()))
+        let money_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        Ok(Self::from(money_str.as_ref()))
     }
 }
 
@@ -1198,6 +1198,15 @@ mod tests {
         let money = Money::new(123.45, Currency::USD());
         let serialized = serde_json::to_string(&money);
         let deserialized: Money = serde_json::from_str(&serialized.unwrap()).unwrap();
+        assert_eq!(money, deserialized);
+    }
+
+    #[rstest]
+    fn test_money_deserialize_from_owned_value() {
+        let money = Money::new(123.45, Currency::USD());
+        let value = serde_json::to_value(money).unwrap();
+
+        let deserialized: Money = serde_json::from_value(value).unwrap();
         assert_eq!(money, deserialized);
     }
 
