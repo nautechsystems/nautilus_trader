@@ -1144,7 +1144,8 @@ impl ExecutionEngine {
         ts_now: UnixNanos,
         order_status: Option<OrderStatus>,
     ) -> Option<OrderAny> {
-        let order = match OrderAny::from_events(vec![OrderEventAny::Initialized(initialized)]) {
+        let initialized = OrderEventAny::Initialized(initialized);
+        let order = match OrderAny::from_events(vec![initialized.clone()]) {
             Ok(order) => order,
             Err(e) => {
                 log::error!("Failed to create external order from report: {e}");
@@ -1163,6 +1164,8 @@ impl ExecutionEngine {
                 log::warn!("Failed to add venue order ID index: {e}");
             }
         }
+
+        self.publish_order_event(&initialized);
 
         match order_status {
             Some(status) => log::info!(
@@ -2208,15 +2211,50 @@ impl ExecutionEngine {
 
                 log::error!("Error applying event: {e}, did not apply {event}");
 
-                let order = self.cache.borrow().order(&client_order_id).cloned();
-                if let Some(order) = order
-                    && should_handle_own_book_order(&order)
-                {
-                    self.cache.borrow_mut().update_own_order_book(&order);
+                if matches!(
+                    event,
+                    OrderEventAny::Denied(_)
+                        | OrderEventAny::Rejected(_)
+                        | OrderEventAny::Canceled(_)
+                        | OrderEventAny::Expired(_)
+                ) {
+                    log::warn!(
+                        "Terminal event {event} failed to apply to {client_order_id}, forcing cleanup from own book"
+                    );
+                    self.cache
+                        .borrow_mut()
+                        .force_remove_from_own_order_book(&client_order_id);
+                } else {
+                    let order = self.cache.borrow().order(&client_order_id).cloned();
+                    if let Some(order) = order {
+                        let should_update_own_book = {
+                            let cache = self.cache.borrow();
+                            let own_book = cache.own_order_book(&order.instrument_id());
+                            (own_book.is_some() && order.is_closed())
+                                || should_handle_own_book_order(&order)
+                        };
+
+                        if should_update_own_book {
+                            self.cache.borrow_mut().update_own_order_book(&order);
+                        }
+                    }
                 }
                 return None;
             }
         };
+
+        if self.config.manage_own_order_books && should_handle_own_book_order(&order) {
+            let needs_own_book = {
+                self.cache
+                    .borrow()
+                    .own_order_book(&order.instrument_id())
+                    .is_none()
+            };
+
+            if needs_own_book {
+                self.cache.borrow_mut().update_own_order_book(&order);
+            }
+        }
 
         if self.config.debug {
             log::debug!("{SEND}{EVT} {event}");

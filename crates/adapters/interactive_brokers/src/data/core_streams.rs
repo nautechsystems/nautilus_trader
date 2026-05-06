@@ -52,6 +52,7 @@ enum StreamAction {
 
 const HISTORICAL_BAR_MIN_COUNT: i64 = 300;
 const HISTORICAL_BAR_RETRY_DELAY: Duration = Duration::from_secs(1);
+const IB_GENERIC_TICK_OPTION_OPEN_INTEREST: &str = "101";
 
 pub(super) fn resolve_historical_bar_start_ns(
     start_ns: Option<UnixNanos>,
@@ -316,7 +317,7 @@ pub(super) async fn handle_option_greeks_subscription(
 
     let mut subscription = client
         .market_data(&contract)
-        .generic_ticks(&["101"])
+        .generic_ticks(&[IB_GENERIC_TICK_OPTION_OPEN_INTEREST])
         .streaming()
         .subscribe()
         .await

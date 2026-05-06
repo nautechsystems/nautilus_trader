@@ -33,7 +33,7 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-arrow = ["dep:arrow"]
+arrow = ["dep:arrow", "nautilus-model/arrow"]
 capnp = ["dep:capnp"]
 display = ["arrow"]
 sbe = []

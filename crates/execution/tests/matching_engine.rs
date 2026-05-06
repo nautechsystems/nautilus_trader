@@ -22,7 +22,10 @@ use nautilus_common::{
     messages::execution::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder},
     msgbus::{
         self, MessagingSwitchboard, TypedIntoHandler,
-        stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
+        stubs::{
+            TypedIntoMessageSavingHandler, TypedMessageSavingHandler,
+            get_typed_into_message_saving_handler, get_typed_message_saving_handler,
+        },
     },
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -6268,12 +6271,17 @@ fn test_settlement_price_used_on_contract_expiration(
 
     fill.position_id = Some(PositionId::new("P-001"));
     let position = Position::new(&instrument_es, fill);
+    let strategy_id = position.strategy_id;
     cache
         .borrow_mut()
         .add_position(&position, OmsType::Netting)
         .unwrap();
 
     clear_order_event_handler_messages(&order_event_handler);
+    let topic = format!("events.order.{strategy_id}");
+    let (published_handler, published_events): (_, TypedMessageSavingHandler<OrderEventAny>) =
+        get_typed_message_saving_handler(None);
+    msgbus::subscribe_order_events(topic.clone().into(), published_handler.clone(), None);
 
     // Set settlement price (different from close price and market price)
     let settlement = Price::from("4600.00");
@@ -6288,6 +6296,16 @@ fn test_settlement_price_used_on_contract_expiration(
         UnixNanos::from(2),
     );
     engine.process_instrument_close(close);
+
+    msgbus::unsubscribe_order_events(topic.into(), &published_handler);
+
+    let published_messages = published_events.get_messages();
+    assert_eq!(published_messages.len(), 1);
+    assert!(matches!(
+        published_messages.first(),
+        Some(OrderEventAny::Initialized(init))
+            if init.client_order_id.as_str().starts_with("EXPIRATION-")
+    ));
 
     let messages = get_order_event_handler_messages(&order_event_handler);
     let expiration_fill = messages

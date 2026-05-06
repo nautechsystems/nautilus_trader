@@ -150,6 +150,8 @@ pub enum OKXWsChannel {
     OptionSummary,
     #[serde(rename = "funding-rate")]
     FundingRate,
+    #[serde(rename = "event-contract-markets")]
+    EventContractMarkets,
     #[serde(rename = "index-tickers")]
     IndexTickers,
     #[serde(rename = "status")]

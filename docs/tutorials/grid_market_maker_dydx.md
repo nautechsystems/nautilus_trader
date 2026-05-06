@@ -22,7 +22,7 @@ flowchart LR
 
     subgraph Strategy ["GridMarketMaker"]
         M["mid = (bid + ask) / 2"]
-        TH{{"|mid - last_mid|<br/>>= requote_threshold_bps"}}
+        TH{{"|mid - last_mid|<br/>>= requote_threshold_bps<br/>OR no resting orders"}}
         CA["cancel_all_orders()"]
         SK["skew = skew_factor * net_position"]
         GR["Geometric grid:<br/>buy_n = mid * (1 - bps/10000)^n - skew<br/>sell_n = mid * (1 + bps/10000)^n - skew"]
@@ -175,9 +175,12 @@ strategy cancels all open orders and places a fresh grid:
   orders on the fast short-term path. When `None`, orders use GTC and the
   long-term path.
 - **`on_cancel_resubmit`**: triggers a resubmission on the next quote tick
-  after an unexpected cancel (self-trade prevention, risk limits).
-  Short-term order expiry is silent and does not generate cancel events,
-  so the grid refreshes via continuous requoting rather than this flag.
+  after a cancel that the strategy did not initiate (short-term order
+  expiry from the indexer, self-trade prevention, risk limits). The
+  indexer emits a cancel event for each short-term order shortly after
+  it expires; this flag resets the requote anchor so the next quote
+  rebuilds the grid even if the mid has not moved beyond
+  `requote_threshold_bps`.
 
 ## dYdX-specific considerations
 
@@ -189,13 +192,18 @@ adapter:
 1. The adapter checks `8s < max_short_term_secs (40 blocks * ~0.5s = ~20s)`.
 2. The order is submitted as short-term with
    `GoodTilBlock = current_height + N`.
-3. The order expires silently after about eight seconds if not filled.
+3. The order expires on chain after about eight seconds if not filled.
+   Expiry costs no gas (GTB replay protection handles it on chain), but
+   the indexer still emits an `OrderCanceled` event for each expired
+   order shortly after the expiry block, so the strategy observes the
+   expiry through the normal cancel event path.
 
 This is the recommended configuration for market making because:
 
 - Short-term orders have lower latency.
-- Expiry has no gas cost (GTB replay protection handles it).
-- Continuous requoting replaces expired orders.
+- Expiry has no on-chain gas cost.
+- Continuous requoting (driven by the indexer-emitted cancel events when
+  `on_cancel_resubmit=true`) replaces expired orders.
 
 See the [order classification](../integrations/dydx.md#order-classification)
 section in the integration guide for full details.
@@ -210,9 +218,9 @@ unexpected cancels:
 2. When `on_order_canceled` fires:
    - If the order ID is in `pending_self_cancels`, it is a self-cancel
      and no action is needed.
-   - Otherwise it is unexpected (self-trade prevention or a risk limit).
-     Reset `last_quoted_mid` so the next quote triggers a full grid
-     resubmission.
+   - Otherwise it was not strategy-initiated (short-term order expiry,
+     self-trade prevention, or a risk limit). Reset `last_quoted_mid` so
+     the next quote triggers a full grid resubmission.
 
 This stops the strategy re-quoting unnecessarily during its own cancel
 waves while still responding to surprises.
@@ -429,7 +437,7 @@ fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         return Ok(()); // Mid hasn't moved enough, keep existing grid
     }
 
-    self.cancel_all_orders(instrument_id, None, None)?;
+    self.cancel_all_orders(instrument_id, None, None, None)?;
 
     let (net_position, worst_long, worst_short) = { /* ... */ };
 
@@ -586,8 +594,9 @@ DYDX_LOG=/tmp/dydx_main.log \
    moves more than `requote_threshold_bps`.
 3. **Fills**: position updates, skew adjusts, the next requote shifts the
    grid.
-4. **Expiry**: short-term orders expire silently after about eight
-   seconds; the next requote refreshes the grid.
+4. **Expiry**: short-term orders expire on chain after about eight
+   seconds; the indexer emits a cancel event for each, and the next
+   quote refreshes the grid.
 5. **Shutdown**: all orders cancelled, positions closed, WebSocket
    disconnected.
 

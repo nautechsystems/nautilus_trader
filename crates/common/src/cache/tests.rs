@@ -33,12 +33,13 @@ use nautilus_model::{
         QuoteTick, TradeTick,
     },
     enums::{
-        AggressorSide, BookType, ContingencyType, MarketStatusAction, OmsType, OrderSide,
-        OrderStatus, OrderType, PositionSide, PriceType, TriggerType,
+        AccountType, AggressorSide, BookType, ContingencyType, LiquiditySide, MarketStatusAction,
+        OmsType, OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce,
+        TriggerType,
     },
     events::{
-        OrderAccepted, OrderCanceled, OrderEmulated, OrderEventAny, OrderFilled, OrderRejected,
-        OrderReleased, OrderSubmitted,
+        AccountState, OrderAccepted, OrderCanceled, OrderEmulated, OrderEventAny, OrderFilled,
+        OrderRejected, OrderReleased, OrderSubmitted, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
@@ -53,7 +54,7 @@ use nautilus_model::{
     },
     position::Position,
     stubs::TestDefault,
-    types::{Currency, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rstest::{fixture, rstest};
 
@@ -1989,6 +1990,78 @@ fn test_cache_account_for_venue_return_correct(mut cache: Cache) {
 }
 
 #[rstest]
+fn test_cache_take_account_returns_none_for_unknown(mut cache: Cache) {
+    let result = cache.take_account(&AccountId::test_default());
+    assert!(result.is_none());
+}
+
+#[rstest]
+fn test_cache_update_account_owned_restores_venue_index(mut cache: Cache) {
+    let account = AccountAny::default();
+    let account_id = account.id();
+    let venue = account_id.get_issuer();
+
+    cache.add_account(account).unwrap();
+    let account = cache.take_account(&account_id).unwrap();
+
+    assert!(cache.account(&account_id).is_none());
+    assert!(cache.account_for_venue(&venue).is_none());
+
+    cache.update_account_owned(account.clone()).unwrap();
+
+    assert_eq!(cache.account(&account_id), Some(&account));
+    assert_eq!(cache.account_for_venue(&venue), Some(&account));
+}
+
+#[rstest]
+fn test_cache_update_account_state_adds_new_account(mut cache: Cache) {
+    let account = AccountAny::default();
+    let event = account.last_event().unwrap();
+    let account_id = event.account_id;
+    let venue = account_id.get_issuer();
+
+    cache.update_account_state(&event).unwrap();
+
+    let cached = cache.account(&account_id).unwrap();
+    assert_eq!(cached.id(), account_id);
+    assert_eq!(cached.events(), vec![event]);
+    assert_eq!(cached.balances(), account.balances());
+    assert_eq!(cache.account_for_venue(&venue).unwrap().id(), account_id);
+}
+
+#[rstest]
+fn test_cache_update_account_state_apply_failure_leaves_account_intact(mut cache: Cache) {
+    let account = AccountAny::default();
+    let account_id = account.id();
+    let starting_balances = account.balances();
+    let event = AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("-1 USD"),
+            Money::from("0 USD"),
+            Money::from("-1 USD"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::USD()),
+    );
+
+    cache.add_account(account).unwrap();
+    let result = cache.update_account_state(&event);
+    let cached = cache.account(&account_id).unwrap();
+
+    let error = result.unwrap_err().to_string();
+    assert!(error.contains("balance would be negative"));
+    assert!(error.contains("borrowing not allowed"));
+    assert_eq!(cached.balances(), starting_balances);
+    assert_eq!(cached.events().len(), 1);
+}
+
+#[rstest]
 fn test_get_mark_xrate_returns_none(cache: Cache) {
     // When no mark xrate is set for (USD, EUR), it should return None
     assert!(
@@ -3468,6 +3541,234 @@ fn test_audit_own_order_books_removes_closed(mut cache: Cache) {
 
     let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
     assert_eq!(own_book.bids().count(), 0);
+}
+
+#[rstest]
+fn test_update_order_removes_closed_ioc_from_existing_own_book(mut cache: Cache) {
+    let audusd_sim = audusd_sim();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+
+    let limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .time_in_force(TimeInForce::Ioc)
+        .build();
+
+    cache
+        .add_order(limit_order.clone(), None, None, false)
+        .unwrap();
+    cache.update_own_order_book(&limit_order);
+
+    let mut live_order = limit_order;
+    let submitted = TestOrderEventStubs::submitted(&live_order, AccountId::new("SIM-001"));
+    update_order_with_event(&mut cache, &mut live_order, submitted);
+
+    let accepted = TestOrderEventStubs::accepted(
+        &live_order,
+        AccountId::new("SIM-001"),
+        VenueOrderId::new("V-IOC"),
+    );
+    update_order_with_event(&mut cache, &mut live_order, accepted);
+
+    let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    assert!(own_book.bids().count() > 0);
+
+    let canceled = TestOrderEventStubs::canceled(
+        &live_order,
+        AccountId::new("SIM-001"),
+        Some(VenueOrderId::new("V-IOC")),
+    );
+    update_order_with_event(&mut cache, &mut live_order, canceled);
+
+    let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    assert_eq!(own_book.bids().count(), 0);
+}
+
+#[rstest]
+fn test_update_order_venue_id_conflict_still_removes_closed_from_own_book(mut cache: Cache) {
+    let audusd_sim = audusd_sim();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+
+    let limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+
+    cache
+        .add_order(limit_order.clone(), None, None, false)
+        .unwrap();
+    cache.update_own_order_book(&limit_order);
+
+    let mut live_order = limit_order;
+    let submitted = TestOrderEventStubs::submitted(&live_order, AccountId::new("SIM-001"));
+    update_order_with_event(&mut cache, &mut live_order, submitted);
+
+    let accepted = TestOrderEventStubs::accepted(
+        &live_order,
+        AccountId::new("SIM-001"),
+        VenueOrderId::new("V-ORIGINAL"),
+    );
+    update_order_with_event(&mut cache, &mut live_order, accepted);
+
+    let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    assert!(own_book.bids().count() > 0);
+    assert!(
+        cache
+            .index
+            .orders_open
+            .contains(&live_order.client_order_id())
+    );
+
+    let filled = OrderFilled::new(
+        live_order.trader_id(),
+        live_order.strategy_id(),
+        audusd_sim.id(),
+        live_order.client_order_id(),
+        VenueOrderId::new("V-CONFLICT"),
+        AccountId::new("SIM-001"),
+        TradeId::new("T-CONFLICT"),
+        live_order.order_side(),
+        live_order.order_type(),
+        live_order.quantity(),
+        Price::from("1.00000"),
+        audusd_sim.quote_currency(),
+        LiquiditySide::Maker,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(PositionId::new("P-CONFLICT")),
+        Some(Money::from("0 USD")),
+    );
+    update_order_with_event(&mut cache, &mut live_order, OrderEventAny::Filled(filled));
+
+    let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    assert!(live_order.is_closed());
+    assert_eq!(own_book.bids().count(), 0);
+    assert!(
+        !cache
+            .index
+            .orders_open
+            .contains(&live_order.client_order_id())
+    );
+    assert!(
+        cache
+            .index
+            .orders_closed
+            .contains(&live_order.client_order_id())
+    );
+}
+
+#[rstest]
+fn test_update_order_allows_venue_id_change_for_order_updated(mut cache: Cache) {
+    let audusd_sim = audusd_sim();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+
+    let limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+
+    cache
+        .add_order(limit_order.clone(), None, None, false)
+        .unwrap();
+
+    let mut live_order = limit_order;
+    let submitted = TestOrderEventStubs::submitted(&live_order, AccountId::new("SIM-001"));
+    update_order_with_event(&mut cache, &mut live_order, submitted);
+
+    let original_venue_order_id = VenueOrderId::new("V-ORIGINAL");
+    let accepted = TestOrderEventStubs::accepted(
+        &live_order,
+        AccountId::new("SIM-001"),
+        original_venue_order_id,
+    );
+    update_order_with_event(&mut cache, &mut live_order, accepted);
+
+    let new_venue_order_id = VenueOrderId::new("V-UPDATED");
+    let updated = OrderEventAny::Updated(OrderUpdated::new(
+        live_order.trader_id(),
+        live_order.strategy_id(),
+        audusd_sim.id(),
+        live_order.client_order_id(),
+        live_order.quantity(),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(new_venue_order_id),
+        Some(AccountId::new("SIM-001")),
+        live_order.price(),
+        None,
+        None,
+        false,
+    ));
+    update_order_with_event(&mut cache, &mut live_order, updated);
+
+    assert_eq!(live_order.venue_order_id(), Some(new_venue_order_id));
+    assert_eq!(
+        cache.venue_order_id(&live_order.client_order_id()),
+        Some(&new_venue_order_id)
+    );
+    assert_eq!(
+        cache.client_order_id(&new_venue_order_id),
+        Some(&live_order.client_order_id())
+    );
+}
+
+#[rstest]
+fn test_update_own_order_book_does_not_create_book_for_closed_order(mut cache: Cache) {
+    let audusd_sim = audusd_sim();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+
+    let limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+
+    cache
+        .add_order(limit_order.clone(), None, None, false)
+        .unwrap();
+
+    let mut live_order = limit_order;
+    let submitted = TestOrderEventStubs::submitted(&live_order, AccountId::new("SIM-001"));
+    update_order_with_event(&mut cache, &mut live_order, submitted);
+
+    let accepted = TestOrderEventStubs::accepted(
+        &live_order,
+        AccountId::new("SIM-001"),
+        VenueOrderId::new("V-CLOSED"),
+    );
+    update_order_with_event(&mut cache, &mut live_order, accepted);
+
+    let canceled = TestOrderEventStubs::canceled(
+        &live_order,
+        AccountId::new("SIM-001"),
+        Some(VenueOrderId::new("V-CLOSED")),
+    );
+    update_order_with_event(&mut cache, &mut live_order, canceled);
+
+    assert!(cache.own_order_book(&audusd_sim.id()).is_none());
+
+    cache.update_own_order_book(&live_order);
+
+    assert!(cache.own_order_book(&audusd_sim.id()).is_none());
 }
 
 #[rstest]

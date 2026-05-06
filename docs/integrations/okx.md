@@ -1,27 +1,30 @@
 # OKX
 
-Founded in 2017, OKX is a leading cryptocurrency exchange offering spot, perpetual swap,
-futures, and options trading. This integration supports live market data ingest and order
-execution on OKX.
+Founded in 2017, OKX is a cryptocurrency exchange that offers spot, margin, perpetual
+swap, futures, options, and event contract trading. This integration supports live
+market data ingest and order execution on OKX.
 
 ## Overview
 
-This adapter is implemented in Rust, with optional Python bindings for ease of use in Python-based workflows.
-It does not require external OKX client libraries; the core components are compiled as a static library and linked automatically during the build.
+This adapter is written in Rust, with optional Python bindings for Python workflows.
+It does not require external OKX client libraries. The core components are compiled as
+a static library and linked automatically during the build.
 
 ## Examples
 
-You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/okx/).
+Live example scripts are available in
+[examples/live/okx](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/okx/).
 
 ### Product support
 
-| Product Type      | Data Feed | Trading | Notes                                            |
-|-------------------|-----------|---------|--------------------------------------------------|
-| Spot              | ✓         | ✓       | Use for index prices.                            |
-| Perpetual Swaps   | ✓         | ✓       | Linear and inverse contracts.                    |
-| Futures           | ✓         | ✓       | Specific expiration dates.                       |
-| Margin            | ✓         | ✓       | Spot trading with margin/leverage (spot margin). |
-| Options           | ✓         | ✓       | Limit orders only; no market or conditional.     |
+| Product type      | Data feed | Trading | Notes                                               |
+|-------------------|-----------|---------|-----------------------------------------------------|
+| Spot              | ✓         | ✓       | Spot trading pairs.                                 |
+| Margin            | ✓         | ✓       | Spot trading with margin or leverage.               |
+| Perpetual swaps   | ✓         | ✓       | Linear and inverse contracts.                       |
+| Futures           | ✓         | ✓       | Dated futures contracts.                            |
+| Options           | ✓         | ✓       | Limit‑style orders only; no market or conditional.  |
+| Event contracts   | ✓         | ✓       | Parsed as Nautilus `BinaryOption` instruments.      |
 
 :::note
 **Options support**: The adapter supports options market data, venue-provided Greeks
@@ -31,10 +34,12 @@ You can find live example scripts [here](https://github.com/nautechsystems/nauti
 :::
 
 :::info
-**Instrument multipliers**: For derivatives (SWAP, FUTURES, OPTIONS), instrument multipliers are calculated as the product of OKX's `ctMult` (contract multiplier) and `ctVal` (contract value) fields. This ensures position sizing accurately reflects both the contract size and value.
+**Instrument multipliers**: For derivatives (`SWAP`, `FUTURES`, `OPTION`), instrument
+multipliers are calculated as the product of OKX's `ctMult` and `ctVal` fields. This
+keeps position sizing aligned with OKX contract size and value.
 :::
 
-The OKX adapter includes multiple components, which can be used separately or together depending on your use case.
+The OKX adapter includes multiple components, which can be used separately or together:
 
 - `OKXHttpClient`: Low-level HTTP API connectivity.
 - `OKXWebSocketClient`: Low-level WebSocket API connectivity.
@@ -46,12 +51,13 @@ The OKX adapter includes multiple components, which can be used separately or to
 
 :::note
 Most users will define a configuration for a live trading node (as shown below),
-and won’t need to work directly with these lower-level components.
+and won't need to work directly with these lower-level components.
 :::
 
 ## Symbology
 
-OKX uses specific symbol conventions for different instrument types. All instrument IDs should include the `.OKX` suffix when referencing them (e.g., `BTC-USDT.OKX` for spot Bitcoin).
+OKX uses specific symbol conventions for different instrument types. Add the `.OKX`
+suffix when referencing instruments in Nautilus, for example `BTC-USDT.OKX`.
 
 ### Symbol format by instrument type
 
@@ -73,7 +79,7 @@ InstrumentId.from_str("BTC-USDT.OKX")  # For USDT-quoted spot
 InstrumentId.from_str("BTC-USDC.OKX")  # For USDC-quoted spot
 ```
 
-#### SWAP (Perpetual Futures)
+#### SWAP (perpetual swaps)
 
 Format: `{BaseCurrency}-{QuoteCurrency}-SWAP`
 
@@ -84,12 +90,12 @@ Examples:
 - `ETH-USDT-SWAP` - Ethereum perpetual swap (linear)
 - `ETH-USD-SWAP` - Ethereum perpetual swap (inverse)
 
-Linear vs Inverse contracts:
+Linear vs inverse contracts:
 
 - **Linear** (USDT-margined): Uses stablecoins like USDT as margin.
 - **Inverse** (coin-margined): Uses the base cryptocurrency as margin.
 
-#### FUTURES (Dated Futures)
+#### FUTURES (dated futures)
 
 Format: `{BaseCurrency}-{QuoteCurrency}-{YYMMDD}`
 
@@ -116,6 +122,16 @@ Where:
 - `C` = Call option
 - `P` = Put option
 
+#### EVENTS
+
+OKX event contract instrument IDs use the market ID returned by the OKX instruments API.
+The adapter represents these markets as Nautilus `BinaryOption` instruments.
+
+Example:
+
+- `BTC-ABOVE-DAILY-260224-1600-65000` - Event contract market in the
+  `BTC-ABOVE-DAILY` series.
+
 ### Common questions
 
 **Q: How do I subscribe to spot Bitcoin USD?**
@@ -129,6 +145,10 @@ A: Check the `contract_types` parameter in the configuration:
 
 - For linear contracts: `OKXContractType.LINEAR`.
 - For inverse contracts: `OKXContractType.INVERSE`.
+
+**Q: How do I load event contracts?**
+A: Use `OKXInstrumentType.EVENTS`. To scope loading, pass OKX `seriesId` values such as
+`BTC-ABOVE-DAILY` through `instrument_families`.
 
 ## Orders capability
 
@@ -150,7 +170,7 @@ OKX has specific requirements for client order IDs:
 
 - **No hyphens allowed**: OKX does not accept hyphens (`-`) in client order IDs.
 - Maximum length: 32 characters.
-- Allowed characters: alphanumeric characters and underscores only.
+- Allowed characters: letters and numbers only.
 
 When configuring your strategy, ensure you set:
 
@@ -162,24 +182,28 @@ use_hyphens_in_client_order_ids=False
 
 ### Order types
 
-| Order Type          | Linear Perpetual Swap | Notes                                                         |
-|---------------------|-----------------------|---------------------------------------------------------------|
-| `MARKET`            | ✓                     | Immediate execution at market price. Supports quote quantity. |
-| `MARKET_TO_LIMIT`   | ✓                     | Market order converted to IOC limit.                          |
-| `LIMIT`             | ✓                     | Execution at specified price or better.                       |
-| `STOP_MARKET`       | ✓                     | Conditional market order (OKX algo order).                    |
-| `STOP_LIMIT`        | ✓                     | Conditional limit order (OKX algo order).                     |
-| `MARKET_IF_TOUCHED` | ✓                     | Conditional market order (OKX algo order).                    |
-| `LIMIT_IF_TOUCHED`  | ✓                     | Conditional limit order (OKX algo order).                     |
-| `TRAILING_STOP_MARKET` | ✓                  | Trailing stop market order (OKX advance algo order).          |
+| Order type             | Linear perpetual swap | Notes                                                         |
+|------------------------|-----------------------|---------------------------------------------------------------|
+| `MARKET`               | ✓                     | Immediate execution at market price. Supports quote quantity. |
+| `MARKET_TO_LIMIT`      | ✓                     | Market order converted to IOC limit.                          |
+| `LIMIT`                | ✓                     | Execution at specified price or better.                       |
+| `STOP_MARKET`          | ✓                     | Conditional market order through OKX algo orders.             |
+| `STOP_LIMIT`           | ✓                     | Conditional limit order through OKX algo orders.              |
+| `MARKET_IF_TOUCHED`    | ✓                     | Conditional market order through OKX algo orders.             |
+| `LIMIT_IF_TOUCHED`     | ✓                     | Conditional limit order through OKX algo orders.              |
+| `TRAILING_STOP_MARKET` | ✓                     | Trailing stop market order through OKX advance algo orders.   |
 
 :::info
-**Conditional orders**: `STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`, and `TRAILING_STOP_MARKET` are implemented as OKX algo orders, providing advanced trigger capabilities with multiple price sources. `TRAILING_STOP_MARKET` uses OKX's advance algo order API (`move_order_stop`) and requires the separate `cancel-advance-algos` endpoint for cancellation.
+**Conditional orders**: `STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`,
+`LIMIT_IF_TOUCHED`, and `TRAILING_STOP_MARKET` use OKX algo orders. The
+`TRAILING_STOP_MARKET` path uses OKX's advance algo order API (`move_order_stop`) and
+requires the `cancel-advance-algos` endpoint for cancellation.
 :::
 
 ### Quantity semantics for spot margin trading
 
-When using spot margin trading (`use_spot_margin=True`), OKX interprets order quantities differently depending on the order side:
+When using spot margin trading (`use_spot_margin=True`), OKX interprets order
+quantities differently depending on the order side:
 
 - **Limit** orders interpret `quantity` as the number of base currency units.
 - **Market SELL** orders also use base-unit quantities.
@@ -207,29 +231,31 @@ strategy.submit_order(order)
 
 ### Execution instructions
 
-| Instruction    | Linear Perpetual Swap | Notes                  |
-|----------------|-----------------------|------------------------|
-| `post_only`    | ✓                     | Only for LIMIT orders. |
-| `reduce_only`  | ✓                     | Only for derivatives.  |
+| Instruction   | Linear perpetual swap | Notes                  |
+|---------------|-----------------------|------------------------|
+| `post_only`   | ✓                     | Only for limit orders. |
+| `reduce_only` | ✓                     | Only for derivatives.  |
 
 ### Time in force
 
-| Time in force | Linear Perpetual Swap | Notes                                             |
+| Time in force | Linear perpetual swap | Notes                                             |
 |---------------|-----------------------|---------------------------------------------------|
 | `GTC`         | ✓                     | Good Till Canceled.                               |
 | `FOK`         | ✓                     | Fill or Kill.                                     |
 | `IOC`         | ✓                     | Immediate or Cancel.                              |
-| `GTD`         | -                     | *Not supported by OKX API.*                       |
+| `GTD`         | -                     | *No native OKX order time‑in‑force.*              |
 
 :::note
-**GTD (Good Till Date) time in force**: OKX does not support native GTD functionality through their API.
+**GTD (Good Till Date) time in force**: OKX supports request expiry through `expTime`,
+but that is a request timeout rather than a native order expiry instruction.
 
-If you need GTD functionality, you must use Nautilus's strategy-managed GTD feature, which will handle the order expiration by canceling the order at the specified expiry time.
+If you need GTD functionality, use Nautilus's strategy-managed GTD feature. It handles
+order expiration by canceling the order at the specified expiry time.
 :::
 
 ### Batch operations
 
-| Operation          | Linear Perpetual Swap | Notes                                     |
+| Operation          | Linear perpetual swap | Notes                                     |
 |--------------------|-----------------------|-------------------------------------------|
 | Batch Submit       | ✓                     | Submit multiple orders in single request. |
 | Batch Modify       | ✓                     | Modify multiple orders in single request. |
@@ -237,7 +263,7 @@ If you need GTD functionality, you must use Nautilus's strategy-managed GTD feat
 
 ### Position management
 
-| Feature           | Linear Perpetual Swap | Notes                                                |
+| Feature           | Linear perpetual swap | Notes                                                |
 |-------------------|-----------------------|------------------------------------------------------|
 | Query positions   | ✓                     | Real‑time position updates.                          |
 | Position mode     | ✓                     | Net vs Long/Short mode (see below).                  |
@@ -248,39 +274,48 @@ If you need GTD functionality, you must use Nautilus's strategy-managed GTD feat
 
 OKX supports two position modes for derivatives trading:
 
-- **Net mode** (Netting): Single position per instrument that can be positive (LONG) or negative (SHORT). Buy and sell orders net against each other. This is the default and recommended for most traders.
-- **Long/Short mode** (Hedging): Separate long and short positions for the same instrument. Allows simultaneous long and short positions, useful for hedging strategies.
+- **Net mode** (netting): One position per instrument. Buy and sell orders net against
+  each other. This is the default and recommended mode for most traders.
+- **Long/Short mode** (hedging): Separate long and short positions for the same
+  instrument. This mode supports simultaneous long and short exposure.
 
 :::note
-Position mode must be configured via the OKX Web/App interface and applies account-wide. The adapter automatically detects the current position mode and handles position reporting accordingly.
+Position mode must be configured through the OKX web or app interface and applies
+account-wide. The adapter detects the current position mode and handles position
+reporting accordingly.
 :::
 
 ### Trade modes and margin configuration
 
-OKX's unified account system supports different trade modes for spot and derivatives trading. The adapter automatically determines the correct trade mode based on your configuration and instrument type.
+OKX's unified account system supports different trade modes for spot and derivatives
+trading. The adapter determines the correct trade mode from your configuration and
+instrument type.
 
 :::note
-**Important**: Account modes must be initially configured via the OKX Web/App interface. The API cannot set the account mode for the first time.
+**Important**: Configure the account mode first through the OKX Web or app interface.
+The API cannot set the account mode for the first time.
 :::
 
-For more details on OKX's account modes and margin system, see the [OKX Account Mode documentation](https://www.okx.com/docs-v5/en/#overview-account-mode).
+For more details on OKX account modes and margin, see the
+[OKX Account Mode documentation](https://www.okx.com/docs-v5/en/#overview-account-mode).
 
 #### Trade modes overview
 
-OKX supports four trade modes, which the adapter selects automatically based on your configuration:
+OKX supports multiple account modes. For orders, the adapter selects one of the `cash`,
+`isolated`, or `cross` trade modes from your configuration:
 
-| Mode                | Used For                                   | Leverage | Borrowing | Configuration |
-|---------------------|--------------------------------------------|----------|-----------|---------------|
-| **`cash`**          | Simple spot trading                        | -        | -         | `use_spot_margin=False` (default for SPOT) |
-| **`isolated`**      | Spot margin or derivatives (default)       | ✓        | ✓         | `use_spot_margin=True` with `margin_mode=ISOLATED` (or unset) for SPOT; default for derivatives |
-| **`cross`**         | Spot margin or derivatives, shared pool    | ✓        | ✓         | `use_spot_margin=True` with `margin_mode=CROSS` for SPOT; `margin_mode=CROSS` for derivatives |
+| Mode           | Used for                       | Leverage | Borrowing | Configuration                         |
+|----------------|--------------------------------|----------|-----------|---------------------------------------|
+| **`cash`**     | Spot trading without leverage. | -        | -         | Default when `use_spot_margin=False`. |
+| **`isolated`** | Spot margin or derivatives.    | ✓        | ✓         | `margin_mode=ISOLATED`.               |
+| **`cross`**    | Spot margin or derivatives.    | ✓        | ✓         | `margin_mode=CROSS`.                  |
 
 #### Configuration-based trade mode selection
 
-**The adapter automatically selects the correct trade mode** based on:
+The adapter selects the trade mode from:
 
-1. **Instrument type** (SPOT vs derivatives)
-2. **Configuration settings** (`use_spot_margin` for SPOT, `margin_mode` for derivatives)
+1. **Instrument type** (`SPOT` vs other OKX instrument types).
+2. **Configuration settings** (`use_spot_margin` for `SPOT`, `margin_mode` otherwise).
 
 ##### For SPOT trading
 
@@ -305,7 +340,7 @@ exec_clients={
 }
 ```
 
-##### For derivatives trading (SWAP/FUTURES/OPTIONS)
+##### For non-spot trading
 
 ```python
 # Derivatives with isolated margin (default - uses 'isolated' mode)
@@ -329,7 +364,8 @@ exec_clients={
 
 ##### For mixed SPOT and derivatives trading
 
-When trading both SPOT and derivatives instruments simultaneously, the adapter automatically determines the correct trade mode **per-order** based on the instrument being traded:
+When trading both SPOT and derivatives instruments, the adapter determines the trade
+mode per order based on the instrument being traded:
 
 ```python
 # Mixed SPOT + SWAP configuration
@@ -345,34 +381,39 @@ exec_clients={
 
 **How it works:**
 
-- **SPOT orders** → Uses `cross` mode (because `use_spot_margin=True` and `margin_mode=CROSS`)
-- **SWAP orders** → Uses `cross` mode (because `margin_mode=CROSS`)
-- Each order automatically gets the correct `tdMode` based on its instrument type
-- No manual intervention required
+- **SPOT orders** use `cross` mode because `use_spot_margin=True` and
+  `margin_mode=CROSS`.
+- **SWAP orders** use `cross` mode because `margin_mode=CROSS`.
+- Each order gets the correct `tdMode` based on its instrument type.
+- No manual intervention is required.
 
-This enables strategies that trade across multiple instrument types with different margin configurations, such as:
+This supports strategies that trade across instrument types with different margin
+configuration, such as:
 
-- Spot-futures arbitrage strategies
-- Delta-neutral strategies combining spot and perpetual swaps
-- Market making across spot and derivatives markets
+- Spot-futures arbitrage strategies.
+- Delta-neutral strategies combining spot and perpetual swaps.
+- Market making across spot and derivatives markets.
 
 :::warning
-**Manual trade mode override**: While you can still manually override the trade mode per order using `params={"td_mode": "..."}`, this is **not recommended** as it bypasses automatic mode selection and can lead to order rejection if the wrong mode is specified for the instrument type (e.g., using `isolated` for SPOT instruments).
+**Manual trade mode override**: You can override the trade mode per order with
+`params={"td_mode": "..."}`. This bypasses adapter selection and can lead to order
+rejection when the value does not match the instrument type, such as `isolated` for
+spot instruments.
 
-Only use manual override if you have specific requirements that cannot be met through configuration.
+Only use manual override for requirements that cannot be met through configuration.
 :::
 
 #### Benefits of configuration-based approach
 
 - **Type-safe**: Configuration is validated at startup before placing any orders.
-- **Automatic**: System chooses correct mode based on instrument type and intent.
-- **Clear**: Field names explain purpose (`use_spot_margin` vs obscure `td_mode` parameter).
-- **Safe**: Impossible to use incompatible combinations (e.g., `isolated` mode for SPOT).
-- **Backwards compatible**: Default values maintain existing behavior.
+- **Automatic**: The adapter chooses the mode based on instrument type and intent.
+- **Clear**: Field names explain intent, such as `use_spot_margin` vs `td_mode`.
+- **Safe**: Incompatible combinations are rejected before they reach OKX.
+- **Backwards compatible**: Default values preserve existing behavior.
 
 ### Order querying
 
-| Feature              | Linear Perpetual Swap | Notes                                     |
+| Feature              | Linear perpetual swap | Notes                                     |
 |----------------------|-----------------------|-------------------------------------------|
 | Query open orders    | ✓                     | List all active orders.                   |
 | Query order history  | ✓                     | Historical order data.                    |
@@ -381,20 +422,21 @@ Only use manual override if you have specific requirements that cannot be met th
 
 ### Contingent orders
 
-| Feature             | Linear Perpetual Swap | Notes                                      |
-|---------------------|-----------------------|--------------------------------------------|
-| Order lists         | ✓                     | Batch via WS; regular orders only.         |
-| OCO orders          | ✓                     | One‑Cancels‑Other orders.                  |
-| Bracket orders      | ✓                     | Stop loss + take profit combinations.      |
-| Conditional orders  | ✓                     | Stop and limit‑if‑touched orders.          |
+| Feature            | Linear perpetual swap | Notes                                 |
+|--------------------|-----------------------|---------------------------------------|
+| Order lists        | ✓                     | Batch via WS; regular orders only.    |
+| OCO orders         | ✓                     | One‑Cancels‑Other orders.             |
+| Bracket orders     | ✓                     | Stop loss + take profit combinations. |
+| Conditional orders | ✓                     | Stop and limit‑if‑touched orders.     |
 
 #### Conditional order architecture
 
-Conditional orders (OKX algo orders) use a hybrid architecture for optimal performance and reliability:
+Conditional orders (OKX algo orders) use a hybrid architecture:
 
-- **Submission**: Via HTTP REST API (`/api/v5/trade/order-algo`)
-- **Status updates**: Via WebSocket business endpoint (`/ws/v5/business`) on the `orders-algo` channel
-- **Cancellation**: Via HTTP REST API using algo order ID tracking
+- **Submission**: HTTP REST API (`/api/v5/trade/order-algo`).
+- **Status updates**: WebSocket business endpoint (`/ws/v5/business`) on the
+  `orders-algo` channel.
+- **Cancellation**: HTTP REST API with algo order ID tracking.
 
 This design ensures:
 
@@ -404,21 +446,21 @@ This design ensures:
 
 #### Supported conditional order types
 
-| Order Type          | Trigger Types          | Notes                                     |
-|---------------------|------------------------|-------------------------------------------|
-| `STOP_MARKET`       | Last, Mark, Index      | Market execution when triggered.          |
-| `STOP_LIMIT`        | Last, Mark, Index      | Limit order placement when triggered.     |
-| `MARKET_IF_TOUCHED` | Last, Mark, Index      | Market execution when price touched.      |
-| `LIMIT_IF_TOUCHED`  | Last, Mark, Index      | Limit order placement when price touched. |
-| `TRAILING_STOP_MARKET` | Last, Mark, Index   | Trailing stop with callback ratio.        |
+| Order type             | Trigger types     | Notes                                     |
+|------------------------|-------------------|-------------------------------------------|
+| `STOP_MARKET`          | Last, Mark, Index | Market execution when triggered.          |
+| `STOP_LIMIT`           | Last, Mark, Index | Limit order placement when triggered.     |
+| `MARKET_IF_TOUCHED`    | Last, Mark, Index | Market execution when price touched.      |
+| `LIMIT_IF_TOUCHED`     | Last, Mark, Index | Limit order placement when price touched. |
+| `TRAILING_STOP_MARKET` | Last, Mark, Index | Trailing stop with callback ratio.        |
 
 #### Trigger price types
 
 Conditional orders support different trigger price sources:
 
-- **Last Price** (`TriggerType.LAST_PRICE`): Uses the last traded price (default).
-- **Mark Price** (`TriggerType.MARK_PRICE`): Uses the mark price (recommended for derivatives).
-- **Index Price** (`TriggerType.INDEX_PRICE`): Uses the underlying index price.
+- **Last price** (`TriggerType.LAST_PRICE`): Uses the last traded price (default).
+- **Mark price** (`TriggerType.MARK_PRICE`): Uses the mark price.
+- **Index price** (`TriggerType.INDEX_PRICE`): Uses the underlying index price.
 
 ```python
 # Example: Stop loss using mark price trigger
@@ -436,13 +478,16 @@ strategy.submit_order(stop_order)
 
 ### Liquidation and ADL event handling
 
-The OKX adapter automatically detects and handles exchange-initiated risk management events:
+The OKX adapter detects exchange-initiated risk management events:
 
-- **Liquidation orders**: When a position is liquidated by the exchange (full or partial), the adapter detects the liquidation category and logs warnings with order details. These orders are processed normally through the order and fill pipeline.
-- **Auto-Deleveraging (ADL)**: When your position is closed by the exchange to offset a counterparty's liquidation, the adapter detects and logs the ADL event with position details.
+- **Liquidation orders**: When the exchange liquidates a position, the adapter detects
+  the liquidation category and logs warnings with order details. These orders continue
+  through the normal order and fill pipeline.
+- **Auto-deleveraging (ADL)**: When OKX closes your position to offset a counterparty's
+  liquidation, the adapter detects and logs the ADL event with position details.
 
 Detection is driven by the `category` field on the order record. The
-recognised values are:
+recognized values are:
 
 | `category`              | Meaning                                              |
 |-------------------------|------------------------------------------------------|
@@ -459,9 +504,11 @@ Detection runs on both paths:
   (used during reconciliation and cold-start mass status).
 
 :::info
-**Liquidation and ADL events are logged at WARNING level** with details including order ID, instrument, and state. Monitor your logs for these events as part of your risk management process.
+**Liquidation and ADL events are logged at WARNING level** with details including order
+ID, instrument, and state. Monitor these logs as part of your risk management process.
 
-The adapter handles these exchange-generated orders, generating appropriate `OrderFilled` events and updating positions accordingly. No special handling is required in your strategy code.
+The adapter handles these exchange-generated orders, emits the relevant `OrderFilled`
+events, and updates positions. Your strategy code does not need a separate path.
 :::
 
 Upstream references:
@@ -472,8 +519,9 @@ Upstream references:
 
 ## Options trading
 
-The OKX adapter supports trading options (OPTION instrument type) with some differences from
-other derivatives. OKX options are inverse contracts settled in the underlying cryptocurrency.
+The OKX adapter supports trading options (`OPTION` instrument type) with some differences
+from other derivatives. OKX options are inverse contracts settled in the underlying
+cryptocurrency.
 For full API details see the
 [OKX Options Trading documentation](https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order).
 
@@ -481,7 +529,7 @@ For full API details see the
 
 Only limit-style orders are supported. OKX does not allow market orders for options.
 
-| Order Type | Supported | Notes                                             |
+| Order type | Supported | Notes                                             |
 |------------|-----------|---------------------------------------------------|
 | `LIMIT`    | ✓         | Standard limit order.                             |
 | `MARKET`   | -         | Rejected by the adapter before reaching the API.  |
@@ -490,7 +538,7 @@ Options support FOK and IOC time-in-force. OKX uses a dedicated `op_fok` order t
 options FOK orders; the adapter handles this mapping automatically.
 
 Conditional/algo orders (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`,
-`LIMIT_IF_TOUCHED`, `TRAILING_STOP_MARKET`) are not supported for options and will be denied.
+`LIMIT_IF_TOUCHED`, `TRAILING_STOP_MARKET`) are not supported for options and are denied.
 
 ### Pricing modes
 
@@ -530,20 +578,20 @@ command to amend the price in the original pricing mode.
 
 OKX publishes two parallel greek sets on the `opt-summary` channel:
 
-- **Black-Scholes (`BLACK_SCHOLES`)**: greeks denominated in USD. Matches the convention used
-  by the Deribit and Bybit adapters.
-- **Price-adjusted (`PRICE_ADJUSTED`)**: greeks denominated in the underlying/coin units.
-  Matches OKX's native contract convention.
+- **Black-Scholes (`BLACK_SCHOLES`)**: Greeks denominated in USD. Matches the convention
+  used by the Deribit and Bybit adapters.
+- **Price-adjusted (`PRICE_ADJUSTED`)**: Greeks denominated in the underlying coin
+  units. Matches OKX's native contract convention.
 
-By default the adapter emits **both** on every `opt-summary` tick. Each emitted `OptionGreeks`
+By default the adapter emits both on every `opt-summary` tick. Each emitted `OptionGreeks`
 carries a `convention` field set to `GreeksConvention.BLACK_SCHOLES` or
 `GreeksConvention.PRICE_ADJUSTED`, so receivers can branch per message.
 
 To narrow the stream, pass `params["greeks_convention"]` on subscribe:
 
-- Single string: `"BLACK_SCHOLES"` or `"PRICE_ADJUSTED"` (case-insensitive)
-- List of strings: `["BLACK_SCHOLES", "PRICE_ADJUSTED"]`
-- Omitted: adapter emits both
+- Single string: `"BLACK_SCHOLES"` or `"PRICE_ADJUSTED"` (case-insensitive).
+- List of strings: `["BLACK_SCHOLES", "PRICE_ADJUSTED"]`.
+- Omitted: adapter emits both.
 
 Unknown entries log a warning and are skipped. If every requested entry is unknown, the
 adapter falls back to emitting both.
@@ -617,13 +665,93 @@ config = TradingNodeConfig(
 )
 ```
 
+## Event contracts
+
+OKX exposes prediction market contracts through `instType=EVENTS`. The adapter loads
+these instruments as Nautilus `BinaryOption` instruments and preserves OKX metadata
+such as `seriesId`, `instCategory`, `instIdCode`, `state`, and `ruleType` in the
+instrument `info` field.
+
+### Loading event contract instruments
+
+Use `OKXInstrumentType.EVENTS` in the data or execution client config. The
+`instrument_families` setting maps to OKX `seriesId` values for event contracts. When
+`instrument_families` is omitted, the adapter requests the event contract series list
+first, then requests instruments for each series.
+
+```python
+config = TradingNodeConfig(
+    data_clients={
+        OKX: OKXDataClientConfig(
+            instrument_types=(OKXInstrumentType.EVENTS,),
+            instrument_families=("BTC-ABOVE-DAILY",),
+            instrument_provider=InstrumentProviderConfig(load_all=True),
+        ),
+    },
+    exec_clients={
+        OKX: OKXExecClientConfig(
+            instrument_types=(OKXInstrumentType.EVENTS,),
+            instrument_families=("BTC-ABOVE-DAILY",),
+            margin_mode=OKXMarginMode.CROSS,
+        ),
+    },
+)
+```
+
+### Event contract market data
+
+The low-level HTTP client exposes OKX's public event contract discovery endpoints:
+
+- `request_event_contract_series`.
+- `request_event_contract_events`.
+- `request_event_contract_markets`.
+
+The low-level WebSocket client supports the `event-contract-markets` channel through
+`subscribe_event_contract_markets` and `unsubscribe_event_contract_markets`. This
+channel publishes market status and floor-strike generation updates, has no initial
+snapshot, and does not include `instId`, so the adapter forwards it as raw venue JSON.
+
+:::note
+OKX's standard market data endpoints return YES-side data for `EVENTS`. Derive NO-side
+prices from YES-side prices when a strategy needs both outcomes.
+:::
+
+### Event contract trading
+
+Pass the OKX event outcome through order `params` when submitting event contract orders:
+
+```python
+order = strategy.order_factory.limit(
+    instrument_id=InstrumentId.from_str("BTC-ABOVE-DAILY-260224-1600-65000.OKX"),
+    order_side=OrderSide.BUY,
+    quantity=Quantity.from_int(1),
+    price=Price.from_str("0.42"),
+    params={"outcome": "yes"},
+)
+strategy.submit_order(order)
+```
+
+OKX requires `outcome` for `EVENTS` orders. It also requires `speedBump=1` for
+non-post-only event contract orders and amendments. The adapter validates `outcome`
+before sending the order and defaults `speedBump` to `1` for non-post-only event
+orders when it is not supplied.
+
+Settlement fills arrive with OKX order category `delivery`. The adapter recognizes this
+category during live order updates and reconciliation.
+
+Upstream references:
+
+- [Event contract REST endpoints](https://www.okx.com/docs-v5/en/#public-data-rest-api-get-series).
+- [WS channel](https://www.okx.com/docs-v5/en/#public-data-websocket-event-contract-markets-channel).
+- [Place order request fields](https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order).
+
 ## Authentication
 
-To use the OKX adapter, you'll need to create API credentials in your OKX account:
+To use the OKX adapter, create API credentials in your OKX account:
 
 1. Log into your OKX account and navigate to the API management page.
 2. Create a new API key with the required permissions for trading and data access.
-3. Note down your API key, secret key, and passphrase.
+3. Record your API key, secret key, and passphrase.
 
 You can provide these credentials through environment variables:
 
@@ -642,10 +770,10 @@ OKX provides a demo trading environment for testing strategies without real fund
 ### Setting up a demo account
 
 1. Log into your OKX account at [okx.com](https://www.okx.com).
-2. Navigate to **Trade** → **Demo Trading**.
+2. Navigate to **Trade** > **Demo Trading**.
 3. Go to **Personal Center** within Demo Trading.
 4. Select **Demo Trading API** and create a new API key.
-5. Note down your demo API key, secret, and passphrase.
+5. Record your demo API key, secret key, and passphrase.
 
 You can provide demo credentials through environment variables:
 
@@ -684,7 +812,8 @@ When demo mode is enabled:
 - WebSocket connections use demo endpoints (`wspap.okx.com`).
 
 :::note
-Demo API keys are separate from production keys. You must create API keys specifically for demo trading through the Demo Trading interface. Production API keys will not work in demo mode.
+Demo API keys are separate from production keys. Create API keys for demo trading
+through the Demo Trading interface. Production API keys do not work in demo mode.
 :::
 
 ## Funding rates
@@ -701,12 +830,14 @@ endpoint.
 
 ## Rate limiting
 
-The adapter enforces OKX’s per-endpoint quotas while keeping sensible defaults for both REST and WebSocket calls.
+The adapter enforces OKX's per-endpoint quotas while keeping sensible defaults for REST
+and WebSocket calls.
 
 ### REST limits
 
-- Global cap: 250 requests per second (matches 500 requests / 2 seconds IP allowance).
-- Endpoint-specific quotas appear in the table below and mirror OKX’s published limits where available.
+- Internal global bucket: 250 requests per second.
+- Endpoint-specific quotas appear in the table below and mirror OKX's published limits
+  where available.
 
 ### WebSocket limits
 
@@ -715,28 +846,33 @@ The adapter enforces OKX’s per-endpoint quotas while keeping sensible defaults
 - Order actions (place/cancel/amend): 250 requests per second.
 
 :::warning
-OKX enforces per-endpoint and per-account quotas; exceeding them leads to HTTP 429 responses and temporary throttling on that key.
+OKX enforces per-endpoint and per-account quotas. Exceeding them leads to HTTP 429
+responses and temporary throttling on that key.
 :::
 
-| Key / Endpoint                   | Limit (req/sec) | Notes                                                   |
-|----------------------------------|-----------------|---------------------------------------------------------|
-| `okx:global`                     | 250             | Matches 500 req / 2 s IP allowance.                     |
-| `/api/v5/public/instruments`     | 10              | Matches OKX 20 req / 2 s docs.                          |
-| `/api/v5/market/candles`         | 50              | Higher allowance for streaming candles.                 |
-| `/api/v5/market/history-candles` | 20              | Conservative quota for large historical pulls.          |
-| `/api/v5/market/history-trades`  | 30              | Trade history pulls.                                    |
-| `/api/v5/account/balance`        | 5               | OKX guidance: 10 req / 2 s.                             |
-| `/api/v5/trade/order`            | 30              | 60 requests / 2 seconds per‑instrument limit.           |
-| `/api/v5/trade/orders-pending`   | 20              | Open order fetch.                                       |
-| `/api/v5/trade/orders-history`   | 20              | Historical orders.                                      |
-| `/api/v5/trade/fills`            | 30              | Execution reports.                                      |
-| `/api/v5/trade/order-algo`       | 10              | Algo placements (conditional orders).                   |
-| `/api/v5/trade/cancel-algos`     | 10              | Algo cancellation.                                      |
+| Key / endpoint                          | Limit (req/sec) | Notes                                          |
+|-----------------------------------------|-----------------|------------------------------------------------|
+| `okx:global`                            | 250             | Adapter‑level shared bucket.                   |
+| `/api/v5/public/instruments`            | 10              | OKX 20 requests / 2 seconds.                   |
+| `/api/v5/public/event-contract/series`  | 5               | OKX 10 requests / 2 seconds.                   |
+| `/api/v5/public/event-contract/events`  | 5               | OKX 10 requests / 2 seconds.                   |
+| `/api/v5/public/event-contract/markets` | 5               | OKX 10 requests / 2 seconds.                   |
+| `/api/v5/market/candles`                | 50              | Higher allowance for streaming candles.        |
+| `/api/v5/market/history-candles`        | 20              | Conservative quota for large historical pulls. |
+| `/api/v5/market/history-trades`         | 30              | Trade history pulls.                           |
+| `/api/v5/account/balance`               | 5               | OKX 10 requests / 2 seconds.                   |
+| `/api/v5/trade/order`                   | 30              | OKX 60 requests / 2 seconds.                   |
+| `/api/v5/trade/orders-pending`          | 20              | Open order fetch.                              |
+| `/api/v5/trade/orders-history`          | 20              | Historical orders.                             |
+| `/api/v5/trade/fills`                   | 30              | Execution reports.                             |
+| `/api/v5/trade/order-algo`              | 10              | Algo placements.                               |
+| `/api/v5/trade/cancel-algos`            | 10              | Algo cancellation.                             |
 
-All keys automatically include the `okx:global` bucket. URLs are normalised (query strings removed) before rate limiting, so requests with different filters share the same quota.
+All keys include the `okx:global` bucket. URLs are normalized with query strings removed
+before rate limiting, so requests with different filters share the same quota.
 
 :::info
-For more details on rate limiting, see the official documentation: <https://www.okx.com/docs-v5/en/#rest-api-rate-limit>.
+See the [OKX rate limit documentation](https://www.okx.com/docs-v5/en/#rest-api-rate-limit).
 :::
 
 ## Configuration
@@ -747,50 +883,57 @@ The OKX data client provides the following configuration options:
 
 #### Data client
 
-| Option                               | Default                         | Description |
-|--------------------------------------|---------------------------------|-------------|
-| `instrument_types`                   | `(OKXInstrumentType.SPOT,)`     | Controls which OKX instrument families are loaded (spot, swap, futures, options). |
-| `contract_types`                     | `None`                          | Restricts loading to specific contract styles when combined with `instrument_types`. |
-| `instrument_families`                | `None`                          | Instrument families to load (e.g., "BTC-USD", "ETH-USD"). Required for OPTIONS. Optional for FUTURES/SWAP. Not applicable for SPOT/MARGIN. |
-| `base_url_http`                      | `None`                          | Override for the OKX REST endpoint; defaults to the production URL resolved at runtime. |
-| `base_url_ws`                        | `None`                          | Override for the market data WebSocket endpoint. |
-| `api_key`                            | `None`      | Falls back to `OKX_API_KEY` environment variable when unset. |
-| `api_secret`                         | `None`      | Falls back to `OKX_API_SECRET` environment variable when unset. |
-| `api_passphrase`                     | `None`      | Falls back to `OKX_API_PASSPHRASE` environment variable when unset. |
-| `environment`                        | `None`                          | Environment enum (`LIVE` or `DEMO`). |
-| `http_timeout_secs`                  | `60`                            | Request timeout (seconds) for REST market data calls. |
-| `max_retries`                        | `3`                             | Maximum retry attempts for recoverable REST errors. |
-| `retry_delay_initial_ms`             | `1,000`                         | Initial delay (milliseconds) before retrying a failed request. |
-| `retry_delay_max_ms`                 | `10,000`                        | Upper bound for exponential backoff delay between retries. |
-| `update_instruments_interval_mins`   | `60`                            | Interval, in minutes, between background instrument refreshes. |
-| `vip_level`                          | `None`                          | Enables higher‑depth order book channels when set to the matching OKX VIP tier. |
-| `proxy_url`                          | `None`                          | Optional proxy URL for HTTP and WebSocket transports. |
+| Option                             | Default                     | Description                                  |
+|------------------------------------|-----------------------------|----------------------------------------------|
+| `instrument_types`                 | `(OKXInstrumentType.SPOT,)` | OKX instrument types to load.                |
+| `contract_types`                   | `None`                      | Contract styles to load.                     |
+| `instrument_families`              | `None`                      | Families or event `seriesId` values.         |
+| `base_url_http`                    | `None`                      | Override for the OKX REST endpoint.          |
+| `base_url_ws`                      | `None`                      | Override for the market data WebSocket URL.  |
+| `api_key`                          | `None`                      | Falls back to `OKX_API_KEY` when unset.      |
+| `api_secret`                       | `None`                      | Falls back to `OKX_API_SECRET` when unset.   |
+| `api_passphrase`                   | `None`                      | Falls back to `OKX_API_PASSPHRASE`.          |
+| `environment`                      | `None`                      | Environment enum (`LIVE` or `DEMO`).         |
+| `http_timeout_secs`                | `60`                        | REST market data request timeout.            |
+| `max_retries`                      | `3`                         | Retry attempts for recoverable REST errors.  |
+| `retry_delay_initial_ms`           | `1,000`                     | Initial delay before retrying.               |
+| `retry_delay_max_ms`               | `10,000`                    | Maximum exponential backoff delay.           |
+| `update_instruments_interval_mins` | `60`                        | Background instrument refresh interval.      |
+| `vip_level`                        | `None`                      | Enables higher‑depth books by VIP tier.      |
+| `proxy_url`                        | `None`                      | Optional HTTP and WebSocket proxy URL.       |
+
+`instrument_families` is required for `OPTION`, optional for `FUTURES`, `SWAP`, and
+`EVENTS`, and ignored for `SPOT` and `MARGIN`. For `EVENTS`, pass OKX `seriesId`
+values such as `BTC-ABOVE-DAILY`.
 
 The OKX execution client provides the following configuration options:
 
 #### Execution client
 
-| Option                     | Default     | Description |
-|----------------------------|-------------|-------------|
-| `instrument_types`         | `(OKXInstrumentType.SPOT,)` | Instrument families that should be tradable for this client. |
-| `contract_types`           | `None`      | Restricts tradable contracts (linear, inverse, options) when paired with `instrument_types`. |
-| `instrument_families`      | `None`      | Instrument families to load (e.g., "BTC-USD", "ETH-USD"). Required for OPTIONS. Optional for FUTURES/SWAP. Not applicable for SPOT/MARGIN. |
-| `base_url_http`            | `None`      | Override for the OKX trading REST endpoint. |
-| `base_url_ws`              | `None`      | Override for the private WebSocket endpoint. |
-| `api_key`                  | `None`      | Falls back to `OKX_API_KEY` environment variable when unset. |
-| `api_secret`               | `None`      | Falls back to `OKX_API_SECRET` environment variable when unset. |
-| `api_passphrase`           | `None`      | Falls back to `OKX_API_PASSPHRASE` environment variable when unset. |
-| `environment`              | `None`      | Environment enum (`LIVE` or `DEMO`). |
-| `margin_mode`              | `None`      | Margin mode for derivatives trading (`ISOLATED` or `CROSS`). Only applies to SWAP/FUTURES/OPTIONS. Defaults to `ISOLATED` if not specified. |
-| `use_spot_margin`          | `False`     | Enables margin/leverage for SPOT trading. When `True`, uses `isolated` or `cross` trade mode (determined by `margin_mode`). When `False`, uses `cash` trade mode (no leverage). Only applies to SPOT instruments. |
-| `http_timeout_secs`        | `60`        | Request timeout (seconds) for REST trading calls. |
-| `use_fills_channel`        | `False`     | Subscribes to the dedicated fills channel (VIP5+ required) for lower‑latency fill reports. |
-| `use_mm_mass_cancel`       | `False`     | Uses the market‑maker bulk cancel endpoint when available; otherwise falls back to per‑order cancels. |
-| `max_retries`              | `3`         | Maximum retry attempts for recoverable REST errors. |
-| `retry_delay_initial_ms`   | `1,000`     | Initial delay (milliseconds) applied before retrying a failed request. |
-| `retry_delay_max_ms`       | `10,000`    | Upper bound for the exponential backoff delay between retries. |
-| `use_spot_cash_position_reports` | `False` | Generate position reports for SPOT CASH instruments based on wallet balances. |
-| `proxy_url`                | `None`      | Optional proxy URL for HTTP and WebSocket transports. |
+| Option                            | Default                     | Description                                 |
+|-----------------------------------|-----------------------------|---------------------------------------------|
+| `instrument_types`                | `(OKXInstrumentType.SPOT,)` | Tradable OKX instrument types.              |
+| `contract_types`                  | `None`                      | Tradable contract styles to load.           |
+| `instrument_families`             | `None`                      | Families or event `seriesId` values.        |
+| `base_url_http`                   | `None`                      | Override for the OKX trading REST endpoint. |
+| `base_url_ws`                     | `None`                      | Override for the private WebSocket URL.     |
+| `api_key`                         | `None`                      | Falls back to `OKX_API_KEY` when unset.     |
+| `api_secret`                      | `None`                      | Falls back to `OKX_API_SECRET` when unset.  |
+| `api_passphrase`                  | `None`                      | Falls back to `OKX_API_PASSPHRASE`.         |
+| `environment`                     | `None`                      | Environment enum (`LIVE` or `DEMO`).        |
+| `margin_mode`                     | `None`                      | Margin mode (`ISOLATED` or `CROSS`).        |
+| `use_spot_margin`                 | `False`                     | Enables spot‑style margin or leverage.      |
+| `http_timeout_secs`               | `60`                        | REST trading request timeout.               |
+| `use_fills_channel`               | `False`                     | Subscribes to fills channel (VIP5+).        |
+| `use_mm_mass_cancel`              | `False`                     | Uses the market‑maker bulk cancel endpoint. |
+| `max_retries`                     | `3`                         | Retry attempts for recoverable REST errors. |
+| `retry_delay_initial_ms`          | `1,000`                     | Initial delay before retrying.              |
+| `retry_delay_max_ms`              | `10,000`                    | Maximum exponential backoff delay.          |
+| `use_spot_cash_position_reports`  | `False`                     | Generates SPOT cash positions from wallet.  |
+| `proxy_url`                       | `None`                      | Optional HTTP and WebSocket proxy URL.      |
+
+`instrument_families` has the same meaning for execution clients as it does for data
+clients.
 
 Below is an example configuration for a live trading node using OKX data and execution clients:
 

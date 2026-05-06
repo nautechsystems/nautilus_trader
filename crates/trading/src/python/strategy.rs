@@ -59,8 +59,7 @@ use nautilus_model::{
         OrderUpdated, PositionChanged, PositionClosed, PositionOpened,
     },
     identifiers::{
-        AccountId, ActorId, ClientId, InstrumentId, OptionSeriesId, PositionId, StrategyId,
-        TraderId, Venue,
+        AccountId, ClientId, InstrumentId, OptionSeriesId, PositionId, StrategyId, TraderId, Venue,
     },
     instruments::InstrumentAny,
     orderbook::OrderBook,
@@ -1082,28 +1081,31 @@ impl PyStrategy {
         self.inner_mut().py_self = Some(py_obj);
     }
 
-    /// Updates the strategy_id (actor_id) in both the core config and the actor_id field.
+    /// Updates the runtime strategy ID.
     ///
     /// Must only be called before registration. See `PyDataActor::set_actor_id`.
-    pub fn set_strategy_id(&mut self, strategy_id: StrategyId) {
-        let actor_id = ActorId::from(strategy_id.inner().as_str());
+    pub fn set_strategy_id(&mut self, strategy_id: StrategyId) -> anyhow::Result<()> {
         let inner = self.inner_mut();
-        inner.core.config.strategy_id = Some(strategy_id);
-        inner.core.actor.config.actor_id = Some(actor_id);
-        inner.core.actor.actor_id = actor_id;
+        inner.core.change_id(strategy_id);
+        Ok(())
     }
 
-    /// Updates the log_events setting in the core config.
+    /// Updates the runtime order ID tag.
+    pub fn set_order_id_tag(&mut self, order_id_tag: &str) -> anyhow::Result<()> {
+        let inner = self.inner_mut();
+        inner.core.change_order_id_tag(order_id_tag);
+        Ok(())
+    }
+
+    /// Updates the runtime log_events setting.
     pub fn set_log_events(&mut self, log_events: bool) {
         let inner = self.inner_mut();
-        inner.core.config.log_events = log_events;
         inner.core.actor.config.log_events = log_events;
     }
 
-    /// Updates the log_commands setting in the core config.
+    /// Updates the runtime log_commands setting.
     pub fn set_log_commands(&mut self, log_commands: bool) {
         let inner = self.inner_mut();
-        inner.core.config.log_commands = log_commands;
         inner.core.actor.config.log_commands = log_commands;
     }
 
@@ -1327,11 +1329,9 @@ impl PyStrategy {
             }
         })?;
         let inner = self.inner_mut();
-        match params_map {
-            Some(p) => Strategy::submit_order_with_params(inner, order, position_id, client_id, p),
-            None => Strategy::submit_order(inner, order, position_id, client_id),
-        }
-        .map_err(to_pyruntime_err)
+
+        Strategy::submit_order(inner, order, position_id, client_id, params_map)
+            .map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "modify_order")]
@@ -1356,18 +1356,15 @@ impl PyStrategy {
         })?;
         let inner = self.inner_mut();
 
-        match params_map {
-            Some(p) => Strategy::modify_order_with_params(
-                inner,
-                order,
-                quantity,
-                price,
-                trigger_price,
-                client_id,
-                p,
-            ),
-            None => Strategy::modify_order(inner, order, quantity, price, trigger_price, client_id),
-        }
+        Strategy::modify_order(
+            inner,
+            order,
+            quantity,
+            price,
+            trigger_price,
+            client_id,
+            params_map,
+        )
         .map_err(to_pyruntime_err)
     }
 
@@ -1388,11 +1385,8 @@ impl PyStrategy {
             }
         })?;
         let inner = self.inner_mut();
-        match params_map {
-            Some(p) => Strategy::cancel_order_with_params(inner, order, client_id, p),
-            None => Strategy::cancel_order(inner, order, client_id),
-        }
-        .map_err(to_pyruntime_err)
+
+        Strategy::cancel_order(inner, order, client_id, params_map).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "cancel_orders")]
@@ -1414,6 +1408,7 @@ impl PyStrategy {
             .into_iter()
             .map(|o| pyobject_to_order_any(py, o))
             .collect::<PyResult<Vec<_>>>()?;
+
         Strategy::cancel_orders(self.inner_mut(), orders, client_id, params_map)
             .map_err(to_pyruntime_err)
     }
@@ -1433,18 +1428,13 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
-        let inner = self.inner_mut();
-
-        match params_map {
-            Some(p) => Strategy::cancel_all_orders_with_params(
-                inner,
-                instrument_id,
-                order_side,
-                client_id,
-                p,
-            ),
-            None => Strategy::cancel_all_orders(inner, instrument_id, order_side, client_id),
-        }
+        Strategy::cancel_all_orders(
+            self.inner_mut(),
+            instrument_id,
+            order_side,
+            client_id,
+            params_map,
+        )
         .map_err(to_pyruntime_err)
     }
 

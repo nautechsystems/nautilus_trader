@@ -110,7 +110,7 @@ impl AccountsManager {
             }
         }
 
-        let state = self.generate_account_state(account.clone(), fill.ts_event);
+        let state = self.generate_account_state(&account, fill.ts_event);
         (account, state)
     }
 
@@ -123,25 +123,39 @@ impl AccountsManager {
         &self,
         account: &AccountAny,
         instrument: &InstrumentAny,
-        orders_open: Vec<&OrderAny>,
+        orders_open: &[&OrderAny],
         ts_event: UnixNanos,
     ) -> Option<(AccountAny, AccountState)> {
-        match account.clone() {
-            AccountAny::Margin(margin_account) => self
-                .update_margin_init(&margin_account, instrument, orders_open, ts_event)
-                .map(|(updated_margin_account, state)| {
-                    (AccountAny::Margin(updated_margin_account), state)
-                }),
-            AccountAny::Cash(cash_account) => self
-                .update_balance_locked(&cash_account, instrument, &orders_open, ts_event)
-                .map(|(updated_cash_account, state)| {
-                    (AccountAny::Cash(updated_cash_account), state)
-                }),
-            AccountAny::Betting(betting_account) => self
-                .update_balance_locked_betting(&betting_account, instrument, &orders_open, ts_event)
-                .map(|(updated_betting_account, state)| {
-                    (AccountAny::Betting(updated_betting_account), state)
-                }),
+        let mut account = account.clone();
+        self.update_orders_in_place(&mut account, instrument, orders_open, ts_event)
+            .map(|state| (account, state))
+    }
+
+    /// Updates account balances based on open orders in place.
+    ///
+    /// For cash accounts, updates the balance locked by open orders.
+    /// For margin accounts, updates the initial margin requirements.
+    #[must_use]
+    pub fn update_orders_in_place(
+        &self,
+        account: &mut AccountAny,
+        instrument: &InstrumentAny,
+        orders_open: &[&OrderAny],
+        ts_event: UnixNanos,
+    ) -> Option<AccountState> {
+        match account {
+            AccountAny::Margin(margin_account) => {
+                self.update_margin_init(margin_account, instrument, orders_open, ts_event)
+            }
+            AccountAny::Cash(cash_account) => {
+                self.update_balance_locked(cash_account, instrument, orders_open, ts_event)
+            }
+            AccountAny::Betting(betting_account) => self.update_balance_locked_betting(
+                betting_account,
+                instrument,
+                orders_open,
+                ts_event,
+            ),
         }
     }
 
@@ -158,10 +172,27 @@ impl AccountsManager {
         positions: Vec<&Position>,
         ts_event: UnixNanos,
     ) -> Option<(MarginAccount, AccountState)> {
+        let mut account = account.clone();
+        self.update_positions_in_place(&mut account, instrument, positions, ts_event)
+            .map(|state| (account, state))
+    }
+
+    /// Updates the account based on current open positions in place.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any position's `instrument_id` does not match the provided `instrument`.
+    #[must_use]
+    pub fn update_positions_in_place(
+        &self,
+        account: &mut MarginAccount,
+        instrument: &InstrumentAny,
+        positions: Vec<&Position>,
+        ts_event: UnixNanos,
+    ) -> Option<AccountState> {
         let mut total_margin_maint = 0.0;
         let mut base_xrate: Option<f64> = None;
         let mut currency = instrument.settlement_currency();
-        let mut account = account.clone();
 
         for position in positions {
             assert_eq!(
@@ -311,8 +342,7 @@ impl AccountsManager {
             if let Some(base_currency) = account.base_currency {
                 if base_xrate.is_none() {
                     currency = base_currency;
-                    base_xrate = self
-                        .calculate_xrate_to_base(&AccountAny::Margin(account.clone()), instrument);
+                    base_xrate = self.calculate_xrate_to_base(account.base_currency, instrument);
                 }
 
                 if let Some(xrate) = base_xrate {
@@ -336,27 +366,19 @@ impl AccountsManager {
         log::info!("{} margin_maint={margin_maint}", instrument.id());
 
         // Generate and return account state
-        Some((
-            account.clone(),
-            self.generate_account_state(AccountAny::Margin(account), ts_event),
-        ))
+        Some(self.generate_margin_account_state(account, ts_event))
     }
 
     fn update_balance_locked(
         &self,
-        account: &CashAccount,
+        account: &mut CashAccount,
         instrument: &InstrumentAny,
         orders_open: &[&OrderAny],
         ts_event: UnixNanos,
-    ) -> Option<(CashAccount, AccountState)> {
-        let mut account = account.clone();
-
+    ) -> Option<AccountState> {
         if orders_open.is_empty() {
             account.clear_balance_locked(instrument.id());
-            return Some((
-                account.clone(),
-                self.generate_account_state(AccountAny::Cash(account), ts_event),
-            ));
+            return Some(self.generate_cash_account_state(account, ts_event));
         }
 
         let mut total_locked: AHashMap<Currency, Money> = AHashMap::new();
@@ -400,8 +422,7 @@ impl AccountsManager {
             if let Some(base_curr) = account.base_currency() {
                 if base_xrate.is_none() {
                     currency = base_curr;
-                    base_xrate = self
-                        .calculate_xrate_to_base(&AccountAny::Cash(account.clone()), instrument);
+                    base_xrate = self.calculate_xrate_to_base(account.base_currency(), instrument);
                 }
 
                 if let Some(xrate) = base_xrate {
@@ -424,10 +445,7 @@ impl AccountsManager {
 
         if total_locked.is_empty() {
             account.clear_balance_locked(instrument.id());
-            return Some((
-                account.clone(),
-                self.generate_account_state(AccountAny::Cash(account), ts_event),
-            ));
+            return Some(self.generate_cash_account_state(account, ts_event));
         }
 
         // Clear existing locks before applying new ones to remove stale currency entries
@@ -438,23 +456,19 @@ impl AccountsManager {
             log::info!("{} balance_locked={balance_locked}", instrument.id());
         }
 
-        Some((
-            account.clone(),
-            self.generate_account_state(AccountAny::Cash(account), ts_event),
-        ))
+        Some(self.generate_cash_account_state(account, ts_event))
     }
 
     fn update_margin_init(
         &self,
-        account: &MarginAccount,
+        account: &mut MarginAccount,
         instrument: &InstrumentAny,
-        orders_open: Vec<&OrderAny>,
+        orders_open: &[&OrderAny],
         ts_event: UnixNanos,
-    ) -> Option<(MarginAccount, AccountState)> {
+    ) -> Option<AccountState> {
         let mut total_margin_init = 0.0;
         let mut base_xrate: Option<f64> = None;
         let mut currency = instrument.settlement_currency();
-        let mut account = account.clone();
 
         for order in orders_open {
             assert_eq!(
@@ -534,8 +548,7 @@ impl AccountsManager {
             if let Some(base_currency) = account.base_currency {
                 if base_xrate.is_none() {
                     currency = base_currency;
-                    base_xrate = self
-                        .calculate_xrate_to_base(&AccountAny::Margin(account.clone()), instrument);
+                    base_xrate = self.calculate_xrate_to_base(account.base_currency, instrument);
                 }
 
                 if let Some(xrate) = base_xrate {
@@ -561,27 +574,19 @@ impl AccountsManager {
 
         log::info!("{} margin_init={margin_init}", instrument.id());
 
-        Some((
-            account.clone(),
-            self.generate_account_state(AccountAny::Margin(account), ts_event),
-        ))
+        Some(self.generate_margin_account_state(account, ts_event))
     }
 
     fn update_balance_locked_betting(
         &self,
-        account: &BettingAccount,
+        account: &mut BettingAccount,
         instrument: &InstrumentAny,
         orders_open: &[&OrderAny],
         ts_event: UnixNanos,
-    ) -> Option<(BettingAccount, AccountState)> {
-        let mut account = account.clone();
-
+    ) -> Option<AccountState> {
         if orders_open.is_empty() {
             account.clear_balance_locked(instrument.id());
-            return Some((
-                account.clone(),
-                self.generate_account_state(AccountAny::Betting(account), ts_event),
-            ));
+            return Some(self.generate_betting_account_state(account, ts_event));
         }
 
         let mut total_locked: AHashMap<Currency, Money> = AHashMap::new();
@@ -624,8 +629,7 @@ impl AccountsManager {
             if let Some(base_curr) = account.base_currency() {
                 if base_xrate.is_none() {
                     currency = base_curr;
-                    base_xrate = self
-                        .calculate_xrate_to_base(&AccountAny::Betting(account.clone()), instrument);
+                    base_xrate = self.calculate_xrate_to_base(account.base_currency(), instrument);
                 }
 
                 if let Some(xrate) = base_xrate {
@@ -648,10 +652,7 @@ impl AccountsManager {
 
         if total_locked.is_empty() {
             account.clear_balance_locked(instrument.id());
-            return Some((
-                account.clone(),
-                self.generate_account_state(AccountAny::Betting(account), ts_event),
-            ));
+            return Some(self.generate_betting_account_state(account, ts_event));
         }
 
         account.clear_balance_locked(instrument.id());
@@ -661,10 +662,7 @@ impl AccountsManager {
             log::info!("{} balance_locked={balance_locked}", instrument.id());
         }
 
-        Some((
-            account.clone(),
-            self.generate_account_state(AccountAny::Betting(account), ts_event),
-        ))
+        Some(self.generate_betting_account_state(account, ts_event))
     }
 
     fn update_balance_single_currency(
@@ -901,57 +899,85 @@ impl AccountsManager {
         }
     }
 
-    fn generate_account_state(&self, account: AccountAny, ts_event: UnixNanos) -> AccountState {
+    fn generate_account_state(&self, account: &AccountAny, ts_event: UnixNanos) -> AccountState {
         match account {
             AccountAny::Margin(margin_account) => {
-                // Include both per-instrument (`margins`) and account-wide
-                // (`account_margins`, keyed by collateral currency) entries so
-                // regenerated state events preserve the full margin picture.
-                let mut margins: Vec<_> = margin_account.margins.values().copied().collect();
-                margins.extend(margin_account.account_margins.values().copied());
-                AccountState::new(
-                    margin_account.id,
-                    AccountType::Margin,
-                    margin_account.balances.clone().into_values().collect(),
-                    margins,
-                    false,
-                    UUID4::new(),
-                    ts_event,
-                    self.clock.borrow().timestamp_ns(),
-                    margin_account.base_currency(),
-                )
+                self.generate_margin_account_state(margin_account, ts_event)
             }
-            AccountAny::Cash(cash_account) => AccountState::new(
-                cash_account.id,
-                AccountType::Cash,
-                cash_account.balances.clone().into_values().collect(),
-                vec![],
-                false,
-                UUID4::new(),
-                ts_event,
-                self.clock.borrow().timestamp_ns(),
-                cash_account.base_currency(),
-            ),
-            AccountAny::Betting(betting_account) => AccountState::new(
-                betting_account.id,
-                AccountType::Betting,
-                betting_account.balances.clone().into_values().collect(),
-                vec![],
-                false,
-                UUID4::new(),
-                ts_event,
-                self.clock.borrow().timestamp_ns(),
-                betting_account.base_currency(),
-            ),
+            AccountAny::Cash(cash_account) => {
+                self.generate_cash_account_state(cash_account, ts_event)
+            }
+            AccountAny::Betting(betting_account) => {
+                self.generate_betting_account_state(betting_account, ts_event)
+            }
         }
+    }
+
+    fn generate_margin_account_state(
+        &self,
+        margin_account: &MarginAccount,
+        ts_event: UnixNanos,
+    ) -> AccountState {
+        // Include both per-instrument (`margins`) and account-wide
+        // (`account_margins`, keyed by collateral currency) entries so
+        // regenerated state events preserve the full margin picture.
+        let mut margins: Vec<_> = margin_account.margins.values().copied().collect();
+        margins.extend(margin_account.account_margins.values().copied());
+        AccountState::new(
+            margin_account.id,
+            AccountType::Margin,
+            margin_account.balances.clone().into_values().collect(),
+            margins,
+            false,
+            UUID4::new(),
+            ts_event,
+            self.clock.borrow().timestamp_ns(),
+            margin_account.base_currency(),
+        )
+    }
+
+    fn generate_cash_account_state(
+        &self,
+        cash_account: &CashAccount,
+        ts_event: UnixNanos,
+    ) -> AccountState {
+        AccountState::new(
+            cash_account.id,
+            AccountType::Cash,
+            cash_account.balances.clone().into_values().collect(),
+            vec![],
+            false,
+            UUID4::new(),
+            ts_event,
+            self.clock.borrow().timestamp_ns(),
+            cash_account.base_currency(),
+        )
+    }
+
+    fn generate_betting_account_state(
+        &self,
+        betting_account: &BettingAccount,
+        ts_event: UnixNanos,
+    ) -> AccountState {
+        AccountState::new(
+            betting_account.id,
+            AccountType::Betting,
+            betting_account.balances.clone().into_values().collect(),
+            vec![],
+            false,
+            UUID4::new(),
+            ts_event,
+            self.clock.borrow().timestamp_ns(),
+            betting_account.base_currency(),
+        )
     }
 
     fn calculate_xrate_to_base(
         &self,
-        account: &AccountAny,
+        base_currency: Option<Currency>,
         instrument: &InstrumentAny,
     ) -> Option<f64> {
-        match account.base_currency() {
+        match base_currency {
             None => Some(1.0),
             Some(base_curr) => self.cache.borrow().get_xrate(
                 instrument.id().venue,
@@ -1132,7 +1158,7 @@ mod tests {
         let result = manager.update_orders(
             &AccountAny::Cash(account),
             &InstrumentAny::CurrencyPair(instrument),
-            orders,
+            &orders,
             UnixNanos::default(),
         );
 
@@ -1260,7 +1286,7 @@ mod tests {
         let result = manager.update_orders(
             &AccountAny::Betting(account),
             &InstrumentAny::Betting(instrument),
-            orders,
+            &orders,
             UnixNanos::default(),
         );
 
@@ -1349,7 +1375,7 @@ mod tests {
         let result = manager.update_orders(
             &AccountAny::Betting(account),
             &InstrumentAny::Betting(instrument.clone()),
-            vec![&order],
+            &[&order],
             UnixNanos::default(),
         );
 
@@ -1372,7 +1398,7 @@ mod tests {
         let result = manager.update_orders(
             &updated_account,
             &InstrumentAny::Betting(instrument),
-            vec![],
+            &[],
             UnixNanos::default(),
         );
 
@@ -1513,7 +1539,7 @@ mod tests {
         let result = manager.update_orders(
             &AccountAny::Cash(account),
             &InstrumentAny::CurrencyPair(instrument.clone()),
-            orders_both,
+            &orders_both,
             UnixNanos::default(),
         );
 
@@ -1538,7 +1564,7 @@ mod tests {
         let result = manager.update_orders(
             &updated_account,
             &InstrumentAny::CurrencyPair(instrument),
-            orders_sell_only,
+            &orders_sell_only,
             UnixNanos::default(),
         );
 
@@ -1800,7 +1826,7 @@ mod tests {
         let result = manager.update_orders(
             &AccountAny::Cash(account),
             &InstrumentAny::CurrencyPair(instrument.clone()),
-            vec![&order],
+            &[&order],
             UnixNanos::default(),
         );
 
@@ -1824,7 +1850,7 @@ mod tests {
         let result = manager.update_orders(
             &updated_account,
             &InstrumentAny::CurrencyPair(instrument),
-            vec![],
+            &[],
             UnixNanos::default(),
         );
 
@@ -1882,7 +1908,7 @@ mod tests {
         let manager = AccountsManager::new(clock, cache);
 
         let state =
-            manager.generate_account_state(AccountAny::Margin(account), UnixNanos::default());
+            manager.generate_account_state(&AccountAny::Margin(account), UnixNanos::default());
 
         assert_eq!(state.balances.len(), 1);
         assert_eq!(state.balances[0].currency, usd);

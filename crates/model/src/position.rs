@@ -339,6 +339,9 @@ impl Position {
             && let Some(base_currency) = self.base_currency
             && commission.currency == base_currency
         {
+            let mut adjustment_id = fill.event_id.as_bytes();
+            adjustment_id[15] ^= 0x01;
+
             let adjustment = PositionAdjusted::new(
                 self.trader_id,
                 self.strategy_id,
@@ -349,7 +352,7 @@ impl Position {
                 Some(-commission.as_decimal()),
                 None,
                 Some(fill.client_order_id.inner()),
-                UUID4::new(),
+                UUID4::from_bytes(adjustment_id),
                 fill.ts_event,
                 fill.ts_init,
             );
@@ -983,7 +986,7 @@ mod tests {
 
     use crate::{
         enums::{LiquiditySide, OrderSide, OrderType, PositionAdjustmentType, PositionSide},
-        events::{OrderFilled, PositionAdjusted, order::spec::OrderFilledSpec},
+        events::{OrderEventAny, OrderFilled, PositionAdjusted, order::spec::OrderFilledSpec},
         identifiers::{
             AccountId, ClientOrderId, PositionId, StrategyId, TradeId, VenueOrderId, stubs::uuid4,
         },
@@ -3021,7 +3024,7 @@ mod tests {
             .build();
 
         // Buy 1.0 BTC with 0.001 BTC commission
-        let fill = TestOrderEventStubs::filled(
+        let fill = match TestOrderEventStubs::filled(
             &order,
             &btc_usdt,
             Some(TradeId::new("1")),
@@ -3032,9 +3035,13 @@ mod tests {
             Some(Money::new(0.001, btc_usdt.base_currency().unwrap())),
             None,
             None,
-        );
+        ) {
+            OrderEventAny::Filled(fill) => fill,
+            _ => unreachable!(),
+        };
 
-        let position = Position::new(&btc_usdt, fill.into());
+        let position = Position::new(&btc_usdt, fill);
+        let replayed_position = Position::new(&btc_usdt, fill);
 
         // Position quantity should be 1.0 - 0.001 = 0.999 BTC
         assert!(
@@ -3066,6 +3073,10 @@ mod tests {
             Some(rust_decimal_macros::dec!(-0.001))
         );
         assert_eq!(adjustment.pnl_change, None);
+        assert_eq!(
+            adjustment.event_id,
+            replayed_position.adjustments[0].event_id
+        );
     }
 
     #[rstest]

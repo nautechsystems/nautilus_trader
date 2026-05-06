@@ -2029,6 +2029,7 @@ pub fn parse_ws_message_data(
             let data_vec = parse_funding_rate_msg_vec(data, instrument_id, ts_init, funding_cache)?;
             Ok(Some(NautilusWsMessage::FundingRates(data_vec)))
         }
+        OKXWsChannel::EventContractMarkets => Ok(Some(NautilusWsMessage::Raw(data))),
         channel if okx_channel_to_bar_spec(channel).is_some() => {
             let bar_spec = okx_channel_to_bar_spec(channel).expect("bar_spec checked above");
             let data_vec = parse_candle_msg_vec(
@@ -2146,6 +2147,7 @@ mod tests {
             algo_cl_ord_id: None,
             attach_algo_cl_ord_id: None,
             attach_algo_ords: Vec::new(),
+            outcome: None,
             fee: Some("-1.0".to_string()),
             fee_ccy: Ustr::from("USDT"),
             fill_fee: None,
@@ -2952,6 +2954,7 @@ mod tests {
             algo_cl_ord_id: None,
             attach_algo_cl_ord_id: None,
             attach_algo_ords: Vec::new(),
+            outcome: None,
             fee: Some("-1.0".to_string()), // Total fee so far
             fee_ccy: Ustr::from("USDT"),
             fill_fee: None,
@@ -3036,6 +3039,7 @@ mod tests {
             algo_cl_ord_id: None,
             attach_algo_cl_ord_id: None,
             attach_algo_ords: Vec::new(),
+            outcome: None,
             fee: Some("-3.0".to_string()), // Same total fee
             fee_ccy: Ustr::from("USDT"),
             fill_fee: None,
@@ -3157,6 +3161,7 @@ mod tests {
             algo_cl_ord_id: None,
             attach_algo_cl_ord_id: None,
             attach_algo_ords: Vec::new(),
+            outcome: None,
             fee: Some("0.5".to_string()), // Rebate: positive value from OKX
             fee_ccy: Ustr::from("USDT"),
             fill_fee: None,
@@ -3241,6 +3246,7 @@ mod tests {
             algo_cl_ord_id: None,
             attach_algo_cl_ord_id: None,
             attach_algo_ords: Vec::new(),
+            outcome: None,
             fee: Some("0.8".to_string()), // Cumulative rebate
             fee_ccy: Ustr::from("USDT"),
             fill_fee: None,
@@ -3360,6 +3366,7 @@ mod tests {
             algo_cl_ord_id: None,
             attach_algo_cl_ord_id: None,
             attach_algo_ords: Vec::new(),
+            outcome: None,
             fee: Some("1.0".to_string()), // Rebate from OKX
             fee_ccy: Ustr::from("USDT"),
             fill_fee: None,
@@ -3446,6 +3453,7 @@ mod tests {
             algo_cl_ord_id: None,
             attach_algo_cl_ord_id: None,
             attach_algo_ords: Vec::new(),
+            outcome: None,
             fee: Some("-2.0".to_string()), // Now a charge (negative from OKX)
             fee_ccy: Ustr::from("USDT"),
             fill_fee: None,
@@ -3566,6 +3574,7 @@ mod tests {
             algo_cl_ord_id: None,
             attach_algo_cl_ord_id: None,
             attach_algo_ords: Vec::new(),
+            outcome: None,
             fee: Some("-2.0".to_string()),
             fee_ccy: Ustr::from("USDT"),
             fill_fee: None,
@@ -3650,6 +3659,7 @@ mod tests {
             algo_cl_ord_id: None,
             attach_algo_cl_ord_id: None,
             attach_algo_ords: Vec::new(),
+            outcome: None,
             fee: Some("-1.5".to_string()), // Total reduced
             fee_ccy: Ustr::from("USDT"),
             fill_fee: None,
@@ -4420,6 +4430,7 @@ mod tests {
             algo_cl_ord_id: None,
             attach_algo_cl_ord_id: None,
             attach_algo_ords: Vec::new(),
+            outcome: None,
             fee: Some("-9.75".to_string()),
             fee_ccy: Ustr::from("USDT"),
             fill_fee: None,
@@ -4905,6 +4916,7 @@ mod tests {
             algo_cl_ord_id: None,
             attach_algo_cl_ord_id: None,
             attach_algo_ords: Vec::new(),
+            outcome: None,
             fee: Some("0".to_string()),
             fee_ccy: Ustr::from("USDT"),
             fill_fee: None,
@@ -5570,6 +5582,7 @@ mod tests {
             algo_cl_ord_id: None,
             attach_algo_cl_ord_id: None,
             attach_algo_ords: Vec::new(),
+            outcome: None,
             fee: None,
             fee_ccy: Ustr::from("USDT"),
             fill_fee: None,
@@ -5668,6 +5681,9 @@ mod tests {
                     tp_trigger_px: String::new(),
                     tp_ord_px: String::new(),
                     tp_trigger_px_type: None,
+                    callback_ratio: String::new(),
+                    callback_spread: String::new(),
+                    active_px: String::new(),
                 },
                 OKXAttachedAlgoOrd {
                     attach_algo_id: "algo-tp".to_string(),
@@ -5678,8 +5694,12 @@ mod tests {
                     tp_trigger_px: "2500".to_string(),
                     tp_ord_px: "-1".to_string(),
                     tp_trigger_px_type: Some(OKXTriggerType::Last),
+                    callback_ratio: String::new(),
+                    callback_spread: String::new(),
+                    active_px: String::new(),
                 },
             ],
+            outcome: None,
             fee: None,
             fee_ccy: Ustr::from("USDT"),
             fill_fee: None,
@@ -6673,6 +6693,43 @@ mod tests {
             assert_eq!(*count, 0);
             let should_unsubscribe_ws = *count == 0;
             assert!(should_unsubscribe_ws);
+        }
+    }
+
+    #[rstest]
+    fn test_parse_event_contract_markets_returns_raw_message() {
+        let data = serde_json::json!([{
+            "seriesId": "BTC-ABOVE-DAILY",
+            "eventId": "BTC-ABOVE-DAILY-260224-1600",
+            "instId": "BTC-ABOVE-DAILY-260224-1600-65000",
+            "listTime": "1769697132335",
+            "fixTime": "",
+            "expTime": "1769697132335",
+            "state": "live",
+            "outcome": "0",
+            "floorStrike": "120000",
+            "settleValue": "",
+            "disputed": false
+        }]);
+        let instrument_id = InstrumentId::from("BTC-ABOVE-DAILY-260224-1600-65000.OKX");
+        let mut funding_cache = AHashMap::new();
+        let instruments_cache = AHashMap::new();
+
+        let result = parse_ws_message_data(
+            &OKXWsChannel::EventContractMarkets,
+            data.clone(),
+            &instrument_id,
+            2,
+            2,
+            UnixNanos::default(),
+            &mut funding_cache,
+            &instruments_cache,
+        )
+        .unwrap();
+
+        match result {
+            Some(NautilusWsMessage::Raw(raw)) => assert_eq!(raw, data),
+            _ => panic!("Expected raw event contract market payload"),
         }
     }
 }

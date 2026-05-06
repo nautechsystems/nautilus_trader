@@ -1074,19 +1074,24 @@ impl OrderEmulator {
                 transformed.events.insert(0, event.clone());
             }
 
-            if let Err(e) = self.cache.borrow_mut().add_order(
-                OrderAny::Limit(transformed.clone()),
-                command.position_id,
-                command.client_id,
-                true,
-            ) {
-                log::error!("Failed to add order: {e}");
-            }
+            let add_result = {
+                let mut cache = self.cache.borrow_mut();
+                cache.add_order(
+                    OrderAny::Limit(transformed.clone()),
+                    command.position_id,
+                    command.client_id,
+                    true,
+                )
+            };
 
-            msgbus::publish_order_event(
-                format!("events.order.{}", order.strategy_id()).into(),
-                transformed.last_event(),
-            );
+            if let Err(e) = add_result {
+                log::error!("Failed to add order: {e}");
+            } else {
+                msgbus::publish_order_event(
+                    format!("events.order.{}", order.strategy_id()).into(),
+                    transformed.last_event(),
+                );
+            }
 
             let event = OrderReleased::new(
                 order.trader_id(),
@@ -1201,19 +1206,24 @@ impl OrderEmulator {
                 transformed.events.insert(0, event.clone());
             }
 
-            if let Err(e) = self.cache.borrow_mut().add_order(
-                OrderAny::Market(transformed.clone()),
-                command.position_id,
-                command.client_id,
-                true,
-            ) {
-                log::error!("Failed to add order: {e}");
-            }
+            let add_result = {
+                let mut cache = self.cache.borrow_mut();
+                cache.add_order(
+                    OrderAny::Market(transformed.clone()),
+                    command.position_id,
+                    command.client_id,
+                    true,
+                )
+            };
 
-            msgbus::publish_order_event(
-                format!("events.order.{}", order.strategy_id()).into(),
-                transformed.last_event(),
-            );
+            if let Err(e) = add_result {
+                log::error!("Failed to add order: {e}");
+            } else {
+                msgbus::publish_order_event(
+                    format!("events.order.{}", order.strategy_id()).into(),
+                    transformed.last_event(),
+                );
+            }
 
             let ts_now = self.clock.borrow().timestamp_ns();
             let event = OrderReleased::new(
@@ -1390,6 +1400,17 @@ mod tests {
         OrderTestBuilder::new(OrderType::StopMarket)
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
+            .trigger_price(Price::from("5100.00"))
+            .quantity(Quantity::from(1))
+            .emulation_trigger(trigger)
+            .build()
+    }
+
+    fn create_stop_limit_order(instrument: &CryptoPerpetual, trigger: TriggerType) -> OrderAny {
+        OrderTestBuilder::new(OrderType::StopLimit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .price(Price::from("5100.00"))
             .trigger_price(Price::from("5100.00"))
             .quantity(Quantity::from(1))
             .emulation_trigger(trigger)
@@ -1720,11 +1741,57 @@ mod tests {
         assert_eq!(cached_order.status(), OrderStatus::Released);
         assert_eq!(risk_events.len(), 1);
         assert!(matches!(risk_events[0], OrderEventAny::Released(_)));
-        assert!(
-            order_events
-                .iter()
-                .any(|event| matches!(event, OrderEventAny::Released(_)))
+        assert_eq!(order_events.len(), 2);
+        assert!(matches!(order_events[0], OrderEventAny::Initialized(_)));
+        assert!(matches!(order_events[1], OrderEventAny::Released(_)));
+    }
+
+    #[rstest]
+    fn test_fill_limit_order_publishes_transformed_initialized_before_released(
+        instrument: CryptoPerpetual,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        let risk_events = register_risk_event_handler("RiskEngine.process.limit_released");
+        add_instrument_to_cache(&cache, &instrument);
+        let order = create_stop_limit_order(&instrument, TriggerType::BidAsk);
+        let client_order_id = order.client_order_id();
+        let strategy_id = order.strategy_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator
+            .borrow_mut()
+            .cache_submit_order_command(command.clone());
+        emulator.borrow_mut().handle_submit_order(command);
+        risk_events.clear();
+        let (order_handler, order_events) = subscribe_order_topic(strategy_id);
+        {
+            let mut emulator = emulator.borrow_mut();
+            emulator
+                .matching_cores
+                .get_mut(&instrument.id())
+                .unwrap()
+                .set_ask_raw(Price::from("5100.00"));
+            emulator.fill_limit_order(client_order_id);
+        }
+        msgbus::unsubscribe_order_events(
+            format!("events.order.{strategy_id}").into(),
+            &order_handler,
         );
+        let cache = cache.borrow();
+        let cached_order = cache.order(&client_order_id).unwrap();
+        let risk_events = risk_events.get_messages();
+        let order_events = order_events.borrow();
+
+        assert_eq!(cached_order.status(), OrderStatus::Released);
+        assert_eq!(risk_events.len(), 1);
+        assert!(matches!(risk_events[0], OrderEventAny::Released(_)));
+        assert_eq!(order_events.len(), 2);
+        assert!(matches!(order_events[0], OrderEventAny::Initialized(_)));
+        assert!(matches!(order_events[1], OrderEventAny::Released(_)));
     }
 
     #[rstest]

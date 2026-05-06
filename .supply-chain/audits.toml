@@ -195,6 +195,12 @@ criteria = "safe-to-deploy"
 delta = "0.47.0 -> 0.48.0"
 notes = "Crate code only bumps dbn to 0.55.0 and updates changelog entries. No source logic, build script, or network changes in databento itself."
 
+[[audits.databento]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.49.0 -> 0.50.0"
+notes = "Crate code only bumps dbn to 0.57.0 and updates changelog entries. No source logic, build script, feature, or network behavior changes in databento itself."
+
 [[audits.dbn]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -213,6 +219,12 @@ criteria = "safe-to-deploy"
 delta = "0.54.0 -> 0.55.0"
 notes = "Adds MXTO/IEXO venue and publisher constants, caches DbnFsm upgrade decisions to skip compat work when not needed, and removes Copy/Clone from RecordRefMut. No new unsafe."
 
+[[audits.dbn]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.56.0 -> 0.57.0"
+notes = "Adds InstrumentClass::Index plus StatType price variants and Python enum names, and bumps dbn-macros. No new unsafe, build script, file, or network behavior."
+
 [[audits.dbn-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -230,6 +242,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.54.0 -> 0.55.0"
 notes = "Serialize derive macros now return compile_error immediately on invalid attrs instead of emitting broken generated code. No new unsafe or runtime behavior."
+
+[[audits.dbn-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.56.0 -> 0.57.0"
+notes = "Version bump only. Published source only updates package version metadata."
 
 [[audits.fastrand]]
 who = "Nautech Systems <info@nautechsystems.io>"

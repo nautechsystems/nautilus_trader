@@ -1,6 +1,10 @@
 
 # cargo-vet imports lock
 
+[[unpublished.nautilus-coinbase]]
+version = "0.57.0"
+audited_as = "0.56.0"
+
 [[publisher.anstream]]
 version = "1.0.0"
 when = "2026-02-11"

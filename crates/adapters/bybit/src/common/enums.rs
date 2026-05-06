@@ -704,8 +704,17 @@ pub enum BybitCreateType {
     CreateByLiquidate,
     CreateByTakeover,
     CreateByTpsl,
+    CreateByBboOrder,
     #[serde(other)]
     Other,
+}
+
+/// BBO side type values for Bybit order placement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum BybitBboSideType {
+    Queue,
+    Counterparty,
 }
 
 /// Venue order type enumeration.

@@ -302,7 +302,8 @@ fn test_from_config_with_custom_strategy_id() {
         5,
         20,
     )
-    .with_strategy_id(StrategyId::from("MY_EMA-002"));
+    .with_strategy_id(StrategyId::from("MY_EMA-002"))
+    .with_order_id_tag("002".to_string());
 
     let strategy = EmaCross::from_config(config);
     assert_eq!(

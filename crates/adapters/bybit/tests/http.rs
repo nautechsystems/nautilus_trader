@@ -27,7 +27,7 @@ use axum::{
 use chrono::Utc;
 use nautilus_bybit::{
     common::enums::{
-        BybitAccountType, BybitMarginMode, BybitPositionIdx, BybitProductType,
+        BybitAccountType, BybitBboSideType, BybitMarginMode, BybitPositionIdx, BybitProductType,
         BybitUnifiedMarginStatus,
     },
     http::{
@@ -70,6 +70,8 @@ struct CapturedOrder {
     is_leverage: Option<i32>,
     order_link_id: Option<String>,
     position_idx: Option<i64>,
+    bbo_side_type: Option<String>,
+    bbo_level: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -429,6 +431,14 @@ async fn handle_post_order_with_capture(
             .and_then(|v| v.as_str())
             .map(String::from),
         position_idx: order_req.get("positionIdx").and_then(|v| v.as_i64()),
+        bbo_side_type: order_req
+            .get("bboSideType")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        bbo_level: order_req
+            .get("bboLevel")
+            .and_then(|v| v.as_str())
+            .map(String::from),
     };
 
     {
@@ -2638,6 +2648,8 @@ async fn test_submit_order_stop_market_with_trigger_price() {
             false, // is_quote_quantity
             false, // is_leverage
             None,  // position_idx
+            None,  // bbo_side_type
+            None,  // bbo_level
         )
         .await;
 
@@ -2723,6 +2735,8 @@ async fn test_submit_order_stop_limit_with_trigger_price_and_limit_price() {
             false, // is_quote_quantity
             false, // is_leverage
             None,  // position_idx
+            None,  // bbo_side_type
+            None,  // bbo_level
         )
         .await;
 
@@ -2809,6 +2823,8 @@ async fn test_submit_order_market_if_touched_trigger_direction() {
             false,
             false,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -2878,6 +2894,8 @@ async fn test_submit_order_post_only() {
             false,
             false,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -2893,6 +2911,68 @@ async fn test_submit_order_post_only() {
         Some("PostOnly"),
         "Post-only orders should have timeInForce=PostOnly"
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_with_bbo_sends_bbo_and_omits_price() {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None, None)
+        .await
+        .unwrap();
+
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let result = client
+        .submit_order(
+            AccountId::from("BYBIT-UNIFIED"),
+            BybitProductType::Linear,
+            InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT")),
+            ClientOrderId::from("bbo-test-1"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::new(0.001, 3),
+            Some(TimeInForce::Gtc),
+            Some(Price::new(50_000.0, 2)),
+            None,
+            None,
+            false,
+            false,
+            false,
+            None,
+            Some(BybitBboSideType::Queue),
+            Some("3".to_string()),
+        )
+        .await;
+
+    assert!(result.is_ok(), "Order submission should succeed");
+
+    let orders = state.order_submissions.lock().await;
+    assert_eq!(orders.len(), 1);
+
+    let order = &orders[0];
+    assert_eq!(order.order_type, "Limit");
+    assert_eq!(order.price, None);
+    assert_eq!(order.bbo_side_type.as_deref(), Some("Queue"));
+    assert_eq!(order.bbo_level.as_deref(), Some("3"));
 }
 
 #[rstest]
@@ -2945,6 +3025,8 @@ async fn test_submit_order_spot_market_base_quantity() {
             false, // is_quote_quantity=false -> baseCoin
             true,  // is_leverage
             None,  // position_idx
+            None,  // bbo_side_type
+            None,  // bbo_level
         )
         .await;
 
@@ -3018,6 +3100,8 @@ async fn test_submit_order_spot_market_quote_quantity() {
             true,  // is_quote_quantity=true -> quoteCoin
             false, // is_leverage
             None,  // position_idx
+            None,  // bbo_side_type
+            None,  // bbo_level
         )
         .await;
 
@@ -3091,6 +3175,8 @@ async fn test_submit_order_linear_does_not_send_market_unit() {
             true,  // is_quote_quantity - should be ignored for LINEAR
             false, // is_leverage - only for SPOT
             None,  // position_idx
+            None,  // bbo_side_type
+            None,  // bbo_level
         )
         .await;
 
@@ -3163,6 +3249,8 @@ async fn test_submit_order_limit_if_touched_trigger_direction() {
             false,
             false,
             false,
+            None,
+            None,
             None,
         )
         .await;
@@ -3245,6 +3333,8 @@ async fn test_submit_order_serializes_position_idx(
             false,
             false,
             position_idx,
+            None,
+            None,
         )
         .await;
 

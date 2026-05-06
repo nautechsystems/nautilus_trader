@@ -87,8 +87,7 @@ pub struct DataTesterConfig {
     /// Whether to request instruments on start.
     #[builder(default = false)]
     pub request_instruments: bool,
-    // TODO: Support request_quotes when historical data requests are available
-    /// Whether to request historical quotes (not yet implemented).
+    /// Whether to request historical quotes.
     #[builder(default = false)]
     pub request_quotes: bool,
     // TODO: Support request_trades when historical data requests are available

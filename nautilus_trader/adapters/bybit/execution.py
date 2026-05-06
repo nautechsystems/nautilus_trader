@@ -927,6 +927,7 @@ class BybitExecutionClient(LiveExecutionClient):
         # so that bad values surface as order_denied (not order_rejected after submission).
         try:
             tp_sl = _parse_bybit_tp_sl_params(command.params)
+            _validate_bybit_bbo_params(order, product_type, tp_sl)
         except ValueError as e:
             self.generate_order_denied(
                 strategy_id=order.strategy_id,
@@ -970,7 +971,12 @@ class BybitExecutionClient(LiveExecutionClient):
         pyo3_time_in_force = (
             time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
         )
-        pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
+        has_bbo = "bbo_side_type" in tp_sl
+        pyo3_price = (
+            nautilus_pyo3.Price.from_str(str(order.price))
+            if order.has_price and not has_bbo
+            else None
+        )
 
         pyo3_trigger_price = None
 
@@ -1006,6 +1012,8 @@ class BybitExecutionClient(LiveExecutionClient):
                     is_quote_quantity=is_quote_quantity,
                     is_leverage=is_leverage,
                     position_idx=position_idx,
+                    bbo_side_type=tp_sl.get("bbo_side_type"),
+                    bbo_level=tp_sl.get("bbo_level"),
                 )
             elif (
                 tp_sl.get("take_profit")
@@ -1067,6 +1075,8 @@ class BybitExecutionClient(LiveExecutionClient):
                     reduce_only=order.is_reduce_only,
                     is_leverage=is_leverage,
                     position_idx=position_idx,
+                    bbo_side_type=tp_sl.get("bbo_side_type"),
+                    bbo_level=tp_sl.get("bbo_level"),
                 )
         except Exception as e:
             self._log.error(f"Failed to submit order {order.client_order_id}: {e}")
@@ -1088,6 +1098,11 @@ class BybitExecutionClient(LiveExecutionClient):
         # Parse and validate adapter-specific params before touching any order state.
         try:
             tp_sl = _parse_bybit_tp_sl_params(command.params)
+            for order in command.order_list.orders:
+                product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+                    order.instrument_id.symbol.value,
+                )
+                _validate_bybit_bbo_params(order, product_type, tp_sl)
         except ValueError as e:
             now_ns = self._clock.timestamp_ns()
             for order in command.order_list.orders:
@@ -1162,6 +1177,7 @@ class BybitExecutionClient(LiveExecutionClient):
             if order.has_trigger_price:
                 pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
 
+            has_bbo = "bbo_side_type" in tp_sl
             is_quote_quantity = (
                 order.is_quote_quantity if hasattr(order, "is_quote_quantity") else False
             )
@@ -1186,7 +1202,9 @@ class BybitExecutionClient(LiveExecutionClient):
                         time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
                     ),
                     price=(
-                        nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
+                        nautilus_pyo3.Price.from_str(str(order.price))
+                        if order.has_price and not has_bbo
+                        else None
                     ),
                     trigger_price=pyo3_trigger_price,
                     post_only=order.is_post_only,
@@ -1194,6 +1212,8 @@ class BybitExecutionClient(LiveExecutionClient):
                     is_quote_quantity=is_quote_quantity,
                     is_leverage=is_leverage,
                     position_idx=position_idx,
+                    bbo_side_type=tp_sl.get("bbo_side_type"),
+                    bbo_level=tp_sl.get("bbo_level"),
                 )
             except Exception as e:
                 self._log.error(f"Failed to submit order {order.client_order_id}: {e}")
@@ -1252,7 +1272,12 @@ class BybitExecutionClient(LiveExecutionClient):
             pyo3_time_in_force = (
                 time_in_force_to_pyo3(order.time_in_force) if order.time_in_force else None
             )
-            pyo3_price = nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
+            has_bbo = "bbo_side_type" in tp_sl
+            pyo3_price = (
+                nautilus_pyo3.Price.from_str(str(order.price))
+                if order.has_price and not has_bbo
+                else None
+            )
 
             pyo3_trigger_price = None
 
@@ -1295,6 +1320,8 @@ class BybitExecutionClient(LiveExecutionClient):
                 take_profit=pyo3_take_profit,
                 stop_loss=pyo3_stop_loss,
                 position_idx=position_idx,
+                bbo_side_type=tp_sl.get("bbo_side_type"),
+                bbo_level=tp_sl.get("bbo_level"),
             )
             _apply_tp_sl_fields(ws_params, tp_sl)
             order_params.append(ws_params)
@@ -1984,6 +2011,15 @@ class BybitExecutionClient(LiveExecutionClient):
 # Bybit V5 API uses PascalCase strings for these enum fields.
 _BYBIT_VALID_TRIGGER_TYPES: frozenset[str] = frozenset({"LastPrice", "IndexPrice", "MarkPrice"})
 _BYBIT_VALID_ORDER_TYPES: frozenset[str] = frozenset({"Market", "Limit"})
+_BYBIT_VALID_BBO_SIDE_TYPES: frozenset[str] = frozenset({"Queue", "Counterparty"})
+_BYBIT_VALID_BBO_LEVELS: frozenset[str] = frozenset({"1", "2", "3", "4", "5"})
+_BYBIT_BBO_ORDER_TYPES: frozenset[OrderType] = frozenset(
+    {
+        OrderType.LIMIT,
+        OrderType.STOP_LIMIT,
+        OrderType.LIMIT_IF_TOUCHED,
+    },
+)
 
 
 def _validate_price_string(key: str, val: str) -> str:
@@ -2023,6 +2059,68 @@ def _validate_tp_sl_cross_fields(result: dict) -> None:
         raise ValueError("'sl_limit_price' requires 'sl_order_type' to be 'Limit'")
 
 
+def _normalize_bbo_side_type(val: object) -> str:
+    if not isinstance(val, str):
+        raise ValueError(
+            f"Invalid type for 'bbo_side_type': {type(val).__name__}, expected str",
+        )
+
+    for valid in _BYBIT_VALID_BBO_SIDE_TYPES:
+        if val.casefold() == valid.casefold():
+            return valid
+
+    raise ValueError(
+        f"Invalid Bybit BBO side type for 'bbo_side_type': '{val}'. "
+        f"Expected one of {sorted(_BYBIT_VALID_BBO_SIDE_TYPES)}.",
+    )
+
+
+def _normalize_bbo_level(val: object) -> str:
+    if isinstance(val, bool) or not isinstance(val, (str, int)):
+        raise ValueError(
+            f"Invalid type for 'bbo_level': {type(val).__name__}, expected str or int",
+        )
+
+    level = str(val)
+    if level not in _BYBIT_VALID_BBO_LEVELS:
+        raise ValueError(
+            f"Invalid Bybit BBO level for 'bbo_level': '{level}'. "
+            f"Expected one of {sorted(_BYBIT_VALID_BBO_LEVELS)}.",
+        )
+
+    return level
+
+
+def _parse_position_idx_param(p: dict, result: dict) -> None:
+    val = p.get("position_idx")
+    if val is None:
+        return
+
+    if isinstance(val, bool) or not isinstance(val, int):
+        raise ValueError(
+            f"Invalid type for 'position_idx': {type(val).__name__}, expected int",
+        )
+    if val not in (0, 1, 2):
+        raise ValueError(
+            f"Invalid 'position_idx': {val}, expected 0, 1, or 2",
+        )
+    result["position_idx"] = val
+
+
+def _parse_bbo_params(p: dict, result: dict) -> None:
+    bbo_side_type = p.get("bbo_side_type")
+    bbo_level = p.get("bbo_level")
+
+    if (bbo_side_type is None) != (bbo_level is None):
+        raise ValueError("'bbo_side_type' and 'bbo_level' must be provided together")
+
+    if bbo_side_type is not None:
+        result["bbo_side_type"] = _normalize_bbo_side_type(bbo_side_type)
+
+    if bbo_level is not None:
+        result["bbo_level"] = _normalize_bbo_level(bbo_level)
+
+
 def _parse_bybit_tp_sl_params(params: dict | None) -> dict:
     p = params or {}
     result: dict = {"is_leverage": bool(p.get("is_leverage", False))}
@@ -2059,18 +2157,8 @@ def _parse_bybit_tp_sl_params(params: dict | None) -> dict:
     if val is not None:
         result["close_on_trigger"] = bool(val)
 
-    val = p.get("position_idx")
-    if val is not None:
-        if isinstance(val, bool) or not isinstance(val, int):
-            raise ValueError(
-                f"Invalid type for 'position_idx': {type(val).__name__}, expected int",
-            )
-        if val not in (0, 1, 2):
-            raise ValueError(
-                f"Invalid 'position_idx': {val}, expected 0, 1, or 2",
-            )
-        result["position_idx"] = val
-
+    _parse_position_idx_param(p, result)
+    _parse_bbo_params(p, result)
     _parse_option_params(p, result)
 
     return result
@@ -2094,6 +2182,27 @@ def _parse_option_params(p: dict, result: dict) -> None:
         result["mmp"] = val
 
 
+def _validate_bybit_bbo_params(
+    order: Order,
+    product_type: BybitProductType,
+    params: dict,
+) -> None:
+    if "bbo_side_type" not in params:
+        return
+
+    if product_type not in (BybitProductType.LINEAR, BybitProductType.INVERSE):
+        raise ValueError(
+            "UNSUPPORTED: `bbo_side_type` and `bbo_level` are only supported for "
+            "Bybit linear and inverse products",
+        )
+
+    if order.order_type not in _BYBIT_BBO_ORDER_TYPES:
+        raise ValueError(
+            "UNSUPPORTED: `bbo_side_type` and `bbo_level` are not supported for "
+            f"order type {order.type_string()} on Bybit",
+        )
+
+
 def _apply_tp_sl_fields(order_params: object, tp_sl: dict) -> None:
     for attr in (
         "tp_trigger_by",
@@ -2107,6 +2216,8 @@ def _apply_tp_sl_fields(order_params: object, tp_sl: dict) -> None:
         "close_on_trigger",
         "order_iv",
         "mmp",
+        "bbo_side_type",
+        "bbo_level",
     ):
         val = tp_sl.get(attr)
         if val is not None:

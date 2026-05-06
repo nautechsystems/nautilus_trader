@@ -19,6 +19,7 @@ from typing import Any
 from nautilus_trader.adapters.okx.config import OKXDataClientConfig
 from nautilus_trader.adapters.okx.constants import OKX_VENUE
 from nautilus_trader.adapters.okx.providers import OKXInstrumentProvider
+from nautilus_trader.adapters.okx.types import GREEKS_CONVENTION_TO_TYPE
 from nautilus_trader.adapters.okx.types import OKX_INSTRUMENT_TYPES
 from nautilus_trader.adapters.okx.types import OkxInstrument
 from nautilus_trader.cache.cache import Cache
@@ -79,12 +80,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import Instrument
-
-
-_GREEKS_CONVENTION_TO_TYPE: dict[GreeksConvention, OKXGreeksType] = {
-    GreeksConvention.BLACK_SCHOLES: OKXGreeksType.BS,
-    GreeksConvention.PRICE_ADJUSTED: OKXGreeksType.PA,
-}
 
 
 class OKXDataClient(LiveMarketDataClient):
@@ -419,7 +414,7 @@ class OKXDataClient(LiveMarketDataClient):
                     f"Unrecognized greeks_convention {entry!r}, skipping",
                 )
                 continue
-            greeks_type = _GREEKS_CONVENTION_TO_TYPE[convention]
+            greeks_type = GREEKS_CONVENTION_TO_TYPE[convention]
             if greeks_type not in resolved:
                 resolved.append(greeks_type)
 
@@ -587,6 +582,7 @@ class OKXDataClient(LiveMarketDataClient):
                 nautilus_pyo3.OKXInstrumentType.FUTURES,
                 nautilus_pyo3.OKXInstrumentType.SWAP,
                 nautilus_pyo3.OKXInstrumentType.OPTION,
+                nautilus_pyo3.OKXInstrumentType.EVENTS,
             )
 
             if instrument_families and supports_family:

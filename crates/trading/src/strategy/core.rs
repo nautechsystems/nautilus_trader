@@ -28,7 +28,9 @@ use nautilus_common::{
     factories::OrderFactory,
 };
 use nautilus_execution::order_manager::manager::OrderManager;
-use nautilus_model::identifiers::{ActorId, ClientOrderId, StrategyId, TraderId};
+use nautilus_model::identifiers::{
+    ActorId, ClientOrderId, StrategyId, TraderId, normalize_order_id_tag,
+};
 use nautilus_portfolio::portfolio::Portfolio;
 use ustr::Ustr;
 
@@ -44,6 +46,8 @@ pub struct StrategyCore {
     pub(crate) actor: DataActorCore,
     /// The strategy configuration.
     pub config: StrategyConfig,
+    strategy_id: Option<StrategyId>,
+    order_id_tag: Option<String>,
     pub(crate) order_manager: Option<OrderManager>,
     pub(crate) order_factory: Option<OrderFactory>,
     pub(crate) portfolio: Option<Rc<RefCell<Portfolio>>>,
@@ -60,6 +64,8 @@ impl Debug for StrategyCore {
         f.debug_struct(stringify!(StrategyCore))
             .field("actor", &self.actor)
             .field("config", &self.config)
+            .field("strategy_id", &self.strategy_id)
+            .field("order_id_tag", &self.order_id_tag)
             .field("order_manager", &self.order_manager)
             .field("order_factory", &self.order_factory)
             .field("is_exiting", &self.is_exiting)
@@ -72,23 +78,30 @@ impl Debug for StrategyCore {
 impl StrategyCore {
     /// Creates a new [`StrategyCore`] instance.
     pub fn new(config: StrategyConfig) -> Self {
+        let configured_strategy_id = config.strategy_id;
+        let configured_order_id_tag = normalize_order_id_tag(config.order_id_tag.as_deref());
+        let strategy_id = configured_strategy_id
+            .map(|id| strategy_id_with_order_id_tag(id, configured_order_id_tag));
+        let order_id_tag = strategy_id
+            .map(|id| id.get_tag().to_string())
+            .or_else(|| configured_order_id_tag.map(str::to_string));
+
         let actor_config = DataActorConfig {
-            actor_id: config
-                .strategy_id
-                .map(|id| ActorId::from(id.inner().as_str())),
+            actor_id: strategy_id.map(|id| ActorId::from(id.inner().as_str())),
             log_events: config.log_events,
             log_commands: config.log_commands,
         };
 
-        let strategy_id = config
-            .strategy_id
+        let strategy_id_str = strategy_id
             .map(|id| id.inner().to_string())
             .unwrap_or_default();
-        let market_exit_timer_name = Ustr::from(&format!("MARKET_EXIT_CHECK:{strategy_id}"));
+        let market_exit_timer_name = Ustr::from(&format!("MARKET_EXIT_CHECK:{strategy_id_str}"));
 
         Self {
             actor: DataActorCore::new(actor_config),
             config,
+            strategy_id,
+            order_id_tag,
             order_manager: None,
             order_factory: None,
             portfolio: None,
@@ -99,6 +112,45 @@ impl StrategyCore {
             market_exit_timer_name,
             market_exit_tag: Ustr::from("MARKET_EXIT"),
         }
+    }
+
+    /// Changes the strategy ID before registration.
+    pub fn change_id(&mut self, strategy_id: StrategyId) {
+        let strategy_id = strategy_id_with_order_id_tag(strategy_id, self.order_id_tag());
+        self.set_runtime_strategy_id(strategy_id);
+    }
+
+    /// Changes the order ID tag before registration.
+    pub fn change_order_id_tag(&mut self, order_id_tag: &str) {
+        self.order_id_tag = normalize_order_id_tag(Some(order_id_tag)).map(str::to_string);
+
+        if let Some(strategy_id) = self.strategy_id
+            && let Some(order_id_tag) = self.order_id_tag()
+        {
+            let strategy_id = strategy_id_with_order_id_tag(strategy_id, Some(order_id_tag));
+            self.set_runtime_strategy_id(strategy_id);
+        }
+    }
+
+    fn set_runtime_strategy_id(&mut self, strategy_id: StrategyId) {
+        let actor_id = ActorId::from(strategy_id.inner().as_str());
+        self.actor.actor_id = actor_id;
+        self.actor.config.actor_id = Some(actor_id);
+        self.strategy_id = Some(strategy_id);
+        self.order_id_tag = Some(strategy_id.get_tag().to_string());
+        self.market_exit_timer_name = Ustr::from(&format!("MARKET_EXIT_CHECK:{strategy_id}"));
+    }
+
+    /// Returns the runtime order ID tag.
+    #[must_use]
+    pub fn order_id_tag(&self) -> Option<&str> {
+        self.order_id_tag.as_deref()
+    }
+
+    /// Returns the runtime strategy ID.
+    #[must_use]
+    pub fn strategy_id(&self) -> Option<StrategyId> {
+        self.strategy_id
     }
 
     /// Registers the strategy with the trading engine components.
@@ -115,13 +167,16 @@ impl StrategyCore {
         cache: Rc<RefCell<Cache>>,
         portfolio: Rc<RefCell<Portfolio>>,
     ) -> anyhow::Result<()> {
+        let strategy_id = StrategyId::from(self.actor.actor_id.inner().as_str());
+
         self.actor
             .register(trader_id, clock.clone(), cache.clone())?;
 
-        let strategy_id = StrategyId::from(self.actor.actor_id.inner().as_str());
-
         // Update market exit timer name with actual strategy ID
         self.market_exit_timer_name = Ustr::from(&format!("MARKET_EXIT_CHECK:{strategy_id}"));
+
+        self.strategy_id = Some(strategy_id);
+        self.order_id_tag = Some(strategy_id.get_tag().to_string());
 
         self.order_factory = Some(OrderFactory::new(
             trader_id,
@@ -181,6 +236,21 @@ impl StrategyCore {
     }
 }
 
+fn strategy_id_with_order_id_tag(
+    strategy_id: StrategyId,
+    order_id_tag: Option<&str>,
+) -> StrategyId {
+    let Some(order_id_tag) = normalize_order_id_tag(order_id_tag) else {
+        return strategy_id;
+    };
+
+    if strategy_id.get_tag() == order_id_tag {
+        strategy_id
+    } else {
+        StrategyId::from(format!("{strategy_id}-{order_id_tag}"))
+    }
+}
+
 impl Deref for StrategyCore {
     type Target = DataActorCore;
     fn deref(&self) -> &Self::Target {
@@ -220,12 +290,104 @@ mod tests {
 
         assert_eq!(core.config.strategy_id, config.strategy_id);
         assert_eq!(core.config.order_id_tag, config.order_id_tag);
+        assert_eq!(core.strategy_id(), config.strategy_id);
+        assert_eq!(core.order_id_tag(), Some("001"));
         assert!(core.order_manager.is_none());
         assert!(core.order_factory.is_none());
         assert!(core.portfolio.is_none());
         assert!(!core.is_exiting);
         assert!(!core.pending_stop);
         assert_eq!(core.market_exit_attempts, 0);
+    }
+
+    #[rstest]
+    fn test_strategy_core_new_applies_explicit_order_id_tag_to_strategy_id() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            order_id_tag: Some("T01".to_string()),
+            ..Default::default()
+        };
+
+        let core = StrategyCore::new(config.clone());
+
+        assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS-T01"));
+        assert_eq!(core.config.strategy_id, config.strategy_id);
+        assert_eq!(core.config.order_id_tag, config.order_id_tag);
+        assert_eq!(
+            core.strategy_id(),
+            Some(StrategyId::from("ExampleStrategy-XNAS-T01"))
+        );
+        assert_eq!(core.order_id_tag(), Some("T01"));
+    }
+
+    #[rstest]
+    fn test_strategy_core_new_uses_strategy_tag_when_order_id_tag_is_omitted() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            ..Default::default()
+        };
+
+        let core = StrategyCore::new(config.clone());
+
+        assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS"));
+        assert_eq!(core.config.strategy_id, config.strategy_id);
+        assert_eq!(core.config.order_id_tag, None);
+        assert_eq!(core.strategy_id(), config.strategy_id);
+        assert_eq!(core.order_id_tag(), Some("XNAS"));
+    }
+
+    #[rstest]
+    fn test_strategy_core_change_id_appends_existing_order_id_tag() {
+        let config = StrategyConfig {
+            order_id_tag: Some("T01".to_string()),
+            ..Default::default()
+        };
+        let mut core = StrategyCore::new(config);
+
+        core.change_id(StrategyId::from("ExampleStrategy-XNAS"));
+
+        assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS-T01"));
+        assert_eq!(
+            core.strategy_id(),
+            Some(StrategyId::from("ExampleStrategy-XNAS-T01"))
+        );
+        assert_eq!(core.order_id_tag(), Some("T01"));
+    }
+
+    #[rstest]
+    fn test_strategy_core_change_order_id_tag_appends_to_existing_strategy_id() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            ..Default::default()
+        };
+        let mut core = StrategyCore::new(config);
+
+        core.change_order_id_tag("T01");
+
+        assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS-T01"));
+        assert_eq!(
+            core.strategy_id(),
+            Some(StrategyId::from("ExampleStrategy-XNAS-T01"))
+        );
+        assert_eq!(core.order_id_tag(), Some("T01"));
+    }
+
+    #[rstest]
+    fn test_strategy_core_change_order_id_tag_does_not_duplicate_matching_tag() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS-T01")),
+            ..Default::default()
+        };
+        let mut core = StrategyCore::new(config);
+
+        core.change_order_id_tag("T01");
+
+        assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS-T01"));
+        assert_eq!(
+            core.strategy_id(),
+            Some(StrategyId::from("ExampleStrategy-XNAS-T01"))
+        );
+        assert_eq!(core.order_id_tag(), Some("T01"));
     }
 
     #[rstest]
@@ -249,6 +411,38 @@ mod tests {
         assert!(core.order_factory.is_some());
         assert!(core.portfolio.is_some());
         assert_eq!(core.trader_id(), Some(trader_id));
+    }
+
+    #[rstest]
+    fn test_strategy_core_register_uses_order_id_tag_for_factory() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            order_id_tag: Some("T01".to_string()),
+            ..Default::default()
+        };
+        let mut core = StrategyCore::new(config);
+
+        let trader_id = TraderId::from("TRADER-001");
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let portfolio = Rc::new(RefCell::new(Portfolio::new(
+            cache.clone(),
+            clock.clone(),
+            None,
+        )));
+
+        core.register(trader_id, clock, cache, portfolio).unwrap();
+
+        let order_factory = core.order_factory();
+        let client_order_id = order_factory.generate_client_order_id();
+        let order_list_id = order_factory.generate_order_list_id();
+
+        assert_eq!(
+            core.strategy_id(),
+            Some(StrategyId::from("ExampleStrategy-XNAS-T01"))
+        );
+        assert_eq!(client_order_id.as_str(), "O-19700101-000000-001-T01-1");
+        assert_eq!(order_list_id.as_str(), "OL-19700101-000000-001-T01-1");
     }
 
     #[rstest]

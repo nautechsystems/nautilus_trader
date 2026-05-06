@@ -104,7 +104,7 @@ impl OrderMessageBuilder {
 
     /// Returns the maximum duration (in seconds) for short-term orders.
     ///
-    /// Computed as: `SHORT_TERM_ORDER_MAXIMUM_LIFETIME (20 blocks) × seconds_per_block`
+    /// Computed as: `SHORT_TERM_ORDER_MAXIMUM_LIFETIME (40 blocks) × seconds_per_block`
     ///
     /// Uses dynamic block time from `BlockTimeMonitor` when available,
     /// falling back to 500ms/block when insufficient samples.

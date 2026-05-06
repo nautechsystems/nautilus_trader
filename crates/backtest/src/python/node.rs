@@ -24,8 +24,9 @@ use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::identifiers::{ActorId, ComponentId, StrategyId};
 #[cfg(feature = "examples")]
 use nautilus_trading::examples::strategies::{
-    DeltaNeutralVol, DeltaNeutralVolConfig, EmaCross, EmaCrossConfig, GridMarketMaker,
-    GridMarketMakerConfig, HurstVpinDirectional, HurstVpinDirectionalConfig,
+    CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol, DeltaNeutralVolConfig,
+    EmaCross, EmaCrossConfig, GridMarketMaker, GridMarketMakerConfig, HurstVpinDirectional,
+    HurstVpinDirectionalConfig,
 };
 use nautilus_trading::{
     ImportableStrategyConfig,
@@ -304,7 +305,16 @@ impl BacktestNode {
                         } else {
                             anyhow::bail!("Invalid `strategy_id` type");
                         };
-                        py_strategy_ref.set_strategy_id(strategy_id_val);
+                        py_strategy_ref.set_strategy_id(strategy_id_val)?;
+                    }
+
+                    if let Ok(order_id_tag) = config_obj.getattr("order_id_tag")
+                        && !order_id_tag.is_none()
+                    {
+                        let order_id_tag_val = order_id_tag
+                            .extract::<String>()
+                            .map_err(|e| anyhow::anyhow!("Invalid `order_id_tag` type: {e}"))?;
+                        py_strategy_ref.set_order_id_tag(&order_id_tag_val)?;
                     }
 
                     if let Ok(log_events) = config_obj.getattr("log_events")
@@ -421,6 +431,10 @@ impl BacktestNode {
             } else if let Ok(config) = config.extract::<GridMarketMakerConfig>() {
                 engine
                     .add_strategy(GridMarketMaker::new(config))
+                    .map_err(to_pyruntime_err)
+            } else if let Ok(config) = config.extract::<CompositeMarketMakerConfig>() {
+                engine
+                    .add_strategy(CompositeMarketMaker::new(config))
                     .map_err(to_pyruntime_err)
             } else if let Ok(config) = config.extract::<DeltaNeutralVolConfig>() {
                 engine

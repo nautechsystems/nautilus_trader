@@ -189,7 +189,7 @@ impl EmaCross {
             None,
             None,
         );
-        self.submit_order(order, None, None)
+        self.submit_order(order, None, None, None)
     }
 }
 
@@ -267,7 +267,7 @@ impl SnapshotNettingFlip {
             None,
             None,
         );
-        self.submit_order(order, None, None)
+        self.submit_order(order, None, None, None)
     }
 }
 
@@ -1846,7 +1846,7 @@ impl DataActor for CascadingStopStrategy {
                 None,
                 None,
             );
-            self.submit_order(order, None, None)?;
+            self.submit_order(order, None, None, None)?;
         }
         Ok(())
     }
@@ -1873,7 +1873,7 @@ impl DataActor for CascadingStopStrategy {
                 None,
                 None,
             );
-            self.submit_order(order, None, None)?;
+            self.submit_order(order, None, None, None)?;
         }
         Ok(())
     }
@@ -1921,7 +1921,7 @@ impl DualTimerStrategy {
     fn new(instrument_id: InstrumentId, trade_size: Quantity, timer_ts: u64) -> Self {
         let config = StrategyConfig {
             strategy_id: Some(StrategyId::from("DUAL-TIMER-001")),
-            order_id_tag: Some("002".to_string()),
+            order_id_tag: Some("001".to_string()),
             ..Default::default()
         };
         Self {
@@ -1972,7 +1972,7 @@ impl DataActor for DualTimerStrategy {
             None,
             None,
         );
-        self.submit_order(order, None, None)?;
+        self.submit_order(order, None, None, None)?;
         Ok(())
     }
 }

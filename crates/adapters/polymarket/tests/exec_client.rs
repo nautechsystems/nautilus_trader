@@ -902,6 +902,22 @@ fn make_market_order(
     side: OrderSide,
     quote_quantity: bool,
 ) -> OrderAny {
+    make_market_order_with_time_in_force(
+        client_order_id,
+        instrument_id,
+        side,
+        quote_quantity,
+        TimeInForce::Ioc,
+    )
+}
+
+fn make_market_order_with_time_in_force(
+    client_order_id: &str,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    quote_quantity: bool,
+    time_in_force: TimeInForce,
+) -> OrderAny {
     OrderAny::Market(MarketOrder::new(
         TraderId::from("TESTER-001"),
         StrategyId::from("S-001"),
@@ -909,7 +925,7 @@ fn make_market_order(
         ClientOrderId::from(client_order_id),
         side,
         Quantity::new(10.0, 0),
-        TimeInForce::Ioc,
+        time_in_force,
         UUID4::new(),
         UnixNanos::default(),
         false, // reduce_only
@@ -923,6 +939,76 @@ fn make_market_order(
         None,
         None,
     ))
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_market_order_denied_unsupported_time_in_force() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let order = make_market_order_with_time_in_force(
+        "O-MKT-GTC",
+        instrument_id,
+        OrderSide::Sell,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let cmd = make_submit_cmd(&order, instrument_id);
+
+    client.submit_order(cmd).unwrap();
+
+    let event = rx.try_recv().unwrap();
+    assert_order_event(event, "Denied");
+    assert_eq!(*state.order_post_count.lock().await, 0);
+}
+
+#[rstest]
+#[case::ioc(TimeInForce::Ioc, "FAK")]
+#[case::fok(TimeInForce::Fok, "FOK")]
+#[tokio::test]
+async fn test_submit_market_order_posts_order_type_from_time_in_force(
+    #[case] time_in_force: TimeInForce,
+    #[case] expected_order_type: &str,
+) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+
+    let order = make_market_order_with_time_in_force(
+        "O-MKT-TIF",
+        instrument_id,
+        OrderSide::Sell,
+        false,
+        time_in_force,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let cmd = make_submit_cmd(&order, instrument_id);
+
+    client.submit_order(cmd).unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
+
+    let body = state.last_body.lock().await.clone().unwrap();
+    assert_eq!(
+        body.get("orderType").and_then(Value::as_str),
+        Some(expected_order_type),
+    );
 }
 
 #[rstest]
@@ -1293,7 +1379,13 @@ async fn test_fok_deferred_check_emits_rejected_for_unmatched() {
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
     add_instrument_to_cache(&cache, instrument_id);
 
-    let order = make_market_order("O-FOK-UNMATCHED", instrument_id, OrderSide::Buy, true);
+    let order = make_market_order_with_time_in_force(
+        "O-FOK-UNMATCHED",
+        instrument_id,
+        OrderSide::Buy,
+        true,
+        TimeInForce::Fok,
+    );
     cache
         .borrow_mut()
         .add_order(order.clone(), None, None, false)

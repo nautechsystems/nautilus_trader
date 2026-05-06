@@ -49,6 +49,9 @@ audit-as-crates-io = true
 [policy.nautilus-cli]
 audit-as-crates-io = true
 
+[policy.nautilus-coinbase]
+audit-as-crates-io = true
+
 [policy.nautilus-common]
 audit-as-crates-io = true
 
@@ -566,11 +569,11 @@ version = "0.3.16"
 criteria = "safe-to-deploy"
 
 [[exemptions.bollard]]
-version = "0.18.1"
+version = "0.21.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.bollard-stubs]]
-version = "1.47.1-rc.27.3.1"
+version = "1.53.1-rc.29.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.bon]]
@@ -1377,10 +1380,6 @@ criteria = "safe-to-deploy"
 version = "2.12.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.iri-string]]
-version = "0.7.12"
-criteria = "safe-to-deploy"
-
 [[exemptions.is-macro]]
 version = "0.3.7"
 criteria = "safe-to-deploy"
@@ -1603,6 +1602,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-cli]]
 version = "0.57.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.nautilus-coinbase]]
+version = "0.56.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-common]]
@@ -1842,11 +1845,11 @@ version = "0.11.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.pin-project]]
-version = "1.1.11"
+version = "1.1.12"
 criteria = "safe-to-deploy"
 
 [[exemptions.pin-project-internal]]
-version = "1.1.11"
+version = "1.1.12"
 criteria = "safe-to-deploy"
 
 [[exemptions.pin-project-lite]]
@@ -2015,6 +2018,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.rayon]]
 version = "1.12.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.redb]]
+version = "4.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.redis]]
@@ -2562,7 +2569,7 @@ version = "0.5.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.tower-http]]
-version = "0.6.8"
+version = "0.6.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.tower-layer]]

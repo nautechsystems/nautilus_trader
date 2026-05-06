@@ -34,6 +34,7 @@ from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
@@ -54,11 +55,13 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import OrderList
 from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.bybit.conftest import _create_ws_mock
+from tests.integration_tests.adapters.bybit.conftest import create_bybit_linear_perpetual
 
 
 @pytest.fixture
@@ -477,6 +480,227 @@ async def test_submit_limit_order(exec_client_builder, monkeypatch, instrument):
 
 
 @pytest.mark.asyncio
+async def test_submit_limit_order_with_bbo_params(exec_client_builder, monkeypatch):
+    client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+
+    await client._connect()
+
+    instrument = create_bybit_linear_perpetual()
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-BBO-1"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"bbo_side_type": "queue", "bbo_level": 3},
+    )
+
+    try:
+        await client._submit_order(command)
+
+        ws_trade_client.submit_order.assert_awaited_once()
+        kwargs = ws_trade_client.submit_order.call_args.kwargs
+        assert kwargs["price"] is None
+        assert kwargs["bbo_side_type"] == "Queue"
+        assert kwargs["bbo_level"] == "3"
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_market_order_with_bbo_params_denied(
+    exec_client_builder,
+    monkeypatch,
+):
+    client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+    mock_generate_denied = MagicMock()
+    monkeypatch.setattr(client, "generate_order_denied", mock_generate_denied)
+
+    await client._connect()
+
+    instrument = create_bybit_linear_perpetual()
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-BBO-2"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"bbo_side_type": "Queue", "bbo_level": "1"},
+    )
+
+    try:
+        await client._submit_order(command)
+
+        ws_trade_client.submit_order.assert_not_awaited()
+        mock_generate_denied.assert_called_once()
+        assert "not supported" in mock_generate_denied.call_args.kwargs["reason"]
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_list_with_bbo_params(exec_client_builder, monkeypatch):
+    client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.build_place_order_params = MagicMock(side_effect=[MagicMock(), MagicMock()])
+    ws_trade_client.batch_place_orders = AsyncMock()
+
+    await client._connect()
+
+    instrument = create_bybit_linear_perpetual()
+    orders = [
+        LimitOrder(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=instrument.id,
+            client_order_id=ClientOrderId("O-BBO-LIST-1"),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("0.100"),
+            price=Price.from_str("50000.00"),
+            init_id=TestIdStubs.uuid(),
+            ts_init=0,
+        ),
+        LimitOrder(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=instrument.id,
+            client_order_id=ClientOrderId("O-BBO-LIST-2"),
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_str("0.100"),
+            price=Price.from_str("50100.00"),
+            init_id=TestIdStubs.uuid(),
+            ts_init=0,
+        ),
+    ]
+    order_list = OrderList(TestIdStubs.order_list_id(), orders)
+    command = SubmitOrderList(
+        trader_id=orders[0].trader_id,
+        strategy_id=orders[0].strategy_id,
+        order_list=order_list,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"bbo_side_type": "counterparty", "bbo_level": 5},
+    )
+
+    try:
+        await client._submit_order_list(command)
+
+        assert ws_trade_client.build_place_order_params.call_count == 2
+        for call in ws_trade_client.build_place_order_params.call_args_list:
+            assert call.kwargs["price"] is None
+            assert call.kwargs["bbo_side_type"] == "Counterparty"
+            assert call.kwargs["bbo_level"] == "5"
+        ws_trade_client.batch_place_orders.assert_awaited_once()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_list_with_bbo_params_denies_unsupported_order_type(
+    exec_client_builder,
+    monkeypatch,
+):
+    client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.build_place_order_params = MagicMock()
+    ws_trade_client.batch_place_orders = AsyncMock()
+    mock_generate_denied = MagicMock()
+    monkeypatch.setattr(client, "generate_order_denied", mock_generate_denied)
+
+    await client._connect()
+
+    instrument = create_bybit_linear_perpetual()
+    orders = [
+        LimitOrder(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=instrument.id,
+            client_order_id=ClientOrderId("O-BBO-LIST-3"),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("0.100"),
+            price=Price.from_str("50000.00"),
+            init_id=TestIdStubs.uuid(),
+            ts_init=0,
+        ),
+        MarketOrder(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=instrument.id,
+            client_order_id=ClientOrderId("O-BBO-LIST-4"),
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_str("0.100"),
+            time_in_force=TimeInForce.IOC,
+            reduce_only=False,
+            quote_quantity=False,
+            init_id=TestIdStubs.uuid(),
+            ts_init=0,
+        ),
+    ]
+    order_list = OrderList(TestIdStubs.order_list_id(), orders)
+    command = SubmitOrderList(
+        trader_id=orders[0].trader_id,
+        strategy_id=orders[0].strategy_id,
+        order_list=order_list,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"bbo_side_type": "Queue", "bbo_level": "1"},
+    )
+
+    try:
+        await client._submit_order_list(command)
+
+        ws_trade_client.build_place_order_params.assert_not_called()
+        ws_trade_client.batch_place_orders.assert_not_awaited()
+        assert mock_generate_denied.call_count == 2
+        for call in mock_generate_denied.call_args_list:
+            assert "not supported" in call.kwargs["reason"]
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
 async def test_submit_stop_market_order(exec_client_builder, monkeypatch, instrument):
     # Arrange
     client, ws_client, http_client, instrument_provider = exec_client_builder(
@@ -875,6 +1099,31 @@ def test_parse_tp_sl_valid_full_params():
     assert result["sl_order_type"] == "Market"
     assert result["close_on_trigger"] is True
     assert result["is_leverage"] is True
+
+
+def test_parse_tp_sl_valid_bbo_params():
+    result = _parse_bybit_tp_sl_params({"bbo_side_type": "counterparty", "bbo_level": 5})
+
+    assert result["bbo_side_type"] == "Counterparty"
+    assert result["bbo_level"] == "5"
+
+
+@pytest.mark.parametrize(
+    ("params", "expected"),
+    [
+        ({"bbo_side_type": "Queue"}, "must be provided together"),
+        ({"bbo_level": "1"}, "must be provided together"),
+        ({"bbo_side_type": "invalid", "bbo_level": "1"}, "Invalid Bybit BBO side type"),
+        ({"bbo_side_type": "Queue", "bbo_level": "6"}, "Invalid Bybit BBO level"),
+        ({"bbo_side_type": 1, "bbo_level": "1"}, "Invalid type for 'bbo_side_type'"),
+        ({"bbo_side_type": "Queue", "bbo_level": True}, "Invalid type for 'bbo_level'"),
+    ],
+)
+def test_parse_tp_sl_rejects_invalid_bbo_params(params, expected):
+    with pytest.raises(ValueError) as exc_info:
+        _parse_bybit_tp_sl_params(params)
+
+    assert expected in str(exc_info.value)
 
 
 def test_parse_tp_sl_none_params_returns_defaults():

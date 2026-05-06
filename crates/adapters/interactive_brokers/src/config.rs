@@ -99,6 +99,9 @@ pub struct InteractiveBrokersDataClientConfig {
     /// Whether to use batch quotes (reqMktData) by default instead of tick-by-tick.
     #[builder(default = true)]
     pub batch_quotes: bool,
+    /// Instrument provider configuration.
+    #[builder(default)]
+    pub instrument_provider: InteractiveBrokersInstrumentProviderConfig,
 }
 
 impl Default for InteractiveBrokersDataClientConfig {
@@ -142,6 +145,9 @@ pub struct InteractiveBrokersExecClientConfig {
     /// Whether to track option exercise from position updates.
     #[builder(default)]
     pub track_option_exercise_from_position_update: bool,
+    /// Instrument provider configuration.
+    #[builder(default)]
+    pub instrument_provider: InteractiveBrokersInstrumentProviderConfig,
 }
 
 impl Default for InteractiveBrokersExecClientConfig {

@@ -107,7 +107,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     events::OrderEventAny,
-    identifiers::{ClientOrderId, StrategyId, TraderId},
+    identifiers::{ClientOrderId, TraderId},
     orders::Order,
 };
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
@@ -1342,7 +1342,7 @@ impl LiveNode {
     /// Returns an error if:
     /// - The node is currently running.
     /// - A strategy with the same ID is already registered.
-    pub fn add_strategy<T>(&mut self, strategy: T) -> anyhow::Result<()>
+    pub fn add_strategy<T>(&mut self, mut strategy: T) -> anyhow::Result<()>
     where
         T: Strategy + Component + Debug + 'static,
     {
@@ -1353,7 +1353,11 @@ impl LiveNode {
         }
 
         // Register external order claims before adding strategy (which moves it)
-        let strategy_id = StrategyId::from(strategy.component_id().inner().as_str());
+        let strategy_id = self
+            .kernel
+            .trader
+            .borrow()
+            .prepare_strategy_for_registration(&mut strategy)?;
         if let Some(claims) = strategy.external_order_claims() {
             for instrument_id in claims {
                 self.exec_manager

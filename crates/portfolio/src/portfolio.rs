@@ -1047,10 +1047,11 @@ impl Portfolio {
                 }
             };
 
+            let orders_open_refs: Vec<&OrderAny> = orders_open.iter().collect();
             let result = self.inner.borrow_mut().accounts.update_orders(
                 &account,
                 instrument,
-                orders_open.iter().collect(),
+                &orders_open_refs,
                 self.clock.borrow().timestamp_ns(),
             );
 
@@ -1890,10 +1891,11 @@ fn update_instrument_id(
     };
 
     // No cache borrow held: AccountsManager borrows cache internally for xrate lookups
+    let orders_open_refs: Vec<&OrderAny> = orders_open.iter().collect();
     let result_init = inner.borrow().accounts.update_orders(
         &account,
         &instrument,
-        orders_open.iter().collect(),
+        &orders_open_refs,
         clock.borrow().timestamp_ns(),
     );
 
@@ -1946,17 +1948,17 @@ fn update_order(
     };
 
     // Scoped borrow: must drop before calling AccountsManager (which borrows cache internally)
-    let (account, instrument, orders_open) = {
+    let (instrument, orders_open) = {
         let cache_ref = cache.borrow();
 
         let account = if let Some(account) = cache_ref.account(&account_id) {
-            account.clone()
+            account
         } else {
             log::error!("Cannot update order: no account registered for {account_id}");
             return;
         };
 
-        match &account {
+        match account {
             AccountAny::Margin(margin_account) => {
                 if !margin_account.base.calculate_account_state {
                     return;
@@ -2016,12 +2018,16 @@ fn update_order(
             .map(|o| (*o).clone())
             .collect();
 
-        (account, instrument, orders_open)
+        (instrument, orders_open)
     };
 
-    // No cache borrow held: AccountsManager borrows cache internally for xrate lookups
-    let mut working_account = account;
-    let mut balances_updated = false;
+    // No cache borrow held: AccountsManager borrows cache internally for xrate lookups.
+    let mut working_account = if let Some(account) = cache.borrow_mut().take_account(&account_id) {
+        account
+    } else {
+        log::error!("Cannot update order: no account registered for {account_id}");
+        return;
+    };
 
     if let OrderEventAny::Filled(order_filled) = event {
         let (post_balance, _state) =
@@ -2030,7 +2036,8 @@ fn update_order(
                 .accounts
                 .update_balances(working_account, &instrument, *order_filled);
         working_account = post_balance;
-        balances_updated = true;
+
+        cache.borrow_mut().cache_account_owned(working_account);
 
         let portfolio_clone = Portfolio {
             clock: clock.clone(),
@@ -2053,25 +2060,38 @@ fn update_order(
                 );
             }
         }
+
+        working_account = cache
+            .borrow_mut()
+            .take_account(&account_id)
+            .expect("account restored before unrealized PnL calculation");
     }
 
-    let account_state = inner.borrow().accounts.update_orders(
-        &working_account,
+    let orders_open_refs: Vec<&OrderAny> = orders_open.iter().collect();
+    let account_state = inner.borrow().accounts.update_orders_in_place(
+        &mut working_account,
         &instrument,
-        orders_open.iter().collect(),
+        &orders_open_refs,
         clock.borrow().timestamp_ns(),
     );
 
-    if let Some((updated_account, account_state)) = account_state {
-        cache.borrow_mut().update_account(&updated_account).unwrap();
+    let updated_account_id = working_account.id();
+
+    if account_state.is_some() || matches!(event, OrderEventAny::Filled(_)) {
+        cache
+            .borrow_mut()
+            .update_account_owned(working_account)
+            .unwrap();
+    } else {
+        cache.borrow_mut().cache_account_owned(working_account);
+    }
+
+    if let Some(account_state) = account_state {
         msgbus::publish_account_state(
-            format!("events.account.{}", updated_account.id()).into(),
+            format!("events.account.{updated_account_id}").into(),
             &account_state,
         );
     } else {
-        if balances_updated {
-            cache.borrow_mut().update_account(&working_account).unwrap();
-        }
         log::debug!("Added pending calculation for {}", instrument.id());
         inner.borrow_mut().pending_calcs.insert(instrument.id());
     }
@@ -2190,32 +2210,9 @@ fn update_account(
     inner: &Rc<RefCell<PortfolioState>>,
     event: &AccountState,
 ) {
-    let mut cache_ref = cache.borrow_mut();
-
-    if let Some(existing) = cache_ref.account(&event.account_id) {
-        let mut account = existing.clone();
-        if let Err(e) = account.apply(event.clone()) {
-            log::error!("Failed to apply account state: {e}");
-            return;
-        }
-
-        if let Err(e) = cache_ref.update_account(&account) {
-            log::error!("Failed to update account: {e}");
-            return;
-        }
-    } else {
-        let account = match AccountAny::from_events(std::slice::from_ref(event)) {
-            Ok(account) => account,
-            Err(e) => {
-                log::error!("Failed to create account: {e}");
-                return;
-            }
-        };
-
-        if let Err(e) = cache_ref.add_account(account) {
-            log::error!("Failed to add account: {e}");
-            return;
-        }
+    if let Err(e) = cache.borrow_mut().update_account_state(event) {
+        log::error!("Failed to update account state: {e}");
+        return;
     }
 
     // Throttled logging logic

@@ -61,6 +61,8 @@ pub mod kernel;
 pub mod messages;
 pub mod trader;
 
+mod registration;
+
 #[cfg(feature = "python")]
 pub mod python;
 

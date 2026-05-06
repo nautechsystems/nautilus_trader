@@ -20,11 +20,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::{
     enums::{
-        BybitAccountType, BybitExecType, BybitInstrumentStatus, BybitKlineInterval,
-        BybitMarginMode, BybitMarketUnit, BybitOpenOnly, BybitOptionType, BybitOrderFilter,
-        BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionMode,
-        BybitProductType, BybitSmpType, BybitStopOrderType, BybitTimeInForce, BybitTpSlMode,
-        BybitTriggerDirection, BybitTriggerType,
+        BybitAccountType, BybitBboSideType, BybitExecType, BybitInstrumentStatus,
+        BybitKlineInterval, BybitMarginMode, BybitMarketUnit, BybitOpenOnly, BybitOptionType,
+        BybitOrderFilter, BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
+        BybitPositionMode, BybitProductType, BybitSmpType, BybitStopOrderType, BybitTimeInForce,
+        BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
     },
     parse::opt_bool_as_int,
 };
@@ -454,6 +454,12 @@ pub struct BybitBatchPlaceOrderEntry {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sl_order_type: Option<BybitOrderType>,
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bbo_side_type: Option<BybitBboSideType>,
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bbo_level: Option<String>,
 }
 
 /// Body parameters for `POST /v5/order/create-batch`.

@@ -90,9 +90,9 @@ use crate::common::{
     consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_VENUE},
     credential::{Credential, credential_env_vars},
     enums::{
-        BybitAccountType, BybitContractType, BybitEnvironment, BybitMarginMode, BybitOpenOnly,
-        BybitOrderFilter, BybitOrderSide, BybitOrderType, BybitPositionIdx, BybitPositionMode,
-        BybitProductType,
+        BybitAccountType, BybitBboSideType, BybitContractType, BybitEnvironment, BybitMarginMode,
+        BybitOpenOnly, BybitOrderFilter, BybitOrderSide, BybitOrderType, BybitPositionIdx,
+        BybitPositionMode, BybitProductType,
     },
     models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
     parse::{
@@ -2422,6 +2422,8 @@ impl BybitHttpClient {
         is_quote_quantity: bool,
         is_leverage: bool,
         position_idx: Option<BybitPositionIdx>,
+        bbo_side_type: Option<BybitBboSideType>,
+        bbo_level: Option<String>,
     ) -> anyhow::Result<OrderStatusReport> {
         let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
@@ -2456,7 +2458,9 @@ impl BybitHttpClient {
         order_entry.market_unit(market_unit);
         order_entry.trigger_direction(trigger_dir);
 
-        if let Some(price) = price {
+        if bbo_side_type.is_none()
+            && let Some(price) = price
+        {
             order_entry.price(Some(price.to_string()));
         }
 
@@ -2473,6 +2477,9 @@ impl BybitHttpClient {
         if let Some(idx) = position_idx {
             order_entry.position_idx(Some(idx));
         }
+
+        order_entry.bbo_side_type(bbo_side_type);
+        order_entry.bbo_level(bbo_level);
 
         let order_entry = order_entry.build().build_anyhow()?;
 

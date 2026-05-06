@@ -23,7 +23,7 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-examples = ["nautilus-live/node"]
+examples = ["nautilus-live/node", "nautilus-trading/examples"]
 extension-module = [
   "gateway",
   "nautilus-common/extension-module",
@@ -36,12 +36,14 @@ extension-module = [
   "python",
 ]
 python = [
+  "dep:nautilus-system",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-execution/python",
   "nautilus-live/python",
   "nautilus-model/python",
   "nautilus-network/python",
+  "nautilus-system/python",
   "pyo3",
   "pyo3-async-runtimes",
 ]
@@ -58,6 +60,7 @@ nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
+nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -86,7 +89,24 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+nautilus-trading = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tempfile = { workspace = true }
 tracing-test = { workspace = true }
+
+# Run live smoke with `cargo run --example ib-data-tester --package nautilus-interactive-brokers --features examples`.
+# Run embedded config unit tests with `cargo test --example ib-data-tester --package nautilus-interactive-brokers --features examples`.
+[[example]]
+name = "ib-data-tester"
+path = "examples/node_data_tester.rs"
+required-features = ["examples"]
+doc = false
+
+# Run live smoke with `cargo run --example ib-exec-tester --package nautilus-interactive-brokers --features examples`.
+# Run embedded config unit tests with `cargo test --example ib-exec-tester --package nautilus-interactive-brokers --features examples`.
+[[example]]
+name = "ib-exec-tester"
+path = "examples/node_exec_tester.rs"
+required-features = ["examples"]
+doc = false

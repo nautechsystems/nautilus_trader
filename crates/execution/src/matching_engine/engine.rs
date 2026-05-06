@@ -1965,13 +1965,14 @@ impl OrderMatchingEngine {
                 ))]),
             ));
 
-            if self
-                .cache
-                .borrow_mut()
-                .add_order(order.clone(), Some(position_id), None, false)
-                .is_err()
-            {
+            let add_result =
+                self.cache
+                    .borrow_mut()
+                    .add_order(order.clone(), Some(position_id), None, false);
+            if add_result.is_err() {
                 log::debug!("Expiration order already in cache: {client_order_id}");
+            } else {
+                self.publish_order_initialized(&order);
             }
 
             let venue_order_id = self.ids_generator.get_venue_order_id(&order).unwrap();
@@ -4757,6 +4758,14 @@ impl OrderMatchingEngine {
             due_post_only,
         ));
         self.dispatch_order_event(event);
+    }
+
+    fn publish_order_initialized(&self, order: &OrderAny) {
+        let event = OrderEventAny::Initialized(order.init_event().clone());
+        msgbus::publish_order_event(
+            format!("events.order.{}", order.strategy_id()).into(),
+            &event,
+        );
     }
 
     fn generate_order_accepted(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
