@@ -1,0 +1,15 @@
+{
+  "method": "add_order",
+  "params": {
+    "order_type": "limit",
+    "side": "buy",
+    "order_qty": 0.01,
+    "symbol": "BTC/USD",
+    "limit_price": 30000.0,
+    "time_in_force": "GTC",
+    "cl_ord_id": "O-20260505-000001",
+    "post_only": true,
+    "token": "TESTTOKEN"
+  },
+  "req_id": 42
+}

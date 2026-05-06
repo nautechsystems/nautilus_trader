@@ -1,0 +1,13 @@
+{
+  "method": "batch_add",
+  "req_id": 45,
+  "success": true,
+  "time_in": "2026-05-05T10:00:00.123Z",
+  "time_out": "2026-05-05T10:00:00.125Z",
+  "result": {
+    "orders": [
+      {"order_id": "O1", "cl_ord_id": "O-A", "success": true},
+      {"cl_ord_id": "O-B", "success": false, "error": "EOrder:Invalid price"}
+    ]
+  }
+}

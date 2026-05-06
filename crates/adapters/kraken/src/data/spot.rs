@@ -357,6 +357,7 @@ impl KrakenSpotDataClient {
                 }
             }
             KrakenSpotWsMessage::Execution(_) => {}
+            KrakenSpotWsMessage::OrderResponse(_) => {}
             KrakenSpotWsMessage::Reconnected => {
                 log::info!("Spot WebSocket reconnected");
             }

@@ -34,6 +34,7 @@
 
 pub mod futures;
 pub mod spot;
+pub mod spot_orders;
 
 use std::sync::{
     Arc, Mutex,
@@ -191,10 +192,16 @@ impl WsDispatchState {
             .map(|r| r.clone())
     }
 
-    /// Marks an `OrderAccepted` event as emitted for this order.
-    pub fn insert_accepted(&self, cid: ClientOrderId) {
+    /// Atomically marks an `OrderAccepted` event as emitted for this order.
+    ///
+    /// Returns `true` when the entry was newly inserted (caller should emit the
+    /// event), and `false` when an entry was already present (caller should
+    /// skip emission). Replaces the racier "contains-then-insert" pattern,
+    /// which allowed concurrent emitters to both observe `false` from
+    /// `contains` and then both insert + emit duplicate `OrderAccepted` events.
+    pub fn insert_accepted(&self, cid: ClientOrderId) -> bool {
         self.evict_if_full(&self.emitted_accepted);
-        self.emitted_accepted.insert(cid);
+        self.emitted_accepted.insert(cid)
     }
 
     /// Marks an order as having reached the filled terminal state.
@@ -320,10 +327,9 @@ pub(crate) fn ensure_accepted_emitted(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) {
-    if state.emitted_accepted.contains(&client_order_id) {
+    if !state.insert_accepted(client_order_id) {
         return;
     }
-    state.insert_accepted(client_order_id);
     let accepted = OrderAccepted::new(
         emitter.trader_id(),
         identity.strategy_id,
@@ -430,6 +436,21 @@ mod tests {
         // Second insert is a no-op.
         state.insert_accepted(cid);
         assert!(state.emitted_accepted.contains(&cid));
+    }
+
+    #[rstest]
+    fn test_insert_accepted_returns_true_on_first_insert_false_on_repeat() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::new("uuid-atomic");
+
+        assert!(
+            state.insert_accepted(cid),
+            "first insert must report newly inserted",
+        );
+        assert!(
+            !state.insert_accepted(cid),
+            "second insert must report already present (atomic dedup)",
+        );
     }
 
     #[rstest]

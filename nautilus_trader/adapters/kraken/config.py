@@ -172,6 +172,23 @@ class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):
         Display-only: Kraken converts internally; per-position figures from
         ``OpenPositions`` remain in the traded pair's quote currency.
         Only effective when ``spot_account_type=AccountType.MARGIN``.
+    use_ws_trade : bool, default True
+        If ``True``, order submission (add/amend/cancel) uses the Kraken
+        WebSocket v2 trade channel when the connection is authenticated and
+        active. Set to ``False`` to force all order operations through the
+        REST API (useful for testing or when WebSocket trade channel is
+        unavailable).
+    ws_request_timeout_secs : PositiveInt, default 5
+        Seconds to wait for a Kraken WebSocket order-response before
+        synthesising a local rejection event (``OrderRejected`` for submit /
+        batch_add, ``OrderModifyRejected`` for amend, ``OrderCancelRejected``
+        for cancel). Submit and batch_add timeouts also fire a best-effort
+        ``cancel_order`` over the same WebSocket as a safety net against the
+        venue having accepted the order before the response was delivered;
+        any orphan order is otherwise picked up by the live execution
+        reconciliation loop. The timeout does NOT trigger an automatic REST
+        retry — the strategy must resubmit if it wants to try again. Only
+        relevant when ``use_ws_trade`` is ``True``.
 
     Examples
     --------
@@ -224,6 +241,8 @@ class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):
     spot_account_type: AccountType = AccountType.CASH
     default_leverage: int | None = None
     margin_balance_asset: str | None = None
+    use_ws_trade: bool = True
+    ws_request_timeout_secs: PositiveInt = 5
 
     def __post_init__(self) -> None:
         if self.default_leverage is not None and self.spot_account_type != AccountType.MARGIN:

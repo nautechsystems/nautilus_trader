@@ -433,6 +433,7 @@ impl KrakenSpotWebSocketClient {
                         KrakenSpotWsMessage::Reconnected => {
                             log::info!("WebSocket reconnected");
                         }
+                        KrakenSpotWsMessage::OrderResponse(_) => {}
                     }
                 }
             });

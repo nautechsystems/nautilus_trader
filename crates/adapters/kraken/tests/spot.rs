@@ -13,12 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Shared primitives and utilities for the Kraken adapter.
+//! Integration tests for Kraken Spot adapter.
 
-pub mod consts;
-pub mod credential;
-pub mod enums;
-pub mod models;
-pub mod order_params;
-pub mod parse;
-pub mod urls;
+#[path = "spot/websocket_orders.rs"]
+mod websocket_orders;

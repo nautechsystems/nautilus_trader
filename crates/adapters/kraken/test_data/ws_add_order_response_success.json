@@ -1,0 +1,12 @@
+{
+  "method": "add_order",
+  "req_id": 42,
+  "success": true,
+  "time_in": "2026-05-05T10:00:00.123Z",
+  "time_out": "2026-05-05T10:00:00.125Z",
+  "result": {
+    "order_id": "OABCDE-12345-FGHIJ",
+    "cl_ord_id": "O-20260505-000001",
+    "order_userref": 0
+  }
+}

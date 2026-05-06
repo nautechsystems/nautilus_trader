@@ -172,6 +172,20 @@ pub struct KrakenExecClientConfig {
     /// Display-only: Kraken converts internally; per-position figures from
     /// `OpenPositions` remain in the traded pair's quote currency.
     pub margin_balance_asset: Option<String>,
+
+    /// Use WebSocket v2 for order submission, modification, and cancellation.
+    ///
+    /// When `true` (default), `submit_order`, `modify_order`, `cancel_order`,
+    /// and `submit_order_list` route through the authenticated WebSocket
+    /// connection when active, falling back to REST when the WebSocket is
+    /// inactive. When `false`, all order operations use REST only.
+    #[builder(default = true)]
+    pub use_ws_trade: bool,
+
+    /// Timeout in seconds for WebSocket order responses before emitting a
+    /// rejection event.
+    #[builder(default = 5)]
+    pub ws_request_timeout_secs: u64,
 }
 
 impl Default for KrakenExecClientConfig {
@@ -219,4 +233,18 @@ fn validate_product_environment(
         anyhow::bail!("Kraken Spot does not support the demo environment");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_exec_config_ws_trade_defaults() {
+        let cfg = KrakenExecClientConfig::default();
+        assert!(cfg.use_ws_trade);
+        assert_eq!(cfg.ws_request_timeout_secs, 5);
+    }
 }
