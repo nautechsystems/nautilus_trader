@@ -1324,7 +1324,7 @@ impl PyStrategy {
         let order = pyobject_to_order_any(py, order)?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1350,7 +1350,7 @@ impl PyStrategy {
         let order = pyobject_to_order_any(py, order)?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1380,7 +1380,7 @@ impl PyStrategy {
         let order = pyobject_to_order_any(py, order)?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1400,7 +1400,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1424,7 +1424,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1499,7 +1499,7 @@ impl PyStrategy {
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
         let params_map = match params {
-            Some(dict) => from_pydict(py, dict)?,
+            Some(dict) => from_pydict(py, &dict)?,
             None => None,
         };
         Strategy::query_account(self.inner_mut(), account_id, client_id, params_map)
@@ -1517,7 +1517,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let order = pyobject_to_order_any(py, order)?;
         let params_map = match params {
-            Some(dict) => from_pydict(py, dict)?,
+            Some(dict) => from_pydict(py, &dict)?,
             None => None,
         };
         Strategy::query_order(self.inner_mut(), &order, client_id, params_map)
@@ -1737,7 +1737,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1755,7 +1755,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1773,7 +1773,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1794,7 +1794,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1824,7 +1824,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1854,7 +1854,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1872,7 +1872,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1890,7 +1890,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1908,7 +1908,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1926,7 +1926,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1944,7 +1944,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1962,7 +1962,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -1980,7 +1980,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2003,7 +2003,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2028,7 +2028,7 @@ impl PyStrategy {
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
         let params_map = match params {
-            Some(dict) => from_pydict(py, dict)?,
+            Some(dict) => from_pydict(py, &dict)?,
             None => None,
         };
         DataActor::subscribe_option_chain(
@@ -2064,7 +2064,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2082,7 +2082,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2100,7 +2100,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2118,7 +2118,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2137,7 +2137,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2164,7 +2164,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2182,7 +2182,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2200,7 +2200,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2218,7 +2218,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2236,7 +2236,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2254,7 +2254,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2277,7 +2277,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2300,7 +2300,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2323,7 +2323,7 @@ impl PyStrategy {
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2371,7 +2371,7 @@ impl PyStrategy {
     ) -> PyResult<String> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2404,7 +2404,7 @@ impl PyStrategy {
     ) -> PyResult<String> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2435,7 +2435,7 @@ impl PyStrategy {
     ) -> PyResult<String> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2465,7 +2465,7 @@ impl PyStrategy {
     ) -> PyResult<String> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2495,7 +2495,7 @@ impl PyStrategy {
     ) -> PyResult<String> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2529,7 +2529,7 @@ impl PyStrategy {
     ) -> PyResult<String> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2563,7 +2563,7 @@ impl PyStrategy {
     ) -> PyResult<String> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
@@ -2597,7 +2597,7 @@ impl PyStrategy {
     ) -> PyResult<String> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
-                Some(dict) => from_pydict(py, dict),
+                Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;

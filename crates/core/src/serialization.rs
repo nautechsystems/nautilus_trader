@@ -428,8 +428,8 @@ pub fn deserialize_decimal_from_str<'de, D>(deserializer: D) -> Result<Decimal, 
 where
     D: Deserializer<'de>,
 {
-    let s = String::deserialize(deserializer)?;
-    Decimal::from_str(&s).map_err(D::Error::custom)
+    let s: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+    Decimal::from_str(s.as_ref()).map_err(D::Error::custom)
 }
 
 /// Deserializes a `Decimal` from a string field that might be empty.
@@ -443,11 +443,11 @@ pub fn deserialize_decimal_or_zero<'de, D>(deserializer: D) -> Result<Decimal, D
 where
     D: Deserializer<'de>,
 {
-    let s: String = Deserialize::deserialize(deserializer)?;
+    let s: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
     if s.is_empty() || s == "0" {
         Ok(Decimal::ZERO)
     } else {
-        Decimal::from_str(&s).map_err(D::Error::custom)
+        Decimal::from_str(s.as_ref()).map_err(D::Error::custom)
     }
 }
 
@@ -466,11 +466,13 @@ pub fn deserialize_optional_decimal_str<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let s: String = Deserialize::deserialize(deserializer)?;
+    let s: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
     if s.is_empty() || s == "0" {
         Ok(None)
     } else {
-        Decimal::from_str(&s).map(Some).map_err(D::Error::custom)
+        Decimal::from_str(s.as_ref())
+            .map(Some)
+            .map_err(D::Error::custom)
     }
 }
 
@@ -644,11 +646,11 @@ pub fn deserialize_string_to_u8<'de, D>(deserializer: D) -> Result<u8, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s: String = Deserialize::deserialize(deserializer)?;
+    let s: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
     if s.is_empty() {
         return Ok(0);
     }
-    s.parse::<u8>().map_err(D::Error::custom)
+    s.as_ref().parse::<u8>().map_err(D::Error::custom)
 }
 
 /// Deserializes a `u64` from a string field.
@@ -662,11 +664,11 @@ pub fn deserialize_string_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Erro
 where
     D: Deserializer<'de>,
 {
-    let s = String::deserialize(deserializer)?;
+    let s: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
     if s.is_empty() {
         Ok(0)
     } else {
-        s.parse::<u64>().map_err(D::Error::custom)
+        s.as_ref().parse::<u64>().map_err(D::Error::custom)
     }
 }
 

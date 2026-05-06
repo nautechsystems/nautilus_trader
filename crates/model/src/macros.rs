@@ -32,8 +32,8 @@ macro_rules! enum_strum_serde {
             where
                 D: Deserializer<'de>,
             {
-                let s = String::deserialize(deserializer)?;
-                <$type>::from_str(&s).map_err(serde::de::Error::custom)
+                let s: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+                <$type>::from_str(s.as_ref()).map_err(serde::de::Error::custom)
             }
         }
     };

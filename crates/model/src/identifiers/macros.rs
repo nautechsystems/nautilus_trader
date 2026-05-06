@@ -31,8 +31,8 @@ macro_rules! impl_serialization_for_identifier {
             where
                 D: Deserializer<'de>,
             {
-                let value_str: &str = Deserialize::deserialize(deserializer)?;
-                Self::new_checked(value_str).map_err(serde::de::Error::custom)
+                let value_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+                Self::new_checked(value_str.as_ref()).map_err(serde::de::Error::custom)
             }
         }
     };
