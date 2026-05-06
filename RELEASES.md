@@ -64,6 +64,7 @@ Released on TBD (UTC).
 - Fixed Betfair Rust adapter panic on blank `customerOrderRef`/`rfo` by normalizing empty strings to `None`
 - Fixed Betfair Rust adapter spurious `OrderRejected` after OCM already reported a terminal state
 - Fixed Betfair Rust adapter `ignore_external_orders` to treat empty `rfo` strings the same as missing
+- Fixed Databento metadata-backed price precision for live and historical data (#4002), thanks @faysou
 - Fixed dYdX FOK and DAY time-in-force orders to reject pre-submission instead of failing at the venue or mapping to GTC
 - Fixed dYdX MIT/LIT round-tripping on reconcile when the Indexer collapses both variants under `TAKE_PROFIT`
 - Fixed dYdX GTD expiry to surface `OrderExpired` on both WS and HTTP reconciliation paths
@@ -135,6 +136,7 @@ Released on TBD (UTC).
 ### Documentation Updates
 - Added DST docs caveats for process-global lazy state RNG consumption and `CacheView` factory blocker
 - Added Bybit hedge-mode docs with official `positionIdx` API links
+- Added Databento docs for price precision precedence and publisher mappings
 - Added Polymarket fill quantity normalization section explaining the dust snap, deferred dust, and commission semantics
 - Added dYdX adapter notes for FOK deprecation, DAY rejection, equity-tier limit, and MIT/LIT round-tripping
 - Updated adapter docs and examples to use environment enums instead of legacy test flags

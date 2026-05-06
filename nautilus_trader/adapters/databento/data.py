@@ -1414,8 +1414,9 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         pyo3_quotes = []
 
-        for price_precision, grouped_instrument_ids in self._quote_precision_groups(
+        for price_precision, grouped_instrument_ids in self._price_precision_groups(
             instrument_ids,
+            data_label="quote",
         ).items():
             kwargs = {
                 "dataset": dataset,
@@ -1444,9 +1445,10 @@ class DatabentoDataClient(LiveMarketDataClient):
             params=request.params,
         )
 
-    def _quote_precision_groups(
+    def _price_precision_groups(
         self,
         instrument_ids: list[InstrumentId],
+        data_label: str,
     ) -> dict[int | None, list[InstrumentId]]:
         precision_groups: dict[int | None, list[InstrumentId]] = defaultdict(list)
 
@@ -1454,7 +1456,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             instrument = self._instrument_provider.find(instrument_id)
             if instrument is None:
                 self._log.warning(
-                    f"Cannot resolve instrument {instrument_id} price precision for Databento historical quote request",
+                    f"Cannot resolve instrument {instrument_id} price precision for Databento historical {data_label} request",
                 )
                 precision_groups[None].append(instrument_id)
                 continue
@@ -1500,13 +1502,28 @@ class DatabentoDataClient(LiveMarketDataClient):
         for i, instrument_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
-        pyo3_trades = await self._http_client.get_range_trades(
-            dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(inst_id) for inst_id in instrument_ids],
-            start=start.value,
-            end=end.value,
-        )
+        pyo3_trades = []
+
+        for price_precision, grouped_instrument_ids in self._price_precision_groups(
+            instrument_ids,
+            data_label="trade",
+        ).items():
+            kwargs = {
+                "dataset": dataset,
+                "instrument_ids": [
+                    instrument_id_to_pyo3(inst_id) for inst_id in grouped_instrument_ids
+                ],
+                "start": start.value,
+                "end": end.value,
+            }
+
+            if price_precision is not None:
+                kwargs["price_precision"] = price_precision
+
+            pyo3_trades.extend(await self._http_client.get_range_trades(**kwargs))
+
         trades = TradeTick.from_pyo3_list(pyo3_trades)
+        trades.sort(key=lambda trade: (trade.ts_event, trade.ts_init))
 
         self._handle_trade_ticks(
             request.instrument_id,

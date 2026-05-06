@@ -177,6 +177,28 @@ async def test_subscribe_statistics_passes_price_precision(
 
 
 @pytest.mark.asyncio
+async def test_subscribe_parent_symbols_passes_parent_stype(
+    databento_client,
+    instrument_provider,
+):
+    live_client = _prepare_live_client(databento_client, instrument_provider)
+    parent_symbols = {
+        InstrumentId.from_str("ES.FUT.GLBX"),
+        InstrumentId.from_str("NQ.FUT.GLBX"),
+    }
+
+    await databento_client._subscribe_parent_symbols("GLBX.MDP3", parent_symbols)
+
+    call_kwargs = live_client.subscribe.call_args.kwargs
+    assert call_kwargs["schema"] == "definition"
+    assert [str(instrument_id) for instrument_id in call_kwargs["instrument_ids"]] == [
+        "ES.FUT.GLBX",
+        "NQ.FUT.GLBX",
+    ]
+    assert call_kwargs["stype_in"] == "parent"
+
+
+@pytest.mark.asyncio
 async def test_subscribe_order_book_deltas_passes_price_precisions(
     databento_client,
     instrument_provider,
@@ -525,6 +547,145 @@ async def test_request_quote_ticks_partial_instruments(
     assert response.correlation_id == request.id
     assert len(response.data) == 2
     assert all(q.instrument_id == ES_CY for q in response.data)
+
+
+@pytest.mark.asyncio
+async def test_request_trade_ticks_single_instrument_passes_price_precision(
+    databento_client,
+    mock_http_client,
+    instrument_provider,
+    data_responses,
+):
+    instrument_provider.find.return_value = SimpleNamespace(price_precision=5)
+
+    pyo3_trades = [
+        TestDataProviderPyo3.trade_tick(instrument_id=ES_ID),
+        TestDataProviderPyo3.trade_tick(instrument_id=ES_ID),
+    ]
+    mock_http_client.get_range_trades = AsyncMock(return_value=pyo3_trades)
+
+    request = RequestTradeTicks(
+        instrument_id=ES_CY,
+        start=datetime(2024, 1, 1, tzinfo=UTC),
+        end=datetime(2024, 1, 2, tzinfo=UTC),
+        limit=0,
+        client_id=ClientId("DATABENTO"),
+        venue=GLBX,
+        callback=None,
+        request_id=UUID4(),
+        ts_init=0,
+        params={},
+    )
+
+    await databento_client._request_trade_ticks(request)
+
+    assert len(data_responses) == 1
+    response = data_responses[0]
+    assert response.data_type.type == TradeTick
+    assert response.data_type.metadata["instrument_id"] == ES_CY
+    assert response.correlation_id == request.id
+    assert len(response.data) == 2
+
+    call_kwargs = mock_http_client.get_range_trades.call_args.kwargs
+    assert len(call_kwargs["instrument_ids"]) == 1
+    assert str(call_kwargs["instrument_ids"][0]) == str(ES_ID)
+    assert call_kwargs["dataset"] == "GLBX.MDP3"
+    assert call_kwargs["price_precision"] == 5
+
+
+@pytest.mark.asyncio
+async def test_request_trade_ticks_groups_by_price_precision(
+    databento_client,
+    mock_http_client,
+    instrument_provider,
+    data_responses,
+):
+    instrument_provider.find.side_effect = [
+        SimpleNamespace(price_precision=2),
+        SimpleNamespace(price_precision=5),
+    ]
+    mock_http_client.get_range_trades = AsyncMock(
+        side_effect=[
+            [TestDataProviderPyo3.trade_tick(instrument_id=ES_ID, ts_event=2, ts_init=2)],
+            [TestDataProviderPyo3.trade_tick(instrument_id=NQ_ID, ts_event=1, ts_init=1)],
+        ],
+    )
+
+    request = RequestTradeTicks(
+        instrument_id=ES_CY,
+        start=datetime(2024, 1, 1, tzinfo=UTC),
+        end=datetime(2024, 1, 2, tzinfo=UTC),
+        limit=0,
+        client_id=ClientId("DATABENTO"),
+        venue=GLBX,
+        callback=None,
+        request_id=UUID4(),
+        ts_init=0,
+        params={"instrument_ids": [ES_CY, NQ_CY]},
+    )
+
+    await databento_client._request_trade_ticks(request)
+
+    assert mock_http_client.get_range_trades.await_count == 2
+    first_call = mock_http_client.get_range_trades.await_args_list[0].kwargs
+    second_call = mock_http_client.get_range_trades.await_args_list[1].kwargs
+    assert first_call["price_precision"] == 2
+    assert [str(instrument_id) for instrument_id in first_call["instrument_ids"]] == [str(ES_ID)]
+    assert second_call["price_precision"] == 5
+    assert [str(instrument_id) for instrument_id in second_call["instrument_ids"]] == [
+        str(NQ_ID),
+    ]
+
+    assert len(data_responses) == 1
+    response = data_responses[0]
+    assert [trade.ts_event for trade in response.data] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_request_trade_ticks_uses_resolved_precision_when_one_instrument_missing(
+    databento_client,
+    mock_http_client,
+    instrument_provider,
+    data_responses,
+):
+    instrument_provider.find.side_effect = [
+        None,
+        SimpleNamespace(price_precision=5),
+    ]
+    mock_http_client.get_range_trades = AsyncMock(
+        side_effect=[
+            [TestDataProviderPyo3.trade_tick(instrument_id=ES_ID)],
+            [TestDataProviderPyo3.trade_tick(instrument_id=NQ_ID)],
+        ],
+    )
+
+    request = RequestTradeTicks(
+        instrument_id=ES_CY,
+        start=datetime(2024, 1, 1, tzinfo=UTC),
+        end=datetime(2024, 1, 2, tzinfo=UTC),
+        limit=0,
+        client_id=ClientId("DATABENTO"),
+        venue=GLBX,
+        callback=None,
+        request_id=UUID4(),
+        ts_init=0,
+        params={"instrument_ids": [ES_CY, NQ_CY]},
+    )
+
+    await databento_client._request_trade_ticks(request)
+
+    assert mock_http_client.get_range_trades.await_count == 2
+    missing_call = mock_http_client.get_range_trades.await_args_list[0].kwargs
+    resolved_call = mock_http_client.get_range_trades.await_args_list[1].kwargs
+    assert "price_precision" not in missing_call
+    assert [str(instrument_id) for instrument_id in missing_call["instrument_ids"]] == [str(ES_ID)]
+    assert resolved_call["price_precision"] == 5
+    assert [str(instrument_id) for instrument_id in resolved_call["instrument_ids"]] == [
+        str(NQ_ID),
+    ]
+
+    assert len(data_responses) == 1
+    assert len(data_responses[0].data) == 2
 
 
 @pytest.mark.asyncio

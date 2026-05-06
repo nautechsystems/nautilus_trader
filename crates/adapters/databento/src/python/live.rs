@@ -208,7 +208,7 @@ impl DatabentoLiveClient {
     }
 
     #[pyo3(name = "subscribe")]
-    #[pyo3(signature = (schema, instrument_ids, start=None, snapshot=None, price_precisions=None))]
+    #[pyo3(signature = (schema, instrument_ids, start=None, snapshot=None, price_precisions=None, stype_in=None))]
     #[expect(clippy::needless_pass_by_value)]
     fn py_subscribe(
         &mut self,
@@ -217,6 +217,7 @@ impl DatabentoLiveClient {
         start: Option<u64>,
         snapshot: Option<bool>,
         price_precisions: Option<Vec<Option<u8>>>,
+        stype_in: Option<String>,
     ) -> PyResult<()> {
         self.symbol_venue_map.rcu(|m| {
             for id in &instrument_ids {
@@ -249,7 +250,10 @@ impl DatabentoLiveClient {
         let first_symbol = symbols
             .first()
             .ok_or_else(|| to_pyvalue_err("No symbols provided"))?;
-        let stype_in = infer_symbology_type(first_symbol);
+        let stype_in = match stype_in {
+            Some(stype_in) => dbn::SType::from_str(&stype_in).map_err(to_pyvalue_err)?,
+            None => infer_symbology_type(first_symbol),
+        };
         let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let mut sub = Subscription::builder()
@@ -351,5 +355,75 @@ impl DatabentoLiveClient {
         self.is_closed = true;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use rstest::rstest;
+
+    use super::*;
+
+    fn client() -> DatabentoLiveClient {
+        DatabentoLiveClient::py_new(
+            "test-api-key".to_string(),
+            "GLBX.MDP3".to_string(),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json"),
+            true,
+            None,
+            None,
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    fn test_py_subscribe_uses_explicit_parent_stype() {
+        let mut client = client();
+
+        client
+            .py_subscribe(
+                "definition".to_string(),
+                vec![InstrumentId::from("ES.FUT.GLBX")],
+                None,
+                None,
+                None,
+                Some("parent".to_string()),
+            )
+            .unwrap();
+
+        let command = client.cmd_rx.as_mut().unwrap().try_recv().unwrap();
+        match command {
+            HandlerCommand::Subscribe(sub) => {
+                assert_eq!(sub.schema, dbn::Schema::Definition);
+                assert_eq!(sub.stype_in, dbn::SType::Parent);
+                assert_eq!(sub.symbols.to_api_string(), "ES.FUT");
+            }
+            other => panic!("expected HandlerCommand::Subscribe, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_py_subscribe_rejects_invalid_stype() {
+        Python::initialize();
+        let mut client = client();
+
+        let err = client
+            .py_subscribe(
+                "definition".to_string(),
+                vec![InstrumentId::from("ES.FUT.GLBX")],
+                None,
+                None,
+                None,
+                Some("not-a-stype".to_string()),
+            )
+            .unwrap_err();
+
+        assert!(err.to_string().contains("not-a-stype"));
+        assert!(matches!(
+            client.cmd_rx.as_mut().unwrap().try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
     }
 }

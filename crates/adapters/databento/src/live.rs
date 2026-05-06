@@ -44,6 +44,7 @@ use nautilus_model::{
     enums::RecordFlag,
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
+    types::Currency,
 };
 use nautilus_network::backoff::ExponentialBackoff;
 
@@ -289,7 +290,8 @@ impl DatabentoFeedHandler {
         let clock = get_atomic_clock_realtime();
         let mut symbol_map = PitSymbolMap::new();
         let mut instrument_id_map: AHashMap<u32, InstrumentId> = AHashMap::new();
-        let mut price_precision_map: AHashMap<u32, u8> = AHashMap::new();
+        let mut instrument_def_price_precision_map: AHashMap<u32, u8> = AHashMap::new();
+        let mut subscription_price_precision_map: AHashMap<u32, u8> = AHashMap::new();
 
         let mut buffering_start = None;
         let mut buffered_deltas: AHashMap<InstrumentId, Vec<OrderBookDelta>> = AHashMap::new();
@@ -516,6 +518,12 @@ impl DatabentoFeedHandler {
             } else if let Some(msg) = record.get::<dbn::SymbolMappingMsg>() {
                 // Remove instrument ID index as the raw symbol may have changed
                 instrument_id_map.remove(&msg.hd.instrument_id);
+                instrument_def_price_precision_map.remove(&msg.hd.instrument_id);
+                update_price_precision_map_with_symbol_mapping_msg(
+                    msg,
+                    &self.price_precision_overrides,
+                    &mut subscription_price_precision_map,
+                )?;
                 handle_symbol_mapping_msg(msg, &mut symbol_map, &mut instrument_id_map)?;
             } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
                 if self.use_exchange_as_venue {
@@ -542,7 +550,8 @@ impl DatabentoFeedHandler {
                         ts_init,
                     )?
                 };
-                price_precision_map.insert(msg.hd.instrument_id, data.price_precision());
+                instrument_def_price_precision_map
+                    .insert(msg.hd.instrument_id, data.price_precision());
                 self.send_msg(DatabentoMessage::Instrument(Box::new(data)))
                     .await;
             } else if let Some(msg) = record.get::<dbn::StatusMsg>() {
@@ -569,7 +578,8 @@ impl DatabentoFeedHandler {
                         &self.publisher_venue_map,
                         &sym_map,
                         &mut instrument_id_map,
-                        &price_precision_map,
+                        &instrument_def_price_precision_map,
+                        &subscription_price_precision_map,
                         &self.price_precision_overrides,
                         ts_init,
                     )?
@@ -585,7 +595,8 @@ impl DatabentoFeedHandler {
                         &self.publisher_venue_map,
                         &sym_map,
                         &mut instrument_id_map,
-                        &price_precision_map,
+                        &instrument_def_price_precision_map,
+                        &subscription_price_precision_map,
                         &self.price_precision_overrides,
                         ts_init,
                     )?
@@ -601,7 +612,8 @@ impl DatabentoFeedHandler {
                         &self.publisher_venue_map,
                         &sym_map,
                         &mut instrument_id_map,
-                        &price_precision_map,
+                        &instrument_def_price_precision_map,
+                        &subscription_price_precision_map,
                         &self.price_precision_overrides,
                         ts_init,
                         &initialized_books,
@@ -732,6 +744,35 @@ fn handle_symbol_mapping_msg(
     Ok(())
 }
 
+fn update_price_precision_map_with_symbol_mapping_msg(
+    msg: &dbn::SymbolMappingMsg,
+    price_precision_overrides: &AHashMap<Symbol, u8>,
+    subscription_price_precision_map: &mut AHashMap<u32, u8>,
+) -> anyhow::Result<()> {
+    subscription_price_precision_map.remove(&msg.hd.instrument_id);
+
+    let stype_in_symbol = msg
+        .stype_in_symbol()
+        .map_err(|e| anyhow::anyhow!("Error decoding `stype_in_symbol`: {e}"))?;
+    let stype_out_symbol = msg
+        .stype_out_symbol()
+        .map_err(|e| anyhow::anyhow!("Error decoding `stype_out_symbol`: {e}"))?;
+
+    let price_precision = [stype_in_symbol, stype_out_symbol]
+        .into_iter()
+        .find_map(|symbol| {
+            price_precision_overrides
+                .get(&Symbol::from_str_unchecked(symbol))
+                .copied()
+        });
+
+    if let Some(price_precision) = price_precision {
+        subscription_price_precision_map.insert(msg.hd.instrument_id, price_precision);
+    }
+
+    Ok(())
+}
+
 /// Updates the instrument ID map using exchange information from the symbol map.
 fn update_instrument_id_map_with_exchange(
     symbol_map: &PitSymbolMap,
@@ -845,7 +886,8 @@ fn handle_imbalance_msg(
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     symbol_venue_map: &AHashMap<Symbol, Venue>,
     instrument_id_map: &mut AHashMap<u32, InstrumentId>,
-    price_precision_map: &AHashMap<u32, u8>,
+    instrument_def_price_precision_map: &AHashMap<u32, u8>,
+    subscription_price_precision_map: &AHashMap<u32, u8>,
     price_precision_overrides: &AHashMap<Symbol, u8>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<DatabentoImbalance> {
@@ -860,7 +902,8 @@ fn handle_imbalance_msg(
     let price_precision = resolve_price_precision(
         msg.hd.instrument_id,
         instrument_id,
-        price_precision_map,
+        instrument_def_price_precision_map,
+        subscription_price_precision_map,
         price_precision_overrides,
     );
 
@@ -875,7 +918,8 @@ fn handle_statistics_msg(
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     symbol_venue_map: &AHashMap<Symbol, Venue>,
     instrument_id_map: &mut AHashMap<u32, InstrumentId>,
-    price_precision_map: &AHashMap<u32, u8>,
+    instrument_def_price_precision_map: &AHashMap<u32, u8>,
+    subscription_price_precision_map: &AHashMap<u32, u8>,
     price_precision_overrides: &AHashMap<Symbol, u8>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<DatabentoStatistics> {
@@ -890,7 +934,8 @@ fn handle_statistics_msg(
     let price_precision = resolve_price_precision(
         msg.hd.instrument_id,
         instrument_id,
-        price_precision_map,
+        instrument_def_price_precision_map,
+        subscription_price_precision_map,
         price_precision_overrides,
     );
 
@@ -904,7 +949,8 @@ fn handle_record(
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     symbol_venue_map: &AHashMap<Symbol, Venue>,
     instrument_id_map: &mut AHashMap<u32, InstrumentId>,
-    price_precision_map: &AHashMap<u32, u8>,
+    instrument_def_price_precision_map: &AHashMap<u32, u8>,
+    subscription_price_precision_map: &AHashMap<u32, u8>,
     price_precision_overrides: &AHashMap<Symbol, u8>,
     ts_init: UnixNanos,
     initialized_books: &HashSet<InstrumentId>,
@@ -921,7 +967,8 @@ fn handle_record(
     let price_precision = resolve_price_precision(
         record.header().instrument_id,
         instrument_id,
-        price_precision_map,
+        instrument_def_price_precision_map,
+        subscription_price_precision_map,
         price_precision_overrides,
     );
 
@@ -949,18 +996,24 @@ fn handle_record(
 fn resolve_price_precision(
     record_instrument_id: u32,
     instrument_id: InstrumentId,
-    price_precision_map: &AHashMap<u32, u8>,
+    instrument_def_price_precision_map: &AHashMap<u32, u8>,
+    subscription_price_precision_map: &AHashMap<u32, u8>,
     price_precision_overrides: &AHashMap<Symbol, u8>,
 ) -> u8 {
-    price_precision_map
+    instrument_def_price_precision_map
         .get(&record_instrument_id)
         .copied()
+        .or_else(|| {
+            subscription_price_precision_map
+                .get(&record_instrument_id)
+                .copied()
+        })
         .or_else(|| {
             price_precision_overrides
                 .get(&instrument_id.symbol)
                 .copied()
         })
-        .unwrap_or(2)
+        .unwrap_or(Currency::USD().precision)
 }
 
 /// Processes an MBO delta through the buffering state machine.
