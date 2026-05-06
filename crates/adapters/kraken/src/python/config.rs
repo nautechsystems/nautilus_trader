@@ -105,6 +105,8 @@ impl KrakenExecClientConfig {
         use_spot_position_reports = None,
         spot_positions_quote_currency = None,
         margin_balance_asset = None,
+        use_ws_trade = None,
+        ws_request_timeout_secs = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -125,6 +127,8 @@ impl KrakenExecClientConfig {
         use_spot_position_reports: Option<bool>,
         spot_positions_quote_currency: Option<String>,
         margin_balance_asset: Option<String>,
+        use_ws_trade: Option<bool>,
+        ws_request_timeout_secs: Option<u64>,
     ) -> PyResult<Self> {
         let defaults = Self::default();
         let spot_account_type = spot_account_type.unwrap_or(defaults.spot_account_type);
@@ -155,6 +159,9 @@ impl KrakenExecClientConfig {
             spot_positions_quote_currency: spot_positions_quote_currency
                 .unwrap_or(defaults.spot_positions_quote_currency),
             margin_balance_asset,
+            use_ws_trade: use_ws_trade.unwrap_or(defaults.use_ws_trade),
+            ws_request_timeout_secs: ws_request_timeout_secs
+                .unwrap_or(defaults.ws_request_timeout_secs),
         })
     }
 

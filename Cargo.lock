@@ -6035,6 +6035,7 @@ dependencies = [
  "nautilus-tardis",
  "nautilus-testkit",
  "nautilus-trading",
+ "proptest",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",

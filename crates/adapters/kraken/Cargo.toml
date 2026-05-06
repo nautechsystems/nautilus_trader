@@ -101,6 +101,7 @@ nautilus-trading = { workspace = true }
 axum = { workspace = true }
 criterion = { workspace = true }
 dotenvy = { workspace = true }
+proptest = { workspace = true }
 rstest = { workspace = true }
 
 # Run with `cargo bench -p nautilus-kraken --bench websocket`
