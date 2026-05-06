@@ -56,6 +56,7 @@ Released on TBD (UTC).
 - Fixed `ExecutionEngine` reconciliation skipping `OrderUpdated` when both report and order were already `ACCEPTED`
 - Fixed `Strategy`/`Actor` clock callback leak on dispose (#3967), thanks for reporting @frslvr
 - Fixed `Strategy` pending cancel and pending update events before order commands (Rust)
+- Fixed `Strategy` submit methods to publish `OrderInitialized` before cache updates (Rust)
 - Fixed `ExecTester` LIT pricing direction so reconciled BUY/SELL LIT orders satisfy the `trigger_price` invariant
 - Fixed wrangler v2 timestamp resolution to force nanoseconds before the int64 cast for pandas 3 compatibility (#3970), thanks @gzenz
 - Fixed Binance Futures reduce-only orders not reconciling venue-side quantity reductions (Python and Rust) (#3983), thanks for reporting @KaizynX

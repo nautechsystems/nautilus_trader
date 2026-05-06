@@ -119,12 +119,23 @@ pub trait Strategy: DataActor {
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let ts_init = core.clock().timestamp_ns();
 
+        if order.status() != OrderStatus::Initialized {
+            anyhow::bail!(
+                "Order denied: invalid status for {}, expected INITIALIZED",
+                order.client_order_id()
+            );
+        }
+
         let market_exit_tag = core.market_exit_tag;
         let is_market_exit_order = order
             .tags()
             .is_some_and(|tags| tags.contains(&market_exit_tag));
+        let should_deny_for_market_exit =
+            core.is_exiting && !order.is_reduce_only() && !is_market_exit_order;
 
-        if core.is_exiting && !order.is_reduce_only() && !is_market_exit_order {
+        publish_order_initialized(&order);
+
+        if should_deny_for_market_exit {
             self.deny_order(&order, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
             return Ok(());
         }
@@ -179,6 +190,15 @@ pub trait Strategy: DataActor {
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) -> anyhow::Result<()> {
+        for order in &orders {
+            if order.status() != OrderStatus::Initialized {
+                anyhow::bail!(
+                    "Order in list denied: invalid status for {}, expected INITIALIZED",
+                    order.client_order_id()
+                );
+            }
+        }
+
         let should_deny = {
             let core = self.core_mut();
             let tag = core.market_exit_tag;
@@ -189,6 +209,9 @@ pub trait Strategy: DataActor {
         };
 
         if should_deny {
+            for order in &orders {
+                publish_order_initialized(order);
+            }
             self.deny_order_list(&orders, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
             return Ok(());
         }
@@ -214,13 +237,6 @@ pub trait Strategy: DataActor {
             }
 
             for order in &orders {
-                if order.status() != OrderStatus::Initialized {
-                    anyhow::bail!(
-                        "Order in list denied: invalid status for {}, expected INITIALIZED",
-                        order.client_order_id()
-                    );
-                }
-
                 if cache.order_exists(&order.client_order_id()) {
                     anyhow::bail!(
                         "Order in list denied: duplicate {}",
@@ -228,6 +244,10 @@ pub trait Strategy: DataActor {
                     );
                 }
             }
+        }
+
+        for order in &orders {
+            publish_order_initialized(order);
         }
 
         {
@@ -1598,12 +1618,20 @@ pub trait Strategy: DataActor {
         }
 
         let event = OrderEventAny::Denied(event);
-        {
+        let applied = {
             let cache_rc = core.cache_rc();
             let mut cache = cache_rc.borrow_mut();
             if let Err(e) = cache.update_order(&event) {
                 log::warn!("Failed to apply OrderDenied event: {e}");
+                false
+            } else {
+                true
             }
+        };
+
+        if applied {
+            let topic = format!("events.order.{strategy_id}");
+            msgbus::publish_order_event(topic.into(), &event);
         }
     }
 
@@ -1750,6 +1778,12 @@ pub trait Strategy: DataActor {
     }
 }
 
+fn publish_order_initialized(order: &OrderAny) {
+    let topic = format!("events.order.{}", order.strategy_id());
+    let event = OrderEventAny::Initialized(order.init_event().clone());
+    msgbus::publish_order_event(topic.into(), &event);
+}
+
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, rc::Rc};
@@ -1760,7 +1794,7 @@ mod tests {
         clock::{Clock, TestClock},
         component::Component,
         msgbus::{
-            self, MessagingSwitchboard,
+            self, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
             stubs::{
                 TypedIntoMessageSavingHandler, TypedMessageSavingHandler,
                 get_typed_into_message_saving_handler, get_typed_message_saving_handler,
@@ -1773,8 +1807,8 @@ mod tests {
         enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide},
         events::{OrderAccepted, OrderCanceled, OrderFilled, OrderRejected},
         identifiers::{
-            AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
-            VenueOrderId,
+            AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, TradeId,
+            TraderId, VenueOrderId,
         },
         orderbook::own::OwnOrderBook,
         orders::{LimitOrder, MarketOrder, stubs::TestOrderEventStubs},
@@ -2272,6 +2306,250 @@ mod tests {
         strategy.on_order_modify_rejected(OrderModifyRejected::default());
         strategy.on_order_cancel_rejected(OrderCancelRejected::default());
         strategy.on_order_updated(OrderUpdated::default());
+    }
+
+    #[rstest]
+    fn test_submit_order_publishes_order_initialized_before_cache_insert_and_send() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let order = make_initialized_market_order("O-20250208-INIT-001");
+        let client_order_id = order.client_order_id();
+        let cache_rc = strategy.core.cache_rc();
+        let timeline = Rc::new(RefCell::new(Vec::new()));
+        let event_messages = Rc::new(RefCell::new(Vec::new()));
+
+        let event_handler = {
+            let event_messages = event_messages.clone();
+            let timeline = timeline.clone();
+            TypedHandler::from_with_id("events.order.initialized", move |event: &OrderEventAny| {
+                assert!(!cache_rc.borrow().order_exists(&client_order_id));
+                assert!(matches!(event, OrderEventAny::Initialized(_)));
+                event_messages.borrow_mut().push(event.clone());
+                timeline.borrow_mut().push("init");
+            })
+        };
+        let risk_handler = {
+            let timeline = timeline.clone();
+            TypedIntoHandler::from_with_id(
+                "RiskEngine.queue_execute",
+                move |command: TradingCommand| {
+                    assert!(matches!(command, TradingCommand::SubmitOrder(_)));
+                    timeline.borrow_mut().push("command");
+                },
+            )
+        };
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        let topic = format!("events.order.{}", order.strategy_id());
+        msgbus::subscribe_order_events(topic.clone().into(), event_handler.clone(), None);
+
+        strategy
+            .submit_order(order.clone(), None, None, None)
+            .unwrap();
+
+        msgbus::unsubscribe_order_events(topic.into(), &event_handler);
+
+        let event_messages = event_messages.borrow();
+        assert_eq!(event_messages.len(), 1);
+        assert_eq!(
+            event_messages[0],
+            OrderEventAny::Initialized(order.init_event().clone())
+        );
+        assert_eq!(timeline.borrow().as_slice(), &["init", "command"]);
+    }
+
+    #[rstest]
+    fn test_submit_order_rejects_non_initialized_without_events() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let order = make_accepted_market_order("O-20250208-ACCEPTED-001");
+        let topic = format!("events.order.{}", order.strategy_id());
+        let (event_handler, event_messages): (_, TypedMessageSavingHandler<OrderEventAny>) =
+            get_typed_message_saving_handler(Some(Ustr::from("events.order.invalid")));
+
+        msgbus::subscribe_order_events(topic.clone().into(), event_handler.clone(), None);
+        let result = strategy.submit_order(order, None, None, None);
+
+        msgbus::unsubscribe_order_events(topic.into(), &event_handler);
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("expected INITIALIZED")
+        );
+        assert!(event_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_submit_order_list_publishes_order_initialized_before_cache_insert_and_send() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let order_list_id = OrderListId::from("OL-20250208-LIST-INIT");
+        let mut orders = vec![
+            make_initialized_market_order("O-20250208-LIST-INIT-001"),
+            make_initialized_market_order("O-20250208-LIST-INIT-002"),
+        ];
+
+        for order in &mut orders {
+            order.set_order_list_id(order_list_id);
+        }
+
+        let client_order_id1 = orders[0].client_order_id();
+        let client_order_id2 = orders[1].client_order_id();
+        let cache_rc = strategy.core.cache_rc();
+        let timeline = Rc::new(RefCell::new(Vec::new()));
+        let event_messages = Rc::new(RefCell::new(Vec::new()));
+
+        let event_handler = {
+            let event_messages = event_messages.clone();
+            let timeline = timeline.clone();
+            TypedHandler::from_with_id(
+                "events.order.list_initialized",
+                move |event: &OrderEventAny| {
+                    match event {
+                        OrderEventAny::Initialized(e) if e.client_order_id == client_order_id1 => {
+                            assert!(!cache_rc.borrow().order_exists(&client_order_id1));
+                            timeline.borrow_mut().push("init1");
+                        }
+                        OrderEventAny::Initialized(e) if e.client_order_id == client_order_id2 => {
+                            assert!(!cache_rc.borrow().order_exists(&client_order_id2));
+                            timeline.borrow_mut().push("init2");
+                        }
+                        _ => panic!("unexpected order event {event:?}"),
+                    }
+                    event_messages.borrow_mut().push(event.clone());
+                },
+            )
+        };
+        let risk_handler = {
+            let timeline = timeline.clone();
+            TypedIntoHandler::from_with_id(
+                "RiskEngine.queue_execute",
+                move |command: TradingCommand| {
+                    assert!(matches!(command, TradingCommand::SubmitOrderList(_)));
+                    timeline.borrow_mut().push("command");
+                },
+            )
+        };
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        let topic = format!("events.order.{}", orders[0].strategy_id());
+        msgbus::subscribe_order_events(topic.clone().into(), event_handler.clone(), None);
+
+        strategy
+            .submit_order_list(orders.clone(), None, None, None)
+            .unwrap();
+
+        msgbus::unsubscribe_order_events(topic.into(), &event_handler);
+
+        let event_messages = event_messages.borrow();
+        assert_eq!(event_messages.len(), 2);
+        assert_eq!(
+            event_messages[0],
+            OrderEventAny::Initialized(orders[0].init_event().clone())
+        );
+        assert_eq!(
+            event_messages[1],
+            OrderEventAny::Initialized(orders[1].init_event().clone())
+        );
+        assert_eq!(timeline.borrow().as_slice(), &["init1", "init2", "command"]);
+    }
+
+    #[rstest]
+    fn test_submit_order_list_create_list_branch_publishes_init_before_cache_insert() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let orders = vec![
+            make_initialized_market_order("O-20250208-LIST-CREATE-001"),
+            make_initialized_market_order("O-20250208-LIST-CREATE-002"),
+        ];
+
+        let client_order_id1 = orders[0].client_order_id();
+        let client_order_id2 = orders[1].client_order_id();
+        let cache_rc = strategy.core.cache_rc();
+        let timeline = Rc::new(RefCell::new(Vec::new()));
+        let event_messages = Rc::new(RefCell::new(Vec::new()));
+
+        let event_handler = {
+            let event_messages = event_messages.clone();
+            let timeline = timeline.clone();
+            TypedHandler::from_with_id(
+                "events.order.list_create_initialized",
+                move |event: &OrderEventAny| {
+                    match event {
+                        OrderEventAny::Initialized(e) if e.client_order_id == client_order_id1 => {
+                            assert!(!cache_rc.borrow().order_exists(&client_order_id1));
+                            timeline.borrow_mut().push("init1");
+                        }
+                        OrderEventAny::Initialized(e) if e.client_order_id == client_order_id2 => {
+                            assert!(!cache_rc.borrow().order_exists(&client_order_id2));
+                            timeline.borrow_mut().push("init2");
+                        }
+                        _ => panic!("unexpected order event {event:?}"),
+                    }
+                    event_messages.borrow_mut().push(event.clone());
+                },
+            )
+        };
+        let risk_handler = {
+            let timeline = timeline.clone();
+            TypedIntoHandler::from_with_id(
+                "RiskEngine.queue_execute",
+                move |command: TradingCommand| {
+                    assert!(matches!(command, TradingCommand::SubmitOrderList(_)));
+                    timeline.borrow_mut().push("command");
+                },
+            )
+        };
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        let topic = format!("events.order.{}", orders[0].strategy_id());
+        msgbus::subscribe_order_events(topic.clone().into(), event_handler.clone(), None);
+
+        strategy
+            .submit_order_list(orders.clone(), None, None, None)
+            .unwrap();
+
+        msgbus::unsubscribe_order_events(topic.into(), &event_handler);
+
+        let event_messages = event_messages.borrow();
+        assert_eq!(event_messages.len(), 2);
+        assert_eq!(
+            event_messages[0],
+            OrderEventAny::Initialized(orders[0].init_event().clone())
+        );
+        assert_eq!(
+            event_messages[1],
+            OrderEventAny::Initialized(orders[1].init_event().clone())
+        );
+        assert_eq!(timeline.borrow().as_slice(), &["init1", "init2", "command"]);
+
+        let cache = strategy.core.cache();
+        let cached_order1 = cache.order(&client_order_id1).unwrap();
+        let cached_order2 = cache.order(&client_order_id2).unwrap();
+        let order_list_id = cached_order1.order_list_id().unwrap();
+        assert_eq!(cached_order2.order_list_id(), Some(order_list_id));
+
+        let order_list = cache.order_list(&order_list_id).unwrap();
+        assert_eq!(
+            order_list.client_order_ids.as_slice(),
+            &[client_order_id1, client_order_id2]
+        );
     }
 
     #[rstest]
@@ -3334,6 +3612,8 @@ mod tests {
         start_strategy(&mut strategy);
         strategy.core.is_exiting = true;
 
+        let (event_handler, event_messages): (_, TypedMessageSavingHandler<OrderEventAny>) =
+            get_typed_message_saving_handler(Some(Ustr::from("events.order.denied")));
         let order = OrderAny::Market(MarketOrder::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("TEST-001"),
@@ -3355,13 +3635,150 @@ mod tests {
             None,
             None,
         ));
+        let topic = format!("events.order.{}", order.strategy_id());
+        msgbus::subscribe_order_events(topic.clone().into(), event_handler.clone(), None);
         let client_order_id = order.client_order_id();
-        let result = strategy.submit_order(order, None, None, None);
+        let result = strategy.submit_order(order.clone(), None, None, None);
+
+        msgbus::unsubscribe_order_events(topic.into(), &event_handler);
 
         assert!(result.is_ok());
         let cache = strategy.core.cache();
         let cached_order = cache.order(&client_order_id).unwrap();
         assert_eq!(cached_order.status(), OrderStatus::Denied);
+
+        let event_messages = event_messages.get_messages();
+        assert_eq!(event_messages.len(), 2);
+        assert_eq!(
+            event_messages[0],
+            OrderEventAny::Initialized(order.init_event().clone())
+        );
+        let OrderEventAny::Denied(denied) = &event_messages[1] else {
+            panic!("expected OrderDenied event");
+        };
+        assert_eq!(denied.reason, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
+    }
+
+    #[rstest]
+    fn test_submit_order_list_denied_during_market_exit_publishes_init_then_denied_events() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+        strategy.core.is_exiting = true;
+
+        let orders = vec![
+            make_initialized_market_order("O-20250208-LIST-DENY-001"),
+            make_initialized_market_order("O-20250208-LIST-DENY-002"),
+        ];
+        let client_order_id1 = orders[0].client_order_id();
+        let client_order_id2 = orders[1].client_order_id();
+        let cache_rc = strategy.core.cache_rc();
+        let timeline = Rc::new(RefCell::new(Vec::new()));
+        let event_messages = Rc::new(RefCell::new(Vec::new()));
+
+        let event_handler = {
+            let event_messages = event_messages.clone();
+            let timeline = timeline.clone();
+            TypedHandler::from_with_id("events.order.list_denied", move |event: &OrderEventAny| {
+                match event {
+                    OrderEventAny::Initialized(e) if e.client_order_id == client_order_id1 => {
+                        assert!(!cache_rc.borrow().order_exists(&client_order_id1));
+                        timeline.borrow_mut().push("init1");
+                    }
+                    OrderEventAny::Initialized(e) if e.client_order_id == client_order_id2 => {
+                        assert!(!cache_rc.borrow().order_exists(&client_order_id2));
+                        timeline.borrow_mut().push("init2");
+                    }
+                    OrderEventAny::Denied(e) if e.client_order_id == client_order_id1 => {
+                        assert_eq!(e.reason, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
+                        let cache = cache_rc.borrow();
+                        let cached_order = cache.order(&client_order_id1).unwrap();
+                        assert_eq!(cached_order.status(), OrderStatus::Denied);
+                        timeline.borrow_mut().push("denied1");
+                    }
+                    OrderEventAny::Denied(e) if e.client_order_id == client_order_id2 => {
+                        assert_eq!(e.reason, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
+                        let cache = cache_rc.borrow();
+                        let cached_order = cache.order(&client_order_id2).unwrap();
+                        assert_eq!(cached_order.status(), OrderStatus::Denied);
+                        timeline.borrow_mut().push("denied2");
+                    }
+                    _ => panic!("unexpected order event {event:?}"),
+                }
+                event_messages.borrow_mut().push(event.clone());
+            })
+        };
+        let risk_handler = {
+            let timeline = timeline.clone();
+            TypedIntoHandler::from_with_id(
+                "RiskEngine.queue_execute",
+                move |_command: TradingCommand| {
+                    timeline.borrow_mut().push("command");
+                },
+            )
+        };
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        let topic = format!("events.order.{}", orders[0].strategy_id());
+        msgbus::subscribe_order_events(topic.clone().into(), event_handler.clone(), None);
+        let result = strategy.submit_order_list(orders.clone(), None, None, None);
+
+        msgbus::unsubscribe_order_events(topic.into(), &event_handler);
+
+        assert!(result.is_ok());
+
+        {
+            let cache = strategy.core.cache();
+            let cached_order1 = cache.order(&client_order_id1).unwrap();
+            let cached_order2 = cache.order(&client_order_id2).unwrap();
+            assert_eq!(cached_order1.status(), OrderStatus::Denied);
+            assert_eq!(cached_order2.status(), OrderStatus::Denied);
+        }
+
+        let event_messages = event_messages.borrow();
+        assert_eq!(event_messages.len(), 4);
+        assert_eq!(
+            event_messages[0],
+            OrderEventAny::Initialized(orders[0].init_event().clone())
+        );
+        assert_eq!(
+            event_messages[1],
+            OrderEventAny::Initialized(orders[1].init_event().clone())
+        );
+        assert_eq!(
+            timeline.borrow().as_slice(),
+            &["init1", "init2", "denied1", "denied2"]
+        );
+    }
+
+    #[rstest]
+    fn test_submit_order_list_market_exit_rejects_non_initialized_without_events() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+        strategy.core.is_exiting = true;
+
+        let order = make_accepted_market_order("O-20250208-LIST-DENY-ACCEPTED");
+        let topic = format!("events.order.{}", order.strategy_id());
+        let (event_handler, event_messages): (_, TypedMessageSavingHandler<OrderEventAny>) =
+            get_typed_message_saving_handler(Some(Ustr::from("events.order.list_invalid")));
+
+        msgbus::subscribe_order_events(topic.clone().into(), event_handler.clone(), None);
+        let result = strategy.submit_order_list(vec![order], None, None, None);
+
+        msgbus::unsubscribe_order_events(topic.into(), &event_handler);
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("expected INITIALIZED")
+        );
+        assert!(event_messages.get_messages().is_empty());
     }
 
     #[rstest]
