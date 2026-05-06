@@ -21,6 +21,7 @@ Released on TBD (UTC).
 - Added Polymarket `OrderStatusReport.filled_qty` dust snap at terminal `Filled` status to absorb venue truncation
 - Added Polymarket `PolymarketFeeModel` backtest fee model with maker-rebate inference
 - Added Polymarket `PolymarketDataLoader.sanitize_info` flag to strip resolution fields on resolved markets
+- Added `#[custom_data_field(json)]` for JSON-backed Arrow `Utf8` storage of Serde-serializable fields, with typed PyO3 dict conversion for supported `IndexMap<K, V>` and `HashMap<K, V>` element types (#4003), thanks @faysou
 
 ### Breaking Changes
 - Removed legacy adapter environment flags per previous deprecation; use `environment` enum
@@ -39,6 +40,7 @@ Released on TBD (UTC).
 - Changed Rust strategy registration to append `order_id_tag` to explicit strategy IDs, matching Cython
 - Changed Binance Futures to prefer `DEMO` endpoints for simulated trading
 - Changed Kraken Spot to reject `DEMO`; demo remains Futures-only
+- Changed `nautilus_core::from_pydict` signature from `Py<PyDict>` to `&Py<PyDict>` to avoid moving the input dict (Rust) (#4003), thanks @faysou
 
 ### Security
 

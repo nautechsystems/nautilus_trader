@@ -458,7 +458,7 @@ def test_rust_typed_map_custom_data_roundtrip(tmp_path):
     _assert_typed_value_map(original.instrument_ids, {"primary": "AUD/USD.SIM"}, InstrumentId)
     _assert_typed_value_map(original.account_ids, {"primary": "SIM-001"}, AccountId)
     _assert_typed_value_map(original.currencies, {"settlement": "USD"}, Currency)
-    _assert_typed_value_map(original.bar_types, {"bar": str(bar_type)}, type(bar_type))
+    _assert_typed_value_map(original.bar_types, {"bar": str(bar_type)}, BarType)
     _assert_typed_value_map(original.prices, {"bid": "1.23456"}, Price)
     _assert_typed_value_map(original.quantities, {"size": "10.500"}, Quantity)
     _assert_typed_value_map(original.monies, {"notional": "123.45 USD"}, Money)
@@ -478,7 +478,7 @@ def test_rust_typed_map_custom_data_roundtrip(tmp_path):
     _assert_typed_map(
         original.prices_by_bar_type,
         {str(bar_type): "1.23456"},
-        type(bar_type),
+        BarType,
         Price,
     )
     _assert_typed_map(
@@ -523,7 +523,7 @@ def test_rust_typed_map_custom_data_roundtrip(tmp_path):
     _assert_typed_value_map(roundtripped.instrument_ids, {"primary": "AUD/USD.SIM"}, InstrumentId)
     _assert_typed_value_map(roundtripped.account_ids, {"primary": "SIM-001"}, AccountId)
     _assert_typed_value_map(roundtripped.currencies, {"settlement": "USD"}, Currency)
-    _assert_typed_value_map(roundtripped.bar_types, {"bar": str(bar_type)}, type(bar_type))
+    _assert_typed_value_map(roundtripped.bar_types, {"bar": str(bar_type)}, BarType)
     _assert_typed_value_map(roundtripped.prices, {"bid": "1.23456"}, Price)
     _assert_typed_value_map(roundtripped.quantities, {"size": "10.500"}, Quantity)
     _assert_typed_value_map(roundtripped.monies, {"notional": "123.45 USD"}, Money)
@@ -543,7 +543,7 @@ def test_rust_typed_map_custom_data_roundtrip(tmp_path):
     _assert_typed_map(
         roundtripped.prices_by_bar_type,
         {str(bar_type): "1.23456"},
-        type(bar_type),
+        BarType,
         Price,
     )
     _assert_typed_map(
@@ -568,7 +568,7 @@ def test_rust_typed_map_custom_data_roundtrip(tmp_path):
         _assert_typed_value_map(rt.instrument_ids, {"primary": "AUD/USD.SIM"}, InstrumentId)
         _assert_typed_value_map(rt.account_ids, {"primary": "SIM-001"}, AccountId)
         _assert_typed_value_map(rt.currencies, {"settlement": "USD"}, Currency)
-        _assert_typed_value_map(rt.bar_types, {"bar": str(bar_type)}, type(bar_type))
+        _assert_typed_value_map(rt.bar_types, {"bar": str(bar_type)}, BarType)
         _assert_typed_value_map(rt.prices, {"bid": "1.23456"}, Price)
         _assert_typed_value_map(rt.quantities, {"size": "10.500"}, Quantity)
         _assert_typed_value_map(rt.monies, {"notional": "123.45 USD"}, Money)
@@ -580,7 +580,7 @@ def test_rust_typed_map_custom_data_roundtrip(tmp_path):
             Quantity,
         )
         _assert_typed_map(rt.monies_by_currency, {"USD": "123.45 USD"}, Currency, Money)
-        _assert_typed_map(rt.prices_by_bar_type, {str(bar_type): "1.23456"}, type(bar_type), Price)
+        _assert_typed_map(rt.prices_by_bar_type, {str(bar_type): "1.23456"}, BarType, Price)
         _assert_typed_map(
             rt.hash_prices_by_instrument,
             {"AUD/USD.SIM": "1.23456"},
