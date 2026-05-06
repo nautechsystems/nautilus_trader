@@ -35,6 +35,8 @@
 //!
 //! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `arrow`: Enables Apache Arrow schema and `RecordBatch` registries for custom data.
+//! - `python-arrow`: Enables Python bindings together with `PyArrow` `RecordBatch` bridging.
 //! - `stubs`: Enables type stubs for use in testing scenarios.
 //! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 //! - `defi`: Enables the DeFi (Decentralized Finance) domain model.
