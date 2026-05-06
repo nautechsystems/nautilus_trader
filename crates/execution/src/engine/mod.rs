@@ -2208,11 +2208,33 @@ impl ExecutionEngine {
 
                 log::error!("Error applying event: {e}, did not apply {event}");
 
-                let order = self.cache.borrow().order(&client_order_id).cloned();
-                if let Some(order) = order
-                    && should_handle_own_book_order(&order)
-                {
-                    self.cache.borrow_mut().update_own_order_book(&order);
+                if matches!(
+                    event,
+                    OrderEventAny::Denied(_)
+                        | OrderEventAny::Rejected(_)
+                        | OrderEventAny::Canceled(_)
+                        | OrderEventAny::Expired(_)
+                ) {
+                    log::warn!(
+                        "Terminal event {event} failed to apply to {client_order_id}, forcing cleanup from own book"
+                    );
+                    self.cache
+                        .borrow_mut()
+                        .force_remove_from_own_order_book(&client_order_id);
+                } else {
+                    let order = self.cache.borrow().order(&client_order_id).cloned();
+                    if let Some(order) = order {
+                        let should_update_own_book = {
+                            let cache = self.cache.borrow();
+                            let own_book = cache.own_order_book(&order.instrument_id());
+                            (own_book.is_some() && order.is_closed())
+                                || should_handle_own_book_order(&order)
+                        };
+
+                        if should_update_own_book {
+                            self.cache.borrow_mut().update_own_order_book(&order);
+                        }
+                    }
                 }
                 return None;
             }

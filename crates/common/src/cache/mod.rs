@@ -2425,10 +2425,11 @@ impl Cache {
         }
 
         // Update own book
-        if self.own_order_book(&order.instrument_id()).is_some()
-            && should_handle_own_book_order(order)
-        {
-            self.update_own_order_book(order);
+        if !self.own_books.is_empty() {
+            let own_book = self.own_order_book(&order.instrument_id());
+            if (own_book.is_some() && order.is_closed()) || should_handle_own_book_order(order) {
+                self.update_own_order_book(order);
+            }
         }
 
         if let Some(database) = &mut self.database {
@@ -4196,10 +4197,18 @@ impl Cache {
 
         let instrument_id = order.instrument_id();
 
-        let own_book = self
-            .own_books
-            .entry(instrument_id)
-            .or_insert_with(|| OwnOrderBook::new(instrument_id));
+        if !self.own_books.contains_key(&instrument_id) {
+            if order.is_closed() {
+                return;
+            }
+
+            self.own_books
+                .insert(instrument_id, OwnOrderBook::new(instrument_id));
+        }
+
+        let Some(own_book) = self.own_books.get_mut(&instrument_id) else {
+            return;
+        };
 
         let own_book_order = order.to_own_book_order();
 

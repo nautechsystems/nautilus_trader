@@ -307,7 +307,7 @@ fn test_from_config_with_custom_strategy_id() {
     let strategy = EmaCross::from_config(config);
     assert_eq!(
         strategy.core().config.strategy_id,
-        Some(StrategyId::from("MY_EMA-002")),
+        Some(StrategyId::from("MY_EMA-002-001")),
     );
     assert_eq!(strategy.instrument_id, InstrumentId::from(INSTRUMENT_ID));
     assert_eq!(strategy.trade_size, Quantity::from("50000"));
