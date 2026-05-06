@@ -44,6 +44,7 @@ Released on TBD (UTC).
 - Fixed `RefCell` reentrancy in `ExecutionEngine::load_cache` nested `borrow_mut` calls
 - Fixed `RefCell` double-borrow panic in `Portfolio::update_position` when `calculate_account_state` is true
 - Fixed `AccountsManager::update_balances` discarding recalculated balances by mutating a dropped clone
+- Fixed Rust portfolio account event clone overhead (#4004), thanks for reporting @magnified103
 - Fixed margin `AccountState` events emitting empty balances when balances were populated
 - Fixed `allow_cash_borrowing` not applied to cached cash accounts during simulated venue initialization
 - Fixed cache venue order ID updates and own-book cleanup for cancel-replace flows (Rust)

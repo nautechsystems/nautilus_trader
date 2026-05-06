@@ -58,7 +58,7 @@ use nautilus_model::{
         AggregationSource, ContingencyType, OmsType, OrderSide, PositionSide, PriceType,
         TriggerType,
     },
-    events::OrderEventAny,
+    events::{AccountState, OrderEventAny},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
         OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
@@ -2312,6 +2312,66 @@ impl Cache {
         self.accounts.insert(account_id, account.clone());
 
         if let Some(database) = &mut self.database {
+            database.update_account(account)?;
+        }
+        Ok(())
+    }
+
+    /// Removes the `account` from the cache and returns it.
+    ///
+    /// This supports hot paths which need owned account mutation without
+    /// cloning the account event history.
+    #[must_use]
+    pub fn take_account(&mut self, account_id: &AccountId) -> Option<AccountAny> {
+        self.accounts.remove(account_id)
+    }
+
+    /// Caches the `account` in memory without updating the database.
+    pub fn cache_account_owned(&mut self, account: AccountAny) {
+        let account_id = account.id();
+        self.index
+            .venue_account
+            .insert(account_id.get_issuer(), account_id);
+        self.accounts.insert(account_id, account);
+    }
+
+    /// Updates the `account` in the cache, taking ownership of the updated account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating the account in the database fails.
+    pub fn update_account_owned(&mut self, account: AccountAny) -> anyhow::Result<()> {
+        let account_id = account.id();
+        self.cache_account_owned(account);
+
+        if let Some(database) = &mut self.database {
+            let Some(account) = self.accounts.get(&account_id) else {
+                anyhow::bail!("Account {account_id} not found after cache update");
+            };
+            database.update_account(account)?;
+        }
+        Ok(())
+    }
+
+    /// Applies an account state event to the cached account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if applying or persisting the account state fails.
+    pub fn update_account_state(&mut self, event: &AccountState) -> anyhow::Result<()> {
+        if let Some(account) = self.accounts.get_mut(&event.account_id) {
+            account.apply(event.clone())?;
+        } else {
+            return self.add_account(AccountAny::from_events(std::slice::from_ref(event))?);
+        }
+
+        if let Some(database) = &mut self.database {
+            let Some(account) = self.accounts.get(&event.account_id) else {
+                anyhow::bail!(
+                    "Account {} not found after account state update",
+                    event.account_id
+                );
+            };
             database.update_account(account)?;
         }
         Ok(())

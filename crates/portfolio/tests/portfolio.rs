@@ -600,6 +600,149 @@ fn test_update_orders_open_cash_account(
 }
 
 #[rstest]
+fn test_update_order_without_account_state_restores_account(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("SIM-001");
+    let account_state = AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![
+            AccountBalance::new(
+                Money::new(1_000_000.0, Currency::USD()),
+                Money::new(0.0, Currency::USD()),
+                Money::new(1_000_000.0, Currency::USD()),
+            ),
+            AccountBalance::new(
+                Money::new(100_000.0, Currency::EUR()),
+                Money::new(0.0, Currency::EUR()),
+                Money::new(100_000.0, Currency::EUR()),
+            ),
+        ],
+        vec![],
+        true,
+        uuid4(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::EUR()),
+    );
+
+    let mut account = AccountAny::from(account_state);
+    account.set_calculate_account_state(true);
+    let starting_balances = account.balances();
+
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    simple_cache.add_account(account).unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100000"))
+        .price(Price::from("0.80000"))
+        .build();
+
+    simple_cache
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let submitted = submit_order(&order);
+    order = simple_cache
+        .update_order(&OrderEventAny::Submitted(submitted))
+        .unwrap();
+    let accepted = accept_order(&order);
+    simple_cache
+        .update_order(&OrderEventAny::Accepted(accepted))
+        .unwrap();
+
+    let cache = Rc::new(RefCell::new(simple_cache));
+    let mut portfolio = Portfolio::new(cache.clone(), Rc::new(RefCell::new(clock)), None);
+
+    portfolio.update_order(&OrderEventAny::Accepted(accepted));
+
+    let cache_ref = cache.borrow();
+    let cached = cache_ref.account(&account_id).unwrap();
+    assert_eq!(cached.balances(), starting_balances);
+    assert_eq!(
+        cache_ref
+            .account_for_venue(&Venue::test_default())
+            .unwrap()
+            .id(),
+        account_id
+    );
+}
+
+#[rstest]
+fn test_update_order_filled_restores_account_before_unrealized_pnl(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    instrument_btcusdt: InstrumentAny,
+) {
+    let account_id = AccountId::new("BINANCE-01234");
+    let account_state = get_margin_account(Some("BINANCE-01234"));
+    let instrument_id = instrument_btcusdt.id();
+    let venue = instrument_id.venue;
+
+    let mut account = AccountAny::from(account_state);
+    account.set_calculate_account_state(true);
+
+    simple_cache.add_instrument(instrument_btcusdt).unwrap();
+    simple_cache.add_account(account).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::new(25_000.0, 1))
+        .build();
+
+    simple_cache
+        .add_order(order.clone(), None, None, true)
+        .unwrap();
+
+    let cache = Rc::new(RefCell::new(simple_cache));
+    let mut portfolio = Portfolio::new(cache.clone(), Rc::new(RefCell::new(clock)), None);
+    let filled = OrderFilled::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        VenueOrderId::new("1"),
+        account_id,
+        TradeId::new("1"),
+        order.order_side(),
+        order.order_type(),
+        order.quantity(),
+        order.price().unwrap(),
+        Currency::USDT(),
+        LiquiditySide::Taker,
+        uuid4(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(PositionId::new("P-001")),
+        Some(Money::new(0.0, Currency::USDT())),
+    );
+
+    portfolio.update_order(&OrderEventAny::Filled(filled));
+
+    {
+        let cache_ref = cache.borrow();
+        assert!(cache_ref.account(&account_id).is_some());
+        assert!(cache_ref.account_for_venue(&venue).is_some());
+    }
+
+    let removed_account = cache.borrow_mut().take_account(&account_id).unwrap();
+    assert_eq!(removed_account.id(), account_id);
+    assert_eq!(
+        portfolio.unrealized_pnl(&instrument_id),
+        Some(Money::new(0.0, Currency::USDT()))
+    );
+}
+
+#[rstest]
 fn test_update_orders_open_margin_account(
     mut portfolio: Portfolio,
     instrument_btcusdt: InstrumentAny,

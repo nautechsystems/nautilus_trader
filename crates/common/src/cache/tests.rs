@@ -33,12 +33,13 @@ use nautilus_model::{
         QuoteTick, TradeTick,
     },
     enums::{
-        AggressorSide, BookType, ContingencyType, LiquiditySide, MarketStatusAction, OmsType,
-        OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce, TriggerType,
+        AccountType, AggressorSide, BookType, ContingencyType, LiquiditySide, MarketStatusAction,
+        OmsType, OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce,
+        TriggerType,
     },
     events::{
-        OrderAccepted, OrderCanceled, OrderEmulated, OrderEventAny, OrderFilled, OrderRejected,
-        OrderReleased, OrderSubmitted, OrderUpdated,
+        AccountState, OrderAccepted, OrderCanceled, OrderEmulated, OrderEventAny, OrderFilled,
+        OrderRejected, OrderReleased, OrderSubmitted, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
@@ -53,7 +54,7 @@ use nautilus_model::{
     },
     position::Position,
     stubs::TestDefault,
-    types::{Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rstest::{fixture, rstest};
 
@@ -1986,6 +1987,78 @@ fn test_cache_account_for_venue_return_correct(mut cache: Cache) {
     let result = cache.account_for_venue(&venue);
     assert!(result.is_some());
     assert_eq!(*result.unwrap(), account);
+}
+
+#[rstest]
+fn test_cache_take_account_returns_none_for_unknown(mut cache: Cache) {
+    let result = cache.take_account(&AccountId::test_default());
+    assert!(result.is_none());
+}
+
+#[rstest]
+fn test_cache_update_account_owned_restores_venue_index(mut cache: Cache) {
+    let account = AccountAny::default();
+    let account_id = account.id();
+    let venue = account_id.get_issuer();
+
+    cache.add_account(account).unwrap();
+    let account = cache.take_account(&account_id).unwrap();
+
+    assert!(cache.account(&account_id).is_none());
+    assert!(cache.account_for_venue(&venue).is_none());
+
+    cache.update_account_owned(account.clone()).unwrap();
+
+    assert_eq!(cache.account(&account_id), Some(&account));
+    assert_eq!(cache.account_for_venue(&venue), Some(&account));
+}
+
+#[rstest]
+fn test_cache_update_account_state_adds_new_account(mut cache: Cache) {
+    let account = AccountAny::default();
+    let event = account.last_event().unwrap();
+    let account_id = event.account_id;
+    let venue = account_id.get_issuer();
+
+    cache.update_account_state(&event).unwrap();
+
+    let cached = cache.account(&account_id).unwrap();
+    assert_eq!(cached.id(), account_id);
+    assert_eq!(cached.events(), vec![event]);
+    assert_eq!(cached.balances(), account.balances());
+    assert_eq!(cache.account_for_venue(&venue).unwrap().id(), account_id);
+}
+
+#[rstest]
+fn test_cache_update_account_state_apply_failure_leaves_account_intact(mut cache: Cache) {
+    let account = AccountAny::default();
+    let account_id = account.id();
+    let starting_balances = account.balances();
+    let event = AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("-1 USD"),
+            Money::from("0 USD"),
+            Money::from("-1 USD"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::USD()),
+    );
+
+    cache.add_account(account).unwrap();
+    let result = cache.update_account_state(&event);
+    let cached = cache.account(&account_id).unwrap();
+
+    let error = result.unwrap_err().to_string();
+    assert!(error.contains("balance would be negative"));
+    assert!(error.contains("borrowing not allowed"));
+    assert_eq!(cached.balances(), starting_balances);
+    assert_eq!(cached.events().len(), 1);
 }
 
 #[rstest]
