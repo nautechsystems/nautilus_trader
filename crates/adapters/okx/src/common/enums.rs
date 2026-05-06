@@ -307,6 +307,9 @@ pub enum OKXInstrumentStatus {
     Test,
     PostOnly,
     Rebase,
+    /// Unknown or future state (graceful fallback for venue schema evolution).
+    #[serde(other)]
+    Unknown,
 }
 
 /// Represents an instrument contract type on OKX.

@@ -259,6 +259,7 @@ pub fn okx_status_to_market_action(status: OKXInstrumentStatus) -> MarketStatusA
         OKXInstrumentStatus::Test => MarketStatusAction::NotAvailableForTrading,
         OKXInstrumentStatus::PostOnly => MarketStatusAction::Quoting,
         OKXInstrumentStatus::Rebase => MarketStatusAction::NotAvailableForTrading,
+        OKXInstrumentStatus::Unknown => MarketStatusAction::NotAvailableForTrading,
     }
 }
 
@@ -5079,10 +5080,27 @@ mod tests {
         OKXInstrumentStatus::Rebase,
         MarketStatusAction::NotAvailableForTrading
     )]
+    #[case(
+        OKXInstrumentStatus::Unknown,
+        MarketStatusAction::NotAvailableForTrading
+    )]
     fn test_okx_status_to_market_action(
         #[case] status: OKXInstrumentStatus,
         #[case] expected: MarketStatusAction,
     ) {
         assert_eq!(okx_status_to_market_action(status), expected);
+    }
+
+    #[rstest]
+    #[case::future_state("\"future_state_xyz\"")]
+    #[case::frozen("\"frozen\"")]
+    #[case::delisting("\"delisting\"")]
+    fn test_okx_unknown_status_falls_back(#[case] json: &str) {
+        let parsed: OKXInstrumentStatus = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed, OKXInstrumentStatus::Unknown);
+        assert_eq!(
+            okx_status_to_market_action(parsed),
+            MarketStatusAction::NotAvailableForTrading
+        );
     }
 }
