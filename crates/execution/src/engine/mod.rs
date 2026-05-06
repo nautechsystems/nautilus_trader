@@ -1144,7 +1144,8 @@ impl ExecutionEngine {
         ts_now: UnixNanos,
         order_status: Option<OrderStatus>,
     ) -> Option<OrderAny> {
-        let order = match OrderAny::from_events(vec![OrderEventAny::Initialized(initialized)]) {
+        let initialized = OrderEventAny::Initialized(initialized);
+        let order = match OrderAny::from_events(vec![initialized.clone()]) {
             Ok(order) => order,
             Err(e) => {
                 log::error!("Failed to create external order from report: {e}");
@@ -1163,6 +1164,8 @@ impl ExecutionEngine {
                 log::warn!("Failed to add venue order ID index: {e}");
             }
         }
+
+        self.publish_order_event(&initialized);
 
         match order_status {
             Some(status) => log::info!(

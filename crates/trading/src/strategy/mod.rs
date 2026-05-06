@@ -133,8 +133,6 @@ pub trait Strategy: DataActor {
         let should_deny_for_market_exit =
             core.is_exiting && !order.is_reduce_only() && !is_market_exit_order;
 
-        publish_order_initialized(&order);
-
         if should_deny_for_market_exit {
             self.deny_order(&order, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
             return Ok(());
@@ -148,6 +146,8 @@ pub trait Strategy: DataActor {
             let mut cache = cache_rc.borrow_mut();
             cache.add_order(order.clone(), position_id, client_id, true)?;
         }
+
+        publish_order_initialized(&order);
 
         let command = SubmitOrder::new(
             trader_id,
@@ -209,9 +209,6 @@ pub trait Strategy: DataActor {
         };
 
         if should_deny {
-            for order in &orders {
-                publish_order_initialized(order);
-            }
             self.deny_order_list(&orders, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
             return Ok(());
         }
@@ -246,17 +243,20 @@ pub trait Strategy: DataActor {
             }
         }
 
-        for order in &orders {
-            publish_order_initialized(order);
-        }
-
         {
             let cache_rc = core.cache_rc();
             let mut cache = cache_rc.borrow_mut();
             cache.add_order_list(order_list.clone())?;
-            for order in &orders {
+        }
+
+        for order in &orders {
+            {
+                let cache_rc = core.cache_rc();
+                let mut cache = cache_rc.borrow_mut();
                 cache.add_order(order.clone(), position_id, client_id, true)?;
             }
+
+            publish_order_initialized(order);
         }
 
         let params = params.filter(|params| !params.is_empty());
@@ -1608,13 +1608,24 @@ pub trait Strategy: DataActor {
             order.client_order_id()
         );
 
-        // Add order to cache if not exists, then update with denied event
-        {
+        let publish_initialized = {
             let cache_rc = core.cache_rc();
             let mut cache = cache_rc.borrow_mut();
-            if !cache.order_exists(&order.client_order_id()) {
-                let _ = cache.add_order(order.clone(), None, None, true);
+            if cache.order_exists(&order.client_order_id()) {
+                false
+            } else {
+                match cache.add_order(order.clone(), None, None, true) {
+                    Ok(()) => true,
+                    Err(e) => {
+                        log::warn!("Failed to add denied order to cache: {e}");
+                        false
+                    }
+                }
             }
+        };
+
+        if publish_initialized {
+            publish_order_initialized(order);
         }
 
         let event = OrderEventAny::Denied(event);
@@ -2309,7 +2320,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_submit_order_publishes_order_initialized_before_cache_insert_and_send() {
+    fn test_submit_order_publishes_order_initialized_after_cache_insert_before_send() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
 
@@ -2323,7 +2334,7 @@ mod tests {
             let event_messages = event_messages.clone();
             let timeline = timeline.clone();
             TypedHandler::from_with_id("events.order.initialized", move |event: &OrderEventAny| {
-                assert!(!cache_rc.borrow().order_exists(&client_order_id));
+                assert!(cache_rc.borrow().order_exists(&client_order_id));
                 assert!(matches!(event, OrderEventAny::Initialized(_)));
                 event_messages.borrow_mut().push(event.clone());
                 timeline.borrow_mut().push("init");
@@ -2388,7 +2399,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_submit_order_list_publishes_order_initialized_before_cache_insert_and_send() {
+    fn test_submit_order_list_publishes_order_initialized_after_cache_insert_before_send() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
 
@@ -2416,11 +2427,11 @@ mod tests {
                 move |event: &OrderEventAny| {
                     match event {
                         OrderEventAny::Initialized(e) if e.client_order_id == client_order_id1 => {
-                            assert!(!cache_rc.borrow().order_exists(&client_order_id1));
+                            assert!(cache_rc.borrow().order_exists(&client_order_id1));
                             timeline.borrow_mut().push("init1");
                         }
                         OrderEventAny::Initialized(e) if e.client_order_id == client_order_id2 => {
-                            assert!(!cache_rc.borrow().order_exists(&client_order_id2));
+                            assert!(cache_rc.borrow().order_exists(&client_order_id2));
                             timeline.borrow_mut().push("init2");
                         }
                         _ => panic!("unexpected order event {event:?}"),
@@ -2467,7 +2478,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_submit_order_list_create_list_branch_publishes_init_before_cache_insert() {
+    fn test_submit_order_list_create_list_branch_publishes_init_after_cache_insert() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
 
@@ -2490,11 +2501,11 @@ mod tests {
                 move |event: &OrderEventAny| {
                     match event {
                         OrderEventAny::Initialized(e) if e.client_order_id == client_order_id1 => {
-                            assert!(!cache_rc.borrow().order_exists(&client_order_id1));
+                            assert!(cache_rc.borrow().order_exists(&client_order_id1));
                             timeline.borrow_mut().push("init1");
                         }
                         OrderEventAny::Initialized(e) if e.client_order_id == client_order_id2 => {
-                            assert!(!cache_rc.borrow().order_exists(&client_order_id2));
+                            assert!(cache_rc.borrow().order_exists(&client_order_id2));
                             timeline.borrow_mut().push("init2");
                         }
                         _ => panic!("unexpected order event {event:?}"),
@@ -3682,11 +3693,11 @@ mod tests {
             TypedHandler::from_with_id("events.order.list_denied", move |event: &OrderEventAny| {
                 match event {
                     OrderEventAny::Initialized(e) if e.client_order_id == client_order_id1 => {
-                        assert!(!cache_rc.borrow().order_exists(&client_order_id1));
+                        assert!(cache_rc.borrow().order_exists(&client_order_id1));
                         timeline.borrow_mut().push("init1");
                     }
                     OrderEventAny::Initialized(e) if e.client_order_id == client_order_id2 => {
-                        assert!(!cache_rc.borrow().order_exists(&client_order_id2));
+                        assert!(cache_rc.borrow().order_exists(&client_order_id2));
                         timeline.borrow_mut().push("init2");
                     }
                     OrderEventAny::Denied(e) if e.client_order_id == client_order_id1 => {
@@ -3744,13 +3755,25 @@ mod tests {
             event_messages[0],
             OrderEventAny::Initialized(orders[0].init_event().clone())
         );
+        assert!(matches!(
+            &event_messages[1],
+            OrderEventAny::Denied(e)
+                if e.client_order_id == client_order_id1
+                    && e.reason == Ustr::from("MARKET_EXIT_IN_PROGRESS")
+        ));
         assert_eq!(
-            event_messages[1],
+            event_messages[2],
             OrderEventAny::Initialized(orders[1].init_event().clone())
         );
+        assert!(matches!(
+            &event_messages[3],
+            OrderEventAny::Denied(e)
+                if e.client_order_id == client_order_id2
+                    && e.reason == Ustr::from("MARKET_EXIT_IN_PROGRESS")
+        ));
         assert_eq!(
             timeline.borrow().as_slice(),
-            &["init1", "init2", "denied1", "denied2"]
+            &["init1", "denied1", "init2", "denied2"]
         );
     }
 
