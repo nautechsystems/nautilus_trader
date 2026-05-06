@@ -678,8 +678,12 @@ strategy class name and an order ID tag. The tag can be supplied with `order_id_
 otherwise registration assigns the next numeric tag, starting with `000`. For example,
 the above config results in a strategy ID of `MyStrategy-001`.
 
-If `strategy_id` is supplied, use a value whose final hyphen-separated part is the
-order ID tag, such as `MyStrategy-001`.
+If `strategy_id` is supplied with `order_id_tag`, Rust appends the tag to the
+runtime strategy ID unless the ID already ends with that tag. For example,
+`strategy_id=MyStrategy-PRIMARY` with `order_id_tag=ABC` becomes
+`MyStrategy-PRIMARY-ABC`.
+If `order_id_tag` is omitted, Rust uses the final hyphen-separated part of
+`strategy_id` as the order ID tag.
 
 :::note
 The platform has built-in safety measures: if two strategies share a duplicated strategy ID,
@@ -691,15 +695,13 @@ various commands and events belong to. The order ID tag also keeps generated cli
 order IDs unique across strategies for the same trader.
 
 :::info Rust implementation
-Rust treats `StrategyConfig` as immutable construction input. If `strategy_id` is
-supplied, Rust uses it as the authoritative runtime `StrategyId`; the order tag is
-the final hyphen-separated part of that ID. `order_id_tag` remains useful when
-`strategy_id` is omitted, because it overrides the generated suffix, for example
-`MyStrategy-ABC`.
+Rust treats `StrategyConfig` as immutable construction input. The runtime
+`StrategyId` carries the order ID tag, matching Python/Cython behavior. This keeps
+actor registration, client order ID generation, order list ID generation, and
+position ID generation aligned through `strategy_id.get_tag()`.
 
-If both fields are supplied in Rust, they must agree: `strategy_id=MyStrategy-ABC`
-with `order_id_tag=ABC` is valid, but `order_id_tag=001` is rejected. Python/Cython
-keeps the existing runtime composition behavior and is not changed by this Rust rule.
+If `strategy_id` is omitted, `order_id_tag` overrides the generated suffix, for
+example `MyStrategy-ABC`.
 :::
 
 See the [`StrategyId` API Reference](/docs/python-api-latest/model/identifiers.html) for further details.

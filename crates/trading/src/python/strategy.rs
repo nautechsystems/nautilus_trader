@@ -60,7 +60,6 @@ use nautilus_model::{
     },
     identifiers::{
         AccountId, ClientId, InstrumentId, OptionSeriesId, PositionId, StrategyId, TraderId, Venue,
-        normalize_order_id_tag,
     },
     instruments::InstrumentAny,
     orderbook::OrderBook,
@@ -1087,15 +1086,6 @@ impl PyStrategy {
     /// Must only be called before registration. See `PyDataActor::set_actor_id`.
     pub fn set_strategy_id(&mut self, strategy_id: StrategyId) -> anyhow::Result<()> {
         let inner = self.inner_mut();
-        if let Some(order_id_tag) = inner.core.order_id_tag()
-            && strategy_id.get_tag() != order_id_tag
-        {
-            anyhow::bail!(
-                "Strategy order_id_tag '{order_id_tag}' does not match strategy_id '{strategy_id}' tag '{}'",
-                strategy_id.get_tag(),
-            );
-        }
-
         inner.core.change_id(strategy_id);
         Ok(())
     }
@@ -1103,16 +1093,6 @@ impl PyStrategy {
     /// Updates the runtime order ID tag.
     pub fn set_order_id_tag(&mut self, order_id_tag: &str) -> anyhow::Result<()> {
         let inner = self.inner_mut();
-        if let Some(order_id_tag) = normalize_order_id_tag(Some(order_id_tag))
-            && let Some(strategy_id) = inner.core.strategy_id()
-            && strategy_id.get_tag() != order_id_tag
-        {
-            anyhow::bail!(
-                "Strategy order_id_tag '{order_id_tag}' does not match strategy_id '{strategy_id}' tag '{}'",
-                strategy_id.get_tag(),
-            );
-        }
-
         inner.core.change_order_id_tag(order_id_tag);
         Ok(())
     }

@@ -36,7 +36,7 @@ Released on TBD (UTC).
 - Changed `nautilus-network` default Cargo features to include `transport-sockudo`
 - Changed `OrderMatchingEngineConfig` defaults to match the Cython per-engine constructor (Rust)
 - Changed `Strategy` order APIs to take `Option<Params>` to avoid unnecessary `IndexMap` allocations (Rust); use `None` or `Some(params)`
-- Changed Rust strategy registration to honor explicit `strategy_id` and require matching unique order tags
+- Changed Rust strategy registration to append `order_id_tag` to explicit strategy IDs, matching Cython
 - Changed Binance Futures to prefer `DEMO` endpoints for simulated trading
 - Changed Kraken Spot to reject `DEMO`; demo remains Futures-only
 

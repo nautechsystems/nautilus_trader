@@ -2429,6 +2429,102 @@ fn test_handle_order_fill_event_with_no_position_id_correctly_handles_fill(
 }
 
 #[rstest]
+fn test_handle_hedging_fill_generates_position_id_from_runtime_strategy_tag(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::from("ExampleStrategy-XNAS-T01");
+    let instrument = audusd_sim();
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Hedging,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let account = CashAccount::default();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(account.into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-20240101-000000-001-T01-1"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+
+    let order_submitted_event = TestOrderEventStubs::submitted(&order, AccountId::test_default());
+    execution_engine.process(&order_submitted_event);
+
+    let order_accepted_event = TestOrderEventStubs::accepted(
+        &order,
+        AccountId::test_default(),
+        VenueOrderId::from("V-001"),
+    );
+    execution_engine.process(&order_accepted_event);
+
+    let order_filled_event = OrderEventAny::Filled(OrderFilled::new(
+        trader_id,
+        strategy_id,
+        instrument.id,
+        order.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::new("E-19700101-000000-001-T01-1"),
+        order.order_side(),
+        order.order_type(),
+        order.quantity(),
+        Price::from_str("1.0").unwrap(),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        None,
+        Some(Money::from("2 USD")),
+    ));
+    execution_engine.process(&order_filled_event);
+
+    let expected_position_id = PositionId::from("P-19700101-000000-001-T01-1");
+    let cache = execution_engine.cache().borrow();
+    let position_ids = cache.position_ids(None, None, None, None);
+    assert!(
+        position_ids.contains(&expected_position_id),
+        "Expected {expected_position_id}, found {position_ids:?}"
+    );
+
+    let position = cache
+        .position(&expected_position_id)
+        .expect("Position should use the final runtime strategy tag");
+
+    assert_eq!(position.strategy_id, strategy_id);
+    assert_eq!(position.id, expected_position_id);
+}
+
+#[rstest]
 fn test_handle_order_fill_event(mut execution_engine: ExecutionEngine) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
