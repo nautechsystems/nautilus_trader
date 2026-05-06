@@ -26,6 +26,7 @@ Released on TBD (UTC).
 - Removed legacy adapter environment flags per previous deprecation; use `environment` enum
 - Removed `From<OrderInitialized>` for order types; use `TryFrom` to surface invariant errors via `try_from`/`try_into`
 - Removed Polymarket `SNAP_UNDERFILL_ULPS` and `SNAP_OVERFILL_ULPS`; reverting to single `DUST_SNAP_THRESHOLD` constant
+- Removed stale Tardis `crypto-com-derivatives` exchange variant
 - Renamed Binance and Kraken environments from `Mainnet`/`MAINNET` to `Live`/`LIVE`
 - Renamed `time_bars_origins` config param to `time_bars_origin_offset` in `DataEngineConfig`/`LiveDataEngineConfig` (Rust)
 - Changed to deny `submit_order`/`submit_order_list` with a custom `position_id` under `NETTING` OMS; use `HEDGING` for custom position IDs
@@ -98,6 +99,7 @@ Released on TBD (UTC).
 - Fixed Polymarket `parse_trades` `ts_event` collisions on same-second fills (Python and Rust)
 - Fixed Polymarket `fetch_trades` aborting on historical-offset ceiling; warns and returns partial (Python and Rust)
 - Fixed Polymarket `load_trades` non-deterministic same-second ordering across pages (Python and Rust)
+- Fixed Tardis instrument metadata parsing for numeric fields encoded as strings
 
 ### Internal Improvements
 - Added `OrderMatchingCore::update_price_increment` primitive for tick-size propagation parity (Rust)

@@ -21,7 +21,7 @@ use nautilus_model::{
     identifiers::{InstrumentId, Symbol, TradeId},
     types::{PRICE_MAX, PRICE_MIN, Price},
 };
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, de};
 use ustr::Ustr;
 
 use super::enums::{TardisExchange, TardisInstrumentType, TardisOptionType};
@@ -35,11 +35,83 @@ const FNV_PRIME: u64 = 0x0100_0000_01b3;
 /// # Errors
 ///
 /// Returns a deserialization error if the input is not a valid string.
-pub fn deserialize_uppercase<'de, D>(deserializer: D) -> Result<Ustr, D::Error>
+pub(crate) fn deserialize_uppercase<'de, D>(deserializer: D) -> Result<Ustr, D::Error>
 where
     D: Deserializer<'de>,
 {
     String::deserialize(deserializer).map(|s| Ustr::from(&s.to_uppercase()))
+}
+
+/// Deserializes an `f64` from a JSON number or numeric string.
+///
+/// # Errors
+///
+/// Returns a deserialization error if the input is not numeric or if the string cannot be parsed
+/// as `f64`.
+pub(crate) fn deserialize_f64_or_string<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct F64OrString;
+    impl<'de> de::Visitor<'de> for F64OrString {
+        type Value = f64;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("f64 or string-encoded f64")
+        }
+        fn visit_f64<E: de::Error>(self, v: f64) -> Result<f64, E> {
+            Ok(v)
+        }
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<f64, E> {
+            Ok(v as f64)
+        }
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<f64, E> {
+            Ok(v as f64)
+        }
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<f64, E> {
+            v.parse().map_err(de::Error::custom)
+        }
+    }
+    deserializer.deserialize_any(F64OrString)
+}
+
+/// Deserializes an optional `f64` from null, a JSON number, or a numeric string.
+///
+/// # Errors
+///
+/// Returns a deserialization error if a non-null input is not numeric or if the string cannot be
+/// parsed as `f64`.
+pub(crate) fn deserialize_opt_f64_or_string<'de, D>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct OptF64OrString;
+    impl<'de> de::Visitor<'de> for OptF64OrString {
+        type Value = Option<f64>;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("null, f64, or string-encoded f64")
+        }
+        fn visit_none<E: de::Error>(self) -> Result<Option<f64>, E> {
+            Ok(None)
+        }
+        fn visit_unit<E: de::Error>(self) -> Result<Option<f64>, E> {
+            Ok(None)
+        }
+        fn visit_f64<E: de::Error>(self, v: f64) -> Result<Option<f64>, E> {
+            Ok(Some(v))
+        }
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<Option<f64>, E> {
+            Ok(Some(v as f64))
+        }
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<Option<f64>, E> {
+            Ok(Some(v as f64))
+        }
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Option<f64>, E> {
+            v.parse().map(Some).map_err(de::Error::custom)
+        }
+    }
+    deserializer.deserialize_any(OptF64OrString)
 }
 
 /// Derives a deterministic [`TradeId`] from trade fields.
