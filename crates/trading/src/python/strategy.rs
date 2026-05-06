@@ -59,8 +59,8 @@ use nautilus_model::{
         OrderUpdated, PositionChanged, PositionClosed, PositionOpened,
     },
     identifiers::{
-        AccountId, ActorId, ClientId, InstrumentId, OptionSeriesId, PositionId, StrategyId,
-        TraderId, Venue,
+        AccountId, ClientId, InstrumentId, OptionSeriesId, PositionId, StrategyId, TraderId, Venue,
+        normalize_order_id_tag,
     },
     instruments::InstrumentAny,
     orderbook::OrderBook,
@@ -1082,28 +1082,50 @@ impl PyStrategy {
         self.inner_mut().py_self = Some(py_obj);
     }
 
-    /// Updates the strategy_id (actor_id) in both the core config and the actor_id field.
+    /// Updates the runtime strategy ID.
     ///
     /// Must only be called before registration. See `PyDataActor::set_actor_id`.
-    pub fn set_strategy_id(&mut self, strategy_id: StrategyId) {
-        let actor_id = ActorId::from(strategy_id.inner().as_str());
+    pub fn set_strategy_id(&mut self, strategy_id: StrategyId) -> anyhow::Result<()> {
         let inner = self.inner_mut();
-        inner.core.config.strategy_id = Some(strategy_id);
-        inner.core.actor.config.actor_id = Some(actor_id);
-        inner.core.actor.actor_id = actor_id;
+        if let Some(order_id_tag) = inner.core.order_id_tag()
+            && strategy_id.get_tag() != order_id_tag
+        {
+            anyhow::bail!(
+                "Strategy order_id_tag '{order_id_tag}' does not match strategy_id '{strategy_id}' tag '{}'",
+                strategy_id.get_tag(),
+            );
+        }
+
+        inner.core.change_id(strategy_id);
+        Ok(())
     }
 
-    /// Updates the log_events setting in the core config.
+    /// Updates the runtime order ID tag.
+    pub fn set_order_id_tag(&mut self, order_id_tag: &str) -> anyhow::Result<()> {
+        let inner = self.inner_mut();
+        if let Some(order_id_tag) = normalize_order_id_tag(Some(order_id_tag))
+            && let Some(strategy_id) = inner.core.strategy_id()
+            && strategy_id.get_tag() != order_id_tag
+        {
+            anyhow::bail!(
+                "Strategy order_id_tag '{order_id_tag}' does not match strategy_id '{strategy_id}' tag '{}'",
+                strategy_id.get_tag(),
+            );
+        }
+
+        inner.core.change_order_id_tag(order_id_tag);
+        Ok(())
+    }
+
+    /// Updates the runtime log_events setting.
     pub fn set_log_events(&mut self, log_events: bool) {
         let inner = self.inner_mut();
-        inner.core.config.log_events = log_events;
         inner.core.actor.config.log_events = log_events;
     }
 
-    /// Updates the log_commands setting in the core config.
+    /// Updates the runtime log_commands setting.
     pub fn set_log_commands(&mut self, log_commands: bool) {
         let inner = self.inner_mut();
-        inner.core.config.log_commands = log_commands;
         inner.core.actor.config.log_commands = log_commands;
     }
 

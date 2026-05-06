@@ -19,7 +19,7 @@
 //! and individual trading components. It manages component lifecycles, provides
 //! unique identification, and coordinates with system engines.
 
-use std::{any::type_name, cell::RefCell, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::AHashMap;
 use nautilus_common::{
@@ -34,7 +34,7 @@ use nautilus_common::{
     messages::execution::TradingCommand,
     msgbus,
     msgbus::{
-        Endpoint, MStr, ShareableMessageHandler, TypedHandler, get_message_bus,
+        ShareableMessageHandler, TypedHandler, get_message_bus,
         switchboard::{get_event_orders_topic, get_event_positions_topic},
     },
     timer::{TimeEvent, TimeEventCallback},
@@ -42,52 +42,22 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     events::{OrderEventAny, PositionEvent},
-    identifiers::{ActorId, ComponentId, ExecAlgorithmId, StrategyId, TraderId},
+    identifiers::{
+        ActorId, ComponentId, ExecAlgorithmId, StrategyId, TraderId, normalize_order_id_tag,
+    },
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_trading::{ExecutionAlgorithm, strategy::Strategy};
 use ustr::Ustr;
 
+use crate::registration::{
+    base_strategy_id, ensure_unique_order_id_tag, strategy_control_endpoint,
+    strategy_registration_id,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StrategyCommand {
     ExitMarket,
-}
-
-fn strategy_control_endpoint(strategy_id: StrategyId) -> MStr<Endpoint> {
-    format!("{strategy_id}.control").into()
-}
-
-fn strategy_registration_id<T>(strategy: &T) -> String
-where
-    T: Strategy + Component + Debug + 'static,
-{
-    strategy.core().config.strategy_id.map_or_else(
-        || {
-            let strategy_type = type_name::<T>()
-                .rsplit("::")
-                .next()
-                .unwrap_or_else(|| type_name::<T>());
-            strategy_type.to_string()
-        },
-        |strategy_id| strategy_id.to_string(),
-    )
-}
-
-fn strategy_id_with_registration_tag(strategy_id: String, order_id_tag: &str) -> StrategyId {
-    if strategy_id
-        .rsplit_once('-')
-        .is_some_and(|(_, tag)| tag == order_id_tag)
-    {
-        StrategyId::from(strategy_id)
-    } else {
-        StrategyId::from(format!("{strategy_id}-{order_id_tag}"))
-    }
-}
-
-fn base_strategy_id(strategy_id: &str) -> String {
-    strategy_id
-        .split_once('-')
-        .map_or_else(|| strategy_id.to_string(), |(base, _)| base.to_string())
 }
 
 /// Central orchestrator for managing trading components.
@@ -440,6 +410,10 @@ impl Trader {
             anyhow::bail!("Strategy '{strategy_id}' is already tracked by trader");
         }
 
+        let existing_order_id_tags: Vec<&str> =
+            self.strategy_ids.iter().map(StrategyId::get_tag).collect();
+        ensure_unique_order_id_tag(&existing_order_id_tags, strategy_id.get_tag())?;
+
         let actor_id = Ustr::from(strategy_id.inner().as_str());
 
         // Subscribe to order events for this strategy
@@ -527,40 +501,47 @@ impl Trader {
         let existing_order_id_tags: Vec<&str> =
             self.strategy_ids.iter().map(StrategyId::get_tag).collect();
 
-        let order_id_tag = strategy
-            .core()
-            .config
-            .order_id_tag
-            .clone()
-            .filter(|tag| !tag.is_empty() && tag != "None");
+        let configured_strategy_id = strategy.core().strategy_id();
+        let configured_order_id_tag =
+            normalize_order_id_tag(strategy.core().config.order_id_tag.as_deref());
+        let runtime_order_id_tag = normalize_order_id_tag(strategy.core().order_id_tag());
 
-        let strategy_id = if let Some(order_id_tag) = order_id_tag {
-            if existing_order_id_tags.contains(&order_id_tag.as_str()) {
+        let strategy_id = if let Some(strategy_id) = configured_strategy_id {
+            let order_id_tag = runtime_order_id_tag
+                .unwrap_or_else(|| strategy_id.get_tag())
+                .to_string();
+
+            if strategy_id.get_tag() != order_id_tag {
                 anyhow::bail!(
-                    "Strategy order_id_tag conflict for '{order_id_tag}', explicitly define unique order_id_tag values",
+                    "Strategy order_id_tag '{order_id_tag}' does not match strategy_id '{strategy_id}' tag '{}'",
+                    strategy_id.get_tag(),
                 );
             }
 
-            let strategy_id = strategy_id_with_registration_tag(
-                strategy_registration_id::<T>(strategy),
-                &order_id_tag,
-            );
+            if let Some(configured_order_id_tag) = configured_order_id_tag
+                && configured_order_id_tag != order_id_tag
+            {
+                anyhow::bail!(
+                    "Strategy config order_id_tag '{configured_order_id_tag}' does not match runtime order_id_tag '{order_id_tag}'",
+                );
+            }
+
+            ensure_unique_order_id_tag(&existing_order_id_tags, &order_id_tag)?;
             strategy.core_mut().change_id(strategy_id);
             strategy_id
         } else {
-            let order_id_tag = format!("{:03}", existing_order_id_tags.len());
-            if existing_order_id_tags.contains(&order_id_tag.as_str()) {
-                anyhow::bail!(
-                    "Strategy order_id_tag conflict for '{order_id_tag}', explicitly define unique order_id_tag values",
-                );
-            }
+            let order_id_tag = runtime_order_id_tag.map_or_else(
+                || format!("{:03}", existing_order_id_tags.len()),
+                str::to_string,
+            );
+            ensure_unique_order_id_tag(&existing_order_id_tags, &order_id_tag)?;
 
             let base_id = strategy_registration_id::<T>(strategy);
             let strategy_id =
                 StrategyId::from(format!("{}-{order_id_tag}", base_strategy_id(&base_id)));
             let core = strategy.core_mut();
             core.change_id(strategy_id);
-            core.change_order_id_tag(order_id_tag);
+            core.change_order_id_tag(&order_id_tag);
             strategy_id
         };
 
@@ -1549,7 +1530,7 @@ mod tests {
         assert!(
             trader
                 .strategy_ids()
-                .contains(&StrategyId::from("Test-000"))
+                .contains(&StrategyId::from("Test-Strategy"))
         );
     }
 
@@ -1605,6 +1586,10 @@ mod tests {
             .prepare_strategy_for_registration(&mut strategy)
             .unwrap();
         assert_eq!(prepared_id, StrategyId::from("TestStrategy-000"));
+        assert_eq!(strategy.core().config.strategy_id, None);
+        assert_eq!(strategy.core().config.order_id_tag, None);
+        assert_eq!(strategy.core().strategy_id(), Some(prepared_id));
+        assert_eq!(strategy.core().order_id_tag(), Some("000"));
 
         assert!(trader.add_strategy(strategy).is_ok());
         assert_eq!(trader.strategy_ids(), vec![prepared_id]);
@@ -1634,6 +1619,11 @@ mod tests {
         let strategy2 = TestStrategy::new(config);
 
         assert!(trader.add_strategy(strategy1).is_ok());
+        assert_eq!(
+            trader.strategy_ids(),
+            vec![StrategyId::from("TestStrategy-001")]
+        );
+
         let result = trader.add_strategy(strategy2);
 
         assert!(result.is_err());
@@ -1642,6 +1632,75 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("order_id_tag conflict")
+        );
+    }
+
+    #[rstest]
+    fn test_add_strategy_id_with_subscriptions_duplicate_order_id_tag_fails() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+            create_trader_components();
+        let trader_id = TraderId::test_default();
+        let instance_id = UUID4::new();
+
+        let mut trader = Trader::new(
+            trader_id,
+            instance_id,
+            Environment::Backtest,
+            clock,
+            cache,
+            portfolio,
+        );
+
+        assert!(
+            trader
+                .add_strategy_id_with_subscriptions::<TestStrategy>(StrategyId::from("Foo-001"))
+                .is_ok()
+        );
+
+        let result =
+            trader.add_strategy_id_with_subscriptions::<TestStrategy>(StrategyId::from("Bar-001"));
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("order_id_tag conflict")
+        );
+        assert_eq!(trader.strategy_ids(), vec![StrategyId::from("Foo-001")]);
+    }
+
+    #[rstest]
+    fn test_add_strategy_with_mismatched_strategy_id_and_order_id_tag_fails() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+            create_trader_components();
+        let trader_id = TraderId::test_default();
+        let instance_id = UUID4::new();
+
+        let mut trader = Trader::new(
+            trader_id,
+            instance_id,
+            Environment::Backtest,
+            clock,
+            cache,
+            portfolio,
+        );
+
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("TestStrategy-001")),
+            order_id_tag: Some("002".to_string()),
+            ..Default::default()
+        };
+        let strategy = TestStrategy::new(config);
+
+        let result = trader.add_strategy(strategy);
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("does not match strategy_id")
         );
     }
 
@@ -1833,7 +1892,7 @@ mod tests {
         let strategy = TestStrategy::new(config);
         trader.add_strategy(strategy).unwrap();
 
-        let strategy_id = StrategyId::from("Test-000");
+        let strategy_id = StrategyId::from("Test-Strategy");
         let endpoint = strategy_control_endpoint(strategy_id);
         assert!(
             get_message_bus()
@@ -1881,7 +1940,7 @@ mod tests {
         let strategy = TestStrategy::new(config);
         trader.add_strategy(strategy).unwrap();
 
-        let strategy_id = StrategyId::from("Test-000");
+        let strategy_id = StrategyId::from("Test-Strategy");
         let endpoint = strategy_control_endpoint(strategy_id);
         assert!(
             get_message_bus()
@@ -1999,7 +2058,7 @@ mod tests {
         let strategy = TestStrategy::new(config);
         trader.add_strategy(strategy).unwrap();
 
-        let strategy_id = StrategyId::from("Test-000");
+        let strategy_id = StrategyId::from("Test-Strategy");
         let endpoint = strategy_control_endpoint(strategy_id);
         assert!(
             get_message_bus()

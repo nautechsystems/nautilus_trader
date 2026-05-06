@@ -670,8 +670,16 @@ Some venues (such as Binance Futures) support the GTD time in force, so to avoid
 ### Multiple strategies
 
 If you intend running multiple instances of the same strategy, with different
-configurations (such as trading different instruments), then you will need to define
-a unique `order_id_tag` for each of these strategies (as shown above).
+configurations (such as trading different instruments), then each instance needs a
+unique strategy ID and order ID tag.
+
+If `strategy_id` is not supplied, the platform builds the strategy ID from the
+strategy class name and an order ID tag. The tag can be supplied with `order_id_tag`;
+otherwise registration assigns the next numeric tag, starting with `000`. For example,
+the above config results in a strategy ID of `MyStrategy-001`.
+
+If `strategy_id` is supplied, use a value whose final hyphen-separated part is the
+order ID tag, such as `MyStrategy-001`.
 
 :::note
 The platform has built-in safety measures: if two strategies share a duplicated strategy ID,
@@ -679,9 +687,20 @@ a `RuntimeError` is raised during registration indicating the strategy ID is alr
 :::
 
 The reason for this is that the system must be able to identify which strategy
-various commands and events belong to. A strategy ID is made up of the
-strategy class name, and the strategies `order_id_tag` separated by a hyphen. For
-example the above config would result in a strategy ID of `MyStrategy-001`.
+various commands and events belong to. The order ID tag also keeps generated client
+order IDs unique across strategies for the same trader.
+
+:::info Rust implementation
+Rust treats `StrategyConfig` as immutable construction input. If `strategy_id` is
+supplied, Rust uses it as the authoritative runtime `StrategyId`; the order tag is
+the final hyphen-separated part of that ID. `order_id_tag` remains useful when
+`strategy_id` is omitted, because it overrides the generated suffix, for example
+`MyStrategy-ABC`.
+
+If both fields are supplied in Rust, they must agree: `strategy_id=MyStrategy-ABC`
+with `order_id_tag=ABC` is valid, but `order_id_tag=001` is rejected. Python/Cython
+keeps the existing runtime composition behavior and is not changed by this Rust rule.
+:::
 
 See the [`StrategyId` API Reference](/docs/python-api-latest/model/identifiers.html) for further details.
 

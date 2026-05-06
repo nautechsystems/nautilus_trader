@@ -28,28 +28,13 @@ use nautilus_common::{
     factories::OrderFactory,
 };
 use nautilus_execution::order_manager::manager::OrderManager;
-use nautilus_model::identifiers::{ActorId, ClientOrderId, StrategyId, TraderId};
+use nautilus_model::identifiers::{
+    ActorId, ClientOrderId, StrategyId, TraderId, normalize_order_id_tag,
+};
 use nautilus_portfolio::portfolio::Portfolio;
 use ustr::Ustr;
 
 use super::config::StrategyConfig;
-
-/// Returns the strategy ID with `order_id_tag` as its final tag.
-#[must_use]
-pub fn strategy_id_with_order_id_tag(
-    strategy_id: StrategyId,
-    order_id_tag: Option<&str>,
-) -> StrategyId {
-    let Some(order_id_tag) = order_id_tag.filter(|tag| !tag.is_empty() && *tag != "None") else {
-        return strategy_id;
-    };
-
-    if strategy_id.get_tag() == order_id_tag {
-        return strategy_id;
-    }
-
-    StrategyId::from(format!("{strategy_id}-{order_id_tag}"))
-}
 
 /// The core component of a [`Strategy`](super::Strategy), managing data, orders, and state.
 ///
@@ -61,6 +46,8 @@ pub struct StrategyCore {
     pub(crate) actor: DataActorCore,
     /// The strategy configuration.
     pub config: StrategyConfig,
+    strategy_id: Option<StrategyId>,
+    order_id_tag: Option<String>,
     pub(crate) order_manager: Option<OrderManager>,
     pub(crate) order_factory: Option<OrderFactory>,
     pub(crate) portfolio: Option<Rc<RefCell<Portfolio>>>,
@@ -77,6 +64,8 @@ impl Debug for StrategyCore {
         f.debug_struct(stringify!(StrategyCore))
             .field("actor", &self.actor)
             .field("config", &self.config)
+            .field("strategy_id", &self.strategy_id)
+            .field("order_id_tag", &self.order_id_tag)
             .field("order_manager", &self.order_manager)
             .field("order_factory", &self.order_factory)
             .field("is_exiting", &self.is_exiting)
@@ -88,18 +77,21 @@ impl Debug for StrategyCore {
 
 impl StrategyCore {
     /// Creates a new [`StrategyCore`] instance.
-    pub fn new(mut config: StrategyConfig) -> Self {
-        let strategy_id = config.strategy_id.map(|strategy_id| {
-            strategy_id_with_order_id_tag(strategy_id, config.order_id_tag.as_deref())
-        });
-        config.strategy_id = strategy_id;
+    pub fn new(config: StrategyConfig) -> Self {
+        let configured_strategy_id = config.strategy_id;
+        let order_id_tag = normalize_order_id_tag(config.order_id_tag.as_deref())
+            .map(str::to_string)
+            .or_else(|| {
+                configured_strategy_id.map(|strategy_id| strategy_id.get_tag().to_string())
+            });
+
         let actor_config = DataActorConfig {
-            actor_id: strategy_id.map(|id| ActorId::from(id.inner().as_str())),
+            actor_id: configured_strategy_id.map(|id| ActorId::from(id.inner().as_str())),
             log_events: config.log_events,
             log_commands: config.log_commands,
         };
 
-        let strategy_id = strategy_id
+        let strategy_id = configured_strategy_id
             .map(|id| id.inner().to_string())
             .unwrap_or_default();
         let market_exit_timer_name = Ustr::from(&format!("MARKET_EXIT_CHECK:{strategy_id}"));
@@ -107,6 +99,8 @@ impl StrategyCore {
         Self {
             actor: DataActorCore::new(actor_config),
             config,
+            strategy_id: configured_strategy_id,
+            order_id_tag,
             order_manager: None,
             order_factory: None,
             portfolio: None,
@@ -124,13 +118,27 @@ impl StrategyCore {
         let actor_id = ActorId::from(strategy_id.inner().as_str());
         self.actor.actor_id = actor_id;
         self.actor.config.actor_id = Some(actor_id);
-        self.config.strategy_id = Some(strategy_id);
+        self.strategy_id = Some(strategy_id);
+        self.order_id_tag
+            .get_or_insert_with(|| strategy_id.get_tag().to_string());
         self.market_exit_timer_name = Ustr::from(&format!("MARKET_EXIT_CHECK:{strategy_id}"));
     }
 
     /// Changes the order ID tag before registration.
-    pub fn change_order_id_tag(&mut self, order_id_tag: String) {
-        self.config.order_id_tag = Some(order_id_tag);
+    pub fn change_order_id_tag(&mut self, order_id_tag: &str) {
+        self.order_id_tag = normalize_order_id_tag(Some(order_id_tag)).map(str::to_string);
+    }
+
+    /// Returns the runtime order ID tag.
+    #[must_use]
+    pub fn order_id_tag(&self) -> Option<&str> {
+        self.order_id_tag.as_deref()
+    }
+
+    /// Returns the runtime strategy ID.
+    #[must_use]
+    pub fn strategy_id(&self) -> Option<StrategyId> {
+        self.strategy_id
     }
 
     /// Registers the strategy with the trading engine components.
@@ -147,10 +155,18 @@ impl StrategyCore {
         cache: Rc<RefCell<Cache>>,
         portfolio: Rc<RefCell<Portfolio>>,
     ) -> anyhow::Result<()> {
+        let strategy_id = StrategyId::from(self.actor.actor_id.inner().as_str());
+        if let Some(order_id_tag) = self.order_id_tag()
+            && strategy_id.get_tag() != order_id_tag
+        {
+            anyhow::bail!(
+                "Strategy order_id_tag '{order_id_tag}' does not match strategy_id '{strategy_id}' tag '{}'",
+                strategy_id.get_tag(),
+            );
+        }
+
         self.actor
             .register(trader_id, clock.clone(), cache.clone())?;
-
-        let strategy_id = StrategyId::from(self.actor.actor_id.inner().as_str());
 
         // Update market exit timer name with actual strategy ID
         self.market_exit_timer_name = Ustr::from(&format!("MARKET_EXIT_CHECK:{strategy_id}"));
@@ -252,6 +268,8 @@ mod tests {
 
         assert_eq!(core.config.strategy_id, config.strategy_id);
         assert_eq!(core.config.order_id_tag, config.order_id_tag);
+        assert_eq!(core.strategy_id(), config.strategy_id);
+        assert_eq!(core.order_id_tag(), Some("001"));
         assert!(core.order_manager.is_none());
         assert!(core.order_factory.is_none());
         assert!(core.portfolio.is_none());
@@ -261,25 +279,25 @@ mod tests {
     }
 
     #[rstest]
-    fn test_strategy_core_new_applies_explicit_order_id_tag() {
+    fn test_strategy_core_new_preserves_explicit_strategy_id() {
         let config = StrategyConfig {
-            strategy_id: Some(StrategyId::from("aggressor-1.257778121-51158946.BETFAIR")),
+            strategy_id: Some(StrategyId::from(
+                "aggressor-1.257778121-51158946.BETFAIR-AGG",
+            )),
             order_id_tag: Some("AGG".to_string()),
             ..Default::default()
         };
 
-        let core = StrategyCore::new(config);
+        let core = StrategyCore::new(config.clone());
 
         assert_eq!(
             core.actor_id(),
             ActorId::from("aggressor-1.257778121-51158946.BETFAIR-AGG")
         );
-        assert_eq!(
-            core.config.strategy_id,
-            Some(StrategyId::from(
-                "aggressor-1.257778121-51158946.BETFAIR-AGG"
-            ))
-        );
+        assert_eq!(core.config.strategy_id, config.strategy_id);
+        assert_eq!(core.config.order_id_tag, config.order_id_tag);
+        assert_eq!(core.strategy_id(), config.strategy_id);
+        assert_eq!(core.order_id_tag(), Some("AGG"));
     }
 
     #[rstest]
@@ -308,7 +326,9 @@ mod tests {
     #[rstest]
     fn test_strategy_core_register_uses_order_id_tag_for_factory() {
         let config = StrategyConfig {
-            strategy_id: Some(StrategyId::from("aggressor-1.257778121-51158946.BETFAIR")),
+            strategy_id: Some(StrategyId::from(
+                "aggressor-1.257778121-51158946.BETFAIR-AGG",
+            )),
             order_id_tag: Some("AGG".to_string()),
             ..Default::default()
         };

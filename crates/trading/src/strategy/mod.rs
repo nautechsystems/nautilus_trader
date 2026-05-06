@@ -1004,7 +1004,7 @@ pub trait Strategy: DataActor {
 
             if is_warning {
                 log::warn!("{id} {RECV}{EVT} {event}");
-            } else if core.config.log_events {
+            } else if core.actor.config.log_events {
                 log::info!("{id} {RECV}{EVT} {event}");
             }
 
@@ -1071,7 +1071,7 @@ pub trait Strategy: DataActor {
         let state = {
             let core = self.core_mut();
 
-            if core.config.log_events {
+            if core.actor.config.log_events {
                 let id = &core.actor.actor_id;
                 log::info!("{id} {RECV}{EVT} {event:?}");
             }

@@ -302,12 +302,13 @@ fn test_from_config_with_custom_strategy_id() {
         5,
         20,
     )
-    .with_strategy_id(StrategyId::from("MY_EMA-002"));
+    .with_strategy_id(StrategyId::from("MY_EMA-002"))
+    .with_order_id_tag("002".to_string());
 
     let strategy = EmaCross::from_config(config);
     assert_eq!(
         strategy.core().config.strategy_id,
-        Some(StrategyId::from("MY_EMA-002-001")),
+        Some(StrategyId::from("MY_EMA-002")),
     );
     assert_eq!(strategy.instrument_id, InstrumentId::from(INSTRUMENT_ID));
     assert_eq!(strategy.trade_size, Quantity::from("50000"));
