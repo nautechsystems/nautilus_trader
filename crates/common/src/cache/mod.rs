@@ -2383,8 +2383,12 @@ impl Cache {
             // If the order is being modified then we allow a changing `VenueOrderId` to accommodate
             // venues which use a cancel+replace update strategy.
             if !self.index.venue_order_ids.contains_key(&venue_order_id) {
-                // TODO: If the last event was `OrderUpdated` then overwrite should be true
-                self.add_venue_order_id(&order.client_order_id(), &venue_order_id, false)?;
+                let overwrite = matches!(order.last_event(), OrderEventAny::Updated(_));
+                if let Err(e) =
+                    self.add_venue_order_id(&order.client_order_id(), &venue_order_id, overwrite)
+                {
+                    log::error!("Error indexing venue order ID in cache: {e}");
+                }
             }
         }
 

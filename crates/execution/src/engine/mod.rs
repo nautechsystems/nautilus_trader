@@ -2240,6 +2240,19 @@ impl ExecutionEngine {
             }
         };
 
+        if self.config.manage_own_order_books && should_handle_own_book_order(&order) {
+            let needs_own_book = {
+                self.cache
+                    .borrow()
+                    .own_order_book(&order.instrument_id())
+                    .is_none()
+            };
+
+            if needs_own_book {
+                self.cache.borrow_mut().update_own_order_book(&order);
+            }
+        }
+
         if self.config.debug {
             log::debug!("{SEND}{EVT} {event}");
         }

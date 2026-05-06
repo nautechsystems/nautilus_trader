@@ -9577,6 +9577,51 @@ fn test_reconcile_order_status_report_creates_external_order_accepted(
 }
 
 #[rstest]
+fn test_reconcile_order_status_report_external_order_bootstraps_own_book() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        manage_own_order_books: true,
+        ..Default::default()
+    };
+    let mut execution_engine = ExecutionEngine::new(clock, cache, Some(config));
+
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let report = create_order_status_report(
+        Some(ClientOrderId::from("external-open-001")),
+        VenueOrderId::from("V-EXT-OWN-001"),
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(50_000),
+        Quantity::from(0),
+    );
+
+    execution_engine.reconcile_order_status_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&ClientOrderId::from("external-open-001"))
+        .expect("external order should be in cache");
+    let own_book = cache
+        .own_order_book(&instrument.id())
+        .expect("own book should be initialized for external open order");
+
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    assert!(own_book.is_order_in_book(&order.client_order_id()));
+    assert_eq!(
+        own_book.bid_client_order_ids(),
+        vec![order.client_order_id()]
+    );
+    assert!(own_book.ask_client_order_ids().is_empty());
+}
+
+#[rstest]
 fn test_reconcile_order_status_report_external_order_uses_claimed_strategy(
     mut execution_engine: ExecutionEngine,
 ) {
