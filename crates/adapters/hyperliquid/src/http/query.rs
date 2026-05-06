@@ -222,6 +222,14 @@ impl InfoRequest {
         }
     }
 
+    /// Creates a request to get outcome metadata.
+    pub fn outcome_meta() -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::OutcomeMeta,
+            params: InfoRequestParams::None,
+        }
+    }
+
     /// Creates a request to get L2 order book for a coin.
     pub fn l2_book(coin: &str) -> Self {
         Self {
@@ -458,6 +466,16 @@ mod tests {
         assert_eq!(req.request_type, HyperliquidInfoRequestType::AllPerpMetas);
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains(r#""type":"allPerpMetas""#));
+    }
+
+    #[rstest]
+    fn test_info_request_outcome_meta() {
+        let req = InfoRequest::outcome_meta();
+
+        assert_eq!(req.request_type, HyperliquidInfoRequestType::OutcomeMeta);
+        assert!(matches!(req.params, InfoRequestParams::None));
+        let json = serde_json::to_string(&req).unwrap();
+        assert_eq!(json, r#"{"type":"outcomeMeta"}"#);
     }
 
     #[rstest]

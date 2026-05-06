@@ -816,6 +816,8 @@ pub enum HyperliquidInfoRequestType {
     MetaAndAssetCtxs,
     /// Get spot metadata with asset contexts.
     SpotMetaAndAssetCtxs,
+    /// Get outcome metadata.
+    OutcomeMeta,
     /// Get L2 order book for a coin.
     L2Book,
     /// Get all mid prices.
@@ -877,6 +879,7 @@ impl HyperliquidInfoRequestType {
             Self::SpotMeta => "spotMeta",
             Self::MetaAndAssetCtxs => "metaAndAssetCtxs",
             Self::SpotMetaAndAssetCtxs => "spotMetaAndAssetCtxs",
+            Self::OutcomeMeta => "outcomeMeta",
             Self::L2Book => "l2Book",
             Self::AllMids => "allMids",
             Self::UserFills => "userFills",
@@ -1083,6 +1086,14 @@ mod tests {
                 tif
             );
         }
+    }
+
+    #[rstest]
+    fn test_info_request_type_outcome_meta_as_str() {
+        assert_eq!(
+            HyperliquidInfoRequestType::OutcomeMeta.as_str(),
+            "outcomeMeta"
+        );
     }
 
     #[rstest]

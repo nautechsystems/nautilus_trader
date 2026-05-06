@@ -39,8 +39,8 @@ use nautilus_hyperliquid::{
     common::enums::{HyperliquidEnvironment, HyperliquidInfoRequestType},
     http::{
         models::{
-            Cloid, HyperliquidFills, HyperliquidL2Book, PerpMeta, PerpMetaAndCtxs, SpotMeta,
-            SpotMetaAndCtxs,
+            Cloid, HyperliquidFills, HyperliquidL2Book, OutcomeMeta, PerpMeta, PerpMetaAndCtxs,
+            SpotMeta, SpotMetaAndCtxs,
         },
         query::{InfoRequest, InfoRequestParams},
     },
@@ -157,6 +157,20 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             {"universe": [], "tokens": []},
             []
         ]))
+        .into_response(),
+        "outcomeMeta" => Json(json!({
+            "outcomes": [
+                {
+                    "outcome": 123,
+                    "name": "Recurring",
+                    "description": "class:priceBinary|underlying:HYPE|expiry:20260310-1100|targetPrice:34.5|period:3m",
+                    "sideSpecs": [
+                        {"name": "Yes"},
+                        {"name": "No"}
+                    ]
+                }
+            ]
+        }))
         .into_response(),
         "l2Book" => {
             let book = load_json("http_l2_book_btc.json");
@@ -384,6 +398,23 @@ async fn test_spot_meta_and_ctxs_returns_metadata_with_contexts() {
     assert!(meta.tokens.is_empty());
     assert!(meta.universe.is_empty());
     assert!(ctxs.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_outcome_meta_returns_outcome_metadata() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+    let meta = client.get_outcome_meta().await.unwrap();
+
+    assert_eq!(meta.outcomes.len(), 1);
+    assert_eq!(meta.outcomes[0].outcome, 123);
+    assert_eq!(meta.outcomes[0].side_specs[0].name, "Yes");
+
+    let request_body = state.last_request_body.lock().await.clone().unwrap();
+    assert_eq!(request_body.get("type").unwrap(), "outcomeMeta");
 }
 
 #[rstest]
@@ -1067,6 +1098,12 @@ impl TestHttpClient {
 
     async fn get_spot_meta_and_ctxs(&self) -> Result<SpotMetaAndCtxs, String> {
         let request = InfoRequest::spot_meta_and_asset_ctxs();
+        let value = self.send_info_request(&request).await?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    async fn get_outcome_meta(&self) -> Result<OutcomeMeta, String> {
+        let request = InfoRequest::outcome_meta();
         let value = self.send_info_request(&request).await?;
         serde_json::from_value(value).map_err(|e| e.to_string())
     }

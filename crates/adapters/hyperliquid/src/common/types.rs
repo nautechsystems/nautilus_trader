@@ -60,6 +60,13 @@ impl HyperliquidAssetId {
         Self(HIP_4_OUTCOME_BASE + 10 * outcome + u32::from(side))
     }
 
+    /// Creates an outcome (HIP-4) asset ID from an encoded `10 * outcome + side` value.
+    pub fn from_outcome_encoding(encoding: u32) -> Option<Self> {
+        let raw = HIP_4_OUTCOME_BASE.checked_add(encoding)?;
+        let asset_id = Self(raw);
+        asset_id.is_outcome().then_some(asset_id)
+    }
+
     /// Checks if this is a perp asset (raw index, `< 10_000`).
     pub fn is_perp(self) -> bool {
         self.0 < HIP_1_SPOT_BASE
@@ -104,14 +111,18 @@ impl HyperliquidAssetId {
 
     /// Returns the outcome number for an outcome asset, otherwise `None`.
     pub fn outcome_index(self) -> Option<u32> {
-        self.is_outcome()
-            .then(|| (self.0 - HIP_4_OUTCOME_BASE) / 10)
+        self.outcome_encoding().map(|encoding| encoding / 10)
     }
 
     /// Returns the outcome side (`0` or `1`) for an outcome asset, otherwise `None`.
     pub fn outcome_side(self) -> Option<u8> {
-        self.is_outcome()
-            .then(|| ((self.0 - HIP_4_OUTCOME_BASE) % 10) as u8)
+        self.outcome_encoding()
+            .map(|encoding| (encoding % 10) as u8)
+    }
+
+    /// Returns the outcome encoding (`10 * outcome + side`) for an outcome asset.
+    pub fn outcome_encoding(self) -> Option<u32> {
+        self.is_outcome().then(|| self.0 - HIP_4_OUTCOME_BASE)
     }
 
     /// Gets the raw asset ID value.
@@ -174,6 +185,7 @@ mod tests {
         assert!(!asset_id.is_builder_perp());
         assert!(asset_id.is_outcome());
         assert_eq!(asset_id.base_index(), 10);
+        assert_eq!(asset_id.outcome_encoding(), Some(10));
         assert_eq!(asset_id.outcome_index(), Some(1));
         assert_eq!(asset_id.outcome_side(), Some(0));
     }
@@ -183,8 +195,27 @@ mod tests {
         let asset_id = HyperliquidAssetId::outcome(3, 1);
         assert_eq!(asset_id.to_raw(), 100_000_031);
         assert!(asset_id.is_outcome());
+        assert_eq!(asset_id.outcome_encoding(), Some(31));
         assert_eq!(asset_id.outcome_index(), Some(3));
         assert_eq!(asset_id.outcome_side(), Some(1));
+    }
+
+    #[rstest]
+    fn test_asset_id_from_outcome_encoding() {
+        let asset_id = HyperliquidAssetId::from_outcome_encoding(10).unwrap();
+        assert_eq!(asset_id.to_raw(), 100_000_010);
+        assert_eq!(asset_id.outcome_index(), Some(1));
+        assert_eq!(asset_id.outcome_side(), Some(0));
+    }
+
+    #[rstest]
+    fn test_asset_id_from_outcome_encoding_rejects_invalid_side() {
+        assert_eq!(HyperliquidAssetId::from_outcome_encoding(12), None);
+    }
+
+    #[rstest]
+    fn test_asset_id_from_outcome_encoding_rejects_overflow() {
+        assert_eq!(HyperliquidAssetId::from_outcome_encoding(u32::MAX), None);
     }
 
     #[rstest]

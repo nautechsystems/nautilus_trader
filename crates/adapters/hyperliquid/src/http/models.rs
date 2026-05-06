@@ -254,6 +254,37 @@ pub struct SpotPair {
     pub is_canonical: bool,
 }
 
+/// Complete outcome metadata response from `POST /info` with `{ "type": "outcomeMeta" }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutcomeMeta {
+    /// Outcome markets available.
+    pub outcomes: Vec<OutcomeMarket>,
+}
+
+/// A single outcome market from the outcome metadata response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutcomeMarket {
+    /// Outcome identifier used with side to derive HIP-4 asset IDs.
+    pub outcome: u32,
+    /// Outcome market name.
+    pub name: String,
+    /// Venue-provided market description.
+    pub description: String,
+    /// Side specifications for the binary outcome.
+    #[serde(default)]
+    pub side_specs: Vec<OutcomeSideSpec>,
+}
+
+/// A single side specification for an outcome market.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutcomeSideSpec {
+    /// Side name (for example, "Yes" or "No").
+    pub name: String,
+}
+
 /// Optional perpetuals metadata with asset contexts from `{ "type": "metaAndAssetCtxs" }`.
 /// Returns a tuple: `[PerpMeta, Vec<PerpAssetCtx>]`
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -685,6 +716,25 @@ mod tests {
 
         assert_eq!(asset.growth_mode, None);
         assert_eq!(asset.margin_mode, None);
+    }
+
+    #[rstest]
+    fn test_outcome_meta_defaults_missing_side_specs() {
+        let json = r#"{
+            "outcomes": [
+                {
+                    "outcome": 123,
+                    "name": "Recurring",
+                    "description": "class:priceBinary|underlying:HYPE|expiry:20260310-1100|targetPrice:34.5|period:3m"
+                }
+            ]
+        }"#;
+
+        let meta: OutcomeMeta = serde_json::from_str(json).unwrap();
+
+        assert_eq!(meta.outcomes.len(), 1);
+        assert_eq!(meta.outcomes[0].outcome, 123);
+        assert!(meta.outcomes[0].side_specs.is_empty());
     }
 
     #[rstest]
