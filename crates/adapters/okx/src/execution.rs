@@ -87,6 +87,13 @@ fn get_param_as_string(params: &Option<Params>, key: &str) -> Option<String> {
     })
 }
 
+fn supports_algo_orders(instrument_type: OKXInstrumentType) -> bool {
+    !matches!(
+        instrument_type,
+        OKXInstrumentType::Option | OKXInstrumentType::Events
+    )
+}
+
 #[derive(Debug)]
 pub struct OKXExecutionClient {
     core: ExecutionClientCore,
@@ -294,6 +301,8 @@ impl OKXExecutionClient {
 
         let px_usd = get_param_as_string(&cmd.params, "px_usd");
         let px_vol = get_param_as_string(&cmd.params, "px_vol");
+        let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
+        let outcome = get_param_as_string(&cmd.params, "outcome");
 
         self.spawn_task("submit_order", async move {
             let result = ws_private
@@ -316,6 +325,8 @@ impl OKXExecutionClient {
                     None,
                     px_usd,
                     px_vol,
+                    speed_bump,
+                    outcome,
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"));
@@ -954,7 +965,7 @@ impl ExecutionClient for OKXExecutionClient {
 
         // Subscribe to algo orders on business WebSocket (OKX requires this endpoint)
         for inst_type in &instrument_types {
-            if *inst_type != OKXInstrumentType::Option {
+            if supports_algo_orders(*inst_type) {
                 self.ws_business.subscribe_orders_algo(*inst_type).await?;
                 self.ws_business.subscribe_algo_advance(*inst_type).await?;
             }
@@ -1023,6 +1034,9 @@ impl ExecutionClient for OKXExecutionClient {
         let instrument_id = cmd.instrument_id;
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
+        let should_query_algo = supports_algo_orders(okx_instrument_type_from_symbol(
+            instrument_id.symbol.as_str(),
+        ));
 
         self.spawn_task("query_order", async move {
             let mut reports = match http_client
@@ -1046,21 +1060,23 @@ impl ExecutionClient for OKXExecutionClient {
 
             // Merge algo orders (stop, OCO, TP/SL, trailing) so query_order can
             // resolve conditional orders as well.
-            match http_client
-                .request_algo_order_status_reports(
-                    account_id,
-                    None,
-                    Some(instrument_id),
-                    None,
-                    Some(client_order_id),
-                    None,
-                    None,
-                )
-                .await
-            {
-                Ok(mut algo) => reports.append(&mut algo),
-                Err(e) => {
-                    log::warn!("OKX query_order algo lookup failed for {instrument_id}: {e}");
+            if should_query_algo {
+                match http_client
+                    .request_algo_order_status_reports(
+                        account_id,
+                        None,
+                        Some(instrument_id),
+                        None,
+                        Some(client_order_id),
+                        None,
+                        None,
+                    )
+                    .await
+                {
+                    Ok(mut algo) => reports.append(&mut algo),
+                    Err(e) => {
+                        log::warn!("OKX query_order algo lookup failed for {instrument_id}: {e}");
+                    }
                 }
             }
 
@@ -1229,26 +1245,32 @@ impl ExecutionClient for OKXExecutionClient {
             )
             .await?;
 
-        // Merge algo orders (stop, OCO, TP/SL, trailing). They live on a
-        // separate OKX endpoint and would otherwise be dropped from
-        // reconciliation, leaving stop/conditional orders unrecovered after
-        // a restart.
-        match self
-            .http_client
-            .request_algo_order_status_reports(
-                self.core.account_id,
-                None,
-                Some(instrument_id),
-                None,
-                cmd.client_order_id,
-                None,
-                None,
-            )
-            .await
-        {
-            Ok(mut algo_reports) => reports.append(&mut algo_reports),
-            Err(e) => {
-                log::warn!("Failed to fetch algo order status reports for {instrument_id}: {e}");
+        if supports_algo_orders(okx_instrument_type_from_symbol(
+            instrument_id.symbol.as_str(),
+        )) {
+            // Merge algo orders (stop, OCO, TP/SL, trailing). They live on a
+            // separate OKX endpoint and would otherwise be dropped from
+            // reconciliation, leaving stop/conditional orders unrecovered after
+            // a restart.
+            match self
+                .http_client
+                .request_algo_order_status_reports(
+                    self.core.account_id,
+                    None,
+                    Some(instrument_id),
+                    None,
+                    cmd.client_order_id,
+                    None,
+                    None,
+                )
+                .await
+            {
+                Ok(mut algo_reports) => reports.append(&mut algo_reports),
+                Err(e) => {
+                    log::warn!(
+                        "Failed to fetch algo order status reports for {instrument_id}: {e}"
+                    );
+                }
             }
         }
 
@@ -1284,29 +1306,33 @@ impl ExecutionClient for OKXExecutionClient {
                 .await?;
             reports.append(&mut fetched);
 
-            // Merge algo orders for the requested instrument so reconciliation
-            // recovers stop, OCO, TP/SL, and trailing orders alongside regular
-            // ones. Failure here is logged but does not abort the regular
-            // reconciliation; an algo-endpoint outage should not blank the
-            // entire status report.
-            match self
-                .http_client
-                .request_algo_order_status_reports(
-                    self.core.account_id,
-                    None,
-                    Some(instrument_id),
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .await
-            {
-                Ok(mut algo) => reports.append(&mut algo),
-                Err(e) => {
-                    log::warn!(
-                        "Failed to fetch algo order status reports for {instrument_id}: {e}"
-                    );
+            if supports_algo_orders(okx_instrument_type_from_symbol(
+                instrument_id.symbol.as_str(),
+            )) {
+                // Merge algo orders for the requested instrument so reconciliation
+                // recovers stop, OCO, TP/SL, and trailing orders alongside regular
+                // ones. Failure here is logged but does not abort the regular
+                // reconciliation; an algo-endpoint outage should not blank the
+                // entire status report.
+                match self
+                    .http_client
+                    .request_algo_order_status_reports(
+                        self.core.account_id,
+                        None,
+                        Some(instrument_id),
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                    .await
+                {
+                    Ok(mut algo) => reports.append(&mut algo),
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to fetch algo order status reports for {instrument_id}: {e}"
+                        );
+                    }
                 }
             }
         } else {
@@ -1325,23 +1351,25 @@ impl ExecutionClient for OKXExecutionClient {
                     .await?;
                 reports.append(&mut fetched);
 
-                match self
-                    .http_client
-                    .request_algo_order_status_reports(
-                        self.core.account_id,
-                        Some(inst_type),
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                    )
-                    .await
-                {
-                    Ok(mut algo) => reports.append(&mut algo),
-                    Err(e) => log::warn!(
-                        "Failed to fetch algo order status reports for {inst_type:?}: {e}"
-                    ),
+                if supports_algo_orders(inst_type) {
+                    match self
+                        .http_client
+                        .request_algo_order_status_reports(
+                            self.core.account_id,
+                            Some(inst_type),
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                        )
+                        .await
+                    {
+                        Ok(mut algo) => reports.append(&mut algo),
+                        Err(e) => log::warn!(
+                            "Failed to fetch algo order status reports for {inst_type:?}: {e}"
+                        ),
+                    }
                 }
             }
         }
@@ -1578,6 +1606,8 @@ impl ExecutionClient for OKXExecutionClient {
 
         // Build batch payload and emit submitted events
         let mut batch_orders = Vec::new();
+        let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
+        let outcome = get_param_as_string(&cmd.params, "outcome");
 
         for client_order_id in &cmd.order_list.client_order_ids {
             let order = cache.order(client_order_id).expect("validated above");
@@ -1595,6 +1625,8 @@ impl ExecutionClient for OKXExecutionClient {
                 order.trigger_price(),
                 Some(order.is_post_only()),
                 Some(order.is_reduce_only()),
+                speed_bump.clone(),
+                outcome.clone(),
             ));
 
             self.ws_dispatch_state.order_identities.insert(
@@ -1658,6 +1690,7 @@ impl ExecutionClient for OKXExecutionClient {
 
         let new_px_usd = get_param_as_string(&cmd.params, "px_usd");
         let new_px_vol = get_param_as_string(&cmd.params, "px_vol");
+        let speed_bump = get_param_as_string(&cmd.params, "speed_bump");
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -1674,6 +1707,7 @@ impl ExecutionClient for OKXExecutionClient {
                     command.venue_order_id,
                     new_px_usd,
                     new_px_vol,
+                    speed_bump,
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("Modify order failed: {e}"));
@@ -1988,6 +2022,20 @@ mod tests {
             use_spot_margin,
             ..OKXExecClientConfig::default()
         }
+    }
+
+    #[rstest]
+    #[case::spot(OKXInstrumentType::Spot, true)]
+    #[case::margin(OKXInstrumentType::Margin, true)]
+    #[case::swap(OKXInstrumentType::Swap, true)]
+    #[case::futures(OKXInstrumentType::Futures, true)]
+    #[case::option(OKXInstrumentType::Option, false)]
+    #[case::events(OKXInstrumentType::Events, false)]
+    fn test_supports_algo_orders(
+        #[case] instrument_type: OKXInstrumentType,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(supports_algo_orders(instrument_type), expected);
     }
 
     #[rstest]

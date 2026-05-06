@@ -17,6 +17,7 @@ Released on TBD (UTC).
 - Added Coinbase CFM liquidation buffer warning when buffer drops below 20%
 - Added dYdX historical funding rate requests via the `request_funding_rates` HTTP method and PyO3 binding
 - Added Kraken Spot margin trading support (#3965), thanks @mcgrj
+- Added OKX event contracts support
 - Added Polymarket `OrderStatusReport.filled_qty` dust snap at terminal `Filled` status to absorb venue truncation
 - Added Polymarket `PolymarketFeeModel` backtest fee model with maker-rebate inference
 - Added Polymarket `PolymarketDataLoader.sanitize_info` flag to strip resolution fields on resolved markets
@@ -87,6 +88,7 @@ Released on TBD (UTC).
 - Fixed Kraken symbol normalization for WS v2 compatibility (#3961), thanks @mcgrj
 - Fixed OKX missing `post_only` instrument status (#3966), thanks @jhavie
 - Fixed OKX missing `rebase` instrument status (#3998), thanks @jhavie
+- Fixed OKX future instrument status parsing (#4005), thanks @cryptoSUN2049
 - Fixed Polymarket V2 BUY overfill rejection via overfill-only `last_qty` snap on WS, REST, and buffered drain paths
 - Fixed Polymarket REST fill paths bypassing dust normalization, causing engine state to diverge from venue across paths
 - Fixed Polymarket adapter book resync on `tick_size_change` (#3942), thanks for reporting @graceyangfan

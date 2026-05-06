@@ -76,6 +76,8 @@ struct TestServerState {
     last_order_detail_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     option_summary_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     option_summary_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    instrument_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    event_series_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     algo_pending_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     algo_history_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     last_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -142,8 +144,98 @@ fn load_instruments_from(filename: &str) -> Vec<InstrumentAny> {
         .collect()
 }
 
+fn event_contract_series_response() -> Value {
+    json!({
+        "code": "0",
+        "msg": "",
+        "data": [
+            {
+                "seriesId": "BTC-ABOVE-DAILY",
+                "freq": "daily",
+                "title": "BTC above daily",
+                "category": "1",
+                "settlement": {
+                    "method": "cash",
+                    "closeEarly": false,
+                    "srcName": "OKX BTC/USD Index",
+                    "underlying": "BTC-USD"
+                }
+            },
+            {
+                "seriesId": "ETH-ABOVE-DAILY",
+                "freq": "daily",
+                "title": "ETH above daily",
+                "category": "1",
+                "settlement": {
+                    "method": "cash",
+                    "closeEarly": false,
+                    "srcName": "OKX ETH/USD Index",
+                    "underlying": "ETH-USD"
+                }
+            }
+        ],
+    })
+}
+
+fn event_instrument_payload(series_id: &str, inst_id: &str, inst_id_code: u64) -> Value {
+    json!({
+        "instType": "EVENTS",
+        "instId": inst_id,
+        "instIdCode": inst_id_code,
+        "uly": "",
+        "instFamily": "",
+        "seriesId": series_id,
+        "instCategory": "1",
+        "baseCcy": "",
+        "quoteCcy": "USDT",
+        "settleCcy": "USDT",
+        "ctVal": "",
+        "ctMult": "",
+        "ctValCcy": "",
+        "optType": "",
+        "stk": "",
+        "listTime": "1769697132335",
+        "expTime": "1769700732335",
+        "lever": "",
+        "tickSz": "0.001",
+        "lotSz": "1",
+        "minSz": "1",
+        "ctType": "",
+        "state": "live",
+        "ruleType": "normal",
+        "maxLmtSz": "1000000",
+        "maxMktSz": "1000000",
+    })
+}
+
+fn event_instruments_response(params: &HashMap<String, String>) -> Value {
+    let Some(series_id) = params.get("seriesId").map(String::as_str) else {
+        return json!({"code": "0", "msg": "", "data": []});
+    };
+
+    let (inst_id, inst_id_code) = match series_id {
+        "BTC-ABOVE-DAILY" => ("BTC-ABOVE-DAILY-260224-1600-65000", 1_000_000_001),
+        "ETH-ABOVE-DAILY" => ("ETH-ABOVE-DAILY-260224-1600-3500", 1_000_000_002),
+        _ => return json!({"code": "0", "msg": "", "data": []}),
+    };
+
+    if params
+        .get("instId")
+        .is_some_and(|requested| requested != inst_id)
+    {
+        return json!({"code": "0", "msg": "", "data": []});
+    }
+
+    json!({
+        "code": "0",
+        "msg": "",
+        "data": [event_instrument_payload(series_id, inst_id, inst_id_code)],
+    })
+}
+
 fn create_router(state: Arc<TestServerState>) -> Router {
     let instruments_state = state.clone();
+    let event_series_state = state.clone();
     let history_state = state.clone();
     let option_summary_state = state.clone();
     let pending_state = state.clone();
@@ -156,9 +248,15 @@ fn create_router(state: Arc<TestServerState>) -> Router {
     Router::new()
         .route(
             "/api/v5/public/instruments",
-            get(move || {
+            get(move |Query(params): Query<HashMap<String, String>>| {
                 let state = instruments_state.clone();
                 async move {
+                    state.instrument_queries.lock().await.push(params.clone());
+
+                    if params.get("instType").map(String::as_str) == Some("EVENTS") {
+                        return Json(event_instruments_response(&params)).into_response();
+                    }
+
                     let mut count = state.request_count.lock().await;
                     *count += 1;
 
@@ -175,6 +273,16 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                     }
 
                     Json(load_test_data("http_get_instruments_spot.json")).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/public/event-contract/series",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = event_series_state.clone();
+                async move {
+                    state.event_series_queries.lock().await.push(params);
+                    Json(event_contract_series_response()).into_response()
                 }
             }),
         )
@@ -609,6 +717,135 @@ async fn test_http_get_instruments_returns_data() {
 
     assert!(!instruments.is_empty());
     assert_eq!(instruments[0].inst_type, OKXInstrumentType::Spot);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_event_instruments_fetches_all_series() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let (instruments, inst_id_codes) = client
+        .request_instruments(OKXInstrumentType::Events, None)
+        .await
+        .unwrap();
+
+    let event_queries: Vec<_> = state
+        .instrument_queries
+        .lock()
+        .await
+        .iter()
+        .filter(|params| params.get("instType").map(String::as_str) == Some("EVENTS"))
+        .cloned()
+        .collect();
+
+    assert_eq!(instruments.len(), 2);
+    assert!(matches!(instruments[0], InstrumentAny::BinaryOption(_)));
+    assert!(matches!(instruments[1], InstrumentAny::BinaryOption(_)));
+    assert_eq!(
+        inst_id_codes,
+        vec![
+            (
+                Ustr::from("BTC-ABOVE-DAILY-260224-1600-65000"),
+                1_000_000_001
+            ),
+            (
+                Ustr::from("ETH-ABOVE-DAILY-260224-1600-3500"),
+                1_000_000_002
+            ),
+        ]
+    );
+    assert_eq!(state.event_series_queries.lock().await.len(), 1);
+    assert_eq!(event_queries.len(), 2);
+    assert_eq!(
+        event_queries
+            .iter()
+            .map(|params| params.get("seriesId").map(String::as_str))
+            .collect::<Vec<_>>(),
+        vec![Some("BTC-ABOVE-DAILY"), Some("ETH-ABOVE-DAILY")]
+    );
+    assert!(
+        event_queries
+            .iter()
+            .all(|params| !params.contains_key("instFamily"))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_event_instrument_scans_series_until_match() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let instrument = client
+        .request_instrument(InstrumentId::from("ETH-ABOVE-DAILY-260224-1600-3500.OKX"))
+        .await
+        .unwrap();
+
+    let event_queries: Vec<_> = state
+        .instrument_queries
+        .lock()
+        .await
+        .iter()
+        .filter(|params| params.get("instType").map(String::as_str) == Some("EVENTS"))
+        .cloned()
+        .collect();
+
+    let InstrumentAny::BinaryOption(binary) = instrument else {
+        panic!("expected binary option");
+    };
+
+    assert_eq!(
+        binary.id,
+        InstrumentId::from("ETH-ABOVE-DAILY-260224-1600-3500.OKX")
+    );
+    assert_eq!(state.event_series_queries.lock().await.len(), 1);
+    assert_eq!(event_queries.len(), 2);
+    assert_eq!(
+        event_queries
+            .iter()
+            .map(|params| {
+                (
+                    params.get("seriesId").map(String::as_str),
+                    params.get("instId").map(String::as_str),
+                )
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                Some("BTC-ABOVE-DAILY"),
+                Some("ETH-ABOVE-DAILY-260224-1600-3500")
+            ),
+            (
+                Some("ETH-ABOVE-DAILY"),
+                Some("ETH-ABOVE-DAILY-260224-1600-3500")
+            ),
+        ]
+    );
 }
 
 #[rstest]
@@ -2345,7 +2582,15 @@ async fn test_http_place_order_with_attached_tp_sl_uses_single_oco_payload() {
                 tp_trigger_px: Some("41000.00".to_string()),
                 tp_ord_px: Some("-1".to_string()),
                 tp_trigger_px_type: Some(OKXTriggerType::Last),
+                callback_ratio: None,
+                callback_spread: None,
+                active_px: None,
+                new_callback_ratio: None,
+                new_callback_spread: None,
+                new_active_px: None,
             }]),
+            None,
+            None,
             None,
             None,
         )

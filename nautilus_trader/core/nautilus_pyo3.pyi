@@ -8365,6 +8365,29 @@ class OKXHttpClient:
     async def request_instruments(
         self, instrument_type: OKXInstrumentType, instrument_family: str | None = None
     ) -> tuple[list[Instrument], list[tuple[str, int]]]: ...
+    async def request_event_contract_series(
+        self,
+        series_id: str | None = None,
+    ) -> Any: ...
+    async def request_event_contract_events(
+        self,
+        series_id: str,
+        event_id: str | None = None,
+        state: str | None = None,
+        limit: str | None = None,
+        before: str | None = None,
+        after: str | None = None,
+    ) -> Any: ...
+    async def request_event_contract_markets(
+        self,
+        series_id: str,
+        event_id: str | None = None,
+        inst_id: str | None = None,
+        state: str | None = None,
+        limit: str | None = None,
+        before: str | None = None,
+        after: str | None = None,
+    ) -> Any: ...
     async def request_account_state(self, account_id: AccountId) -> AccountState: ...
     async def request_trades(
         self,
@@ -8460,6 +8483,8 @@ class OKXHttpClient:
         attach_algo_ords: list[dict[str, str]] | None = None,
         px_usd: str | None = None,
         px_vol: str | None = None,
+        speed_bump: str | None = None,
+        outcome: str | None = None,
     ) -> Any: ...
     async def place_algo_order(
         self,
@@ -8620,6 +8645,8 @@ class OKXWebSocketClient:
         attach_algo_ords: list[dict[str, str]] | None = None,
         px_usd: str | None = None,
         px_vol: str | None = None,
+        speed_bump: str | None = None,
+        outcome: str | None = None,
     ) -> None: ...
     async def cancel_order(
         self,
@@ -8640,6 +8667,7 @@ class OKXWebSocketClient:
         quantity: Quantity | None = None,
         new_px_usd: str | None = None,
         new_px_vol: str | None = None,
+        speed_bump: str | None = None,
     ) -> None: ...
     async def batch_submit_orders(
         self,
@@ -8687,6 +8715,7 @@ class OKXInstrumentType(Enum):
     SWAP = "SWAP"
     FUTURES = "FUTURES"
     OPTION = "OPTION"
+    EVENTS = "EVENTS"
 
 class OKXContractType(Enum):
     NONE = "NONE"
