@@ -452,10 +452,17 @@ pub fn parse_account_state(
             Some("DERIBIT - Parsing account state"),
         );
 
-        // In cross-margin mode, margin_balance is the entire cross-collateral portfolio
-        // value denominated in this currency (same ~$X re-expressed per currency), causing
-        // N-fold overcounting. Use equity (actual per-currency holdings) instead.
-        // In segregated mode, margin_balance is per-currency scoped and correct.
+        // Segregated mode: `margin_balance` and `available_funds` are per-currency scoped.
+        // Cross-margin mode: both are the cross-collateral portfolio value re-denominated
+        // in this currency, summing them across currencies N-fold overcounts the same value.
+        // Use `equity` (actual per-currency holdings) for total and `available_withdrawal_funds`
+        // (per-currency withdrawable, ~ equity minus fee buffer) for free.
+        //
+        // Trade-off: in cross-margin, the risk engine reads `balance.free` as buying power
+        // for new orders (see `Account::balance_free`), so this is conservative versus the
+        // venue-reported `available_funds` which includes cross-collateral. Preserving that
+        // value would require breaking the `total = locked + free` invariant or re-introducing
+        // the cross-denominated overcount, so per-currency consistency wins here.
         let is_cross_margin = summary.cross_collateral_enabled.unwrap_or(false);
         let (total, free) = if is_cross_margin {
             (
@@ -534,9 +541,9 @@ pub fn parse_portfolio_to_account_state(
         Some("DERIBIT - Parsing portfolio update"),
     );
 
-    // In cross-margin mode, margin_balance is the entire cross-collateral portfolio
-    // value denominated in this currency, causing N-fold overcounting.
-    // Use equity (actual per-currency holdings) instead.
+    // See `parse_account_state` for the rationale: cross-margin uses equity and
+    // `available_withdrawal_funds` (per-currency consistency, conservative free balance);
+    // segregated uses `margin_balance` and `available_funds` (per-currency scoped).
     let is_cross_margin = portfolio.cross_collateral_enabled.unwrap_or(false);
     let (total, free) = if is_cross_margin {
         (

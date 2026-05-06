@@ -36,6 +36,7 @@ Released on TBD (UTC).
 - Changed Python order `create()` methods to raise `ValueError` on invalid `OrderInitialized` instead of panicking
 - Changed default `TransportBackend` to `Sockudo`; set `backend = Tungstenite` to keep the previous default
 - Changed `nautilus-network` default Cargo features to include `transport-sockudo`
+- Changed `nautilus-model` to make `arrow` support optional behind a Cargo feature; enable the `arrow` feature (or `python-arrow` for the Python bindings) to restore the previous behavior (#4008), thanks @sunlei
 - Changed `OrderMatchingEngineConfig` defaults to match the Cython per-engine constructor (Rust)
 - Changed `Strategy` order APIs to take `Option<Params>` to avoid unnecessary `IndexMap` allocations (Rust); use `None` or `Some(params)`
 - Changed Rust strategy registration to append `order_id_tag` to explicit strategy IDs, matching Cython
@@ -73,7 +74,7 @@ Released on TBD (UTC).
 - Fixed Betfair Rust adapter panic on blank `customerOrderRef`/`rfo` by normalizing empty strings to `None`
 - Fixed Betfair Rust adapter spurious `OrderRejected` after OCM already reported a terminal state
 - Fixed Betfair Rust adapter `ignore_external_orders` to treat empty `rfo` strings the same as missing
-- Fixed Databento metadata-backed price precision for live and historical data (#4002), thanks @faysou
+- Fixed Databento market data price precision preservation (#4002), thanks @faysou
 - Fixed dYdX FOK and DAY time-in-force orders to reject pre-submission instead of failing at the venue or mapping to GTC
 - Fixed dYdX MIT/LIT round-tripping on reconcile when the Indexer collapses both variants under `TAKE_PROFIT`
 - Fixed dYdX GTD expiry to surface `OrderExpired` on both WS and HTTP reconciliation paths
@@ -83,6 +84,7 @@ Released on TBD (UTC).
 - Fixed dYdX Python `_request_instrument(s)` to pass the full `_handle_data_response` argument set
 - Fixed dYdX Python `_subscribe_order_book_depth` to log a graceful warning instead of raising `NotImplementedError`
 - Fixed Deribit `StopMarket` `OrderRejected` when the order response omits `filled_amount` (#3995), thanks for reporting @marco-rigoni
+- Fixed Deribit cross-margin balance overcounting where `margin_balance` per currency re-denominates the entire cross-collateral portfolio; cross-margin accounts now report `equity` for total and `available_withdrawal_funds` for free (#4009), thanks @filipmacek
 - Fixed Hyperliquid modify-after-partial-fill sending absolute total quantity to the cancel-replace leg, causing the engine to overfill the order (#3986)
 - Fixed Hyperliquid testnet orders rejected with "Builder fee has not been approved"; testnet orders now omit builder attribution to match the vault-order behavior (#3989)
 - Fixed Hyperliquid spurious `OrderCanceled` on concurrent modifies (Python and Rust) (#3971), thanks @M-Advis
