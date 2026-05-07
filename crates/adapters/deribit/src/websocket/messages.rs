@@ -632,8 +632,9 @@ pub struct DeribitOrderMsg {
     /// Original order amount in contracts.
     #[serde(deserialize_with = "nautilus_core::serialization::deserialize_decimal")]
     pub amount: Decimal,
-    /// Amount filled so far.
-    #[serde(deserialize_with = "nautilus_core::serialization::deserialize_decimal")]
+    /// Amount filled so far. Deribit omits this field for untriggered trigger
+    /// orders (e.g. `stop_market`, `stop_limit`); treat the missing case as zero.
+    #[serde(default, deserialize_with = "deserialize_decimal")]
     pub filled_amount: Decimal,
     /// Average fill price.
     #[serde(
@@ -782,6 +783,15 @@ pub struct DeribitPortfolioMsg {
     /// Maintenance margin requirement. Maps to MarginBalance.maintenance.
     #[serde(with = "rust_decimal::serde::float")]
     pub maintenance_margin: Decimal,
+    /// Margin model (e.g., "segregated_sm", "cross_sm", "cross_pm")
+    #[serde(default)]
+    pub margin_model: Option<String>,
+    /// Whether cross-collateral is enabled for this currency
+    #[serde(default)]
+    pub cross_collateral_enabled: Option<bool>,
+    /// Available withdrawal funds (per-currency withdrawable amount)
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub available_withdrawal_funds: Option<Decimal>,
 }
 
 /// Raw Deribit WebSocket message variants.

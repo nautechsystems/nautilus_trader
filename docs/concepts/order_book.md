@@ -122,32 +122,44 @@ in the center, and asks on the right.
 
 ## Own order book
 
-The `OwnOrderBook` tracks your own working orders separately from the public book.
-Market making and other strategies use it to find the true available liquidity
-at each price level (public size minus your own orders).
+The `OwnOrderBook` tracks your own working orders separately from the public book. Market
+making and other quoting strategies use it to estimate available liquidity at each price
+level after subtracting their own orders.
 
-The cache maintains own order books automatically as orders are submitted, accepted,
-and filled.
+Execution engines maintain own books when `manage_own_order_books` is enabled. The cache
+updates an existing own book as order events change state. Eligible orders have a price and
+do not use `IOC` or `FOK` time in force. Terminal events may still clean up an existing own
+book entry, even when the order would not otherwise be eligible for tracking.
 
 ### Order lifecycle
 
-The `OwnOrderBook` tracks orders through their lifecycle. Orders are added when
-submitted and updated as events arrive (accepted, partially filled, etc.).
+The `OwnOrderBook` tracks orders through their lifecycle. Orders are added when submitted
+or materialized from reconciliation, updated as state changes arrive, and removed when they
+close. Updates include accepted, pending update, pending cancel, partially filled, filled,
+canceled, expired, rejected, and denied states as supported by the order model.
+
 Each `OwnBookOrder` carries:
 
-- `status`: Current order status (SUBMITTED, ACCEPTED, PARTIALLY_FILLED, etc.).
+- `client_order_id`: Client order ID used to reconcile the own book with cache state.
+- `venue_order_id`: Venue order ID when one has been assigned.
+- `side`, `price`, and `size`: Order side and the remaining own-book price level.
+- `order_type` and `time_in_force`: Order type metadata used by filters and diagnostics.
+- `status`: Current order status, such as `SUBMITTED`, `ACCEPTED`, or `PENDING_CANCEL`.
+- `ts_last`: Timestamp of the latest order event applied to this own-book order.
 - `ts_accepted`: Timestamp when the order was accepted by the venue.
 - `ts_submitted`: Timestamp when the order was submitted.
+- `ts_init`: Timestamp when the order was initialized.
 
-These fields are used by the filtering logic to selectively include or exclude
-orders from filtered views (see [Status and time filtering](#status-and-time-filtering)).
+These fields let filtered views include or exclude own orders by status and acceptance time
+(see [Status and time filtering](#status-and-time-filtering)).
 
 ### Auditing
 
-The `audit_open_orders` method reconciles the book against a set of known open
-order IDs. Any orders in the book not in the provided set are removed and logged
-as audit errors. The cache calls this periodically to keep the own book in sync
-with the execution system.
+The `audit_open_orders` method reconciles an own book against a set of valid client order
+IDs. Any own-book order not in the provided set is removed and logged as an audit error.
+`Cache::audit_own_order_books` builds this set from open and in-flight orders so submitted
+orders are not removed during normal venue latency windows. Live systems can run this audit
+periodically through the own-books audit interval.
 
 ### Querying
 

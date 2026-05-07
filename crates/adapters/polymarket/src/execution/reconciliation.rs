@@ -27,9 +27,12 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use super::parse::{
-    build_maker_fill_report, instrument_taker_fee, parse_fill_report, parse_order_status_report,
-    parse_timestamp,
+use super::{
+    order_fill_tracker::OrderFillTrackerMap,
+    parse::{
+        build_maker_fill_report, instrument_taker_fee, parse_fill_report,
+        parse_order_status_report, parse_timestamp,
+    },
 };
 use crate::{
     common::{
@@ -251,10 +254,12 @@ pub(crate) fn build_position_reports(
 }
 
 /// Full reconciliation mass status generation.
+#[expect(clippy::too_many_arguments)]
 pub(crate) async fn generate_mass_status(
     http_client: &PolymarketClobHttpClient,
     data_api_client: &PolymarketDataApiHttpClient,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
+    fill_tracker: &OrderFillTrackerMap,
     ctx: &FillContext<'_>,
     client_id: ClientId,
     venue: Venue,
@@ -279,6 +284,10 @@ pub(crate) async fn generate_mass_status(
 
     let (mut fill_reports, fills_filtered) =
         build_fill_reports_from_trades(&trades, ctx, instruments, None, ts_init);
+
+    // Snap dust drift on REST fills the same way the WS path does.
+    // Commission stays as venue-reported.
+    fill_tracker.snap_fill_reports(&mut fill_reports);
 
     // Position reports from Data API
     let positions = data_api_client

@@ -33,19 +33,15 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 @pytest.mark.parametrize(
-    ("environment", "demo", "testnet", "expected"),
+    ("environment", "expected"),
     [
-        (None, False, False, BybitEnvironment.MAINNET),
-        (None, True, False, BybitEnvironment.DEMO),
-        (None, False, True, BybitEnvironment.TESTNET),
-        (BybitEnvironment.DEMO, False, False, BybitEnvironment.DEMO),
-        (BybitEnvironment.TESTNET, False, False, BybitEnvironment.TESTNET),
-        (BybitEnvironment.TESTNET, True, False, BybitEnvironment.TESTNET),
-        (BybitEnvironment.MAINNET, False, True, BybitEnvironment.MAINNET),
+        (None, BybitEnvironment.MAINNET),
+        (BybitEnvironment.DEMO, BybitEnvironment.DEMO),
+        (BybitEnvironment.TESTNET, BybitEnvironment.TESTNET),
     ],
 )
-def test_resolve_environment(environment, demo, testnet, expected):
-    assert _resolve_environment(environment, demo, testnet) == expected
+def test_resolve_environment(environment, expected):
+    assert _resolve_environment(environment) == expected
 
 
 class TestBybitFactories:

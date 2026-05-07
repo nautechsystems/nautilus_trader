@@ -682,7 +682,7 @@ impl Clock for TestClock {
     fn next_time_ns(&self, name: &str) -> Option<UnixNanos> {
         self.timers
             .get(&Ustr::from(name))
-            .map(|timer| timer.next_time_ns())
+            .map(TestTimer::next_time_ns)
     }
 
     fn cancel_timer(&mut self, name: &str) {
@@ -708,7 +708,7 @@ impl Clock for TestClock {
 }
 
 pub(crate) fn replace_existing_timer<T: Timer>(timers: &mut BTreeMap<Ustr, T>, name: &Ustr) {
-    let is_expired = timers.get(name).map(|t| t.is_expired());
+    let is_expired = timers.get(name).map(T::is_expired);
     match is_expired {
         Some(true) => {
             timers.remove(name);

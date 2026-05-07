@@ -58,6 +58,7 @@ use nautilus_model::{
         AggregationSource, ContingencyType, OmsType, OrderSide, PositionSide, PriceType,
         TriggerType,
     },
+    events::{AccountState, OrderEventAny},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
         OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
@@ -67,7 +68,7 @@ use nautilus_model::{
         OrderBook,
         own::{OwnOrderBook, should_handle_own_book_order},
     },
-    orders::{Order, OrderAny, OrderList},
+    orders::{Order, OrderAny, OrderError, OrderList},
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };
@@ -573,9 +574,7 @@ impl Cache {
     // Calculate the unrealized profit and loss (PnL) for `position`.
     #[must_use]
     pub fn calculate_unrealized_pnl(&self, position: &Position) -> Option<Money> {
-        let quote = if let Some(quote) = self.quote(&position.instrument_id) {
-            quote
-        } else {
+        let Some(quote) = self.quote(&position.instrument_id) else {
             log::warn!(
                 "Cannot calculate unrealized PnL for {}, no quotes for {}",
                 position.id,
@@ -2318,12 +2317,119 @@ impl Cache {
         Ok(())
     }
 
-    /// Updates the `order` in the cache.
+    /// Removes the `account` from the cache and returns it.
+    ///
+    /// This supports hot paths which need owned account mutation without
+    /// cloning the account event history.
+    #[must_use]
+    pub fn take_account(&mut self, account_id: &AccountId) -> Option<AccountAny> {
+        self.accounts.remove(account_id)
+    }
+
+    /// Caches the `account` in memory without updating the database.
+    pub fn cache_account_owned(&mut self, account: AccountAny) {
+        let account_id = account.id();
+        self.index
+            .venue_account
+            .insert(account_id.get_issuer(), account_id);
+        self.accounts.insert(account_id, account);
+    }
+
+    /// Updates the `account` in the cache, taking ownership of the updated account.
     ///
     /// # Errors
     ///
-    /// Returns an error if updating the order in the database fails.
-    pub fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+    /// Returns an error if updating the account in the database fails.
+    pub fn update_account_owned(&mut self, account: AccountAny) -> anyhow::Result<()> {
+        let account_id = account.id();
+        self.cache_account_owned(account);
+
+        if let Some(database) = &mut self.database {
+            let Some(account) = self.accounts.get(&account_id) else {
+                anyhow::bail!("Account {account_id} not found after cache update");
+            };
+            database.update_account(account)?;
+        }
+        Ok(())
+    }
+
+    /// Applies an account state event to the cached account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if applying or persisting the account state fails.
+    pub fn update_account_state(&mut self, event: &AccountState) -> anyhow::Result<()> {
+        if let Some(account) = self.accounts.get_mut(&event.account_id) {
+            account.apply(event.clone())?;
+        } else {
+            return self.add_account(AccountAny::from_events(std::slice::from_ref(event))?);
+        }
+
+        if let Some(database) = &mut self.database {
+            let Some(account) = self.accounts.get(&event.account_id) else {
+                anyhow::bail!(
+                    "Account {} not found after account state update",
+                    event.account_id
+                );
+            };
+            database.update_account(account)?;
+        }
+        Ok(())
+    }
+
+    /// Replaces the cached `order` from a non-event snapshot.
+    ///
+    /// Prefer [`Self::update_order`] for lifecycle state changes. Use this only for order state
+    /// that is not represented by [`OrderEventAny`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating the order indexes or database fails.
+    pub fn replace_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+        self.refresh_order(order)?;
+
+        self.orders.insert(order.client_order_id(), order.clone());
+
+        Ok(())
+    }
+
+    /// Updates the cached order by applying an event and refreshing derived cache state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order is not found or rejects the event.
+    pub fn update_order(&mut self, event: &OrderEventAny) -> anyhow::Result<OrderAny> {
+        let event_client_order_id = event.client_order_id();
+        let client_order_id = if self.order_exists(&event_client_order_id) {
+            event_client_order_id
+        } else if let Some(venue_order_id) = event.venue_order_id() {
+            self.index
+                .venue_order_ids
+                .get(&venue_order_id)
+                .copied()
+                .ok_or(OrderError::NotFound(event_client_order_id))?
+        } else {
+            return Err(OrderError::NotFound(event_client_order_id).into());
+        };
+
+        let mut order = self
+            .orders
+            .get(&client_order_id)
+            .ok_or(OrderError::NotFound(client_order_id))?
+            .clone();
+
+        order.apply(event.clone())?;
+
+        if let Err(e) = self.refresh_order(&order) {
+            log::error!("Error updating order in cache: {e}");
+        }
+
+        self.orders.insert(client_order_id, order.clone());
+
+        Ok(order)
+    }
+
+    fn refresh_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
         let client_order_id = order.client_order_id();
 
         if order.is_active_local() {
@@ -2337,8 +2443,12 @@ impl Cache {
             // If the order is being modified then we allow a changing `VenueOrderId` to accommodate
             // venues which use a cancel+replace update strategy.
             if !self.index.venue_order_ids.contains_key(&venue_order_id) {
-                // TODO: If the last event was `OrderUpdated` then overwrite should be true
-                self.add_venue_order_id(&order.client_order_id(), &venue_order_id, false)?;
+                let overwrite = matches!(order.last_event(), OrderEventAny::Updated(_));
+                if let Err(e) =
+                    self.add_venue_order_id(&order.client_order_id(), &venue_order_id, overwrite)
+                {
+                    log::error!("Error indexing venue order ID in cache: {e}");
+                }
             }
         }
 
@@ -2379,10 +2489,11 @@ impl Cache {
         }
 
         // Update own book
-        if self.own_order_book(&order.instrument_id()).is_some()
-            && should_handle_own_book_order(order)
-        {
-            self.update_own_order_book(order);
+        if !self.own_books.is_empty() {
+            let own_book = self.own_order_book(&order.instrument_id());
+            if (own_book.is_some() && order.is_closed()) || should_handle_own_book_order(order) {
+                self.update_own_order_book(order);
+            }
         }
 
         if let Some(database) = &mut self.database {
@@ -2392,9 +2503,6 @@ impl Cache {
             //     database.snapshot_order_state(order)?;
             // }
         }
-
-        // update the order in the cache
-        self.orders.insert(client_order_id, order.clone());
 
         Ok(())
     }
@@ -2612,9 +2720,7 @@ impl Cache {
     ///
     /// Returns an error if snapshotting the order state fails.
     pub fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {
-        let database = if let Some(database) = &self.database {
-            database
-        } else {
+        let Some(database) = &self.database else {
             log::warn!(
                 "Cannot snapshot order state for {} (no database configured)",
                 order.client_order_id()
@@ -4155,10 +4261,18 @@ impl Cache {
 
         let instrument_id = order.instrument_id();
 
-        let own_book = self
-            .own_books
-            .entry(instrument_id)
-            .or_insert_with(|| OwnOrderBook::new(instrument_id));
+        if !self.own_books.contains_key(&instrument_id) {
+            if order.is_closed() {
+                return;
+            }
+
+            self.own_books
+                .insert(instrument_id, OwnOrderBook::new(instrument_id));
+        }
+
+        let Some(own_book) = self.own_books.get_mut(&instrument_id) else {
+            return;
+        };
 
         let own_book_order = order.to_own_book_order();
 
@@ -4188,11 +4302,10 @@ impl Cache {
     ///
     /// This method is used when order event application fails and we need to ensure
     /// terminal orders are properly cleaned up from own books and all relevant indexes.
-    /// Replicates the index cleanup that update_order performs for closed orders.
+    /// Replicates the index cleanup that `update_order` performs for closed orders.
     pub fn force_remove_from_own_order_book(&mut self, client_order_id: &ClientOrderId) {
-        let order = match self.orders.get(client_order_id) {
-            Some(order) => order,
-            None => return,
+        let Some(order) = self.orders.get(client_order_id) else {
+            return;
         };
 
         self.index.orders_open.remove(client_order_id);
@@ -4218,8 +4331,8 @@ impl Cache {
     /// Audit all own order books against open and inflight order indexes.
     ///
     /// Ensures closed orders are removed from own order books. This includes both
-    /// orders tracked in `orders_open` (ACCEPTED, TRIGGERED, PENDING_*, PARTIALLY_FILLED)
-    /// and `orders_inflight` (INITIALIZED, SUBMITTED) to prevent false positives
+    /// orders tracked in `orders_open` (`ACCEPTED`, `TRIGGERED`, `PENDING_*`, `PARTIALLY_FILLED`)
+    /// and `orders_inflight` (`INITIALIZED`, `SUBMITTED`) to prevent false positives
     /// during venue latency windows.
     pub fn audit_own_order_books(&mut self) {
         log::debug!("Starting own books audit");

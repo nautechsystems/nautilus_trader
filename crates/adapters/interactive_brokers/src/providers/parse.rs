@@ -20,7 +20,7 @@ use std::str::FromStr;
 use ibapi::contracts::SecurityType;
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    enums::{AssetClass, OptionKind},
+    enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
     instruments::{
         Cfd, Commodity, CryptoPerpetual, CurrencyPair, Equity, FuturesContract, FuturesSpread,
@@ -31,7 +31,10 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use crate::common::contract_to_params;
+use crate::common::{
+    contract_to_params,
+    enums::{IbOptionRight, IbSecurityType},
+};
 
 /// Convert tick size to precision value.
 #[must_use]
@@ -206,13 +209,13 @@ fn ib_contract_info_for_contract(contract: &ibapi::contracts::Contract) -> nauti
 }
 
 fn sec_type_to_asset_class(sec_type: &str) -> AssetClass {
-    match sec_type {
-        "STK" => AssetClass::Equity,
-        "IND" => AssetClass::Index,
-        "CASH" => AssetClass::FX,
-        "BOND" => AssetClass::Debt,
-        "CMDTY" => AssetClass::Commodity,
-        "FUT" => AssetClass::Index,
+    match IbSecurityType::from_str(sec_type).ok() {
+        Some(IbSecurityType::Stock) => AssetClass::Equity,
+        Some(IbSecurityType::Index) => AssetClass::Index,
+        Some(IbSecurityType::ForexPair) => AssetClass::FX,
+        Some(IbSecurityType::Bond) => AssetClass::Debt,
+        Some(IbSecurityType::Commodity) => AssetClass::Commodity,
+        Some(IbSecurityType::Future) => AssetClass::Index,
         _ => AssetClass::Equity,
     }
 }
@@ -327,6 +330,19 @@ fn parse_crypto_contract(
     InstrumentAny::from(instrument)
 }
 
+fn parse_contract_multiplier(multiplier: &str, default: f64) -> Quantity {
+    if multiplier.is_empty() {
+        return Quantity::new(default, 0);
+    }
+
+    Quantity::from_str(multiplier).unwrap_or_else(|e| {
+        tracing::warn!(
+            "Failed to parse IB contract multiplier '{multiplier}', using default {default}: {e}"
+        );
+        Quantity::new(default, 0)
+    })
+}
+
 /// Parse futures contract (FUT).
 fn parse_futures_contract(
     details: &ibapi::contracts::ContractDetails,
@@ -356,7 +372,7 @@ fn parse_futures_contract(
         .checked_sub(ninety_days_ns)
         .unwrap_or(UnixNanos::from(0)); // -90 days or 0 if underflow
 
-    let multiplier = details.contract.multiplier.parse::<f64>().unwrap_or(1.0);
+    let multiplier = parse_contract_multiplier(&details.contract.multiplier, 1.0);
 
     let instrument = FuturesContract::new(
         instrument_id,
@@ -369,7 +385,7 @@ fn parse_futures_contract(
         Currency::from(details.contract.currency.to_string()),
         price_precision,
         Price::new(details.min_tick, price_precision),
-        Quantity::new(multiplier, 0),
+        multiplier,
         Quantity::new(1.0, 0),
         None,                            // max_quantity
         None,                            // min_quantity
@@ -417,17 +433,10 @@ fn parse_option_contract(
         .unwrap_or(UnixNanos::from(0)); // -90 days or 0 if underflow
 
     // Parse option kind (CALL or PUT)
-    let option_kind = match details.contract.right.as_str() {
-        "C" => OptionKind::Call,
-        "P" => OptionKind::Put,
-        _ => anyhow::bail!("Unknown option kind: {}", details.contract.right),
-    };
+    let option_kind = IbOptionRight::from_str(details.contract.right.as_str())?.option_kind();
 
-    let multiplier = details.contract.multiplier.parse::<f64>().unwrap_or(100.0);
-    let asset_class = match details.under_security_type.as_str() {
-        "IND" => AssetClass::Index,
-        _ => AssetClass::Equity,
-    };
+    let multiplier = parse_contract_multiplier(&details.contract.multiplier, 100.0);
+    let asset_class = sec_type_to_asset_class(details.under_security_type.as_str());
     let underlying =
         if details.under_security_type == "IND" && !details.under_symbol.starts_with('^') {
             format!("^{}", details.under_symbol)
@@ -448,8 +457,8 @@ fn parse_option_contract(
         expiration_ns,
         price_precision,
         Price::new(details.min_tick, price_precision),
-        Quantity::new(multiplier, 0),
-        Quantity::new(multiplier, 0),
+        multiplier,
+        multiplier,
         None,                            // max_quantity
         None,                            // min_quantity
         None,                            // max_price
@@ -474,11 +483,12 @@ mod tests {
         enums::AssetClass,
         identifiers::{InstrumentId, Symbol as NautilusSymbol, Venue},
         instruments::{Instrument, InstrumentAny},
+        types::Quantity,
     };
     use rstest::rstest;
     use ustr::Ustr;
 
-    use super::parse_ib_contract_to_instrument;
+    use super::{parse_contract_multiplier, parse_ib_contract_to_instrument};
 
     #[rstest]
     fn test_parse_option_contract_prefixes_index_underlying() {
@@ -514,6 +524,20 @@ mod tests {
         assert_eq!(option.asset_class(), AssetClass::Index);
         assert_eq!(option.underlying(), Some(Ustr::from("^SPX")));
     }
+
+    #[rstest]
+    #[case("100", 100.0)]
+    #[case("", 1.0)]
+    #[case("not-a-number", 1.0)]
+    fn test_parse_contract_multiplier_uses_quantity_parser(
+        #[case] multiplier: &str,
+        #[case] expected: f64,
+    ) {
+        assert_eq!(
+            parse_contract_multiplier(multiplier, 1.0),
+            Quantity::new(expected, 0)
+        );
+    }
 }
 
 /// Parse index contract (IND).
@@ -542,67 +566,6 @@ fn parse_index_contract(
     );
 
     InstrumentAny::from(instrument)
-}
-
-/// Create a spread instrument ID from leg tuples.
-///
-/// This implements the same logic as Python's `InstrumentId.new_spread`:
-/// - Creates a symbol string like `(1)SYMBOL1_(-2)SYMBOL2`
-/// - Positive ratios: `(ratio)SYMBOL`
-/// - Negative ratios: `((abs(ratio)))SYMBOL`
-/// - Sorts legs alphabetically by symbol
-/// - All legs must have the same venue
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - Less than 2 legs provided
-/// - Any ratio is zero
-/// - Venues don't match across legs
-pub fn create_spread_instrument_id(
-    leg_tuples: &[(InstrumentId, i32)],
-) -> anyhow::Result<InstrumentId> {
-    if leg_tuples.len() < 2 {
-        anyhow::bail!("instrument_ratios list needs to have at least 2 legs");
-    }
-
-    // Validate all ratios are non-zero and venues match
-    let first_venue = leg_tuples[0].0.venue;
-
-    for (instrument_id, ratio) in leg_tuples {
-        if *ratio == 0 {
-            anyhow::bail!("ratio cannot be zero");
-        }
-
-        if instrument_id.venue != first_venue {
-            anyhow::bail!(
-                "All venues must match. Expected {}, was {}",
-                first_venue,
-                instrument_id.venue
-            );
-        }
-    }
-
-    // Sort instrument ratios alphabetically by symbol
-    let mut sorted_ratios = leg_tuples.to_vec();
-    sorted_ratios.sort_by(|a, b| a.0.symbol.as_str().cmp(b.0.symbol.as_str()));
-
-    // Build the composite symbol
-    let mut symbol_parts = Vec::new();
-
-    for (instrument_id, ratio) in &sorted_ratios {
-        let symbol_part = if *ratio > 0 {
-            format!("({}){}", ratio, instrument_id.symbol.as_str())
-        } else {
-            format!("(({})){}", ratio.abs(), instrument_id.symbol.as_str())
-        };
-        symbol_parts.push(symbol_part);
-    }
-
-    let composite_symbol = symbol_parts.join("_");
-    let symbol = Symbol::from(composite_symbol.as_str());
-
-    Ok(InstrumentId::new(symbol, first_venue))
 }
 
 /// Parse a spread instrument ID into an OptionSpread instrument.

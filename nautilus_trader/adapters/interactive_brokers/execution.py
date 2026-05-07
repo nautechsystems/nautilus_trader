@@ -425,12 +425,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         if report is None:
             self._log.warning(
-                f"Order {command.client_order_id=}, {command.venue_order_id} not found, canceling",
-            )
-            self._on_order_status(
-                order_ref=command.client_order_id.value,
-                order_status="Cancelled",
-                reason="Not found in query",
+                f"Order {command.client_order_id=}, {command.venue_order_id} not found in "
+                "`get_open_orders`; leaving order state unchanged",
             )
 
         return report
@@ -1070,9 +1066,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         if ib_order.parentId:
             parent_nautilus_order = self._cache.order(ClientOrderId(ib_order.parentId))
 
-            if parent_nautilus_order:
+            if parent_nautilus_order and parent_nautilus_order.venue_order_id is not None:
                 ib_order.parentId = int(parent_nautilus_order.venue_order_id.value)
             else:
+                self._log.warning(
+                    f"Parent order {ib_order.parentId!r} has no venue order ID yet; "
+                    "modifying child order without parentId",
+                )
                 ib_order.parentId = 0
 
         if command.quantity and command.quantity != ib_order.totalQuantity:
@@ -1793,10 +1793,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # IB's execDetails callback can race ahead of openOrder for fast fills (typically
         # market orders or marketable limit orders on liquid combos). The Execution object
         # is authoritative for venue_order_id, so backfill the mapping into the cache by
-        # synthesizing an OrderAccepted event when openOrder hasn't fired yet. Without
-        # this, downstream FillReports during continuous reconciliation cannot map
-        # venue_order_id back to client_order_id and are silently dropped.
-        if nautilus_order.venue_order_id is None:
+        # synthesizing an OrderAccepted event for a submitted order when openOrder hasn't
+        # fired yet. Without this, downstream FillReports during continuous reconciliation
+        # cannot map venue_order_id back to client_order_id and are silently dropped. If
+        # openOrder arrives later, _handle_order_event skips the duplicate acceptance.
+        if nautilus_order.venue_order_id is None and nautilus_order.status == OrderStatus.SUBMITTED:
             self._log.warning(
                 f"execDetails arrived before openOrder for {nautilus_order.client_order_id}; "
                 f"synthesizing OrderAccepted with venue_order_id={venue_order_id}",

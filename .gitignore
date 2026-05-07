@@ -43,11 +43,18 @@ logs/
 .benchmarks*
 .coverage*
 htmlcov/
+perf.data
 
 # Rust related
 *target/
 *target-v2/
 **/*.rs.bk
+
+# Fuzz testing artifacts (cargo-fuzz)
+**/fuzz/corpus/
+**/fuzz/artifacts/
+**/fuzz/coverage/
+**/fuzz/target/
 
 # Python related
 *.pyc
@@ -127,6 +134,7 @@ tests/test_data/local/
 tests/unit_tests/catalog/
 tests/unit_tests/persistence/catalog/
 tests/test_data/**/backtest/**
+
 
 # Exceptions
 !tests/test_data/large/checksums.json

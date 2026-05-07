@@ -269,7 +269,7 @@ fn create_test_client(addr: &SocketAddr) -> BinanceFuturesWebSocketClient {
     let ws_url = format!("ws://{addr}/ws");
     BinanceFuturesWebSocketClient::new(
         BinanceProductType::UsdM,
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some(ws_url),
@@ -277,6 +277,21 @@ fn create_test_client(addr: &SocketAddr) -> BinanceFuturesWebSocketClient {
         TransportBackend::default(),
     )
     .unwrap()
+}
+
+#[rstest]
+fn test_client_accepts_demo_environment() {
+    let result = BinanceFuturesWebSocketClient::new(
+        BinanceProductType::UsdM,
+        BinanceEnvironment::Demo,
+        None,
+        None,
+        Some("ws://127.0.0.1:1/ws".to_string()),
+        None,
+        TransportBackend::default(),
+    );
+
+    assert!(result.is_ok());
 }
 
 #[rstest]
@@ -586,7 +601,7 @@ async fn test_unsubscribe_request_format() {
 async fn test_connection_failure_invalid_url() {
     let result = BinanceFuturesWebSocketClient::new(
         BinanceProductType::UsdM,
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         Some("ws://127.0.0.1:9999/invalid".to_string()),
@@ -605,7 +620,7 @@ async fn test_connection_failure_invalid_url() {
 async fn test_default_client_creation_usdm() {
     let client = BinanceFuturesWebSocketClient::new(
         BinanceProductType::UsdM,
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         None,
@@ -624,7 +639,7 @@ async fn test_default_client_creation_usdm() {
 async fn test_default_client_creation_coinm() {
     let client = BinanceFuturesWebSocketClient::new(
         BinanceProductType::CoinM,
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         None,
@@ -643,7 +658,7 @@ async fn test_default_client_creation_coinm() {
 async fn test_invalid_product_type_rejected() {
     let result = BinanceFuturesWebSocketClient::new(
         BinanceProductType::Spot,
-        BinanceEnvironment::Mainnet,
+        BinanceEnvironment::Live,
         None,
         None,
         None,

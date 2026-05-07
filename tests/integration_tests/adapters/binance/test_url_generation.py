@@ -64,7 +64,7 @@ from nautilus_trader.adapters.binance.common.urls import get_ws_public_base_url
             BinanceAccountType.USDT_FUTURES,
             BinanceEnvironment.TESTNET,
             False,
-            "https://testnet.binancefuture.com",
+            "https://demo-fapi.binance.com",
         ),
         (
             BinanceAccountType.COIN_FUTURES,
@@ -85,7 +85,7 @@ from nautilus_trader.adapters.binance.common.urls import get_ws_public_base_url
             BinanceAccountType.COIN_FUTURES,
             BinanceEnvironment.DEMO,
             False,
-            "https://testnet.binancefuture.com",
+            "https://demo-dapi.binance.com",
         ),
     ],
 )
@@ -168,13 +168,13 @@ def test_get_http_base_url(account_type, environment, is_us, expected):
             BinanceAccountType.USDT_FUTURES,
             BinanceEnvironment.DEMO,
             False,
-            "wss://stream.binancefuture.com",
+            "wss://demo-fstream.binance.com",
         ),
         (
             BinanceAccountType.COIN_FUTURES,
             BinanceEnvironment.DEMO,
             False,
-            "wss://dstream.binancefuture.com",
+            "wss://demo-dstream.binance.com",
         ),
     ],
 )
@@ -301,6 +301,12 @@ def test_get_ws_api_base_url_raises_for_coin_futures(account_type, environment):
             False,
             "wss://stream.binancefuture.com",
         ),
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinanceEnvironment.DEMO,
+            False,
+            "wss://demo-fstream.binance.com",
+        ),
     ],
 )
 def test_get_ws_private_base_url(account_type, environment, is_us, expected):
@@ -334,6 +340,12 @@ def test_get_ws_private_base_url(account_type, environment, is_us, expected):
             BinanceEnvironment.TESTNET,
             False,
             "wss://stream.binancefuture.com",
+        ),
+        (
+            BinanceAccountType.USDT_FUTURES,
+            BinanceEnvironment.DEMO,
+            False,
+            "wss://demo-fstream.binance.com",
         ),
     ],
 )

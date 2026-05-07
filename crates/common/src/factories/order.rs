@@ -559,7 +559,7 @@ impl OrderFactory {
             .unwrap();
         }
         let order_list_id = self.generate_order_list_id();
-        let order_ids: Vec<ClientOrderId> = orders.iter().map(|o| o.client_order_id()).collect();
+        let order_ids: Vec<ClientOrderId> = orders.iter().map(OrderAny::client_order_id).collect();
 
         // Propagate list ID back to each order
         for order in orders.iter_mut() {

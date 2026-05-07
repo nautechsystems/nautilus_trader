@@ -69,7 +69,7 @@ impl OrderLifetime {
     /// Determines order lifetime based on time_in_force, expire_time, and max short-term duration.
     ///
     /// The `max_short_term_secs` is computed dynamically from `BlockTimeMonitor`:
-    /// `max_short_term_secs = SHORT_TERM_ORDER_MAXIMUM_LIFETIME (20 blocks) × seconds_per_block`
+    /// `max_short_term_secs = SHORT_TERM_ORDER_MAXIMUM_LIFETIME (40 blocks) × seconds_per_block`
     ///
     /// Returns `ShortTerm` when:
     /// - TimeInForce is IOC or FOK (immediate execution orders)

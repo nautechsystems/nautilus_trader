@@ -43,6 +43,22 @@ class MyActor(Actor):
         self.count_of_processed_bars += 1
 ```
 
+## Actor configuration and IDs
+
+Actors can receive an `ActorConfig` subclass. The base config may include an `actor_id`;
+if supplied, the actor registers with that ID. If omitted, the system derives a runtime
+actor ID.
+
+Treat configuration as construction data for the actor. Read user-supplied settings through
+`self.config`, and keep runtime state on the actor itself.
+
+:::info Rust implementation
+For Rust actors, generated or assigned runtime IDs live on the actor core rather than being
+written back into `DataActorConfig`. This differs from Python bridge paths which may copy
+inherited config fields into runtime state when a Python object is created from an importable
+config.
+:::
+
 ## Lifecycle
 
 Actors follow a defined state machine through their lifecycle:

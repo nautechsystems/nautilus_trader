@@ -521,7 +521,7 @@ impl MessageBus {
         let topic = MStr::<Topic>::topic(topic).expect(FAILED);
         self.topics
             .get(&topic)
-            .map_or_else(|| self.find_topic_matches(topic).len(), |subs| subs.len())
+            .map_or_else(|| self.find_topic_matches(topic).len(), Vec::len)
     }
 
     /// Returns active subscriptions.
@@ -979,7 +979,7 @@ mod tests {
 
     /// A simple reference model for subscription behavior.
     struct SimpleSubscriptionModel {
-        /// Stores (pattern, handler_id) tuples for active subscriptions.
+        /// Stores (pattern, `handler_id`) tuples for active subscriptions.
         subscriptions: Vec<(String, String)>,
     }
 

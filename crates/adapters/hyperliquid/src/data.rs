@@ -78,6 +78,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct HyperliquidDataClient {
+    clock: &'static AtomicTime,
     client_id: ClientId,
     #[allow(dead_code)]
     config: HyperliquidDataClientConfig,
@@ -88,11 +89,7 @@ pub struct HyperliquidDataClient {
     tasks: Vec<JoinHandle<()>>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    // Maps coin symbols (e.g., "BTC") to instrument IDs (e.g., "BTC-PERP")
     coin_to_instrument_id: Arc<AtomicMap<Ustr, InstrumentId>>,
-    clock: &'static AtomicTime,
-    #[allow(dead_code)]
-    instrument_refresh_active: bool,
 }
 
 impl HyperliquidDataClient {
@@ -141,6 +138,7 @@ impl HyperliquidDataClient {
         );
 
         Ok(Self {
+            clock,
             client_id,
             config,
             http_client,
@@ -151,8 +149,6 @@ impl HyperliquidDataClient {
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             coin_to_instrument_id: Arc::new(AtomicMap::new()),
-            clock,
-            instrument_refresh_active: false,
         })
     }
 

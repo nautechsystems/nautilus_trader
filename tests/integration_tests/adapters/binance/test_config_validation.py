@@ -38,7 +38,6 @@ def test_data_client_config_documentation_accuracy(default_data_config):
     assert config.api_key is None
     assert config.api_secret is None
     assert config.environment is None
-    assert config.testnet is False
     assert config.us is False
     assert config.update_instruments_interval_mins == 60
     assert config.use_agg_trade_ticks is False
@@ -51,7 +50,6 @@ def test_exec_client_config_documentation_accuracy(default_exec_config):
     assert config.api_key is None
     assert config.api_secret is None
     assert config.environment is None
-    assert config.testnet is False
     assert config.us is False
     assert config.use_gtd is True
     assert config.use_reduce_only is True
@@ -65,7 +63,7 @@ def test_data_client_config_with_valid_parameters():
     config = BinanceDataClientConfig(
         api_key="test_api_key",
         api_secret="test_api_secret",
-        testnet=True,
+        environment=BinanceEnvironment.TESTNET,
         us=True,
         update_instruments_interval_mins=30,
         use_agg_trade_ticks=True,
@@ -73,7 +71,7 @@ def test_data_client_config_with_valid_parameters():
 
     assert config.api_key == "test_api_key"
     assert config.api_secret == "test_api_secret"
-    assert config.testnet is True
+    assert config.environment == BinanceEnvironment.TESTNET
     assert config.us is True
     assert config.update_instruments_interval_mins == 30
     assert config.use_agg_trade_ticks is True
@@ -83,7 +81,7 @@ def test_exec_client_config_with_valid_parameters():
     config = BinanceExecClientConfig(
         api_key="test_api_key",
         api_secret="test_api_secret",
-        testnet=True,
+        environment=BinanceEnvironment.TESTNET,
         us=True,
         use_gtd=False,
         use_reduce_only=False,
@@ -96,7 +94,7 @@ def test_exec_client_config_with_valid_parameters():
 
     assert config.api_key == "test_api_key"
     assert config.api_secret == "test_api_secret"
-    assert config.testnet is True
+    assert config.environment == BinanceEnvironment.TESTNET
     assert config.us is True
     assert config.use_gtd is False
     assert config.use_reduce_only is False
@@ -132,20 +130,9 @@ def test_exec_config_optional_parameters_none():
 
 
 def test_resolve_environment_defaults_to_live():
-    assert _resolve_environment(None, False) == BinanceEnvironment.LIVE
+    assert _resolve_environment(None) == BinanceEnvironment.LIVE
 
 
 def test_resolve_environment_from_environment_field():
-    assert _resolve_environment(BinanceEnvironment.DEMO, False) == BinanceEnvironment.DEMO
-    assert _resolve_environment(BinanceEnvironment.TESTNET, False) == BinanceEnvironment.TESTNET
-
-
-def test_resolve_environment_testnet_deprecated():
-    with pytest.warns(DeprecationWarning, match="testnet"):
-        result = _resolve_environment(None, True)
-    assert result == BinanceEnvironment.TESTNET
-
-
-def test_resolve_environment_both_raises():
-    with pytest.raises(ValueError, match="Cannot set both"):
-        _resolve_environment(BinanceEnvironment.DEMO, True)
+    assert _resolve_environment(BinanceEnvironment.DEMO) == BinanceEnvironment.DEMO
+    assert _resolve_environment(BinanceEnvironment.TESTNET) == BinanceEnvironment.TESTNET

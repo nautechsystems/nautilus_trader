@@ -30,18 +30,24 @@ from nautilus_trader.execution.messages import GenerateOrderStatusReport
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events.order import OrderAccepted
+from nautilus_trader.model.functions import account_type_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import CryptoPerpetual
@@ -52,7 +58,10 @@ from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import OrderList
 from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.model.orders import TrailingStopLimitOrder
+from nautilus_trader.model.position import Position
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.kraken.conftest import _create_exec_ws_mock_futures
 from tests.integration_tests.adapters.kraken.conftest import _create_exec_ws_mock_spot
@@ -292,7 +301,7 @@ async def test_connect_success_spot(exec_client_builder_spot, monkeypatch):
     try:
         # Assert
         instrument_provider.initialize.assert_awaited_once()
-        http_client.request_account_state.assert_awaited_once()
+        http_client.request_account_state_with_metrics.assert_awaited_once()
         ws_client.connect.assert_awaited_once()
         ws_client.wait_until_active.assert_awaited_once_with(timeout_secs=10.0)
         ws_client.authenticate.assert_awaited_once()
@@ -2136,12 +2145,136 @@ async def test_connect_success_dual_product(exec_client_builder_dual, monkeypatc
     try:
         # Assert - Both WebSocket clients should be connected
         instrument_provider.initialize.assert_awaited_once()
-        http_client_spot.request_account_state.assert_awaited()
+        http_client_spot.request_account_state_with_metrics.assert_awaited()
         http_client_futures.request_account_state.assert_awaited()
         ws_spot_client.connect.assert_awaited_once()
         ws_futures_client.connect.assert_awaited_once()
     finally:
         await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_update_account_state_margin_populates_info_dict(
+    exec_client_builder_spot,
+    monkeypatch,
+    msgbus,
+):
+    # Arrange
+    client, _ws_client, http_client, _instrument_provider = exec_client_builder_spot(
+        monkeypatch,
+        config_kwargs={
+            "spot_account_type": AccountType.MARGIN,
+            "default_leverage": 3,
+            "margin_balance_asset": "ZGBP",
+        },
+    )
+
+    metrics = {
+        "equity": "198499.67",
+        "free_margin": "185999.67",
+        "used_margin": "12500.00",
+        "unrealized_pnl": "-250.75",
+        "margin_level": "1587.99",
+        "trade_balance": "150000.00",
+        "equivalent_balance": "198750.42",
+        "cost_basis": "12350.00",
+        "valuation": "12099.25",
+        "unexecuted_value": "0.00",
+        "asset": "GBP",
+    }
+    http_client.request_account_state_with_metrics = AsyncMock(
+        return_value=(http_client.request_account_state.return_value, metrics),
+    )
+
+    captured: dict = {}
+    original_generate = client.generate_account_state
+
+    def capture(*args, **kwargs):
+        captured.update(kwargs)
+        return original_generate(*args, **kwargs)
+
+    monkeypatch.setattr(client, "generate_account_state", capture)
+
+    await client._connect()
+
+    try:
+        await client._update_account_state()
+
+        http_client.request_account_state_with_metrics.assert_awaited()
+        last_call = http_client.request_account_state_with_metrics.call_args
+        assert last_call.args[2] == "ZGBP"
+
+        assert captured.get("info") == metrics
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_update_account_state_cash_skips_margin_metrics(
+    exec_client_builder_spot,
+    monkeypatch,
+    msgbus,
+):
+    client, _ws_client, http_client, _instrument_provider = exec_client_builder_spot(monkeypatch)
+    http_client.request_margin_metrics = AsyncMock(return_value={})
+
+    captured: dict = {}
+    original_generate = client.generate_account_state
+
+    def capture(*args, **kwargs):
+        captured.update(kwargs)
+        return original_generate(*args, **kwargs)
+
+    monkeypatch.setattr(client, "generate_account_state", capture)
+
+    await client._connect()
+
+    try:
+        http_client.request_margin_metrics.reset_mock()
+        await client._update_account_state()
+
+        http_client.request_margin_metrics.assert_not_called()
+        assert captured.get("info") == {}
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_update_account_state_margin_passes_asset_to_request_account_state(
+    exec_client_builder_spot,
+    monkeypatch,
+):
+    client, _ws_client, http_client, _instrument_provider = exec_client_builder_spot(
+        monkeypatch,
+        config_kwargs={
+            "spot_account_type": AccountType.MARGIN,
+            "default_leverage": 2,
+            "margin_balance_asset": "ZGBP",
+        },
+    )
+
+    await client._connect()
+
+    try:
+        http_client.request_account_state_with_metrics.reset_mock()
+        await client._update_account_state()
+
+        http_client.request_account_state_with_metrics.assert_awaited_once()
+        call_args = http_client.request_account_state_with_metrics.call_args
+        assert call_args.args[2] == "ZGBP"
+    finally:
+        await client._disconnect()
+
+
+def test_kraken_exec_client_config_accepts_margin_balance_asset():
+    config = KrakenExecClientConfig(
+        api_key="k",
+        api_secret="s",
+        spot_account_type=AccountType.MARGIN,
+        default_leverage=3,
+        margin_balance_asset="ZGBP",
+    )
+    assert config.margin_balance_asset == "ZGBP"
 
 
 @pytest.mark.asyncio
@@ -2159,7 +2292,7 @@ async def test_update_account_state_dual_product(exec_client_builder_dual, monke
     await client._connect()
 
     # Reset mocks to track new calls
-    http_client_spot.request_account_state.reset_mock()
+    http_client_spot.request_account_state_with_metrics.reset_mock()
     http_client_futures.request_account_state.reset_mock()
     initial_sent_count = msgbus.sent_count
 
@@ -2168,7 +2301,7 @@ async def test_update_account_state_dual_product(exec_client_builder_dual, monke
         await client._update_account_state()
 
         # Assert - Both clients should be queried
-        http_client_spot.request_account_state.assert_awaited_once()
+        http_client_spot.request_account_state_with_metrics.assert_awaited_once()
         http_client_futures.request_account_state.assert_awaited_once()
 
         # Account state should be generated (message sent)
@@ -3116,3 +3249,584 @@ async def test_submit_gtc_limit_order_spot_no_expire_time(
         assert call_kwargs["expire_time"] is None
     finally:
         await client._disconnect()
+
+
+def test_account_type_to_pyo3_round_trip():
+    assert account_type_to_pyo3(AccountType.CASH).name == "CASH"
+    assert account_type_to_pyo3(AccountType.MARGIN).name == "MARGIN"
+    assert account_type_to_pyo3(AccountType.BETTING).name == "BETTING"
+
+
+def test_kraken_exec_client_config_uses_model_account_type():
+    config = KrakenExecClientConfig(
+        api_key="test",
+        api_secret="test",
+        spot_account_type=AccountType.MARGIN,
+    )
+    assert config.spot_account_type == AccountType.MARGIN
+
+
+def test_kraken_exec_config_rejects_default_leverage_with_cash():
+    with pytest.raises(
+        ValueError,
+        match=r"default_leverage requires spot_account_type=AccountType\.MARGIN",
+    ):
+        KrakenExecClientConfig(
+            api_key="test",
+            api_secret="test",
+            default_leverage=3,
+            spot_account_type=AccountType.CASH,
+        )
+
+
+def test_kraken_exec_config_accepts_default_leverage_with_margin():
+    config = KrakenExecClientConfig(
+        api_key="test",
+        api_secret="test",
+        default_leverage=3,
+        spot_account_type=AccountType.MARGIN,
+    )
+    assert config.default_leverage == 3
+
+
+@pytest.mark.asyncio
+async def test_submit_order_from_list_propagates_leverage_params(
+    exec_client_builder_spot,
+    monkeypatch,
+    instrument,
+):
+    """
+    _submit_order_from_list must forward SubmitOrderList.params so that per-list
+    leverage reaches the single-order submission path.
+    """
+    client, _, _, _ = exec_client_builder_spot(monkeypatch)
+    client._submit_order = AsyncMock()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-LIST-LEV-1"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.10000000"),
+        price=Price.from_str("50000.0"),
+        time_in_force=TimeInForce.GTC,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    order_list = OrderList(
+        order_list_id=TestIdStubs.order_list_id(),
+        orders=[order],
+    )
+    command = SubmitOrderList(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        order_list=order_list,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        params={"leverage": 5},
+    )
+
+    await client._submit_order_from_list(order, command)
+
+    client._submit_order.assert_awaited_once()
+    forwarded: SubmitOrder = client._submit_order.call_args.args[0]
+    assert forwarded.params == {"leverage": 5}
+
+
+@pytest.mark.asyncio
+async def test_submit_spot_order_list_batch_passes_leverage_to_http_client(
+    exec_client_builder_spot,
+    monkeypatch,
+    instrument,
+):
+    """
+    _submit_spot_order_list_batch must pass list-level leverage to submit_orders_batch.
+    """
+    client, _, http_client, _ = exec_client_builder_spot(monkeypatch)
+    http_client.submit_orders_batch = AsyncMock(return_value=["placed"])
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-BATCH-LEV-1"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.10000000"),
+        price=Price.from_str("50000.0"),
+        time_in_force=TimeInForce.GTC,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    order_list = OrderList(
+        order_list_id=TestIdStubs.order_list_id(),
+        orders=[order],
+    )
+    command = SubmitOrderList(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        order_list=order_list,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        params={"leverage": 7},
+    )
+
+    await client._submit_spot_order_list_batch([order], command)
+
+    http_client.submit_orders_batch.assert_awaited_once()
+    call_args = http_client.submit_orders_batch.call_args
+    leverage_arg = (
+        call_args.args[1] if len(call_args.args) > 1 else call_args.kwargs.get("leverage")
+    )
+    assert leverage_arg == 7
+
+
+@pytest.mark.asyncio
+async def test_submit_spot_order_list_batch_no_leverage_passes_none(
+    exec_client_builder_spot,
+    monkeypatch,
+    instrument,
+):
+    """
+    Without list-level params, submit_orders_batch receives leverage=None.
+    """
+    client, _, http_client, _ = exec_client_builder_spot(monkeypatch)
+    http_client.submit_orders_batch = AsyncMock(return_value=["placed"])
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-BATCH-NOLEV-1"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.10000000"),
+        price=Price.from_str("50000.0"),
+        time_in_force=TimeInForce.GTC,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    order_list = OrderList(
+        order_list_id=TestIdStubs.order_list_id(),
+        orders=[order],
+    )
+    command = SubmitOrderList(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        order_list=order_list,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        params=None,
+    )
+
+    await client._submit_spot_order_list_batch([order], command)
+
+    http_client.submit_orders_batch.assert_awaited_once()
+    call_args = http_client.submit_orders_batch.call_args
+    leverage_arg = (
+        call_args.args[1] if len(call_args.args) > 1 else call_args.kwargs.get("leverage")
+    )
+    assert leverage_arg is None
+
+
+@pytest.mark.asyncio
+async def test_submit_spot_order_list_batch_uses_default_leverage_when_no_params(
+    exec_client_builder_spot,
+    monkeypatch,
+    instrument,
+):
+    """
+    When no per-list leverage is in params, the batch path must fall back to
+    config.default_leverage (not None), matching the single-order path.
+    """
+    client, _, http_client, _ = exec_client_builder_spot(
+        monkeypatch,
+        config_kwargs={"spot_account_type": AccountType.MARGIN, "default_leverage": 3},
+    )
+    http_client.submit_orders_batch = AsyncMock(return_value=["placed"])
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-BATCH-DEFLEV-1"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.10000000"),
+        price=Price.from_str("50000.0"),
+        time_in_force=TimeInForce.GTC,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    order_list = OrderList(
+        order_list_id=TestIdStubs.order_list_id(),
+        orders=[order],
+    )
+    command = SubmitOrderList(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        order_list=order_list,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        params=None,
+    )
+
+    await client._submit_spot_order_list_batch([order], command)
+
+    http_client.submit_orders_batch.assert_awaited_once()
+    call_args = http_client.submit_orders_batch.call_args
+    leverage_arg = (
+        call_args.args[1] if len(call_args.args) > 1 else call_args.kwargs.get("leverage")
+    )
+    assert leverage_arg == 3
+
+
+@pytest.mark.asyncio
+async def test_submit_spot_order_list_batch_invalid_leverage_emits_denied_for_all(
+    exec_client_builder_spot,
+    monkeypatch,
+    instrument,
+):
+    """
+    A malformed batch leverage param must emit OrderDenied for every order in the batch
+    and not call the HTTP batch endpoint, so none of them are left stranded without a
+    terminal event.
+    """
+    client, _, http_client, _ = exec_client_builder_spot(
+        monkeypatch,
+        config_kwargs={"spot_account_type": AccountType.MARGIN},
+    )
+    client.generate_order_denied = MagicMock()
+    client.generate_order_submitted = MagicMock()
+    http_client.submit_orders_batch = AsyncMock()
+
+    orders = [
+        LimitOrder(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=instrument.id,
+            client_order_id=ClientOrderId(f"O-BADLEV-{i}"),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("0.10000000"),
+            price=Price.from_str("50000.0"),
+            time_in_force=TimeInForce.GTC,
+            init_id=TestIdStubs.uuid(),
+            ts_init=0,
+        )
+        for i in range(2)
+    ]
+    order_list = OrderList(
+        order_list_id=TestIdStubs.order_list_id(),
+        orders=orders,
+    )
+    command = SubmitOrderList(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        order_list=order_list,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        params={"leverage": "bad"},
+    )
+
+    await client._submit_spot_order_list_batch(orders, command)
+
+    assert client.generate_order_denied.call_count == 2
+    client.generate_order_submitted.assert_not_called()
+    http_client.submit_orders_batch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_invalid_leverage_emits_denied_not_submitted(
+    exec_client_builder_spot,
+    monkeypatch,
+    instrument,
+):
+    """
+    A malformed leverage param must produce OrderDenied before OrderSubmitted is
+    emitted, so the order is never left stranded in SUBMITTED state with WS cache
+    populated.
+    """
+    client, _, http_client, _ = exec_client_builder_spot(monkeypatch)
+    client.generate_order_denied = MagicMock()
+    client.generate_order_submitted = MagicMock()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-BAD-LEV-1"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.10000000"),
+        price=Price.from_str("50000.0"),
+        time_in_force=TimeInForce.GTC,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        params={"leverage": "not-a-number"},
+    )
+
+    await client._submit_order(command)
+
+    client.generate_order_denied.assert_called_once()
+    denial_kwargs = client.generate_order_denied.call_args.kwargs
+    assert denial_kwargs["client_order_id"] == order.client_order_id
+    assert "leverage" in denial_kwargs["reason"].lower()
+    client.generate_order_submitted.assert_not_called()
+    http_client.submit_order.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_submit_reduce_only_in_cash_mode_emits_denied_not_submitted(
+    exec_client_builder_spot,
+    monkeypatch,
+    instrument,
+):
+    """
+    A spot CASH-mode reduce-only order must be denied with a terminal event before
+    OrderSubmitted is emitted, so the strategy is informed Kraken cannot honour the flag
+    without margin enabled.
+    """
+    client, _, http_client, _ = exec_client_builder_spot(monkeypatch)
+    client.generate_order_denied = MagicMock()
+    client.generate_order_submitted = MagicMock()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-CASH-RO-1"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.10000000"),
+        price=Price.from_str("50000.0"),
+        time_in_force=TimeInForce.GTC,
+        reduce_only=True,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    await client._submit_order(command)
+
+    client.generate_order_denied.assert_called_once()
+    denial_kwargs = client.generate_order_denied.call_args.kwargs
+    assert denial_kwargs["client_order_id"] == order.client_order_id
+    assert "reduce_only" in denial_kwargs["reason"]
+    assert "Margin" in denial_kwargs["reason"]
+    client.generate_order_submitted.assert_not_called()
+    http_client.submit_order.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_submit_spot_order_list_batch_reduce_only_in_cash_mode_emits_denied_for_all(
+    exec_client_builder_spot,
+    monkeypatch,
+    instrument,
+):
+    """
+    Reduce-only orders submitted in a list under CASH mode must each receive an
+    OrderDenied terminal event, never reach the HTTP batch endpoint, and never get
+    OrderSubmitted emitted.
+    """
+    client, _, http_client, _ = exec_client_builder_spot(monkeypatch)
+    client.generate_order_denied = MagicMock()
+    client.generate_order_submitted = MagicMock()
+    http_client.submit_orders_batch = AsyncMock()
+
+    orders = [
+        LimitOrder(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=instrument.id,
+            client_order_id=ClientOrderId(f"O-CASH-RO-LIST-{i}"),
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_str("0.10000000"),
+            price=Price.from_str("50000.0"),
+            time_in_force=TimeInForce.GTC,
+            reduce_only=True,
+            init_id=TestIdStubs.uuid(),
+            ts_init=0,
+        )
+        for i in range(2)
+    ]
+    order_list = OrderList(
+        order_list_id=TestIdStubs.order_list_id(),
+        orders=orders,
+    )
+    command = SubmitOrderList(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        order_list=order_list,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    await client._submit_spot_order_list_batch(orders, command)
+
+    assert client.generate_order_denied.call_count == 2
+    for call in client.generate_order_denied.call_args_list:
+        assert "reduce_only" in call.kwargs["reason"]
+        assert "Margin" in call.kwargs["reason"]
+    client.generate_order_submitted.assert_not_called()
+    http_client.submit_orders_batch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_generate_position_status_reports_emits_flat_for_stale_margin_positions(
+    exec_client_builder_spot,
+    monkeypatch,
+    cache,
+    instrument,
+):
+    """
+    In spot margin mode, positions the engine cache shows as open but Kraken no longer
+    reports must receive synthetic FLAT PositionStatusReports so the engine reconciles
+    them.
+    """
+    client, _, http_client, _ = exec_client_builder_spot(
+        monkeypatch,
+        config_kwargs={"spot_account_type": AccountType.MARGIN},
+    )
+    http_client.request_position_status_reports = AsyncMock(return_value=[])
+
+    order = TestExecStubs.market_order(instrument=instrument)
+    position_id = PositionId("P-STALE-1")
+    cache.add_order(order, position_id)
+    fill = TestEventStubs.order_filled(
+        order,
+        instrument=instrument,
+        account_id=AccountId("KRAKEN-UNIFIED"),
+        position_id=position_id,
+        last_px=Price.from_str("50000.0"),
+    )
+    stale_position = Position(instrument=instrument, fill=fill)
+    cache.add_position(stale_position, OmsType.HEDGING)
+
+    command = GeneratePositionStatusReports(
+        instrument_id=None,
+        start=None,
+        end=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    reports = await client.generate_position_status_reports(command)
+
+    flat_reports = [r for r in reports if r.instrument_id == instrument.id]
+    assert len(flat_reports) == 1
+    assert flat_reports[0].position_side == PositionSide.FLAT
+    assert flat_reports[0].quantity == Quantity.zero(instrument.size_precision)
+
+
+@pytest.mark.asyncio
+async def test_generate_position_status_reports_no_flat_for_futures_in_dual_mode(
+    exec_client_builder_dual,
+    monkeypatch,
+    cache,
+    futures_instrument,
+):
+    """
+    In dual SPOT-margin + FUTURES mode, open futures cache positions must NOT receive
+    synthetic FLAT reports from the spot stale-position sweep; futures reconciliation
+    handles them independently.
+    """
+    client, _, _, http_client_spot, http_client_futures, _ = exec_client_builder_dual(
+        monkeypatch,
+        config_kwargs={"spot_account_type": AccountType.MARGIN},
+    )
+    http_client_spot.request_position_status_reports = AsyncMock(return_value=[])
+    http_client_futures.request_position_status_reports = AsyncMock(return_value=[])
+
+    cache.add_instrument(futures_instrument)
+    order = TestExecStubs.market_order(instrument=futures_instrument)
+    position_id = PositionId("P-FUTURES-1")
+    cache.add_order(order, position_id)
+    fill = TestEventStubs.order_filled(
+        order,
+        instrument=futures_instrument,
+        account_id=AccountId("KRAKEN-UNIFIED"),
+        position_id=position_id,
+        last_px=Price.from_str("30000.0"),
+    )
+    futures_position = Position(instrument=futures_instrument, fill=fill)
+    cache.add_position(futures_position, OmsType.HEDGING)
+
+    command = GeneratePositionStatusReports(
+        instrument_id=None,
+        start=None,
+        end=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    reports = await client.generate_position_status_reports(command)
+
+    futures_flats = [
+        r
+        for r in reports
+        if r.instrument_id == futures_instrument.id and r.position_side == PositionSide.FLAT
+    ]
+    assert len(futures_flats) == 0
+
+
+def _make_pyo3_batch_order(
+    client_order_id: str,
+) -> tuple:
+    return (
+        nautilus_pyo3.InstrumentId.from_str("XBT/USDT.KRAKEN"),
+        nautilus_pyo3.ClientOrderId(client_order_id),
+        nautilus_pyo3.OrderSide.BUY,
+        nautilus_pyo3.OrderType.LIMIT,
+        nautilus_pyo3.Quantity.from_str("0.10000000"),
+        nautilus_pyo3.TimeInForce.GTC,
+        nautilus_pyo3.Price.from_str("50000.0"),
+        None,
+        None,
+        False,
+        False,
+        None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_submit_orders_batch_rejects_short_per_order_reduce_only() -> None:
+    """
+    The PyO3 batch binding must reject a per_order_reduce_only list shorter than the
+    orders list to prevent silent order omission via zip truncation.
+    """
+    http_client = nautilus_pyo3.KrakenSpotHttpClient()
+    orders = [
+        _make_pyo3_batch_order("O-LEN-MISMATCH-1"),
+        _make_pyo3_batch_order("O-LEN-MISMATCH-2"),
+    ]
+
+    with pytest.raises(ValueError, match="per_order_reduce_only length"):
+        await http_client.submit_orders_batch(
+            orders,
+            per_order_reduce_only=[True],
+        )
+
+
+@pytest.mark.asyncio
+async def test_submit_orders_batch_rejects_long_per_order_leverages() -> None:
+    """
+    The PyO3 batch binding must reject a per_order_leverages list longer than the orders
+    list rather than silently dropping the trailing entries.
+    """
+    http_client = nautilus_pyo3.KrakenSpotHttpClient()
+    orders = [_make_pyo3_batch_order("O-LEV-LEN-1")]
+
+    with pytest.raises(ValueError, match="per_order_leverages length"):
+        await http_client.submit_orders_batch(
+            orders,
+            per_order_leverages=[5, 10],
+        )

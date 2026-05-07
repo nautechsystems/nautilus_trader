@@ -38,7 +38,10 @@ use nautilus_persistence::{
         catalog::ParquetDataCatalog,
         session::{DataBackendSession, QueryResult},
     },
-    test_data::{MacroYieldCurveData, RustTestCustomData, RustTestParamsCustomData},
+    test_data::{
+        MacroYieldCurveData, RustTestCustomData, RustTestHashMapCustomData,
+        RustTestParamsCustomData, RustTestPriceMapCustomData,
+    },
 };
 use nautilus_serialization::{arrow::ArrowSchemaProvider, ensure_custom_data_registered};
 use nautilus_testkit::common::get_nautilus_test_data_file_path;
@@ -60,7 +63,9 @@ fn ensure_test_custom_data_registered() {
     ONCE.call_once(|| {
         ensure_custom_data_registered::<MacroYieldCurveData>();
         ensure_custom_data_registered::<RustTestCustomData>();
+        ensure_custom_data_registered::<RustTestHashMapCustomData>();
         ensure_custom_data_registered::<RustTestParamsCustomData>();
+        ensure_custom_data_registered::<RustTestPriceMapCustomData>();
     });
 }
 
@@ -3419,6 +3424,153 @@ fn test_query_custom_data_dynamic_with_explicit_files() {
         })
         .collect();
     assert_eq!(values, vec![1.0, 2.0]);
+}
+
+#[rstest]
+fn test_rust_custom_data_roundtrip_with_indexmap_price_field() {
+    use std::sync::Arc;
+
+    use indexmap::IndexMap;
+    use nautilus_model::data::{CustomData, Data, DataType};
+
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let data_type = DataType::new("RustTestPriceMapCustomData", None, None);
+    let audusd = InstrumentId::from("AUD/USD.SIM");
+    let btcusdt = InstrumentId::from("BTCUSDT.BINANCE");
+
+    let mut prices_a = IndexMap::new();
+    prices_a.insert(audusd, Price::from("1.23456"));
+    prices_a.insert(btcusdt, Price::from("65432.10"));
+
+    let mut prices_b = IndexMap::new();
+    prices_b.insert(btcusdt, Price::from("65433.20"));
+    prices_b.insert(audusd, Price::from("1.23457"));
+
+    let original_data = [
+        RustTestPriceMapCustomData {
+            name: "first".to_string(),
+            prices: prices_a,
+            ts_event: UnixNanos::from(10),
+            ts_init: UnixNanos::from(10),
+        },
+        RustTestPriceMapCustomData {
+            name: "second".to_string(),
+            prices: prices_b,
+            ts_event: UnixNanos::from(20),
+            ts_init: UnixNanos::from(20),
+        },
+    ];
+
+    let custom_data: Vec<CustomData> = original_data
+        .iter()
+        .cloned()
+        .map(|item| CustomData::new(Arc::new(item), data_type.clone()))
+        .collect();
+
+    catalog
+        .write_custom_data_batch(custom_data, None, None, Some(false))
+        .unwrap();
+
+    let loaded: Vec<Data> = catalog
+        .query_custom_data_dynamic(
+            "RustTestPriceMapCustomData",
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(loaded.len(), original_data.len());
+
+    for (expected, actual) in original_data.iter().zip(loaded.iter()) {
+        if let Data::Custom(custom) = actual {
+            assert_eq!(custom.data_type.type_name(), "RustTestPriceMapCustomData");
+            let rust: &RustTestPriceMapCustomData = custom
+                .data
+                .as_any()
+                .downcast_ref::<RustTestPriceMapCustomData>()
+                .expect("Expected RustTestPriceMapCustomData");
+            assert_eq!(expected, rust);
+        } else {
+            panic!("Expected Data::Custom variant");
+        }
+    }
+}
+
+#[rstest]
+fn test_rust_custom_data_roundtrip_with_hashmap_price_field() {
+    use std::sync::Arc;
+
+    use nautilus_model::data::{CustomData, Data, DataType};
+
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let data_type = DataType::new("RustTestHashMapCustomData", None, None);
+
+    let original_data = [
+        RustTestHashMapCustomData {
+            name: "first".to_string(),
+            prices: HashMap::from([
+                ("AUD/USD.SIM".to_string(), Price::from("1.23456")),
+                ("BTCUSDT.BINANCE".to_string(), Price::from("65432.10")),
+            ]),
+            ts_event: UnixNanos::from(10),
+            ts_init: UnixNanos::from(10),
+        },
+        RustTestHashMapCustomData {
+            name: "second".to_string(),
+            prices: HashMap::from([
+                ("AUD/USD.SIM".to_string(), Price::from("1.23457")),
+                ("BTCUSDT.BINANCE".to_string(), Price::from("65433.20")),
+            ]),
+            ts_event: UnixNanos::from(20),
+            ts_init: UnixNanos::from(20),
+        },
+    ];
+
+    let custom_data: Vec<CustomData> = original_data
+        .iter()
+        .cloned()
+        .map(|item| CustomData::new(Arc::new(item), data_type.clone()))
+        .collect();
+
+    catalog
+        .write_custom_data_batch(custom_data, None, None, Some(false))
+        .unwrap();
+
+    let loaded: Vec<Data> = catalog
+        .query_custom_data_dynamic(
+            "RustTestHashMapCustomData",
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(loaded.len(), original_data.len());
+
+    for (expected, actual) in original_data.iter().zip(loaded.iter()) {
+        if let Data::Custom(custom) = actual {
+            assert_eq!(custom.data_type.type_name(), "RustTestHashMapCustomData");
+            let rust: &RustTestHashMapCustomData = custom
+                .data
+                .as_any()
+                .downcast_ref::<RustTestHashMapCustomData>()
+                .expect("Expected RustTestHashMapCustomData");
+            assert_eq!(expected, rust);
+        } else {
+            panic!("Expected Data::Custom variant");
+        }
+    }
 }
 
 /// Regression: write_data_enum groups custom data by full DataType (type_name + identifier + metadata).

@@ -56,6 +56,9 @@ pub const OKX_FIELD_SCODE: &str = "sCode";
 /// JSON field key for sub-error message in order operation responses.
 pub const OKX_FIELD_SMSG: &str = "sMsg";
 
+/// JSON field key for detailed sub-error code in order operation responses.
+pub const OKX_FIELD_SUBCODE: &str = "subCode";
+
 /// JSON field key for client order ID in order operation responses.
 pub const OKX_FIELD_CLORDID: &str = "clOrdId";
 
@@ -155,16 +158,18 @@ pub const OKX_TARGET_CCY_QUOTE: &str = "quote_ccy";
 ///
 /// Returns `Some(families)` when the type supports family filtering, or `None`
 /// to skip the instrument type entirely (Option without configured families).
-/// An empty vec means no family filter is needed (Spot, Margin).
+/// An empty vec means no family filter is needed (Spot, Margin), or all
+/// discoverable families should be loaded (Events).
 pub fn resolve_instrument_families(
     configured: &Option<Vec<String>>,
     inst_type: OKXInstrumentType,
 ) -> Option<Vec<String>> {
     match (configured, inst_type) {
         (Some(families), OKXInstrumentType::Option) => Some(families.clone()),
-        (Some(families), OKXInstrumentType::Futures | OKXInstrumentType::Swap) => {
-            Some(families.clone())
-        }
+        (
+            Some(families),
+            OKXInstrumentType::Futures | OKXInstrumentType::Swap | OKXInstrumentType::Events,
+        ) => Some(families.clone()),
         (None, OKXInstrumentType::Option) => {
             log::warn!("Skipping OPTION type: instrument_families required but not configured");
             None

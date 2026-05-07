@@ -670,8 +670,20 @@ Some venues (such as Binance Futures) support the GTD time in force, so to avoid
 ### Multiple strategies
 
 If you intend running multiple instances of the same strategy, with different
-configurations (such as trading different instruments), then you will need to define
-a unique `order_id_tag` for each of these strategies (as shown above).
+configurations (such as trading different instruments), then each instance needs a
+unique strategy ID and order ID tag.
+
+If `strategy_id` is not supplied, the platform builds the strategy ID from the
+strategy class name and an order ID tag. The tag can be supplied with `order_id_tag`;
+otherwise registration assigns the next numeric tag, starting with `000`. For example,
+the above config results in a strategy ID of `MyStrategy-001`.
+
+If `strategy_id` is supplied with `order_id_tag`, Rust appends the tag to the
+runtime strategy ID unless the ID already ends with that tag. For example,
+`strategy_id=MyStrategy-PRIMARY` with `order_id_tag=ABC` becomes
+`MyStrategy-PRIMARY-ABC`.
+If `order_id_tag` is omitted, Rust uses the final hyphen-separated part of
+`strategy_id` as the order ID tag.
 
 :::note
 The platform has built-in safety measures: if two strategies share a duplicated strategy ID,
@@ -679,9 +691,18 @@ a `RuntimeError` is raised during registration indicating the strategy ID is alr
 :::
 
 The reason for this is that the system must be able to identify which strategy
-various commands and events belong to. A strategy ID is made up of the
-strategy class name, and the strategies `order_id_tag` separated by a hyphen. For
-example the above config would result in a strategy ID of `MyStrategy-001`.
+various commands and events belong to. The order ID tag also keeps generated client
+order IDs unique across strategies for the same trader.
+
+:::info Rust implementation
+Rust treats `StrategyConfig` as immutable construction input. The runtime
+`StrategyId` carries the order ID tag, matching Python/Cython behavior. This keeps
+actor registration, client order ID generation, order list ID generation, and
+position ID generation aligned through `strategy_id.get_tag()`.
+
+If `strategy_id` is omitted, `order_id_tag` overrides the generated suffix, for
+example `MyStrategy-ABC`.
+:::
 
 See the [`StrategyId` API Reference](/docs/python-api-latest/model/identifiers.html) for further details.
 

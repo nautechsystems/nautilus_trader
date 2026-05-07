@@ -72,6 +72,12 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt"] }
+
+# Run with `cargo bench -p nautilus-data --bench engine`
+[[bench]]
+name = "engine"
+harness = false

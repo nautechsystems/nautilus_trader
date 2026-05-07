@@ -74,16 +74,19 @@ pub use option_chain::{OptionChainSlice, OptionGreeks, OptionStrikeData, StrikeR
 pub use order::{BookOrder, NULL_ORDER};
 pub use prices::{IndexPriceUpdate, MarkPriceUpdate};
 pub use quote::QuoteTick;
+#[cfg(feature = "arrow")]
 pub use registry::{
-    ArrowDecoder, ArrowEncoder, decode_custom_from_arrow, deserialize_custom_from_json,
-    encode_custom_to_arrow, ensure_arrow_registered, ensure_json_deserializer_registered,
-    get_arrow_schema, register_arrow, register_json_deserializer,
+    ArrowDecoder, ArrowEncoder, decode_custom_from_arrow, encode_custom_to_arrow,
+    ensure_arrow_registered, get_arrow_schema, register_arrow,
 };
 #[cfg(feature = "python")]
 pub use registry::{
     PyExtractor, ensure_py_extractor_registered, ensure_rust_extractor_factory_registered,
     ensure_rust_extractor_registered, get_rust_extractor, register_py_extractor,
     register_rust_extractor, register_rust_extractor_factory, try_extract_from_py,
+};
+pub use registry::{
+    deserialize_custom_from_json, ensure_json_deserializer_registered, register_json_deserializer,
 };
 pub use status::InstrumentStatus;
 pub use trade::TradeTick;

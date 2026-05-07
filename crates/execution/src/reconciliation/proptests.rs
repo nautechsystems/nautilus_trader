@@ -24,7 +24,7 @@
 //!
 //! Property bodies are short by design: the Phase 1 `debug_assert!` tripwires
 //! in `positions.rs` and `orders.rs` catch the low-level invariant violations
-//! (positive fill qty, non-negative simulated value, monotonic filled_qty)
+//! (positive fill qty, non-negative simulated value, monotonic `filled_qty`)
 //! before the property body even runs.
 
 #![cfg(test)]

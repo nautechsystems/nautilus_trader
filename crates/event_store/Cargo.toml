@@ -1,0 +1,34 @@
+[package]
+name = "nautilus-event-store"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Event store and authoritative log of state-affecting messages for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false # Do not publish to crates.io yet
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_event_store"
+crate-type = ["rlib"]
+
+[features]
+default = []
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+redb = { workspace = true }
+
+[dev-dependencies]

@@ -34,6 +34,7 @@ use nautilus_common::{
             report::{GenerateOrderStatusReports, GeneratePositionStatusReports},
         },
     },
+    msgbus::{self, switchboard},
 };
 use nautilus_core::{
     UUID4, UnixNanos,
@@ -985,7 +986,7 @@ impl ExecutionManager {
                 {
                     let elapsed_ms = nanos_to_millis((ts_now - last_activity).as_u64());
                     let threshold_ms = nanos_to_millis(self.config.open_check_threshold_ns);
-                    log::info!(
+                    log::debug!(
                         "Deferring reconciliation for {client_order_id}: recent local activity ({elapsed_ms}ms < threshold={threshold_ms}ms)",
                     );
                     continue;
@@ -2380,8 +2381,8 @@ impl ExecutionManager {
             tags,
         );
 
-        let events = vec![OrderEventAny::Initialized(initialized)];
-        let order = match OrderAny::from_events(events) {
+        let initialized = OrderEventAny::Initialized(initialized);
+        let order = match OrderAny::from_events(vec![initialized.clone()]) {
             Ok(order) => order,
             Err(e) => {
                 log::error!("Failed to create order from report: {e}");
@@ -2425,6 +2426,8 @@ impl ExecutionManager {
                 log::warn!("Failed to add venue order ID index: {e}");
             }
         }
+
+        Self::publish_order_event(&initialized);
 
         log::info!(
             color = LogColor::Blue as u8;
@@ -2516,6 +2519,11 @@ impl ExecutionManager {
         };
 
         (order_events, Some(metadata))
+    }
+
+    fn publish_order_event(event: &OrderEventAny) {
+        let topic = switchboard::get_event_orders_topic(event.strategy_id());
+        msgbus::publish_order_event(topic, event);
     }
 
     /// Adjusts fills for instruments with incomplete first lifecycle (partial window).

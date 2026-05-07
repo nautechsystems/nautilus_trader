@@ -21,12 +21,13 @@
 //! Uses [`RetryManager`] from `nautilus-network` with exponential backoff for
 //! transient HTTP failures (timeouts, 5xx, rate limits).
 
-use std::sync::Arc;
+use std::{error::Error as StdError, fmt::Display, sync::Arc};
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
-    types::{Price, Quantity},
+    identifiers::VenueOrderId,
+    types::Quantity,
 };
 use nautilus_network::retry::{RetryConfig, RetryManager};
 use rust_decimal::Decimal;
@@ -60,6 +61,43 @@ pub(crate) struct MarketBuyFeeContext {
     pub builder_taker_fee_rate: Decimal,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct MarketOrderSubmitRequest {
+    pub(crate) token_id: String,
+    pub(crate) side: OrderSide,
+    pub(crate) amount: Quantity,
+    pub(crate) time_in_force: TimeInForce,
+    pub(crate) neg_risk: bool,
+    pub(crate) tick_decimals: u32,
+    pub(crate) fee_context: Option<MarketBuyFeeContext>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct MarketOrderSubmitResult {
+    pub response: OrderResponse,
+    pub expected_base_qty: Decimal,
+    pub expected_venue_order_id: VenueOrderId,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct UnknownSubmitError {
+    pub reason: String,
+    pub expected_venue_order_id: VenueOrderId,
+    pub expected_base_qty: Option<Decimal>,
+}
+
+impl Display for UnknownSubmitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "submit outcome unknown for {}: {}",
+            self.expected_venue_order_id, self.reason
+        )
+    }
+}
+
+impl StdError for UnknownSubmitError {}
+
 /// HTTP order submission and cancellation facade.
 ///
 /// Provides a clean API accepting Nautilus-native types, internally handling:
@@ -89,39 +127,10 @@ impl OrderSubmitter {
         }
     }
 
-    /// Builds a signed limit order and posts it with retry on transient failures.
-    #[expect(clippy::too_many_arguments)]
-    pub async fn submit_limit_order(
-        &self,
-        token_id: &str,
-        side: OrderSide,
-        price: Price,
-        quantity: Quantity,
-        time_in_force: TimeInForce,
-        post_only: bool,
-        neg_risk: bool,
-        expire_time: Option<UnixNanos>,
-        tick_decimals: u32,
-    ) -> anyhow::Result<OrderResponse> {
-        let request = LimitOrderSubmitRequest {
-            token_id: token_id.to_string(),
-            side,
-            price,
-            quantity,
-            time_in_force,
-            post_only,
-            neg_risk,
-            expire_time,
-            tick_decimals,
-        };
-        let submission = self.prepare_limit_order_submission(&request).await?;
-        self.post_limit_order_submission(submission).await
-    }
-
     /// Fetches order book, calculates crossing price, builds and posts a market order.
     ///
     /// Converts Nautilus side to Polymarket side, walks the appropriate book side
-    /// to find the crossing price, then builds and submits a FOK order.
+    /// to find the crossing price, then builds and submits a FAK or FOK order.
     /// The book fetch is not retried (stale on retry); only the final POST is retried.
     ///
     /// The second return value is the order's signed base quantity (shares for
@@ -129,25 +138,31 @@ impl OrderSubmitter {
     /// signed `taker_amount` so quote-to-base conversion matches what the venue
     /// can fill (single crossing price), not the multi-level book walk total.
     ///
-    /// `fee_context`, when supplied with `OrderSide::Buy`, is used to shrink
+    /// `request.fee_context`, when supplied with `OrderSide::Buy`, is used to shrink
     /// `amount` for taker fees before signing so balance-sized BUYs are not
     /// rejected by the venue. SELL ignores the context.
     pub async fn submit_market_order(
         &self,
-        token_id: &str,
-        side: OrderSide,
-        amount: Quantity,
-        neg_risk: bool,
-        tick_decimals: u32,
-        fee_context: Option<MarketBuyFeeContext>,
-    ) -> anyhow::Result<(OrderResponse, Decimal)> {
+        request: MarketOrderSubmitRequest,
+    ) -> anyhow::Result<MarketOrderSubmitResult> {
+        let MarketOrderSubmitRequest {
+            token_id,
+            side,
+            amount,
+            time_in_force,
+            neg_risk,
+            tick_decimals,
+            fee_context,
+        } = request;
         let poly_side = PolymarketOrderSide::try_from(side)
             .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
+        let order_type = PolymarketOrderType::from_market_time_in_force(time_in_force)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
         let amount_dec = amount.as_decimal();
 
         let book = self
             .http_client
-            .get_book(token_id)
+            .get_book(&token_id)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to fetch order book: {e}"))?;
 
@@ -177,7 +192,7 @@ impl OrderSubmitter {
         let poly_order = self
             .order_builder
             .build_market_order(
-                token_id,
+                &token_id,
                 poly_side,
                 result.crossing_price,
                 signed_amount,
@@ -195,29 +210,43 @@ impl OrderSubmitter {
             PolymarketOrderSide::Buy => poly_order.taker_amount / usdc_scale,
             PolymarketOrderSide::Sell => amount_dec,
         };
+        let expected_venue_order_id = self
+            .order_builder
+            .expected_order_id(&poly_order, neg_risk)?;
 
         let http_client = self.http_client.clone();
 
-        let response = self
+        let response = match self
             .retry_manager
             .execute_with_retry(
                 "submit_market_order",
                 || {
                     let http_client = http_client.clone();
                     let poly_order = poly_order.clone();
-                    async move {
-                        http_client
-                            .post_order(&poly_order, PolymarketOrderType::FOK, false)
-                            .await
-                    }
+                    async move { http_client.post_order(&poly_order, order_type, false).await }
                 },
                 |e| e.is_retryable(),
                 Error::transport,
             )
             .await
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        {
+            Ok(response) => response,
+            Err(e) if e.is_submit_outcome_unknown() => {
+                return Err(UnknownSubmitError {
+                    reason: e.to_string(),
+                    expected_venue_order_id,
+                    expected_base_qty: Some(signed_base_qty),
+                }
+                .into());
+            }
+            Err(e) => anyhow::bail!("{e}"),
+        };
 
-        Ok((response, signed_base_qty))
+        Ok(MarketOrderSubmitResult {
+            response,
+            expected_base_qty: signed_base_qty,
+            expected_venue_order_id,
+        })
     }
 
     /// Cancels a single order with retry on transient failures.
@@ -318,17 +347,22 @@ impl OrderSubmitter {
             )
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
+        let expected_venue_order_id = self
+            .order_builder
+            .expected_order_id(&order, request.neg_risk)?;
+
         Ok(SignedLimitOrderSubmission {
             order,
             order_type,
             post_only: request.post_only,
+            expected_venue_order_id,
         })
     }
 
     pub(crate) async fn post_limit_order_submission(
         &self,
         submission: SignedLimitOrderSubmission,
-    ) -> anyhow::Result<OrderResponse> {
+    ) -> crate::http::error::Result<OrderResponse> {
         let http_client = self.http_client.clone();
 
         self.retry_manager
@@ -351,13 +385,12 @@ impl OrderSubmitter {
                 Error::transport,
             )
             .await
-            .map_err(|e| anyhow::anyhow!("{e}"))
     }
 
     pub(crate) async fn post_limit_order_submissions(
         &self,
         submissions: Vec<SignedLimitOrderSubmission>,
-    ) -> anyhow::Result<Vec<OrderResponse>> {
+    ) -> crate::http::error::Result<Vec<OrderResponse>> {
         let order_refs: Vec<(&PolymarketOrder, PolymarketOrderType, bool)> = submissions
             .iter()
             .map(|submission| {
@@ -372,10 +405,7 @@ impl OrderSubmitter {
         // Do not retry batch submits automatically.
         // A transport timeout can race with server-side acceptance and resubmit
         // the whole batch without an idempotency key we can verify here.
-        self.http_client
-            .post_orders(&order_refs)
-            .await
-            .map_err(|e| anyhow::anyhow!("{e}"))
+        self.http_client.post_orders(&order_refs).await
     }
 }
 

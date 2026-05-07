@@ -1,0 +1,12 @@
+{
+  "method": "batch_add",
+  "params": {
+    "symbol": "BTC/USD",
+    "orders": [
+      {"order_type": "limit", "side": "buy", "order_qty": 0.01, "limit_price": 30000.0, "cl_ord_id": "O-A"},
+      {"order_type": "limit", "side": "sell", "order_qty": 0.01, "limit_price": 31000.0, "cl_ord_id": "O-B"}
+    ],
+    "token": "TESTTOKEN"
+  },
+  "req_id": 45
+}

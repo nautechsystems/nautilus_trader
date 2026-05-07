@@ -43,7 +43,9 @@ use nautilus_common::{
         },
     },
 };
-use nautilus_core::{AtomicMap, MUTEX_POISONED, string::secret::REDACTED, time::AtomicTime};
+use nautilus_core::{
+    AtomicMap, MUTEX_POISONED, Params, string::secret::REDACTED, time::AtomicTime,
+};
 use nautilus_model::{
     enums::BarAggregation,
     identifiers::{ClientId, Symbol, Venue},
@@ -60,6 +62,8 @@ use crate::{
     symbology::instrument_id_to_symbol_string,
     types::PublisherId,
 };
+
+const PRICE_PRECISION_PARAM: &str = "price_precision";
 
 /// Configuration for the Databento data client.
 #[derive(Clone)]
@@ -526,6 +530,12 @@ impl DataClient for DatabentoDataClient {
         self.symbol_venue_map
             .insert(cmd.instrument_id.symbol, cmd.instrument_id.venue);
         let symbol = cmd.instrument_id.symbol.to_string();
+        if let Some(price_precision) = price_precision_from_params(cmd.params.as_ref())? {
+            self.send_command_to_dataset(
+                &dataset,
+                HandlerCommand::SetPricePrecision(cmd.instrument_id.symbol, price_precision),
+            )?;
+        }
 
         let subscription = Subscription::builder()
             .schema(databento::dbn::Schema::Mbp1) // Market by price level 1 for quotes
@@ -561,6 +571,12 @@ impl DataClient for DatabentoDataClient {
         self.symbol_venue_map
             .insert(cmd.instrument_id.symbol, cmd.instrument_id.venue);
         let symbol = cmd.instrument_id.symbol.to_string();
+        if let Some(price_precision) = price_precision_from_params(cmd.params.as_ref())? {
+            self.send_command_to_dataset(
+                &dataset,
+                HandlerCommand::SetPricePrecision(cmd.instrument_id.symbol, price_precision),
+            )?;
+        }
 
         let subscription = Subscription::builder()
             .schema(databento::dbn::Schema::Trades)
@@ -883,5 +899,50 @@ impl DataClient for DatabentoDataClient {
         });
 
         Ok(())
+    }
+}
+
+fn price_precision_from_params(params: Option<&Params>) -> anyhow::Result<Option<u8>> {
+    let Some(price_precision) = params.and_then(|params| params.get_u64(PRICE_PRECISION_PARAM))
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(u8::try_from(price_precision).map_err(|_| {
+        anyhow::anyhow!(
+            "`{PRICE_PRECISION_PARAM}` must be less than or equal to {}",
+            u8::MAX
+        )
+    })?))
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use serde_json::json;
+
+    use super::*;
+
+    #[rstest]
+    fn test_price_precision_from_params() {
+        let mut params = Params::new();
+        params.insert(PRICE_PRECISION_PARAM.to_string(), json!(5));
+
+        let price_precision = price_precision_from_params(Some(&params)).unwrap();
+
+        assert_eq!(price_precision, Some(5));
+    }
+
+    #[rstest]
+    fn test_price_precision_from_params_rejects_out_of_range_value() {
+        let mut params = Params::new();
+        params.insert(
+            PRICE_PRECISION_PARAM.to_string(),
+            json!(u64::from(u8::MAX) + 1),
+        );
+
+        let result = price_precision_from_params(Some(&params));
+
+        assert!(result.is_err());
     }
 }

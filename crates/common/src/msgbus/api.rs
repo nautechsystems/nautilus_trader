@@ -1052,12 +1052,12 @@ pub fn publish_defi_flash(topic: MStr<Topic>, flash: &PoolFlash) {
 
 /// Publishes a message to typed handlers using thread-local buffer reuse.
 ///
-/// The `fill_fn` receives a mutable reference to the MessageBus, avoiding
+/// The `fill_fn` receives a mutable reference to the `MessageBus`, avoiding
 /// redundant TLS access and Rc clone/drop overhead per publish.
 ///
 /// # Invariants
 ///
-/// - `fill_fn` must not call any publish path (would panic from RefCell double-borrow).
+/// - `fill_fn` must not call any publish path (would panic from `RefCell` double-borrow).
 /// - Handler panics drop the buffer, losing reuse optimization (acceptable as panics are fatal).
 #[inline]
 fn publish_typed<T: 'static>(
@@ -1345,7 +1345,7 @@ mod tests {
     //! Tests for the message bus API functions.
     //!
     //! Includes re-entrancy tests that verify handlers can call back into the
-    //! message bus without causing RefCell borrow conflicts. This is the scenario
+    //! message bus without causing `RefCell` borrow conflicts. This is the scenario
     //! where `send_*` holds a borrow, calls the handler, and the handler needs to
     //! call `borrow_mut()` for topic getters or other operations.
 

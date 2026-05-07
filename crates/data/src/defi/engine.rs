@@ -43,7 +43,7 @@ use crate::engine::{
     },
 };
 
-/// Extracts the block position tuple from a DexPoolData event.
+/// Extracts the block position tuple from a `DexPoolData` event.
 fn get_event_block_position(event: &DexPoolData) -> (u64, u32, u32) {
     match event {
         DexPoolData::Swap(s) => (s.block, s.transaction_index, s.log_index),
@@ -53,7 +53,7 @@ fn get_event_block_position(event: &DexPoolData) -> (u64, u32, u32) {
     }
 }
 
-/// Converts buffered DefiData events to DexPoolData and sorts by block position.
+/// Converts buffered `DefiData` events to `DexPoolData` and sorts by block position.
 fn convert_and_sort_buffered_events(buffered_events: Vec<DefiData>) -> Vec<DexPoolData> {
     let mut events: Vec<DexPoolData> = buffered_events
         .into_iter()
@@ -123,7 +123,7 @@ impl DataEngine {
             && self.external_clients.contains(client_id)
         {
             if self.config.debug {
-                log::debug!("Skipping defi subscribe for external client {client_id}: {cmd:?}",);
+                log::debug!("Skipping defi subscribe for external client {client_id}: {cmd:?}");
             }
             return Ok(());
         }
@@ -171,7 +171,7 @@ impl DataEngine {
             && self.external_clients.contains(client_id)
         {
             if self.config.debug {
-                log::debug!("Skipping defi unsubscribe for external client {client_id}: {cmd:?}",);
+                log::debug!("Skipping defi unsubscribe for external client {client_id}: {cmd:?}");
             }
             return Ok(());
         }

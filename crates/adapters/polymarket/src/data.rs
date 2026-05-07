@@ -14,6 +14,15 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Live market data client implementation for the Polymarket adapter.
+//!
+//! Tick-size changes are handled as book epoch transitions: the local order
+//! book is dropped, incremental `price_change` deltas are gated through
+//! `pending_snapshot_after_tick_change`, and the gate clears once the next
+//! venue snapshot reseeds the book under the new precision. The quote arm of
+//! `price_change` stays open through the gap because each payload carries
+//! `best_bid` / `best_ask` on the new grid; `last_quotes` is preserved so the
+//! unchanged side's size carries forward. See
+//! `docs/integrations/polymarket.md` for the full description.
 
 use std::sync::{
     Arc, Mutex as StdMutex,
@@ -169,6 +178,7 @@ struct WsMessageContext {
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
+    pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
     subscribe_new_markets: bool,
     new_market_filter: Option<Arc<dyn InstrumentFilter>>,
     cancellation_token: CancellationToken,
@@ -201,6 +211,7 @@ pub struct PolymarketDataClient {
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
+    pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
     ws_open_tokens: Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
     pending_auto_loads: Arc<StdMutex<AHashSet<InstrumentId>>>,
@@ -240,6 +251,7 @@ impl PolymarketDataClient {
             active_quote_subs: Arc::new(AtomicSet::new()),
             active_delta_subs: Arc::new(AtomicSet::new()),
             active_trade_subs: Arc::new(AtomicSet::new()),
+            pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
             ws_open_tokens: Arc::new(AtomicSet::new()),
             ws_sub_mutex: Arc::new(tokio::sync::Mutex::new(())),
             pending_auto_loads: Arc::new(StdMutex::new(AHashSet::new())),
@@ -539,6 +551,7 @@ impl PolymarketDataClient {
             active_quote_subs: self.active_quote_subs.clone(),
             active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
+            pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
             subscribe_new_markets: self.config.subscribe_new_markets,
             new_market_filter: self.config.new_market_filter.clone(),
             cancellation_token: cancellation.clone(),
@@ -598,6 +611,7 @@ impl PolymarketDataClient {
                 };
                 let instrument_id = meta.instrument_id;
                 let ts_init = ctx.clock.get_time_ns();
+                let mut book_seeded = false;
 
                 if ctx.active_delta_subs.contains(&instrument_id) {
                     match parse_book_snapshot(
@@ -613,10 +627,11 @@ impl PolymarketDataClient {
                                 .entry(instrument_id)
                                 .or_insert_with(|| OrderBook::new(instrument_id, BookType::L2_MBP));
 
-                            if let Err(e) = book.apply_deltas(&deltas) {
-                                log::error!(
+                            match book.apply_deltas(&deltas) {
+                                Ok(()) => book_seeded = true,
+                                Err(e) => log::error!(
                                     "Failed to apply book snapshot for {instrument_id}: {e}"
-                                );
+                                ),
                             }
 
                             let data: NautilusData = OrderBookDeltas_API::new(deltas).into();
@@ -636,12 +651,20 @@ impl PolymarketDataClient {
                         meta.size_precision,
                         ts_init,
                     ) {
-                        Ok(Some(quote)) => {
-                            Self::emit_quote_if_changed(ctx, instrument_id, quote);
-                        }
+                        Ok(Some(quote)) => Self::emit_quote_if_changed(ctx, instrument_id, quote),
                         Ok(None) => {}
                         Err(e) => log::error!("Failed to parse quote from snapshot: {e}"),
                     }
+                }
+
+                if book_seeded
+                    && ctx
+                        .pending_snapshot_after_tick_change
+                        .contains(&instrument_id)
+                {
+                    ctx.pending_snapshot_after_tick_change
+                        .remove(&instrument_id);
+                    log::info!("Resumed book for {instrument_id} after tick size change");
                 }
             }
 
@@ -666,8 +689,15 @@ impl PolymarketDataClient {
                         }
                     };
                     let instrument_id = meta.instrument_id;
+                    let pending = ctx
+                        .pending_snapshot_after_tick_change
+                        .contains(&instrument_id);
 
-                    if ctx.active_delta_subs.contains(&instrument_id) {
+                    if pending && ctx.active_delta_subs.contains(&instrument_id) {
+                        log::debug!(
+                            "Dropping book delta for {instrument_id}: awaiting snapshot after tick size change",
+                        );
+                    } else if ctx.active_delta_subs.contains(&instrument_id) {
                         let per_asset = PolymarketQuotes {
                             market: quotes.market,
                             price_changes: vec![change.clone()],
@@ -818,6 +848,14 @@ impl PolymarketDataClient {
                             log::error!("Failed to rebuild instrument for tick size change: {e}");
                         }
                     }
+                }
+
+                // Book epoch transition; see module docs.
+                let instrument_id = meta.instrument_id;
+                ctx.order_books.remove(&instrument_id);
+
+                if ctx.active_delta_subs.contains(&instrument_id) {
+                    ctx.pending_snapshot_after_tick_change.insert(instrument_id);
                 }
             }
 
@@ -1398,6 +1436,8 @@ impl DataClient for PolymarketDataClient {
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.active_delta_subs.remove(&instrument_id);
+        self.pending_snapshot_after_tick_change
+            .remove(&instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
         log::debug!("Unsubscribed from book deltas for {instrument_id}");
@@ -1432,10 +1472,21 @@ mod tests {
         instruments::BinaryOption,
         types::{Currency, Price, Quantity},
     };
+    use nautilus_network::retry::RetryConfig;
     use rstest::rstest;
 
     use super::*;
-    use crate::websocket::{client::WsSubscriptionHandle, handler::HandlerCommand};
+    use crate::{
+        common::enums::PolymarketOrderSide,
+        websocket::{
+            client::WsSubscriptionHandle,
+            handler::HandlerCommand,
+            messages::{
+                MarketWsMessage, PolymarketBookLevel, PolymarketBookSnapshot, PolymarketQuote,
+                PolymarketQuotes, PolymarketTickSizeChange,
+            },
+        },
+    };
 
     fn make_handle() -> (
         WsSubscriptionHandle,
@@ -1756,5 +1807,413 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing token_meta for {token_id}"));
             assert_eq!(meta.instrument_id, inst.id());
         }
+    }
+
+    fn make_ws_ctx() -> (
+        WsMessageContext,
+        tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    ) {
+        let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let gamma_client = PolymarketGammaHttpClient::new(
+            Some("http://localhost".to_string()),
+            5,
+            RetryConfig::default(),
+        )
+        .expect("gamma client");
+
+        let ctx = WsMessageContext {
+            clock: get_atomic_clock_realtime(),
+            data_sender: data_tx,
+            token_meta: Arc::new(DashMap::new()),
+            instruments: Arc::new(AtomicMap::new()),
+            gamma_client,
+            filters: vec![],
+            order_books: Arc::new(DashMap::new()),
+            last_quotes: Arc::new(DashMap::new()),
+            active_quote_subs: Arc::new(AtomicSet::new()),
+            active_delta_subs: Arc::new(AtomicSet::new()),
+            active_trade_subs: Arc::new(AtomicSet::new()),
+            pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
+            subscribe_new_markets: false,
+            new_market_filter: None,
+            cancellation_token: CancellationToken::new(),
+        };
+
+        (ctx, data_rx)
+    }
+
+    fn seed_instrument(
+        ctx: &WsMessageContext,
+        raw_symbol: &str,
+        price_increment: Price,
+        size_increment: Quantity,
+    ) -> InstrumentAny {
+        let inst = stub_instrument(raw_symbol, price_increment, size_increment);
+        cache_instrument(&ctx.instruments, &ctx.token_meta, &inst);
+        inst
+    }
+
+    fn level(price: &str, size: &str) -> PolymarketBookLevel {
+        PolymarketBookLevel {
+            price: price.to_string(),
+            size: size.to_string(),
+        }
+    }
+
+    fn make_snapshot(market: &str, asset_id: &str, prices: &[(&str, &str)]) -> MarketWsMessage {
+        let mid = prices.len() / 2;
+        let bids = prices[..mid].iter().map(|(p, s)| level(p, s)).collect();
+        let asks = prices[mid..].iter().map(|(p, s)| level(p, s)).collect();
+        MarketWsMessage::Book(PolymarketBookSnapshot {
+            market: Ustr::from(market),
+            asset_id: Ustr::from(asset_id),
+            bids,
+            asks,
+            timestamp: "1700000000000".to_string(),
+        })
+    }
+
+    fn make_tick_change(market: &str, asset_id: &str, old: &str, new: &str) -> MarketWsMessage {
+        MarketWsMessage::TickSizeChange(PolymarketTickSizeChange {
+            market: Ustr::from(market),
+            asset_id: Ustr::from(asset_id),
+            new_tick_size: new.to_string(),
+            old_tick_size: old.to_string(),
+            timestamp: "1700000001000".to_string(),
+        })
+    }
+
+    fn make_price_change(market: &str, asset_id: &str, price: &str, size: &str) -> MarketWsMessage {
+        MarketWsMessage::PriceChange(PolymarketQuotes {
+            market: Ustr::from(market),
+            price_changes: vec![PolymarketQuote {
+                asset_id: Ustr::from(asset_id),
+                price: price.to_string(),
+                side: PolymarketOrderSide::Buy,
+                size: size.to_string(),
+                hash: String::new(),
+                best_bid: None,
+                best_ask: None,
+            }],
+            timestamp: "1700000002000".to_string(),
+        })
+    }
+
+    #[rstest]
+    fn tick_size_change_clears_book_and_marks_pending() {
+        // Coarsens 0.001 -> 0.01. last_quote is preserved (carried forward by
+        // parse_quote_from_price_change). raw_symbol == asset_id because
+        // token_meta is keyed on raw_symbol.
+        let asset_id_str = "0xTOKEN";
+        let token_ustr = Ustr::from(asset_id_str);
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+
+        // Seed last_quote so we can assert it survives the tick-size change.
+        let prior_quote = QuoteTick::new(
+            instrument_id,
+            Price::from("0.504"),
+            Price::from("0.506"),
+            Quantity::from("5.00"),
+            Quantity::from("8.00"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        ctx.last_quotes.insert(instrument_id, prior_quote);
+
+        let snap = make_snapshot(
+            market,
+            asset_id_str,
+            &[
+                ("0.501", "10"),
+                ("0.504", "5"),
+                ("0.506", "8"),
+                ("0.509", "12"),
+            ],
+        );
+        PolymarketDataClient::handle_market_message(snap, &ctx);
+        assert!(ctx.order_books.contains_key(&instrument_id));
+        // Drain the snapshot DataEvents we just produced so the assertion
+        // below only sees what the tick-size change emits.
+        while data_rx.try_recv().is_ok() {}
+
+        let change = make_tick_change(market, asset_id_str, "0.001", "0.01");
+        PolymarketDataClient::handle_market_message(change, &ctx);
+
+        assert!(!ctx.order_books.contains_key(&instrument_id));
+        // last_quote is intentionally preserved across the epoch.
+        assert!(ctx.last_quotes.contains_key(&instrument_id));
+        assert!(
+            ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+
+        let meta = ctx.token_meta.get(&token_ustr).expect("token_meta");
+        assert_eq!(meta.price_precision, 2);
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            events.iter().any(|e| matches!(e, DataEvent::Instrument(_))),
+            "expected rebuilt instrument event, found: {events:?}",
+        );
+        assert!(
+            !events.iter().any(|e| matches!(e, DataEvent::Data(_))),
+            "tick size change must not emit Data events: {events:?}",
+        );
+    }
+
+    #[rstest]
+    fn pending_drops_price_change_until_snapshot() {
+        // Acceptance criterion 4: a price_change arriving while pending
+        // must be dropped; the next snapshot reseeds the book and clears
+        // the pending flag.
+        let asset_id_str = "0xTOKEN2";
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+
+        let pc = make_price_change(market, asset_id_str, "0.50", "20");
+        PolymarketDataClient::handle_market_message(pc, &ctx);
+
+        assert!(!ctx.order_books.contains_key(&instrument_id));
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            events.is_empty(),
+            "price_change while pending must not emit any events: {events:?}",
+        );
+
+        let snap = make_snapshot(
+            market,
+            asset_id_str,
+            &[("0.45", "5"), ("0.49", "10"), ("0.51", "8"), ("0.55", "12")],
+        );
+        PolymarketDataClient::handle_market_message(snap, &ctx);
+
+        assert!(
+            !ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        assert!(ctx.order_books.contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    fn tick_size_change_does_not_mark_pending_for_trade_only_sub() {
+        // Trade-only subs don't read the book; pending would be dead state.
+        let asset_id_str = "0xTOKEN6";
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_trade_subs.insert(instrument_id);
+
+        let change = make_tick_change(market, asset_id_str, "0.001", "0.01");
+        PolymarketDataClient::handle_market_message(change, &ctx);
+
+        assert!(
+            !ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            events.iter().any(|e| matches!(e, DataEvent::Instrument(_))),
+            "instrument update must still be emitted: {events:?}",
+        );
+    }
+
+    #[rstest]
+    fn pending_persists_when_snapshot_has_corrupt_level() {
+        // parse_book_snapshot must fail on a malformed mid-book level; pending
+        // stays set even though parse_quote_from_snapshot succeeds on the top.
+        let asset_id_str = "0xTOKEN7";
+
+        let (ctx, _data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.active_quote_subs.insert(instrument_id);
+        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+
+        let snap = MarketWsMessage::Book(PolymarketBookSnapshot {
+            market: Ustr::from("0xMARKET"),
+            asset_id: Ustr::from(asset_id_str),
+            bids: vec![level("not-a-number", "1"), level("0.49", "10")],
+            asks: vec![level("0.51", "8"), level("0.55", "12")],
+            timestamp: "1700000000000".to_string(),
+        });
+        PolymarketDataClient::handle_market_message(snap, &ctx);
+
+        assert!(
+            ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        assert!(!ctx.order_books.contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    fn price_change_emits_delta_when_not_pending() {
+        // Positive complement to pending_drops_price_change_until_snapshot.
+        let asset_id_str = "0xTOKEN10";
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.order_books.insert(
+            instrument_id,
+            OrderBook::new(instrument_id, BookType::L2_MBP),
+        );
+
+        let pc = make_price_change(market, asset_id_str, "0.50", "20");
+        PolymarketDataClient::handle_market_message(pc, &ctx);
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, DataEvent::Data(NautilusData::Deltas(_)))),
+            "delta must be emitted on the not-pending happy path: {events:?}",
+        );
+
+        let book = ctx.order_books.get(&instrument_id).expect("book entry");
+        assert_eq!(book.best_bid_price(), Some(Price::from("0.50")));
+        assert_eq!(book.best_bid_size(), Some(Quantity::from("20.00")));
+    }
+
+    #[rstest]
+    fn quote_path_open_during_pending_window() {
+        // Only the delta arm is gated. Unchanged ask_size carries forward
+        // from the preserved last_quote rather than defaulting to zero.
+        let asset_id_str = "0xTOKEN8";
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.active_quote_subs.insert(instrument_id);
+        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+
+        // Sizes must use the instrument's size_precision; QuoteTick::new_checked
+        // rejects cross-precision construction.
+        let prior = QuoteTick::new(
+            instrument_id,
+            Price::from("0.49"),
+            Price::from("0.51"),
+            Quantity::from("100.00"),
+            Quantity::from("75.00"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        ctx.last_quotes.insert(instrument_id, prior);
+
+        let pc = MarketWsMessage::PriceChange(PolymarketQuotes {
+            market: Ustr::from(market),
+            price_changes: vec![PolymarketQuote {
+                asset_id: Ustr::from(asset_id_str),
+                price: "0.50".to_string(),
+                side: PolymarketOrderSide::Buy,
+                size: "20".to_string(),
+                hash: String::new(),
+                best_bid: Some("0.50".to_string()),
+                best_ask: Some("0.52".to_string()),
+            }],
+            timestamp: "1700000003000".to_string(),
+        });
+        PolymarketDataClient::handle_market_message(pc, &ctx);
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, DataEvent::Data(NautilusData::Deltas(_)))),
+            "delta must be dropped while pending: {events:?}",
+        );
+        let emitted_quote = events
+            .iter()
+            .find_map(|e| match e {
+                DataEvent::Data(NautilusData::Quote(q)) => Some(q),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("expected quote event, found: {events:?}"));
+        assert_eq!(emitted_quote.bid_size, Quantity::from("20.00"));
+        // ask_size carried forward from the prior quote, not defaulted to zero.
+        assert_eq!(emitted_quote.ask_size, Quantity::from("75.00"));
+    }
+
+    #[rstest]
+    fn pending_persists_when_snapshot_fails_to_seed() {
+        // An empty snapshot must leave pending in place.
+        let asset_id_str = "0xTOKEN5";
+        let market = "0xMARKET";
+
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+
+        let empty = MarketWsMessage::Book(PolymarketBookSnapshot {
+            market: Ustr::from(market),
+            asset_id: Ustr::from(asset_id_str),
+            bids: vec![],
+            asks: vec![],
+            timestamp: "1700000000000".to_string(),
+        });
+        PolymarketDataClient::handle_market_message(empty, &ctx);
+
+        assert!(
+            ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert!(
+            !events.iter().any(|e| matches!(e, DataEvent::Data(_))),
+            "empty snapshot must not emit Data events: {events:?}",
+        );
     }
 }

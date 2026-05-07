@@ -37,7 +37,7 @@
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `extension-module`: Builds the crate as a Python extension module.
 //! - `turmoil`: Enables deterministic network simulation testing with [turmoil](https://github.com/tokio-rs/turmoil).
-//! - `transport-sockudo`: Adds the [sockudo-ws](https://crates.io/crates/sockudo-ws) WebSocket backend, selectable via `WebSocketConfig.backend`.
+//! - `transport-sockudo`: Adds the [sockudo-ws](https://crates.io/crates/sockudo-ws) WebSocket backend, selectable via `WebSocketConfig.backend`. Enabled by default; disable with `default-features = false` to drop the dependency.
 //!
 //! # Testing
 //!

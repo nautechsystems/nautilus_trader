@@ -201,7 +201,7 @@ impl BinanceFuturesExecutionClient {
                     .base_url_ws_trading
                     .clone()
                     .or_else(|| match config.environment {
-                        BinanceEnvironment::Testnet => {
+                        BinanceEnvironment::Testnet | BinanceEnvironment::Demo => {
                             Some(BINANCE_FUTURES_USD_WS_API_TESTNET_URL.to_string())
                         }
                         _ => Some(BINANCE_FUTURES_USD_WS_API_URL.to_string()),
@@ -417,6 +417,7 @@ impl BinanceFuturesExecutionClient {
                 order_side,
                 order_type,
                 price,
+                quantity,
             },
         );
 
@@ -987,7 +988,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             || get_ws_private_base_url(self.product_type, self.config.environment).to_string(),
             |url| {
                 if self.product_type == BinanceProductType::UsdM
-                    && self.config.environment == BinanceEnvironment::Mainnet
+                    && self.config.environment == BinanceEnvironment::Live
                 {
                     get_usdm_ws_route_base_url(&url, "private")
                 } else {

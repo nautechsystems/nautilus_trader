@@ -61,11 +61,69 @@ pub enum InteractiveBrokersError {
     Internal(String),
 }
 
+impl InteractiveBrokersError {
+    /// Returns the payload-free error kind.
+    #[must_use]
+    pub const fn kind(&self) -> InteractiveBrokersErrorKind {
+        match self {
+            Self::Connection(_) => InteractiveBrokersErrorKind::Connection,
+            Self::Authentication(_) => InteractiveBrokersErrorKind::Authentication,
+            Self::Configuration(_) => InteractiveBrokersErrorKind::Configuration,
+            Self::Request(_) => InteractiveBrokersErrorKind::Request,
+            Self::Parse(_) => InteractiveBrokersErrorKind::Parse,
+            Self::Instrument(_) => InteractiveBrokersErrorKind::Instrument,
+            Self::Order(_) => InteractiveBrokersErrorKind::Order,
+            Self::MarketData(_) => InteractiveBrokersErrorKind::MarketData,
+            Self::IbApi(_) => InteractiveBrokersErrorKind::IbApi,
+            Self::Internal(_) => InteractiveBrokersErrorKind::Internal,
+        }
+    }
+}
+
+/// Payload-free Interactive Brokers adapter error kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        from_py_object
+    )
+)]
+pub enum InteractiveBrokersErrorKind {
+    /// Connection error.
+    Connection,
+    /// Authentication error.
+    Authentication,
+    /// Invalid configuration.
+    Configuration,
+    /// API request error.
+    Request,
+    /// Response parsing error.
+    Parse,
+    /// Instrument error.
+    Instrument,
+    /// Order error.
+    Order,
+    /// Market data error.
+    MarketData,
+    /// Generic error from rust-ibapi.
+    IbApi,
+    /// Internal error.
+    Internal,
+}
+
 /// Result type for Interactive Brokers operations.
 pub type InteractiveBrokersResult<T> = Result<T, InteractiveBrokersError>;
 
 /// IB API error code classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        from_py_object
+    )
+)]
 pub enum ErrorCategory {
     /// Client/application error (should not retry).
     ClientError,

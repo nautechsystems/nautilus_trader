@@ -189,7 +189,7 @@ impl EmaCross {
             None,
             None,
         );
-        self.submit_order(order, None, None)
+        self.submit_order(order, None, None, None)
     }
 }
 
@@ -267,7 +267,7 @@ impl SnapshotNettingFlip {
             None,
             None,
         );
-        self.submit_order(order, None, None)
+        self.submit_order(order, None, None, None)
     }
 }
 
@@ -1086,6 +1086,349 @@ impl DataActor for ShutdownOnTick {
     }
 }
 
+struct ShutdownBeforeFutureTimer {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    shutdown_after: usize,
+    tick_count: usize,
+    timer_ts: u64,
+    timer_count: std::rc::Rc<Cell<u32>>,
+}
+
+impl ShutdownBeforeFutureTimer {
+    fn new(
+        instrument_id: InstrumentId,
+        shutdown_after: usize,
+        timer_ts: u64,
+        timer_count: std::rc::Rc<Cell<u32>>,
+    ) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("SHUTDOWN-TIMER-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            shutdown_after,
+            tick_count: 0,
+            timer_ts,
+            timer_count,
+        }
+    }
+}
+
+nautilus_strategy!(ShutdownBeforeFutureTimer);
+
+impl Debug for ShutdownBeforeFutureTimer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ShutdownBeforeFutureTimer))
+            .finish()
+    }
+}
+
+impl DataActor for ShutdownBeforeFutureTimer {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        let timer_ts = self.timer_ts;
+        self.clock()
+            .set_time_alert_ns("future_timer", timer_ts.into(), None, None)?;
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        self.tick_count += 1;
+        if self.tick_count == self.shutdown_after {
+            self.shutdown_system(Some("shutdown before future timer".to_string()));
+        }
+        Ok(())
+    }
+
+    fn on_time_event(&mut self, _event: &TimeEvent) -> anyhow::Result<()> {
+        self.timer_count.set(self.timer_count.get() + 1);
+        Ok(())
+    }
+}
+
+#[rstest]
+fn test_non_streaming_shutdown_does_not_fire_future_timers(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    let timer_count = std::rc::Rc::new(Cell::new(0));
+    engine
+        .add_strategy(ShutdownBeforeFutureTimer::new(
+            instrument_id,
+            2,
+            2_500_000_000,
+            timer_count.clone(),
+        ))
+        .unwrap();
+
+    let batch = vec![
+        quote(instrument_id, "1000.00", "1000.10", 1_000_000_000),
+        quote(instrument_id, "1001.00", "1001.10", 2_000_000_000),
+        quote(instrument_id, "1002.00", "1002.10", 3_000_000_000),
+    ];
+    engine.add_data(batch, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    assert_eq!(
+        engine.get_result().iterations,
+        2,
+        "Run must stop on the shutdown tick",
+    );
+    assert_eq!(
+        timer_count.get(),
+        0,
+        "Future timer must not fire after shutdown in a non-streaming run",
+    );
+}
+
+struct ShutdownFromTimer {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    shutdown_ts: u64,
+    later_ts: u64,
+    shutdown_fired: std::rc::Rc<Cell<u32>>,
+    later_fired: std::rc::Rc<Cell<u32>>,
+    quote_count: std::rc::Rc<Cell<u32>>,
+}
+
+impl ShutdownFromTimer {
+    fn new(
+        instrument_id: InstrumentId,
+        shutdown_ts: u64,
+        later_ts: u64,
+        shutdown_fired: std::rc::Rc<Cell<u32>>,
+        later_fired: std::rc::Rc<Cell<u32>>,
+        quote_count: std::rc::Rc<Cell<u32>>,
+    ) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("SHUTDOWN-FROM-TIMER-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            shutdown_ts,
+            later_ts,
+            shutdown_fired,
+            later_fired,
+            quote_count,
+        }
+    }
+}
+
+nautilus_strategy!(ShutdownFromTimer);
+
+impl Debug for ShutdownFromTimer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ShutdownFromTimer)).finish()
+    }
+}
+
+impl DataActor for ShutdownFromTimer {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        let shutdown_ts = self.shutdown_ts;
+        let later_ts = self.later_ts;
+        self.clock()
+            .set_time_alert_ns("shutdown_timer", shutdown_ts.into(), None, None)?;
+        self.clock()
+            .set_time_alert_ns("later_timer", later_ts.into(), None, None)?;
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        self.quote_count.set(self.quote_count.get() + 1);
+        Ok(())
+    }
+
+    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+        if event.name.as_str() == "shutdown_timer" {
+            self.shutdown_fired.set(self.shutdown_fired.get() + 1);
+            self.shutdown_system(Some("shutdown from timer".to_string()));
+        } else if event.name.as_str() == "later_timer" {
+            self.later_fired.set(self.later_fired.get() + 1);
+        }
+        Ok(())
+    }
+}
+
+struct ShutdownAndScheduleNewAlert {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    shutdown_ts: u64,
+    new_alert_ts: u64,
+    shutdown_fired: std::rc::Rc<Cell<u32>>,
+    new_alert_fired: std::rc::Rc<Cell<u32>>,
+}
+
+impl ShutdownAndScheduleNewAlert {
+    fn new(
+        instrument_id: InstrumentId,
+        shutdown_ts: u64,
+        new_alert_ts: u64,
+        shutdown_fired: std::rc::Rc<Cell<u32>>,
+        new_alert_fired: std::rc::Rc<Cell<u32>>,
+    ) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("SHUTDOWN-RESCHEDULE-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            shutdown_ts,
+            new_alert_ts,
+            shutdown_fired,
+            new_alert_fired,
+        }
+    }
+}
+
+nautilus_strategy!(ShutdownAndScheduleNewAlert);
+
+impl Debug for ShutdownAndScheduleNewAlert {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ShutdownAndScheduleNewAlert))
+            .finish()
+    }
+}
+
+impl DataActor for ShutdownAndScheduleNewAlert {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        let shutdown_ts = self.shutdown_ts;
+        self.clock()
+            .set_time_alert_ns("shutdown_timer", shutdown_ts.into(), None, None)?;
+        Ok(())
+    }
+
+    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+        if event.name.as_str() == "shutdown_timer" {
+            self.shutdown_fired.set(self.shutdown_fired.get() + 1);
+            let new_alert_ts = self.new_alert_ts;
+            self.clock().set_time_alert_ns(
+                "post_shutdown_alert",
+                new_alert_ts.into(),
+                None,
+                None,
+            )?;
+            self.shutdown_system(Some("shutdown and reschedule".to_string()));
+        } else if event.name.as_str() == "post_shutdown_alert" {
+            self.new_alert_fired.set(self.new_alert_fired.get() + 1);
+        }
+        Ok(())
+    }
+}
+
+#[rstest]
+fn test_shutdown_handler_scheduling_new_alert_does_not_fire_it(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    // Alerts scheduled by a shutdown handler must not fire on later flushes
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    let shutdown_fired = std::rc::Rc::new(Cell::new(0));
+    let new_alert_fired = std::rc::Rc::new(Cell::new(0));
+    engine
+        .add_strategy(ShutdownAndScheduleNewAlert::new(
+            instrument_id,
+            2_500_000_000,
+            2_600_000_000,
+            shutdown_fired.clone(),
+            new_alert_fired.clone(),
+        ))
+        .unwrap();
+
+    let batch = vec![
+        quote(instrument_id, "1000.00", "1000.10", 1_000_000_000),
+        quote(instrument_id, "1001.00", "1001.10", 2_000_000_000),
+        quote(instrument_id, "1002.00", "1002.10", 3_000_000_000),
+    ];
+    engine.add_data(batch, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    assert_eq!(
+        shutdown_fired.get(),
+        1,
+        "Shutdown timer must fire once before requesting shutdown",
+    );
+    assert_eq!(
+        new_alert_fired.get(),
+        0,
+        "Alert scheduled by the shutdown handler must not fire after the stop",
+    );
+}
+
+#[rstest]
+fn test_shutdown_from_timer_during_flush_does_not_fire_later_timers(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    // A timer-triggered shutdown must drop later alerts queued for the same flush
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    let shutdown_fired = std::rc::Rc::new(Cell::new(0));
+    let later_fired = std::rc::Rc::new(Cell::new(0));
+    let quote_count = std::rc::Rc::new(Cell::new(0));
+    engine
+        .add_strategy(ShutdownFromTimer::new(
+            instrument_id,
+            2_500_000_000,
+            2_800_000_000,
+            shutdown_fired.clone(),
+            later_fired.clone(),
+            quote_count.clone(),
+        ))
+        .unwrap();
+
+    let batch = vec![
+        quote(instrument_id, "1000.00", "1000.10", 1_000_000_000),
+        quote(instrument_id, "1001.00", "1001.10", 2_000_000_000),
+        quote(instrument_id, "1002.00", "1002.10", 3_000_000_000),
+    ];
+    engine.add_data(batch, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    assert_eq!(
+        shutdown_fired.get(),
+        1,
+        "Shutdown timer must fire once before requesting shutdown",
+    );
+    assert_eq!(
+        later_fired.get(),
+        0,
+        "Later timer must not fire after a timer-initiated shutdown",
+    );
+    assert_eq!(
+        quote_count.get(),
+        2,
+        "Quote arriving after a timer-initiated shutdown must not be delivered",
+    );
+    assert_eq!(
+        engine.kernel().clock.borrow().timestamp_ns().as_u64(),
+        2_500_000_000,
+        "Engine clock must anchor at the shutdown timer ts, not the skipped data ts",
+    );
+}
+
 #[rstest]
 fn test_streaming_shutdown_finalizes_engine(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let mut engine = create_engine();
@@ -1503,7 +1846,7 @@ impl DataActor for CascadingStopStrategy {
                 None,
                 None,
             );
-            self.submit_order(order, None, None)?;
+            self.submit_order(order, None, None, None)?;
         }
         Ok(())
     }
@@ -1530,7 +1873,7 @@ impl DataActor for CascadingStopStrategy {
                 None,
                 None,
             );
-            self.submit_order(order, None, None)?;
+            self.submit_order(order, None, None, None)?;
         }
         Ok(())
     }
@@ -1578,7 +1921,7 @@ impl DualTimerStrategy {
     fn new(instrument_id: InstrumentId, trade_size: Quantity, timer_ts: u64) -> Self {
         let config = StrategyConfig {
             strategy_id: Some(StrategyId::from("DUAL-TIMER-001")),
-            order_id_tag: Some("002".to_string()),
+            order_id_tag: Some("001".to_string()),
             ..Default::default()
         };
         Self {
@@ -1629,7 +1972,7 @@ impl DataActor for DualTimerStrategy {
             None,
             None,
         );
-        self.submit_order(order, None, None)?;
+        self.submit_order(order, None, None, None)?;
         Ok(())
     }
 }

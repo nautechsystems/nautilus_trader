@@ -122,7 +122,7 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | `COINBASE`              | `coinbase`                                            |
 | `COINBASE_INTX`         | `coinbase-international`                              |
 | `COINFLEX`              | `coinflex` (*for historical research*)                |
-| `CRYPTO_COM`            | `crypto-com`, `crypto-com-derivatives`                |
+| `CRYPTO_COM`            | `crypto-com`                                          |
 | `CRYPTOFACILITIES`      | `cryptofacilities`                                    |
 | `DELTA`                 | `delta`                                               |
 | `DERIBIT`               | `deribit`                                             |

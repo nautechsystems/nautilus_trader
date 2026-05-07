@@ -41,11 +41,8 @@ if TYPE_CHECKING:
 
 def _resolve_environment(
     environment: HyperliquidEnvironment | None,
-    testnet: bool,
 ) -> HyperliquidEnvironment:
-    if environment is not None:
-        return environment
-    return HyperliquidEnvironment.TESTNET if testnet else HyperliquidEnvironment.MAINNET
+    return environment or HyperliquidEnvironment.MAINNET
 
 
 @lru_cache(1)
@@ -186,7 +183,7 @@ class HyperliquidLiveDataClientFactory(LiveDataClientFactory):
         HyperliquidDataClient
 
         """
-        environment = _resolve_environment(config.environment, config.testnet)
+        environment = _resolve_environment(config.environment)
         client = get_cached_hyperliquid_http_client(
             timeout_secs=config.http_timeout_secs,
             environment=environment,
@@ -246,7 +243,7 @@ class HyperliquidLiveExecClientFactory(LiveExecClientFactory):
         HyperliquidExecutionClient
 
         """
-        environment = _resolve_environment(config.environment, config.testnet)
+        environment = _resolve_environment(config.environment)
         client = get_cached_hyperliquid_http_client(
             private_key=config.private_key,
             vault_address=config.vault_address,

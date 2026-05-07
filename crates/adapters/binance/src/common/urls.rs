@@ -17,12 +17,15 @@
 
 use super::{
     consts::{
-        BINANCE_FUTURES_COIN_DEMO_HTTP_URL, BINANCE_FUTURES_COIN_HTTP_URL,
-        BINANCE_FUTURES_COIN_TESTNET_HTTP_URL, BINANCE_FUTURES_COIN_TESTNET_WS_URL,
-        BINANCE_FUTURES_COIN_WS_URL, BINANCE_FUTURES_USD_DEMO_HTTP_URL,
+        BINANCE_FUTURES_COIN_DEMO_HTTP_URL, BINANCE_FUTURES_COIN_DEMO_WS_URL,
+        BINANCE_FUTURES_COIN_HTTP_URL, BINANCE_FUTURES_COIN_TESTNET_HTTP_URL,
+        BINANCE_FUTURES_COIN_TESTNET_WS_URL, BINANCE_FUTURES_COIN_WS_URL,
+        BINANCE_FUTURES_USD_DEMO_HTTP_URL, BINANCE_FUTURES_USD_DEMO_WS_URL,
         BINANCE_FUTURES_USD_HTTP_URL, BINANCE_FUTURES_USD_TESTNET_HTTP_URL,
         BINANCE_FUTURES_USD_TESTNET_WS_URL, BINANCE_FUTURES_USD_WS_PRIVATE_URL,
         BINANCE_FUTURES_USD_WS_PUBLIC_URL, BINANCE_FUTURES_USD_WS_URL, BINANCE_OPTIONS_HTTP_URL,
+        BINANCE_OPTIONS_TESTNET_HTTP_URL, BINANCE_OPTIONS_TESTNET_WS_PRIVATE_URL,
+        BINANCE_OPTIONS_TESTNET_WS_PUBLIC_URL, BINANCE_OPTIONS_TESTNET_WS_URL,
         BINANCE_OPTIONS_WS_URL, BINANCE_SPOT_DEMO_HTTP_URL, BINANCE_SPOT_DEMO_WS_URL,
         BINANCE_SPOT_HTTP_URL, BINANCE_SPOT_TESTNET_HTTP_URL, BINANCE_SPOT_TESTNET_WS_URL,
         BINANCE_SPOT_WS_URL,
@@ -37,13 +40,13 @@ pub fn get_http_base_url(
     environment: BinanceEnvironment,
 ) -> &'static str {
     match (product_type, environment) {
-        // Mainnet
-        (BinanceProductType::Spot | BinanceProductType::Margin, BinanceEnvironment::Mainnet) => {
+        // Live
+        (BinanceProductType::Spot | BinanceProductType::Margin, BinanceEnvironment::Live) => {
             BINANCE_SPOT_HTTP_URL
         }
-        (BinanceProductType::UsdM, BinanceEnvironment::Mainnet) => BINANCE_FUTURES_USD_HTTP_URL,
-        (BinanceProductType::CoinM, BinanceEnvironment::Mainnet) => BINANCE_FUTURES_COIN_HTTP_URL,
-        (BinanceProductType::Options, BinanceEnvironment::Mainnet) => BINANCE_OPTIONS_HTTP_URL,
+        (BinanceProductType::UsdM, BinanceEnvironment::Live) => BINANCE_FUTURES_USD_HTTP_URL,
+        (BinanceProductType::CoinM, BinanceEnvironment::Live) => BINANCE_FUTURES_COIN_HTTP_URL,
+        (BinanceProductType::Options, BinanceEnvironment::Live) => BINANCE_OPTIONS_HTTP_URL,
 
         // Testnet
         (BinanceProductType::Spot | BinanceProductType::Margin, BinanceEnvironment::Testnet) => {
@@ -55,7 +58,9 @@ pub fn get_http_base_url(
         (BinanceProductType::CoinM, BinanceEnvironment::Testnet) => {
             BINANCE_FUTURES_COIN_TESTNET_HTTP_URL
         }
-        (BinanceProductType::Options, BinanceEnvironment::Testnet) => BINANCE_OPTIONS_HTTP_URL,
+        (BinanceProductType::Options, BinanceEnvironment::Testnet) => {
+            BINANCE_OPTIONS_TESTNET_HTTP_URL
+        }
 
         // Demo
         (BinanceProductType::Spot | BinanceProductType::Margin, BinanceEnvironment::Demo) => {
@@ -63,7 +68,7 @@ pub fn get_http_base_url(
         }
         (BinanceProductType::UsdM, BinanceEnvironment::Demo) => BINANCE_FUTURES_USD_DEMO_HTTP_URL,
         (BinanceProductType::CoinM, BinanceEnvironment::Demo) => BINANCE_FUTURES_COIN_DEMO_HTTP_URL,
-        (BinanceProductType::Options, BinanceEnvironment::Demo) => BINANCE_OPTIONS_HTTP_URL,
+        (BinanceProductType::Options, BinanceEnvironment::Demo) => BINANCE_OPTIONS_TESTNET_HTTP_URL,
     }
 }
 
@@ -74,13 +79,13 @@ pub fn get_ws_base_url(
     environment: BinanceEnvironment,
 ) -> &'static str {
     match (product_type, environment) {
-        // Mainnet
-        (BinanceProductType::Spot | BinanceProductType::Margin, BinanceEnvironment::Mainnet) => {
+        // Live
+        (BinanceProductType::Spot | BinanceProductType::Margin, BinanceEnvironment::Live) => {
             BINANCE_SPOT_WS_URL
         }
-        (BinanceProductType::UsdM, BinanceEnvironment::Mainnet) => BINANCE_FUTURES_USD_WS_URL,
-        (BinanceProductType::CoinM, BinanceEnvironment::Mainnet) => BINANCE_FUTURES_COIN_WS_URL,
-        (BinanceProductType::Options, BinanceEnvironment::Mainnet) => BINANCE_OPTIONS_WS_URL,
+        (BinanceProductType::UsdM, BinanceEnvironment::Live) => BINANCE_FUTURES_USD_WS_URL,
+        (BinanceProductType::CoinM, BinanceEnvironment::Live) => BINANCE_FUTURES_COIN_WS_URL,
+        (BinanceProductType::Options, BinanceEnvironment::Live) => BINANCE_OPTIONS_WS_URL,
 
         // Testnet
         (BinanceProductType::Spot | BinanceProductType::Margin, BinanceEnvironment::Testnet) => {
@@ -92,23 +97,23 @@ pub fn get_ws_base_url(
         (BinanceProductType::CoinM, BinanceEnvironment::Testnet) => {
             BINANCE_FUTURES_COIN_TESTNET_WS_URL
         }
-        (BinanceProductType::Options, BinanceEnvironment::Testnet) => BINANCE_OPTIONS_WS_URL,
+        (BinanceProductType::Options, BinanceEnvironment::Testnet) => {
+            BINANCE_OPTIONS_TESTNET_WS_URL
+        }
 
-        // Demo (futures demo uses same WS URLs as futures testnet)
+        // Demo
         (BinanceProductType::Spot | BinanceProductType::Margin, BinanceEnvironment::Demo) => {
             BINANCE_SPOT_DEMO_WS_URL
         }
-        (BinanceProductType::UsdM, BinanceEnvironment::Demo) => BINANCE_FUTURES_USD_TESTNET_WS_URL,
-        (BinanceProductType::CoinM, BinanceEnvironment::Demo) => {
-            BINANCE_FUTURES_COIN_TESTNET_WS_URL
-        }
-        (BinanceProductType::Options, BinanceEnvironment::Demo) => BINANCE_OPTIONS_WS_URL,
+        (BinanceProductType::UsdM, BinanceEnvironment::Demo) => BINANCE_FUTURES_USD_DEMO_WS_URL,
+        (BinanceProductType::CoinM, BinanceEnvironment::Demo) => BINANCE_FUTURES_COIN_DEMO_WS_URL,
+        (BinanceProductType::Options, BinanceEnvironment::Demo) => BINANCE_OPTIONS_TESTNET_WS_URL,
     }
 }
 
 /// Returns the WebSocket public stream base URL for high-frequency book data.
 ///
-/// USD-M mainnet uses the dedicated public endpoint for `@bookTicker` and
+/// USD-M live exchange uses the dedicated public endpoint for `@bookTicker` and
 /// `@depth` streams. All other product types and environments fall back to
 /// [`get_ws_base_url`].
 #[must_use]
@@ -117,8 +122,9 @@ pub fn get_ws_public_base_url(
     environment: BinanceEnvironment,
 ) -> &'static str {
     match (product_type, environment) {
-        (BinanceProductType::UsdM, BinanceEnvironment::Mainnet) => {
-            BINANCE_FUTURES_USD_WS_PUBLIC_URL
+        (BinanceProductType::UsdM, BinanceEnvironment::Live) => BINANCE_FUTURES_USD_WS_PUBLIC_URL,
+        (BinanceProductType::Options, BinanceEnvironment::Testnet | BinanceEnvironment::Demo) => {
+            BINANCE_OPTIONS_TESTNET_WS_PUBLIC_URL
         }
         _ => get_ws_base_url(product_type, environment),
     }
@@ -126,7 +132,7 @@ pub fn get_ws_public_base_url(
 
 /// Returns the WebSocket private stream base URL for user data.
 ///
-/// USD-M mainnet uses the dedicated private endpoint. All other
+/// USD-M live exchange uses the dedicated private endpoint. All other
 /// product types and environments fall back to [`get_ws_base_url`].
 #[must_use]
 pub fn get_ws_private_base_url(
@@ -134,8 +140,9 @@ pub fn get_ws_private_base_url(
     environment: BinanceEnvironment,
 ) -> &'static str {
     match (product_type, environment) {
-        (BinanceProductType::UsdM, BinanceEnvironment::Mainnet) => {
-            BINANCE_FUTURES_USD_WS_PRIVATE_URL
+        (BinanceProductType::UsdM, BinanceEnvironment::Live) => BINANCE_FUTURES_USD_WS_PRIVATE_URL,
+        (BinanceProductType::Options, BinanceEnvironment::Testnet | BinanceEnvironment::Demo) => {
+            BINANCE_OPTIONS_TESTNET_WS_PRIVATE_URL
         }
         _ => get_ws_base_url(product_type, environment),
     }
@@ -157,7 +164,7 @@ fn is_usdm_ws_host(base_url: &str) -> bool {
 
 /// Returns a routed USD-M Futures WebSocket URL derived from an override.
 ///
-/// Binance now routes USD-M Futures mainnet traffic by category. This helper
+/// Binance now routes USD-M Futures live traffic by category. This helper
 /// accepts either a root override (for example `wss://fstream.binance.com`) or
 /// a routed/transport-specific override such as `/market`, `/public/ws`, or
 /// `/private/stream`, then rebuilds the URL for the requested route.
@@ -208,8 +215,8 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_http_url_spot_mainnet() {
-        let url = get_http_base_url(BinanceProductType::Spot, BinanceEnvironment::Mainnet);
+    fn test_http_url_spot_live() {
+        let url = get_http_base_url(BinanceProductType::Spot, BinanceEnvironment::Live);
         assert_eq!(url, "https://api.binance.com");
     }
 
@@ -226,8 +233,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_http_url_usdm_mainnet() {
-        let url = get_http_base_url(BinanceProductType::UsdM, BinanceEnvironment::Mainnet);
+    fn test_http_url_usdm_live() {
+        let url = get_http_base_url(BinanceProductType::UsdM, BinanceEnvironment::Live);
         assert_eq!(url, "https://fapi.binance.com");
     }
 
@@ -238,8 +245,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_http_url_coinm_mainnet() {
-        let url = get_http_base_url(BinanceProductType::CoinM, BinanceEnvironment::Mainnet);
+    fn test_http_url_coinm_live() {
+        let url = get_http_base_url(BinanceProductType::CoinM, BinanceEnvironment::Live);
         assert_eq!(url, "https://dapi.binance.com");
     }
 
@@ -252,12 +259,24 @@ mod tests {
     #[rstest]
     fn test_http_url_coinm_demo() {
         let url = get_http_base_url(BinanceProductType::CoinM, BinanceEnvironment::Demo);
+        assert_eq!(url, "https://demo-dapi.binance.com");
+    }
+
+    #[rstest]
+    fn test_http_url_options_testnet() {
+        let url = get_http_base_url(BinanceProductType::Options, BinanceEnvironment::Testnet);
         assert_eq!(url, "https://testnet.binancefuture.com");
     }
 
     #[rstest]
-    fn test_ws_url_spot_mainnet() {
-        let url = get_ws_base_url(BinanceProductType::Spot, BinanceEnvironment::Mainnet);
+    fn test_http_url_options_demo() {
+        let url = get_http_base_url(BinanceProductType::Options, BinanceEnvironment::Demo);
+        assert_eq!(url, "https://testnet.binancefuture.com");
+    }
+
+    #[rstest]
+    fn test_ws_url_spot_live() {
+        let url = get_ws_base_url(BinanceProductType::Spot, BinanceEnvironment::Live);
         assert_eq!(url, "wss://stream.binance.com:9443/ws");
     }
 
@@ -268,8 +287,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_ws_url_usdm_mainnet() {
-        let url = get_ws_base_url(BinanceProductType::UsdM, BinanceEnvironment::Mainnet);
+    fn test_ws_url_usdm_live() {
+        let url = get_ws_base_url(BinanceProductType::UsdM, BinanceEnvironment::Live);
         assert_eq!(url, "wss://fstream.binance.com/market/ws");
     }
 
@@ -280,32 +299,68 @@ mod tests {
     }
 
     #[rstest]
-    fn test_ws_private_url_usdm_mainnet() {
-        let url = get_ws_private_base_url(BinanceProductType::UsdM, BinanceEnvironment::Mainnet);
+    fn test_ws_url_usdm_demo() {
+        let url = get_ws_base_url(BinanceProductType::UsdM, BinanceEnvironment::Demo);
+        assert_eq!(url, "wss://demo-fstream.binance.com/ws");
+    }
+
+    #[rstest]
+    fn test_ws_url_coinm_demo() {
+        let url = get_ws_base_url(BinanceProductType::CoinM, BinanceEnvironment::Demo);
+        assert_eq!(url, "wss://demo-dstream.binance.com/ws");
+    }
+
+    #[rstest]
+    fn test_ws_url_options_testnet() {
+        let url = get_ws_base_url(BinanceProductType::Options, BinanceEnvironment::Testnet);
+        assert_eq!(url, "wss://fstream.binancefuture.com/market/ws");
+    }
+
+    #[rstest]
+    fn test_ws_url_options_demo() {
+        let url = get_ws_base_url(BinanceProductType::Options, BinanceEnvironment::Demo);
+        assert_eq!(url, "wss://fstream.binancefuture.com/market/ws");
+    }
+
+    #[rstest]
+    fn test_ws_private_url_usdm_live() {
+        let url = get_ws_private_base_url(BinanceProductType::UsdM, BinanceEnvironment::Live);
         assert_eq!(url, "wss://fstream.binance.com/private/ws");
     }
 
     #[rstest]
     fn test_ws_private_url_fallback_to_market() {
-        let url = get_ws_private_base_url(BinanceProductType::Spot, BinanceEnvironment::Mainnet);
+        let url = get_ws_private_base_url(BinanceProductType::Spot, BinanceEnvironment::Live);
         assert_eq!(
             url,
-            get_ws_base_url(BinanceProductType::Spot, BinanceEnvironment::Mainnet)
+            get_ws_base_url(BinanceProductType::Spot, BinanceEnvironment::Live)
         );
     }
 
     #[rstest]
-    fn test_ws_public_url_usdm_mainnet() {
-        let url = get_ws_public_base_url(BinanceProductType::UsdM, BinanceEnvironment::Mainnet);
+    fn test_ws_public_url_usdm_live() {
+        let url = get_ws_public_base_url(BinanceProductType::UsdM, BinanceEnvironment::Live);
         assert_eq!(url, "wss://fstream.binance.com/public/ws");
     }
 
     #[rstest]
+    fn test_ws_public_url_options_demo() {
+        let url = get_ws_public_base_url(BinanceProductType::Options, BinanceEnvironment::Demo);
+        assert_eq!(url, "wss://fstream.binancefuture.com/public/ws");
+    }
+
+    #[rstest]
+    fn test_ws_private_url_options_demo() {
+        let url = get_ws_private_base_url(BinanceProductType::Options, BinanceEnvironment::Demo);
+        assert_eq!(url, "wss://fstream.binancefuture.com/private/ws");
+    }
+
+    #[rstest]
     fn test_ws_public_url_fallback_to_market() {
-        let url = get_ws_public_base_url(BinanceProductType::Spot, BinanceEnvironment::Mainnet);
+        let url = get_ws_public_base_url(BinanceProductType::Spot, BinanceEnvironment::Live);
         assert_eq!(
             url,
-            get_ws_base_url(BinanceProductType::Spot, BinanceEnvironment::Mainnet)
+            get_ws_base_url(BinanceProductType::Spot, BinanceEnvironment::Live)
         );
     }
 

@@ -19,8 +19,9 @@
 //! The registry only stores type name -> callbacks for lookup; each type provides
 //! its own deserialize/encode/decode via the trait or registration.
 
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
+#[cfg(feature = "arrow")]
 use arrow::{datatypes::Schema, record_batch::RecordBatch};
 use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_core::Params;
@@ -31,14 +32,22 @@ use crate::data::{CustomData, CustomDataTrait, Data, DataType};
 
 pub type JsonDeserializer =
     Box<dyn Fn(serde_json::Value) -> Result<Arc<dyn CustomDataTrait>, anyhow::Error> + Send + Sync>;
+#[cfg(feature = "arrow")]
 pub type ArrowEncoder =
     Box<dyn Fn(&[Arc<dyn CustomDataTrait>]) -> Result<RecordBatch, anyhow::Error> + Send + Sync>;
+#[cfg(feature = "arrow")]
 pub type ArrowDecoder = Box<
-    dyn Fn(&HashMap<String, String>, RecordBatch) -> Result<Vec<Data>, anyhow::Error> + Send + Sync,
+    dyn Fn(
+            &std::collections::HashMap<String, String>,
+            RecordBatch,
+        ) -> Result<Vec<Data>, anyhow::Error>
+        + Send
+        + Sync,
 >;
 
 struct Registries {
     json: DashMap<String, JsonDeserializer>,
+    #[cfg(feature = "arrow")]
     arrow: DashMap<String, (Arc<Schema>, ArrowEncoder, ArrowDecoder)>,
 }
 
@@ -46,6 +55,7 @@ fn registries() -> &'static Registries {
     static REGISTRIES: std::sync::OnceLock<Registries> = std::sync::OnceLock::new();
     REGISTRIES.get_or_init(|| Registries {
         json: DashMap::new(),
+        #[cfg(feature = "arrow")]
         arrow: DashMap::new(),
     })
 }
@@ -146,6 +156,7 @@ pub fn deserialize_custom_from_json(
 ///
 /// # Errors
 /// Returns an error if the type is already registered for Arrow.
+#[cfg(feature = "arrow")]
 pub fn register_arrow(
     type_name: &str,
     schema: Arc<Schema>,
@@ -170,6 +181,7 @@ pub fn register_arrow(
 ///
 /// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[cfg(feature = "arrow")]
 pub fn ensure_arrow_registered(
     type_name: &str,
     schema: Arc<Schema>,
@@ -185,6 +197,7 @@ pub fn ensure_arrow_registered(
 
 /// Returns the Arrow schema for the given custom type name, if registered.
 #[must_use]
+#[cfg(feature = "arrow")]
 pub fn get_arrow_schema(type_name: &str) -> Option<Arc<Schema>> {
     let reg = registries();
     reg.arrow
@@ -196,6 +209,7 @@ pub fn get_arrow_schema(type_name: &str) -> Option<Arc<Schema>> {
 ///
 /// # Errors
 /// Returns an error if the type is not registered or encoding fails.
+#[cfg(feature = "arrow")]
 pub fn encode_custom_to_arrow(
     type_name: &str,
     items: &[Arc<dyn CustomDataTrait>],
@@ -217,9 +231,10 @@ pub fn encode_custom_to_arrow(
     clippy::implicit_hasher,
     reason = "callers always use the default hasher"
 )]
+#[cfg(feature = "arrow")]
 pub fn decode_custom_from_arrow(
     type_name: &str,
-    metadata: &HashMap<String, String>,
+    metadata: &std::collections::HashMap<String, String>,
     record_batch: RecordBatch,
 ) -> Result<Option<Vec<Data>>, anyhow::Error> {
     let reg = registries();
@@ -567,6 +582,35 @@ mod tests {
         assert!(
             err_msg.contains("already registered"),
             "expected 'already registered' in error, found: {err_msg}"
+        );
+    }
+
+    #[rstest]
+    #[cfg(feature = "arrow")]
+    fn ensure_arrow_registered_is_idempotent() {
+        let schema = Arc::new(arrow::datatypes::Schema::empty());
+        let encoder: ArrowEncoder = Box::new(|_| {
+            Ok(arrow::record_batch::RecordBatch::new_empty(Arc::new(
+                arrow::datatypes::Schema::empty(),
+            )))
+        });
+        let decoder: ArrowDecoder = Box::new(|_, _| Ok(Vec::new()));
+
+        let r1 = ensure_arrow_registered("IdempotentTestArrow", schema, encoder, decoder);
+        assert!(r1.is_ok(), "first Arrow registration should succeed");
+
+        let schema2 = Arc::new(arrow::datatypes::Schema::empty());
+        let encoder2: ArrowEncoder = Box::new(|_| {
+            Ok(arrow::record_batch::RecordBatch::new_empty(Arc::new(
+                arrow::datatypes::Schema::empty(),
+            )))
+        });
+        let decoder2: ArrowDecoder = Box::new(|_, _| Ok(Vec::new()));
+
+        let r2 = ensure_arrow_registered("IdempotentTestArrow", schema2, encoder2, decoder2);
+        assert!(
+            r2.is_ok(),
+            "second Arrow registration with same type_name should be idempotent"
         );
     }
 }

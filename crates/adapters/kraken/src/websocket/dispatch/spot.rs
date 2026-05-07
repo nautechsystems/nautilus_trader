@@ -211,12 +211,11 @@ fn status_tracked(
 
     match report.order_status {
         OrderStatus::Accepted => {
-            if state.emitted_accepted.contains(&client_order_id) {
+            if !state.insert_accepted(client_order_id) {
                 // Already accepted; this is a redundant New / Restated / Status
                 // exec. The strategy already saw OrderAccepted; nothing to emit.
                 return;
             }
-            state.insert_accepted(client_order_id);
             let accepted = OrderAccepted::new(
                 trader_id,
                 identity.strategy_id,

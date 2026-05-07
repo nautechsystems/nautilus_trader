@@ -250,7 +250,7 @@ impl<T: 'static> TopicRouter<T> {
     #[must_use]
     pub fn subscriber_count(&self, topic: MStr<Topic>) -> usize {
         self.get_matching_indices(topic)
-            .map_or_else(|| self.find_matches(topic).len(), |indices| indices.len())
+            .map_or_else(|| self.find_matches(topic).len(), <[usize]>::len)
     }
 
     /// Returns the count of subscribers with an exact topic match,
@@ -310,7 +310,7 @@ impl<T: 'static> TopicRouter<T> {
 
     /// Gets cached matching indices for a topic, if available.
     fn get_matching_indices(&self, topic: MStr<Topic>) -> Option<&[usize]> {
-        self.topic_cache.get(&topic).map(|v| v.as_slice())
+        self.topic_cache.get(&topic).map(SmallVec::as_slice)
     }
 
     /// Gets or computes matching subscription indices for a topic.

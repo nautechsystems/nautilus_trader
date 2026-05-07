@@ -1358,19 +1358,16 @@ impl Cache {
     fn py_instruments(&self, py: Python, venue: Option<Venue>) -> PyResult<Vec<Py<PyAny>>> {
         let mut py_instruments = Vec::new();
 
-        match venue {
-            Some(venue) => {
-                let instruments = self.instruments(&venue, None);
-                for instrument in instruments {
-                    py_instruments.push(instrument_any_to_pyobject(py, (*instrument).clone())?);
-                }
+        if let Some(venue) = venue {
+            let instruments = self.instruments(&venue, None);
+            for instrument in instruments {
+                py_instruments.push(instrument_any_to_pyobject(py, (*instrument).clone())?);
             }
-            None => {
-                let instrument_ids = self.instrument_ids(None);
-                for instrument_id in instrument_ids {
-                    if let Some(instrument) = self.instrument(instrument_id) {
-                        py_instruments.push(instrument_any_to_pyobject(py, instrument.clone())?);
-                    }
+        } else {
+            let instrument_ids = self.instrument_ids(None);
+            for instrument_id in instrument_ids {
+                if let Some(instrument) = self.instrument(instrument_id) {
+                    py_instruments.push(instrument_any_to_pyobject(py, instrument.clone())?);
                 }
             }
         }
@@ -2553,7 +2550,7 @@ impl Cache {
     ///
     /// This method is used when order event application fails and we need to ensure
     /// terminal orders are properly cleaned up from own books and all relevant indexes.
-    /// Replicates the index cleanup that update_order performs for closed orders.
+    /// Replicates the index cleanup that `update_order` performs for closed orders.
     #[pyo3(name = "force_remove_from_own_order_book")]
     fn py_force_remove_from_own_order_book(&mut self, client_order_id: ClientOrderId) {
         self.force_remove_from_own_order_book(&client_order_id);
@@ -2562,8 +2559,8 @@ impl Cache {
     /// Audit all own order books against open and inflight order indexes.
     ///
     /// Ensures closed orders are removed from own order books. This includes both
-    /// orders tracked in `orders_open` (ACCEPTED, TRIGGERED, PENDING_*, PARTIALLY_FILLED)
-    /// and `orders_inflight` (INITIALIZED, SUBMITTED) to prevent false positives
+    /// orders tracked in `orders_open` (`ACCEPTED`, `TRIGGERED`, `PENDING_*`, `PARTIALLY_FILLED`)
+    /// and `orders_inflight` (`INITIALIZED`, `SUBMITTED`) to prevent false positives
     /// during venue latency windows.
     #[pyo3(name = "audit_own_order_books")]
     fn py_audit_own_order_books(&mut self) {

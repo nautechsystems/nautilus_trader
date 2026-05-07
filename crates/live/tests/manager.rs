@@ -18,7 +18,7 @@
 //! These tests focus on observable behavior through the public API.
 //! Internal state tests are in the in-module tests in manager.rs.
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use async_trait::async_trait;
 use indexmap::IndexSet;
@@ -34,6 +34,11 @@ use nautilus_common::{
             SubmitOrderList, TradingCommand,
         },
     },
+    msgbus::{
+        self,
+        stubs::{TypedMessageSavingHandler, get_typed_message_saving_handler},
+        switchboard,
+    },
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::{
@@ -43,7 +48,7 @@ use nautilus_live::manager::{ExecutionManager, ExecutionManagerConfig};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
-        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
+        AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
         PositionSideSpecified, TimeInForce, TriggerType,
     },
     events::{
@@ -51,8 +56,8 @@ use nautilus_model::{
         account::state::AccountState,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
-        TraderId, Venue, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
+        TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{
         Instrument, InstrumentAny,
@@ -464,6 +469,239 @@ async fn test_reconcile_mass_status_creates_external_order_accepted() {
     let client_order_id = ClientOrderId::from("V-EXT-001");
     let order = ctx.get_order(&client_order_id);
     assert!(order.is_some());
+}
+
+#[rstest]
+fn test_reconcile_order_status_report_publishes_external_order_initialized() {
+    let ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let strategy_id = StrategyId::from("EXT-PUBLISH-DIRECT");
+
+    ctx.add_instrument(test_instrument());
+    ctx.exec_engine
+        .borrow_mut()
+        .register_external_order_claims(strategy_id, &HashSet::from([instrument_id]))
+        .unwrap();
+
+    let topic = switchboard::get_event_orders_topic(strategy_id);
+    let (handler, event_messages): (_, TypedMessageSavingHandler<OrderEventAny>) =
+        get_typed_message_saving_handler(None);
+    msgbus::subscribe_order_events(topic.into(), handler.clone(), None);
+
+    let report = create_order_status_report(
+        None,
+        VenueOrderId::from("V-EXT-PUBLISH-DIRECT"),
+        instrument_id,
+        OrderStatus::Accepted,
+        Quantity::from("1.0"),
+        Quantity::from("0"),
+    );
+    ctx.exec_engine
+        .borrow_mut()
+        .reconcile_order_status_report(&report);
+
+    msgbus::unsubscribe_order_events(topic.into(), &handler);
+
+    let messages = event_messages.get_messages();
+    assert_eq!(messages.len(), 2);
+
+    match &messages[0] {
+        OrderEventAny::Initialized(initialized) => {
+            assert_eq!(
+                initialized.client_order_id,
+                ClientOrderId::from("V-EXT-PUBLISH-DIRECT")
+            );
+            assert_eq!(initialized.strategy_id, strategy_id);
+            assert!(initialized.reconciliation);
+        }
+        event => panic!("Expected OrderInitialized event, was {event:?}"),
+    }
+
+    assert!(matches!(messages[1], OrderEventAny::Accepted(_)));
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_publishes_external_order_initialized() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let strategy_id = StrategyId::from("EXT-PUBLISH-MASS");
+
+    ctx.add_instrument(test_instrument());
+    ctx.manager
+        .claim_external_orders(instrument_id, strategy_id);
+
+    let topic = switchboard::get_event_orders_topic(strategy_id);
+    let (handler, event_messages): (_, TypedMessageSavingHandler<OrderEventAny>) =
+        get_typed_message_saving_handler(None);
+    msgbus::subscribe_order_events(topic.into(), handler.clone(), None);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let report = create_order_status_report(
+        None,
+        VenueOrderId::from("V-EXT-PUBLISH-MASS"),
+        instrument_id,
+        OrderStatus::Accepted,
+        Quantity::from("1.0"),
+        Quantity::from("0"),
+    );
+    mass_status.add_order_reports(vec![report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    msgbus::unsubscribe_order_events(topic.into(), &handler);
+
+    let messages = event_messages.get_messages();
+    assert_eq!(result.events.len(), 1);
+    assert!(matches!(result.events[0], OrderEventAny::Accepted(_)));
+    assert_eq!(messages.len(), 2);
+
+    match &messages[0] {
+        OrderEventAny::Initialized(initialized) => {
+            assert_eq!(
+                initialized.client_order_id,
+                ClientOrderId::from("V-EXT-PUBLISH-MASS")
+            );
+            assert_eq!(initialized.strategy_id, strategy_id);
+            assert!(initialized.reconciliation);
+        }
+        event => panic!("Expected OrderInitialized event, was {event:?}"),
+    }
+
+    assert!(matches!(messages[1], OrderEventAny::Accepted(_)));
+}
+
+#[rstest]
+fn test_order_fill_replay_propagates_position_id_to_oto_contingent_order() {
+    let ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = test_instrument_id();
+    let primary_id = ClientOrderId::from("O-OTO-PRIMARY");
+    let contingent_id = ClientOrderId::from("O-OTO-CONTINGENT");
+    let position_id = PositionId::from("P-OTO-001");
+
+    ctx.add_instrument(instrument.clone());
+
+    let mut primary_order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(primary_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("3000.00"))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![contingent_id])
+        .build();
+    apply_submitted_and_accepted(&mut primary_order, VenueOrderId::from("V-OTO-PRIMARY"));
+
+    let mut contingent_order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(contingent_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("3100.00"))
+        .build();
+    apply_submitted_and_accepted(
+        &mut contingent_order,
+        VenueOrderId::from("V-OTO-CONTINGENT"),
+    );
+
+    let strategy_id = primary_order.strategy_id();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Hedging);
+    ctx.add_order(primary_order.clone());
+    ctx.add_order(contingent_order);
+
+    let fill = TestOrderEventStubs::filled(
+        &primary_order,
+        &instrument,
+        Some(TradeId::from("T-OTO-001")),
+        Some(position_id),
+        Some(Price::from("3000.00")),
+        Some(Quantity::from("1.0")),
+        Some(LiquiditySide::Taker),
+        Some(Money::from("0 USDT")),
+        Some(UnixNanos::from(2_000_000)),
+        Some(test_account_id()),
+    );
+    ctx.exec_engine.borrow_mut().process(&fill);
+
+    let cache = ctx.cache.borrow();
+    let primary_after = cache.order(&primary_id).unwrap();
+    let contingent_after = cache.order(&contingent_id).unwrap();
+
+    assert_eq!(primary_after.position_id(), Some(position_id));
+    assert_eq!(contingent_after.position_id(), Some(position_id));
+    assert_eq!(cache.position_id(&contingent_id), Some(&position_id));
+}
+
+#[rstest]
+fn test_order_fill_replay_propagates_position_id_to_exec_spawn_primary_order() {
+    let ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = test_instrument_id();
+    let primary_id = ClientOrderId::from("O-SPAWN-PRIMARY");
+    let spawned_id = ClientOrderId::from("O-SPAWN-CHILD");
+    let position_id = PositionId::from("P-SPAWN-001");
+
+    ctx.add_instrument(instrument.clone());
+
+    let mut primary_order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(primary_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("3000.00"))
+        .build();
+    apply_submitted_and_accepted(&mut primary_order, VenueOrderId::from("V-SPAWN-PRIMARY"));
+
+    let mut spawned_order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(spawned_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("3000.00"))
+        .exec_algorithm_id(ExecAlgorithmId::from("ALG-SPAWN"))
+        .exec_spawn_id(primary_id)
+        .build();
+    apply_submitted_and_accepted(&mut spawned_order, VenueOrderId::from("V-SPAWN-CHILD"));
+
+    let strategy_id = spawned_order.strategy_id();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Hedging);
+    ctx.add_order(primary_order);
+    ctx.add_order(spawned_order.clone());
+
+    let fill = TestOrderEventStubs::filled(
+        &spawned_order,
+        &instrument,
+        Some(TradeId::from("T-SPAWN-001")),
+        Some(position_id),
+        Some(Price::from("3000.00")),
+        Some(Quantity::from("1.0")),
+        Some(LiquiditySide::Taker),
+        Some(Money::from("0 USDT")),
+        Some(UnixNanos::from(2_000_000)),
+        Some(test_account_id()),
+    );
+    ctx.exec_engine.borrow_mut().process(&fill);
+
+    let cache = ctx.cache.borrow();
+    let primary_after = cache.order(&primary_id).unwrap();
+    let spawned_after = cache.order(&spawned_id).unwrap();
+
+    assert_eq!(primary_after.position_id(), Some(position_id));
+    assert_eq!(spawned_after.position_id(), Some(position_id));
+    assert_eq!(cache.position_id(&primary_id), Some(&position_id));
 }
 
 #[tokio::test]
@@ -1999,9 +2237,18 @@ fn create_accepted_order(
     venue_order_id: VenueOrderId,
 ) -> OrderAny {
     let mut order = create_submitted_order(client_order_id, instrument_id, side, quantity, price);
-    let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
-    order.apply(accepted).unwrap();
+    apply_submitted_and_accepted(&mut order, venue_order_id);
     order
+}
+
+fn apply_submitted_and_accepted(order: &mut OrderAny, venue_order_id: VenueOrderId) {
+    if order.status() == OrderStatus::Initialized {
+        let submitted = TestOrderEventStubs::submitted(order, test_account_id());
+        order.apply(submitted).unwrap();
+    }
+
+    let accepted = TestOrderEventStubs::accepted(order, test_account_id(), venue_order_id);
+    order.apply(accepted).unwrap();
 }
 
 fn create_pending_update_order(
@@ -6703,15 +6950,16 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected() 
     let mut ctx = TestContext::with_config(config);
     ctx.add_instrument(test_instrument());
 
-    let order = create_submitted_order(
+    let order = create_limit_order(
         "O-001",
         test_instrument_id(),
         OrderSide::Buy,
         "10.0",
         "100.0",
     );
-    ctx.add_order(order.clone());
-    ctx.cache.borrow_mut().update_order(&order).unwrap();
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    ctx.add_order(order);
+    ctx.cache.borrow_mut().update_order(&submitted).unwrap();
 
     // Venue returns no reports, order was never placed
     let mock_client = MockExecutionClient::new(vec![]);

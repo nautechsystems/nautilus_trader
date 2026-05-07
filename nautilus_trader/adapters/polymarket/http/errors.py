@@ -67,6 +67,9 @@ def should_retry(error: BaseException) -> bool:
         # https://github.com/Polymarket/py-clob-client-v2/blob/main/py_clob_client_v2/exceptions.py
         status_code = getattr(error, "status_code", None)
 
+        if status_code is None:
+            return True
+
         # Retry on rate limits and server errors
         if status_code == 429 or (status_code is not None and status_code >= 500):
             return True

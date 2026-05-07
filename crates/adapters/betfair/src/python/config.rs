@@ -147,6 +147,7 @@ impl BetfairExecConfig {
         reconcile_market_ids_only = false,
         reconcile_market_ids = None,
         use_market_version = false,
+        stream_gap_recovery_lookback_mins = 10,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -173,6 +174,7 @@ impl BetfairExecConfig {
         reconcile_market_ids_only: bool,
         reconcile_market_ids: Option<Vec<String>>,
         use_market_version: bool,
+        stream_gap_recovery_lookback_mins: u64,
     ) -> Self {
         Self {
             trader_id: trader_id.unwrap_or_else(|| TraderId::from("TRADER-001")),
@@ -198,6 +200,7 @@ impl BetfairExecConfig {
             reconcile_market_ids_only,
             reconcile_market_ids,
             use_market_version,
+            stream_gap_recovery_lookback_mins,
         }
     }
 

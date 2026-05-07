@@ -95,6 +95,10 @@ impl From<LatencyModelAny> for Box<dyn LatencyModel> {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
 )]
+#[allow(
+    clippy::struct_field_names,
+    reason = "latency_nanos suffix consistently identifies latency types"
+)]
 pub struct StaticLatencyModel {
     base_latency_nanos: UnixNanos,
     insert_latency_nanos: UnixNanos,

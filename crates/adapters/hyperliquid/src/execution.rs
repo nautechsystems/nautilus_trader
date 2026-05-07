@@ -52,7 +52,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS},
+        consts::HYPERLIQUID_VENUE,
         credential::Secrets,
         parse::{
             clamp_price_to_precision, client_order_id_to_cancel_request_with_asset,
@@ -66,9 +66,8 @@ use crate::{
     http::{
         client::HyperliquidHttpClient,
         models::{
-            ClearinghouseState, Cloid, HyperliquidExecAction, HyperliquidExecBuilderFee,
-            HyperliquidExecGrouping, HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind,
-            SpotClearinghouseState,
+            ClearinghouseState, Cloid, HyperliquidExecAction, HyperliquidExecGrouping,
+            HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind, SpotClearinghouseState,
         },
     },
     websocket::{
@@ -590,16 +589,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let dispatch_state = self.ws_dispatch_state.clone();
         let client_order_id = order.client_order_id();
 
-        // Vaults cannot approve builder fees, so skip builder attribution
-        // for vault orders to avoid "Builder fee has not been approved" rejection
-        let builder = if self.http_client.has_vault_address() {
-            None
-        } else {
-            Some(HyperliquidExecBuilderFee {
-                address: NAUTILUS_BUILDER_ADDRESS.to_string(),
-                fee_tenths_bp: 0,
-            })
-        };
+        let builder = self.http_client.builder_attribution();
 
         self.spawn_task("submit_order", async move {
             let action = HyperliquidExecAction::Order {
@@ -716,14 +706,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let client_order_ids: Vec<ClientOrderId> =
             valid_orders.iter().map(|o| o.client_order_id()).collect();
 
-        let builder = if self.http_client.has_vault_address() {
-            None
-        } else {
-            Some(HyperliquidExecBuilderFee {
-                address: NAUTILUS_BUILDER_ADDRESS.to_string(),
-                fee_tenths_bp: 0,
-            })
-        };
+        let builder = self.http_client.builder_attribution();
 
         self.spawn_task("submit_order_list", async move {
             let action = HyperliquidExecAction::Order {
@@ -878,7 +861,26 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let should_normalize = self.config.normalize_prices;
         let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref());
 
-        let quantity = cmd.quantity.unwrap_or(order.leaves_qty());
+        // Hyperliquid modify is cancel-replace; subtract filled to avoid overfill.
+        let target_total_qty = cmd.quantity.unwrap_or(order.quantity());
+        let filled_qty = order.filled_qty();
+        if target_total_qty <= filled_qty {
+            let reason =
+                format!("modify quantity {target_total_qty} not greater than filled {filled_qty}",);
+            log::warn!("Cannot modify order {}: {reason}", cmd.client_order_id);
+
+            self.emitter.emit_order_modify_rejected_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                Some(venue_order_id),
+                &reason,
+                self.clock.get_time_ns(),
+            );
+            return Ok(());
+        }
+
+        let quantity = target_total_qty - filled_qty;
         let price_decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
         let asset = match http_client.get_asset_index(&symbol) {
             Some(a) => a,
@@ -946,12 +948,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let client_order_id = cmd.client_order_id;
         let old_venue_order_id = venue_order_id;
 
-        // Mark the old venue_order_id as in-flight before the HTTP await so
-        // the WS cancel handler can suppress the cancel-replace old leg even
-        // when the WS message arrives before the HTTP response. The marker is
-        // cleared on any failure path so a failed modify never leaves stale
-        // race state behind.
-        dispatch_state.mark_pending_modify(client_order_id, old_venue_order_id);
+        // Mark before the HTTP await so an early CANCELED(old_voi) on the WS is suppressed.
+        dispatch_state.mark_pending_modify(client_order_id, old_venue_order_id, target_total_qty);
 
         self.spawn_task("modify_order", async move {
             let action = HyperliquidExecAction::Modify {
@@ -1590,7 +1588,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             (None, None) => reports,
         };
 
-        log::info!("Generated {} order status reports", reports.len());
+        log::debug!("Generated {} order status reports", reports.len());
         Ok(reports)
     }
 
@@ -1623,7 +1621,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             reports
         };
 
-        log::info!("Generated {} fill reports", reports.len());
+        log::debug!("Generated {} fill reports", reports.len());
         Ok(reports)
     }
 
@@ -1640,7 +1638,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .await
             .context("failed to generate position status reports")?;
 
-        log::info!("Generated {} position status reports", reports.len());
+        log::debug!("Generated {} position status reports", reports.len());
         Ok(reports)
     }
 
@@ -1909,10 +1907,11 @@ fn handle_execution_report(
                 emitter.send_fill_report(fill_report);
             }
 
-            // If this fill matches a deferred FILLED marker, drop the cloid
-            // mapping now that the fill has landed.
+            // Skip cleanup while a cancel-replace fill is buffered; the
+            // replacement ACCEPTED still needs to resolve the cloid (GH-3972).
             if let Some(id) = client_order_id
                 && pending_filled_cloids.contains(&id)
+                && dispatch_state.buffered_fill_count(&id) == 0
             {
                 pending_filled_cloids.remove(&id);
                 let cloid = Cloid::from_client_order_id(id);
@@ -2011,6 +2010,20 @@ mod tests {
         venue_order_id: &str,
         status: OrderStatus,
     ) -> OrderStatusReport {
+        make_status_report_with_quantity(
+            client_order_id,
+            venue_order_id,
+            status,
+            Quantity::from("0.0001"),
+        )
+    }
+
+    fn make_status_report_with_quantity(
+        client_order_id: Option<&str>,
+        venue_order_id: &str,
+        status: OrderStatus,
+        quantity: Quantity,
+    ) -> OrderStatusReport {
         OrderStatusReport::new(
             AccountId::from("HYPERLIQUID-001"),
             InstrumentId::from(TEST_INSTRUMENT_ID),
@@ -2020,7 +2033,7 @@ mod tests {
             OrderType::Limit,
             TimeInForce::Gtc,
             status,
-            Quantity::from("0.0001"),
+            quantity,
             Quantity::from("0"),
             UnixNanos::default(),
             UnixNanos::default(),
@@ -2398,6 +2411,173 @@ mod tests {
         ));
         // Deferred cleanup fires once the fill lands.
         assert_eq!(ws_client.get_cloid_mapping(&cloid_for("O-HER-FILL")), None);
+    }
+
+    /// GH-3972: when a status-only `FILLED` marker arrives before both the
+    /// buffered fill and the replacement `ACCEPTED(new_voi)`, the cloid
+    /// mapping must NOT be evicted on the buffered fill: otherwise the later
+    /// `ACCEPTED` cannot resolve the cloid and the buffered fill is stranded.
+    #[rstest]
+    fn test_handle_execution_report_buffered_fill_preserves_cloid_under_filled_marker() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = WsDispatchState::new();
+        let mut pending_cloids: FifoCache<ClientOrderId, 10_000> = FifoCache::new();
+
+        let cid = ClientOrderId::from("O-HER-BUF");
+        state.register_identity(cid, test_identity());
+        state.insert_accepted(cid);
+        state.record_venue_order_id(cid, VenueOrderId::new("old-voi"));
+        state.mark_pending_modify(cid, VenueOrderId::new("old-voi"), test_identity().quantity);
+
+        ws_client.cache_cloid_mapping(cloid_for("O-HER-BUF"), cid);
+
+        // Status-only FILLED marker arrives first; defers cloid eviction.
+        let status_marker = make_status_report(Some("O-HER-BUF"), "new-voi", OrderStatus::Filled);
+        handle_execution_report(
+            ExecutionReport::Order(status_marker),
+            &state,
+            &emitter,
+            &ws_client,
+            &mut pending_cloids,
+            UnixNanos::default(),
+        );
+        assert!(pending_cloids.contains(&cid));
+        assert_eq!(
+            ws_client.get_cloid_mapping(&cloid_for("O-HER-BUF")),
+            Some(cid)
+        );
+
+        // Fill carrying the new venue_order_id arrives before ACCEPTED. It is
+        // buffered; the cloid mapping must be preserved so the eventual
+        // ACCEPTED can still resolve and drain the buffer.
+        let fill = make_fill_report(Some("O-HER-BUF"), "new-voi", "trade-buf");
+        handle_execution_report(
+            ExecutionReport::Fill(fill),
+            &state,
+            &emitter,
+            &ws_client,
+            &mut pending_cloids,
+            UnixNanos::default(),
+        );
+
+        assert_eq!(state.buffered_fill_count(&cid), 1);
+        assert!(drain_events(&mut rx).is_empty());
+        assert!(
+            pending_cloids.contains(&cid),
+            "deferred cleanup must remain armed until the buffered fill drains",
+        );
+        assert_eq!(
+            ws_client.get_cloid_mapping(&cloid_for("O-HER-BUF")),
+            Some(cid),
+            "cloid mapping must survive a buffered fill so the later ACCEPTED resolves",
+        );
+    }
+
+    /// After a partial fill, the cancel-replace `OrderUpdated` must carry
+    /// the user's absolute total, not the venue's remaining-only view.
+    #[rstest]
+    fn test_cancel_replace_emits_target_total_quantity() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = WsDispatchState::new();
+        let mut pending_cloids: FifoCache<ClientOrderId, 10_000> = FifoCache::new();
+
+        let cid = ClientOrderId::from("O-HER-CR-QTY");
+        let target_total = Quantity::from("0.00020");
+        let venue_remaining = Quantity::from("0.00015");
+
+        let mut identity = test_identity();
+        identity.quantity = target_total;
+        state.register_identity(cid, identity);
+        state.insert_accepted(cid);
+        state.record_venue_order_id(cid, VenueOrderId::new("old-voi"));
+        state.mark_pending_modify(cid, VenueOrderId::new("old-voi"), target_total);
+
+        ws_client.cache_cloid_mapping(cloid_for("O-HER-CR-QTY"), cid);
+
+        let accepted = make_status_report_with_quantity(
+            Some("O-HER-CR-QTY"),
+            "new-voi",
+            OrderStatus::Accepted,
+            venue_remaining,
+        );
+        handle_execution_report(
+            ExecutionReport::Order(accepted),
+            &state,
+            &emitter,
+            &ws_client,
+            &mut pending_cloids,
+            UnixNanos::default(),
+        );
+
+        let events = drain_events(&mut rx);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ExecutionEvent::Order(OrderEventAny::Updated(updated)) => {
+                assert_eq!(
+                    updated.quantity, target_total,
+                    "OrderUpdated must carry the engine's absolute total quantity",
+                );
+                assert_eq!(updated.venue_order_id, Some(VenueOrderId::new("new-voi")));
+            }
+            other => panic!("expected OrderUpdated, found {other:?}"),
+        }
+
+        // identity.quantity drives the terminal-fill threshold; must match target_total.
+        let identity = state
+            .lookup_identity(&cid)
+            .expect("identity should still be tracked");
+        assert_eq!(identity.quantity, target_total);
+
+        assert!(state.pending_modify(&cid).is_none());
+        assert!(state.pending_modify_target_qty(&cid).is_none());
+        assert_eq!(
+            state.cached_venue_order_id(&cid),
+            Some(VenueOrderId::new("new-voi")),
+        );
+    }
+
+    /// Without a target-qty marker (e.g. reconcile-driven modifies), the
+    /// promotion falls back to `report.quantity`.
+    #[rstest]
+    fn test_cancel_replace_without_marker_falls_back_to_report_quantity() {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = WsDispatchState::new();
+        let mut pending_cloids: FifoCache<ClientOrderId, 10_000> = FifoCache::new();
+
+        let cid = ClientOrderId::from("O-HER-CR-EXT");
+        state.register_identity(cid, test_identity());
+        state.insert_accepted(cid);
+        state.record_venue_order_id(cid, VenueOrderId::new("old-voi"));
+
+        ws_client.cache_cloid_mapping(cloid_for("O-HER-CR-EXT"), cid);
+
+        let report_qty = Quantity::from("0.0005");
+        let accepted = make_status_report_with_quantity(
+            Some("O-HER-CR-EXT"),
+            "new-voi",
+            OrderStatus::Accepted,
+            report_qty,
+        );
+        handle_execution_report(
+            ExecutionReport::Order(accepted),
+            &state,
+            &emitter,
+            &ws_client,
+            &mut pending_cloids,
+            UnixNanos::default(),
+        );
+
+        let events = drain_events(&mut rx);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ExecutionEvent::Order(OrderEventAny::Updated(updated)) => {
+                assert_eq!(updated.quantity, report_qty);
+            }
+            other => panic!("expected OrderUpdated, found {other:?}"),
+        }
     }
 
     #[rstest]

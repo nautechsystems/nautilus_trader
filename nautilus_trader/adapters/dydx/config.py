@@ -36,10 +36,6 @@ class DydxDataClientConfig(LiveDataClientConfig, frozen=True):
     environment : DydxNetwork, optional
         The dYdX network environment for the client (MAINNET or TESTNET).
         If ``None`` then defaults to MAINNET.
-        Takes precedence over ``is_testnet`` if set.
-    is_testnet : bool, default False
-        If the client is connecting to the dYdX testnet API.
-        Deprecated: use ``environment=DydxNetwork.TESTNET`` instead.
     base_url_http : str, optional
         The base URL for HTTP API endpoints.
         If ``None`` then will use the default URL for the selected network.
@@ -62,7 +58,6 @@ class DydxDataClientConfig(LiveDataClientConfig, frozen=True):
 
     wallet_address: str | None = None
     environment: DydxNetwork | None = None
-    is_testnet: bool = False
     bars_timestamp_on_close: bool = True
     base_url_http: str | None = None
     base_url_ws: str | None = None
@@ -97,10 +92,6 @@ class DydxExecClientConfig(LiveExecClientConfig, frozen=True):
     environment : DydxNetwork, optional
         The dYdX network environment for the client (MAINNET or TESTNET).
         If ``None`` then defaults to MAINNET.
-        Takes precedence over ``is_testnet`` if set.
-    is_testnet : bool, default False
-        If the client is connecting to the dYdX testnet API.
-        Deprecated: use ``environment=DydxNetwork.TESTNET`` instead.
     base_url_http : str, optional
         The HTTP client custom endpoint override.
         If ``None`` then will use the default URL for the selected network.
@@ -130,7 +121,6 @@ class DydxExecClientConfig(LiveExecClientConfig, frozen=True):
     private_key: str | None = None
     authenticator_ids: list[int] | None = None
     environment: DydxNetwork | None = None
-    is_testnet: bool = False
     base_url_http: str | None = None
     base_url_ws: str | None = None
     base_url_grpc: str | None = None

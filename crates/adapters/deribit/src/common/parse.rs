@@ -452,16 +452,20 @@ pub fn parse_account_state(
             Some("DERIBIT - Parsing account state"),
         );
 
-        // Parse balance using margin_balance (not equity):
-        // - total: margin_balance (equity minus fee reserves)
-        // - free: available_funds
-        // - locked derived centrally at currency precision; for Deribit it equals
-        //   `initial_margin` since `available_funds = margin_balance - initial_margin`.
-        let balance = AccountBalance::from_total_and_free(
-            summary.margin_balance,
-            summary.available_funds,
-            currency,
-        )?;
+        // In cross-margin mode, margin_balance is the entire cross-collateral portfolio
+        // value denominated in this currency (same ~$X re-expressed per currency), causing
+        // N-fold overcounting. Use equity (actual per-currency holdings) instead.
+        // In segregated mode, margin_balance is per-currency scoped and correct.
+        let is_cross_margin = summary.cross_collateral_enabled.unwrap_or(false);
+        let (total, free) = if is_cross_margin {
+            (
+                summary.equity,
+                summary.available_withdrawal_funds.unwrap_or(Decimal::ZERO),
+            )
+        } else {
+            (summary.margin_balance, summary.available_funds)
+        };
+        let balance = AccountBalance::from_total_and_free(total, free, currency)?;
         balances.push(balance);
 
         // Parse margin balances if present
@@ -530,16 +534,21 @@ pub fn parse_portfolio_to_account_state(
         Some("DERIBIT - Parsing portfolio update"),
     );
 
-    // Parse balance using margin_balance (not equity):
-    // - total: margin_balance (equity minus fee reserves, used for margin calculations)
-    // - free: available_funds (what can be used for new orders)
-    // - locked derived centrally at currency precision; for Deribit it equals
-    //   `initial_margin` since `available_funds = margin_balance - initial_margin`.
-    let balance = AccountBalance::from_total_and_free(
-        portfolio.margin_balance,
-        portfolio.available_funds,
-        currency,
-    )?;
+    // In cross-margin mode, margin_balance is the entire cross-collateral portfolio
+    // value denominated in this currency, causing N-fold overcounting.
+    // Use equity (actual per-currency holdings) instead.
+    let is_cross_margin = portfolio.cross_collateral_enabled.unwrap_or(false);
+    let (total, free) = if is_cross_margin {
+        (
+            portfolio.equity,
+            portfolio
+                .available_withdrawal_funds
+                .unwrap_or(Decimal::ZERO),
+        )
+    } else {
+        (portfolio.margin_balance, portfolio.available_funds)
+    };
+    let balance = AccountBalance::from_total_and_free(total, free, currency)?;
     let balances = vec![balance];
 
     // Parse margin balances
@@ -987,6 +996,76 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_account_state_cross_margin() {
+        let json_data = load_test_json("http_get_account_summaries_cross_margin.json");
+        let response: DeribitJsonRpcResponse<DeribitAccountSummariesResponse> =
+            serde_json::from_str(&json_data).unwrap();
+        let result = response.result.expect("Test data must have result");
+
+        let account_id = AccountId::from("DERIBIT-001");
+        let ts_event =
+            extract_server_timestamp(response.us_out).expect("Test data must have us_out");
+        let ts_init = UnixNanos::default();
+
+        let account_state = parse_account_state(&result.summaries, account_id, ts_init, ts_event)
+            .expect("Should parse cross-margin account state");
+
+        // All 4 currencies in fixture have cross_collateral_enabled=true (cross_pm mode)
+        // BTC: equity=2.288e-5 (actual holding), margin_balance=3.1639e-4 (portfolio-wide)
+        // USDT: equity=23.61869 (actual holding), margin_balance=25.713074 (portfolio-wide)
+        // SOL: equity=0 (no holding), margin_balance=0.29488918 (phantom)
+        // ETH: equity=8.6e-5 (small holding), margin_balance=0.01089 (portfolio-wide)
+
+        assert_eq!(account_state.balances.len(), 4);
+
+        // BTC: total should be equity (2.288e-5), NOT margin_balance (3.1639e-4)
+        let btc = account_state
+            .balances
+            .iter()
+            .find(|b| b.currency.code == "BTC")
+            .expect("BTC balance should exist");
+        assert_eq!(btc.total.as_f64(), 2.288e-5);
+        assert_eq!(btc.free.as_f64(), 2.288e-5); // available_withdrawal_funds
+        assert_eq!(btc.locked.as_f64(), 0.0);
+
+        // USDT: total should be equity (23.61869), NOT margin_balance (25.713074)
+        let usdt = account_state
+            .balances
+            .iter()
+            .find(|b| b.currency.code == "USDT")
+            .expect("USDT balance should exist");
+        assert_eq!(usdt.total.as_f64(), 23.61869);
+        assert_eq!(usdt.free.as_f64(), 23.618645); // available_withdrawal_funds
+        let usdt_locked = usdt.locked.as_f64();
+        assert!(
+            (usdt_locked - 0.000045).abs() < 0.001,
+            "USDT locked ({usdt_locked}) should be close to 0.000045"
+        );
+
+        // SOL: equity=0, should produce zero balance (not margin_balance=0.29488918)
+        let sol = account_state
+            .balances
+            .iter()
+            .find(|b| b.currency.code == "SOL")
+            .expect("SOL balance should exist");
+        assert_eq!(sol.total.as_f64(), 0.0);
+        assert_eq!(sol.free.as_f64(), 0.0);
+
+        // ETH: equity=8.6e-5 (small holding), NOT margin_balance=0.01089 (portfolio-wide)
+        let eth = account_state
+            .balances
+            .iter()
+            .find(|b| b.currency.code == "ETH")
+            .expect("ETH balance should exist");
+        assert_eq!(eth.total.as_f64(), 8.6e-5);
+        assert_eq!(eth.free.as_f64(), 8.5e-5); // available_withdrawal_funds
+
+        // Verify account metadata
+        assert_eq!(account_state.account_type, AccountType::Margin);
+        assert!(account_state.is_reported);
+    }
+
+    #[rstest]
     fn test_parse_trade_tick_sell() {
         let json_data = load_test_json("http_get_last_trades.json");
         let response: DeribitJsonRpcResponse<DeribitTradesResponse> =
@@ -1282,6 +1361,8 @@ mod tests {
         assert_eq!(portfolio.margin_balance, dec!(54.968258));
         assert_eq!(portfolio.initial_margin, dec!(1.100011));
         assert_eq!(portfolio.maintenance_margin, dec!(0.0));
+        assert_eq!(portfolio.cross_collateral_enabled, Some(true));
+        assert_eq!(portfolio.margin_model.as_deref(), Some("cross_sm"));
 
         // Test parsing to AccountState
         let account_id = AccountId::new("DERIBIT-master");
@@ -1296,17 +1377,18 @@ mod tests {
         assert!(account_state.is_reported);
 
         // Verify balances (should have 1 balance for USDT)
+        // cross_collateral_enabled=true so total=equity, free=available_withdrawal_funds
         assert_eq!(account_state.balances.len(), 1);
         let balance = &account_state.balances[0];
         assert_eq!(balance.currency.code, "USDT");
-        assert_eq!(balance.total.as_f64(), 54.968258); // margin_balance
-        assert_eq!(balance.free.as_f64(), 53.868247); // available_funds
+        assert_eq!(balance.total.as_f64(), 55.00055); // equity (not margin_balance)
+        assert_eq!(balance.free.as_f64(), 54.968257); // available_withdrawal_funds (not available_funds)
 
-        // locked = total - free = 54.968258 - 53.868247 = 1.100011 (equals initial_margin)
+        // locked = total - free = 55.00055 - 54.968257 = 0.032293
         let locked = balance.locked.as_f64();
         assert!(
-            (locked - 1.100011).abs() < 0.0001,
-            "Locked ({locked}) should be close to 1.100011 (initial_margin)"
+            (locked - 0.032293).abs() < 0.001,
+            "Locked ({locked}) should be close to 0.032293"
         );
 
         // Verify margins (should have 1 margin since initial_margin > 0)

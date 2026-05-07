@@ -132,11 +132,7 @@ class DydxDataClient(LiveMarketDataClient):
         # Configuration
         self._config = config
         self._bars_timestamp_on_close = config.bars_timestamp_on_close
-        self._network = (
-            config.environment
-            if config.environment is not None
-            else (DydxNetwork.TESTNET if config.is_testnet else DydxNetwork.MAINNET)
-        )
+        self._network = config.environment or DydxNetwork.MAINNET
         self._log.info(f"network={self._network}", LogColor.BLUE)
         self._log.info(f"{config.bars_timestamp_on_close=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)

@@ -128,7 +128,7 @@ export OKX_API_SECRET="your_api_secret"
 export OKX_API_PASSPHRASE="your_passphrase"
 ```
 
-For demo trading, set `is_demo: true` in both config structs and use demo
+For demo trading, set `environment: OKXEnvironment::Demo` in both config structs and use demo
 API credentials from OKX.
 
 Each adapter documents its required variables in the

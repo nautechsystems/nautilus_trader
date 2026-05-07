@@ -93,13 +93,6 @@ proptest = { workspace = true }
 rstest = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
-[[bin]]
-name = "databento-sandbox"
-path = "bin/sandbox.rs"
-required-features = ["python"]
-doc = false
-test = false
-
 [[example]]
 name = "databento-data-tester"
 path = "examples/node_data_tester.rs"

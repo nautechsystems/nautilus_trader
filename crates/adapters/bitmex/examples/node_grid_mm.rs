@@ -37,7 +37,6 @@ use nautilus_model::{
     identifiers::{InstrumentId, TraderId},
     types::Quantity,
 };
-use nautilus_network::websocket::TransportBackend;
 use nautilus_trading::examples::strategies::{GridMarketMaker, GridMarketMakerConfig};
 
 #[tokio::main]
@@ -50,7 +49,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_config = BitmexDataClientConfig {
         environment: BitmexEnvironment::Testnet,
-        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -59,7 +57,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         BitmexExecClientConfig {
             environment: BitmexEnvironment::Testnet,
             deadmans_switch_timeout_secs: Some(60),
-            transport_backend: TransportBackend::Sockudo,
             ..Default::default()
         },
     );

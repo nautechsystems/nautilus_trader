@@ -954,10 +954,9 @@ async def test_reconcile_order_with_price_update(
     result = exec_engine._reconcile_order_report(report, trades=[])
 
     # Assert
-    # The direct call to _reconcile_order_report doesn't apply the update event
     assert result is True
-    # Order price remains unchanged without full event processing
-    assert order.price == Price.from_str("1.00000")
+    # OrderUpdated event was generated and applied (e.g. priceMatch on Binance Futures)
+    assert order.price == Price.from_str("1.00100")
 
 
 @pytest.mark.asyncio
@@ -1011,10 +1010,9 @@ async def test_reconcile_order_with_quantity_update(
     result = exec_engine._reconcile_order_report(report, trades=[])
 
     # Assert
-    # The direct call to _reconcile_order_report doesn't apply the update event
     assert result is True
-    # Order quantity remains unchanged without full event processing
-    assert order.quantity == Quantity.from_int(100)
+    # OrderUpdated event was generated and applied (e.g. reduce-only auto-reduction)
+    assert order.quantity == Quantity.from_int(150)
 
 
 @pytest.mark.asyncio

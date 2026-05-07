@@ -336,13 +336,16 @@ impl WebSocketClientInner {
     ///
     /// Dispatches on `backend` to the matching backend helper. The
     /// [`TransportBackend::Tungstenite`] backend is always available; the
-    /// [`TransportBackend::Sockudo`] requires the `transport-sockudo` Cargo
-    /// feature and uses a custom HTTP/1.1 handshake path for upgrade headers.
+    /// [`TransportBackend::Sockudo`] backend requires the `transport-sockudo`
+    /// Cargo feature (enabled by default) and uses a custom HTTP/1.1 handshake
+    /// path for upgrade headers.
     ///
     /// When `proxy_url` is `Some`, the Tungstenite backend establishes an HTTP
     /// `CONNECT` tunnel through the proxy before performing the WebSocket
-    /// handshake. The Sockudo backend does not yet support proxying and will
-    /// return an error if a proxy URL is supplied.
+    /// handshake. The Sockudo backend does not yet support proxying; when it
+    /// is selected together with a proxy URL, this method logs a warning and
+    /// transparently falls back to Tungstenite so omitted-backend Python
+    /// configurations keep working.
     ///
     /// # Errors
     ///
@@ -358,6 +361,17 @@ impl WebSocketClientInner {
         backend: TransportBackend,
         proxy_url: Option<&str>,
     ) -> Result<(MessageWriter, MessageReader), TransportError> {
+        // Sockudo does not yet support proxy tunnels. When a proxy URL is supplied,
+        // route through Tungstenite so configurations that rely on the runtime
+        // default keep working (notably the Python `WebSocketConfig` binding,
+        // which exposes `proxy_url` but no `backend` selector).
+        if matches!(backend, TransportBackend::Sockudo)
+            && let Some(proxy) = proxy_url
+        {
+            log::warn!("Sockudo backend does not support proxy_url; falling back to Tungstenite");
+            return Box::pin(Self::connect_tungstenite_via_proxy(url, headers, proxy)).await;
+        }
+
         match backend {
             TransportBackend::Tungstenite => match proxy_url {
                 Some(proxy) => {
@@ -366,11 +380,6 @@ impl WebSocketClientInner {
                 None => Self::connect_tungstenite(url, headers).await,
             },
             TransportBackend::Sockudo => {
-                if proxy_url.is_some() {
-                    return Err(TransportError::Other(
-                        "proxy_url is not supported with the Sockudo backend".to_string(),
-                    ));
-                }
                 #[cfg(feature = "transport-sockudo")]
                 {
                     Self::connect_sockudo(url, headers).await

@@ -14,13 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
 from nautilus_trader.adapters.okx.config import OKXExecClientConfig
 from nautilus_trader.adapters.okx.constants import OKX_VENUE
 from nautilus_trader.adapters.okx.providers import OKXInstrumentProvider
+from nautilus_trader.adapters.okx.types import OKXAttachedOcoBinding
 from nautilus_trader.adapters.okx.types import OkxInstrument
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
@@ -81,31 +81,6 @@ from nautilus_trader.model.instruments import CryptoOption
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
-
-
-@dataclass(frozen=True)
-class _OKXAttachedOcoBinding:
-    parent_client_order_id: ClientOrderId
-    attach_client_order_id: ClientOrderId
-    instrument_id: InstrumentId
-    sl_client_order_id: ClientOrderId | None
-    tp_client_order_id: ClientOrderId | None
-
-    def child_client_order_ids(self) -> list[ClientOrderId]:
-        child_ids: list[ClientOrderId] = []
-
-        if self.sl_client_order_id is not None:
-            child_ids.append(self.sl_client_order_id)
-        if self.tp_client_order_id is not None and self.tp_client_order_id not in child_ids:
-            child_ids.append(self.tp_client_order_id)
-        return child_ids
-
-    def all_client_order_ids(self) -> list[ClientOrderId]:
-        ids = [self.parent_client_order_id, self.attach_client_order_id]
-        for child_id in self.child_client_order_ids():
-            if child_id not in ids:
-                ids.append(child_id)
-        return ids
 
 
 class OKXExecutionClient(LiveExecutionClient):
@@ -170,12 +145,7 @@ class OKXExecutionClient(LiveExecutionClient):
         )
         margin_mode = str(config.margin_mode) if config.margin_mode else None
 
-        # Resolve environment: explicit setting takes precedence over is_demo
-        self._environment = (
-            config.environment
-            if config.environment is not None
-            else (OKXEnvironment.DEMO if config.is_demo else OKXEnvironment.LIVE)
-        )
+        self._environment = config.environment or OKXEnvironment.LIVE
 
         # Configuration
         self._config = config
@@ -220,7 +190,7 @@ class OKXExecutionClient(LiveExecutionClient):
         self._algo_order_instruments: dict[ClientOrderId, InstrumentId] = {}
         self._client_id_aliases: dict[ClientOrderId, ClientOrderId] = {}
         self._client_id_children: dict[ClientOrderId, ClientOrderId] = {}
-        self._attached_oco_bindings: dict[ClientOrderId, _OKXAttachedOcoBinding] = {}
+        self._attached_oco_bindings: dict[ClientOrderId, OKXAttachedOcoBinding] = {}
 
         # WebSocket API
         _private_url = config.base_url_ws or nautilus_pyo3.get_okx_ws_url_private(self._environment)
@@ -350,8 +320,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 await self._ws_client.subscribe_orders(OKXInstrumentType.MARGIN)
                 subscribed_order_channels.add(OKXInstrumentType.MARGIN)
 
-            # OKX doesn't support algo orders channel for OPTIONS
-            if instrument_type != OKXInstrumentType.OPTION:
+            if _supports_algo_orders(instrument_type):
                 await self._ws_business_client.subscribe_orders_algo(instrument_type)
                 await self._ws_business_client.subscribe_algo_advance(instrument_type)
 
@@ -1111,6 +1080,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 order_list.orders,
             )
             attach_algo_ords = self._build_attach_algo_ords(sl_order, tp_order)
+            attach_algo_ords = self._merge_attach_algo_ords(attach_algo_ords, command.params)
             self._register_attached_oco_binding(parent_order, sl_order, tp_order)
 
             for order in order_list.orders:
@@ -1140,6 +1110,19 @@ class OKXExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                 )
 
+    @staticmethod
+    def _merge_attach_algo_ords(
+        bracket_attach_algo_ords: list[dict[str, str]],
+        params: dict[str, Any] | None,
+    ) -> list[dict[str, str]]:
+        param_attach_algo_ords = OKXExecutionClient._attach_algo_ords_from_params(params)
+        if bracket_attach_algo_ords and param_attach_algo_ords:
+            raise ValueError(
+                "OKX attach_algo_ords param cannot be combined with bracket order TP/SL legs",
+            )
+
+        return bracket_attach_algo_ords or param_attach_algo_ords
+
     async def _submit_regular_order_http(
         self,
         order: Order,
@@ -1162,6 +1145,8 @@ class OKXExecutionClient(LiveExecutionClient):
 
         px_usd = params.get("px_usd") if params else None
         px_vol = params.get("px_vol") if params else None
+        speed_bump = params.get("speed_bump") if params else None
+        outcome = params.get("outcome") if params else None
 
         response = await self._http_client.place_order(
             trader_id=pyo3_trader_id,
@@ -1180,6 +1165,8 @@ class OKXExecutionClient(LiveExecutionClient):
             attach_algo_ords=attach_algo_ords,
             px_usd=str(px_usd) if px_usd is not None else None,
             px_vol=str(px_vol) if px_vol is not None else None,
+            speed_bump=str(speed_bump) if speed_bump is not None else None,
+            outcome=str(outcome) if outcome is not None else None,
         )
 
         if response.get("s_code") and response["s_code"] != "0":
@@ -1213,6 +1200,8 @@ class OKXExecutionClient(LiveExecutionClient):
 
         px_usd = params.get("px_usd") if params else None
         px_vol = params.get("px_vol") if params else None
+        speed_bump = params.get("speed_bump") if params else None
+        outcome = params.get("outcome") if params else None
 
         await self._ws_client.submit_order(
             trader_id=pyo3_trader_id,
@@ -1232,6 +1221,8 @@ class OKXExecutionClient(LiveExecutionClient):
             attach_algo_ords=attach_algo_ords,
             px_usd=str(px_usd) if px_usd is not None else None,
             px_vol=str(px_vol) if px_vol is not None else None,
+            speed_bump=str(speed_bump) if speed_bump is not None else None,
+            outcome=str(outcome) if outcome is not None else None,
         )
 
     async def _submit_order_websocket(self, command: SubmitOrder) -> None:
@@ -1249,6 +1240,7 @@ class OKXExecutionClient(LiveExecutionClient):
             await self._submit_regular_order_websocket(
                 order=order,
                 params=command.params,
+                attach_algo_ords=self._attach_algo_ords_from_params(command.params) or None,
             )
         except Exception as e:
             self.generate_order_rejected(
@@ -1379,7 +1371,7 @@ class OKXExecutionClient(LiveExecutionClient):
         if attach_client_order_id is None:
             return
 
-        binding = _OKXAttachedOcoBinding(
+        binding = OKXAttachedOcoBinding(
             parent_client_order_id=parent_order.client_order_id,
             attach_client_order_id=attach_client_order_id,
             instrument_id=parent_order.instrument_id,
@@ -1432,7 +1424,7 @@ class OKXExecutionClient(LiveExecutionClient):
     def _rebuild_attached_oco_binding(
         self,
         client_order_id: ClientOrderId,
-    ) -> _OKXAttachedOcoBinding | None:
+    ) -> OKXAttachedOcoBinding | None:
         order = self._cache.order(client_order_id)
         if order is None:
             return None
@@ -1452,7 +1444,7 @@ class OKXExecutionClient(LiveExecutionClient):
     def _attached_oco_binding(
         self,
         client_order_id: ClientOrderId | None,
-    ) -> _OKXAttachedOcoBinding | None:
+    ) -> OKXAttachedOcoBinding | None:
         if client_order_id is None:
             return None
         binding = self._attached_oco_bindings.get(client_order_id)
@@ -1486,6 +1478,24 @@ class OKXExecutionClient(LiveExecutionClient):
             attach_algo_ord["tp_trigger_px_type"] = self._okx_trigger_type_str(tp_order)
 
         return [attach_algo_ord] if attach_algo_ord else []
+
+    @staticmethod
+    def _attach_algo_ords_from_params(params: dict[str, Any] | None) -> list[dict[str, str]]:
+        raw_attach_algo_ords = params.get("attach_algo_ords") if params else None
+        if raw_attach_algo_ords is None:
+            return []
+        if not isinstance(raw_attach_algo_ords, list | tuple):
+            raise ValueError("OKX attach_algo_ords param must be a list of dicts")
+
+        attach_algo_ords: list[dict[str, str]] = []
+        for raw_item in raw_attach_algo_ords:
+            if not isinstance(raw_item, dict):
+                raise ValueError("OKX attach_algo_ords entries must be dicts")
+            attach_algo_ords.append(
+                {str(key): str(value) for key, value in raw_item.items() if value is not None},
+            )
+
+        return attach_algo_ords
 
     async def _submit_algo_order_http(self, command: SubmitOrder) -> None:
         order = command.order
@@ -1833,6 +1843,7 @@ class OKXExecutionClient(LiveExecutionClient):
 
         new_px_usd = command.params.get("px_usd") if command.params else None
         new_px_vol = command.params.get("px_vol") if command.params else None
+        speed_bump = command.params.get("speed_bump") if command.params else None
 
         try:
             await self._ws_client.modify_order(
@@ -1845,6 +1856,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 venue_order_id=pyo3_venue_order_id,
                 new_px_usd=str(new_px_usd) if new_px_usd is not None else None,
                 new_px_vol=str(new_px_vol) if new_px_vol is not None else None,
+                speed_bump=str(speed_bump) if speed_bump is not None else None,
             )
         except Exception as e:
             self.generate_order_modify_rejected(
@@ -2951,3 +2963,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 self._client_id_aliases.pop(key, None)
 
         self._client_id_children.pop(canonical, None)
+
+
+def _supports_algo_orders(instrument_type: OKXInstrumentType) -> bool:
+    return instrument_type not in (OKXInstrumentType.OPTION, OKXInstrumentType.EVENTS)

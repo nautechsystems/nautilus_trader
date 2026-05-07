@@ -71,7 +71,7 @@ impl TokenizedAsset {
         info: Option<Py<PyDict>>,
     ) -> PyResult<Self> {
         let info_map = if let Some(info_dict) = info {
-            Python::attach(|py| from_pydict(py, info_dict))?
+            Python::attach(|py| from_pydict(py, &info_dict))?
         } else {
             None
         };

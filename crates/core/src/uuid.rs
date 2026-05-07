@@ -282,8 +282,8 @@ impl<'de> Deserialize<'de> for UUID4 {
     where
         D: Deserializer<'de>,
     {
-        let uuid4_str: &str = Deserialize::deserialize(deserializer)?;
-        uuid4_str.parse().map_err(serde::de::Error::custom)
+        let uuid4_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        uuid4_str.as_ref().parse().map_err(serde::de::Error::custom)
     }
 }
 
@@ -476,6 +476,15 @@ mod tests {
         let serialized = format!("\"{uuid_string}\"");
 
         let deserialized: UUID4 = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.to_string(), uuid_string);
+    }
+
+    #[rstest]
+    fn test_deserialize_from_owned_value() {
+        let uuid_string = "2d89666b-1a1e-4a75-b193-4eb3b454c757";
+        let value = serde_json::Value::String(uuid_string.to_string());
+
+        let deserialized: UUID4 = serde_json::from_value(value).unwrap();
         assert_eq!(deserialized.to_string(), uuid_string);
     }
 

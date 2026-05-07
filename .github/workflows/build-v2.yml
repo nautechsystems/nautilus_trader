@@ -6,6 +6,7 @@ name: build-v2
 #   https://packages.nautechsystems.io/v2/simple/nautilus-trader/
 
 permissions:
+  # Principle of least privilege
   contents: read
   actions: read
 
@@ -51,19 +52,22 @@ jobs:
         run: bash scripts/ci/plan.sh
 
   pre-commit:
-    # Self-hosted for internal work; Depot for fork PRs.
+    # Fork PRs stay on GitHub-hosted runners.
     runs-on: >-
       ${{ github.event.pull_request.head.repo.fork
-      && fromJson('["depot-ubuntu-22.04-8"]')
+      && 'ubuntu-22.04'
       || fromJson('["self-hosted", "Linux", "X64", "build-v2"]') }}
     env:
-      # Self-hosted persists target dir outside the workspace so it survives
-      # actions/checkout's git clean -ffdx. Fork PRs run on Depot and fall
-      # through to Swatinem/rust-cache on the workspace target dir.
+      # Self-hosted keeps Rust artifacts outside the workspace.
       CARGO_TARGET_DIR: >-
         ${{ github.event.pull_request.head.repo.fork
         && format('{0}/target', github.workspace)
         || '/home/runner/.cache/cargo-target/pre-commit' }}
+      CARGO_CI_PROFILE: >-
+        ${{ github.event.pull_request.head.repo.fork && 'ci-pr' || 'nextest' }}
+      # Scopes incremental clippy/doc checks; empty for non-PR/push events.
+      CHANGED_BASE_SHA: >-
+        ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
@@ -76,6 +80,8 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          # Full history so changed-file scripts can resolve CHANGED_BASE_SHA.
+          fetch-depth: 0
 
       # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
       - name: Verify immutable CI inputs (post-checkout)
@@ -90,11 +96,15 @@ jobs:
           build-type: "pre-commit"
           rust-cache-enabled: ${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}
 
+      - name: Limit Cargo build jobs on fork PR runners
+        if: github.event.pull_request.head.repo.fork
+        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
+
       - name: Run pre-commit
         run: prek run --all-files
 
-  rust-tests:
-    if: needs.plan.outputs.run-rust-tests == 'true'
+  build:
+    if: needs.plan.outputs.run-tests == 'true'
     needs:
       - plan
       - pre-commit
@@ -109,9 +119,9 @@ jobs:
     defaults:
       run:
         shell: bash
-    name: rust-tests (ubuntu-22.04, ${{ matrix.python-version }})
     env:
       BUILD_MODE: release
+      CARGO_CI_PROFILE: nextest
       RUST_BACKTRACE: 1
       # Outside the workspace so it survives actions/checkout's git clean -ffdx,
       # giving us persistent on-disk Rust artifact reuse between runs.
@@ -141,7 +151,6 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     # yamllint enable rule:line-length
-
     steps:
       - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
@@ -169,11 +178,13 @@ jobs:
           rust-cache-enabled: "false"
 
       - name: Install Nautilus CLI
+        if: needs.plan.outputs.run-rust-tests == 'true'
         env:
           NAUTILUS_CLI_FORCE_SOURCE: ${{ github.ref == 'refs/heads/nightly' && '1' || '0' }}
         run: bash scripts/ci/install-nautilus-cli.sh
 
       - name: Init postgres schema
+        if: needs.plan.outputs.run-rust-tests == 'true'
         run: nautilus database init --schema ${{ github.workspace }}/schema/sql
         env:
           POSTGRES_HOST: localhost
@@ -183,71 +194,23 @@ jobs:
           POSTGRES_DATABASE: nautilus
 
       - name: Cached test data
+        if: needs.plan.outputs.run-rust-tests == 'true'
         uses: ./.github/actions/common-test-data
 
       - name: Run Rust tests (core)
+        if: needs.plan.outputs.run-rust-tests == 'true'
         run: make cargo-test-core HYPERSYNC=true NEXTEST_PROFILE=ci
 
       - name: Run Rust tests (adapters)
+        if: needs.plan.outputs.run-rust-tests == 'true'
         run: make cargo-test-adapters HYPERSYNC=true NEXTEST_PROFILE=ci
 
       - name: Clean Rust test artifacts
+        if: needs.plan.outputs.run-rust-tests == 'true'
         run: |
           rm -rf "${CARGO_TARGET_DIR}/nextest"
+          rm -rf "${CARGO_TARGET_DIR}/${CARGO_CI_PROFILE:-nextest}"
           df -h .
-
-  build:
-    if: >
-      always() &&
-      needs.plan.outputs.run-tests == 'true' &&
-      needs.pre-commit.result == 'success' &&
-      (needs.rust-tests.result == 'success' || needs.rust-tests.result == 'skipped')
-    needs:
-      - plan
-      - pre-commit
-      - rust-tests
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version:
-          - "3.12"
-          - "3.13"
-          - "3.14"
-    runs-on: [self-hosted, Linux, X64, build-v2]
-    defaults:
-      run:
-        shell: bash
-    env:
-      BUILD_MODE: release
-      RUST_BACKTRACE: 1
-      # Outside the workspace so it survives actions/checkout's git clean -ffdx,
-      # giving us persistent on-disk Rust artifact reuse between runs.
-      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/py${{ matrix.python-version }}
-    steps:
-      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
-        with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
-          allowed-endpoints: >-
-            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
-            ${{ vars.CI_ALLOWED_ENDPOINTS }}
-
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-
-      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
-      - name: Verify immutable CI inputs (post-checkout)
-        run: bash scripts/ci/verify-ci-inputs.sh post-checkout
-
-      - name: Common setup
-        uses: ./.github/actions/common-setup
-        with:
-          python-version: ${{ matrix.python-version }}
-          # free-disk-space auto-skips on the nautilus-ci-runner-* pool.
-          free-disk-space: "true"
-          # Persistent CARGO_TARGET_DIR replaces Swatinem/rust-cache here.
-          rust-cache-enabled: "false"
 
       # Update version for dev/nightly branches
       - name: Update version in pyproject.toml

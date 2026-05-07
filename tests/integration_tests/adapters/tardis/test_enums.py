@@ -45,7 +45,6 @@ _EXPECTED_VENUE_MAPPINGS = {
     "coinbase-international": "COINBASE_INTX",
     "coinflex": "COINFLEX",
     "crypto-com": "CRYPTO_COM",
-    "crypto-com-derivatives": "CRYPTO_COM",
     "cryptofacilities": "CRYPTOFACILITIES",
     "delta": "DELTA",
     "deribit": "DERIBIT",

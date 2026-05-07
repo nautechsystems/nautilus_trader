@@ -25,11 +25,19 @@
 //! Channel pairs:
 //!
 //! - **Time events**: timer callbacks dispatched by the clock.
-//! - **Data commands**: subscribe/unsubscribe requests to data clients.
-//! - **Data events**: market data from adapters to the data engine.
-//! - **Trading commands**: order actions to execution clients.
 //! - **Execution events**: fills, order updates, and account state from
 //!   execution clients to the execution engine.
+//! - **Trading commands**: order actions to execution clients.
+//! - **Data events**: market data from adapters to the data engine.
+//! - **Data commands**: subscribe/unsubscribe requests to data clients.
+//!
+//! Both `AsyncRunner::run` and `LiveNode::run` use a `biased;` select with
+//! exec branches polled ahead of data branches, so a strategy action
+//! (cancel, submit) is not delayed behind a market-data backlog when the
+//! select polls receivers each iteration. The two loops use slightly
+//! different cmd/evt sub-orders because `LiveNode::run` also folds in the
+//! maintenance timer and signal handling that `AsyncRunner::run` does not
+//! see; check each `select!` block for the exact order at that site.
 //!
 //! The runner can drive the event loop in two ways:
 //!
@@ -50,8 +58,8 @@
 //!   thread. Senders are cloneable and `Send`, but the `RefCell`-backed
 //!   TLS slots are not accessible from other threads.
 //! - Only one runner at a time should own the TLS slots on a given
-//!   thread. `bind_senders` unconditionally replaces the previous
-//!   contents, so the last caller wins.
+//!   thread. `bind_senders` overwrites any existing TLS contents on the
+//!   thread, so the last caller wins.
 
 use std::{fmt::Debug, sync::Arc};
 
@@ -152,21 +160,21 @@ pub trait Runner {
 #[derive(Debug)]
 pub struct AsyncRunnerChannels {
     pub time_evt_rx: tokio::sync::mpsc::UnboundedReceiver<TimeEventHandler>,
-    pub data_evt_rx: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-    pub data_cmd_rx: tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
     pub exec_evt_rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     pub exec_cmd_rx: tokio::sync::mpsc::UnboundedReceiver<TradingCommand>,
+    pub data_evt_rx: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    pub data_cmd_rx: tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
 }
 
 pub struct AsyncRunner {
     channels: AsyncRunnerChannels,
     time_evt_tx: tokio::sync::mpsc::UnboundedSender<TimeEventHandler>,
-    data_cmd_tx: tokio::sync::mpsc::UnboundedSender<DataCommand>,
-    data_evt_tx: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    exec_cmd_tx: tokio::sync::mpsc::UnboundedSender<TradingCommand>,
-    exec_evt_tx: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
     signal_rx: tokio::sync::mpsc::UnboundedReceiver<()>,
     signal_tx: tokio::sync::mpsc::UnboundedSender<()>,
+    exec_cmd_tx: tokio::sync::mpsc::UnboundedSender<TradingCommand>,
+    exec_evt_tx: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+    data_cmd_tx: tokio::sync::mpsc::UnboundedSender<DataCommand>,
+    data_evt_tx: tokio::sync::mpsc::UnboundedSender<DataEvent>,
 }
 
 /// Handle for stopping the AsyncRunner from another context.
@@ -207,27 +215,27 @@ impl AsyncRunner {
         use tokio::sync::mpsc::unbounded_channel; // tokio-import-ok
 
         let (time_evt_tx, time_evt_rx) = unbounded_channel::<TimeEventHandler>();
-        let (data_cmd_tx, data_cmd_rx) = unbounded_channel::<DataCommand>();
-        let (data_evt_tx, data_evt_rx) = unbounded_channel::<DataEvent>();
+        let (signal_tx, signal_rx) = unbounded_channel::<()>();
         let (exec_cmd_tx, exec_cmd_rx) = unbounded_channel::<TradingCommand>();
         let (exec_evt_tx, exec_evt_rx) = unbounded_channel::<ExecutionEvent>();
-        let (signal_tx, signal_rx) = unbounded_channel::<()>();
+        let (data_cmd_tx, data_cmd_rx) = unbounded_channel::<DataCommand>();
+        let (data_evt_tx, data_evt_rx) = unbounded_channel::<DataEvent>();
 
         Self {
             channels: AsyncRunnerChannels {
                 time_evt_rx,
-                data_evt_rx,
-                data_cmd_rx,
                 exec_evt_rx,
                 exec_cmd_rx,
+                data_evt_rx,
+                data_cmd_rx,
             },
             time_evt_tx,
-            data_cmd_tx,
-            data_evt_tx,
-            exec_cmd_tx,
-            exec_evt_tx,
             signal_rx,
             signal_tx,
+            exec_cmd_tx,
+            exec_evt_tx,
+            data_cmd_tx,
+            data_evt_tx,
         }
     }
 
@@ -240,14 +248,14 @@ impl AsyncRunner {
         replace_time_event_sender(Arc::new(AsyncTimeEventSender::new(
             self.time_evt_tx.clone(),
         )));
-        replace_data_cmd_sender(Arc::new(AsyncDataCommandSender::new(
-            self.data_cmd_tx.clone(),
-        )));
-        replace_data_event_sender(self.data_evt_tx.clone());
         replace_exec_cmd_sender(Arc::new(AsyncTradingCommandSender::new(
             self.exec_cmd_tx.clone(),
         )));
         replace_exec_event_sender(self.exec_evt_tx.clone());
+        replace_data_cmd_sender(Arc::new(AsyncDataCommandSender::new(
+            self.data_cmd_tx.clone(),
+        )));
+        replace_data_event_sender(self.data_evt_tx.clone());
     }
 
     /// Stops the runner with an internal shutdown signal.
@@ -285,6 +293,12 @@ impl AsyncRunner {
         loop {
             let mut progressed = false;
 
+            // Events drain before commands here even though the runtime select
+            // prefers the opposite for everything-else: `LiveNode::start()`
+            // calls this after `connect_data_clients()` to push queued
+            // `DataEvent::Instrument` items into the cache. A pending
+            // subscription command (e.g. `SubscribeBars`) processed before the
+            // matching instrument lands would be rejected by the data engine.
             while let Ok(evt) = self.channels.data_evt_rx.try_recv() {
                 Self::handle_data_event(evt);
                 progressed = true;
@@ -327,17 +341,17 @@ impl AsyncRunner {
                 Some(handler) = self.channels.time_evt_rx.recv() => {
                     Self::handle_time_event(handler);
                 },
-                Some(cmd) = self.channels.data_cmd_rx.recv() => {
-                    Self::handle_data_command(cmd);
-                },
-                Some(evt) = self.channels.data_evt_rx.recv() => {
-                    Self::handle_data_event(evt);
-                },
                 Some(cmd) = self.channels.exec_cmd_rx.recv() => {
                     Self::handle_exec_command(cmd);
                 },
                 Some(evt) = self.channels.exec_evt_rx.recv() => {
                     Self::handle_exec_event(evt);
+                },
+                Some(cmd) = self.channels.data_cmd_rx.recv() => {
+                    Self::handle_data_command(cmd);
+                },
+                Some(evt) = self.channels.data_evt_rx.recv() => {
+                    Self::handle_data_event(evt);
                 },
                 else => {
                     log::debug!("AsyncRunner all channels closed, exiting");
@@ -518,16 +532,16 @@ mod tests {
         AsyncRunner {
             channels: AsyncRunnerChannels {
                 time_evt_rx,
-                data_evt_rx,
-                data_cmd_rx,
                 exec_evt_rx,
                 exec_cmd_rx,
+                data_evt_rx,
+                data_cmd_rx,
             },
             time_evt_tx,
-            data_cmd_tx,
-            data_evt_tx,
             exec_cmd_tx,
             exec_evt_tx,
+            data_cmd_tx,
+            data_evt_tx,
             signal_rx,
             signal_tx,
         }

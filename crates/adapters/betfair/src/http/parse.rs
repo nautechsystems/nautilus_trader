@@ -99,7 +99,11 @@ pub fn parse_current_order_report(
         .unwrap_or(ts_accepted);
 
     let venue_order_id = VenueOrderId::from(order.bet_id.as_str());
-    let client_order_id = order.customer_order_ref.as_deref().map(ClientOrderId::from);
+    let client_order_id = order
+        .customer_order_ref
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(ClientOrderId::from);
 
     let price = Price::from_decimal_dp(order.price_size.price, BETFAIR_PRICE_PRECISION)?;
 
@@ -152,7 +156,11 @@ pub fn parse_current_order_fill_report(
 ) -> anyhow::Result<FillReport> {
     let instrument_id = make_instrument_id(&order.market_id, order.selection_id, order.handicap);
     let venue_order_id = VenueOrderId::from(order.bet_id.as_str());
-    let client_order_id = order.customer_order_ref.as_deref().map(ClientOrderId::from);
+    let client_order_id = order
+        .customer_order_ref
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(ClientOrderId::from);
     let order_side = OrderSide::from(order.side);
 
     let size_matched = order.size_matched.unwrap_or(Decimal::ZERO);
@@ -549,5 +557,42 @@ mod tests {
         .unwrap();
 
         assert!(report2.client_order_id.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_current_order_blank_customer_order_ref_normalizes_to_none() {
+        let data = load_test_json("rest/list_current_orders_lapsed.json");
+        let mut resp: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+
+        // Some venues serialize a blank string instead of omitting the field.
+        // ClientOrderId rejects empty strings, so the parser must treat blank
+        // refs as missing rather than panicking.
+        resp.current_orders[0].customer_order_ref = Some(String::new());
+
+        let report = parse_current_order_report(
+            &resp.current_orders[0],
+            AccountId::from("BETFAIR-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        assert!(report.client_order_id.is_none());
+        assert_eq!(report.venue_order_id, VenueOrderId::from("229430281400"));
+        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.quantity, Quantity::from("20.00"));
+        assert_eq!(report.price.unwrap(), Price::from("6.00"));
+
+        let fill = parse_current_order_fill_report(
+            &resp.current_orders[0],
+            AccountId::from("BETFAIR-001"),
+            Currency::from("GBP"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        assert!(fill.client_order_id.is_none());
+        assert_eq!(fill.venue_order_id, VenueOrderId::from("229430281400"));
+        assert_eq!(fill.order_side, OrderSide::Sell);
+        assert_eq!(fill.last_qty, Quantity::from("0.00"));
+        // Lapsed order has averagePriceMatched=0.0, so the fill report uses 0.00.
+        assert_eq!(fill.last_px, Price::from("0.00"));
     }
 }

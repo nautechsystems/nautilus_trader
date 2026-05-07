@@ -45,7 +45,7 @@ pub struct PsychologicalLine {
 
 impl Display for PsychologicalLine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}({},{})", self.name(), self.period, self.ma_type,)
+        write!(f, "{}({},{})", self.name(), self.period, self.ma_type)
     }
 }
 

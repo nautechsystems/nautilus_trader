@@ -126,6 +126,22 @@ and the OMS type will follow the venue's OMS type.
 When configuring a backtest, you can specify the `oms_type` for the venue. For accuracy, match this with the OMS type used by the venue.
 :::
 
+### Custom position IDs and NETTING
+
+Custom position IDs are only valid under `HEDGING` OMS. Under `NETTING` there is by
+definition a single position per (instrument, strategy), and the engine assigns it a
+deterministic ID of the form `{instrument_id}-{strategy_id}`.
+
+The `ExecutionEngine` enforces this at submit time. If the effective OMS resolves to
+`NETTING` and `submit_order` (or `submit_order_list`) is called with a `position_id` that
+does not match `{instrument_id}-{strategy_id}`, the order is denied with an
+`OrderDenied` event explaining the mismatch.
+
+This rule still permits the common closing idiom: `Strategy.close_position(position)`
+forwards `position.id`, which under `NETTING` is exactly the deterministic ID, so it is
+accepted. To label or partition positions with arbitrary IDs, configure the strategy
+with `oms_type=HEDGING`.
+
 ## Risk engine
 
 The `RiskEngine` is a component of every Nautilus system, including backtest, sandbox, and live

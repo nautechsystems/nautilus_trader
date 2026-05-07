@@ -31,13 +31,16 @@ You can find live example scripts [here](https://github.com/nautechsystems/nauti
 
 ## Builder attribution
 
-Orders submitted through the adapter include a NautilusTrader builder address with a zero fee
-rate. This is for attribution only and does not charge any additional fees. No builder code
-approval is required.
+Mainnet orders submitted through the adapter include a NautilusTrader builder address with a
+zero fee rate. This is for attribution only and does not charge any additional fees.
 
-When trading via a vault (`vault_address` configured), the builder address is omitted from
-orders. Hyperliquid does not allow vaults to approve builder fees, so including the builder
-address would cause the exchange to reject the order.
+The builder address is omitted from orders in two cases:
+
+- **Testnet.** Hyperliquid testnet rejects orders that include a builder address the wallet has
+  not explicitly approved (faucet-funded testnet wallets typically have no approval), so testnet
+  orders never include the builder.
+- **Vault trading** (`vault_address` configured). Hyperliquid does not allow vaults to approve
+  builder fees, so including the builder address would cause the exchange to reject the order.
 
 ## Testnet setup
 
@@ -95,7 +98,8 @@ export HYPERLIQUID_TESTNET_PK="your_private_key_here"
 export HYPERLIQUID_TESTNET_VAULT="vault_address_here"
 ```
 
-The adapter automatically loads these when `testnet=True` in the configuration.
+The adapter automatically loads these when `environment=HyperliquidEnvironment.TESTNET` in the
+configuration.
 
 ## Product support
 
@@ -208,6 +212,7 @@ client config:
 ```python
 from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecClientConfig
+from nautilus_trader.adapters.hyperliquid import HyperliquidEnvironment
 from nautilus_trader.adapters.hyperliquid import HyperliquidProductType
 
 HyperliquidDataClientConfig(
@@ -554,6 +559,19 @@ Under (1) the pending-modify marker is not installed, so the early `CANCELED(old
 cycle restores the correct order state against the exchange.
 :::
 
+A `FillReport` for the replacement leg can also race ahead of `ACCEPTED(new_oid)`. The dispatch
+buffers such fills (when the pending-modify marker is set and the report's `oid` does not match
+the cached value) and drains them on the matching `ACCEPTED`, so `OrderFilled` always follows
+the promoting `OrderUpdated` against up-to-date state. See
+[GH-3972](https://github.com/nautechsystems/nautilus_trader/issues/3972).
+
+:::note
+A chained-modify edge case is deferred: if a delayed fill from a *prior* leg arrives during a
+*new* in-flight modify and that new modify then fails, the buffered fill is stranded until
+terminal cleanup. Reconciliation (`request_fill_reports`) recovers it. Fully closing this
+requires additional design work (retired-VOI tracking or drain on modify-failure paths).
+:::
+
 ## Order books
 
 Order books are maintained via L2 WebSocket subscription. Each message delivers a full-depth
@@ -663,8 +681,8 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 
 | Option              | Default | Description                                     |
 |---------------------|---------|-------------------------------------------------|
+| `environment`       | `None`  | Environment enum (`MAINNET` or `TESTNET`).       |
 | `base_url_ws`       | `None`  | Override for the WebSocket base URL.            |
-| `testnet`           | `False` | Connect to the Hyperliquid testnet when `True`. |
 | `product_types`     | `None`  | Optional product types to load, for example `PERP_HIP3` for HIP-3 perps. |
 | `http_timeout_secs` | `10`    | Timeout (seconds) applied to REST calls.        |
 | `proxy_url`         | `None`  | Optional proxy URL for HTTP and WebSocket transports. |
@@ -676,8 +694,8 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 | `private_key`               | `None`  | EVM private key; loaded from `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.   |
 | `vault_address`             | `None`  | Vault address; loaded from `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` if omitted. |
 | `account_address`           | `None`  | Main account address for agent wallet trading; loaded from `HYPERLIQUID_ACCOUNT_ADDRESS`. |
+| `environment`               | `None`  | Environment enum (`MAINNET` or `TESTNET`).                                           |
 | `base_url_ws`               | `None`  | Override for the WebSocket base URL.                                                      |
-| `testnet`                   | `False` | Connect to the Hyperliquid testnet when `True`.                                           |
 | `product_types`             | `None`  | Optional product types to load, for example `PERP_HIP3` for HIP-3 perps.                  |
 | `max_retries`               | `None`  | Maximum retry attempts for submit, cancel, or modify order requests.                      |
 | `retry_delay_initial_ms`    | `None`  | Initial delay (milliseconds) between retries.                                             |
@@ -705,7 +723,7 @@ config = TradingNodeConfig(
                 HyperliquidProductType.PERP,
                 HyperliquidProductType.PERP_HIP3,
             ),
-            testnet=True,  # Use testnet
+            environment=HyperliquidEnvironment.TESTNET,
         ),
     },
     exec_clients={
@@ -717,7 +735,7 @@ config = TradingNodeConfig(
                 HyperliquidProductType.PERP,
                 HyperliquidProductType.PERP_HIP3,
             ),
-            testnet=True,  # Use testnet
+            environment=HyperliquidEnvironment.TESTNET,
             normalize_prices=True,  # Rounds prices to 5 significant figures
         ),
     },
@@ -725,8 +743,9 @@ config = TradingNodeConfig(
 ```
 
 :::note
-When `testnet=True`, the adapter automatically uses testnet environment variables
-(`HYPERLIQUID_TESTNET_PK` and `HYPERLIQUID_TESTNET_VAULT`) instead of mainnet variables.
+When `environment=HyperliquidEnvironment.TESTNET`, the adapter automatically uses testnet
+environment variables (`HYPERLIQUID_TESTNET_PK` and `HYPERLIQUID_TESTNET_VAULT`) instead of
+mainnet variables.
 :::
 
 Then, create a `TradingNode` and add the client factories:

@@ -83,6 +83,17 @@ impl AccountAny {
         }
     }
 
+    /// Sets whether account state should be recalculated from order fills.
+    pub fn set_calculate_account_state(&mut self, calculate_account_state: bool) {
+        match self {
+            Self::Margin(margin) => margin.base.calculate_account_state = calculate_account_state,
+            Self::Cash(cash) => cash.base.calculate_account_state = calculate_account_state,
+            Self::Betting(betting) => {
+                betting.base.calculate_account_state = calculate_account_state;
+            }
+        }
+    }
+
     #[must_use]
     pub fn balances(&self) -> IndexMap<Currency, AccountBalance> {
         match self {

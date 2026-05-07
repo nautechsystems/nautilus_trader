@@ -330,7 +330,7 @@ fn add_open_order_to_cache(
         UnixNanos::default(),
     );
 
-    let mut order_any: OrderAny = order.into();
+    let order_any: OrderAny = order.into();
 
     let accepted = OrderAccepted::new(
         trader_id,
@@ -345,15 +345,14 @@ fn add_open_order_to_cache(
         false,
     );
 
-    order_any
-        .apply(OrderEventAny::Accepted(accepted))
-        .expect("Failed to apply accepted");
-
     cache
         .borrow_mut()
-        .add_order(order_any.clone(), None, None, false)
+        .add_order(order_any, None, None, false)
         .unwrap();
-    cache.borrow_mut().update_order(&order_any).unwrap();
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
+        .unwrap();
 }
 
 #[rstest]

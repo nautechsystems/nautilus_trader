@@ -44,7 +44,9 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{OKX_FIELD_CLORDID, OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_SUCCESS_CODE},
+        consts::{
+            OKX_FIELD_CLORDID, OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_FIELD_SUBCODE, OKX_SUCCESS_CODE,
+        },
         enums::OKXOrderStatus,
         parse::{
             is_market_price, parse_client_order_id, parse_millisecond_timestamp, parse_price,
@@ -289,6 +291,11 @@ pub fn dispatch_ws_message(
                     .get(OKX_FIELD_SMSG)
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
+                let sub_code = item
+                    .get(OKX_FIELD_SUBCODE)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let reason = format_order_response_reason(s_code, s_msg, sub_code);
                 let cl_ord_id = item
                     .get(OKX_FIELD_CLORDID)
                     .and_then(|v| v.as_str())
@@ -346,7 +353,7 @@ pub fn dispatch_ws_message(
                             ident.strategy_id,
                             ident.instrument_id,
                             client_order_id,
-                            s_msg,
+                            &reason,
                             ts_init,
                             false,
                         );
@@ -360,7 +367,7 @@ pub fn dispatch_ws_message(
                             ident.instrument_id,
                             client_order_id,
                             venue_order_id,
-                            s_msg,
+                            &reason,
                             ts_init,
                         );
                     }
@@ -371,7 +378,7 @@ pub fn dispatch_ws_message(
                             ident.instrument_id,
                             client_order_id,
                             venue_order_id,
-                            s_msg,
+                            &reason,
                             ts_init,
                         );
                     }
@@ -979,6 +986,17 @@ pub fn dispatch_execution_reports(
     }
 }
 
+fn format_order_response_reason(s_code: &str, s_msg: &str, sub_code: &str) -> String {
+    match (s_msg.is_empty(), sub_code.is_empty(), s_code.is_empty()) {
+        (false, true, _) => s_msg.to_string(),
+        (false, false, _) => format!("{s_msg} (subCode={sub_code})"),
+        (true, false, false) => format!("sCode={s_code} subCode={sub_code}"),
+        (true, false, true) => format!("subCode={sub_code}"),
+        (true, true, false) => format!("sCode={s_code}"),
+        (true, true, true) => String::new(),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AlgoCancelContext {
     pub client_order_id: ClientOrderId,
@@ -1038,6 +1056,32 @@ pub fn emit_batch_cancel_failure(
             ctx.venue_order_id,
             error,
             ts,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::format_order_response_reason;
+
+    #[rstest]
+    #[case("51000", "Rejected", "", "Rejected")]
+    #[case("51000", "Rejected", "51004", "Rejected (subCode=51004)")]
+    #[case("51000", "", "51004", "sCode=51000 subCode=51004")]
+    #[case("51000", "", "", "sCode=51000")]
+    #[case("", "", "51004", "subCode=51004")]
+    #[case("", "", "", "")]
+    fn test_format_order_response_reason(
+        #[case] s_code: &str,
+        #[case] s_msg: &str,
+        #[case] sub_code: &str,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            format_order_response_reason(s_code, s_msg, sub_code),
+            expected
         );
     }
 }

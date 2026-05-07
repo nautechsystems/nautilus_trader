@@ -15,7 +15,6 @@
 
 //! Python bindings for [`Params`] type conversion.
 
-use indexmap::IndexMap;
 use pyo3::{
     conversion::IntoPyObjectExt,
     prelude::*,
@@ -23,7 +22,10 @@ use pyo3::{
 };
 use serde_json::Value;
 
-use crate::{params::Params, python::to_pyvalue_err};
+use crate::{
+    params::Params,
+    python::{serialization::from_pyobject_pyo3, to_pyvalue_err},
+};
 
 /// Converts a Python dict to `Params` (IndexMap<String, Value>).
 ///
@@ -32,24 +34,13 @@ use crate::{params::Params, python::to_pyvalue_err};
 /// Returns a `PyErr` if:
 /// - the dict cannot be serialized to JSON
 /// - the JSON is not a valid object
-pub fn pydict_to_params(py: Python<'_>, dict: Py<PyDict>) -> PyResult<Option<Params>> {
+pub fn pydict_to_params(py: Python<'_>, dict: &Py<PyDict>) -> PyResult<Option<Params>> {
     let dict_bound = dict.bind(py);
     if dict_bound.is_empty() {
         return Ok(None);
     }
 
-    let json_str: String = PyModule::import(py, "json")?
-        .call_method("dumps", (dict,), None)?
-        .extract()?;
-    let json_value: Value = serde_json::from_str(&json_str).map_err(to_pyvalue_err)?;
-
-    if let Value::Object(map) = json_value {
-        Ok(Some(Params::from_index_map(
-            map.into_iter().collect::<IndexMap<String, Value>>(),
-        )))
-    } else {
-        Err(to_pyvalue_err("Expected a dictionary"))
-    }
+    from_pyobject_pyo3(py, dict_bound.as_any()).map(Some)
 }
 
 /// Helper function to convert a `serde_json::Value` to a Python object.
@@ -82,8 +73,7 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
             }
         }
         Value::Array(arr) => {
-            let py_list =
-                PyList::new(py, &[] as &[Py<PyAny>]).expect("Invalid `ExactSizeIterator`");
+            let py_list = PyList::new(py, &[] as &[Py<PyAny>])?;
             for item in arr {
                 let py_item = value_to_pyobject(py, item)?;
                 py_list.append(py_item)?;

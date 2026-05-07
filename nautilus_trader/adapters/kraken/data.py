@@ -151,7 +151,9 @@ class KrakenDataClient(LiveMarketDataClient):
             self._log.info(f"FUTURES REST API key {masked_key}", LogColor.BLUE)
 
         # Determine environment
-        environment = config.environment or KrakenEnvironment.MAINNET
+        environment = config.environment or KrakenEnvironment.LIVE
+        if environment == KrakenEnvironment.DEMO and KrakenProductType.SPOT in self._product_types:
+            raise ValueError("Kraken Spot does not support the demo environment")
 
         # WebSocket API - Spot (Kraken v2 API)
         self._ws_client_spot: nautilus_pyo3.KrakenSpotWebSocketClient | None = None

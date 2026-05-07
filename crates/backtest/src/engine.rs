@@ -720,6 +720,13 @@ impl BacktestEngine {
                 self.advance_time_impl(ts_init, &clocks);
             }
 
+            // A timer fired during clock advance may have requested shutdown,
+            // skip delivering this data point in that case
+            if self.kernel.is_shutdown_requested() {
+                self.force_stop = true;
+                break;
+            }
+
             // Route data to exchange
             self.route_data_to_exchange(d);
 
@@ -748,14 +755,14 @@ impl BacktestEngine {
         self.settle_venues(ts_now);
         self.run_venue_modules(ts_now);
 
-        // Flush remaining timer events. In streaming mode only flush to the
-        // last data timestamp to avoid advancing timers past the current batch.
-        // The final flush to end_ns happens in end() or a non-streaming run.
-        if streaming {
-            self.flush_accumulator_events(&clocks, self.last_ns);
+        // Cap at last_ns when streaming or after shutdown to avoid firing
+        // timers past the current batch or the graceful stop
+        let flush_ts = if streaming || self.force_stop || self.kernel.is_shutdown_requested() {
+            self.last_ns
         } else {
-            self.flush_accumulator_events(&clocks, end_ns);
-        }
+            end_ns
+        };
+        self.flush_accumulator_events(&clocks, flush_ts);
 
         Ok(())
     }
@@ -1050,6 +1057,7 @@ impl BacktestEngine {
         };
 
         let mut ts_last: Option<UnixNanos> = None;
+        let mut shutdown_at: Option<UnixNanos> = None;
 
         while let Some(handler) = self.accumulator.pop_next_at_or_before(ts_before) {
             let ts_event = handler.event.ts_event;
@@ -1069,6 +1077,14 @@ impl BacktestEngine {
             handler.run();
             self.drain_command_queues();
 
+            // Drop queued events on a handler-triggered shutdown so no later
+            // timer fires after the graceful stop
+            if self.kernel.is_shutdown_requested() {
+                self.accumulator.clear();
+                shutdown_at = Some(ts_event);
+                break;
+            }
+
             // Re-advance clocks to capture chained timers
             for clock in clocks {
                 Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
@@ -1081,11 +1097,23 @@ impl BacktestEngine {
             self.run_venue_modules(ts);
         }
 
-        Self::set_all_clocks_time(clocks, ts_now);
-        logging_clock_set_static_time(ts_now.as_u64());
+        // On a mid-drain shutdown, anchor state at the firing timer's ts so
+        // post-run settlement and backtest_end reflect the graceful stop
+        if let Some(ts_event) = shutdown_at {
+            self.last_ns = ts_event;
+        } else {
+            Self::set_all_clocks_time(clocks, ts_now);
+            logging_clock_set_static_time(ts_now.as_u64());
+        }
     }
 
     fn flush_accumulator_events(&mut self, clocks: &[Rc<RefCell<dyn Clock>>], ts_now: UnixNanos) {
+        // Bail after shutdown so handler-scheduled alerts do not fire post-stop
+        if self.kernel.is_shutdown_requested() {
+            self.accumulator.clear();
+            return;
+        }
+
         for clock in clocks {
             Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
         }
@@ -1109,6 +1137,13 @@ impl BacktestEngine {
 
             handler.run();
             self.drain_command_queues();
+
+            // Drop queued events on a handler-triggered shutdown so no later
+            // timer fires after the graceful stop
+            if self.kernel.is_shutdown_requested() {
+                self.accumulator.clear();
+                break;
+            }
 
             // Re-advance clocks to capture chained timers
             for clock in clocks {

@@ -34,15 +34,18 @@ from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import CryptoPerpetual
@@ -52,10 +55,13 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import OrderList
 from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.test_kit.functions import eventually
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.bybit.conftest import _create_ws_mock
+from tests.integration_tests.adapters.bybit.conftest import create_bybit_linear_perpetual
 
 
 @pytest.fixture
@@ -149,6 +155,7 @@ async def test_generate_order_status_reports_converts_results(exec_client_builde
     client, _, http_client, _ = exec_client_builder(monkeypatch)
 
     expected_report = MagicMock()
+    expected_report.client_order_id = None  # External order short-circuit in cache helper
     monkeypatch.setattr(
         "nautilus_trader.adapters.bybit.execution.OrderStatusReport.from_pyo3",
         lambda obj: expected_report,
@@ -172,6 +179,56 @@ async def test_generate_order_status_reports_converts_results(exec_client_builde
     # Assert
     http_client.request_order_status_reports.assert_awaited_once()
     assert reports == [expected_report]
+
+
+@pytest.mark.asyncio
+async def test_generate_order_status_reports_caches_local_venue_position_id(
+    exec_client_builder,
+    monkeypatch,
+    cache,
+    instrument,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-HEDGE-RECON"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100000"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    venue_position_id = PositionId("BTCUSDT-SPOT.BYBIT-LONG")
+    expected_report = MagicMock()
+    expected_report.client_order_id = order.client_order_id
+    expected_report.venue_position_id = venue_position_id
+    expected_report.order_status = OrderStatus.ACCEPTED
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bybit.execution.OrderStatusReport.from_pyo3",
+        lambda obj: expected_report,
+    )
+
+    http_client.request_order_status_reports.return_value = [MagicMock()]
+    command = GenerateOrderStatusReports(
+        instrument_id=instrument.id,
+        start=None,
+        end=None,
+        open_only=True,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    reports = await client.generate_order_status_reports(command)
+
+    # Assert
+    assert reports == [expected_report]
+    assert client._order_position_ids[order.client_order_id] == venue_position_id
 
 
 @pytest.mark.asyncio
@@ -418,6 +475,227 @@ async def test_submit_limit_order(exec_client_builder, monkeypatch, instrument):
         assert isinstance(kwargs["order_side"], nautilus_pyo3.OrderSide)
         assert isinstance(kwargs["order_type"], nautilus_pyo3.OrderType)
         assert isinstance(kwargs["time_in_force"], nautilus_pyo3.TimeInForce)
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_limit_order_with_bbo_params(exec_client_builder, monkeypatch):
+    client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+
+    await client._connect()
+
+    instrument = create_bybit_linear_perpetual()
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-BBO-1"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"bbo_side_type": "queue", "bbo_level": 3},
+    )
+
+    try:
+        await client._submit_order(command)
+
+        ws_trade_client.submit_order.assert_awaited_once()
+        kwargs = ws_trade_client.submit_order.call_args.kwargs
+        assert kwargs["price"] is None
+        assert kwargs["bbo_side_type"] == "Queue"
+        assert kwargs["bbo_level"] == "3"
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_market_order_with_bbo_params_denied(
+    exec_client_builder,
+    monkeypatch,
+):
+    client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+    mock_generate_denied = MagicMock()
+    monkeypatch.setattr(client, "generate_order_denied", mock_generate_denied)
+
+    await client._connect()
+
+    instrument = create_bybit_linear_perpetual()
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-BBO-2"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"bbo_side_type": "Queue", "bbo_level": "1"},
+    )
+
+    try:
+        await client._submit_order(command)
+
+        ws_trade_client.submit_order.assert_not_awaited()
+        mock_generate_denied.assert_called_once()
+        assert "not supported" in mock_generate_denied.call_args.kwargs["reason"]
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_list_with_bbo_params(exec_client_builder, monkeypatch):
+    client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.build_place_order_params = MagicMock(side_effect=[MagicMock(), MagicMock()])
+    ws_trade_client.batch_place_orders = AsyncMock()
+
+    await client._connect()
+
+    instrument = create_bybit_linear_perpetual()
+    orders = [
+        LimitOrder(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=instrument.id,
+            client_order_id=ClientOrderId("O-BBO-LIST-1"),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("0.100"),
+            price=Price.from_str("50000.00"),
+            init_id=TestIdStubs.uuid(),
+            ts_init=0,
+        ),
+        LimitOrder(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=instrument.id,
+            client_order_id=ClientOrderId("O-BBO-LIST-2"),
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_str("0.100"),
+            price=Price.from_str("50100.00"),
+            init_id=TestIdStubs.uuid(),
+            ts_init=0,
+        ),
+    ]
+    order_list = OrderList(TestIdStubs.order_list_id(), orders)
+    command = SubmitOrderList(
+        trader_id=orders[0].trader_id,
+        strategy_id=orders[0].strategy_id,
+        order_list=order_list,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"bbo_side_type": "counterparty", "bbo_level": 5},
+    )
+
+    try:
+        await client._submit_order_list(command)
+
+        assert ws_trade_client.build_place_order_params.call_count == 2
+        for call in ws_trade_client.build_place_order_params.call_args_list:
+            assert call.kwargs["price"] is None
+            assert call.kwargs["bbo_side_type"] == "Counterparty"
+            assert call.kwargs["bbo_level"] == "5"
+        ws_trade_client.batch_place_orders.assert_awaited_once()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_list_with_bbo_params_denies_unsupported_order_type(
+    exec_client_builder,
+    monkeypatch,
+):
+    client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.build_place_order_params = MagicMock()
+    ws_trade_client.batch_place_orders = AsyncMock()
+    mock_generate_denied = MagicMock()
+    monkeypatch.setattr(client, "generate_order_denied", mock_generate_denied)
+
+    await client._connect()
+
+    instrument = create_bybit_linear_perpetual()
+    orders = [
+        LimitOrder(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=instrument.id,
+            client_order_id=ClientOrderId("O-BBO-LIST-3"),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("0.100"),
+            price=Price.from_str("50000.00"),
+            init_id=TestIdStubs.uuid(),
+            ts_init=0,
+        ),
+        MarketOrder(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=instrument.id,
+            client_order_id=ClientOrderId("O-BBO-LIST-4"),
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_str("0.100"),
+            time_in_force=TimeInForce.IOC,
+            reduce_only=False,
+            quote_quantity=False,
+            init_id=TestIdStubs.uuid(),
+            ts_init=0,
+        ),
+    ]
+    order_list = OrderList(TestIdStubs.order_list_id(), orders)
+    command = SubmitOrderList(
+        trader_id=orders[0].trader_id,
+        strategy_id=orders[0].strategy_id,
+        order_list=order_list,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"bbo_side_type": "Queue", "bbo_level": "1"},
+    )
+
+    try:
+        await client._submit_order_list(command)
+
+        ws_trade_client.build_place_order_params.assert_not_called()
+        ws_trade_client.batch_place_orders.assert_not_awaited()
+        assert mock_generate_denied.call_count == 2
+        for call in mock_generate_denied.call_args_list:
+            assert "not supported" in call.kwargs["reason"]
     finally:
         await client._disconnect()
 
@@ -823,6 +1101,31 @@ def test_parse_tp_sl_valid_full_params():
     assert result["is_leverage"] is True
 
 
+def test_parse_tp_sl_valid_bbo_params():
+    result = _parse_bybit_tp_sl_params({"bbo_side_type": "counterparty", "bbo_level": 5})
+
+    assert result["bbo_side_type"] == "Counterparty"
+    assert result["bbo_level"] == "5"
+
+
+@pytest.mark.parametrize(
+    ("params", "expected"),
+    [
+        ({"bbo_side_type": "Queue"}, "must be provided together"),
+        ({"bbo_level": "1"}, "must be provided together"),
+        ({"bbo_side_type": "invalid", "bbo_level": "1"}, "Invalid Bybit BBO side type"),
+        ({"bbo_side_type": "Queue", "bbo_level": "6"}, "Invalid Bybit BBO level"),
+        ({"bbo_side_type": 1, "bbo_level": "1"}, "Invalid type for 'bbo_side_type'"),
+        ({"bbo_side_type": "Queue", "bbo_level": True}, "Invalid type for 'bbo_level'"),
+    ],
+)
+def test_parse_tp_sl_rejects_invalid_bbo_params(params, expected):
+    with pytest.raises(ValueError) as exc_info:
+        _parse_bybit_tp_sl_params(params)
+
+    assert expected in str(exc_info.value)
+
+
 def test_parse_tp_sl_none_params_returns_defaults():
     result = _parse_bybit_tp_sl_params(None)
     assert result == {"is_leverage": False}
@@ -953,6 +1256,215 @@ def test_resolve_position_idx_returns_none_for_non_derivative_products(
     assert client._resolve_position_idx(instrument_id, OrderSide.BUY, False, 1) is None
 
 
+@pytest.mark.parametrize(
+    ("position_idx", "expected"),
+    [
+        (None, None),
+        (nautilus_pyo3.BybitPositionIdx.ONE_WAY, None),
+        (nautilus_pyo3.BybitPositionIdx.BUY_HEDGE, "LTCUSDT-LINEAR.BYBIT-LONG"),
+        (nautilus_pyo3.BybitPositionIdx.SELL_HEDGE, "LTCUSDT-LINEAR.BYBIT-SHORT"),
+    ],
+)
+def test_make_hedge_venue_position_id(position_idx, expected):
+    instrument_id = nautilus_pyo3.InstrumentId.from_str("LTCUSDT-LINEAR.BYBIT")
+
+    result = nautilus_pyo3.bybit_make_hedge_venue_position_id(instrument_id, position_idx)
+    assert (str(result) if result is not None else None) == expected
+
+
+def test_cache_order_position_id_caches_only_hedge_indexes(exec_client_builder, monkeypatch):
+    client, *_ = exec_client_builder(monkeypatch)
+    order = MagicMock()
+    order.instrument_id = InstrumentId(Symbol("LTCUSDT-LINEAR"), BYBIT_VENUE)
+    order.client_order_id = ClientOrderId("O-001")
+
+    client._cache_order_position_id(order, nautilus_pyo3.BybitPositionIdx.BUY_HEDGE)
+
+    assert client._order_position_ids[order.client_order_id] == PositionId(
+        "LTCUSDT-LINEAR.BYBIT-LONG",
+    )
+
+    client._cache_order_position_id(order, nautilus_pyo3.BybitPositionIdx.ONE_WAY)
+
+    assert order.client_order_id not in client._order_position_ids
+
+
+def test_handle_order_status_report_caches_venue_position_id(
+    exec_client_builder,
+    monkeypatch,
+    cache,
+    instrument,
+):
+    client, *_ = exec_client_builder(monkeypatch)
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-HEDGE-STATUS"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100000"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    venue_position_id = PositionId("BTCUSDT-SPOT.BYBIT-LONG")
+    report = MagicMock()
+    report.client_order_id = order.client_order_id
+    report.instrument_id = order.instrument_id
+    report.venue_order_id = VenueOrderId("BYBIT-ORDER-001")
+    report.venue_position_id = venue_position_id
+    report.order_status = OrderStatus.ACCEPTED
+    report.ts_last = 0
+    report.is_order_updated.return_value = False
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bybit.execution.OrderStatusReport.from_pyo3",
+        lambda _: report,
+    )
+
+    client.generate_order_accepted = MagicMock()
+
+    client._handle_order_status_report_pyo3(MagicMock())
+
+    assert client._order_position_ids[order.client_order_id] == venue_position_id
+    client.generate_order_accepted.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "terminal_status",
+    [OrderStatus.REJECTED, OrderStatus.CANCELED, OrderStatus.EXPIRED],
+)
+def test_cache_report_position_id_clears_terminal_reports(
+    exec_client_builder,
+    monkeypatch,
+    terminal_status,
+):
+    client, *_ = exec_client_builder(monkeypatch)
+    client_order_id = ClientOrderId("O-HEDGE-TERMINAL")
+    report = MagicMock()
+    report.client_order_id = client_order_id
+    report.venue_position_id = PositionId("BTCUSDT-SPOT.BYBIT-LONG")
+    report.order_status = terminal_status
+    client._order_position_ids[client_order_id] = report.venue_position_id
+    client._order_filled_qty[client_order_id] = Quantity.from_str("0.050000")
+
+    client._cache_report_position_id(report)
+
+    assert client_order_id not in client._order_position_ids
+    assert client_order_id not in client._order_filled_qty
+
+
+def test_cache_report_position_id_filled_preserves_caches_for_pending_fills(
+    exec_client_builder,
+    monkeypatch,
+):
+    # FILLED order status reports must not pop the hedge cache or the spot-borrow
+    # accumulator. The matching fill report drives both lifecycles.
+    client, *_ = exec_client_builder(monkeypatch)
+    client_order_id = ClientOrderId("O-HEDGE-FILLED")
+    venue_position_id = PositionId("BTCUSDT-SPOT.BYBIT-LONG")
+    accumulator = Quantity.from_str("0.050000")
+    client._order_position_ids[client_order_id] = venue_position_id
+    client._order_filled_qty[client_order_id] = accumulator
+
+    report = MagicMock()
+    report.client_order_id = client_order_id
+    report.venue_position_id = venue_position_id
+    report.order_status = OrderStatus.FILLED
+
+    client._cache_report_position_id(report)
+
+    assert client._order_position_ids[client_order_id] == venue_position_id
+    assert client._order_filled_qty[client_order_id] == accumulator
+
+
+def test_handle_fill_report_uses_cached_position_id_across_partial_fills(
+    exec_client_builder,
+    monkeypatch,
+    msgbus,
+    exec_engine,
+    cache,
+    instrument,
+):
+    # Drives real generate_order_filled so order.filled_qty is updated synchronously.
+    # Locks the multi-partial-fill behavior: position_id stays cached until the order
+    # is fully filled, then the cache entry is cleared.
+    client, *_ = exec_client_builder(monkeypatch)
+    cache.add_instrument(instrument)
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-HEDGE-FILL"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100000"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    order.apply(TestEventStubs.order_submitted(order=order))
+    order.apply(
+        TestEventStubs.order_accepted(
+            order=order,
+            venue_order_id=VenueOrderId("BYBIT-ORDER-001"),
+        ),
+    )
+    cache.add_order(order, None)
+
+    fills_received: list = []
+
+    def apply_fill(event):
+        fills_received.append(event)
+        order.apply(event)
+
+    msgbus.deregister(endpoint="ExecEngine.process", handler=exec_engine.process)
+    msgbus.register(endpoint="ExecEngine.process", handler=apply_fill)
+
+    venue_position_id = PositionId("BTCUSDT-SPOT.BYBIT-LONG")
+    client._order_position_ids[order.client_order_id] = venue_position_id
+
+    def fill_report(trade_id: str, last_qty: str) -> nautilus_pyo3.FillReport:
+        return nautilus_pyo3.FillReport(
+            account_id=nautilus_pyo3.AccountId("BYBIT-UNIFIED"),
+            instrument_id=nautilus_pyo3.InstrumentId.from_str(instrument.id.value),
+            venue_order_id=nautilus_pyo3.VenueOrderId("BYBIT-ORDER-001"),
+            trade_id=nautilus_pyo3.TradeId(trade_id),
+            order_side=nautilus_pyo3.OrderSide.BUY,
+            last_qty=nautilus_pyo3.Quantity.from_str(last_qty),
+            last_px=nautilus_pyo3.Price.from_str("50000.00"),
+            commission=nautilus_pyo3.Money.from_str("0.01 USDT"),
+            liquidity_side=nautilus_pyo3.LiquiditySide.TAKER,
+            ts_event=0,
+            client_order_id=nautilus_pyo3.ClientOrderId(order.client_order_id.value),
+            report_id=nautilus_pyo3.UUID4(),
+            ts_init=0,
+        )
+
+    # Partial fill 1: 0.030 of 0.100
+    client._handle_fill_report_pyo3(fill_report("T-001", "0.030000"))
+    assert order.filled_qty == Quantity.from_str("0.030000")
+    assert client._order_position_ids[order.client_order_id] == venue_position_id
+
+    # Partial fill 2: cumulative 0.060
+    client._handle_fill_report_pyo3(fill_report("T-002", "0.030000"))
+    assert order.filled_qty == Quantity.from_str("0.060000")
+    assert client._order_position_ids[order.client_order_id] == venue_position_id
+
+    # Partial fill 3: cumulative 0.090, still partial, position must remain cached
+    client._handle_fill_report_pyo3(fill_report("T-003", "0.030000"))
+    assert order.filled_qty == Quantity.from_str("0.090000")
+    assert client._order_position_ids[order.client_order_id] == venue_position_id
+
+    # Final fill: cumulative 0.100, order fully filled, cache cleared
+    client._handle_fill_report_pyo3(fill_report("T-004", "0.010000"))
+    assert order.filled_qty == Quantity.from_str("0.100000")
+    assert order.client_order_id not in client._order_position_ids
+
+    assert len(fills_received) == 4
+    assert all(fill.position_id == venue_position_id for fill in fills_received)
+
+
 @pytest.mark.asyncio
 async def test_submit_order_with_tp_sl_in_demo_mode_emits_order_denied(
     exec_client_builder,
@@ -961,7 +1473,7 @@ async def test_submit_order_with_tp_sl_in_demo_mode_emits_order_denied(
 ):
     client, ws_client, http_client, instrument_provider = exec_client_builder(
         monkeypatch,
-        config_kwargs={"demo": True},
+        config_kwargs={"environment": nautilus_pyo3.BybitEnvironment.DEMO},
     )
 
     ws_trade_client = client._ws_trade_client

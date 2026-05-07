@@ -32,6 +32,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
+    identifiers::VenueOrderId,
     orders::{Order, OrderAny},
 };
 use rust_decimal::Decimal;
@@ -43,7 +44,7 @@ use crate::{
         enums::{PolymarketOrderSide, PolymarketOrderType, SignatureType},
     },
     http::models::PolymarketOrder,
-    signing::eip712::OrderSigner,
+    signing::eip712::{OrderSigner, order_hash},
 };
 
 /// Zero `bytes32` used for the `metadata` field (reserved for future use).
@@ -147,6 +148,18 @@ impl PolymarketOrderBuilder {
         self.build_and_sign(token_id, side, maker_amount, taker_amount, "0", neg_risk)
     }
 
+    /// Computes the Polymarket order ID for a signed CLOB V2 order.
+    pub fn expected_order_id(
+        &self,
+        order: &PolymarketOrder,
+        neg_risk: bool,
+    ) -> anyhow::Result<VenueOrderId> {
+        let hash = order_hash(order, neg_risk)
+            .map_err(|e| anyhow::anyhow!("Failed to derive order hash: {e}"))?;
+        let order_id = format!("{hash:#x}");
+        Ok(VenueOrderId::from(order_id.as_str()))
+    }
+
     /// Validates a limit order before building, returning a denial reason if invalid.
     pub fn validate_limit_order(order: &OrderAny) -> Result<(), String> {
         if order.is_reduce_only() {
@@ -223,6 +236,13 @@ impl PolymarketOrderBuilder {
             _ => {
                 return Err(format!("Invalid order side: {:?}", order.order_side()));
             }
+        }
+
+        if PolymarketOrderType::from_market_time_in_force(order.time_in_force()).is_err() {
+            return Err(format!(
+                "Unsupported time in force for Polymarket market order: {:?}; use IOC or FOK",
+                order.time_in_force()
+            ));
         }
 
         Ok(())

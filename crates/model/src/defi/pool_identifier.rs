@@ -280,8 +280,8 @@ impl<'de> Deserialize<'de> for PoolIdentifier {
     where
         D: Deserializer<'de>,
     {
-        let value_str: &str = Deserialize::deserialize(deserializer)?;
-        Self::new_checked(value_str).map_err(serde::de::Error::custom)
+        let value_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        Self::new_checked(value_str.as_ref()).map_err(serde::de::Error::custom)
     }
 }
 
@@ -405,6 +405,18 @@ mod tests {
         let deserialized: PoolIdentifier = serde_json::from_str(&json).unwrap();
 
         assert_eq!(original, deserialized);
+    }
+
+    #[rstest]
+    fn test_deserialize_from_owned_value() {
+        let value =
+            serde_json::Value::String("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2".to_string());
+
+        let deserialized: PoolIdentifier = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            deserialized,
+            PoolIdentifier::new("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
+        );
     }
 
     #[rstest]

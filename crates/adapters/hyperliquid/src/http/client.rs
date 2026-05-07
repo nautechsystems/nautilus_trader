@@ -1053,6 +1053,20 @@ impl HyperliquidHttpClient {
         self.inner.has_vault_address()
     }
 
+    /// Returns the builder-attribution fee to attach to outgoing orders, or
+    /// `None` when attribution must be omitted (vault orders and testnet).
+    #[must_use]
+    pub fn builder_attribution(&self) -> Option<HyperliquidExecBuilderFee> {
+        if self.has_vault_address() || self.is_testnet() {
+            None
+        } else {
+            Some(HyperliquidExecBuilderFee {
+                address: NAUTILUS_BUILDER_ADDRESS.to_string(),
+                fee_tenths_bp: 0,
+            })
+        }
+    }
+
     /// Gets the account address for queries: account_address if configured
     /// (agent wallet), then vault address, otherwise the user (EOA) address.
     ///
@@ -2509,14 +2523,7 @@ impl HyperliquidHttpClient {
             cloid: Some(Cloid::from_client_order_id(client_order_id)),
         };
 
-        let builder = if self.has_vault_address() {
-            None
-        } else {
-            Some(HyperliquidExecBuilderFee {
-                address: NAUTILUS_BUILDER_ADDRESS.to_string(),
-                fee_tenths_bp: 0,
-            })
-        };
+        let builder = self.builder_attribution();
 
         let action = HyperliquidExecAction::Order {
             orders: vec![hyperliquid_order],
@@ -2716,14 +2723,7 @@ impl HyperliquidHttpClient {
             hyperliquid_orders.push(request);
         }
 
-        let builder = if self.has_vault_address() {
-            None
-        } else {
-            Some(HyperliquidExecBuilderFee {
-                address: NAUTILUS_BUILDER_ADDRESS.to_string(),
-                fee_tenths_bp: 0,
-            })
-        };
+        let builder = self.builder_attribution();
 
         let grouping =
             determine_order_list_grouping(&orders.iter().copied().cloned().collect::<Vec<_>>());

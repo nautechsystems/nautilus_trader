@@ -669,8 +669,10 @@ mod tests {
     fn test_null_terminator_present() {
         let s = StackStr::new("test");
         let ptr = s.as_ptr();
-        // Read byte at position 4 (after "test")
-        let null_byte = unsafe { *ptr.add(4) };
+        // SAFETY: StackStr buffer reserves at least 5 bytes (4 chars + null)
+        let p = unsafe { ptr.add(4) };
+        // SAFETY: position 4 is in-bounds and contains the null terminator
+        let null_byte = unsafe { *p };
         assert_eq!(null_byte, 0);
     }
 

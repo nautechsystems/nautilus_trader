@@ -107,10 +107,6 @@ impl BacktestExecutionClient {
 
         let factory = OrderEventFactory::new(trader_id, account_id, account_type, base_currency);
 
-        if !frozen_account {
-            // TODO Register calculated account
-        }
-
         Self {
             core,
             factory,

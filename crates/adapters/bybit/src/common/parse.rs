@@ -152,10 +152,10 @@ use ustr::Ustr;
 use crate::{
     common::{
         enums::{
-            BybitContractType, BybitKlineInterval, BybitMarketUnit, BybitOptionType,
-            BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionSide,
-            BybitProductType, BybitStopOrderType, BybitTimeInForce, BybitTriggerDirection,
-            BybitTriggerType,
+            BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarketUnit,
+            BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
+            BybitPositionMode, BybitPositionSide, BybitProductType, BybitStopOrderType,
+            BybitTimeInForce, BybitTriggerDirection, BybitTriggerType,
         },
         symbol::BybitSymbol,
     },
@@ -865,10 +865,6 @@ pub fn parse_kline_bar(
 /// Constructs a venue position ID from an instrument and Bybit position index.
 ///
 /// Position index values: 0 = one-way mode, 1 = buy-side hedge, 2 = sell-side hedge.
-///
-/// Not currently wired into reports because Bybit defaults to netting mode where
-/// non-None `venue_position_id` overrides the computed netting position ID.
-/// Ready to activate when hedge-mode support is added.
 #[must_use]
 pub fn make_venue_position_id(instrument_id: InstrumentId, position_idx: i32) -> PositionId {
     let side = match position_idx {
@@ -878,6 +874,49 @@ pub fn make_venue_position_id(instrument_id: InstrumentId, position_idx: i32) ->
         _ => "UNKNOWN",
     };
     PositionId::new(format!("{instrument_id}-{side}"))
+}
+
+/// Constructs a venue position ID only for hedge-mode Bybit position indexes.
+#[must_use]
+pub fn make_hedge_venue_position_id(
+    instrument_id: InstrumentId,
+    position_idx: i32,
+) -> Option<PositionId> {
+    match position_idx {
+        1 | 2 => Some(make_venue_position_id(instrument_id, position_idx)),
+        _ => None,
+    }
+}
+
+/// Resolves the `positionIdx` to send with an order under a given position mode.
+///
+/// In hedge mode `positionIdx` identifies the position being affected (1 = long,
+/// 2 = short), not the trade direction. A reduce-only sell closes a long position
+/// and a reduce-only buy closes a short position. A manual override always wins.
+#[must_use]
+pub fn resolve_position_idx(
+    position_mode: Option<BybitPositionMode>,
+    order_side: BybitOrderSide,
+    is_reduce_only: bool,
+    manual_override: Option<BybitPositionIdx>,
+) -> Option<BybitPositionIdx> {
+    if manual_override.is_some() {
+        return manual_override;
+    }
+
+    let mode = position_mode?;
+    match mode {
+        BybitPositionMode::BothSides => Some(match (order_side, is_reduce_only) {
+            (BybitOrderSide::Buy, false) | (BybitOrderSide::Sell, true) => {
+                BybitPositionIdx::BuyHedge
+            }
+            (BybitOrderSide::Sell, false) | (BybitOrderSide::Buy, true) => {
+                BybitPositionIdx::SellHedge
+            }
+            (BybitOrderSide::Unknown, _) => BybitPositionIdx::OneWay,
+        }),
+        BybitPositionMode::MergedSingle => Some(BybitPositionIdx::OneWay),
+    }
 }
 
 /// Parses a Bybit execution into a Nautilus FillReport.
@@ -1022,6 +1061,9 @@ pub fn parse_position_status_report(
         );
     }
 
+    let venue_position_id =
+        make_hedge_venue_position_id(instrument_id, position.position_idx as i32);
+
     Ok(PositionStatusReport::new(
         account_id,
         instrument_id,
@@ -1030,7 +1072,7 @@ pub fn parse_position_status_report(
         ts_last,
         ts_init,
         None, // Will generate a new UUID4
-        None, // venue_position_id omitted: non-None triggers hedge-mode reconciliation
+        venue_position_id,
         avg_px_open,
     ))
 }
@@ -1374,8 +1416,10 @@ pub fn parse_order_status_report(
         report = report.with_trigger_type(trigger_type);
     }
 
-    // venue_position_id omitted: in netting mode, non-None values override the
-    // computed netting position ID and break position tracking.
+    if let Some(venue_position_id) = make_hedge_venue_position_id(instrument_id, order.position_idx)
+    {
+        report = report.with_venue_position_id(venue_position_id);
+    }
 
     if order.reduce_only {
         report = report.with_reduce_only(true);
@@ -1492,11 +1536,17 @@ pub struct BybitTpSlParams {
     pub order_iv: Option<String>,
     pub mmp: Option<bool>,
     pub position_idx: Option<BybitPositionIdx>,
+    pub bbo_side_type: Option<BybitBboSideType>,
+    pub bbo_level: Option<String>,
 }
 
 impl BybitTpSlParams {
     pub fn has_tp_sl(&self) -> bool {
         self.take_profit.is_some() || self.stop_loss.is_some()
+    }
+
+    pub fn has_bbo(&self) -> bool {
+        self.bbo_side_type.is_some()
     }
 }
 
@@ -1511,6 +1561,21 @@ pub fn get_price_str(params: &Params, key: &str) -> Option<String> {
         Some(n.to_string())
     } else {
         value.as_u64().map(|n| n.to_string())
+    }
+}
+
+pub fn parse_bbo_side_type(s: &str) -> anyhow::Result<BybitBboSideType> {
+    match s.to_ascii_lowercase().as_str() {
+        "queue" => Ok(BybitBboSideType::Queue),
+        "counterparty" => Ok(BybitBboSideType::Counterparty),
+        _ => anyhow::bail!("invalid Bybit bbo_side_type: '{s}', expected Queue or Counterparty"),
+    }
+}
+
+pub fn parse_bbo_level(s: String) -> anyhow::Result<String> {
+    match s.as_str() {
+        "1" | "2" | "3" | "4" | "5" => Ok(s),
+        _ => anyhow::bail!("invalid 'bbo_level': '{s}', expected 1, 2, 3, 4, or 5"),
     }
 }
 
@@ -1648,6 +1713,33 @@ pub fn parse_bybit_tp_sl_params(params: Option<&Params>) -> anyhow::Result<Bybit
         });
     }
 
+    let has_bbo_side_type = params.get("bbo_side_type").is_some();
+    let has_bbo_level = params.get("bbo_level").is_some();
+
+    if has_bbo_side_type != has_bbo_level {
+        anyhow::bail!("'bbo_side_type' and 'bbo_level' must be provided together");
+    }
+
+    if let Some(value) = params.get("bbo_side_type") {
+        let side_type = value.as_str().ok_or_else(|| {
+            anyhow::anyhow!("invalid type for 'bbo_side_type': {value}, expected string")
+        })?;
+        result.bbo_side_type = Some(parse_bbo_side_type(side_type)?);
+    }
+
+    if let Some(value) = params.get("bbo_level") {
+        let level = if let Some(s) = value.as_str() {
+            s.to_string()
+        } else if let Some(i) = value.as_i64() {
+            i.to_string()
+        } else if let Some(u) = value.as_u64() {
+            u.to_string()
+        } else {
+            anyhow::bail!("invalid type for 'bbo_level': {value}, expected string or integer");
+        };
+        result.bbo_level = Some(parse_bbo_level(level)?);
+    }
+
     Ok(result)
 }
 
@@ -1688,7 +1780,8 @@ mod tests {
         http::models::{
             BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
             BybitInstrumentOptionResponse, BybitInstrumentSpotResponse, BybitKlinesResponse,
-            BybitOpenOrdersResponse, BybitTradeHistoryResponse, BybitTradesResponse,
+            BybitOpenOrdersResponse, BybitPositionListResponse, BybitTradeHistoryResponse,
+            BybitTradesResponse,
         },
     };
 
@@ -2081,6 +2174,7 @@ mod tests {
         let result = parse_bybit_tp_sl_params(None).unwrap();
         assert!(!result.is_leverage);
         assert!(!result.has_tp_sl());
+        assert!(!result.has_bbo());
         assert!(result.order_iv.is_none());
         assert!(result.mmp.is_none());
     }
@@ -2091,6 +2185,7 @@ mod tests {
         let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
         assert!(!result.is_leverage);
         assert!(!result.has_tp_sl());
+        assert!(!result.has_bbo());
         assert!(result.order_iv.is_none());
         assert!(result.mmp.is_none());
     }
@@ -2120,6 +2215,57 @@ mod tests {
         assert_eq!(result.tp_limit_price.as_deref(), Some("54990.00"));
         assert_eq!(result.close_on_trigger, Some(true));
         assert!(result.is_leverage);
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_valid_bbo() {
+        let p = params_from(&[("bbo_side_type", json!("queue")), ("bbo_level", json!(3))]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+
+        assert!(result.has_bbo());
+        assert_eq!(result.bbo_side_type, Some(BybitBboSideType::Queue));
+        assert_eq!(result.bbo_level.as_deref(), Some("3"));
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_rejects_invalid_bbo() {
+        let cases = vec![
+            (
+                params_from(&[("bbo_side_type", json!("Queue"))]),
+                "must be provided together",
+            ),
+            (
+                params_from(&[("bbo_level", json!("1"))]),
+                "must be provided together",
+            ),
+            (
+                params_from(&[
+                    ("bbo_side_type", json!("invalid")),
+                    ("bbo_level", json!("1")),
+                ]),
+                "invalid Bybit bbo_side_type",
+            ),
+            (
+                params_from(&[("bbo_side_type", json!("Queue")), ("bbo_level", json!("6"))]),
+                "invalid 'bbo_level'",
+            ),
+            (
+                params_from(&[("bbo_side_type", json!(1)), ("bbo_level", json!("1"))]),
+                "invalid type for 'bbo_side_type'",
+            ),
+            (
+                params_from(&[
+                    ("bbo_side_type", json!("Queue")),
+                    ("bbo_level", json!(true)),
+                ]),
+                "invalid type for 'bbo_level'",
+            ),
+        ];
+
+        for (p, expected) in cases {
+            let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+            assert!(err.to_string().contains(expected));
+        }
     }
 
     #[rstest]
@@ -2475,6 +2621,67 @@ mod tests {
     }
 
     #[rstest]
+    #[case::oneway(0, None)]
+    #[case::long(1, Some("BTCUSDT-LINEAR.BYBIT-LONG"))]
+    #[case::short(2, Some("BTCUSDT-LINEAR.BYBIT-SHORT"))]
+    #[case::unknown(99, None)]
+    fn test_make_hedge_venue_position_id(
+        #[case] position_idx: i32,
+        #[case] expected: Option<&str>,
+    ) {
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let result = make_hedge_venue_position_id(instrument_id, position_idx);
+        assert_eq!(result, expected.map(PositionId::from));
+    }
+
+    #[rstest]
+    #[case::buy_open(BybitOrderSide::Buy, false, BybitPositionIdx::BuyHedge)]
+    #[case::sell_open(BybitOrderSide::Sell, false, BybitPositionIdx::SellHedge)]
+    #[case::sell_close_long(BybitOrderSide::Sell, true, BybitPositionIdx::BuyHedge)]
+    #[case::buy_close_short(BybitOrderSide::Buy, true, BybitPositionIdx::SellHedge)]
+    fn test_resolve_position_idx_hedge_mode(
+        #[case] side: BybitOrderSide,
+        #[case] is_reduce_only: bool,
+        #[case] expected: BybitPositionIdx,
+    ) {
+        let idx = resolve_position_idx(
+            Some(BybitPositionMode::BothSides),
+            side,
+            is_reduce_only,
+            None,
+        );
+        assert_eq!(idx, Some(expected));
+    }
+
+    #[rstest]
+    fn test_resolve_position_idx_one_way_mode() {
+        let idx = resolve_position_idx(
+            Some(BybitPositionMode::MergedSingle),
+            BybitOrderSide::Buy,
+            false,
+            None,
+        );
+        assert_eq!(idx, Some(BybitPositionIdx::OneWay));
+    }
+
+    #[rstest]
+    fn test_resolve_position_idx_manual_override_wins() {
+        let idx = resolve_position_idx(
+            Some(BybitPositionMode::BothSides),
+            BybitOrderSide::Buy,
+            false,
+            Some(BybitPositionIdx::SellHedge),
+        );
+        assert_eq!(idx, Some(BybitPositionIdx::SellHedge));
+    }
+
+    #[rstest]
+    fn test_resolve_position_idx_returns_none_when_unconfigured() {
+        let idx = resolve_position_idx(None, BybitOrderSide::Buy, false, None);
+        assert!(idx.is_none());
+    }
+
+    #[rstest]
     fn test_parse_fill_report_venue_position_id_is_none() {
         let instrument = linear_instrument();
         let json = load_test_json("http_get_executions.json");
@@ -2485,6 +2692,40 @@ mod tests {
         let report = parse_fill_report(execution, account_id, &instrument, TS).unwrap();
 
         assert_eq!(report.venue_position_id, None);
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_venue_position_id_for_hedge() {
+        let instrument = linear_instrument();
+        let json = load_test_json("http_get_orders_realtime_tp_sl.json");
+        let response: BybitOpenOrdersResponse = serde_json::from_str(&json).unwrap();
+        let mut order = response.result.list[0].clone();
+        order.position_idx = 2;
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_order_status_report(&order, &instrument, account_id, TS).unwrap();
+
+        assert_eq!(
+            report.venue_position_id,
+            Some(PositionId::from("BTCUSDT-LINEAR.BYBIT-SHORT"))
+        );
+    }
+
+    #[rstest]
+    fn test_parse_position_status_report_venue_position_id_for_hedge() {
+        let json = load_test_json("http_get_positions.json");
+        let response: BybitPositionListResponse = serde_json::from_str(&json).unwrap();
+        let mut position = response.result.list[0].clone();
+        position.position_idx = BybitPositionIdx::BuyHedge;
+        let instrument = linear_instrument();
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_position_status_report(&position, account_id, &instrument, TS).unwrap();
+
+        assert_eq!(
+            report.venue_position_id,
+            Some(PositionId::from("BTCUSDT-LINEAR.BYBIT-LONG"))
+        );
     }
 
     #[rstest]

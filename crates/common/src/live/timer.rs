@@ -308,7 +308,9 @@ fn call_python_with_time_event(event: TimeEvent, callback: &Py<PyAny>) {
 mod tests {
     use std::{num::NonZeroU64, sync::Arc};
 
-    use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_core::{
+        UnixNanos, datetime::floor_to_nearest_microsecond, time::get_atomic_clock_realtime,
+    };
     use rstest::*;
     use ustr::Ustr;
 
@@ -380,7 +382,10 @@ mod tests {
 
         timer.start();
 
-        assert!(timer.next_time_ns() >= before);
+        // `next_time_ns` is floored to microsecond precision, so compare against
+        // the same floor applied to the baseline
+        let before_floored = UnixNanos::from(floor_to_nearest_microsecond(before.as_u64()));
+        assert!(timer.next_time_ns() >= before_floored);
 
         timer.cancel();
     }

@@ -19,7 +19,7 @@ use std::{
     collections::HashMap,
     sync::{
         Arc, RwLock,
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
 };
 
@@ -50,7 +50,7 @@ pub const KRAKEN_SPOT_WS_TOPIC_DELIMITER: char = ':';
 use super::{
     enums::{KrakenWsChannel, KrakenWsMethod},
     handler::{SpotFeedHandler, SpotHandlerCommand},
-    messages::{KrakenSpotWsMessage, KrakenWsParams, KrakenWsRequest},
+    messages::{KrakenSpotWsMessage, KrakenWsChannelParams, KrakenWsParams, KrakenWsRequest},
 };
 use crate::{
     common::parse::normalize_spot_symbol,
@@ -83,7 +83,7 @@ pub struct KrakenSpotWebSocketClient {
     subscription_payloads: Arc<tokio::sync::RwLock<HashMap<String, String>>>,
     auth_tracker: AuthTracker,
     cancellation_token: CancellationToken,
-    req_id_counter: Arc<tokio::sync::RwLock<u64>>,
+    req_id_counter: Arc<AtomicU64>,
     auth_token: Arc<tokio::sync::RwLock<Option<String>>>,
     account_id: Arc<RwLock<Option<AccountId>>>,
     truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
@@ -153,7 +153,7 @@ impl KrakenSpotWebSocketClient {
             subscription_payloads: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             auth_tracker: AuthTracker::new(),
             cancellation_token,
-            req_id_counter: Arc::new(tokio::sync::RwLock::new(0)),
+            req_id_counter: Arc::new(AtomicU64::new(0)),
             auth_token: Arc::new(tokio::sync::RwLock::new(None)),
             account_id: Arc::new(RwLock::new(None)),
             truncated_id_map: Arc::new(AtomicMap::new()),
@@ -163,10 +163,41 @@ impl KrakenSpotWebSocketClient {
         }
     }
 
-    async fn get_next_req_id(&self) -> u64 {
-        let mut counter = self.req_id_counter.write().await;
-        *counter += 1;
-        *counter
+    fn get_next_req_id(&self) -> u64 {
+        self.req_id_counter.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
+    /// Returns the shared request-id counter.
+    pub fn req_id_counter(&self) -> Arc<AtomicU64> {
+        self.req_id_counter.clone()
+    }
+
+    /// Returns a clone of the handler command channel sender.
+    pub async fn handler_command_sender(
+        &self,
+    ) -> tokio::sync::mpsc::UnboundedSender<SpotHandlerCommand> {
+        self.cmd_tx.read().await.clone()
+    }
+
+    /// Returns the current cached authentication token, if any.
+    pub async fn auth_token(&self) -> Option<String> {
+        self.auth_token.read().await.clone()
+    }
+
+    /// Returns the current cached authentication token without awaiting.
+    ///
+    /// Returns `None` when the lock is contended or no token is cached. Used by
+    /// the synchronous order-routing path where the auth token is normally
+    /// uncontended; callers fall back to REST when the lock is unavailable.
+    pub fn auth_token_blocking(&self) -> Option<String> {
+        self.auth_token.try_read().ok().and_then(|g| g.clone())
+    }
+
+    /// Returns a clone of the auth token handle for components that need
+    /// non-async, lock-free read access (e.g. compensating cancels triggered
+    /// from the timeout task in `OrderRequestState`).
+    pub fn auth_token_handle(&self) -> Arc<tokio::sync::RwLock<Option<String>>> {
+        self.auth_token.clone()
     }
 
     /// Connects to the WebSocket server.
@@ -510,10 +541,10 @@ impl KrakenSpotWebSocketClient {
             None
         };
 
-        let req_id = self.get_next_req_id().await;
+        let req_id = self.get_next_req_id();
         let request = KrakenWsRequest {
             method: KrakenWsMethod::Subscribe,
-            params: Some(KrakenWsParams {
+            params: Some(KrakenWsParams::Channel(KrakenWsChannelParams {
                 channel,
                 symbol: Some(symbols_to_subscribe.clone()),
                 snapshot: None,
@@ -523,7 +554,7 @@ impl KrakenSpotWebSocketClient {
                 token,
                 snap_orders: None,
                 snap_trades: None,
-            }),
+            })),
             req_id: Some(req_id),
         };
 
@@ -562,10 +593,10 @@ impl KrakenSpotWebSocketClient {
             return Ok(());
         }
 
-        let req_id = self.get_next_req_id().await;
+        let req_id = self.get_next_req_id();
         let request = KrakenWsRequest {
             method: KrakenWsMethod::Subscribe,
-            params: Some(KrakenWsParams {
+            params: Some(KrakenWsParams::Channel(KrakenWsChannelParams {
                 channel,
                 symbol: Some(symbols_to_subscribe.clone()),
                 snapshot: Some(false),
@@ -575,7 +606,7 @@ impl KrakenSpotWebSocketClient {
                 token: None,
                 snap_orders: None,
                 snap_trades: None,
-            }),
+            })),
             req_id: Some(req_id),
         };
 
@@ -614,10 +645,10 @@ impl KrakenSpotWebSocketClient {
             return Ok(());
         }
 
-        let req_id = self.get_next_req_id().await;
+        let req_id = self.get_next_req_id();
         let request = KrakenWsRequest {
             method: KrakenWsMethod::Unsubscribe,
-            params: Some(KrakenWsParams {
+            params: Some(KrakenWsParams::Channel(KrakenWsChannelParams {
                 channel,
                 symbol: Some(symbols_to_unsubscribe.clone()),
                 snapshot: None,
@@ -627,7 +658,7 @@ impl KrakenSpotWebSocketClient {
                 token: None,
                 snap_orders: None,
                 snap_trades: None,
-            }),
+            })),
             req_id: Some(req_id),
         };
 
@@ -681,10 +712,10 @@ impl KrakenSpotWebSocketClient {
             None
         };
 
-        let req_id = self.get_next_req_id().await;
+        let req_id = self.get_next_req_id();
         let request = KrakenWsRequest {
             method: KrakenWsMethod::Unsubscribe,
-            params: Some(KrakenWsParams {
+            params: Some(KrakenWsParams::Channel(KrakenWsChannelParams {
                 channel,
                 symbol: Some(symbols_to_unsubscribe.clone()),
                 snapshot: None,
@@ -694,7 +725,7 @@ impl KrakenSpotWebSocketClient {
                 token,
                 snap_orders: None,
                 snap_trades: None,
-            }),
+            })),
             req_id: Some(req_id),
         };
 
@@ -711,7 +742,7 @@ impl KrakenSpotWebSocketClient {
 
     /// Sends a ping message to keep the connection alive.
     pub async fn send_ping(&self) -> Result<(), KrakenWsError> {
-        let req_id = self.get_next_req_id().await;
+        let req_id = self.get_next_req_id();
 
         let request = KrakenWsRequest {
             method: KrakenWsMethod::Ping,
@@ -739,6 +770,14 @@ impl KrakenSpotWebSocketClient {
             KrakenWsMethod::Ping | KrakenWsMethod::Pong => SpotHandlerCommand::Ping {
                 payload: payload.clone(),
             },
+            KrakenWsMethod::AddOrder
+            | KrakenWsMethod::AmendOrder
+            | KrakenWsMethod::CancelOrder
+            | KrakenWsMethod::BatchAdd => {
+                return Err(KrakenWsError::InvalidMessage(
+                    "Order methods must not be sent via send_command; use the dedicated order submission path".to_string()
+                ));
+            }
         };
 
         self.cmd_tx
@@ -877,10 +916,10 @@ impl KrakenSpotWebSocketClient {
 
         self.subscriptions.mark_subscribe(&key);
 
-        let req_id = self.get_next_req_id().await;
+        let req_id = self.get_next_req_id();
         let request = KrakenWsRequest {
             method: KrakenWsMethod::Subscribe,
-            params: Some(KrakenWsParams {
+            params: Some(KrakenWsParams::Channel(KrakenWsChannelParams {
                 channel: KrakenWsChannel::Ticker,
                 symbol: Some(vec![symbol]),
                 snapshot: None,
@@ -890,7 +929,7 @@ impl KrakenSpotWebSocketClient {
                 token: None,
                 snap_orders: None,
                 snap_trades: None,
-            }),
+            })),
             req_id: Some(req_id),
         };
 
@@ -930,7 +969,7 @@ impl KrakenSpotWebSocketClient {
         snap_orders: bool,
         snap_trades: bool,
     ) -> Result<(), KrakenWsError> {
-        let req_id = self.get_next_req_id().await;
+        let req_id = self.get_next_req_id();
 
         let token = self.auth_token.read().await.clone().ok_or_else(|| {
             KrakenWsError::AuthenticationError(
@@ -941,7 +980,7 @@ impl KrakenSpotWebSocketClient {
 
         let request = KrakenWsRequest {
             method: KrakenWsMethod::Subscribe,
-            params: Some(KrakenWsParams {
+            params: Some(KrakenWsParams::Channel(KrakenWsChannelParams {
                 channel: KrakenWsChannel::Executions,
                 symbol: None,
                 snapshot: None,
@@ -951,7 +990,7 @@ impl KrakenSpotWebSocketClient {
                 token: Some(token),
                 snap_orders: Some(snap_orders),
                 snap_trades: Some(snap_trades),
-            }),
+            })),
             req_id: Some(req_id),
         };
 
@@ -990,10 +1029,10 @@ impl KrakenSpotWebSocketClient {
 
         self.subscriptions.mark_unsubscribe(&key);
 
-        let req_id = self.get_next_req_id().await;
+        let req_id = self.get_next_req_id();
         let request = KrakenWsRequest {
             method: KrakenWsMethod::Unsubscribe,
-            params: Some(KrakenWsParams {
+            params: Some(KrakenWsParams::Channel(KrakenWsChannelParams {
                 channel: KrakenWsChannel::Ticker,
                 symbol: Some(vec![symbol]),
                 snapshot: None,
@@ -1003,7 +1042,7 @@ impl KrakenSpotWebSocketClient {
                 token: None,
                 snap_orders: None,
                 snap_trades: None,
-            }),
+            })),
             req_id: Some(req_id),
         };
 
@@ -1125,9 +1164,27 @@ fn bar_type_to_ws_interval(bar_type: BarType) -> Result<u32, KrakenWsError> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, atomic::Ordering};
+
     use rstest::rstest;
+    use tokio_util::sync::CancellationToken;
 
     use super::*;
+    use crate::config::KrakenDataClientConfig;
+
+    #[rstest]
+    fn test_req_id_counter_is_shared_arc_and_monotonic() {
+        let cfg = KrakenDataClientConfig::default();
+        let client = KrakenSpotWebSocketClient::new(cfg, CancellationToken::new(), None);
+        let counter = client.req_id_counter();
+        let a = counter.fetch_add(1, Ordering::Relaxed);
+        let b = counter.fetch_add(1, Ordering::Relaxed);
+        assert!(b > a);
+        #[allow(clippy::redundant_clone)]
+        let cloned = client.clone();
+        let cloned_counter = cloned.req_id_counter();
+        assert!(Arc::ptr_eq(&counter, &cloned_counter));
+    }
 
     #[rstest]
     #[case("XBT/EUR", "BTC/EUR")]

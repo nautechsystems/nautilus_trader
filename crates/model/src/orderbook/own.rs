@@ -29,7 +29,7 @@ use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, time::nanos_since_unix_epoch};
 use rust_decimal::Decimal;
 
-use super::{BookViewError, display::pprint_own_book};
+use super::{BookViewError, OwnBookError, display::pprint_own_book};
 use crate::{
     enums::{OrderSideSpecified, OrderStatus, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId, TraderId, VenueOrderId},
@@ -289,7 +289,7 @@ impl OwnOrderBook {
     /// # Errors
     ///
     /// Returns an error if the order is not found.
-    pub fn update(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
+    pub fn update(&mut self, order: OwnBookOrder) -> Result<(), OwnBookError> {
         let result = match order.side {
             OrderSideSpecified::Buy => self.bids.update(order),
             OrderSideSpecified::Sell => self.asks.update(order),
@@ -307,7 +307,7 @@ impl OwnOrderBook {
     /// # Errors
     ///
     /// Returns an error if the order is not found.
-    pub fn delete(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
+    pub fn delete(&mut self, order: OwnBookOrder) -> Result<(), OwnBookError> {
         let result = match order.side {
             OrderSideSpecified::Buy => self.bids.delete(order),
             OrderSideSpecified::Sell => self.asks.delete(order),
@@ -698,27 +698,18 @@ impl OwnBookLadder {
     /// # Errors
     ///
     /// Returns an error if the order is not found.
-    pub fn update(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
+    pub fn update(&mut self, order: OwnBookOrder) -> Result<(), OwnBookError> {
+        let client_order_id = order.client_order_id;
+
         let Some(price) = self.cache.get(&order.client_order_id).copied() else {
-            log::error!(
-                "Own book update failed - order {client_order_id} not in cache",
-                client_order_id = order.client_order_id
-            );
-            anyhow::bail!(
-                "Order {} not found in own book (cache)",
-                order.client_order_id
-            );
+            return Err(OwnBookError::OrderNotFoundInCache { client_order_id });
         };
 
         let Some(level) = self.levels.get_mut(&price) else {
-            log::error!(
-                "Own book update failed - order {client_order_id} cached level {price:?} missing",
-                client_order_id = order.client_order_id
-            );
-            anyhow::bail!(
-                "Order {} not found in own book (level)",
-                order.client_order_id
-            );
+            return Err(OwnBookError::CachedLevelMissing {
+                client_order_id,
+                price,
+            });
         };
 
         if order.price == level.price.value {
@@ -733,7 +724,7 @@ impl OwnBookLadder {
             return Ok(());
         }
 
-        level.delete(&order.client_order_id)?;
+        level.delete(&client_order_id)?;
         self.cache.shift_remove(&order.client_order_id);
 
         if level.is_empty() {
@@ -749,7 +740,7 @@ impl OwnBookLadder {
     /// # Errors
     ///
     /// Returns an error if the order is not found.
-    pub fn delete(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
+    pub fn delete(&mut self, order: OwnBookOrder) -> Result<(), OwnBookError> {
         self.remove(&order.client_order_id)
     }
 
@@ -758,17 +749,18 @@ impl OwnBookLadder {
     /// # Errors
     ///
     /// Returns an error if the order is not found.
-    pub fn remove(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
+    pub fn remove(&mut self, client_order_id: &ClientOrderId) -> Result<(), OwnBookError> {
         let Some(price) = self.cache.get(client_order_id).copied() else {
-            log::error!("Own book remove failed - order {client_order_id} not in cache");
-            anyhow::bail!("Order {client_order_id} not found in own book (cache)");
+            return Err(OwnBookError::OrderNotFoundInCache {
+                client_order_id: *client_order_id,
+            });
         };
 
         let Some(level) = self.levels.get_mut(&price) else {
-            log::error!(
-                "Own book remove failed - order {client_order_id} cached level {price:?} missing"
-            );
-            anyhow::bail!("Order {client_order_id} not found in own book (level)");
+            return Err(OwnBookError::CachedLevelMissing {
+                client_order_id: *client_order_id,
+                price,
+            });
         };
 
         level.delete(client_order_id)?;
@@ -934,10 +926,12 @@ impl OwnBookLevel {
     /// # Errors
     ///
     /// Returns an error if the order is not found.
-    pub fn delete(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
+    pub fn delete(&mut self, client_order_id: &ClientOrderId) -> Result<(), OwnBookError> {
         if self.orders.shift_remove(client_order_id).is_none() {
-            // TODO: Use a generic anyhow result for now pending specific error types
-            anyhow::bail!("Order {client_order_id} not found for delete");
+            return Err(OwnBookError::OrderNotFoundAtLevel {
+                client_order_id: *client_order_id,
+                price: self.price,
+            });
         }
         Ok(())
     }

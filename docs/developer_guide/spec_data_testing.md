@@ -22,7 +22,7 @@ Before running data tests:
 - Target instrument available and loadable via the instrument provider.
 - API credentials set via environment variables (`{VENUE}_API_KEY`, `{VENUE}_API_SECRET`) when
   the venue requires authentication for the data being tested.
-- If the venue offers a demo/testnet mode (e.g. `is_demo=True`), use credentials created
+- If the venue offers a demo/testnet mode, use credentials created
   for that environment. Demo and production API keys are typically separate and not
   interchangeable; using the wrong credentials produces authentication errors (e.g. HTTP 401).
 

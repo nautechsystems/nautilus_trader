@@ -39,12 +39,18 @@ use futures_util::{StreamExt, pin_mut};
 use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    enums::{OrderSide, OrderType, TimeInForce},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::InstrumentAny,
+    types::{Price, Quantity},
 };
 use nautilus_network::websocket::TransportBackend;
 use nautilus_okx::{
-    common::{enums::OKXInstrumentType, models::OKXInstrument, parse::parse_instrument_any},
+    common::{
+        enums::{OKXInstrumentType, OKXTradeMode},
+        models::OKXInstrument,
+        parse::parse_instrument_any,
+    },
     http::client::OKXResponse,
     websocket::{client::OKXWebSocketClient, messages::OKXWsMessage},
 };
@@ -54,6 +60,9 @@ use ustr::Ustr;
 const TEXT_PING: &str = "ping";
 const TEXT_PONG: &str = "pong";
 const CONTROL_PING_PAYLOAD: &[u8] = b"server-control-ping";
+const EVENT_SYMBOL: &str = "BTC-ABOVE-DAILY-260224-1600-65000";
+const EVENT_INSTRUMENT_ID: &str = "BTC-ABOVE-DAILY-260224-1600-65000.OKX";
+const EVENT_INST_ID_CODE: u64 = 1_000_000_001;
 
 type SubscriptionEvent = (String, Option<String>, bool);
 
@@ -63,6 +72,7 @@ struct TestServerState {
     login_count: Arc<tokio::sync::Mutex<usize>>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     unsubscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    order_messages: Arc<tokio::sync::Mutex<Vec<Value>>>,
     drop_next_connection: Arc<AtomicBool>,
     send_text_ping: Arc<AtomicBool>,
     send_control_ping: Arc<AtomicBool>,
@@ -118,6 +128,47 @@ fn load_instruments() -> Vec<InstrumentAny> {
                 .flatten()
         })
         .collect()
+}
+
+fn event_instrument() -> InstrumentAny {
+    let raw: OKXInstrument = serde_json::from_value(json!({
+        "instType": "EVENTS",
+        "instId": EVENT_SYMBOL,
+        "instIdCode": EVENT_INST_ID_CODE,
+        "uly": "",
+        "instFamily": "",
+        "seriesId": "BTC-ABOVE-DAILY",
+        "instCategory": "1",
+        "baseCcy": "",
+        "quoteCcy": "USDT",
+        "settleCcy": "USDT",
+        "ctVal": "",
+        "ctMult": "",
+        "ctValCcy": "",
+        "optType": "",
+        "stk": "",
+        "listTime": "1769697132335",
+        "expTime": "1769700732335",
+        "lever": "",
+        "tickSz": "0.001",
+        "lotSz": "1",
+        "minSz": "1",
+        "ctType": "",
+        "state": "live",
+        "ruleType": "normal",
+        "maxLmtSz": "1000000",
+        "maxMktSz": "1000000",
+    }))
+    .expect("valid event instrument");
+
+    parse_instrument_any(&raw, None, None, None, None, UnixNanos::default())
+        .expect("event instrument parses")
+        .expect("event instrument supported")
+}
+
+fn cache_event_instrument(client: &OKXWebSocketClient) {
+    client.cache_instrument(event_instrument());
+    client.cache_inst_id_code(Ustr::from(EVENT_SYMBOL), EVENT_INST_ID_CODE);
 }
 
 fn value_matches_channel(value: &Value, channel: &str) -> bool {
@@ -189,6 +240,10 @@ impl TestServerState {
 
     async fn control_ping_count(&self) -> usize {
         *self.control_ping_count.lock().await
+    }
+
+    async fn order_messages(&self) -> Vec<Value> {
+        self.order_messages.lock().await.clone()
     }
 }
 
@@ -400,6 +455,52 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                             break;
                         }
                     }
+
+                    if let Some(op) = payload.get("op").and_then(Value::as_str)
+                        && matches!(
+                            op,
+                            "order" | "batch-orders" | "amend-order" | "batch-amend-orders"
+                        )
+                    {
+                        {
+                            let mut order_messages = state.order_messages.lock().await;
+                            order_messages.push(payload.clone());
+                        }
+
+                        let data = payload
+                            .get("args")
+                            .and_then(Value::as_array)
+                            .map(|args| {
+                                args.iter()
+                                    .map(|arg| {
+                                        json!({
+                                            "sCode": "0",
+                                            "sMsg": "",
+                                            "clOrdId": arg
+                                                .get("clOrdId")
+                                                .and_then(Value::as_str)
+                                                .unwrap_or(""),
+                                        })
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default();
+                        let ack = json!({
+                            "id": payload.get("id").cloned().unwrap_or(Value::Null),
+                            "op": op,
+                            "code": "0",
+                            "msg": "",
+                            "data": data,
+                        });
+
+                        if socket
+                            .send(Message::Text(ack.to_string().into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
                 }
             }
             Message::Ping(payload) => {
@@ -467,6 +568,296 @@ async fn connect_client(ws_url: &str) -> OKXWebSocketClient {
         None,
     )
     .expect("failed to construct okx websocket client")
+}
+
+#[tokio::test]
+async fn test_submit_event_order_defaults_speed_bump_and_outcome() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url).await;
+    cache_event_instrument(&client);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .submit_order(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            InstrumentId::from(EVENT_INSTRUMENT_ID),
+            OKXTradeMode::Cash,
+            ClientOrderId::from("O-event-default-speed"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("10"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("0.420")),
+            None,
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("yes".to_string()),
+        )
+        .await
+        .expect("submit event order failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.order_messages.lock().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let messages = state.order_messages().await;
+    let arg = &messages[0]["args"][0];
+
+    assert_eq!(messages[0]["op"], "order");
+    assert_eq!(arg["speedBump"], "1");
+    assert_eq!(arg["outcome"], "yes");
+    assert!(arg.get("ccy").is_none());
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_submit_event_post_only_order_omits_default_speed_bump() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url).await;
+    cache_event_instrument(&client);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .submit_order(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            InstrumentId::from(EVENT_INSTRUMENT_ID),
+            OKXTradeMode::Cash,
+            ClientOrderId::from("O-event-post-only"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("10"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("0.420")),
+            None,
+            Some(true),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("yes".to_string()),
+        )
+        .await
+        .expect("submit post-only event order failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.order_messages.lock().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let messages = state.order_messages().await;
+    let arg = &messages[0]["args"][0];
+
+    assert_eq!(messages[0]["op"], "order");
+    assert!(arg.get("speedBump").is_none());
+    assert_eq!(arg["outcome"], "yes");
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_submit_event_order_requires_outcome() {
+    let client = connect_client("ws://127.0.0.1:0/ws").await;
+    cache_event_instrument(&client);
+
+    let result = client
+        .submit_order(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            InstrumentId::from(EVENT_INSTRUMENT_ID),
+            OKXTradeMode::Cash,
+            ClientOrderId::from("O-event-no-outcome"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("10"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("0.420")),
+            None,
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("OKX event contract orders require `outcome`")
+    );
+}
+
+#[tokio::test]
+async fn test_batch_submit_event_order_requires_outcome() {
+    let client = connect_client("ws://127.0.0.1:0/ws").await;
+    cache_event_instrument(&client);
+
+    let result = client
+        .batch_submit_orders(vec![(
+            OKXInstrumentType::Events,
+            InstrumentId::from(EVENT_INSTRUMENT_ID),
+            OKXTradeMode::Cash,
+            ClientOrderId::from("O-event-batch-no-outcome"),
+            OrderSide::Buy,
+            None,
+            OrderType::Limit,
+            Quantity::from("10"),
+            Some(Price::from("0.420")),
+            None,
+            Some(false),
+            None,
+            None,
+            None,
+        )])
+        .await;
+
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("OKX event contract orders require `outcome`")
+    );
+}
+
+#[tokio::test]
+async fn test_batch_submit_event_order_defaults_speed_bump() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url).await;
+    cache_event_instrument(&client);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .batch_submit_orders(vec![(
+            OKXInstrumentType::Events,
+            InstrumentId::from(EVENT_INSTRUMENT_ID),
+            OKXTradeMode::Cash,
+            ClientOrderId::from("O-event-batch-default-speed"),
+            OrderSide::Buy,
+            None,
+            OrderType::Limit,
+            Quantity::from("10"),
+            Some(Price::from("0.420")),
+            None,
+            Some(false),
+            None,
+            None,
+            Some("yes".to_string()),
+        )])
+        .await
+        .expect("batch submit event order failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.order_messages.lock().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let messages = state.order_messages().await;
+    let arg = &messages[0]["args"][0];
+
+    assert_eq!(messages[0]["op"], "batch-orders");
+    assert_eq!(arg["speedBump"], "1");
+    assert_eq!(arg["outcome"], "yes");
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_modify_event_order_sends_explicit_speed_bump() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url).await;
+    cache_event_instrument(&client);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .modify_order(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            InstrumentId::from(EVENT_INSTRUMENT_ID),
+            Some(ClientOrderId::from("O-event-amend")),
+            Some(Price::from("0.430")),
+            Some(Quantity::from("10")),
+            None,
+            None,
+            None,
+            Some("0".to_string()),
+        )
+        .await
+        .expect("modify event order failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.order_messages.lock().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let messages = state.order_messages().await;
+    let arg = &messages[0]["args"][0];
+
+    assert_eq!(messages[0]["op"], "amend-order");
+    assert_eq!(arg["speedBump"], "0");
+
+    client.close().await.expect("close failed");
 }
 
 #[tokio::test]

@@ -26,6 +26,12 @@ use ustr::Ustr;
 /// The identifier for all 'external' strategy IDs (not local to this system instance).
 const EXTERNAL_STRATEGY_ID: &str = "EXTERNAL";
 
+/// Returns a usable order ID tag, filtering unset sentinel values.
+#[must_use]
+pub fn normalize_order_id_tag(order_id_tag: Option<&str>) -> Option<&str> {
+    order_id_tag.filter(|tag| !tag.is_empty() && *tag != "None")
+}
+
 /// Represents a valid strategy ID.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -44,11 +50,11 @@ impl StrategyId {
     ///
     /// Must be correctly formatted with two valid strings either side of a hyphen.
     /// It is expected a strategy ID is the class name of the strategy,
-    /// with an order ID tag number separated by a hyphen.
+    /// with an order ID tag separated by a hyphen.
     ///
     /// Example: "EMACross-001".
     ///
-    /// The reason for the numerical component of the ID is so that order and position IDs
+    /// The reason for the tag component of the ID is so that order and position IDs
     /// do not collide with those from another strategy within the node instance.
     ///
     /// # Errors
@@ -142,7 +148,7 @@ mod tests {
     use nautilus_core::correctness::CorrectnessError;
     use rstest::rstest;
 
-    use super::StrategyId;
+    use super::{StrategyId, normalize_order_id_tag};
     use crate::identifiers::stubs::*;
 
     #[rstest]
@@ -169,6 +175,19 @@ mod tests {
     #[rstest]
     fn test_get_tag_external() {
         assert_eq!(StrategyId::external().get_tag(), "EXTERNAL");
+    }
+
+    #[rstest]
+    #[case(None, None)]
+    #[case(Some(""), None)]
+    #[case(Some("None"), None)]
+    #[case(Some("001"), Some("001"))]
+    #[case(Some("ABC"), Some("ABC"))]
+    fn test_normalize_order_id_tag(
+        #[case] order_id_tag: Option<&str>,
+        #[case] expected: Option<&str>,
+    ) {
+        assert_eq!(normalize_order_id_tag(order_id_tag), expected);
     }
 
     #[rstest]

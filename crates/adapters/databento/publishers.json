@@ -15,7 +15,7 @@
         "publisher_id": 3,
         "dataset": "XBOS.ITCH",
         "venue": "XBOS",
-        "description": "Nasdaq BX TotalView-ITCH"
+        "description": "Nasdaq Texas TotalView-ITCH"
     },
     {
         "publisher_id": 4,
@@ -87,7 +87,7 @@
         "publisher_id": 15,
         "dataset": "MEMX.MEMOIR",
         "venue": "MEMX",
-        "description": "MEMX Memoir Depth"
+        "description": "MEMX MEMOIR Depth"
     },
     {
         "publisher_id": 16,
@@ -195,7 +195,7 @@
         "publisher_id": 33,
         "dataset": "OPRA.PILLAR",
         "venue": "XBXO",
-        "description": "OPRA - Nasdaq BX Options"
+        "description": "OPRA - Nasdaq Texas Options"
     },
     {
         "publisher_id": 34,
@@ -447,7 +447,7 @@
         "publisher_id": 75,
         "dataset": "EQUS.ALL",
         "venue": "XBOS",
-        "description": "Databento US Equities (All Feeds) - Nasdaq BX"
+        "description": "Databento US Equities (All Feeds) - Nasdaq Texas"
     },
     {
         "publisher_id": 76,
@@ -513,7 +513,7 @@
         "publisher_id": 86,
         "dataset": "XNAS.NLS",
         "venue": "XBOS",
-        "description": "Nasdaq NLS - Nasdaq BX"
+        "description": "Nasdaq NLS - Nasdaq Texas"
     },
     {
         "publisher_id": 87,
@@ -525,7 +525,7 @@
         "publisher_id": 88,
         "dataset": "XNAS.BASIC",
         "venue": "XBOS",
-        "description": "Nasdaq Basic - Nasdaq BX"
+        "description": "Nasdaq Basic - Nasdaq Texas"
     },
     {
         "publisher_id": 89,
@@ -627,18 +627,36 @@
         "publisher_id": 105,
         "dataset": "XCBF.PITCH",
         "venue": "XCBF",
-        "description": "Cboe Futures Exchange"
+        "description": "Cboe Futures Exchange (CFE)"
     },
     {
         "publisher_id": 106,
         "dataset": "XCBF.PITCH",
         "venue": "XOFF",
-        "description": "Cboe Futures Exchange - Off-Market Trades"
+        "description": "Cboe Futures Exchange (CFE) - Off-Market Trades"
     },
     {
         "publisher_id": 107,
         "dataset": "OCEA.MEMOIR",
         "venue": "OCEA",
         "description": "Blue Ocean ATS MEMOIR"
+    },
+    {
+        "publisher_id": 108,
+        "dataset": "OPRA.PILLAR",
+        "venue": "MXTO",
+        "description": "OPRA - MEMX MX2 Options"
+    },
+    {
+        "publisher_id": 109,
+        "dataset": "OPRA.PILLAR",
+        "venue": "IEXO",
+        "description": "OPRA - IEX Options LLC"
+    },
+    {
+        "publisher_id": 110,
+        "dataset": "CGIF.TITANIUM",
+        "venue": "CGIF",
+        "description": "Cboe Global Indices Feed"
     }
 ]

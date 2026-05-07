@@ -59,10 +59,6 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     environment : OKXEnvironment, optional
         The OKX environment for the client (LIVE or DEMO).
         If ``None`` then defaults to LIVE.
-        Takes precedence over ``is_demo`` if set.
-    is_demo : bool, default False
-        If the client is connecting to the OKX demo API.
-        Deprecated: use ``environment=OKXEnvironment.DEMO`` instead.
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
     vip_level : OKXVipLevel, optional
@@ -82,7 +78,6 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
-    is_demo: bool = False
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000
@@ -127,10 +122,6 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     environment : OKXEnvironment, optional
         The OKX environment for the client (LIVE or DEMO).
         If ``None`` then defaults to LIVE.
-        Takes precedence over ``is_demo`` if set.
-    is_demo : bool, default False
-        If the client is connecting to the OKX demo API.
-        Deprecated: use ``environment=OKXEnvironment.DEMO`` instead.
     margin_mode : OKXMarginMode, optional
         The intended OKX account margin mode.
         - `ISOLATED`: Margin isolated to specific positions (default)
@@ -175,7 +166,6 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
-    is_demo: bool = False
     margin_mode: OKXMarginMode | None = None
     use_spot_margin: bool = False
     http_timeout_secs: PositiveInt | None = 60

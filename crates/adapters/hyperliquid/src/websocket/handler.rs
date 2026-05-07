@@ -21,12 +21,13 @@ use std::sync::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use dashmap::DashMap;
 use nautilus_common::cache::fifo::FifoCache;
-use nautilus_core::{AtomicTime, nanos::UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    AtomicTime, MUTEX_POISONED, nanos::UnixNanos, time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
     data::BarType,
-    identifiers::{AccountId, ClientOrderId},
+    identifiers::AccountId,
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
@@ -38,7 +39,7 @@ use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 use super::{
-    client::AssetContextDataType,
+    client::{AssetContextDataType, CloidCache},
     enums::HyperliquidWsChannel,
     error::HyperliquidWsError,
     messages::{
@@ -104,7 +105,7 @@ pub(super) struct FeedHandler {
     retry_manager: RetryManager<HyperliquidWsError>,
     message_buffer: Vec<NautilusWsMessage>,
     instruments: AHashMap<Ustr, InstrumentAny>,
-    cloid_cache: Arc<DashMap<Ustr, ClientOrderId>>,
+    cloid_cache: CloidCache,
     bar_types_cache: AHashMap<String, BarType>,
     bar_cache: AHashMap<String, CandleData>,
     asset_context_subs: AHashMap<Ustr, AHashSet<AssetContextDataType>>,
@@ -124,7 +125,7 @@ impl FeedHandler {
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         account_id: Option<AccountId>,
         subscriptions: SubscriptionState,
-        cloid_cache: Arc<DashMap<Ustr, ClientOrderId>>,
+        cloid_cache: CloidCache,
     ) -> Self {
         Self {
             clock: get_atomic_clock_realtime(),
@@ -350,7 +351,7 @@ impl FeedHandler {
     fn parse_to_nautilus_messages(
         msg: HyperliquidWsMessage,
         instruments: &AHashMap<Ustr, InstrumentAny>,
-        cloid_cache: &DashMap<Ustr, ClientOrderId>,
+        cloid_cache: &CloidCache,
         bar_types: &AHashMap<String, BarType>,
         account_id: Option<AccountId>,
         ts_init: UnixNanos,
@@ -495,7 +496,7 @@ impl FeedHandler {
     fn handle_order_updates(
         data: &[super::messages::WsOrderData],
         instruments: &AHashMap<Ustr, InstrumentAny>,
-        cloid_cache: &DashMap<Ustr, ClientOrderId>,
+        cloid_cache: &CloidCache,
         account_id: AccountId,
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
@@ -510,8 +511,13 @@ impl FeedHandler {
                         // Resolve cloid to real client_order_id if cached
                         if let Some(cloid) = &order_update.order.cloid {
                             let cloid_ustr = Ustr::from(cloid.as_str());
-                            if let Some(entry) = cloid_cache.get(&cloid_ustr) {
-                                let real_client_order_id = *entry.value();
+                            let resolved = cloid_cache
+                                .lock()
+                                .expect(MUTEX_POISONED)
+                                .get(&cloid_ustr)
+                                .copied();
+
+                            if let Some(real_client_order_id) = resolved {
                                 log::debug!("Resolved cloid {cloid} -> {real_client_order_id}");
                                 report.client_order_id = Some(real_client_order_id);
                             }
@@ -537,7 +543,7 @@ impl FeedHandler {
     fn handle_user_fills(
         fills: &[super::messages::WsFillData],
         instruments: &AHashMap<Ustr, InstrumentAny>,
-        cloid_cache: &DashMap<Ustr, ClientOrderId>,
+        cloid_cache: &CloidCache,
         account_id: AccountId,
         ts_init: UnixNanos,
         processed_trade_ids: &mut FifoCache<u64, 10_000>,
@@ -561,8 +567,13 @@ impl FeedHandler {
 
                         if let Some(cloid) = &fill.cloid {
                             let cloid_ustr = Ustr::from(cloid.as_str());
-                            if let Some(entry) = cloid_cache.get(&cloid_ustr) {
-                                let real_client_order_id = *entry.value();
+                            let resolved = cloid_cache
+                                .lock()
+                                .expect(MUTEX_POISONED)
+                                .get(&cloid_ustr)
+                                .copied();
+
+                            if let Some(real_client_order_id) = resolved {
                                 log::debug!(
                                     "Resolved fill cloid {cloid} -> {real_client_order_id}"
                                 );

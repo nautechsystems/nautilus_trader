@@ -716,8 +716,8 @@ impl<'de> Deserialize<'de> for Money {
     where
         D: Deserializer<'de>,
     {
-        let money_str: String = Deserialize::deserialize(deserializer)?;
-        Ok(Self::from(money_str.as_str()))
+        let money_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        Ok(Self::from(money_str.as_ref()))
     }
 }
 
@@ -1202,6 +1202,15 @@ mod tests {
     }
 
     #[rstest]
+    fn test_money_deserialize_from_owned_value() {
+        let money = Money::new(123.45, Currency::USD());
+        let value = serde_json::to_value(money).unwrap();
+
+        let deserialized: Money = serde_json::from_value(value).unwrap();
+        assert_eq!(money, deserialized);
+    }
+
+    #[rstest]
     #[should_panic(expected = "`raw` value")]
     fn test_money_from_raw_out_of_range_panics() {
         let usd = Currency::USD();
@@ -1281,7 +1290,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Overflow")]
+    #[should_panic(expected = "Money::from_mantissa_exponent")]
     fn test_from_mantissa_exponent_overflow_panics() {
         let _ = Money::from_mantissa_exponent(i64::MAX, 9, Currency::USD());
     }

@@ -24,7 +24,7 @@ use std::{
     },
 };
 
-use nautilus_core::string::urlencoding;
+use nautilus_core::{MUTEX_POISONED, string::urlencoding};
 use nautilus_network::{
     http::{HttpClient, Method},
     ratelimiter::quota::Quota,
@@ -79,7 +79,8 @@ pub struct BetfairHttpClient {
     credential: BetfairCredential,
     session_token: Arc<tokio::sync::RwLock<Option<String>>>,
     retry_manager: RetryManager<BetfairHttpError>,
-    cancellation_token: CancellationToken,
+    cancellation_token: std::sync::Mutex<CancellationToken>,
+    connect_lock: tokio::sync::Mutex<()>,
     request_id: AtomicU64,
     url_identity_login: String,
     url_keep_alive: String,
@@ -130,7 +131,8 @@ impl BetfairHttpClient {
             credential,
             session_token: Arc::new(tokio::sync::RwLock::new(None)),
             retry_manager: RetryManager::new(retry_config),
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: std::sync::Mutex::new(CancellationToken::new()),
+            connect_lock: tokio::sync::Mutex::new(()),
             request_id: AtomicU64::new(1),
             url_identity_login: BETFAIR_IDENTITY_LOGIN_URL.to_string(),
             url_keep_alive: BETFAIR_KEEP_ALIVE_URL.to_string(),
@@ -163,9 +165,19 @@ impl BetfairHttpClient {
         self
     }
 
-    /// Returns the cancellation token for this client.
-    pub fn cancellation_token(&self) -> &CancellationToken {
-        &self.cancellation_token
+    /// Returns a clone of the current cancellation token for this client.
+    ///
+    /// `disconnect()` cancels and replaces the token, so callers should fetch
+    /// a fresh clone for each operation rather than holding one long-term.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal cancellation-token mutex is poisoned.
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.cancellation_token
+            .lock()
+            .expect(MUTEX_POISONED)
+            .clone()
     }
 
     /// Returns the current session token, if authenticated.
@@ -194,6 +206,15 @@ impl BetfairHttpClient {
     /// Returns an error if the login request fails or authentication
     /// is rejected.
     pub async fn connect(&self) -> Result<(), BetfairHttpError> {
+        // Serialise concurrent connect calls so only one login fires; matches
+        // Python's per-instance asyncio.Lock around the same path.
+        let _guard = self.connect_lock.lock().await;
+
+        if self.session_token.read().await.is_some() {
+            log::debug!("Session token exists (already connected), skipping");
+            return Ok(());
+        }
+
         let form_body = format!(
             "username={}&password={}",
             urlencoding::encode(self.credential.username()),
@@ -228,9 +249,19 @@ impl BetfairHttpClient {
         self.connect().await
     }
 
-    /// Clears the session token.
+    /// Clears the session token, cancels any in-flight retries, and primes a
+    /// fresh cancellation token for the next session.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal cancellation-token mutex is poisoned.
     pub async fn disconnect(&self) {
         log::info!("Betfair disconnecting...");
+        {
+            let mut guard = self.cancellation_token.lock().expect(MUTEX_POISONED);
+            guard.cancel();
+            *guard = CancellationToken::new();
+        }
         *self.session_token.write().await = None;
     }
 
@@ -539,13 +570,22 @@ impl BetfairHttpClient {
             }
         };
 
+        // Snapshot the current token; `disconnect()` may swap it for a fresh
+        // one mid-flight, but the in-flight retry loop should observe the
+        // pre-disconnect token so a cancel actually unblocks it.
+        let token = self
+            .cancellation_token
+            .lock()
+            .expect(MUTEX_POISONED)
+            .clone();
+
         self.retry_manager
             .execute_with_retry_with_cancel(
                 &operation_id,
                 operation,
                 should_retry,
                 create_error,
-                &self.cancellation_token,
+                &token,
             )
             .await
     }

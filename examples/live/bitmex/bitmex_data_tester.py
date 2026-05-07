@@ -55,7 +55,6 @@ config_node = TradingNodeConfig(
         BITMEX: BitmexDataClientConfig(
             environment=BitmexEnvironment.TESTNET if testnet else BitmexEnvironment.MAINNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            testnet=testnet,
         ),
     },
     timeout_connection=10.0,

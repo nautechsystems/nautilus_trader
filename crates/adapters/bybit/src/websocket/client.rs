@@ -54,8 +54,9 @@ use crate::{
         consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_WS_TOPIC_DELIMITER},
         credential::Credential,
         enums::{
-            BybitEnvironment, BybitOrderSide, BybitOrderType, BybitPositionIdx, BybitProductType,
-            BybitTimeInForce, BybitTpSlMode, BybitWsOrderRequestOp, resolve_trigger_type,
+            BybitBboSideType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitPositionIdx,
+            BybitProductType, BybitTimeInForce, BybitTpSlMode, BybitWsOrderRequestOp,
+            resolve_trigger_type,
         },
         parse::{
             bar_spec_to_bybit_interval, extract_base_coin, extract_raw_symbol, map_time_in_force,
@@ -1399,6 +1400,8 @@ impl BybitWebSocketClient {
                 order_iv: order.order_iv,
                 mmp: order.mmp,
                 position_idx: order.position_idx,
+                bbo_side_type: order.bbo_side_type,
+                bbo_level: order.bbo_level,
             })
             .collect();
 
@@ -1552,6 +1555,8 @@ impl BybitWebSocketClient {
         reduce_only: Option<bool>,
         is_leverage: bool,
         position_idx: Option<BybitPositionIdx>,
+        bbo_side_type: Option<BybitBboSideType>,
+        bbo_level: Option<String>,
     ) -> BybitWsResult<String> {
         let params = self.build_place_order_params(
             product_type,
@@ -1571,6 +1576,8 @@ impl BybitWebSocketClient {
             None,
             None,
             position_idx,
+            bbo_side_type,
+            bbo_level,
         )?;
 
         self.place_order(params).await
@@ -1645,6 +1652,8 @@ impl BybitWebSocketClient {
         take_profit: Option<Price>,
         stop_loss: Option<Price>,
         position_idx: Option<BybitPositionIdx>,
+        bbo_side_type: Option<BybitBboSideType>,
+        bbo_level: Option<String>,
     ) -> BybitWsResult<BybitWsPlaceOrderParams> {
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
             .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
@@ -1690,7 +1699,11 @@ impl BybitWebSocketClient {
                 qty: quantity.to_string(),
                 is_leverage: is_leverage_value,
                 market_unit,
-                price: price.map(|p| p.to_string()),
+                price: if bbo_side_type.is_some() {
+                    None
+                } else {
+                    price.map(|p| p.to_string())
+                },
                 time_in_force: bybit_tif,
                 order_link_id: Some(client_order_id.to_string()),
                 reduce_only: reduce_only.filter(|&r| r),
@@ -1716,6 +1729,8 @@ impl BybitWebSocketClient {
                 order_iv: None,
                 mmp: None,
                 position_idx,
+                bbo_side_type,
+                bbo_level,
             }
         } else {
             BybitWsPlaceOrderParams {
@@ -1726,7 +1741,11 @@ impl BybitWebSocketClient {
                 qty: quantity.to_string(),
                 is_leverage: is_leverage_value,
                 market_unit,
-                price: price.map(|p| p.to_string()),
+                price: if bbo_side_type.is_some() {
+                    None
+                } else {
+                    price.map(|p| p.to_string())
+                },
                 time_in_force: bybit_tif,
                 order_link_id: Some(client_order_id.to_string()),
                 reduce_only: reduce_only.filter(|&r| r),
@@ -1752,6 +1771,8 @@ impl BybitWebSocketClient {
                 order_iv: None,
                 mmp: None,
                 position_idx,
+                bbo_side_type,
+                bbo_level,
             }
         };
 
@@ -2100,6 +2121,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
+                None,
             )
             .expect("Failed to build params");
 
@@ -2173,9 +2196,52 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
+                None,
             )
             .expect("Failed to build params");
 
         assert_eq!(params.market_unit, expected);
+    }
+
+    #[rstest]
+    fn test_build_place_order_params_with_bbo_omits_price() {
+        let client = BybitWebSocketClient::new_trade(
+            BybitEnvironment::Testnet,
+            Some("test-key".to_string()),
+            Some("test-secret".to_string()),
+            None,
+            20,
+            TransportBackend::default(),
+            None,
+        );
+
+        let params = client
+            .build_place_order_params(
+                BybitProductType::Linear,
+                InstrumentId::from("ETHUSDT-LINEAR.BYBIT"),
+                ClientOrderId::from("test-bbo-order-1"),
+                OrderSide::Buy,
+                OrderType::Limit,
+                Quantity::from("1.0"),
+                false,
+                Some(TimeInForce::Gtc),
+                Some(Price::from("50000.0")),
+                None,
+                None,
+                None,
+                None,
+                false,
+                None,
+                None,
+                None,
+                Some(BybitBboSideType::Queue),
+                Some("2".to_string()),
+            )
+            .expect("Failed to build params");
+
+        assert_eq!(params.price, None);
+        assert_eq!(params.bbo_side_type, Some(BybitBboSideType::Queue));
+        assert_eq!(params.bbo_level.as_deref(), Some("2"));
     }
 }

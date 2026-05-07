@@ -15,7 +15,10 @@
 
 //! Configuration types for Kraken data and execution clients.
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_model::{
+    enums::AccountType,
+    identifiers::{AccountId, TraderId},
+};
 use nautilus_network::websocket::TransportBackend;
 
 use crate::common::{
@@ -38,7 +41,7 @@ pub struct KrakenDataClientConfig {
     pub api_secret: Option<String>,
     #[builder(default = KrakenProductType::Spot)]
     pub product_type: KrakenProductType,
-    #[builder(default = KrakenEnvironment::Mainnet)]
+    #[builder(default = KrakenEnvironment::Live)]
     pub environment: KrakenEnvironment,
     pub base_url: Option<String>,
     pub ws_public_url: Option<String>,
@@ -61,6 +64,15 @@ impl Default for KrakenDataClientConfig {
 }
 
 impl KrakenDataClientConfig {
+    /// Validates config invariants.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the demo environment is used for Spot.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        validate_product_environment(self.product_type, self.environment)
+    }
+
     /// Returns true if both API key and secret are set.
     pub fn has_api_credentials(&self) -> bool {
         self.api_key.is_some() && self.api_secret.is_some()
@@ -109,7 +121,7 @@ pub struct KrakenExecClientConfig {
     pub api_secret: String,
     #[builder(default = KrakenProductType::Spot)]
     pub product_type: KrakenProductType,
-    #[builder(default = KrakenEnvironment::Mainnet)]
+    #[builder(default = KrakenEnvironment::Live)]
     pub environment: KrakenEnvironment,
     pub base_url: Option<String>,
     pub ws_url: Option<String>,
@@ -122,6 +134,58 @@ pub struct KrakenExecClientConfig {
     pub max_requests_per_second: Option<u32>,
     #[builder(default)]
     pub transport_backend: TransportBackend,
+
+    /// Account type for spot trading (`Cash` or `Margin`).
+    ///
+    /// When set to `Margin`, the adapter calls `TradeBalance` for margin reporting
+    /// and `OpenPositions` for position reconciliation.
+    /// Per-order leverage is set via `SubmitOrder.params["leverage"]` (u16 multiplier).
+    #[builder(default = AccountType::Cash)]
+    pub spot_account_type: AccountType,
+
+    /// Default leverage multiplier for spot margin orders when not overridden per-order.
+    ///
+    /// Sent as `"N:1"` to Kraken (e.g., `3` becomes `"3:1"`).
+    /// Valid tiers per pair are in `AssetPairInfo.leverage_buy` / `leverage_sell`.
+    /// `None` means cash orders (no leverage field sent).
+    pub default_leverage: Option<u16>,
+
+    /// Whether to generate `PositionStatusReport`s from spot wallet balances.
+    ///
+    /// Set `true` for spot-only (cash) accounts that need position tracking from
+    /// balance snapshots. For margin accounts leave `false`; positions are
+    /// reconciled via `OpenPositions` instead.
+    #[builder(default = false)]
+    pub use_spot_position_reports: bool,
+
+    /// Quote currency used for synthetic spot position reports.
+    ///
+    /// Only relevant when `use_spot_position_reports` is `true`.
+    #[builder(default = "USDT".to_string())]
+    pub spot_positions_quote_currency: String,
+
+    /// Summary-display asset for `TradeBalance` margin metrics.
+    ///
+    /// Controls the denomination of equity, free margin, used margin, and other
+    /// summary figures returned by Kraken's `TradeBalance` endpoint (e.g. `"ZUSD"`,
+    /// `"ZGBP"`, `"ZEUR"`, `"USDT"`). `None` lets Kraken default to `ZUSD`.
+    /// Display-only: Kraken converts internally; per-position figures from
+    /// `OpenPositions` remain in the traded pair's quote currency.
+    pub margin_balance_asset: Option<String>,
+
+    /// Use WebSocket v2 for order submission, modification, and cancellation.
+    ///
+    /// When `true` (default), `submit_order`, `modify_order`, `cancel_order`,
+    /// and `submit_order_list` route through the authenticated WebSocket
+    /// connection when active, falling back to REST when the WebSocket is
+    /// inactive. When `false`, all order operations use REST only.
+    #[builder(default = true)]
+    pub use_ws_trade: bool,
+
+    /// Timeout in seconds for WebSocket order responses before emitting a
+    /// rejection event.
+    #[builder(default = 5)]
+    pub ws_request_timeout_secs: u64,
 }
 
 impl Default for KrakenExecClientConfig {
@@ -143,5 +207,44 @@ impl KrakenExecClientConfig {
         self.ws_url.clone().unwrap_or_else(|| {
             get_kraken_ws_private_url(self.product_type, self.environment).to_string()
         })
+    }
+
+    /// Validates config invariants.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `default_leverage` is set on a Cash account or the demo environment is
+    /// used for Spot.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        validate_product_environment(self.product_type, self.environment)?;
+
+        if self.default_leverage.is_some() && self.spot_account_type == AccountType::Cash {
+            anyhow::bail!("default_leverage requires spot_account_type=Margin");
+        }
+        Ok(())
+    }
+}
+
+fn validate_product_environment(
+    product_type: KrakenProductType,
+    environment: KrakenEnvironment,
+) -> anyhow::Result<()> {
+    if product_type == KrakenProductType::Spot && environment == KrakenEnvironment::Demo {
+        anyhow::bail!("Kraken Spot does not support the demo environment");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_exec_config_ws_trade_defaults() {
+        let cfg = KrakenExecClientConfig::default();
+        assert!(cfg.use_ws_trade);
+        assert_eq!(cfg.ws_request_timeout_secs, 5);
     }
 }

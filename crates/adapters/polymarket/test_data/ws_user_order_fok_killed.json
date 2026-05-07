@@ -1,0 +1,21 @@
+{
+  "id": "0x78xx",
+  "owner": "00000000-0000-0000-0000-000000000001",
+  "market": "0x0014",
+  "asset_id": "256",
+  "side": "BUY",
+  "order_owner": "00000000-0000-0000-0000-000000000001",
+  "original_size": "12",
+  "size_matched": "",
+  "price": "0.6",
+  "associate_trades": [],
+  "outcome": "",
+  "type": "CANCELLATION",
+  "created_at": "",
+  "expiration": "0",
+  "order_type": "FOK",
+  "status": "CANCELED_order couldn't be fully filled. FOK orders are fully filled or killed.",
+  "maker_address": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+  "timestamp": "1777824065000",
+  "event_type": "order"
+}

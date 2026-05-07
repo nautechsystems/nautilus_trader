@@ -707,8 +707,7 @@ wallet credentials.
 | Option                    | Default   | Description                                                                                 |
 |---------------------------|-----------|---------------------------------------------------------------------------------------------|
 | `wallet_address`          | `None`    | Legacy Python config field. The public data client does not use wallet credentials.         |
-| `environment`             | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`. Takes precedence over `is_testnet` when set. |
-| `is_testnet`              | `False`   | Legacy flag. Prefer `environment=DydxNetwork.TESTNET`.                                      |
+| `environment`             | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                             |
 | `bars_timestamp_on_close` | `True`    | If bar `ts_event` should be the bar close time. Set `False` to use venue‑native open time.  |
 | `base_url_http`           | `None`    | HTTP API endpoint override. `None` selects the default for the selected network.             |
 | `base_url_ws`             | `None`    | WebSocket endpoint override. `None` selects the default for the selected network.            |
@@ -725,8 +724,7 @@ wallet credentials.
 | `subaccount`                   | `0`       | Subaccount number (0-127). Subaccount 0 is the default.                                            |
 | `private_key`                  | `None`    | Hex‑encoded private key for signing. Falls back to `DYDX_PRIVATE_KEY` / `DYDX_TESTNET_PRIVATE_KEY`. |
 | `authenticator_ids`            | `None`    | List of authenticator IDs for permissioned key trading (institutional setups).                     |
-| `environment`                  | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`. Takes precedence over `is_testnet` when set.       |
-| `is_testnet`                   | `False`   | Legacy flag. Prefer `environment=DydxNetwork.TESTNET`.                                             |
+| `environment`                  | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                                    |
 | `base_url_http`                | `None`    | HTTP client custom endpoint override. `None` selects the default for the selected network.         |
 | `base_url_ws`                  | `None`    | WebSocket client custom endpoint override. `None` selects the default for the selected network.    |
 | `base_url_grpc`                | `None`    | gRPC client custom endpoint override. `None` selects the default for the selected network.         |
@@ -788,7 +786,7 @@ node.build()
 ### API credentials
 
 Credentials can be passed directly via the Python config (`wallet_address`, `private_key`) or
-resolved automatically from environment variables based on the `is_testnet` setting.
+resolved automatically from environment variables based on the configured `environment`.
 
 #### Environment variables
 
@@ -802,7 +800,7 @@ resolved automatically from environment variables based on the `is_testnet` sett
 #### Resolution priority
 
 1. Value passed in the Python config (if non-empty)
-2. Environment variable (selected by `is_testnet` flag)
+2. Environment variable selected by `environment`
 
 ### Permissioned key trading
 

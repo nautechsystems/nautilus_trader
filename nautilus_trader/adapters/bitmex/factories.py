@@ -178,11 +178,7 @@ class BitmexLiveDataClientFactory(LiveDataClientFactory):
         BitmexDataClient
 
         """
-        env = (
-            config.environment
-            if config.environment is not None
-            else (BitmexEnvironment.TESTNET if config.testnet else BitmexEnvironment.MAINNET)
-        )
+        env = config.environment or BitmexEnvironment.MAINNET
 
         client = get_bitmex_http_client(
             api_key=config.api_key,
@@ -254,11 +250,7 @@ class BitmexLiveExecClientFactory(LiveExecClientFactory):
         BitmexExecutionClient
 
         """
-        env = (
-            config.environment
-            if config.environment is not None
-            else (BitmexEnvironment.TESTNET if config.testnet else BitmexEnvironment.MAINNET)
-        )
+        env = config.environment or BitmexEnvironment.MAINNET
 
         client = get_bitmex_http_client(
             api_key=config.api_key,

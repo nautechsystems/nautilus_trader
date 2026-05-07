@@ -53,10 +53,7 @@ def data_client_builder(
             MagicMock(name="py_instrument"),
         ]
 
-        config = HyperliquidDataClientConfig(
-            testnet=False,
-            **(config_kwargs or {}),
-        )
+        config = HyperliquidDataClientConfig(**(config_kwargs or {}))
 
         client = HyperliquidDataClient(
             loop=event_loop,

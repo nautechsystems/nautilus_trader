@@ -306,8 +306,8 @@ impl<'de> Deserialize<'de> for Currency {
     where
         D: serde::Deserializer<'de>,
     {
-        let currency_str: String = Deserialize::deserialize(deserializer)?;
-        Self::from_str(&currency_str).map_err(serde::de::Error::custom)
+        let currency_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        Self::from_str(currency_str.as_ref()).map_err(serde::de::Error::custom)
     }
 }
 

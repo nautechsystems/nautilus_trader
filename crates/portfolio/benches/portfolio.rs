@@ -170,7 +170,7 @@ fn build_portfolio(account_type: AccountType, n: usize) -> Portfolio {
     }
 
     let state = make_account(account_type, &account_id);
-    let account = AccountAny::from_events(&[state.clone()]).unwrap();
+    let account = AccountAny::from_events(std::slice::from_ref(&state)).unwrap();
     cache.add_account(account).unwrap();
 
     for instrument in &instruments {

@@ -18,6 +18,7 @@ from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import PositiveInt
 from nautilus_trader.core.nautilus_pyo3 import KrakenEnvironment
 from nautilus_trader.core.nautilus_pyo3 import KrakenProductType
+from nautilus_trader.model.enums import AccountType
 
 
 class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -38,8 +39,8 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
         - Futures: `KRAKEN_FUTURES_API_SECRET` or `KRAKEN_FUTURES_DEMO_API_SECRET`
     environment : KrakenEnvironment, optional
         The Kraken environment to connect to.
-        If ``None`` then defaults to ``KrakenEnvironment.Mainnet``.
-        Note: testnet is only available for Futures.
+        If ``None`` then defaults to ``KrakenEnvironment.LIVE``.
+        Note: demo is only available for Futures.
     product_types : tuple[KrakenProductType, ...], optional
         The Kraken product types for the client.
         If ``None`` then defaults to ``(KrakenProductType.SPOT,)``.
@@ -111,12 +112,12 @@ class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):
         - Futures: `KRAKEN_FUTURES_API_SECRET` or `KRAKEN_FUTURES_DEMO_API_SECRET`
     environment : KrakenEnvironment, optional
         The Kraken environment to connect to.
-        If ``None`` then defaults to ``KrakenEnvironment.Mainnet``.
-        Note: testnet is only available for Futures.
+        If ``None`` then defaults to ``KrakenEnvironment.LIVE``.
+        Note: demo is only available for Futures.
     product_types : tuple[KrakenProductType, ...], optional
         The Kraken product types for the client.
         If ``None`` then defaults to ``(KrakenProductType.SPOT,)``.
-        Note: SPOT uses a CASH account type, FUTURES uses MARGIN account type.
+        Note: FUTURES always uses MARGIN; SPOT uses ``spot_account_type`` (default CASH).
     base_url_http_spot : str, optional
         The base URL for Kraken Spot HTTP API.
         If ``None`` then will use the default URL based on environment.
@@ -153,6 +154,70 @@ class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):
     spot_positions_quote_currency : str, default "USDT"
         The quote currency to use when generating spot position reports.
         Only instruments with this quote currency will have positions reported.
+    spot_account_type : AccountType, default AccountType.CASH
+        The account type for spot trading. Set to ``AccountType.MARGIN`` to enable:
+        - ``TradeBalance``-based margin reporting (used margin, free margin, equity).
+        - ``OpenPositions``-based position reconciliation.
+        - Per-order leverage via ``SubmitOrder.params = {"leverage": N}``.
+        Has no effect when ``product_types`` includes ``KrakenProductType.FUTURES``.
+    default_leverage : int, optional
+        Default leverage multiplier for spot margin orders when not specified per-order.
+        For example, ``3`` sends ``"3:1"`` to Kraken. ``None`` means cash (no leverage sent).
+        Per-order override: pass ``{"leverage": N}`` in ``SubmitOrder.params``.
+    margin_balance_asset : str, optional
+        Summary-display asset for ``TradeBalance`` margin metrics (e.g. ``"ZUSD"``,
+        ``"ZGBP"``, ``"ZEUR"``, ``"USDT"``). Controls the denomination of equity,
+        free margin, used margin, and other summary figures returned by Kraken's
+        ``TradeBalance`` endpoint. ``None`` lets Kraken default to ``ZUSD``.
+        Display-only: Kraken converts internally; per-position figures from
+        ``OpenPositions`` remain in the traded pair's quote currency.
+        Only effective when ``spot_account_type=AccountType.MARGIN``.
+    use_ws_trade : bool, default True
+        If ``True``, order submission (add/amend/cancel) uses the Kraken
+        WebSocket v2 trade channel when the connection is authenticated and
+        active. Set to ``False`` to force all order operations through the
+        REST API (useful for testing or when WebSocket trade channel is
+        unavailable).
+    ws_request_timeout_secs : PositiveInt, default 5
+        Seconds to wait for a Kraken WebSocket order-response before
+        synthesising a local rejection event (``OrderRejected`` for submit /
+        batch_add, ``OrderModifyRejected`` for amend, ``OrderCancelRejected``
+        for cancel). Submit and batch_add timeouts also fire a best-effort
+        ``cancel_order`` over the same WebSocket as a safety net against the
+        venue having accepted the order before the response was delivered;
+        any orphan order is otherwise picked up by the live execution
+        reconciliation loop. The timeout does NOT trigger an automatic REST
+        retry — the strategy must resubmit if it wants to try again. Only
+        relevant when ``use_ws_trade`` is ``True``.
+
+    Examples
+    --------
+    Spot margin account with 3x default leverage:
+
+    .. code-block:: python
+
+        from nautilus_trader.model.enums import AccountType
+        from nautilus_trader.adapters.kraken.config import KrakenExecClientConfig
+
+        config = KrakenExecClientConfig(
+            api_key="...",
+            api_secret="...",
+            spot_account_type=AccountType.MARGIN,
+            default_leverage=3,
+        )
+
+    Override leverage on a single order:
+
+    .. code-block:: python
+
+        order = strategy.order_factory.limit(
+            instrument_id=BTC_USD,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("0.01"),
+            price=Price.from_str("50000.00"),
+            params={"leverage": 5},  # overrides default_leverage for this order
+        )
+        strategy.submit_order(order)
 
     """
 
@@ -173,3 +238,15 @@ class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):
     max_requests_per_second: PositiveInt | None = None
     use_spot_position_reports: bool = False
     spot_positions_quote_currency: str = "USDT"
+    spot_account_type: AccountType = AccountType.CASH
+    default_leverage: int | None = None
+    margin_balance_asset: str | None = None
+    use_ws_trade: bool = True
+    ws_request_timeout_secs: PositiveInt = 5
+
+    def __post_init__(self) -> None:
+        if self.default_leverage is not None and self.spot_account_type != AccountType.MARGIN:
+            raise ValueError(
+                "default_leverage requires spot_account_type=AccountType.MARGIN "
+                f"(got {self.spot_account_type!r})",
+            )

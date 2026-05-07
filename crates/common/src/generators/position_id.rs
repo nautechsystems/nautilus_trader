@@ -175,6 +175,14 @@ mod tests {
     }
 
     #[rstest]
+    fn test_generate_position_id_uses_final_strategy_tag() {
+        let mut generator = get_position_id_generator();
+        let result = generator.generate(StrategyId::from("ExampleStrategy-XNAS-T01"), false);
+
+        assert_eq!(result, PositionId::from("P-19700101-000000-001-T01-1"));
+    }
+
+    #[rstest]
     fn test_generate_position_id_multiple_strategies() {
         let mut generator = get_position_id_generator();
         let result1 = generator.generate(StrategyId::from("S-001"), false);

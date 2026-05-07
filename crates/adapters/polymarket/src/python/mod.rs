@@ -22,6 +22,7 @@
 
 pub mod config;
 pub mod factories;
+pub mod sort;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
@@ -93,6 +94,11 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PolymarketExecClientConfig>()?;
     m.add_class::<PolymarketDataClientFactory>()?;
     m.add_class::<PolymarketExecutionClientFactory>()?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        sort::py_polymarket_trade_sort_key,
+        m
+    )?)?;
+    m.add_function(pyo3::wrap_pyfunction!(sort::py_polymarket_trade_id, m)?)?;
 
     let registry = get_global_pyo3_registry();
 

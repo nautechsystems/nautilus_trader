@@ -53,7 +53,7 @@ impl<T: ?Sized, H: Handler<T>> Handler<T> for Rc<H> {
 /// # Thread Safety
 ///
 /// Uses `Rc` intentionally (not `Arc`) for single-threaded use within each
-/// async runtime. The MessageBus uses thread-local storage to ensure each
+/// async runtime. The `MessageBus` uses thread-local storage to ensure each
 /// thread gets its own handlers.
 pub struct TypedHandler<T: 'static + ?Sized>(pub Rc<dyn Handler<T>>);
 
@@ -321,7 +321,7 @@ impl<T, H: IntoHandler<T>> IntoHandler<T> for Rc<H> {
 /// # Thread Safety
 ///
 /// Uses `Rc` intentionally (not `Arc`) for single-threaded use within each
-/// async runtime. The MessageBus uses thread-local storage to ensure each
+/// async runtime. The `MessageBus` uses thread-local storage to ensure each
 /// thread gets its own handlers.
 pub struct TypedIntoHandler<T: 'static>(pub Rc<dyn IntoHandler<T>>);
 

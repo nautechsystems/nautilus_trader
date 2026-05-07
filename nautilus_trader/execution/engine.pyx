@@ -1123,6 +1123,16 @@ cdef class ExecutionEngine(Component):
             if self.snapshot_orders:
                 self._create_order_state_snapshot(order)
 
+        cdef str deny_reason = self._check_position_id_against_oms(
+            order.instrument_id,
+            order.strategy_id,
+            command.position_id,
+            client,
+        )
+        if deny_reason is not None:
+            self._deny_order(order, deny_reason)
+            return
+
         cdef Instrument instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
             self._log.error(
@@ -1147,6 +1157,17 @@ cdef class ExecutionEngine(Component):
                 if self.snapshot_orders:
                     self._create_order_state_snapshot(order)
 
+        cdef str deny_reason = self._check_position_id_against_oms(
+            command.instrument_id,
+            command.strategy_id,
+            command.position_id,
+            client,
+        )
+        if deny_reason is not None:
+            for order in command.order_list.orders:
+                self._deny_order(order, deny_reason)
+            return
+
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
         if instrument is None:
             self._log.error(
@@ -1162,6 +1183,37 @@ cdef class ExecutionEngine(Component):
 
         # Send to execution client
         client.submit_order_list(command)
+
+    cdef str _check_position_id_against_oms(
+        self,
+        InstrumentId instrument_id,
+        StrategyId strategy_id,
+        PositionId position_id,
+        ExecutionClient client,
+    ):
+        if position_id is None:
+            return None
+
+        cdef OmsType oms_type = self._resolve_oms_type(strategy_id, client)
+        if oms_type != OmsType.NETTING:
+            return None
+
+        cdef str expected = f"{instrument_id}-{strategy_id}"
+        if position_id.to_str() == expected:
+            return None
+
+        return (
+            f"`position_id` {position_id!r} is not valid for NETTING OMS; "
+            f"expected {expected!r} (use HEDGING for custom position IDs)"
+        )
+
+    cdef OmsType _resolve_oms_type(self, StrategyId strategy_id, ExecutionClient client):
+        cdef OmsType oms_type = self._oms_overrides.get(strategy_id, OmsType.UNSPECIFIED)
+        if oms_type != OmsType.UNSPECIFIED:
+            return oms_type
+        if client is not None:
+            return client.oms_type
+        return OmsType.NETTING
 
     cpdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command):
         client.modify_order(command)
@@ -1384,18 +1436,11 @@ cdef class ExecutionEngine(Component):
             )
 
     cpdef OmsType _determine_oms_type(self, OrderFilled fill):
-        # Check for strategy OMS override
-        cdef ExecutionClient client
-        cdef OmsType oms_type = self._oms_overrides.get(fill.strategy_id, OmsType.UNSPECIFIED)
-        if oms_type == OmsType.UNSPECIFIED:
-            # Use native venue OMS
-            client = self._routing_map.get(fill.instrument_id.venue, self._default_client)
-            if client is None:
-                return OmsType.NETTING
-            else:
-                return client.oms_type
-
-        return oms_type
+        cdef ExecutionClient client = self._routing_map.get(
+            fill.instrument_id.venue,
+            self._default_client,
+        )
+        return self._resolve_oms_type(fill.strategy_id, client)
 
     cpdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type, Order order=None):
         # Fetch ID from cache

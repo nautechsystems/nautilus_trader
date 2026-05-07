@@ -7216,6 +7216,8 @@ class BybitHttpClient:
         is_quote_quantity: bool = False,
         is_leverage: bool = False,
         position_idx: BybitPositionIdx | None = None,
+        bbo_side_type: str | None = None,
+        bbo_level: str | None = None,
     ) -> OrderStatusReport: ...
     async def cancel_order(
         self,
@@ -7318,6 +7320,8 @@ class BybitWebSocketClient:
         reduce_only: bool | None = None,
         is_leverage: bool = False,
         position_idx: BybitPositionIdx | None = None,
+        bbo_side_type: str | None = None,
+        bbo_level: str | None = None,
     ) -> None: ...
     async def modify_order(
         self,
@@ -7376,6 +7380,8 @@ class BybitWebSocketClient:
         take_profit: Price | None = None,
         stop_loss: Price | None = None,
         position_idx: BybitPositionIdx | None = None,
+        bbo_side_type: str | None = None,
+        bbo_level: str | None = None,
     ) -> BybitWsPlaceOrderParams: ...
     def build_amend_order_params(
         self,
@@ -7457,6 +7463,10 @@ def bybit_resolve_position_idx(
     is_reduce_only: bool,
     manual_override: BybitPositionIdx | None = None,
 ) -> BybitPositionIdx | None: ...
+def bybit_make_hedge_venue_position_id(
+    instrument_id: InstrumentId,
+    position_idx: BybitPositionIdx | None = None,
+) -> PositionId | None: ...
 def bybit_extract_raw_symbol(symbol: str) -> str: ...
 def bybit_bar_spec_to_interval(aggregation: int, step: int) -> str: ...
 def bybit_product_type_from_symbol(symbol: str) -> BybitProductType: ...
@@ -7822,6 +7832,7 @@ class DatabentoLiveClient:
         stype_in: str | None = None,
         start: int | None = None,
         snapshot: bool | None = False,
+        price_precisions: list[int | None] | None = None,
     ) -> dict[str, str]: ...
     def start(
         self,
@@ -8354,6 +8365,29 @@ class OKXHttpClient:
     async def request_instruments(
         self, instrument_type: OKXInstrumentType, instrument_family: str | None = None
     ) -> tuple[list[Instrument], list[tuple[str, int]]]: ...
+    async def request_event_contract_series(
+        self,
+        series_id: str | None = None,
+    ) -> Any: ...
+    async def request_event_contract_events(
+        self,
+        series_id: str,
+        event_id: str | None = None,
+        state: str | None = None,
+        limit: str | None = None,
+        before: str | None = None,
+        after: str | None = None,
+    ) -> Any: ...
+    async def request_event_contract_markets(
+        self,
+        series_id: str,
+        event_id: str | None = None,
+        inst_id: str | None = None,
+        state: str | None = None,
+        limit: str | None = None,
+        before: str | None = None,
+        after: str | None = None,
+    ) -> Any: ...
     async def request_account_state(self, account_id: AccountId) -> AccountState: ...
     async def request_trades(
         self,
@@ -8449,6 +8483,8 @@ class OKXHttpClient:
         attach_algo_ords: list[dict[str, str]] | None = None,
         px_usd: str | None = None,
         px_vol: str | None = None,
+        speed_bump: str | None = None,
+        outcome: str | None = None,
     ) -> Any: ...
     async def place_algo_order(
         self,
@@ -8609,6 +8645,8 @@ class OKXWebSocketClient:
         attach_algo_ords: list[dict[str, str]] | None = None,
         px_usd: str | None = None,
         px_vol: str | None = None,
+        speed_bump: str | None = None,
+        outcome: str | None = None,
     ) -> None: ...
     async def cancel_order(
         self,
@@ -8629,6 +8667,7 @@ class OKXWebSocketClient:
         quantity: Quantity | None = None,
         new_px_usd: str | None = None,
         new_px_vol: str | None = None,
+        speed_bump: str | None = None,
     ) -> None: ...
     async def batch_submit_orders(
         self,
@@ -8676,6 +8715,7 @@ class OKXInstrumentType(Enum):
     SWAP = "SWAP"
     FUTURES = "FUTURES"
     OPTION = "OPTION"
+    EVENTS = "EVENTS"
 
 class OKXContractType(Enum):
     NONE = "NONE"
@@ -9254,7 +9294,7 @@ class DydxNetwork(Enum):
 # Kraken
 
 class KrakenEnvironment(Enum):
-    MAINNET = "mainnet"
+    LIVE = "live"
     DEMO = "demo"
 
 class KrakenProductType(Enum):
@@ -9267,7 +9307,6 @@ class KrakenSpotHttpClient:
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url: str | None = None,
-        demo: bool = False,
         timeout_secs: int = 60,
         max_retries: int | None = None,
         retry_delay_ms: int | None = None,
@@ -9283,8 +9322,6 @@ class KrakenSpotHttpClient:
     def api_key_masked(self) -> str | None: ...
     def cache_instrument(self, instrument: Instrument) -> None: ...
     def cancel_all_requests(self) -> None: ...
-    def set_use_spot_position_reports(self, value: bool) -> None: ...
-    def set_spot_positions_quote_currency(self, currency: str) -> None: ...
     async def get_server_time(self) -> str: ...
     async def request_instruments(
         self,
@@ -9313,7 +9350,22 @@ class KrakenSpotHttpClient:
         end: dt.datetime | None = None,
         limit: int | None = None,
     ) -> list[Bar]: ...
-    async def request_account_state(self, account_id: AccountId) -> AccountState: ...
+    async def request_account_state(
+        self,
+        account_id: AccountId,
+        account_type: AccountType = ...,
+        margin_balance_asset: str | None = None,
+    ) -> AccountState: ...
+    async def request_margin_metrics(
+        self,
+        asset: str | None = None,
+    ) -> dict[str, str]: ...
+    async def request_account_state_with_metrics(
+        self,
+        account_id: AccountId,
+        account_type: AccountType = ...,
+        margin_balance_asset: str | None = None,
+    ) -> tuple[AccountState, dict[str, str]]: ...
     async def request_order_status_reports(
         self,
         account_id: AccountId,
@@ -9333,6 +9385,9 @@ class KrakenSpotHttpClient:
         self,
         account_id: AccountId,
         instrument_id: InstrumentId | None = None,
+        account_type: AccountType = ...,
+        use_spot_position_reports: bool = False,
+        quote_currency: str = "USDT",
     ) -> list[PositionStatusReport]: ...
     async def submit_order(
         self,
@@ -9353,6 +9408,8 @@ class KrakenSpotHttpClient:
         post_only: bool = False,
         quote_quantity: bool = False,
         display_qty: Quantity | None = None,
+        leverage: int | None = None,
+        account_type: AccountType = ...,
     ) -> VenueOrderId: ...
     async def submit_orders_batch(
         self,
@@ -9372,6 +9429,10 @@ class KrakenSpotHttpClient:
                 Quantity | None,
             ]
         ],
+        leverage: int | None = None,
+        account_type: AccountType = ...,
+        per_order_leverages: list[int | None] | None = None,
+        per_order_reduce_only: list[bool] | None = None,
     ) -> list[str]: ...
     async def modify_order(
         self,
@@ -10322,6 +10383,15 @@ class LongRatio:
     def calculate_from_positions(self, positions: list[Position]) -> float | None: ...
 
 ###################################################################################################
+# Polymarket
+###################################################################################################
+
+def polymarket_trade_sort_key(
+    trade: dict[str, Any],
+) -> tuple[int, str, str, str, str, str]: ...
+def polymarket_trade_id(transaction_hash: str, asset: str, seq: int) -> str: ...
+
+###################################################################################################
 # Binance
 ###################################################################################################
 
@@ -10333,6 +10403,6 @@ class BinanceProductType(Enum):
     OPTIONS = "OPTIONS"
 
 class BinanceEnvironment(Enum):
-    MAINNET = "MAINNET"
+    LIVE = "LIVE"
     TESTNET = "TESTNET"
     DEMO = "DEMO"

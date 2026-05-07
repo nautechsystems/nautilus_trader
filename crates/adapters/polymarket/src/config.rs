@@ -70,7 +70,7 @@ pub struct PolymarketDataClientConfig {
     pub filters: Vec<Arc<dyn InstrumentFilter>>,
     /// Optional filter applied to newly discovered markets before instrument emission.
     pub new_market_filter: Option<Arc<dyn InstrumentFilter>>,
-    /// WebSocket transport backend (defaults to `Tungstenite`).
+    /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }
@@ -160,7 +160,7 @@ pub struct PolymarketExecClientConfig {
     /// Timeout waiting for WS order acknowledgment (seconds).
     #[builder(default = 5)]
     pub ack_timeout_secs: u64,
-    /// WebSocket transport backend (defaults to `Tungstenite`).
+    /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }

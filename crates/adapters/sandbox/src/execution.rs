@@ -77,6 +77,27 @@ struct SandboxInner {
     event_handler: Option<Rc<dyn Fn(OrderEventAny)>>,
 }
 
+fn quote_matches_instrument_precision(quote: &QuoteTick, instrument: &InstrumentAny) -> bool {
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+
+    quote.bid_price.precision == price_precision
+        && quote.ask_price.precision == price_precision
+        && quote.bid_size.precision == size_precision
+        && quote.ask_size.precision == size_precision
+}
+
+fn bar_matches_instrument_precision(bar: &Bar, instrument: &InstrumentAny) -> bool {
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+
+    bar.open.precision == price_precision
+        && bar.high.precision == price_precision
+        && bar.low.precision == price_precision
+        && bar.close.precision == price_precision
+        && bar.volume.precision == size_precision
+}
+
 impl SandboxInner {
     /// Ensures a matching engine exists for the given instrument.
     fn ensure_matching_engine(&mut self, instrument: &InstrumentAny) {
@@ -117,6 +138,21 @@ impl SandboxInner {
         // Try to get instrument from cache, create engine if found
         let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
         if let Some(instrument) = instrument {
+            if !quote_matches_instrument_precision(quote, &instrument) {
+                log::warn!(
+                    "Dropping quote tick for {} due to precision mismatch \
+                     (bid_px={}, ask_px={}, bid_sz={}, ask_sz={}, expected_price={}, expected_size={})",
+                    instrument_id,
+                    quote.bid_price.precision,
+                    quote.ask_price.precision,
+                    quote.bid_size.precision,
+                    quote.ask_size.precision,
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                );
+                return;
+            }
+
             self.ensure_matching_engine(&instrument);
 
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
@@ -153,6 +189,22 @@ impl SandboxInner {
 
         let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
         if let Some(instrument) = instrument {
+            if !bar_matches_instrument_precision(bar, &instrument) {
+                log::warn!(
+                    "Dropping bar for {} due to precision mismatch \
+                     (open={}, high={}, low={}, close={}, volume={}, expected_price={}, expected_size={})",
+                    instrument_id,
+                    bar.open.precision,
+                    bar.high.precision,
+                    bar.low.precision,
+                    bar.close.precision,
+                    bar.volume.precision,
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                );
+                return;
+            }
+
             self.ensure_matching_engine(&instrument);
 
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
@@ -421,6 +473,21 @@ impl SandboxExecutionClient {
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
 
+        if !quote_matches_instrument_precision(quote, &instrument) {
+            log::warn!(
+                "Dropping quote tick for {} due to precision mismatch \
+                 (bid_px={}, ask_px={}, bid_sz={}, ask_sz={}, expected_price={}, expected_size={})",
+                instrument_id,
+                quote.bid_price.precision,
+                quote.ask_price.precision,
+                quote.bid_size.precision,
+                quote.ask_size.precision,
+                instrument.price_precision(),
+                instrument.size_precision(),
+            );
+            return Ok(());
+        }
+
         let mut inner = self.inner.borrow_mut();
         inner.ensure_matching_engine(&instrument);
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
@@ -472,6 +539,22 @@ impl SandboxExecutionClient {
             .instrument(&instrument_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+
+        if !bar_matches_instrument_precision(bar, &instrument) {
+            log::warn!(
+                "Dropping bar for {} due to precision mismatch \
+                 (open={}, high={}, low={}, close={}, volume={}, expected_price={}, expected_size={})",
+                instrument_id,
+                bar.open.precision,
+                bar.high.precision,
+                bar.low.precision,
+                bar.close.precision,
+                bar.volume.precision,
+                instrument.price_precision(),
+                instrument.size_precision(),
+            );
+            return Ok(());
+        }
 
         let mut inner = self.inner.borrow_mut();
         inner.ensure_matching_engine(&instrument);
@@ -562,6 +645,16 @@ impl ExecutionClient for SandboxExecutionClient {
 
     fn oms_type(&self) -> OmsType {
         self.config.oms_type
+    }
+
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        let instrument_id = instrument.id();
+        let mut inner = self.inner.borrow_mut();
+        if let Some(engine) = inner.matching_engines.get_mut(&instrument_id)
+            && let Err(e) = engine.get_engine_mut().update_instrument(instrument)
+        {
+            log::error!("Failed to update instrument {instrument_id} in sandbox engine: {e}");
+        }
     }
 
     fn get_account(&self) -> Option<AccountAny> {

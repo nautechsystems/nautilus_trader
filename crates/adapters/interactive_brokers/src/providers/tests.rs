@@ -150,13 +150,23 @@ mod tests {
 
     #[rstest]
     fn test_parse_spread_instrument_id_to_legs() {
-        use crate::common::parse::parse_spread_instrument_id_to_legs;
+        use crate::common::parse::{
+            create_spread_instrument_id, parse_spread_instrument_id_to_legs,
+        };
 
-        // Test parsing spread instrument ID
-        let spread_id = InstrumentId::new(
-            NautilusSymbol::from("(1)AAPL_((2))MSFT"),
-            Venue::from("NASDAQ"),
-        );
+        let leg_tuples = [
+            (
+                InstrumentId::new(NautilusSymbol::from("MSFT"), Venue::from("NASDAQ")),
+                -2,
+            ),
+            (
+                InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("NASDAQ")),
+                1,
+            ),
+        ];
+        let spread_id = create_spread_instrument_id(&leg_tuples).unwrap();
+
+        assert_eq!(spread_id.symbol.as_str(), "(1)AAPL_((2))MSFT");
 
         let result = parse_spread_instrument_id_to_legs(&spread_id);
         assert!(result.is_ok());

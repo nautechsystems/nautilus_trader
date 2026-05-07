@@ -322,6 +322,10 @@ impl PortfolioAnalyzer {
 
     /// Records a trade's PnL.
     #[pyo3(name = "add_trade")]
+    #[allow(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "matches underlying add_trade signature"
+    )]
     fn py_add_trade(&mut self, position_id: &PositionId, realized_pnl: &Money) {
         self.add_trade(position_id, realized_pnl);
     }

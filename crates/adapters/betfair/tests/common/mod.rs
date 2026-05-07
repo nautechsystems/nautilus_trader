@@ -30,7 +30,8 @@ use axum::{
     Router,
     body::Bytes,
     extract::State,
-    response::IntoResponse,
+    http::StatusCode,
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
 use nautilus_betfair::{
@@ -87,7 +88,21 @@ pub struct MockState {
     pub keep_alive_count: Arc<AtomicUsize>,
     pub betting_request_count: Arc<AtomicUsize>,
     pub betting_overrides: Arc<Mutex<HashMap<String, Value>>>,
+    /// Forces the betting endpoint to return a JSON-RPC error envelope for a method.
+    /// Maps `method -> (code, message)`.
+    pub betting_error_overrides: Arc<Mutex<HashMap<String, (i64, String)>>>,
+    /// Like `betting_error_overrides` but consumed on first hit; subsequent
+    /// requests for the same method fall through to the default success path.
+    /// Used to exercise session-recovery flows where the venue returns
+    /// `NO_SESSION` once and accepts the retry.
+    pub betting_error_one_shot_overrides: Arc<Mutex<HashMap<String, (i64, String)>>>,
+    /// Forces the betting endpoint to return a non-2xx HTTP status for a method.
+    pub betting_status_overrides: Arc<Mutex<HashMap<String, u16>>>,
     pub betting_methods: Arc<Mutex<Vec<String>>>,
+    /// Records the `params` payload of each betting request, indexed by call order.
+    pub betting_request_params: Arc<Mutex<Vec<(String, Value)>>>,
+    /// Per-method response delay; lets tests widen reconciliation windows.
+    pub betting_response_delays: Arc<Mutex<HashMap<String, Duration>>>,
     pub accounts_overrides: Arc<Mutex<HashMap<String, Value>>>,
     pub login_response_override: Arc<Mutex<Option<String>>>,
     pub keep_alive_response_override: Arc<Mutex<Option<String>>>,
@@ -129,7 +144,7 @@ async fn handle_navigation() -> impl IntoResponse {
     )
 }
 
-async fn handle_betting(State(state): State<MockState>, body: Bytes) -> impl IntoResponse {
+async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response {
     state.betting_request_count.fetch_add(1, Ordering::Relaxed);
     let request: Value = serde_json::from_slice(&body).unwrap_or_default();
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
@@ -141,6 +156,63 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> impl Int
             .lock()
             .unwrap()
             .push(method.to_string());
+        let params = request.get("params").cloned().unwrap_or(Value::Null);
+        state
+            .betting_request_params
+            .lock()
+            .unwrap()
+            .push((method.to_string(), params));
+    }
+
+    let delay = state
+        .betting_response_delays
+        .lock()
+        .unwrap()
+        .get(method)
+        .copied();
+
+    if let Some(delay) = delay {
+        tokio::time::sleep(delay).await;
+    }
+
+    if let Some(status) = state
+        .betting_status_overrides
+        .lock()
+        .unwrap()
+        .get(method)
+        .copied()
+    {
+        let code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        return (code, "").into_response();
+    }
+
+    if let Some((code, message)) = state
+        .betting_error_one_shot_overrides
+        .lock()
+        .unwrap()
+        .remove(method)
+    {
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {"code": code, "message": message},
+        });
+        return axum::Json(response).into_response();
+    }
+
+    if let Some((code, message)) = state
+        .betting_error_overrides
+        .lock()
+        .unwrap()
+        .get(method)
+        .cloned()
+    {
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {"code": code, "message": message},
+        });
+        return axum::Json(response).into_response();
     }
 
     let override_result = state.betting_overrides.lock().unwrap().get(method).cloned();
@@ -177,7 +249,7 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> impl Int
         "id": id,
         "result": result,
     });
-    axum::Json(response)
+    axum::Json(response).into_response()
 }
 
 async fn handle_accounts(State(state): State<MockState>, body: Bytes) -> impl IntoResponse {
