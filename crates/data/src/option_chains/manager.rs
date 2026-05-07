@@ -64,7 +64,7 @@ pub struct OptionChainManager {
     quote_handlers: Vec<TypedHandler<QuoteTick>>,
     greeks_handlers: Vec<TypedHandler<OptionGreeks>>,
     timer_name: Option<Ustr>,
-    msgbus_priority: u8,
+    msgbus_priority: u32,
     /// Whether the first ATM price has been received and the active set bootstrapped.
     bootstrapped: bool,
     /// Shared deferred command queue — the `DataEngine` drains this on each data tick.
@@ -88,7 +88,7 @@ impl OptionChainManager {
         cache: &Rc<RefCell<Cache>>,
         cmd: &SubscribeOptionChain,
         clock: &Rc<RefCell<dyn Clock>>,
-        msgbus_priority: u8,
+        msgbus_priority: u32,
         client: Option<&mut DataClientAdapter>,
         initial_atm_price: Option<Price>,
         deferred_cmd_queue: DeferredCommandQueue,
@@ -189,7 +189,7 @@ impl OptionChainManager {
         manager_rc: &Rc<RefCell<Self>>,
         instrument_ids: &[InstrumentId],
         series_id: OptionSeriesId,
-        priority: u8,
+        priority: u32,
     ) -> (Vec<TypedHandler<QuoteTick>>, TypedHandler<QuoteTick>) {
         let quote_handler = TypedHandler::new(OptionChainQuoteHandler::new(manager_rc, series_id));
         // Always store prototype as first element for bootstrap cloning
@@ -212,7 +212,7 @@ impl OptionChainManager {
         manager_rc: &Rc<RefCell<Self>>,
         instrument_ids: &[InstrumentId],
         series_id: OptionSeriesId,
-        priority: u8,
+        priority: u32,
     ) -> Vec<TypedHandler<OptionGreeks>> {
         let greeks_handler =
             TypedHandler::new(OptionChainGreeksHandler::new(manager_rc, series_id));

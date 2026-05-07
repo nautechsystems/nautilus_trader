@@ -223,7 +223,7 @@ pub fn has_endpoint(endpoint: &str) -> bool {
 pub fn subscribe_any(
     pattern: MStr<Pattern>,
     handler: ShareableMessageHandler,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     let msgbus = get_message_bus();
     let mut msgbus_ref_mut = msgbus.borrow_mut();
@@ -255,7 +255,7 @@ pub fn subscribe_any(
 pub fn subscribe_instruments(
     pattern: MStr<Pattern>,
     handler: ShareableMessageHandler,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     subscribe_any(pattern, handler, priority);
 }
@@ -264,7 +264,7 @@ pub fn subscribe_instruments(
 pub fn subscribe_instrument_close(
     pattern: MStr<Pattern>,
     handler: ShareableMessageHandler,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     subscribe_any(pattern, handler, priority);
 }
@@ -273,7 +273,7 @@ pub fn subscribe_instrument_close(
 pub fn subscribe_book_deltas(
     pattern: MStr<Pattern>,
     handler: TypedHandler<OrderBookDeltas>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus()
         .borrow_mut()
@@ -285,7 +285,7 @@ pub fn subscribe_book_deltas(
 pub fn subscribe_book_depth10(
     pattern: MStr<Pattern>,
     handler: TypedHandler<OrderBookDepth10>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus().borrow_mut().router_depth10.subscribe(
         pattern,
@@ -298,7 +298,7 @@ pub fn subscribe_book_depth10(
 pub fn subscribe_book_snapshots(
     pattern: MStr<Pattern>,
     handler: TypedHandler<OrderBook>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus()
         .borrow_mut()
@@ -310,7 +310,7 @@ pub fn subscribe_book_snapshots(
 pub fn subscribe_quotes(
     pattern: MStr<Pattern>,
     handler: TypedHandler<QuoteTick>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus()
         .borrow_mut()
@@ -322,7 +322,7 @@ pub fn subscribe_quotes(
 pub fn subscribe_trades(
     pattern: MStr<Pattern>,
     handler: TypedHandler<TradeTick>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus()
         .borrow_mut()
@@ -331,7 +331,7 @@ pub fn subscribe_trades(
 }
 
 /// Subscribes a handler to bars matching a pattern.
-pub fn subscribe_bars(pattern: MStr<Pattern>, handler: TypedHandler<Bar>, priority: Option<u8>) {
+pub fn subscribe_bars(pattern: MStr<Pattern>, handler: TypedHandler<Bar>, priority: Option<u32>) {
     get_message_bus()
         .borrow_mut()
         .router_bars
@@ -342,7 +342,7 @@ pub fn subscribe_bars(pattern: MStr<Pattern>, handler: TypedHandler<Bar>, priori
 pub fn subscribe_mark_prices(
     pattern: MStr<Pattern>,
     handler: TypedHandler<MarkPriceUpdate>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus().borrow_mut().router_mark_prices.subscribe(
         pattern,
@@ -355,7 +355,7 @@ pub fn subscribe_mark_prices(
 pub fn subscribe_index_prices(
     pattern: MStr<Pattern>,
     handler: TypedHandler<IndexPriceUpdate>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus()
         .borrow_mut()
@@ -367,7 +367,7 @@ pub fn subscribe_index_prices(
 pub fn subscribe_funding_rates(
     pattern: MStr<Pattern>,
     handler: TypedHandler<FundingRateUpdate>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus()
         .borrow_mut()
@@ -379,7 +379,7 @@ pub fn subscribe_funding_rates(
 pub fn subscribe_greeks(
     pattern: MStr<Pattern>,
     handler: TypedHandler<GreeksData>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus()
         .borrow_mut()
@@ -391,7 +391,7 @@ pub fn subscribe_greeks(
 pub fn subscribe_option_greeks(
     pattern: MStr<Pattern>,
     handler: TypedHandler<OptionGreeks>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus()
         .borrow_mut()
@@ -403,7 +403,7 @@ pub fn subscribe_option_greeks(
 pub fn subscribe_option_chain(
     pattern: MStr<Pattern>,
     handler: TypedHandler<OptionChainSlice>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus()
         .borrow_mut()
@@ -415,7 +415,7 @@ pub fn subscribe_option_chain(
 pub fn subscribe_order_events(
     pattern: MStr<Pattern>,
     handler: TypedHandler<OrderEventAny>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus()
         .borrow_mut()
@@ -427,7 +427,7 @@ pub fn subscribe_order_events(
 pub fn subscribe_position_events(
     pattern: MStr<Pattern>,
     handler: TypedHandler<PositionEvent>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus()
         .borrow_mut()
@@ -439,7 +439,7 @@ pub fn subscribe_position_events(
 pub fn subscribe_account_state(
     pattern: MStr<Pattern>,
     handler: TypedHandler<AccountState>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus()
         .borrow_mut()
@@ -451,7 +451,7 @@ pub fn subscribe_account_state(
 pub fn subscribe_positions(
     pattern: MStr<Pattern>,
     handler: TypedHandler<Position>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus().borrow_mut().router_positions.subscribe(
         pattern,
@@ -465,7 +465,7 @@ pub fn subscribe_positions(
 pub fn subscribe_defi_blocks(
     pattern: MStr<Pattern>,
     handler: TypedHandler<Block>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus().borrow_mut().router_defi_blocks.subscribe(
         pattern,
@@ -479,7 +479,7 @@ pub fn subscribe_defi_blocks(
 pub fn subscribe_defi_pools(
     pattern: MStr<Pattern>,
     handler: TypedHandler<Pool>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus().borrow_mut().router_defi_pools.subscribe(
         pattern,
@@ -493,7 +493,7 @@ pub fn subscribe_defi_pools(
 pub fn subscribe_defi_swaps(
     pattern: MStr<Pattern>,
     handler: TypedHandler<PoolSwap>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus().borrow_mut().router_defi_swaps.subscribe(
         pattern,
@@ -507,7 +507,7 @@ pub fn subscribe_defi_swaps(
 pub fn subscribe_defi_liquidity(
     pattern: MStr<Pattern>,
     handler: TypedHandler<PoolLiquidityUpdate>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus()
         .borrow_mut()
@@ -520,7 +520,7 @@ pub fn subscribe_defi_liquidity(
 pub fn subscribe_defi_collects(
     pattern: MStr<Pattern>,
     handler: TypedHandler<PoolFeeCollect>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus()
         .borrow_mut()
@@ -533,7 +533,7 @@ pub fn subscribe_defi_collects(
 pub fn subscribe_defi_flash(
     pattern: MStr<Pattern>,
     handler: TypedHandler<PoolFlash>,
-    priority: Option<u8>,
+    priority: Option<u32>,
 ) {
     get_message_bus().borrow_mut().router_defi_flash.subscribe(
         pattern,

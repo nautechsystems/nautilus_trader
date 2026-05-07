@@ -139,7 +139,7 @@ pub struct Subscription {
     /// The priority for the subscription determines the ordering of handlers receiving
     /// messages being processed, higher priority handlers will receive messages before
     /// lower priority handlers.
-    pub priority: u8,
+    pub priority: u32,
 }
 
 impl Subscription {
@@ -148,7 +148,7 @@ impl Subscription {
     pub fn new(
         pattern: MStr<Pattern>,
         handler: ShareableMessageHandler,
-        priority: Option<u8>,
+        priority: Option<u32>,
     ) -> Self {
         Self {
             handler_id: handler.0.id(),

@@ -46,13 +46,13 @@ pub struct TypedSubscription<T: 'static> {
     /// The pattern for matching topics.
     pub pattern: MStr<Pattern>,
     /// Higher priority handlers receive messages first.
-    pub priority: u8,
+    pub priority: u32,
 }
 
 impl<T: 'static> TypedSubscription<T> {
     /// Creates a new typed subscription.
     #[must_use]
-    pub fn new(pattern: MStr<Pattern>, handler: TypedHandler<T>, priority: Option<u8>) -> Self {
+    pub fn new(pattern: MStr<Pattern>, handler: TypedHandler<T>, priority: Option<u32>) -> Self {
         Self {
             handler_id: handler.id(),
             pattern,
@@ -169,7 +169,7 @@ impl<T: 'static> TopicRouter<T> {
     ///
     /// Assigning priority is an advanced feature. Higher priority handlers
     /// receive messages before lower priority handlers.
-    pub fn subscribe(&mut self, pattern: MStr<Pattern>, handler: TypedHandler<T>, priority: u8) {
+    pub fn subscribe(&mut self, pattern: MStr<Pattern>, handler: TypedHandler<T>, priority: u32) {
         let sub = TypedSubscription::new(pattern, handler, Some(priority));
 
         // Check for duplicate

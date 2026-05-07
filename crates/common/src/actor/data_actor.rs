@@ -1041,7 +1041,18 @@ pub trait DataActor:
     /// Subscribe to [`Signal`] data by `name`.
     ///
     /// An empty `name` subscribes to every signal.
-    fn subscribe_signal(&mut self, name: &str)
+    ///
+    /// # Parameters
+    ///
+    /// - `name`: signal name to subscribe to.
+    /// - `priority`: optional dispatch priority. Pass `None` for default
+    ///   ordering (by pattern then handler ID). Pass `Some(p)` when actors
+    ///   sharing a signal need deterministic ordering: higher-priority
+    ///   handlers receive the message before lower-priority handlers.
+    ///
+    /// Re-subscribing does not update an existing priority; call
+    /// [`unsubscribe_signal`](Self::unsubscribe_signal) first.
+    fn subscribe_signal(&mut self, name: &str, priority: Option<u32>)
     where
         Self: 'static + Debug + Sized,
     {
@@ -1058,7 +1069,7 @@ pub trait DataActor:
             }
         });
 
-        DataActorCore::subscribe_signal(self, handler, name);
+        DataActorCore::subscribe_signal(self, handler, name, priority);
     }
 
     /// Subscribe to streaming [`QuoteTick`] data for the `instrument_id`.
@@ -3171,7 +3182,12 @@ impl DataActorCore {
     /// # Panics
     ///
     /// Panics if the actor is not registered with a trader.
-    pub fn subscribe_signal(&mut self, handler: ShareableMessageHandler, name: &str) {
+    pub fn subscribe_signal(
+        &mut self,
+        handler: ShareableMessageHandler,
+        name: &str,
+        priority: Option<u32>,
+    ) {
         self.check_registered();
 
         let pattern = get_signal_pattern(name);
@@ -3183,7 +3199,7 @@ impl DataActorCore {
             return;
         }
         self.topic_handlers.insert(pattern, handler.clone());
-        msgbus::subscribe_any(pattern, handler, None);
+        msgbus::subscribe_any(pattern, handler, priority);
     }
 
     /// Helper method for registering quotes subscriptions from the trait.

@@ -38,7 +38,7 @@ use nautilus_model::{
         stubs::*,
     },
     enums::{BookAction, BookType, GreeksConvention, OrderSide},
-    identifiers::{ClientId, InstrumentId, OptionSeriesId, TraderId, Venue},
+    identifiers::{ActorId, ClientId, InstrumentId, OptionSeriesId, TraderId, Venue},
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::*},
     orderbook::OrderBook,
     stubs::TestDefault,
@@ -2427,7 +2427,7 @@ fn test_publish_signal_panics_when_unregistered() {
 #[should_panic(expected = "Actor has not been registered")]
 fn test_subscribe_signal_panics_when_unregistered() {
     let mut actor = TestDataActor::new(DataActorConfig::default());
-    actor.subscribe_signal("example");
+    actor.subscribe_signal("example", None);
 }
 
 #[rstest]
@@ -2499,7 +2499,7 @@ fn test_subscribe_signal_multi_word_name_matches_published_topic(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_signal("hello world");
+    actor.subscribe_signal("hello world", None);
     drop(actor);
 
     let publisher = get_actor_unchecked::<TestDataActor>(&actor_id);
@@ -2530,7 +2530,7 @@ fn test_publish_signal_reaches_subscriber(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_signal(name);
+    actor.subscribe_signal(name, None);
     drop(actor);
 
     let publisher = get_actor_unchecked::<TestDataActor>(&actor_id);
@@ -2558,7 +2558,7 @@ fn test_subscribe_signal_wildcard_matches_all_names(
     actor.start().unwrap();
 
     // Empty name = subscribe to all signals
-    actor.subscribe_signal("");
+    actor.subscribe_signal("", None);
     drop(actor);
 
     let publisher = get_actor_unchecked::<TestDataActor>(&actor_id);
@@ -2582,7 +2582,7 @@ fn test_unsubscribe_signal_stops_delivery(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_signal("alpha");
+    actor.subscribe_signal("alpha", None);
     drop(actor);
 
     let publisher = get_actor_unchecked::<TestDataActor>(&actor_id);
@@ -2601,6 +2601,92 @@ fn test_unsubscribe_signal_stops_delivery(
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_signals.len(), 1);
+}
+
+#[rstest]
+#[case(100, 10)]
+#[case(1_000_000, 10)] // Above old u8 ceiling: locks in u32 widening
+#[case(u32::MAX, 0)] // Saturated boundary
+fn test_subscribe_signal_dispatches_in_priority_order(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    #[case] high_priority: u32,
+    #[case] low_priority: u32,
+) {
+    use crate::msgbus::switchboard::get_signal_topic;
+
+    set_data_cmd_sender(Arc::new(SyncDataCommandSender));
+    *get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut actor_high = TestDataActor::new(DataActorConfig {
+        actor_id: Some(ActorId::new("ACTOR-HIGH")),
+        ..DataActorConfig::default()
+    });
+    actor_high
+        .register(trader_id, clock.clone(), cache.clone())
+        .unwrap();
+    let high_id = actor_high.actor_id().inner();
+    register_actor(actor_high);
+
+    let mut actor_low = TestDataActor::new(DataActorConfig {
+        actor_id: Some(ActorId::new("ACTOR-LOW")),
+        ..DataActorConfig::default()
+    });
+    actor_low.register(trader_id, clock, cache).unwrap();
+    let low_id = actor_low.actor_id().inner();
+    register_actor(actor_low);
+
+    let mut high = get_actor_unchecked::<TestDataActor>(&high_id);
+    high.start().unwrap();
+    high.subscribe_signal("trigger", Some(high_priority));
+    drop(high);
+
+    let mut low = get_actor_unchecked::<TestDataActor>(&low_id);
+    low.start().unwrap();
+    low.subscribe_signal("trigger", Some(low_priority));
+    drop(low);
+
+    // Bus must dispatch the high-priority subscription first regardless of
+    // registration order, including for priorities above the old u8 ceiling.
+    let topic = get_signal_topic("trigger");
+    let subs = get_message_bus().borrow_mut().matching_subscriptions(topic);
+    assert_eq!(subs.len(), 2);
+    assert_eq!(subs[0].priority, high_priority);
+    assert_eq!(subs[1].priority, low_priority);
+
+    // Both actors still receive the signal end-to-end.
+    let publisher = get_actor_unchecked::<TestDataActor>(&high_id);
+    publisher.publish_signal("trigger", "go".to_string(), UnixNanos::default());
+    drop(publisher);
+
+    let high = get_actor_unchecked::<TestDataActor>(&high_id);
+    let low = get_actor_unchecked::<TestDataActor>(&low_id);
+    assert_eq!(high.received_signals.len(), 1);
+    assert_eq!(low.received_signals.len(), 1);
+}
+
+#[rstest]
+fn test_subscribe_signal_resubscribe_does_not_update_priority(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    use crate::msgbus::switchboard::get_signal_topic;
+
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    // First subscription wins; second is silently dropped (warn-only).
+    actor.subscribe_signal("trigger", Some(10));
+    actor.subscribe_signal("trigger", Some(100));
+    drop(actor);
+
+    let topic = get_signal_topic("trigger");
+    let subs = get_message_bus().borrow_mut().matching_subscriptions(topic);
+    assert_eq!(subs.len(), 1);
+    assert_eq!(subs[0].priority, 10);
 }
 
 #[rstest]

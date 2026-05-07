@@ -1192,9 +1192,9 @@ impl PyDataActor {
     }
 
     #[pyo3(name = "subscribe_signal")]
-    #[pyo3(signature = (name=""))]
-    fn py_subscribe_signal(&mut self, name: &str) {
-        DataActor::subscribe_signal(self.inner_mut(), name);
+    #[pyo3(signature = (name="", priority=None))]
+    fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) {
+        DataActor::subscribe_signal(self.inner_mut(), name, priority);
     }
 
     #[pyo3(name = "subscribe_instruments")]
@@ -2528,10 +2528,30 @@ mod tests {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         let mut actor = create_registered_actor(clock, cache, trader_id);
-        actor.py_subscribe_signal("example");
+        actor.py_subscribe_signal("example", None);
         actor.py_unsubscribe_signal("example");
-        actor.py_subscribe_signal("");
+        actor.py_subscribe_signal("", None);
         actor.py_unsubscribe_signal("");
+    }
+
+    #[rstest]
+    fn test_py_subscribe_signal_forwards_priority(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        use crate::msgbus::{MessageBus, get_message_bus, switchboard::get_signal_topic};
+
+        *get_message_bus().borrow_mut() = MessageBus::default();
+
+        let mut actor = create_registered_actor(clock, cache, trader_id);
+        actor.py_subscribe_signal("trigger", Some(50));
+
+        // The PyO3 binding must forward the priority to the bus unchanged.
+        let topic = get_signal_topic("trigger");
+        let subs = get_message_bus().borrow_mut().matching_subscriptions(topic);
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].priority, 50);
     }
 
     #[rstest]
@@ -2587,7 +2607,7 @@ mod tests {
             rust_actor.register_in_global_registries();
             rust_actor.py_start().unwrap();
 
-            rust_actor.py_subscribe_signal("example");
+            rust_actor.py_subscribe_signal("example", None);
             let val1: Py<PyAny> = "1.5".into_py_any_unwrap(py);
             let val2: Py<PyAny> = 2.0_f64.into_py_any_unwrap(py);
             rust_actor
@@ -2622,7 +2642,7 @@ mod tests {
             rust_actor.register_in_global_registries();
             rust_actor.py_start().unwrap();
 
-            rust_actor.py_subscribe_signal("example");
+            rust_actor.py_subscribe_signal("example", None);
             let val1: Py<PyAny> = "1".into_py_any_unwrap(py);
             let val2: Py<PyAny> = "2".into_py_any_unwrap(py);
             rust_actor
@@ -2658,7 +2678,7 @@ mod tests {
             rust_actor.register_in_global_registries();
             rust_actor.py_start().unwrap();
 
-            rust_actor.py_subscribe_signal("");
+            rust_actor.py_subscribe_signal("", None);
             let val1: Py<PyAny> = "1".into_py_any_unwrap(py);
             let val2: Py<PyAny> = "2".into_py_any_unwrap(py);
             let val3: Py<PyAny> = "3".into_py_any_unwrap(py);

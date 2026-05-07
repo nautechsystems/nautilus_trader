@@ -150,7 +150,7 @@ pub struct DataEngine {
     data_count: u64,
     request_count: u64,
     response_count: u64,
-    pub(crate) msgbus_priority: u8,
+    pub(crate) msgbus_priority: u32,
     pub(crate) config: DataEngineConfig,
     #[cfg(feature = "defi")]
     pub(crate) pool_updaters: AHashMap<InstrumentId, Rc<PoolUpdater>>,
