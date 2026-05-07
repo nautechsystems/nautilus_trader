@@ -74,6 +74,17 @@ async def test_stop(ib_client_running):
     assert len(ib_client_running.registered_nautilus_clients) == 0
 
 
+def test_dispose_sets_shutdown_flag(ib_client):
+    # Arrange
+
+    # Act
+    ib_client.dispose()
+
+    # Assert
+    assert ib_client._is_shutting_down is True
+    assert ib_client.is_disposed is True
+
+
 @pytest.mark.asyncio
 async def test_reset(ib_client_running):
     # Arrange
@@ -209,6 +220,21 @@ async def test_run_tws_incoming_msg_reader(ib_client):
 
 
 @pytest.mark.asyncio
+async def test_run_tws_incoming_msg_reader_stops_before_thread_work_when_shutting_down(ib_client):
+    # Arrange
+    ib_client._eclient.conn = Mock()
+    ib_client._eclient.conn.isConnected.return_value = True
+    ib_client._is_shutting_down = True
+
+    with patch("asyncio.to_thread", new_callable=AsyncMock) as to_thread:
+        # Act
+        await ib_client._run_tws_incoming_msg_reader()
+
+    # Assert
+    to_thread.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_run_internal_msg_queue(ib_client_running):
     # Arrange
     test_messages = [b"test message 1", b"test message 2"]
@@ -221,3 +247,40 @@ async def test_run_internal_msg_queue(ib_client_running):
     # Assert
     await eventually(lambda: ib_client_running._process_message.call_count == len(test_messages))
     assert ib_client_running._internal_msg_queue.qsize() == 0
+
+
+@pytest.mark.asyncio
+async def test_run_internal_msg_queue_stops_before_processing_when_shutting_down(ib_client):
+    # Arrange
+    ib_client._eclient.conn = Mock()
+    ib_client._eclient.conn.isConnected.return_value = True
+    ib_client._internal_msg_queue.put_nowait(b"test message")
+    ib_client._process_message = AsyncMock()
+    ib_client._is_shutting_down = True
+
+    # Act
+    await ib_client._run_internal_msg_queue_processor()
+
+    # Assert
+    ib_client._process_message.assert_not_awaited()
+    assert ib_client._internal_msg_queue.qsize() == 1
+
+
+@pytest.mark.asyncio
+async def test_run_internal_msg_queue_handles_executor_shutdown_during_processing(ib_client):
+    # Arrange
+    async def process_message(_):
+        ib_client._is_shutting_down = True
+        raise RuntimeError("cannot schedule new futures after shutdown")
+
+    ib_client._eclient.conn = Mock()
+    ib_client._eclient.conn.isConnected.return_value = True
+    ib_client._internal_msg_queue.put_nowait(b"test message")
+    ib_client._process_message = AsyncMock(side_effect=process_message)
+
+    # Act
+    await ib_client._run_internal_msg_queue_processor()
+
+    # Assert
+    ib_client._process_message.assert_awaited_once()
+    assert ib_client._internal_msg_queue.qsize() == 0
