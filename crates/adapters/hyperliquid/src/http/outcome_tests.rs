@@ -90,7 +90,7 @@ mod tests {
             only_isolated: false,
             is_hip3: false,
             active: true,
-            raw_data: r#"{"outcome":2,"name":"Recurring","description":"class:priceBinary|underlying:BTC|expiry:20260509-0600|targetPrice:80000|period:1d","sideSpecs":[{"name":"Yes"}]}"#.to_string(),
+            raw_data: r#"{"outcome":{"outcome":2,"name":"Recurring","description":"class:priceBinary|underlying:BTC|expiry:20260509-0600|targetPrice:80000|period:1d","sideSpecs":[{"name":"Yes"}]}}"#.to_string(),
         };
 
         let ts_init = UnixNanos::default();
@@ -163,5 +163,100 @@ mod tests {
                 "outcome_id={outcome_id}, side={side}",
             );
         }
+    }
+
+    #[rstest]
+    fn test_create_binary_option_from_price_bucket_question() {
+        let meta = OutcomeMetaResponse {
+            outcomes: vec![
+                OutcomeDescriptor {
+                    outcome: 7130,
+                    name: "Recurring Named Outcome".to_string(),
+                    description: "index:0".to_string(),
+                    side_specs: vec![
+                        OutcomeSideSpec {
+                            name: "Yes".to_string(),
+                        },
+                        OutcomeSideSpec {
+                            name: "No".to_string(),
+                        },
+                    ],
+                },
+                OutcomeDescriptor {
+                    outcome: 7131,
+                    name: "Recurring Named Outcome".to_string(),
+                    description: "index:1".to_string(),
+                    side_specs: vec![
+                        OutcomeSideSpec {
+                            name: "Yes".to_string(),
+                        },
+                        OutcomeSideSpec {
+                            name: "No".to_string(),
+                        },
+                    ],
+                },
+                OutcomeDescriptor {
+                    outcome: 7132,
+                    name: "Recurring Named Outcome".to_string(),
+                    description: "index:2".to_string(),
+                    side_specs: vec![
+                        OutcomeSideSpec {
+                            name: "Yes".to_string(),
+                        },
+                        OutcomeSideSpec {
+                            name: "No".to_string(),
+                        },
+                    ],
+                },
+            ],
+            questions: vec![crate::http::models::OutcomeQuestion {
+                question_id: 208,
+                name: "Recurring".to_string(),
+                description: "class:priceBucket|underlying:BTC|expiry:20260507-1300|priceThresholds:81010,81253|period:15m".to_string(),
+                fallback_outcome: Some(7129),
+                named_outcomes: vec![7130, 7131, 7132],
+                settled_named_outcomes: vec![],
+            }],
+        };
+
+        let defs = parse_outcome_instruments(&meta).unwrap();
+        assert_eq!(defs.len(), 6);
+
+        let yes_def = defs
+            .iter()
+            .find(|d| d.symbol.as_str() == "OUTCOME-7130-YES-OUTCOME")
+            .expect("expected yes def");
+
+        let ts_init = UnixNanos::default();
+        let instrument = create_instrument_from_def(yes_def, ts_init).expect("instrument");
+        let InstrumentAny::BinaryOption(binary) = instrument else {
+            panic!("expected BinaryOption");
+        };
+
+        // Activation/expiry must be derived from the question (15m window ending at 13:00 UTC).
+        assert!(binary.expiration_ns.as_u64() > 0);
+        assert!(binary.activation_ns < binary.expiration_ns);
+        assert_eq!(
+            (binary.expiration_ns.as_u64() - binary.activation_ns.as_u64()) / 1_000_000_000,
+            900
+        );
+
+        // Ensure thresholds are exposed on info for downstream paper trading.
+        let info = binary.info.expect("expected info");
+        let hl = info
+            .get("hyperliquid")
+            .and_then(|v| v.as_object())
+            .expect("expected hyperliquid object");
+        let price_bucket = hl
+            .get("price_bucket")
+            .and_then(|v| v.as_object())
+            .expect("expected price_bucket");
+        let thresholds = price_bucket
+            .get("price_thresholds")
+            .and_then(|v| v.as_array())
+            .expect("expected price_thresholds");
+        assert_eq!(thresholds.len(), 2);
+        assert_eq!(thresholds[0].as_str().unwrap(), "81010");
+        assert_eq!(thresholds[1].as_str().unwrap(), "81253");
     }
 }

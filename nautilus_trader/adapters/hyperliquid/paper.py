@@ -194,3 +194,133 @@ def get_outcome_target_price(instrument: BinaryOption) -> Decimal:
             return Decimal(str(parsed["targetPrice"]))
 
     raise ValueError(f"No `targetPrice` found on instrument.info for {instrument.id}")
+
+
+def get_price_bucket_thresholds(instrument: BinaryOption) -> tuple[Decimal, Decimal]:
+    """
+    Return the two `priceThresholds` boundaries for a Hyperliquid `priceBucket` market.
+
+    Notes
+    -----
+    For `priceBucket`, the adapter stores parsed question metadata under
+    `instrument.info["hyperliquid"]["price_bucket"]["price_thresholds"]`.
+
+    """
+    if not is_outcome_instrument_id(instrument.id):
+        raise ValueError(f"Instrument is not a Hyperliquid outcome market: {instrument.id}")
+
+    info = instrument.info or {}
+    hl = info.get("hyperliquid") if isinstance(info, dict) else None
+    if not isinstance(hl, dict):
+        raise ValueError(f"No hyperliquid info found on instrument.info for {instrument.id}")
+
+    bucket = hl.get("price_bucket")
+    if not isinstance(bucket, dict):
+        raise ValueError(f"No priceBucket metadata found on instrument.info for {instrument.id}")
+
+    thresholds = bucket.get("price_thresholds")
+    if (
+        not isinstance(thresholds, list)
+        or len(thresholds) != 2
+        or thresholds[0] is None
+        or thresholds[1] is None
+    ):
+        raise ValueError(f"Invalid price_thresholds for {instrument.id}: {thresholds}")
+
+    return (Decimal(str(thresholds[0])), Decimal(str(thresholds[1])))
+
+
+def get_price_bucket_index(instrument: BinaryOption) -> int:
+    """
+    Return bucket index (0/1/2) for a Hyperliquid `priceBucket` named outcome
+    instrument.
+    """
+    if not is_outcome_instrument_id(instrument.id):
+        raise ValueError(f"Instrument is not a Hyperliquid outcome market: {instrument.id}")
+
+    info = instrument.info or {}
+    hl = info.get("hyperliquid") if isinstance(info, dict) else None
+    if not isinstance(hl, dict):
+        raise ValueError(f"No hyperliquid info found on instrument.info for {instrument.id}")
+
+    idx = hl.get("bucket_index")
+    if idx is None:
+        raise ValueError(f"No bucket_index found on instrument.info for {instrument.id}")
+    return int(idx)
+
+
+def select_active_price_bucket_instrument(
+    instruments: Iterable[Instrument],
+    *,
+    underlying: str,
+    period: str,
+    bucket_index: int,
+    side: str = "YES",
+    now_ns: int | None = None,
+) -> InstrumentId:
+    """
+    Select the currently active Hyperliquid `priceBucket` named outcome instrument.
+
+    Parameters
+    ----------
+    instruments : Iterable[Instrument]
+        Loaded instruments (from cache/provider).
+    underlying : str
+        Underlying symbol (e.g., "BTC").
+    period : str
+        Recurrence period string (e.g., "15m", "1d").
+    bucket_index : int
+        0/1/2 (e.g., down/range/up depending on venue ordering).
+    side : str, default "YES"
+        Outcome side to prefer (typically "YES").
+    now_ns : int, optional
+        Override current time in nanoseconds.
+
+    """
+    now_ns = now_ns if now_ns is not None else time.time_ns()
+    side = side.upper()
+
+    def matches(inst: BinaryOption) -> bool:
+        info = inst.info or {}
+        hl = info.get("hyperliquid") if isinstance(info, dict) else None
+        if not isinstance(hl, dict):
+            return False
+        bucket = hl.get("price_bucket")
+        if not isinstance(bucket, dict):
+            return False
+        if (bucket.get("underlying") or "").upper() != underlying.upper():
+            return False
+        if (bucket.get("period") or "") != period:
+            return False
+        return int(hl.get("bucket_index", -1)) == int(bucket_index)
+
+    candidates: list[BinaryOption] = [
+        inst
+        for inst in instruments
+        if isinstance(inst, BinaryOption) and is_outcome_instrument_id(inst.id)
+    ]
+
+    if not candidates:
+        raise ValueError("No Hyperliquid outcome instruments were loaded")
+
+    filtered = [inst for inst in candidates if matches(inst)]
+
+    if not filtered:
+        raise ValueError(
+            f"No matching priceBucket instruments found for underlying={underlying}, period={period}, bucket_index={bucket_index}",
+        )
+
+    active = [inst for inst in filtered if int(inst.expiration_ns) > now_ns]
+    if not active:
+        active = filtered
+
+    def score(inst: BinaryOption) -> tuple:
+        matches_side = (inst.outcome or "").upper() == side
+        return (
+            0 if matches_side else 1,
+            int(inst.expiration_ns),
+            inst.id.value,
+        )
+
+    active.sort(key=score)
+    return active[0].id

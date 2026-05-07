@@ -32,8 +32,8 @@ use serde_json::json;
 use ustr::Ustr;
 
 use super::models::{
-    AssetPosition, HyperliquidFill, OutcomeDescriptor, OutcomeMetaResponse, PerpMeta, SpotBalance,
-    SpotMeta,
+    AssetPosition, HyperliquidFill, OutcomeDescriptor, OutcomeMetaResponse, OutcomeQuestion,
+    PerpMeta, SpotBalance, SpotMeta,
 };
 use crate::{
     common::{
@@ -275,6 +275,24 @@ pub fn parse_outcome_instruments(
     const OUTCOME_PRICE_DECIMALS: u32 = 6;
     const OUTCOME_SIZE_DECIMALS: u32 = 6; // USDH precision
 
+    // Build question -> named outcome mapping for categorical questions (e.g., priceBucket with 3
+    // buckets: Down / Range / Up).
+    let mut question_by_outcome_id: ahash::AHashMap<u32, (OutcomeQuestion, u8)> =
+        ahash::AHashMap::new();
+
+    for q in &meta.questions {
+        if let Some(fallback_outcome) = q.fallback_outcome {
+            question_by_outcome_id.insert(fallback_outcome, (q.clone(), u8::MAX));
+        }
+
+        for (idx, outcome_id) in q.named_outcomes.iter().enumerate() {
+            let Ok(idx_u8) = u8::try_from(idx) else {
+                continue;
+            };
+            question_by_outcome_id.insert(*outcome_id, (q.clone(), idx_u8));
+        }
+    }
+
     let mut defs = Vec::new();
 
     for outcome in &meta.outcomes {
@@ -296,6 +314,22 @@ pub fn parse_outcome_instruments(
             let tick_size = pow10_neg(OUTCOME_PRICE_DECIMALS);
             let lot_size = pow10_neg(OUTCOME_SIZE_DECIMALS);
 
+            let raw_data = if let Some((question, bucket_index)) =
+                question_by_outcome_id.get(&outcome.outcome)
+            {
+                serde_json::to_string(&serde_json::json!({
+                    "outcome": outcome,
+                    "question": question,
+                    "bucket_index": bucket_index,
+                }))
+                .unwrap_or_default()
+            } else {
+                serde_json::to_string(&serde_json::json!({
+                    "outcome": outcome,
+                }))
+                .unwrap_or_default()
+            };
+
             let def = HyperliquidInstrumentDef {
                 symbol: symbol.into(),
                 raw_symbol: raw_symbol.into(),
@@ -312,7 +346,7 @@ pub fn parse_outcome_instruments(
                 only_isolated: false,
                 is_hip3: false,
                 active: true,
-                raw_data: serde_json::to_string(outcome).unwrap_or_default(),
+                raw_data,
             };
 
             defs.push(def);
@@ -430,58 +464,91 @@ pub fn create_instrument_from_def(
             // Outcome markets use USDH for settlement
             let currency = get_currency("USDH");
 
-            // Parse raw_data to extract outcome metadata
-            let outcome_desc: serde_json::Result<OutcomeDescriptor> =
-                serde_json::from_str(&def.raw_data);
+            // Parse raw_data to extract outcome metadata.
+            //
+            // For categorical questions (e.g., priceBucket Down/Range/Up), `raw_data` includes the
+            // parent `question` payload + `bucket_index` so we can derive expiry/thresholds.
+            let raw_val: serde_json::Value = serde_json::from_str(&def.raw_data).ok()?;
+            let outcome_desc: OutcomeDescriptor =
+                serde_json::from_value(raw_val.get("outcome")?.clone()).ok()?;
+            let question: Option<OutcomeQuestion> = raw_val
+                .get("question")
+                .and_then(|v| serde_json::from_value(v.clone()).ok());
+            let bucket_index: Option<u8> = raw_val
+                .get("bucket_index")
+                .and_then(|v| v.as_u64())
+                .and_then(|v| u8::try_from(v).ok());
 
-            let raw_description = outcome_desc.as_ref().map_or("", |o| o.description.as_str());
+            let raw_description = outcome_desc.description.as_str();
 
             let parsed_desc = parse_outcome_description(raw_description);
 
-            let (activation_ns, expiration_ns) =
-                match (parsed_desc.activation_ns, parsed_desc.expiration_ns) {
-                    (Some(a), Some(e)) => (a, e),
-                    (None, Some(e)) => (UnixNanos::default(), e),
-                    _ => (UnixNanos::default(), ts_init),
-                };
+            let parsed_question_desc = question
+                .as_ref()
+                .and_then(|q| parse_outcome_question_description(&q.description, bucket_index));
+
+            let (activation_ns, expiration_ns) = match (
+                parsed_desc.activation_ns,
+                parsed_desc.expiration_ns,
+                parsed_question_desc.as_ref().and_then(|p| p.activation_ns),
+                parsed_question_desc.as_ref().and_then(|p| p.expiration_ns),
+            ) {
+                (Some(a), Some(e), _, _) => (a, e),
+                (None, Some(e), _, _) => (UnixNanos::default(), e),
+                (_, _, Some(a), Some(e)) => (a, e),
+                (_, _, None, Some(e)) => (UnixNanos::default(), e),
+                _ => (UnixNanos::default(), ts_init),
+            };
 
             let outcome_side = parse_outcome_side_from_symbol(def.symbol.as_str())
                 .map(Ustr::from)
                 .or_else(|| {
                     outcome_desc
-                        .as_ref()
-                        .ok()
-                        .and_then(|o| o.side_specs.first())
+                        .side_specs
+                        .first()
                         .map(|s| Ustr::from(s.name.as_str()))
                 });
 
-            let description = parsed_desc
+            let description_str = parsed_desc
                 .question
                 .as_deref()
                 .filter(|s| !s.is_empty())
+                .or_else(|| {
+                    parsed_question_desc
+                        .as_ref()
+                        .and_then(|p| p.question.as_deref())
+                        .filter(|s| !s.is_empty())
+                })
                 .or_else(|| (!raw_description.is_empty()).then_some(raw_description))
-                .map(Ustr::from);
+                .map(str::to_string);
+
+            let description = description_str.as_deref().map(Ustr::from);
 
             let info: Option<Params> = serde_json::from_value(json!({
-                "hyperliquid": {
-                    "market_type": "outcome",
-                    "symbol": def.symbol.as_str(),
-                    "raw_symbol": def.raw_symbol.as_str(),
-                    "asset_index": def.asset_index,
-                    "outcome": outcome_desc.as_ref().ok(),
-                    "description_raw": raw_description,
-                    // Parsed `priceBinary` parameters (when available). For recurring markets,
-                    // `target_price` is the threshold used for settlement comparisons.
-                    "price_binary": {
-                        "underlying": parsed_desc.underlying,
-                        "period": parsed_desc.period,
-                        "expiry": parsed_desc.expiry,
-                        "target_price": parsed_desc.target_price,
-                    },
-                    "description_parsed": parsed_desc.fields,
-                }
-            }))
-            .ok();
+	                "hyperliquid": {
+	                    "market_type": "outcome",
+	                    "symbol": def.symbol.as_str(),
+	                    "raw_symbol": def.raw_symbol.as_str(),
+	                    "asset_index": def.asset_index,
+	                    "outcome": outcome_desc,
+	                    "description_raw": raw_description,
+	                    // Parsed `priceBinary` parameters (when available). For recurring markets,
+	                    // `target_price` is the threshold used for settlement comparisons.
+	                    "price_binary": {
+	                        "underlying": parsed_desc.underlying,
+	                        "period": parsed_desc.period,
+	                        "expiry": parsed_desc.expiry,
+	                        "target_price": parsed_desc.target_price,
+	                    },
+	                    // Parsed `priceBucket` parameters (when available). For recurring markets,
+	                    // `price_thresholds` defines the two boundaries which create three buckets.
+	                    "price_bucket": parsed_question_desc.as_ref().and_then(|p| p.price_bucket.clone()),
+	                    "bucket_index": bucket_index,
+	                    "question": question,
+	                    "description_parsed": parsed_desc.fields,
+	                }
+	            }))
+	            .ok();
 
             // For outcome markets, we use BinaryOption instrument
             let binary_option = BinaryOption::new_checked(
@@ -528,6 +595,14 @@ struct ParsedOutcomeDescription {
     target_price: Option<String>,
     expiry: Option<String>,
     fields: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ParsedOutcomeQuestionDescription {
+    activation_ns: Option<UnixNanos>,
+    expiration_ns: Option<UnixNanos>,
+    question: Option<String>,
+    price_bucket: Option<serde_json::Value>,
 }
 
 fn parse_outcome_description(description: &str) -> ParsedOutcomeDescription {
@@ -603,6 +678,93 @@ fn parse_outcome_description(description: &str) -> ParsedOutcomeDescription {
         expiry: expiry_str,
         fields: serde_json::Value::Object(map),
     }
+}
+
+fn parse_outcome_question_description(
+    description: &str,
+    bucket_index: Option<u8>,
+) -> Option<ParsedOutcomeQuestionDescription> {
+    if description.is_empty() {
+        return None;
+    }
+
+    let mut map = serde_json::Map::new();
+
+    for part in description.split('|') {
+        let Some((k, v)) = part.split_once(':') else {
+            continue;
+        };
+        map.insert(k.to_string(), json!(v));
+    }
+
+    let class = map.get("class").and_then(|v| v.as_str())?;
+    if class != "priceBucket" {
+        return None;
+    }
+
+    let expiry = map
+        .get("expiry")
+        .and_then(|v| v.as_str())
+        .and_then(parse_outcome_expiry_to_nanos);
+
+    let period_nanos = map
+        .get("period")
+        .and_then(|v| v.as_str())
+        .and_then(parse_outcome_period_to_nanos);
+
+    let activation_ns = match (expiry, period_nanos) {
+        (Some(expiry_ns), Some(delta)) => expiry_ns.as_u64().checked_sub(delta).map(UnixNanos::new),
+        _ => None,
+    };
+
+    let thresholds: Option<Vec<&str>> =
+        map.get("priceThresholds")
+            .and_then(|v| v.as_str())
+            .map(|s| {
+                s.split(',')
+                    .map(str::trim)
+                    .filter(|p| !p.is_empty())
+                    .collect()
+            });
+
+    let price_bucket = thresholds.as_ref().and_then(|t| {
+        if t.len() != 2 {
+            return None;
+        }
+        Some(json!({
+            "class": "priceBucket",
+            "underlying": map.get("underlying").and_then(|v| v.as_str()),
+            "period": map.get("period").and_then(|v| v.as_str()),
+            "expiry": map.get("expiry").and_then(|v| v.as_str()),
+            "price_thresholds": [t[0], t[1]],
+        }))
+    });
+
+    let question = match (
+        map.get("underlying").and_then(|v| v.as_str()),
+        thresholds.as_ref(),
+        expiry.and_then(unix_nanos_to_iso),
+        bucket_index,
+    ) {
+        (Some(u), Some(t), Some(exp), Some(0)) if t.len() == 2 => {
+            Some(format!("Will {u} be below {} at {exp}?", t[0]))
+        }
+        (Some(u), Some(t), Some(exp), Some(1)) if t.len() == 2 => Some(format!(
+            "Will {u} be between {} and {} at {exp}?",
+            t[0], t[1]
+        )),
+        (Some(u), Some(t), Some(exp), Some(2)) if t.len() == 2 => {
+            Some(format!("Will {u} be above {} at {exp}?", t[1]))
+        }
+        _ => None,
+    };
+
+    Some(ParsedOutcomeQuestionDescription {
+        activation_ns,
+        expiration_ns: expiry,
+        question,
+        price_bucket,
+    })
 }
 
 fn parse_outcome_expiry_to_nanos(expiry: &str) -> Option<UnixNanos> {

@@ -3261,7 +3261,7 @@ mod tests {
             only_isolated: false,
             is_hip3: false,
             active: true,
-            raw_data: r#"{"outcome":2,"name":"Recurring","description":"test","sideSpecs":[{"name":"Yes"},{"name":"No"}]}"#.to_string(),
+            raw_data: r#"{"outcome":{"outcome":2,"name":"Recurring","description":"test","sideSpecs":[{"name":"Yes"},{"name":"No"}]}}"#.to_string(),
         };
 
         let ts = get_atomic_clock_realtime().get_time_ns();

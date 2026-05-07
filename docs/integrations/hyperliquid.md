@@ -222,6 +222,22 @@ via `update_outcome_instruments_on_expiry` so the engine sees the latest `Binary
 and metadata.
 :::
 
+#### `priceBucket` thresholds (Up / Range / Down)
+
+Some recurring outcome products (commonly `period:15m`) are published as `priceBucket` questions with
+three "named outcomes" (e.g., Up / Range / Down) and two boundary thresholds. Hyperliquid exposes
+these boundaries via `outcomeMeta.questions[].description` as `priceThresholds:<low>,<high>`.
+
+The adapter attaches the question metadata to each named outcome instrument and exposes the parsed
+thresholds on the `BinaryOption.info` payload:
+
+```python
+from nautilus_trader.adapters.hyperliquid.paper import get_price_bucket_thresholds
+
+inst = cache.instrument(InstrumentId.from_str("OUTCOME-7130-YES-OUTCOME.HYPERLIQUID"))
+low, high = get_price_bucket_thresholds(inst)  # Decimal, Decimal
+```
+
 #### `targetPrice` threshold (use this)
 
 For HIP-4 `priceBinary` markets, the outcome is determined by comparing the reference price at

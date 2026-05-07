@@ -1546,9 +1546,31 @@ pub struct OutcomeSideSpec {
 #[serde(rename_all = "camelCase")]
 pub struct OutcomeQuestion {
     /// Question identifier.
+    ///
+    /// Upstream field names observed:
+    /// - `question` (current)
+    /// - `questionId` (legacy)
+    #[serde(rename = "question", alias = "questionId")]
     pub question_id: u32,
-    /// Question text.
-    pub text: String,
+    /// Question name/text.
+    ///
+    /// Upstream field names observed:
+    /// - `name` (current)
+    /// - `text` (legacy)
+    #[serde(rename = "name", default, alias = "text")]
+    pub name: String,
+    /// Question description (may encode recurring parameters).
+    #[serde(default)]
+    pub description: String,
+    /// Fallback outcome id for categorical questions (if any).
+    #[serde(default, rename = "fallbackOutcome")]
+    pub fallback_outcome: Option<u32>,
+    /// Named outcome ids for categorical questions (if any).
+    #[serde(default, rename = "namedOutcomes")]
+    pub named_outcomes: Vec<u32>,
+    /// Settled named outcomes (if any).
+    #[serde(default, rename = "settledNamedOutcomes")]
+    pub settled_named_outcomes: Vec<u32>,
 }
 
 /// Represents an outcome market asset with its assigned asset index.
