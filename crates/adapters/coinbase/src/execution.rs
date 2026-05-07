@@ -1163,11 +1163,10 @@ impl ExecutionClient for CoinbaseExecutionClient {
         // without having to look up the current quantity themselves.
         let (auto_price, auto_quantity) = {
             let cache = self.core.cache();
-            let order = cache.order(&cmd.client_order_id);
-            (
-                cmd.price.or_else(|| order.and_then(|o| o.price())),
-                cmd.quantity.or_else(|| order.map(|o| o.quantity())),
-            )
+            let cached = cache.order(&cmd.client_order_id);
+            let cached_price = cached.as_ref().and_then(|o| o.price());
+            let cached_qty = cached.as_ref().map(|o| o.quantity());
+            (cmd.price.or(cached_price), cmd.quantity.or(cached_qty))
         };
 
         let http_client = self.http_client.clone();

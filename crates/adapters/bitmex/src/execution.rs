@@ -946,7 +946,7 @@ impl ExecutionClient for BitmexExecutionClient {
             .core
             .cache()
             .order(&cmd.client_order_id)
-            .cloned()
+            .map(|o| o.clone())
             .ok_or_else(|| {
                 anyhow::anyhow!("Order not found in cache for {}", cmd.client_order_id)
             })?;

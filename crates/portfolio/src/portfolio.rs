@@ -1018,7 +1018,7 @@ impl Portfolio {
                     let orders = cache
                         .orders_open(None, Some(&instrument_id), None, None, None)
                         .into_iter()
-                        .cloned()
+                        .map(|order| order.clone())
                         .collect::<Vec<OrderAny>>();
                     instruments_with_orders.push((instrument.clone(), orders));
                 } else {

@@ -232,7 +232,7 @@ impl OrderManager {
             .cache
             .borrow()
             .order(&rejected.client_order_id)
-            .cloned();
+            .map(|o| o.clone());
 
         if let Some(order) = cloned_order {
             if order.contingency_type() != Some(ContingencyType::NoContingency) {
@@ -252,7 +252,7 @@ impl OrderManager {
             .cache
             .borrow()
             .order(&canceled.client_order_id)
-            .cloned();
+            .map(|o| o.clone());
 
         if let Some(order) = cloned_order {
             if order.contingency_type() != Some(ContingencyType::NoContingency) {
@@ -268,7 +268,11 @@ impl OrderManager {
     }
 
     pub fn handle_order_expired(&mut self, expired: OrderExpired) {
-        let cloned_order = self.cache.borrow().order(&expired.client_order_id).cloned();
+        let cloned_order = self
+            .cache
+            .borrow()
+            .order(&expired.client_order_id)
+            .map(|o| o.clone());
         if let Some(order) = cloned_order {
             if order.contingency_type() != Some(ContingencyType::NoContingency) {
                 self.handle_contingencies(&order);
@@ -283,7 +287,11 @@ impl OrderManager {
     }
 
     pub fn handle_order_updated(&mut self, updated: OrderUpdated) {
-        let cloned_order = self.cache.borrow().order(&updated.client_order_id).cloned();
+        let cloned_order = self
+            .cache
+            .borrow()
+            .order(&updated.client_order_id)
+            .map(|o| o.clone());
         if let Some(order) = cloned_order {
             if order.contingency_type() != Some(ContingencyType::NoContingency) {
                 self.handle_contingencies_update(&order);
@@ -301,7 +309,11 @@ impl OrderManager {
     ///
     /// Panics if the OTO child order cannot be found for the given client order ID.
     pub fn handle_order_filled(&mut self, filled: OrderFilled) {
-        let order = if let Some(order) = self.cache.borrow().order(&filled.client_order_id).cloned()
+        let order = if let Some(order) = self
+            .cache
+            .borrow()
+            .order(&filled.client_order_id)
+            .map(|o| o.clone())
         {
             order
         } else {
@@ -350,14 +362,18 @@ impl OrderManager {
                 };
 
                 for client_order_id in linked_orders {
-                    let mut child_order =
-                        if let Some(order) = self.cache.borrow().order(client_order_id).cloned() {
-                            order
-                        } else {
-                            panic!(
-                                "Cannot find OTO child order for client_order_id: {client_order_id}"
-                            );
-                        };
+                    let mut child_order = if let Some(order) = self
+                        .cache
+                        .borrow()
+                        .order(client_order_id)
+                        .map(|o| o.clone())
+                    {
+                        order
+                    } else {
+                        panic!(
+                            "Cannot find OTO child order for client_order_id: {client_order_id}"
+                        );
+                    };
 
                     if !self.should_manage_order(&child_order) {
                         continue;
@@ -394,7 +410,11 @@ impl OrderManager {
                 };
 
                 for client_order_id in linked_orders {
-                    let contingent_order = match self.cache.borrow().order(client_order_id).cloned()
+                    let contingent_order = match self
+                        .cache
+                        .borrow()
+                        .order(client_order_id)
+                        .map(|o| o.clone())
                     {
                         Some(contingent_order) => contingent_order,
                         None => {
@@ -451,12 +471,16 @@ impl OrderManager {
         };
 
         for client_order_id in linked_orders {
-            let contingent_order =
-                if let Some(order) = self.cache.borrow().order(client_order_id).cloned() {
-                    order
-                } else {
-                    panic!("Cannot find contingent order for client_order_id: {client_order_id}");
-                };
+            let contingent_order = if let Some(order) = self
+                .cache
+                .borrow()
+                .order(client_order_id)
+                .map(|o| o.clone())
+            {
+                order
+            } else {
+                panic!("Cannot find contingent order for client_order_id: {client_order_id}");
+            };
 
             if !self.should_manage_order(&contingent_order)
                 || client_order_id == &order.client_order_id()
@@ -533,7 +557,12 @@ impl OrderManager {
         };
 
         for client_order_id in linked_orders {
-            let contingent_order = match self.cache.borrow().order(client_order_id).cloned() {
+            let contingent_order = match self
+                .cache
+                .borrow()
+                .order(client_order_id)
+                .map(|o| o.clone())
+            {
                 Some(contingent_order) => contingent_order,
                 None => panic!(
                     "Cannot find OCO contingent order for client_order_id: {client_order_id}"

@@ -548,7 +548,7 @@ pub trait ExecutionAlgorithm: DataActor {
 
         let primary = {
             let cache = self.core_mut().cache();
-            cache.order(&exec_spawn_id).cloned()
+            cache.order(&exec_spawn_id).map(|o| o.clone())
         };
 
         let Some(primary) = primary else {
@@ -1022,7 +1022,7 @@ pub trait ExecutionAlgorithm: DataActor {
 
         let order = {
             let cache = self.core_mut().cache();
-            cache.order(&event.client_order_id()).cloned()
+            cache.order(&event.client_order_id()).map(|o| o.clone())
         };
 
         let Some(order) = order else {
@@ -2194,7 +2194,10 @@ mod tests {
 
         let restored_primary = {
             let cache = algo.core.cache();
-            cache.order(&ClientOrderId::from("O-001")).cloned().unwrap()
+            cache
+                .order(&ClientOrderId::from("O-001"))
+                .map(|o| o.clone())
+                .unwrap()
         };
         assert_eq!(restored_primary.quantity(), Quantity::from("1.0"));
     }
@@ -2281,7 +2284,10 @@ mod tests {
 
         let restored_primary = {
             let cache = algo.core.cache();
-            cache.order(&ClientOrderId::from("O-001")).cloned().unwrap()
+            cache
+                .order(&ClientOrderId::from("O-001"))
+                .map(|o| o.clone())
+                .unwrap()
         };
         assert_eq!(restored_primary.quantity(), Quantity::from("1.0"));
     }
@@ -2363,7 +2369,10 @@ mod tests {
 
         let final_primary = {
             let cache = algo.core.cache();
-            cache.order(&ClientOrderId::from("O-001")).cloned().unwrap()
+            cache
+                .order(&ClientOrderId::from("O-001"))
+                .map(|o| o.clone())
+                .unwrap()
         };
         assert_eq!(final_primary.quantity(), Quantity::from("1.0"));
     }
@@ -2462,7 +2471,10 @@ mod tests {
 
         let restored_primary = {
             let cache = algo.core.cache();
-            cache.order(&ClientOrderId::from("O-001")).cloned().unwrap()
+            cache
+                .order(&ClientOrderId::from("O-001"))
+                .map(|o| o.clone())
+                .unwrap()
         };
         assert_eq!(restored_primary.quantity(), Quantity::from("0.7"));
         assert_eq!(events.len(), 1);
@@ -2553,7 +2565,10 @@ mod tests {
 
         let primary_after_accept = {
             let cache = algo.core.cache();
-            cache.order(&ClientOrderId::from("O-001")).cloned().unwrap()
+            cache
+                .order(&ClientOrderId::from("O-001"))
+                .map(|o| o.clone())
+                .unwrap()
         };
         assert_eq!(primary_after_accept.quantity(), Quantity::from("0.5"));
 
@@ -2583,7 +2598,10 @@ mod tests {
 
         let final_primary = {
             let cache = algo.core.cache();
-            cache.order(&ClientOrderId::from("O-001")).cloned().unwrap()
+            cache
+                .order(&ClientOrderId::from("O-001"))
+                .map(|o| o.clone())
+                .unwrap()
         };
         assert_eq!(final_primary.quantity(), Quantity::from("0.5"));
     }

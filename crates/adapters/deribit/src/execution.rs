@@ -728,7 +728,7 @@ impl ExecutionClient for DeribitExecutionClient {
             .core
             .cache()
             .order(&cmd.client_order_id)
-            .cloned()
+            .map(|o| o.clone())
             .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?;
         self.submit_single_order(&order, "submit_order");
         Ok(())

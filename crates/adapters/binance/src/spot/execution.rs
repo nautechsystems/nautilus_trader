@@ -220,7 +220,7 @@ impl BinanceSpotExecutionClient {
             .core
             .cache()
             .order(&cmd.client_order_id)
-            .cloned()
+            .map(|o| o.clone())
             .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?;
 
         let event_emitter = self.emitter.clone();
@@ -906,7 +906,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             .core
             .cache()
             .order(&cmd.client_order_id)
-            .cloned()
+            .map(|o| o.clone())
             .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?;
 
         if order.is_closed() {
@@ -933,7 +933,11 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         // Binance Spot uses cancel-replace for order modification, which requires
         // the full order specification (side, type, time_in_force). Since ModifyOrder
         // doesn't include these fields, we need to look up the original order from cache.
-        let order = self.core.cache().order(&cmd.client_order_id).cloned();
+        let order = self
+            .core
+            .cache()
+            .order(&cmd.client_order_id)
+            .map(|o| o.clone());
 
         let Some(order) = order else {
             log::warn!(

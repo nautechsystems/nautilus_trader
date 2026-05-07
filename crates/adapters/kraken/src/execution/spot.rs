@@ -1346,7 +1346,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             .core
             .cache()
             .order(&cmd.client_order_id)
-            .cloned()
+            .map(|o| o.clone())
             .ok_or_else(|| anyhow::anyhow!("Order not found in cache: {}", cmd.client_order_id))?;
         let leverage = match resolve_leverage(cmd.params.as_ref(), self.config.default_leverage) {
             Ok(lev) => lev,

@@ -815,8 +815,7 @@ impl PolymarketExecutionClient {
         // Fall back to the venue_order_id index when client_order_id is absent.
         let resolved_client_order_id =
             client_order_id.or_else(|| self.core.cache().client_order_id(&venue_order_id).copied());
-        let cached =
-            resolved_client_order_id.and_then(|cid| self.core.cache().order(&cid).cloned());
+        let cached = resolved_client_order_id.and_then(|cid| self.core.cache().order_owned(&cid));
         let cached_quantity = cached.as_ref().map(Order::quantity);
         let cached_order_type = cached.as_ref().map_or(OrderType::Limit, Order::order_type);
         let cached_tif = cached
@@ -1003,7 +1002,7 @@ impl ExecutionClient for PolymarketExecutionClient {
             .core
             .cache()
             .order(&cmd.client_order_id)
-            .cloned()
+            .map(|o| o.clone())
             .ok_or_else(|| {
                 anyhow::anyhow!("Order not found in cache for {}", cmd.client_order_id)
             })?;
@@ -1037,7 +1036,7 @@ impl ExecutionClient for PolymarketExecutionClient {
                 .core
                 .cache()
                 .order(&order_init.client_order_id)
-                .cloned()
+                .map(|o| o.clone())
             else {
                 log::warn!(
                     "Order not found in cache for {}",
@@ -1271,7 +1270,11 @@ impl ExecutionClient for PolymarketExecutionClient {
     }
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
-        let order = self.core.cache().order(&cmd.client_order_id).cloned();
+        let order = self
+            .core
+            .cache()
+            .order(&cmd.client_order_id)
+            .map(|o| o.clone());
         if let Some(order) = order {
             let venue_order_id = order.venue_order_id();
             let ts_now = self.clock.get_time_ns();
@@ -1286,7 +1289,11 @@ impl ExecutionClient for PolymarketExecutionClient {
     }
 
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
-        let order = self.core.cache().order(&cmd.client_order_id).cloned();
+        let order = self
+            .core
+            .cache()
+            .order(&cmd.client_order_id)
+            .map(|o| o.clone());
         let order_ref = match &order {
             Some(o) => o,
             None => {
@@ -1401,7 +1408,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         let submitter = self.submitter.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
-        let orders: Vec<OrderAny> = open_orders.into_iter().cloned().collect();
+        let orders: Vec<OrderAny> = open_orders.into_iter().map(|o| o.clone()).collect();
 
         self.spawn_task("cancel_all_orders", async move {
             let order_id_refs: Vec<&str> = venue_order_ids.iter().map(String::as_str).collect();

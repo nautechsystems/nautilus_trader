@@ -233,7 +233,7 @@ impl OrderEmulator {
             .borrow()
             .orders_emulated(None, None, None, None, None)
             .into_iter()
-            .cloned()
+            .map(|o| o.clone())
             .collect();
 
         if emulated_orders.is_empty() {
@@ -363,7 +363,7 @@ impl OrderEmulator {
             .cache
             .borrow()
             .order(&client_order_id)
-            .cloned()
+            .map(|o| o.clone())
             .expect("order must exist in cache");
 
         let emulation_trigger = order.emulation_trigger();
@@ -683,7 +683,7 @@ impl OrderEmulator {
         };
 
         for id in ids_to_cancel {
-            if let Some(order) = self.cache.borrow().order(&id).cloned() {
+            if let Some(order) = self.cache.borrow().order(&id).map(|o| o.clone()) {
                 self.manager.cancel_order(&order);
             }
         }
@@ -846,7 +846,7 @@ impl OrderEmulator {
                 .cache
                 .borrow()
                 .order(&match_info.client_order_id)
-                .cloned()
+                .map(|o| o.clone())
             {
                 Some(order) => order,
                 None => continue,
@@ -954,7 +954,12 @@ impl OrderEmulator {
     ///
     /// Panics if the order type is invalid for a stop order.
     pub fn trigger_stop_order(&mut self, client_order_id: ClientOrderId) {
-        let order = match self.cache.borrow().order(&client_order_id).cloned() {
+        let order = match self
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .map(|o| o.clone())
+        {
             Some(order) => order,
             None => {
                 log::error!(
@@ -979,7 +984,12 @@ impl OrderEmulator {
     ///
     /// Panics if a limit order has no price.
     pub fn fill_limit_order(&mut self, client_order_id: ClientOrderId) {
-        let order = match self.cache.borrow().order(&client_order_id).cloned() {
+        let order = match self
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .map(|o| o.clone())
+        {
             Some(order) => order,
             None => {
                 log::error!("Cannot fill limit order: order {client_order_id} not found in cache");
@@ -1137,7 +1147,12 @@ impl OrderEmulator {
     ///
     /// Panics if a market order command is missing.
     pub fn fill_market_order(&mut self, client_order_id: ClientOrderId) {
-        let mut order = match self.cache.borrow().order(&client_order_id).cloned() {
+        let mut order = match self
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .map(|o| o.clone())
+        {
             Some(order) => order,
             None => {
                 log::error!("Cannot fill market order: order {client_order_id} not found in cache");

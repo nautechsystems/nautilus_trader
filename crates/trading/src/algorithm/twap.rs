@@ -275,7 +275,7 @@ impl ExecutionAlgorithm for TwapAlgorithm {
 
         let primary = {
             let cache = self.core.cache();
-            cache.order(&primary_id).cloned()
+            cache.order(&primary_id).map(|o| o.clone())
         };
 
         let Some(primary) = primary else {
@@ -722,7 +722,7 @@ mod tests {
         {
             let cache_rc = algo.core.cache_rc();
             let mut cache = cache_rc.borrow_mut();
-            let primary = cache.order(&primary_id).cloned().unwrap();
+            let primary = cache.order(&primary_id).map(|o| o.clone()).unwrap();
 
             let canceled = OrderCanceled::new(
                 primary.trader_id(),

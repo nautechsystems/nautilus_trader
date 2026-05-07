@@ -1332,14 +1332,17 @@ impl ExecutionManager {
     // Private helper methods
 
     fn get_order(&self, client_order_id: &ClientOrderId) -> Option<OrderAny> {
-        self.cache.borrow().order(client_order_id).cloned()
+        self.cache
+            .borrow()
+            .order(client_order_id)
+            .map(|o| o.clone())
     }
 
     fn get_order_by_venue_order_id(&self, venue_order_id: &VenueOrderId) -> Option<OrderAny> {
         let cache = self.cache.borrow();
         cache
             .client_order_id(venue_order_id)
-            .and_then(|client_order_id| cache.order(client_order_id).cloned())
+            .and_then(|client_order_id| cache.order(client_order_id).map(|o| o.clone()))
     }
 
     fn get_instrument(&self, instrument_id: &InstrumentId) -> Option<InstrumentAny> {

@@ -267,7 +267,7 @@ impl OKXExecutionClient {
             let cache = self.core.cache();
             cache
                 .order(&cmd.client_order_id)
-                .cloned()
+                .map(|o| o.clone())
                 .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?
         };
         let ws_private = self.ws_private.clone();
@@ -355,7 +355,7 @@ impl OKXExecutionClient {
             let cache = self.core.cache();
             cache
                 .order(&cmd.client_order_id)
-                .cloned()
+                .map(|o| o.clone())
                 .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?
         };
         let http_client = self.http_client.clone();
@@ -1569,7 +1569,7 @@ impl ExecutionClient for OKXExecutionClient {
             }
 
             log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
-            self.emitter.emit_order_submitted(order);
+            self.emitter.emit_order_submitted(&order);
 
             order_type
         };
@@ -1640,7 +1640,7 @@ impl ExecutionClient for OKXExecutionClient {
             );
 
             log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
-            self.emitter.emit_order_submitted(order);
+            self.emitter.emit_order_submitted(&order);
         }
 
         drop(cache);
@@ -1802,6 +1802,7 @@ impl ExecutionClient for OKXExecutionClient {
                     ));
                 }
             }
+            drop(open_orders);
             drop(cache);
 
             log::debug!(

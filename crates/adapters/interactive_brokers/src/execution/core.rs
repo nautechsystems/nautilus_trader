@@ -306,7 +306,7 @@ impl InteractiveBrokersExecutionClient {
     }
 
     fn cached_order_for_modify(&self, client_order_id: &ClientOrderId) -> Option<OrderAny> {
-        self.core.cache().order(client_order_id).cloned()
+        self.core.cache().order(client_order_id).map(|o| o.clone())
     }
 
     fn reserve_next_local_order_id(next_order_id: &Arc<Mutex<i32>>) -> anyhow::Result<i32> {

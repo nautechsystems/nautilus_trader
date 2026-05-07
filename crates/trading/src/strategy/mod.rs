@@ -688,52 +688,59 @@ pub trait Strategy: DataActor {
         let ts_init = core.clock().timestamp_ns();
         let cache = core.cache();
 
-        let open_orders = cache.orders_open(
-            None,
-            Some(&instrument_id),
-            Some(&strategy_id),
-            None,
-            order_side,
-        );
+        let open_count = cache
+            .orders_open(
+                None,
+                Some(&instrument_id),
+                Some(&strategy_id),
+                None,
+                order_side,
+            )
+            .len();
 
-        let emulated_orders = cache.orders_emulated(
-            None,
-            Some(&instrument_id),
-            Some(&strategy_id),
-            None,
-            order_side,
-        );
+        let emulated_count = cache
+            .orders_emulated(
+                None,
+                Some(&instrument_id),
+                Some(&strategy_id),
+                None,
+                order_side,
+            )
+            .len();
 
-        let inflight_orders = cache.orders_inflight(
-            None,
-            Some(&instrument_id),
-            Some(&strategy_id),
-            None,
-            order_side,
-        );
+        let inflight_count = cache
+            .orders_inflight(
+                None,
+                Some(&instrument_id),
+                Some(&strategy_id),
+                None,
+                order_side,
+            )
+            .len();
 
         // Sort the algorithm IDs so the per-algo cancel cascade fires msgbus
         // events in a deterministic order across runs; the cache returns an
         // unordered AHashSet.
         let mut exec_algorithm_ids: Vec<_> = cache.exec_algorithm_ids().into_iter().collect();
         exec_algorithm_ids.sort();
-        let mut algo_orders = Vec::new();
+        let mut algo_orders: Vec<OrderAny> = Vec::new();
 
         for algo_id in &exec_algorithm_ids {
-            let orders = cache.orders_for_exec_algorithm(
-                algo_id,
-                None,
-                Some(&instrument_id),
-                Some(&strategy_id),
-                None,
-                order_side,
+            algo_orders.extend(
+                cache
+                    .orders_for_exec_algorithm(
+                        algo_id,
+                        None,
+                        Some(&instrument_id),
+                        Some(&strategy_id),
+                        None,
+                        order_side,
+                    )
+                    .into_iter()
+                    .map(|o| o.clone()),
             );
-            algo_orders.extend(orders.iter().map(|o| (*o).clone()));
         }
 
-        let open_count = open_orders.len();
-        let emulated_count = emulated_orders.len();
-        let inflight_count = inflight_orders.len();
         let algo_count = algo_orders.len();
 
         drop(cache);
@@ -1296,21 +1303,17 @@ pub trait Strategy: DataActor {
         let core = self.core_mut();
         let cache = core.cache();
 
-        let open_orders = cache.orders_open(None, None, Some(&strategy_id), None, None);
-        let inflight_orders = cache.orders_inflight(None, None, Some(&strategy_id), None, None);
-        let open_positions = cache.positions_open(None, None, Some(&strategy_id), None, None);
-
         let mut instruments: AHashSet<InstrumentId> = AHashSet::new();
 
-        for order in &open_orders {
+        for order in cache.orders_open(None, None, Some(&strategy_id), None, None) {
             instruments.insert(order.instrument_id());
         }
 
-        for order in &inflight_orders {
+        for order in cache.orders_inflight(None, None, Some(&strategy_id), None, None) {
             instruments.insert(order.instrument_id());
         }
 
-        for position in &open_positions {
+        for position in cache.positions_open(None, None, Some(&strategy_id), None, None) {
             instruments.insert(position.instrument_id);
         }
 
@@ -1412,22 +1415,25 @@ pub trait Strategy: DataActor {
         }
 
         let cache = core.cache();
-        let open_orders = cache.orders_open(None, None, Some(&strategy_id), None, None);
-        let inflight_orders = cache.orders_inflight(None, None, Some(&strategy_id), None, None);
+        let has_open_orders = !cache
+            .orders_open(None, None, Some(&strategy_id), None, None)
+            .is_empty();
+        let has_inflight_orders = !cache
+            .orders_inflight(None, None, Some(&strategy_id), None, None)
+            .is_empty();
 
-        if !open_orders.is_empty() || !inflight_orders.is_empty() {
+        if has_open_orders || has_inflight_orders {
             return;
         }
 
-        let open_positions = cache.positions_open(None, None, Some(&strategy_id), None, None);
+        let positions_data: Vec<_> = cache
+            .positions_open(None, None, Some(&strategy_id), None, None)
+            .iter()
+            .map(|p| (p.id, p.instrument_id, p.side, p.quantity, p.is_closed()))
+            .collect();
 
-        if !open_positions.is_empty() {
+        if !positions_data.is_empty() {
             // If there are open positions but no orders, re-send close orders
-            let positions_data: Vec<_> = open_positions
-                .iter()
-                .map(|p| (p.id, p.instrument_id, p.side, p.quantity, p.is_closed()))
-                .collect();
-
             drop(cache);
 
             for (pos_id, instrument_id, side, quantity, is_closed) in positions_data {
@@ -1733,14 +1739,11 @@ pub trait Strategy: DataActor {
         let core = self.core_mut();
         core.gtd_timers.remove(&client_order_id);
 
-        let cache = core.cache();
-        let Some(order) = cache.order(&client_order_id) else {
+        let order = core.cache().order(&client_order_id).map(|o| o.clone());
+        let Some(order) = order else {
             log::warn!("GTD order {client_order_id} not found in cache");
             return;
         };
-
-        let order = order.clone();
-        drop(cache);
 
         log::info!("GTD order {client_order_id} expired");
 
@@ -1757,17 +1760,14 @@ pub trait Strategy: DataActor {
         let core = self.core_mut();
         let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
         let current_time_ns = core.clock().timestamp_ns();
-        let cache = core.cache();
 
-        let open_orders = cache.orders_open(None, None, Some(&strategy_id), None, None);
-
-        let gtd_orders: Vec<_> = open_orders
-            .iter()
+        let gtd_orders: Vec<OrderAny> = core
+            .cache()
+            .orders_open(None, None, Some(&strategy_id), None, None)
+            .into_iter()
             .filter(|o| o.time_in_force() == TimeInForce::Gtd)
-            .map(|o| (*o).clone())
+            .map(|o| o.clone())
             .collect();
-
-        drop(cache);
 
         for order in gtd_orders {
             let Some(expire_time) = order.expire_time() else {

@@ -612,11 +612,12 @@ impl OrderMatchingEngine {
             if let Some(&(order_price_raw, _)) = self.queue_ahead.get(&client_order_id)
                 && order_price_raw == deleted_price_raw
             {
-                let cache = self.cache.borrow();
-                if let Some(order) = cache.order(&client_order_id)
-                    && order.order_side() == deleted_side
-                {
-                    drop(cache);
+                let matches_side = self
+                    .cache
+                    .borrow()
+                    .order(&client_order_id)
+                    .is_some_and(|o| o.order_side() == deleted_side);
+                if matches_side {
                     self.queue_ahead
                         .insert(client_order_id, (order_price_raw, 0));
                 }
@@ -1076,7 +1077,11 @@ impl OrderMatchingEngine {
             .collect();
 
         for client_order_id in client_order_ids {
-            let order = self.cache.borrow().order(&client_order_id).cloned();
+            let order = self
+                .cache
+                .borrow()
+                .order(&client_order_id)
+                .map(|o| o.clone());
             if let Some(order) = order
                 && (order.is_inflight() || order.is_open())
             {
@@ -1904,7 +1909,7 @@ impl OrderMatchingEngine {
         for order_info in &open_orders {
             let order = {
                 let cache = self.cache.borrow();
-                cache.order(&order_info.client_order_id).cloned()
+                cache.order(&order_info.client_order_id).map(|o| o.clone())
             };
 
             if let Some(order) = order {
@@ -2041,29 +2046,25 @@ impl OrderMatchingEngine {
             // Contingent orders checks
             if self.config.support_contingent_orders {
                 if let Some(parent_order_id) = order.parent_order_id() {
-                    let parent_order = cache_borrow.order(&parent_order_id);
-                    if parent_order.is_none()
-                        || parent_order.unwrap().contingency_type().unwrap() != ContingencyType::Oto
-                    {
-                        panic!("OTO parent not found");
-                    }
+                    let parent_order = match cache_borrow.order(&parent_order_id) {
+                        Some(o) if o.contingency_type().unwrap() == ContingencyType::Oto => o,
+                        _ => panic!("OTO parent not found"),
+                    };
 
-                    if let Some(parent_order) = parent_order {
-                        if parent_order.status() == OrderStatus::Rejected && order.is_open() {
-                            break 'validate Some(
-                                format!("Rejected OTO order from {parent_order_id}").into(),
-                            );
-                        } else if parent_order.status() == OrderStatus::Accepted
-                            || parent_order.status() == OrderStatus::Triggered
-                            || (self.config.oto_full_trigger
-                                && parent_order.status() == OrderStatus::PartiallyFilled)
-                        {
-                            log::info!(
-                                "Pending OTO order {} triggers from {parent_order_id}",
-                                order.client_order_id(),
-                            );
-                            return;
-                        }
+                    if parent_order.status() == OrderStatus::Rejected && order.is_open() {
+                        break 'validate Some(
+                            format!("Rejected OTO order from {parent_order_id}").into(),
+                        );
+                    } else if parent_order.status() == OrderStatus::Accepted
+                        || parent_order.status() == OrderStatus::Triggered
+                        || (self.config.oto_full_trigger
+                            && parent_order.status() == OrderStatus::PartiallyFilled)
+                    {
+                        log::info!(
+                            "Pending OTO order {} triggers from {parent_order_id}",
+                            order.client_order_id(),
+                        );
+                        return;
                     }
                 }
 
@@ -2308,7 +2309,12 @@ impl OrderMatchingEngine {
             return;
         }
 
-        let mut order = match self.cache.borrow().order(&command.client_order_id).cloned() {
+        let mut order = match self
+            .cache
+            .borrow()
+            .order(&command.client_order_id)
+            .map(|o| o.clone())
+        {
             Some(order) => order,
             None => {
                 log::error!(
@@ -2365,7 +2371,12 @@ impl OrderMatchingEngine {
             return;
         }
 
-        let order = match self.cache.borrow().order(&command.client_order_id).cloned() {
+        let order = match self
+            .cache
+            .borrow()
+            .order(&command.client_order_id)
+            .map(|o| o.clone())
+        {
             Some(order) => order,
             None => {
                 log::error!(
@@ -2402,7 +2413,12 @@ impl OrderMatchingEngine {
             .collect();
 
         for client_order_id in client_order_ids {
-            let order = match self.cache.borrow().order(&client_order_id).cloned() {
+            let order = match self
+                .cache
+                .borrow()
+                .order(&client_order_id)
+                .map(|o| o.clone())
+            {
                 Some(order) => order,
                 None => continue,
             };
@@ -2426,7 +2442,11 @@ impl OrderMatchingEngine {
     }
 
     fn resync_core_entry(&mut self, client_order_id: ClientOrderId) -> Option<OrderAny> {
-        let order = self.cache.borrow().order(&client_order_id).cloned()?;
+        let order = self
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .map(|o| o.clone())?;
 
         // Gate on `is_closed`, not `is_open`: cache may transiently hold the
         // order in `Submitted` (process_limit_order accepts before cache add)
@@ -2580,9 +2600,9 @@ impl OrderMatchingEngine {
             // If fill didn't execute (e.g. all liquidity consumed), revert to
             // maker so the fill model check applies on subsequent iterations
             if self.core.order_exists(order.client_order_id())
-                && let Some(cached) = self.cache.borrow_mut().mut_order(&order.client_order_id())
+                && let Some(mut order) = self.cache.borrow_mut().order_mut(&order.client_order_id())
             {
-                cached.set_liquidity_side(LiquiditySide::Maker);
+                order.set_liquidity_side(LiquiditySide::Maker);
             }
         } else if matches!(order.time_in_force(), TimeInForce::Fok | TimeInForce::Ioc) {
             self.cancel_order(order, None);
@@ -2604,13 +2624,13 @@ impl OrderMatchingEngine {
 
                 // Persist Maker side on the cached copy when exec engine
                 // already cached the order (only if not already Maker/Taker)
-                if let Some(cached) = self.cache.borrow_mut().mut_order(&order.client_order_id())
+                if let Some(mut order) = self.cache.borrow_mut().order_mut(&order.client_order_id())
                     && !matches!(
-                        cached.liquidity_side(),
+                        order.liquidity_side(),
                         Some(LiquiditySide::Maker | LiquiditySide::Taker)
                     )
                 {
-                    cached.set_liquidity_side(LiquiditySide::Maker);
+                    order.set_liquidity_side(LiquiditySide::Maker);
                 }
             }
         }
@@ -2653,7 +2673,11 @@ impl OrderMatchingEngine {
         let leaves_qty = order.quantity().saturating_sub(filled_qty);
         if !leaves_qty.is_zero() {
             // Re-fetch from cache to get updated price from partial fill
-            let updated_order = self.cache.borrow().order(&client_order_id).cloned();
+            let updated_order = self
+                .cache
+                .borrow()
+                .order(&client_order_id)
+                .map(|o| o.clone());
             if let Some(mut updated_order) = updated_order {
                 self.accept_order(&mut updated_order);
             }
@@ -3116,7 +3140,7 @@ impl OrderMatchingEngine {
                     .cache
                     .borrow()
                     .order(&match_info.client_order_id)
-                    .cloned()?;
+                    .map(|o| o.clone())?;
 
                 if order.is_closed() {
                     return None;
@@ -3165,7 +3189,12 @@ impl OrderMatchingEngine {
             .collect();
 
         for client_order_id in trailing_ids {
-            let order = match self.cache.borrow().order(&client_order_id).cloned() {
+            let order = match self
+                .cache
+                .borrow()
+                .order(&client_order_id)
+                .map(|o| o.clone())
+            {
                 Some(order) => order,
                 None => {
                     log::warn!(
@@ -3484,7 +3513,12 @@ impl OrderMatchingEngine {
     /// The order is filled as a taker against available liquidity.
     /// Reduce-only orders are canceled if no position exists.
     pub fn fill_market_order(&mut self, client_order_id: ClientOrderId) {
-        let mut order = match self.cache.borrow().order(&client_order_id).cloned() {
+        let mut order = match self
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .map(|o| o.clone())
+        {
             Some(order) => order,
             None => {
                 log::error!("Cannot fill market order: order {client_order_id} not found in cache");
@@ -3610,7 +3644,12 @@ impl OrderMatchingEngine {
     ///
     /// Panics if the order has no price (design error).
     pub fn fill_limit_order(&mut self, client_order_id: ClientOrderId) {
-        let mut order = match self.cache.borrow().order(&client_order_id).cloned() {
+        let mut order = match self
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .map(|o| o.clone())
+        {
             Some(order) => order,
             None => {
                 log::error!("Cannot fill limit order: order {client_order_id} not found in cache");
@@ -4149,8 +4188,8 @@ impl OrderMatchingEngine {
 
             // Re-read from cache to get the order with events applied
             let client_order_id = order.client_order_id();
-            if let Some(cached) = self.cache.borrow_mut().mut_order(&client_order_id) {
-                cached.set_liquidity_side(LiquiditySide::Taker);
+            if let Some(mut order) = self.cache.borrow_mut().order_mut(&client_order_id) {
+                order.set_liquidity_side(LiquiditySide::Taker);
             }
             self.fill_limit_order(client_order_id);
             return;
@@ -4640,7 +4679,12 @@ impl OrderMatchingEngine {
 
     /// Triggers a stop order, converting it to an active market or limit order.
     pub fn trigger_stop_order(&mut self, client_order_id: ClientOrderId) {
-        let order = match self.cache.borrow().order(&client_order_id).cloned() {
+        let order = match self
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .map(|o| o.clone())
+        {
             Some(order) => order,
             None => {
                 log::error!(

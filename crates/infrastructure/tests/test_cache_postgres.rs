@@ -125,7 +125,7 @@ mod serial_tests {
         let cached_order_ids = cache.client_order_ids(None, None, None, None);
         assert_eq!(cached_order_ids.len(), 1);
         let target_order = cache.order(&market_order.client_order_id());
-        assert_eq!(target_order.unwrap(), &market_order);
+        assert_eq!(&*target_order.unwrap(), &market_order);
 
         database.flush().unwrap();
         database.close().unwrap();

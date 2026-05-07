@@ -628,7 +628,7 @@ impl ExecutionClient for AxExecutionClient {
                 OrderType::Market | OrderType::Limit | OrderType::StopLimit
             ) {
                 self.emitter.emit_order_denied(
-                    order,
+                    &order,
                     &format!(
                         "Unsupported order type: {:?}, \
                          AX supports MARKET, LIMIT and STOP_LIMIT",
@@ -640,7 +640,7 @@ impl ExecutionClient for AxExecutionClient {
 
             if order.time_in_force() == TimeInForce::Gtd {
                 self.emitter.emit_order_denied(
-                    order,
+                    &order,
                     "Unsupported time in force: GTD, \
                      AX supports GTC, IOC, FOK, and DAY",
                 );
@@ -648,7 +648,7 @@ impl ExecutionClient for AxExecutionClient {
             }
 
             log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
-            self.emitter.emit_order_submitted(order);
+            self.emitter.emit_order_submitted(&order);
         }
 
         self.submit_order_internal(&cmd)

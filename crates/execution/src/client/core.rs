@@ -113,7 +113,7 @@ impl ExecutionClientCore {
         self.cache
             .borrow()
             .order(client_order_id)
-            .cloned()
+            .map(|o| o.clone())
             .ok_or_else(|| anyhow::anyhow!("Order not found in cache: {client_order_id}"))
     }
 

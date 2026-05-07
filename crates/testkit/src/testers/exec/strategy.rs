@@ -447,7 +447,7 @@ impl ExecTester {
         let Some(cid) = cid else {
             return;
         };
-        let latest = self.cache().order(&cid).cloned();
+        let latest = self.cache().order(&cid).map(|o| o.clone());
         if let Some(latest) = latest {
             match side {
                 OrderSide::Buy => self.buy_order = Some(latest),

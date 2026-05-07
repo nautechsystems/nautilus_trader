@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added continuous futures support for aggregated bars (#3921), thanks @faysou
 - Added `purge_instrument` cache method for trimming unused instruments (#3945), thanks for reporting @fedoraiver
+- Added Rust `Cache::order_owned` returning an owned `OrderAny` snapshot for boundary handover
 - Added `LoggerConfig.file_config` and `clear_log_file` support to the Rust `LiveNode` runtime (#3955), thanks @filipmacek
 - Added `LoggerConfig` Python constructor for direct construction without `from_spec` (#3955), thanks @filipmacek
 - Added `limit_aggressive` and `test_modify_rejected` flags to `ExecTesterConfig` for marketable/modify-rejection tests
@@ -31,6 +32,8 @@ Released on TBD (UTC).
 - Removed stale Tardis `crypto-com-derivatives` exchange variant
 - Renamed Binance and Kraken environments from `Mainnet`/`MAINNET` to `Live`/`LIVE`
 - Renamed `time_bars_origins` config param to `time_bars_origin_offset` in `DataEngineConfig`/`LiveDataEngineConfig` (Rust)
+- Renamed `Cache::mut_order` to `order_mut`; takes `&mut Cache` and returns `OrderRefMut<'_>` (Rust)
+- Changed `Cache::order` and `orders_*` to return `OrderRef<'_>` (newtype borrow, was `&OrderAny`) (Rust)
 - Changed to deny `submit_order`/`submit_order_list` with a custom `position_id` under `NETTING` OMS; use `HEDGING` for custom position IDs
 - Changed JSON log file extension from `.json` to `.jsonl`; update log shippers watching `.json` (#3955), thanks @filipmacek
 - Changed Python order `create()` methods to raise `ValueError` on invalid `OrderInitialized` instead of panicking
@@ -128,11 +131,13 @@ Released on TBD (UTC).
 - Added Interactive Brokers Rust adapter support for v2 live trading (#3974), thanks @faysou
 - Refined data engine request workflow (#3928), thanks @faysou
 - Improved object materialization in Rust stream Feather to parquet conversion (#3954), thanks @faysou
+- Improved cache order storage to per-order `Rc<RefCell<OrderAny>>` cells, closing stale-clone bug class (Rust)
 - Improved `OwnBookLadder` to defer error logging to callers, removing duplicate own-book error noise
 - Improved `OrderMatchingEngine` trailing-stop activation to use the `OrderMatchingCore` `iter_*` API (Rust)
 - Improved `update_balance_multi_currency` to delegate negative-balance enforcement to per-account `update_balances`
 - Improved live exec clients to log ERROR with `timeout_post_stop` hint when cancel tasks abort on disconnect
 - Improved `ExecTester` to refresh tracked orders from cache before modify/cancel-replace so they see venue acks
+- Improved `make build` to leave the venv able to import `nautilus_trader` from any cwd via a local editable `.pth`
 - Improved Betfair Rust adapter to suppress late HTTP acceptance at debug level
 - Improved Betfair Rust adapter to suppress noisy `instrument_close` subscribe/unsubscribe warnings
 - Improved Betfair Rust HTTP client `connect()` to short-circuit when authenticated and serialise concurrent callers
@@ -141,7 +146,6 @@ Released on TBD (UTC).
 - Improved Betfair Rust adapter with explicit info-level no-op overrides for unsupported unsubscribe methods
 - Improved Betfair Rust integration test coverage to cover OCM, replace flow, batch ops, and session recovery
 - Improved Interactive Brokers Python 3.14 installation and integration test coverage
-- Improved `make build` to leave the venv able to import `nautilus_trader` from any cwd via a local editable `.pth`
 - Optimized `OrderMatchingCore` storage to split `BTreeMap` limit/stop books per side for price-time priority (Rust)
 - Optimized live node biased select to dispatch exec commands ahead of market data (Rust)
 - Optimized live node loop by collapsing six maintenance timers into one shared maintenance dispatcher (Rust)
@@ -157,6 +161,7 @@ Released on TBD (UTC).
 - Added Databento docs for price precision precedence and publisher mappings
 - Added Polymarket fill quantity normalization section explaining the dust snap, deferred dust, and commission semantics
 - Added dYdX adapter notes for FOK deprecation, DAY rejection, equity-tier limit, and MIT/LIT round-tripping
+- Added Rust shared-mutability storage guide with `Rc<RefCell<T>>` decision tree to the developer guide
 - Updated adapter docs and examples to use environment enums instead of legacy test flags
 
 ### Deprecations

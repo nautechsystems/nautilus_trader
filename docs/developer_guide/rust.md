@@ -710,6 +710,56 @@ cache.insert(other_key, other_value);  // Data race
    - Concurrent access needed: use `Arc<DashMap<K, V>>`
    - Single-threaded access: use plain `AHashMap<K, V>`
 
+### Shared mutability storage
+
+Code ported from Cython often cloned values out of a container before mutating them.
+That pattern produces silent staleness: the local clone diverges from the canonical
+entry the moment another code path applies an event to it.
+
+Reach for `Rc<RefCell<T>>` (single-threaded) or `Arc<RwLock<T>>` (multi-threaded)
+storage only when all three hold:
+
+- The value is mutated after insertion.
+- Multiple holders need to observe each other's writes.
+- A handle must outlive the container's borrow scope.
+
+Orders in `Cache` use this shape internally for per-key borrow tracking. Storage
+is `AHashMap<ClientOrderId, SharedCell<OrderAny>>`; the smart-pointer leak stays
+internal. Public accessors return scoped newtypes that hide it: `Cache::order`
+returns `OrderRef<'_>` (read borrow), `Cache::order_mut` returns `OrderRefMut<'_>`
+(exclusive write borrow, requires `&mut Cache`), and `Cache::order_owned` returns
+an owned `OrderAny` snapshot when a value must cross a boundary. Engines drop
+the borrow before dispatching events and re-read the cache for post-event state,
+which keeps the dispatch a clean transaction boundary.
+
+`Cache::order_mut` takes `&mut Cache`, which means strategies and adapters
+receiving a `CacheView` (which only exposes immutable cache borrows) cannot reach
+it. Order mutation is reserved for the data and execution engines that hold the
+cache directly; the type system enforces that contract.
+
+Otherwise prefer the simpler shape:
+
+- Read-mostly and set once: `Rc<T>` or `Arc<T>` (no interior mutability).
+- Owned snapshots suffice for callers: store `T`, clone on read.
+- Single owner, no mutation: plain field.
+
+Costs of `Rc<RefCell<T>>` worth weighing before adopting it:
+
+- Every access pays a runtime borrow check.
+- The smart-pointer type leaks at write boundaries.
+- Misuse panics at runtime instead of failing to compile.
+- `Rc<RefCell<T>>` is `!Send`; cross-thread storage needs `Arc<RwLock<T>>`
+  (or `Arc<Mutex<T>>` when reads are rare).
+
+**Decision tree:**
+
+1. Mutable, multi-observer, and handle outlives container borrow?
+   - Single-threaded: `Rc<RefCell<T>>`.
+   - Multi-threaded: `Arc<RwLock<T>>` (or `Arc<Mutex<T>>` when reads are rare).
+2. Read-mostly and set once: `Rc<T>` or `Arc<T>`.
+3. Owned snapshots fine: store `T`, clone on read.
+4. Single owner, no mutation: plain field.
+
 ### Re-export patterns
 
 Organize re-exports alphabetically and place at the end of lib.rs files:

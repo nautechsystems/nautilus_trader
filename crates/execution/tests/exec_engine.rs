@@ -1662,15 +1662,16 @@ fn test_canceled_order_receiving_fill_event_reopens_and_completes_order(
         VenueOrderId::from("V-001"),
     );
     execution_engine.process(&order_accepted_event);
-    let cache = execution_engine.cache().borrow();
-    let accepted_order = cache
+    let accepted_order = execution_engine
+        .cache()
+        .borrow()
         .order(&order.client_order_id())
+        .map(|o| o.clone())
         .expect("Order should exist in cache");
     assert!(
         accepted_order.venue_order_id().is_some(),
         "Order should have venue_order_id after acceptance"
     );
-    drop(cache);
 
     let order_canceled_event = TestOrderEventStubs::canceled(
         &order,
@@ -1678,9 +1679,11 @@ fn test_canceled_order_receiving_fill_event_reopens_and_completes_order(
         Some(VenueOrderId::from("V-001")), // Must match the accepted event
     );
     execution_engine.process(&order_canceled_event);
-    let cache = execution_engine.cache().borrow();
-    let canceled_order = cache
+    let canceled_order = execution_engine
+        .cache()
+        .borrow()
         .order(&order.client_order_id())
+        .map(|o| o.clone())
         .expect("Order should exist in cache");
 
     assert_eq!(
@@ -1693,8 +1696,6 @@ fn test_canceled_order_receiving_fill_event_reopens_and_completes_order(
         canceled_order.is_closed(),
         "Order should be closed before fill event"
     );
-
-    drop(cache);
 
     let order_filled_event = OrderEventAny::Filled(OrderFilled::new(
         order.trader_id(),
@@ -1802,9 +1803,11 @@ fn test_canceled_order_receiving_partial_fill_event_reopens_and_becomes_partiall
         Some(VenueOrderId::from("V-001")), // Must match the accepted event
     );
     execution_engine.process(&order_canceled_event);
-    let cache = execution_engine.cache().borrow();
-    let canceled_order = cache
+    let canceled_order = execution_engine
+        .cache()
+        .borrow()
         .order(&order.client_order_id())
+        .map(|o| o.clone())
         .expect("Order should exist in cache");
 
     assert_eq!(
@@ -1817,8 +1820,6 @@ fn test_canceled_order_receiving_partial_fill_event_reopens_and_becomes_partiall
         canceled_order.is_closed(),
         "Order should be closed before partial fill event"
     );
-
-    drop(cache);
 
     let partial_fill_qty = Quantity::from(50_000); // Half of 100_000
     let order_partially_filled_event = OrderEventAny::Filled(OrderFilled::new(
@@ -1844,9 +1845,11 @@ fn test_canceled_order_receiving_partial_fill_event_reopens_and_becomes_partiall
     ));
 
     execution_engine.process(&order_partially_filled_event);
-    let cache = execution_engine.cache().borrow();
-    let partially_filled_order = cache
+    let partially_filled_order = execution_engine
+        .cache()
+        .borrow()
         .order(&order.client_order_id())
+        .map(|o| o.clone())
         .expect("Order should still exist in cache after partial fill");
 
     assert_eq!(
@@ -2031,9 +2034,11 @@ fn test_modify_order_for_already_closed_order_logs_and_does_nothing(
         Some(Money::from("2 USD")),
     ));
     execution_engine.process(&order_filled_event);
-    let cache = execution_engine.cache().borrow();
-    let filled_order = cache
+    let filled_order = execution_engine
+        .cache()
+        .borrow()
         .order(&order.client_order_id())
+        .map(|o| o.clone())
         .expect("Order should exist in cache");
 
     assert_eq!(
@@ -2046,8 +2051,6 @@ fn test_modify_order_for_already_closed_order_logs_and_does_nothing(
         filled_order.is_closed(),
         "Order should be closed before modify attempt"
     );
-
-    drop(cache);
 
     let modify_order = ModifyOrder {
         trader_id,
@@ -10147,8 +10150,8 @@ fn test_load_cache_no_reentrant_panic(#[case] manage_own_order_books: bool) {
 
 // Regression for #3981: a parent OTO fill linking `position_id` to a contingent
 // child triggered nested `RefCell` borrows in `handle_order_fill`: the outer
-// `cache.mut_order(...)` borrow was still alive when `add_position_id` took a
-// fresh `borrow_mut`.
+// `cache.order_mut(...)` write handle was still alive when `add_position_id`
+// took a fresh `borrow_mut` on the cache.
 #[rstest]
 fn test_handle_order_fill_oto_links_position_to_contingent_children(
     mut execution_engine: ExecutionEngine,

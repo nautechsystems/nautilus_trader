@@ -492,7 +492,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .core
             .cache()
             .order(&cmd.client_order_id)
-            .cloned()
+            .map(|o| o.clone())
             .ok_or_else(|| {
                 anyhow::anyhow!("Order not found in cache for {}", cmd.client_order_id)
             })?;
@@ -839,7 +839,12 @@ impl ExecutionClient for HyperliquidExecutionClient {
         };
 
         // Look up cached order to get side, reduce_only, post_only, TIF
-        let order = match self.core.cache().order(&cmd.client_order_id).cloned() {
+        let order = match self
+            .core
+            .cache()
+            .order(&cmd.client_order_id)
+            .map(|o| o.clone())
+        {
             Some(o) => o,
             None => {
                 let reason = "order not found in cache";

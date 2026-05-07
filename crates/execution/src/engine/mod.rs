@@ -939,11 +939,11 @@ impl ExecutionEngine {
 
         let order = report
             .client_order_id
-            .and_then(|id| cache.order(&id).cloned())
+            .and_then(|id| cache.order(&id).map(|o| o.clone()))
             .or_else(|| {
                 cache
                     .client_order_id(&report.venue_order_id)
-                    .and_then(|cid| cache.order(cid).cloned())
+                    .and_then(|cid| cache.order(cid).map(|o| o.clone()))
             });
 
         let instrument = cache.instrument(&report.instrument_id).cloned();
@@ -1199,11 +1199,11 @@ impl ExecutionEngine {
 
         let order = report
             .client_order_id
-            .and_then(|id| cache.order(&id).cloned())
+            .and_then(|id| cache.order(&id).map(|o| o.clone()))
             .or_else(|| {
                 cache
                     .client_order_id(&report.venue_order_id)
-                    .and_then(|cid| cache.order(cid).cloned())
+                    .and_then(|cid| cache.order(cid).map(|o| o.clone()))
             });
 
         let instrument = cache.instrument(&report.instrument_id).cloned();
@@ -1242,7 +1242,7 @@ impl ExecutionEngine {
                 self.cache
                     .borrow()
                     .order(&order.client_order_id())
-                    .cloned()
+                    .map(|o| o.clone())
                     .unwrap_or(order)
             }
         };
@@ -1272,11 +1272,11 @@ impl ExecutionEngine {
         let cache = self.cache.borrow();
         let order = report
             .client_order_id
-            .and_then(|id| cache.order(&id).cloned())
+            .and_then(|id| cache.order(&id).map(|o| o.clone()))
             .or_else(|| {
                 cache
                     .client_order_id(&report.venue_order_id)
-                    .and_then(|cid| cache.order(cid).cloned())
+                    .and_then(|cid| cache.order(cid).map(|o| o.clone()))
             });
         let instrument = cache.instrument(&report.instrument_id).cloned();
         drop(cache);
@@ -1332,7 +1332,12 @@ impl ExecutionEngine {
             }
 
             // Refresh order after fill to keep filled_qty accurate for the next iteration.
-            if let Some(refreshed) = self.cache.borrow().order(&client_order_id).cloned() {
+            if let Some(refreshed) = self
+                .cache
+                .borrow()
+                .order(&client_order_id)
+                .map(|o| o.clone())
+            {
                 order = refreshed;
             }
         }
@@ -1356,7 +1361,12 @@ impl ExecutionEngine {
             ) {
                 self.handle_event(&event);
 
-                if let Some(refreshed) = self.cache.borrow().order(&client_order_id).cloned() {
+                if let Some(refreshed) = self
+                    .cache
+                    .borrow()
+                    .order(&client_order_id)
+                    .map(|o| o.clone())
+                {
                     order = refreshed;
                 }
             }
@@ -1502,11 +1512,11 @@ impl ExecutionEngine {
                 let cache = self.cache.borrow();
                 order_report
                     .client_order_id
-                    .and_then(|id| cache.order(&id).cloned())
+                    .and_then(|id| cache.order(&id).map(|o| o.clone()))
                     .or_else(|| {
                         cache
                             .client_order_id(&order_report.venue_order_id)
-                            .and_then(|cid| cache.order(cid).cloned())
+                            .and_then(|cid| cache.order(cid).map(|o| o.clone()))
                     })
                     .is_some()
             };
@@ -1637,10 +1647,12 @@ impl ExecutionEngine {
 
             match command {
                 TradingCommand::SubmitOrder(cmd) => {
-                    let cache = self.cache.borrow();
-                    if let Some(order) = cache.order(&cmd.client_order_id) {
-                        let order = order.clone();
-                        drop(cache);
+                    let order = self
+                        .cache
+                        .borrow()
+                        .order(&cmd.client_order_id)
+                        .map(|o| o.clone());
+                    if let Some(order) = order {
                         self.deny_order(&order, &reason);
                     }
                 }
@@ -1923,7 +1935,7 @@ impl ExecutionEngine {
             }
         };
         let order_before_fill = if matches!(event, OrderEventAny::Filled(_)) {
-            cache.order(&client_order_id).cloned()
+            cache.order(&client_order_id).map(|o| o.clone())
         } else {
             None
         };
@@ -2071,15 +2083,15 @@ impl ExecutionEngine {
             o.clone()
         } else {
             let cache = self.cache.borrow();
-            cache
-                .order(&fill.client_order_id())
-                .cloned()
-                .unwrap_or_else(|| {
+            cache.order(&fill.client_order_id()).map_or_else(
+                || {
                     panic!(
                         "Order for {} not found to determine position ID",
                         fill.client_order_id()
                     )
-                })
+                },
+                |o| o.clone(),
+            )
         };
 
         if order.exec_algorithm_id().is_some()
@@ -2099,11 +2111,10 @@ impl ExecutionEngine {
             drop(cache);
 
             if primary.position_id().is_none() && !primary_already_indexed {
-                let mut cache = self.cache.borrow_mut();
-                if let Some(primary_mut) = cache.mut_order(&exec_spawn_id) {
+                if let Some(mut primary_mut) = self.cache.borrow_mut().order_mut(&exec_spawn_id) {
                     primary_mut.set_position_id(Some(position_id));
                 }
-                let _ = cache.add_position_id(
+                let _ = self.cache.borrow_mut().add_position_id(
                     &position_id,
                     &primary.instrument_id().venue,
                     &primary.client_order_id(),
@@ -2131,11 +2142,11 @@ impl ExecutionEngine {
 
         let cache = self.cache.borrow();
 
-        let order = if let Some(o) = order {
-            o
+        let exec_spawn_id = if let Some(o) = order {
+            o.exec_spawn_id()
         } else {
             match cache.order(&fill.client_order_id()) {
-                Some(o) => o,
+                Some(o) => o.exec_spawn_id(),
                 None => {
                     panic!(
                         "Order for {} not found to determine position ID",
@@ -2146,7 +2157,7 @@ impl ExecutionEngine {
         };
 
         // Check execution spawn orders
-        if let Some(spawn_id) = order.exec_spawn_id() {
+        if let Some(spawn_id) = exec_spawn_id {
             let spawn_orders = cache.orders_for_exec_spawn(&spawn_id);
             for spawned_order in spawn_orders {
                 if let Some(pos_id) = spawned_order.position_id() {
@@ -2199,7 +2210,11 @@ impl ExecutionEngine {
                     Some(OrderError::InvalidStateTransition)
                 ) {
                     log::warn!("InvalidStateTrigger: {e}, did not apply {event}");
-                    return self.cache.borrow().order(&client_order_id).cloned();
+                    return self
+                        .cache
+                        .borrow()
+                        .order(&client_order_id)
+                        .map(|o| o.clone());
                 }
 
                 if let Some(OrderError::DuplicateFill(trade_id)) = e.downcast_ref::<OrderError>() {
@@ -2225,7 +2240,11 @@ impl ExecutionEngine {
                         .borrow_mut()
                         .force_remove_from_own_order_book(&client_order_id);
                 } else {
-                    let order = self.cache.borrow().order(&client_order_id).cloned();
+                    let order = self
+                        .cache
+                        .borrow()
+                        .order(&client_order_id)
+                        .map(|o| o.clone());
                     if let Some(order) = order {
                         let should_update_own_book = {
                             let cache = self.cache.borrow();
@@ -2348,23 +2367,23 @@ impl ExecutionEngine {
                 let position_id = pos.id;
 
                 for client_order_id in order.linked_order_ids().unwrap_or_default() {
-                    // Apply mutation and index update in separate borrows: `mut_order`
-                    // holds `&mut Cache`, so a nested `self.cache.borrow_mut()` would panic.
-                    let link = {
-                        let mut cache = self.cache.borrow_mut();
-                        if let Some(contingent_order) = cache.mut_order(client_order_id)
-                            && contingent_order.position_id().is_none()
-                        {
-                            contingent_order.set_position_id(Some(position_id));
-                            Some((
-                                contingent_order.instrument_id().venue,
-                                contingent_order.client_order_id(),
-                                contingent_order.strategy_id(),
-                            ))
-                        } else {
-                            None
-                        }
-                    };
+                    // Take a scoped write borrow on the contingent's cell. The borrow drops at
+                    // the end of `and_then` so the subsequent `add_position_id` on the cache is
+                    // free to take `&mut Cache`.
+                    let link = self.cache.borrow_mut().order_mut(client_order_id).and_then(
+                        |mut contingent_order| {
+                            if contingent_order.position_id().is_none() {
+                                contingent_order.set_position_id(Some(position_id));
+                                Some((
+                                    contingent_order.instrument_id().venue,
+                                    contingent_order.client_order_id(),
+                                    contingent_order.strategy_id(),
+                                ))
+                            } else {
+                                None
+                            }
+                        },
+                    );
 
                     if let Some((venue, contingent_id, strategy_id)) = link
                         && let Err(e) = self.cache.borrow_mut().add_position_id(

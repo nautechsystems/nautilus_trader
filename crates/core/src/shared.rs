@@ -13,30 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Efficient and ergonomic wrappers around frequently-used `Rc<RefCell<T>>` / `Weak<RefCell<T>>` pairs.
+//! Wrappers around shared, interior-mutable cell pairs.
 //!
-//! The NautilusTrader codebase heavily relies on shared, interior-mutable ownership for many
-//! engine components (`Rc<RefCell<T>>`). Repeating that verbose type across many APIs—alongside
-//! its weak counterpart—clutters code and increases the likelihood of accidentally storing a
-//! strong reference where only a weak reference is required (leading to reference cycles).
+//! NautilusTrader engines store many components as `Rc<RefCell<T>>` for shared ownership with
+//! interior mutability. Spelling that type at every boundary is verbose and risks accidentally
+//! holding a strong reference where a weak one is required, leading to reference cycles.
 //!
-//! `SharedCell<T>` and `WeakCell<T>` are zero-cost new-types that make the intent explicit and
-//! offer convenience helpers (`downgrade`, `upgrade`, `borrow`, `borrow_mut`). Because the
-//! wrappers are `#[repr(transparent)]`, they have the exact same memory layout as the wrapped
-//! `Rc` / `Weak` and introduce no runtime overhead.
-
+//! [`SharedCell<T>`] and [`WeakCell<T>`] are zero-cost newtypes that name the intent and forward
+//! the common operations (`new`, `borrow`, `borrow_mut`, `with`, `with_mut`, `downgrade`,
+//! `upgrade`). They are `#[repr(transparent)]` and share the memory layout of the wrapped `Rc` /
+//! `Weak`.
+//!
 //! ## Choosing between `SharedCell` and `WeakCell`
 //!
-//! * Use **`SharedCell<T>`** when the current owner genuinely *owns* (or co-owns) the value –
-//!   just as you would normally store an `Rc<RefCell<T>>`.
-//! * Use **`WeakCell<T>`** for back-references that could otherwise form a reference cycle.
-//!   The back-pointer does **not** keep the value alive, and every access must first
-//!   `upgrade()` to a strong `SharedCell`. This pattern is how we break circular ownership such
-//!   as *Exchange ↔ `ExecutionClient`*: the exchange keeps a `SharedCell` to the client, while the
-//!   client holds only a `WeakCell` back to the exchange.
+//! - Use [`SharedCell<T>`] when the holder owns or co-owns the value, like a plain
+//!   `Rc<RefCell<T>>`.
+//! - Use [`WeakCell<T>`] for back-references that would otherwise form a cycle. The back-pointer
+//!   does not keep the value alive; every access must first `upgrade()` to a strong
+//!   [`SharedCell`]. This pattern breaks circular ownership: for an `Exchange` that owns an
+//!   `ExecutionClient` which references the exchange, the exchange holds a [`SharedCell`] to the
+//!   client and the client holds a [`WeakCell`] back to the exchange.
 
 use std::{
     cell::{BorrowError, BorrowMutError, Ref, RefCell, RefMut},
+    hash::{Hash, Hasher},
     rc::{Rc, Weak},
 };
 
@@ -113,6 +113,47 @@ impl<T> SharedCell<T> {
     pub fn weak_count(&self) -> usize {
         Rc::weak_count(&self.0)
     }
+
+    /// Returns the raw pointer to the underlying cell, useful for identity diagnostics.
+    #[inline]
+    #[must_use]
+    pub fn as_ptr(&self) -> *const RefCell<T> {
+        Rc::as_ptr(&self.0)
+    }
+
+    /// Runs `f` against an immutable borrow of the inner value, returning its result.
+    ///
+    /// The borrow is dropped at the end of the closure, so callers can safely follow
+    /// the call with operations that re-enter the same cell (e.g. event dispatch).
+    #[inline]
+    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        f(&self.0.borrow())
+    }
+
+    /// Runs `f` against a mutable borrow of the inner value, returning its result.
+    ///
+    /// The borrow is dropped at the end of the closure, so callers can safely follow
+    /// the call with operations that re-enter the same cell.
+    #[inline]
+    pub fn with_mut<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
+        f(&mut self.0.borrow_mut())
+    }
+}
+
+impl<T> PartialEq for SharedCell<T> {
+    /// Identity equality: two handles compare equal when they point to the same cell.
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl<T> Eq for SharedCell<T> {}
+
+impl<T> Hash for SharedCell<T> {
+    /// Hashes the cell's pointer address, consistent with the identity-based [`PartialEq`] impl.
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Rc::as_ptr(&self.0).hash(state);
+    }
 }
 
 impl<T> From<Rc<RefCell<T>>> for SharedCell<T> {
@@ -175,6 +216,8 @@ impl<T> From<WeakCell<T>> for Weak<RefCell<T>> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use rstest::rstest;
 
     use super::*;
@@ -281,5 +324,63 @@ mod tests {
 
         let back: Weak<RefCell<i32>> = weak_cell.into();
         assert_eq!(*back.upgrade().unwrap().borrow(), 7);
+    }
+
+    #[rstest]
+    fn test_partial_eq_is_pointer_identity() {
+        let a = SharedCell::new(10);
+        let b = a.clone();
+        let c = SharedCell::new(10);
+
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[rstest]
+    #[expect(
+        clippy::mutable_key_type,
+        reason = "SharedCell hashes by pointer identity, not interior value"
+    )]
+    fn test_hash_matches_pointer_identity() {
+        let a = SharedCell::new(10);
+        let b = a.clone();
+        let c = SharedCell::new(10);
+
+        let mut set: HashSet<SharedCell<i32>> = HashSet::new();
+        set.insert(a);
+        assert!(set.contains(&b));
+        assert!(!set.contains(&c));
+    }
+
+    #[rstest]
+    fn test_as_ptr_matches_clone() {
+        let cell = SharedCell::new(0);
+        let cloned = cell.clone();
+        assert_eq!(cell.as_ptr(), cloned.as_ptr());
+    }
+
+    #[rstest]
+    fn test_with_drops_borrow_before_returning() {
+        let cell = SharedCell::new(100);
+        let value = cell.with(|v| *v);
+
+        // Borrow released; subsequent borrow_mut works without panic.
+        *cell.borrow_mut() = 1;
+
+        assert_eq!(value, 100);
+        assert_eq!(*cell.borrow(), 1);
+    }
+
+    #[rstest]
+    fn test_with_mut_drops_borrow_before_returning() {
+        let cell = SharedCell::new(0);
+        let returned = cell.with_mut(|v| {
+            *v = 7;
+            *v
+        });
+
+        // Borrow released; we can read back through a fresh borrow.
+        assert_eq!(returned, 7);
+        assert_eq!(*cell.borrow(), 7);
     }
 }

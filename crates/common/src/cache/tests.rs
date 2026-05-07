@@ -58,11 +58,22 @@ use nautilus_model::{
 };
 use rstest::{fixture, rstest};
 
-use crate::cache::{Cache, CacheConfig, CacheView};
+use crate::cache::{Cache, CacheConfig, CacheView, OrderRef};
 
 #[fixture]
 fn cache() -> Cache {
     Cache::default()
+}
+
+fn assert_orders_eq(actual: &[OrderRef<'_>], expected: &[&OrderAny]) {
+    assert_eq!(actual.len(), expected.len(), "order list length mismatch");
+    for (a, e) in actual.iter().zip(expected.iter().copied()) {
+        assert_eq!(a, e);
+    }
+}
+
+fn orders_contains(actual: &[OrderRef<'_>], expected: &OrderAny) -> bool {
+    actual.iter().any(|r| r == expected)
 }
 
 #[rstest]
@@ -428,13 +439,15 @@ fn test_order_when_initialized(mut cache: Cache, audusd_sim: CurrencyPair) {
     let client_order_id = order.client_order_id();
     cache.add_order(order, None, None, false).unwrap();
 
-    let order = cache.order(&client_order_id).unwrap();
-    assert_eq!(cache.orders(None, None, None, None, None), vec![order]);
+    let order_ref = cache.order(&client_order_id).unwrap();
+    let order = order_ref.clone();
+    drop(order_ref);
+    assert_orders_eq(&cache.orders(None, None, None, None, None), &[&order]);
     assert!(cache.orders_open(None, None, None, None, None).is_empty());
     assert!(cache.orders_closed(None, None, None, None, None).is_empty());
-    assert_eq!(
-        cache.orders_active_local(None, None, None, None, None),
-        vec![order]
+    assert_orders_eq(
+        &cache.orders_active_local(None, None, None, None, None),
+        &[&order],
     );
     assert!(
         cache
@@ -487,8 +500,9 @@ fn test_order_when_submitted(mut cache: Cache, audusd_sim: CurrencyPair) {
     let result = cache.order(&order.client_order_id()).unwrap();
 
     assert_eq!(order.status(), OrderStatus::Submitted);
-    assert_eq!(result, &order);
-    assert_eq!(cache.orders(None, None, None, None, None), vec![&order]);
+    assert_eq!(&*result, &order);
+    drop(result);
+    assert_orders_eq(&cache.orders(None, None, None, None, None), &[&order]);
     assert!(cache.orders_open(None, None, None, None, None).is_empty());
     assert!(cache.orders_closed(None, None, None, None, None).is_empty());
     assert!(
@@ -600,6 +614,102 @@ fn test_update_order_rejects_invalid_transition_without_mutating(
 }
 
 #[rstest]
+fn test_order_mut_returns_none_for_missing_order(mut cache: Cache) {
+    let client_order_id = ClientOrderId::from("O-MISSING");
+    assert!(cache.order_mut(&client_order_id).is_none());
+}
+
+#[rstest]
+fn test_order_owned_returns_independent_snapshot(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order, None, None, false).unwrap();
+
+    let snapshot = cache.order_owned(&client_order_id).unwrap();
+
+    // Snapshot is independent: subsequent cache mutations do not affect it.
+    cache
+        .order_mut(&client_order_id)
+        .unwrap()
+        .set_position_id(Some(PositionId::from("P-001")));
+
+    assert!(snapshot.position_id().is_none());
+    assert_eq!(
+        cache.order(&client_order_id).unwrap().position_id(),
+        Some(PositionId::from("P-001"))
+    );
+}
+
+#[rstest]
+fn test_order_mut_writes_propagate_to_subsequent_reads(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order, None, None, false).unwrap();
+
+    cache
+        .order_mut(&client_order_id)
+        .unwrap()
+        .set_position_id(Some(PositionId::from("P-001")));
+
+    assert_eq!(
+        cache.order(&client_order_id).unwrap().position_id(),
+        Some(PositionId::from("P-001"))
+    );
+}
+
+#[rstest]
+fn test_add_order_replace_existing_overwrites_value(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let mut replacement = order;
+    replacement.set_position_id(Some(PositionId::from("P-NEW")));
+    cache.add_order(replacement, None, None, true).unwrap();
+
+    assert_eq!(
+        cache.order(&client_order_id).unwrap().position_id(),
+        Some(PositionId::from("P-NEW"))
+    );
+}
+
+#[rstest]
+fn test_replace_order_overwrites_value(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let mut replacement = order;
+    replacement.set_position_id(Some(PositionId::from("P-REPLACED")));
+    cache.replace_order(&replacement).unwrap();
+
+    assert_eq!(
+        cache.order(&client_order_id).unwrap().position_id(),
+        Some(PositionId::from("P-REPLACED"))
+    );
+}
+
+#[rstest]
 fn test_update_order_rejects_venue_fallback_when_event_client_id_differs(
     mut cache: Cache,
     audusd_sim: CurrencyPair,
@@ -693,12 +803,13 @@ fn test_order_when_rejected(mut cache: Cache, audusd_sim: CurrencyPair) {
     let result = cache.order(&order.client_order_id()).unwrap();
 
     assert!(order.is_closed());
-    assert_eq!(result, &order);
-    assert_eq!(cache.orders(None, None, None, None, None), vec![&order]);
+    assert_eq!(&*result, &order);
+    drop(result);
+    assert_orders_eq(&cache.orders(None, None, None, None, None), &[&order]);
     assert!(cache.orders_open(None, None, None, None, None).is_empty());
-    assert_eq!(
-        cache.orders_closed(None, None, None, None, None),
-        vec![&order]
+    assert_orders_eq(
+        &cache.orders_closed(None, None, None, None, None),
+        &[&order],
     );
     assert!(
         cache
@@ -743,12 +854,10 @@ fn test_order_when_accepted(mut cache: Cache, audusd_sim: CurrencyPair) {
     let result = cache.order(&order.client_order_id()).unwrap();
 
     assert!(order.is_open());
-    assert_eq!(result, &order);
-    assert_eq!(cache.orders(None, None, None, None, None), vec![&order]);
-    assert_eq!(
-        cache.orders_open(None, None, None, None, None),
-        vec![&order]
-    );
+    assert_eq!(&*result, &order);
+    drop(result);
+    assert_orders_eq(&cache.orders(None, None, None, None, None), &[&order]);
+    assert_orders_eq(&cache.orders_open(None, None, None, None, None), &[&order]);
     assert!(cache.orders_closed(None, None, None, None, None).is_empty());
     assert!(
         cache
@@ -1003,11 +1112,12 @@ fn test_order_when_filled(mut cache: Cache, audusd_sim: CurrencyPair) {
     let result = cache.order(&order.client_order_id()).unwrap();
 
     assert!(order.is_closed());
-    assert_eq!(result, &order);
-    assert_eq!(cache.orders(None, None, None, None, None), vec![&order]);
-    assert_eq!(
-        cache.orders_closed(None, None, None, None, None),
-        vec![&order]
+    assert_eq!(&*result, &order);
+    drop(result);
+    assert_orders_eq(&cache.orders(None, None, None, None, None), &[&order]);
+    assert_orders_eq(
+        &cache.orders_closed(None, None, None, None, None),
+        &[&order],
     );
     assert!(cache.orders_open(None, None, None, None, None).is_empty());
     assert!(
@@ -1070,8 +1180,9 @@ fn test_orders_for_position(mut cache: Cache, audusd_sim: CurrencyPair) {
         .add_order(order.clone(), Some(position_id), None, false)
         .unwrap();
     let result = cache.order(&order.client_order_id()).unwrap();
-    assert_eq!(result, &order);
-    assert_eq!(cache.orders_for_position(&position_id), vec![&order]);
+    assert_eq!(&*result, &order);
+    drop(result);
+    assert_orders_eq(&cache.orders_for_position(&position_id), &[&order]);
 }
 
 #[rstest]
@@ -1241,7 +1352,7 @@ fn test_add_order_with_account_id_populates_account_index() {
     // Verify account-filtered query returns the order
     let orders_for_account = cache.orders(None, None, None, Some(&account_id), None);
     assert_eq!(orders_for_account.len(), 1);
-    assert!(orders_for_account.contains(&&order));
+    assert!(orders_contains(&orders_for_account, &order));
 }
 
 #[rstest]
@@ -2911,7 +3022,7 @@ fn test_purge_order_cleans_up_strategy_orders_index() {
 
     // Query orders for strategy should not crash and should not include purged order
     let orders_for_strategy = cache.orders(None, None, Some(&strategy_id), None, None);
-    assert!(!orders_for_strategy.contains(&&order));
+    assert!(!orders_contains(&orders_for_strategy, &order));
 }
 
 #[rstest]
@@ -2980,7 +3091,7 @@ fn test_purge_order_cleans_up_exec_spawn_orders_index() {
 
     // Query orders for exec spawn should not crash and should not include purged order
     let orders_for_spawn = cache.orders_for_exec_spawn(&parent_id);
-    assert!(!orders_for_spawn.contains(&&child_order));
+    assert!(!orders_contains(&orders_for_spawn, &child_order));
 }
 
 #[rstest]
@@ -3079,7 +3190,7 @@ fn test_purge_order_cleans_up_account_orders_index() {
     assert!(!cache.index.account_orders.contains_key(&account_id));
 
     let orders_for_account = cache.orders(None, None, None, Some(&account_id), None);
-    assert!(!orders_for_account.contains(&&order));
+    assert!(!orders_contains(&orders_for_account, &order));
 }
 
 #[rstest]

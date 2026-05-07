@@ -154,7 +154,10 @@ impl TestContext {
     }
 
     fn get_order(&self, client_order_id: &ClientOrderId) -> Option<OrderAny> {
-        self.cache.borrow().order(client_order_id).cloned()
+        self.cache
+            .borrow()
+            .order(client_order_id)
+            .map(|o| o.clone())
     }
 }
 

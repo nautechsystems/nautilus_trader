@@ -984,7 +984,7 @@ impl SimulatedExchange {
                         .cache
                         .borrow()
                         .order(&command.client_order_id)
-                        .cloned()
+                        .map(|o| o.clone())
                         .expect("Order must exist in cache");
                     matching_engine.process_order(&mut order, account_id);
                 }
