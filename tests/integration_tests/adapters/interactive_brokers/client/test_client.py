@@ -20,6 +20,7 @@ from unittest.mock import Mock
 from unittest.mock import patch
 
 import pytest
+from ibapi import comm
 
 from nautilus_trader.test_kit.functions import eventually
 
@@ -187,6 +188,16 @@ async def test_wait_until_ready(ib_client_running):
 
 
 @pytest.mark.asyncio
+async def test_wait_until_ready_raises_on_timeout(ib_client):
+    # Arrange
+    ib_client._is_client_ready.clear()
+
+    # Act, Assert
+    with pytest.raises(TimeoutError):
+        await ib_client.wait_until_ready(timeout=0)
+
+
+@pytest.mark.asyncio
 async def test_run_connection_watchdog_reconnect(ib_client):
     # Arrange
     ib_client._is_ib_connected.clear()
@@ -284,3 +295,32 @@ async def test_run_internal_msg_queue_handles_executor_shutdown_during_processin
     # Assert
     ib_client._process_message.assert_awaited_once()
     assert ib_client._internal_msg_queue.qsize() == 0
+
+
+@pytest.mark.asyncio
+async def test_process_message_uses_legacy_framing_when_server_version_unknown(ib_client):
+    # Arrange
+    ib_client._eclient.decoder = MagicMock()
+
+    with patch.object(ib_client._eclient, "serverVersion", return_value=None):
+        # Act
+        result = await ib_client._process_message(b"1\0payload\0")
+
+    # Assert
+    assert result is True
+    ib_client._eclient.decoder.interpret.assert_called_once_with((b"payload",), 1)
+    ib_client._eclient.decoder.processProtoBuf.assert_not_called()
+
+
+def test_send_msg_uses_legacy_framing_when_server_version_unknown(ib_client):
+    # Arrange
+    ib_client._eclient.conn = MagicMock()
+
+    with patch.object(ib_client._eclient, "serverVersion", return_value=None):
+        # Act
+        ib_client.sendMsg(1, "payload\0")
+
+    # Assert
+    ib_client._eclient.conn.sendMsg.assert_called_once_with(
+        comm.make_msg(1, False, "payload\0"),
+    )
