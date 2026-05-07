@@ -31,6 +31,7 @@ Environment
 from __future__ import annotations
 
 import os
+from contextlib import suppress
 from datetime import timedelta
 from decimal import Decimal
 
@@ -67,6 +68,7 @@ class PriceBucketSmokeConfig(StrategyConfig, frozen=True):
     client_id: ClientId = ClientId("SANDBOX")
     order_qty: Decimal = Decimal(100)
     limit_price: float = 0.5
+    poll_interval_secs: int = 2
 
 
 class PriceBucketSmoke(Strategy):
@@ -77,6 +79,8 @@ class PriceBucketSmoke(Strategy):
         self._instrument_id: InstrumentId | None = None
         self._order_submitted: bool = False
         self._initialized: bool = False
+        self._last_expiration_ns: int | None = None
+        self._last_thresholds: tuple[Decimal, Decimal] | None = None
 
     def on_start(self) -> None:
         # Instruments are loaded asynchronously by the data client; delay selection until the cache
@@ -120,6 +124,9 @@ class PriceBucketSmoke(Strategy):
 
         self.subscribe_quote_ticks(selected)
 
+        self._last_expiration_ns = int(instrument.expiration_ns)
+        self._last_thresholds = (low, high)
+
         # Submit an out-of-the-box limit order after a short delay so the paper
         # trading path is exercised even if this testnet instrument has no live
         # quotes during the run window.
@@ -127,6 +134,14 @@ class PriceBucketSmoke(Strategy):
             name="SUBMIT_LIMIT",
             interval=timedelta(seconds=2),
             callback=self._submit_limit_order,
+        )
+
+        # Poll the instrument metadata so we can observe expiry-aligned rotation and
+        # instrument refresh (expiration/threshold updates) without relying on quotes.
+        self.clock.set_timer(
+            name="POLL_ROTATION",
+            interval=timedelta(seconds=self.config.poll_interval_secs),
+            callback=self._poll_rotation,
         )
 
     def _submit_limit_order(self, _time_event) -> None:
@@ -151,6 +166,56 @@ class PriceBucketSmoke(Strategy):
         self.log.info(
             f"Submitted sandbox BUY limit order: {self._instrument_id} @ {self.config.limit_price}",
             LogColor.GREEN,
+        )
+
+    def _poll_rotation(self, _time_event) -> None:
+        instruments = self.cache.instruments()
+        if not instruments:
+            return
+
+        try:
+            selected = select_active_price_bucket_instrument(
+                instruments,
+                underlying=self.config.underlying,
+                period=self.config.period,
+                bucket_index=self.config.bucket_index,
+                side="YES",
+            )
+        except Exception:
+            # Keep polling until the refreshed instrument set becomes available.
+            return
+
+        if self._instrument_id is None:
+            return
+
+        if selected == self._instrument_id:
+            return
+
+        prev_id = self._instrument_id
+        prev_inst = self.cache.instrument(prev_id)
+        prev_exp = int(prev_inst.expiration_ns) if prev_inst is not None else None
+        prev_thresholds = get_price_bucket_thresholds(prev_inst) if prev_inst is not None else None
+
+        new_inst = self.cache.instrument(selected)
+        if new_inst is None:
+            return
+
+        new_exp = int(new_inst.expiration_ns)
+        new_thresholds = get_price_bucket_thresholds(new_inst)
+
+        with suppress(Exception):
+            self.unsubscribe_quote_ticks(prev_id)
+
+        self.subscribe_quote_ticks(selected)
+        self._instrument_id = selected
+        self._last_expiration_ns = new_exp
+        self._last_thresholds = new_thresholds
+
+        self.log.info(
+            "Rotated active priceBucket instrument: "
+            f"{prev_id} (expiry_ns={prev_exp}, thresholds={prev_thresholds}) -> "
+            f"{selected} (expiry_ns={new_exp}, thresholds={new_thresholds})",
+            color=LogColor.YELLOW,
         )
 
 
