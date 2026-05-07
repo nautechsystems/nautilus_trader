@@ -251,6 +251,26 @@ async def test_connect(mocker, exec_client):
 
 
 @pytest.mark.asyncio
+async def test_connect_propagates_client_ready_timeout(mocker, exec_client):
+    # Arrange
+    async def wait_until_ready(timeout):
+        raise TimeoutError
+
+    mocker.patch.object(
+        exec_client._client,
+        "wait_until_ready",
+        side_effect=wait_until_ready,
+    )
+    initialize = mocker.patch.object(exec_client.instrument_provider, "initialize")
+
+    # Act, Assert
+    with pytest.raises(TimeoutError):
+        await exec_client._connect()
+
+    initialize.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_disconnect(mocker, exec_client):
     # Arrange
     mocker.patch.object(

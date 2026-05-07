@@ -400,6 +400,7 @@ class InteractiveBrokersClient(
                 await asyncio.wait_for(self._is_client_ready.wait(), timeout)
         except TimeoutError as e:
             self._log.error(f"Client is not ready: {e}")
+            raise
 
     async def _run_connection_watchdog(self) -> None:
         """
@@ -735,7 +736,7 @@ class InteractiveBrokersClient(
 
             return False
 
-        if self._eclient.serverVersion() >= MIN_SERVER_VER_PROTOBUF:
+        if self._use_raw_int_msg_id():
             sMsgId = msg[:4]
             msgId = int.from_bytes(sMsgId, "big")
             msg = msg[4:]
@@ -840,10 +841,16 @@ class InteractiveBrokersClient(
         """
         Override the logging for ibapi EClient.sendMsg.
         """
-        useRawIntMsgId = self._eclient.serverVersion() >= MIN_SERVER_VER_PROTOBUF
+        useRawIntMsgId = self._use_raw_int_msg_id()
         full_msg = comm.make_msg(msgId, useRawIntMsgId, msg)
         self._log.debug(f"TWS API request sent: function={current_fn_name(1)} msg={full_msg}")
         self._eclient.conn.sendMsg(full_msg)
+
+    def _use_raw_int_msg_id(self) -> bool:
+        server_version = self._eclient.serverVersion()
+
+        # Treat unknown server versions as legacy framing until the handshake completes
+        return server_version is not None and server_version >= MIN_SERVER_VER_PROTOBUF
 
     def logRequest(self, fnName, fnParams):
         """
