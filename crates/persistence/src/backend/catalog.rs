@@ -4338,12 +4338,19 @@ pub fn extract_identifier_from_path(file_path: &str) -> String {
 
 /// Makes an identifier safe for use in SQL table names.
 ///
-/// Removes forward slashes, replaces dots, hyphens, spaces, percent signs, and ampersands with underscores, and converts to lowercase.
+/// Keeps ASCII alphanumerics and underscores; replaces everything else with `_`, then lowercases.
 #[must_use]
 pub fn make_sql_safe_identifier(identifier: &str) -> String {
     urisafe_instrument_id(identifier)
-        .replace(['.', '-', ' ', '%', '&'], "_")
-        .to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 /// Extracts the filename from a file path and makes it SQL-safe.
