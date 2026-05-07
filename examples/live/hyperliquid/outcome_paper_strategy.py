@@ -306,7 +306,7 @@ class OutcomePaperStrategy(Strategy):
 
             order = self.order_factory.limit(
                 instrument_id=instrument_id,
-                side=side,
+                order_side=side,
                 quantity=Quantity(self.config.order_qty, instrument.size_precision),
                 price=Price(price, instrument.price_precision),
                 time_in_force=TimeInForce.GTC,
