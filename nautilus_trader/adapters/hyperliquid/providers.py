@@ -25,16 +25,17 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
 class HyperliquidInstrumentProvider(InstrumentProvider):
     """
-    Load spot and perpetual instruments from Hyperliquid's REST ``/info`` API.
+    Load spot, perpetual, and (optionally) outcome instruments from Hyperliquid's REST
+    ``/info`` API.
     """
 
     def __init__(

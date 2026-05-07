@@ -111,6 +111,7 @@ spot markets.
 | Perpetual Futures | ✓         | ✓       | USDC‑settled linear perps (validator‑operated). |
 | HIP‑3 Perpetuals  | ✓         | ✓       | Builder‑deployed perps. Excluded by default.    |
 | Spot              | ✓         | ✓       | Native spot markets.                            |
+| Outcome (HIP‑4)   | ✓         | ✓       | Prediction markets (YES/NO). Opt‑in.            |
 
 :::note
 All perpetual futures on Hyperliquid are settled in USDC. Spot markets are standard
@@ -178,6 +179,69 @@ InstrumentId.from_str("PURR-USDC-SPOT.HYPERLIQUID")
 :::note
 Spot instruments may include vault tokens (prefixed with `vntls:`). These are automatically
 handled by the instrument provider.
+:::
+
+### Outcome (prediction) markets
+
+Format: `OUTCOME-{OutcomeId}-{YES|NO}-OUTCOME`
+
+Examples:
+
+- `OUTCOME-4-YES-OUTCOME` / `OUTCOME-4-NO-OUTCOME`
+
+To subscribe in your strategy:
+
+```python
+InstrumentId.from_str("OUTCOME-4-YES-OUTCOME.HYPERLIQUID")
+InstrumentId.from_str("OUTCOME-4-NO-OUTCOME.HYPERLIQUID")
+```
+
+To opt-in to outcome markets when building a live node:
+
+```python
+from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
+from nautilus_trader.adapters.hyperliquid import HyperliquidProductType
+
+HyperliquidDataClientConfig(
+    product_types=(
+        HyperliquidProductType.PERP,
+        HyperliquidProductType.OUTCOME,
+    ),
+    # Recommended for recycled/recurring outcome instruments (e.g., daily BTC up/down).
+    # Refreshes shortly after the next loaded outcome expiry (typically 06:00 UTC).
+    update_outcome_instruments_on_expiry=True,
+)
+```
+
+:::note
+Hyperliquid outcome markets are discovered via the REST `outcomeMeta` info request and map to
+raw symbols like `#40` / `#41` (data-coin encoding `asset = outcome_id * 10 + side`).
+Some outcome instruments (e.g., the recurring daily BTC up/down market) can be *recycled* with
+new `expiry`/`targetPrice` parameters. For these markets, enable expiry-aligned instrument refresh
+via `update_outcome_instruments_on_expiry` so the engine sees the latest `BinaryOption.expiration_ns`
+and metadata.
+:::
+
+#### `targetPrice` threshold (use this)
+
+For HIP-4 `priceBinary` markets, the outcome is determined by comparing the reference price at
+expiry to the contract `targetPrice` (i.e., the comparison threshold for YES/NO).
+
+The Hyperliquid adapter parses the `outcomeMeta.description` string and exposes `targetPrice` on
+the `BinaryOption.info` payload:
+
+```python
+from nautilus_trader.adapters.hyperliquid.paper import get_outcome_target_price
+
+inst = cache.instrument(InstrumentId.from_str("OUTCOME-4-YES-OUTCOME.HYPERLIQUID"))
+target_price = get_outcome_target_price(inst)  # Decimal
+```
+
+:::note
+The recurring daily BTC contract settles against Hyperliquid's BTC mark price at expiry (currently
+`06:00 UTC` for the daily contract). If you want to *monitor* or *validate* the settlement reference
+price in real time, subscribe to BTC spot mark price updates (e.g., `UBTC-USDC-SPOT.HYPERLIQUID`),
+but you do not need this feed to obtain `targetPrice`.
 :::
 
 ## HIP-3 builder-deployed perpetuals

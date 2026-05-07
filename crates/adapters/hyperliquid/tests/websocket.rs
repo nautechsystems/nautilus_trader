@@ -37,10 +37,11 @@ use axum::{
 use futures_util::StreamExt;
 use nautilus_common::testing::wait_until_async;
 use nautilus_hyperliquid::{
-    common::enums::HyperliquidEnvironment, websocket::client::HyperliquidWebSocketClient,
+    common::enums::HyperliquidEnvironment, data_types::HyperliquidAllMids,
+    websocket::client::HyperliquidWebSocketClient, websocket::messages::NautilusWsMessage,
 };
 use nautilus_model::{
-    data::BarType,
+    data::{BarType, Data},
     identifiers::{AccountId, InstrumentId},
 };
 use nautilus_network::websocket::TransportBackend;
@@ -1407,12 +1408,12 @@ async fn test_all_mids_subscription() {
         .expect("no message received");
 
     match msg {
-        nautilus_hyperliquid::websocket::messages::NautilusWsMessage::CustomData(data) => {
-            if let nautilus_model::data::Data::Custom(custom) = data {
+        NautilusWsMessage::CustomData(data) => {
+            if let Data::Custom(custom) = data {
                 let all_mids = custom
                     .data
                     .as_any()
-                    .downcast_ref::<nautilus_hyperliquid::data_types::HyperliquidAllMids>()
+                    .downcast_ref::<HyperliquidAllMids>()
                     .expect("expected HyperliquidAllMids");
                 assert_eq!(all_mids.mids.len(), 3);
                 assert!(
@@ -1431,7 +1432,7 @@ async fn test_all_mids_subscription() {
                         .contains_key(&InstrumentId::from("SOL-USD-PERP.HYPERLIQUID"))
                 );
             } else {
-                panic!("expected CustomData, got {:?}", data);
+                panic!("expected CustomData, was {data:?}");
             }
         }
         other => panic!("unexpected message type: {other:?}"),

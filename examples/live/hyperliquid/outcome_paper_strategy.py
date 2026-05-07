@@ -13,9 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
-Hyperliquid Outcome Market Paper Trading Strategy
+Hyperliquid Outcome Market Paper Trading Strategy.
 
 This strategy automatically:
 1. Discovers all available outcome (prediction) markets
@@ -25,11 +24,11 @@ This strategy automatically:
 5. Reports status and PnL
 
 Designed for long-running paper trading with robust error handling.
+
 """
 
 from __future__ import annotations
 
-import asyncio
 import os
 from datetime import timedelta
 from decimal import Decimal
@@ -43,11 +42,11 @@ from nautilus_trader.adapters.hyperliquid.paper import is_outcome_instrument_id
 from nautilus_trader.adapters.hyperliquid.paper import validate_outcome_price
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactory
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.nautilus_pyo3 import HyperliquidEnvironment
 from nautilus_trader.live.node import TradingNode
@@ -75,7 +74,7 @@ class OutcomePaperStrategyConfig(StrategyConfig, frozen=True):
 
     instrument_ids: list[InstrumentId] | None = None  # None = auto-discover
     client_id: ClientId = ClientId("SANDBOX")
-    order_qty: Decimal = Decimal("100")  # Base order quantity in USDH
+    order_qty: Decimal = Decimal(100)  # Base order quantity in USDH
     max_positions: int = 5  # Max simultaneous positions
     min_spread_bps: int = 50  # Minimum spread to trade (50 = 0.5%)
     position_hold_seconds: int = 300  # Flatten position after this time
@@ -92,6 +91,7 @@ class OutcomePaperStrategy(Strategy):
     - Quote-driven order placement
     - Position management with time-based flattening
     - Robust error handling and status reporting
+
     """
 
     def __init__(self, config: OutcomePaperStrategyConfig):
@@ -110,7 +110,7 @@ class OutcomePaperStrategy(Strategy):
 
     def on_start(self) -> None:
         """
-        Called when the strategy starts.
+        Handle strategy start.
         """
         self.log.info("=" * 60)
         self.log.info("Outcome Paper Trading Strategy Starting")
@@ -119,8 +119,7 @@ class OutcomePaperStrategy(Strategy):
         # Discover or use configured instruments
         if self.config.instrument_ids:
             self._outcome_instruments = [
-                inst for inst in self.config.instrument_ids
-                if is_outcome_instrument_id(inst)
+                inst for inst in self.config.instrument_ids if is_outcome_instrument_id(inst)
             ]
             self.log.info(f"Using {len(self._outcome_instruments)} configured outcome instruments")
         else:
@@ -141,16 +140,19 @@ class OutcomePaperStrategy(Strategy):
         self.log.info(f"Strategy initialized with {len(self._outcome_instruments)} markets")
 
     def _discover_outcome_instruments(self) -> None:
-        """Discover outcome instruments from the cache."""
+        """
+        Discover outcome instruments from the cache.
+        """
         all_instruments = self.cache.instruments()
         self._outcome_instruments = [
-            inst.id for inst in all_instruments
-            if is_outcome_instrument_id(inst.id)
+            inst.id for inst in all_instruments if is_outcome_instrument_id(inst.id)
         ]
         self._outcome_instruments.sort(key=lambda x: x.value)
 
     def _subscribe_to_market_data(self) -> None:
-        """Subscribe to quotes, trades, and order book for all outcome instruments."""
+        """
+        Subscribe to quotes, trades, and order book for all outcome instruments.
+        """
         for instrument_id in self._outcome_instruments:
             try:
                 # Subscribe to quote ticks (BBO)
@@ -173,7 +175,9 @@ class OutcomePaperStrategy(Strategy):
                 self._errors += 1
 
     def _start_periodic_tasks(self) -> None:
-        """Start periodic maintenance tasks."""
+        """
+        Start periodic maintenance tasks.
+        """
         # Position flattening timer
         self.clock.set_timer(
             name="FLATTEN_POSITIONS",
@@ -190,7 +194,7 @@ class OutcomePaperStrategy(Strategy):
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
-        Called when a quote tick is received.
+        Handle quote tick updates.
         """
         instrument_id = tick.instrument_id
         self._last_prices[instrument_id] = Decimal(str(tick.bid_price))
@@ -222,14 +226,19 @@ class OutcomePaperStrategy(Strategy):
             self.clock.set_timer(
                 name=f"SELL_{instrument_id.value}",
                 interval=timedelta(seconds=5),
-                callback=lambda event, inst=instrument_id, instr=instrument: self._test_sell(inst, instr),
+                callback=lambda event, inst=instrument_id, instr=instrument: self._test_sell(
+                    inst,
+                    instr,
+                ),
             )
         except Exception as e:
             self.log.error(f"[TEST] Buy failed: {e}")
             self._errors += 1
 
     def _test_sell(self, instrument_id: InstrumentId, instrument) -> None:
-        """Sell position for test flow."""
+        """
+        Sell position for test flow.
+        """
         try:
             sell_order = self.order_factory.market(
                 instrument_id=instrument_id,
@@ -245,34 +254,34 @@ class OutcomePaperStrategy(Strategy):
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
-        Called when a trade tick is received.
+        Handle trade tick updates.
         """
         # Track last trade price
         self._last_prices[tick.instrument_id] = Decimal(str(tick.price))
 
     def _should_trade(self, instrument_id: InstrumentId) -> bool:
-        """Check if we should place a trade for this instrument."""
+        """
+        Check if we should place a trade for this instrument.
+        """
         # Don't trade if at max positions
         open_positions = len(self.cache.positions_open())
         if open_positions >= self.config.max_positions:
             return False
 
         # Don't trade if already have a position in this instrument
-        if self._has_any_position(instrument_id):
-            return False
-
-        return True
+        return not self._has_any_position(instrument_id)
 
     def _has_position(self, instrument_id: InstrumentId, side: OrderSide) -> bool:
-        """Check if we have a position for instrument with given side."""
+        """
+        Check if we have a position for instrument with given side.
+        """
         positions = self.cache.positions_open(instrument_id=instrument_id)
-        for pos in positions:
-            if pos.side == side:
-                return True
-        return False
+        return any(pos.side == side for pos in positions)
 
     def _has_any_position(self, instrument_id: InstrumentId) -> bool:
-        """Check if we have any position for instrument."""
+        """
+        Check if we have any position for instrument.
+        """
         positions = self.cache.positions_open(instrument_id=instrument_id)
         return len(positions) > 0
 
@@ -282,7 +291,9 @@ class OutcomePaperStrategy(Strategy):
         side: OrderSide,
         price: float,
     ) -> None:
-        """Submit a limit order."""
+        """
+        Submit a limit order.
+        """
         try:
             # Validate price
             if self.config.price_guardrail:
@@ -316,26 +327,29 @@ class OutcomePaperStrategy(Strategy):
 
     def on_order_filled(self, event) -> None:
         """
-        Called when an order is filled.
+        Handle order filled events.
         """
         self._orders_filled += 1
 
-        if event.position_id:
-            position = self.cache.position(event.position_id)
-            if position:
-                instrument_id = position.instrument_id
+        if not event.position_id:
+            return
 
-                if position.is_open:
-                    # Track position open time
-                    if instrument_id not in self._position_open_times:
-                        self._position_open_times[instrument_id] = self.clock.utc_now()
-                        self._positions_opened += 1
-                        self.log.info(
-                            f"Position opened: {instrument_id} "
-                            f"{position.side.name} {position.quantity} "
-                            f"@ avg {position.avg_px_open}",
-                            color=LogColor.CYAN,
-                        )
+        position = self.cache.position(event.position_id)
+        if position is None or not position.is_open:
+            return
+
+        instrument_id = position.instrument_id
+        if instrument_id in self._position_open_times:
+            return
+
+        self._position_open_times[instrument_id] = self.clock.utc_now()
+        self._positions_opened += 1
+        self.log.info(
+            f"Position opened: {instrument_id} "
+            f"{position.side.name} {position.quantity} "
+            f"@ avg {position.avg_px_open}",
+            color=LogColor.CYAN,
+        )
 
     def _check_position_hold_times(self, time_event) -> None:
         """
@@ -354,7 +368,9 @@ class OutcomePaperStrategy(Strategy):
                 self._position_open_times.pop(instrument_id, None)
 
     def _flatten_position(self, position: Position) -> None:
-        """Flatten a position using market order."""
+        """
+        Flatten a position using market order.
+        """
         try:
             instrument = self.cache.instrument(position.instrument_id)
             if instrument is None:
@@ -372,8 +388,7 @@ class OutcomePaperStrategy(Strategy):
 
             pnl = position.unrealized_pnl(instrument)
             self.log.info(
-                f"Flattened position: {position.instrument_id} "
-                f"P&L: {pnl:.4f}",
+                f"Flattened position: {position.instrument_id} P&L: {pnl:.4f}",
                 color=LogColor.YELLOW,
             )
 
@@ -415,7 +430,7 @@ class OutcomePaperStrategy(Strategy):
 
     def on_stop(self) -> None:
         """
-        Called when the strategy stops.
+        Handle strategy stop.
         """
         self.log.info("=" * 60)
         self.log.info("Outcome Paper Trading Strategy Stopping")
@@ -434,14 +449,12 @@ class OutcomePaperStrategy(Strategy):
         self.log.info("Strategy stopped gracefully")
 
 
-async def main() -> None:
+def main() -> None:
     """
-    Main entry point for the paper trading node.
+    Run the paper trading node.
     """
     testnet = os.getenv("HYPERLIQUID_OUTCOME_TESTNET", "1").strip() == "1"
-    environment = (
-        HyperliquidEnvironment.TESTNET if testnet else HyperliquidEnvironment.MAINNET
-    )
+    environment = HyperliquidEnvironment.TESTNET if testnet else HyperliquidEnvironment.MAINNET
 
     # Configure node
     config_node = TradingNodeConfig(
@@ -454,7 +467,6 @@ async def main() -> None:
         data_clients={
             HYPERLIQUID: HyperliquidDataClientConfig(
                 environment=environment,
-                testnet=testnet,
                 instrument_provider=InstrumentProviderConfig(load_all=True),
                 product_types=(
                     HyperliquidProductType.OUTCOME,
@@ -462,6 +474,7 @@ async def main() -> None:
                     # HyperliquidProductType.SPOT,
                     # HyperliquidProductType.PERP,
                 ),
+                update_outcome_instruments_on_expiry=True,
             ),
         },
         exec_clients={
@@ -487,7 +500,7 @@ async def main() -> None:
         config=OutcomePaperStrategyConfig(
             strategy_id="OUTCOME-PAPER-STRATEGY",
             client_id=ClientId("SANDBOX"),
-            order_qty=Decimal("100"),
+            order_qty=Decimal(100),
             max_positions=5,
             min_spread_bps=50,
             position_hold_seconds=300,
@@ -506,14 +519,13 @@ async def main() -> None:
     node.build()
 
     try:
-        await node.run_async()
+        node.run(raise_exception=True)
     except KeyboardInterrupt:
         print("Keyboard interrupt received, shutting down...")
     finally:
-        await node.stop_async()
-        await asyncio.sleep(1)
+        node.stop()
         node.dispose()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

@@ -39,12 +39,14 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_core::{AtomicSet, UnixNanos};
 use nautilus_deribit::{
     common::enums::DeribitEnvironment,
+    data_types::DeribitVolatilityIndex,
     websocket::{
         auth::DERIBIT_DATA_SESSION_NAME, client::DeribitWebSocketClient,
         enums::DeribitUpdateInterval, messages::NautilusWsMessage,
     },
 };
 use nautilus_model::{
+    data::Data,
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{CryptoPerpetual, InstrumentAny},
     types::{Currency, Price, Quantity},
@@ -1943,16 +1945,16 @@ async fn test_volatility_index_subscription() {
     match message {
         NautilusWsMessage::Data(data) => {
             assert_eq!(data.len(), 1);
-            if let nautilus_model::data::Data::Custom(custom) = &data[0] {
+            if let Data::Custom(custom) = &data[0] {
                 let dvol = custom
                     .data
                     .as_any()
-                    .downcast_ref::<nautilus_deribit::data_types::DeribitVolatilityIndex>()
+                    .downcast_ref::<DeribitVolatilityIndex>()
                     .expect("expected DeribitVolatilityIndex");
                 assert_eq!(dvol.index_name, "btc_usd");
                 assert_eq!(dvol.value, 129.36);
             } else {
-                panic!("expected CustomData, got {:?}", data[0]);
+                panic!("expected CustomData, was {:?}", data[0]);
             }
         }
         other => panic!("unexpected message: {other:?}"),

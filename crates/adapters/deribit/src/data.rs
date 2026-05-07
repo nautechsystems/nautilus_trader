@@ -1244,7 +1244,10 @@ impl DataClient for DeribitDataClient {
                 .metadata()
                 .as_ref()
                 .and_then(|m| m.get("index_name"))
-                .map_or_else(|| "btc_usd".to_string(), |v| v.as_str().unwrap_or("btc_usd").to_string());
+                .map_or_else(
+                    || "btc_usd".to_string(),
+                    |v| v.as_str().unwrap_or("btc_usd").to_string(),
+                );
 
             log::info!("Subscribing to Deribit volatility index: {index_name}");
 
@@ -1271,7 +1274,10 @@ impl DataClient for DeribitDataClient {
                 .metadata()
                 .as_ref()
                 .and_then(|m| m.get("index_name"))
-                .map_or_else(|| "btc_usd".to_string(), |v| v.as_str().unwrap_or("btc_usd").to_string());
+                .map_or_else(
+                    || "btc_usd".to_string(),
+                    |v| v.as_str().unwrap_or("btc_usd").to_string(),
+                );
 
             log::info!("Unsubscribing from Deribit volatility index: {index_name}");
 

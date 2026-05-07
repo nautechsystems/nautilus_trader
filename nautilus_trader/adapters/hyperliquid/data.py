@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
@@ -57,6 +58,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.instruments import BinaryOption
 
 
 class HyperliquidDataClient(LiveMarketDataClient):
@@ -112,6 +114,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
         environment = config.environment or nautilus_pyo3.HyperliquidEnvironment.MAINNET
         self._log.info(f"config.environment={environment}", LogColor.BLUE)
         self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
+        self._log.info(f"{config.update_outcome_instruments_on_expiry=}", LogColor.BLUE)
         self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
 
         # HTTP client (uses EVM private key for authentication, not API key)
@@ -123,6 +126,14 @@ class HyperliquidDataClient(LiveMarketDataClient):
             url=config.base_url_ws,
             environment=environment,
             proxy_url=config.proxy_url,
+        )
+
+        self._update_instruments_task: asyncio.Task | None = None
+        self._update_outcomes_on_expiry: bool = config.update_outcome_instruments_on_expiry
+        self._outcome_expiry_refresh_delay_secs: int = config.outcome_expiry_refresh_delay_secs
+        self._outcome_expiry_refresh_retries: int = config.outcome_expiry_refresh_retries
+        self._outcome_expiry_refresh_retry_delay_secs: int = (
+            config.outcome_expiry_refresh_retry_delay_secs
         )
 
     @property
@@ -139,9 +150,17 @@ class HyperliquidDataClient(LiveMarketDataClient):
         await self._ws_client.connect(self._loop, instruments, self._handle_msg)
         self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
 
+        if self._update_outcomes_on_expiry:
+            self._update_instruments_task = self.create_task(self._update_outcomes_on_expiry_loop())
+
     async def _disconnect(self) -> None:
         # Delay to allow websocket to send any unsubscribe messages
         await asyncio.sleep(1.0)
+
+        if self._update_instruments_task:
+            self._log.debug("Canceling task 'update_instruments'")
+            self._update_instruments_task.cancel()
+            self._update_instruments_task = None
 
         if not self._ws_client.is_closed():
             self._log.info("Disconnecting WebSocket")
@@ -199,6 +218,55 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
     async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
         self._log.info("Subscribed to instruments updates")
+
+    def _next_outcome_expiry_ns(self) -> int | None:
+        now_ns = time.time_ns()
+        expiries: list[int] = []
+
+        for inst in self.instrument_provider.get_all().values():
+            if isinstance(inst, BinaryOption) and inst.id.symbol.value.startswith("OUTCOME-"):
+                expiry = int(inst.expiration_ns)
+                if expiry > now_ns:
+                    expiries.append(expiry)
+        return min(expiries) if expiries else None
+
+    async def _update_outcomes_on_expiry_loop(self) -> None:
+        while True:
+            try:
+                next_expiry_ns = self._next_outcome_expiry_ns()
+                if next_expiry_ns is None:
+                    # No outcome instruments loaded; fall back to a conservative delay.
+                    await asyncio.sleep(60)
+                    continue
+
+                now_ns = time.time_ns()
+                refresh_at_ns = (
+                    next_expiry_ns + self._outcome_expiry_refresh_delay_secs * 1_000_000_000
+                )
+                sleep_ns = max(0, refresh_at_ns - now_ns)
+                await asyncio.sleep(sleep_ns / 1_000_000_000)
+
+                prev_expiry_ns = next_expiry_ns
+
+                for attempt in range(self._outcome_expiry_refresh_retries):
+                    await self.instrument_provider.initialize(reload=True)
+                    self._cache_instruments()
+                    self._send_all_instruments_to_data_engine()
+
+                    new_expiry_ns = self._next_outcome_expiry_ns()
+                    if new_expiry_ns is not None and new_expiry_ns > prev_expiry_ns:
+                        break
+
+                    if attempt + 1 < self._outcome_expiry_refresh_retries:
+                        await asyncio.sleep(
+                            self._outcome_expiry_refresh_retry_delay_secs * (attempt + 1),
+                        )
+            except asyncio.CancelledError:
+                self._log.debug("Canceled task 'update_instruments'")
+                return
+            except Exception as e:
+                self._log.error(f"Error updating outcome instruments on expiry: {e}")
+                await asyncio.sleep(5)
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)

@@ -18,7 +18,9 @@
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;
+    use nautilus_model::enums::AssetClass;
     use nautilus_model::instruments::InstrumentAny;
+    use rstest::rstest;
 
     use crate::http::{
         models::{OutcomeDescriptor, OutcomeMetaResponse, OutcomeSideSpec},
@@ -28,7 +30,7 @@ mod tests {
         },
     };
 
-    #[test]
+    #[rstest]
     fn test_parse_outcome_instruments() {
         const OUTCOME_ACTION_ASSET_OFFSET: u32 = 100_000_000;
 
@@ -71,7 +73,7 @@ mod tests {
         assert_eq!(no_def.market_type, HyperliquidMarketType::Outcome);
     }
 
-    #[test]
+    #[rstest]
     fn test_create_binary_option_from_outcome_def() {
         let def = HyperliquidInstrumentDef {
             symbol: "OUTCOME-2-YES-OUTCOME".into(),
@@ -88,7 +90,7 @@ mod tests {
             only_isolated: false,
             is_hip3: false,
             active: true,
-            raw_data: r#"{"outcome":2,"name":"BTC above $80k on May 9","description":"Will BTC be above $80,000?","side_specs":[{"name":"Yes"}]}"#.to_string(),
+            raw_data: r#"{"outcome":2,"name":"Recurring","description":"class:priceBinary|underlying:BTC|expiry:20260509-0600|targetPrice:80000|period:1d","sideSpecs":[{"name":"Yes"}]}"#.to_string(),
         };
 
         let ts_init = UnixNanos::default();
@@ -103,19 +105,20 @@ mod tests {
         // Verify BinaryOption properties
         assert_eq!(binary_option.id.symbol.as_str(), "OUTCOME-2-YES-OUTCOME");
         assert_eq!(binary_option.currency.code.as_str(), "USDH");
-        assert_eq!(
-            binary_option.asset_class,
-            nautilus_model::enums::AssetClass::Alternative
-        );
+        assert_eq!(binary_option.asset_class, AssetClass::Alternative);
         assert_eq!(binary_option.price_precision, 6);
         assert_eq!(binary_option.size_precision, 6);
 
         // Check price bounds for prediction markets
         assert!(binary_option.max_price.is_some());
         assert!(binary_option.min_price.is_some());
+
+        // Expiry parsed from encoded description (UTC)
+        assert!(binary_option.expiration_ns > 0);
+        assert!(binary_option.activation_ns < binary_option.expiration_ns);
     }
 
-    #[test]
+    #[rstest]
     fn test_outcome_asset_index_encoding() {
         const OUTCOME_ACTION_ASSET_OFFSET: u32 = 100_000_000;
 
@@ -133,7 +136,7 @@ mod tests {
             let meta = OutcomeMetaResponse {
                 outcomes: vec![OutcomeDescriptor {
                     outcome: outcome_id,
-                    name: format!("Test outcome {}", outcome_id),
+                    name: format!("Test outcome {outcome_id}"),
                     description: "Test description".to_string(),
                     side_specs: vec![
                         OutcomeSideSpec {
@@ -152,15 +155,12 @@ mod tests {
 
             assert_eq!(
                 target_def.asset_index, expected_index,
-                "outcome_id={}, side={}",
-                outcome_id, side
+                "outcome_id={outcome_id}, side={side}",
             );
             assert_eq!(
                 target_def.raw_symbol.as_str(),
                 expected_coin,
-                "outcome_id={}, side={}",
-                outcome_id,
-                side
+                "outcome_id={outcome_id}, side={side}",
             );
         }
     }

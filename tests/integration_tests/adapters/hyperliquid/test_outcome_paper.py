@@ -92,8 +92,7 @@ async def test_provider_falls_back_for_older_http_client_signature(mock_http_cli
 
     assert mock_http_client.load_instrument_definitions.call_count == 2
     assert (
-        "include_outcomes"
-        in mock_http_client.load_instrument_definitions.call_args_list[0].kwargs
+        "include_outcomes" in mock_http_client.load_instrument_definitions.call_args_list[0].kwargs
     )
     assert (
         "include_outcomes"

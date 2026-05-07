@@ -176,12 +176,13 @@ mod tests {
         data::CustomDataTrait,
         identifiers::{InstrumentId, Symbol, Venue},
     };
+    use rstest::rstest;
 
     fn create_test_instrument_id(symbol: &str) -> InstrumentId {
         InstrumentId::new(Symbol::from(symbol), Venue::from("HYPERLIQUID"))
     }
 
-    #[test]
+    #[rstest]
     fn test_hyperliquid_all_mids_new() {
         let mut mids = HashMap::new();
         mids.insert(
@@ -203,7 +204,7 @@ mod tests {
         assert_eq!(all_mids.ts_init.as_u64(), 1_000_000_001);
     }
 
-    #[test]
+    #[rstest]
     fn test_hyperliquid_all_mids_type_name() {
         let all_mids =
             HyperliquidAllMids::new(HashMap::new(), UnixNanos::default(), UnixNanos::default());
@@ -211,7 +212,7 @@ mod tests {
         assert_eq!(HyperliquidAllMids::type_name_static(), "HyperliquidAllMids");
     }
 
-    #[test]
+    #[rstest]
     fn test_hyperliquid_all_mids_to_json() {
         let mut mids = HashMap::new();
         mids.insert(
@@ -229,7 +230,7 @@ mod tests {
         assert!(json_str.contains("65000.5"));
     }
 
-    #[test]
+    #[rstest]
     fn test_hyperliquid_all_mids_from_json() {
         let json_value = serde_json::json!({
             "mids": {
@@ -246,7 +247,7 @@ mod tests {
         assert_eq!(all_mids.ts_init.as_u64(), 1_000_000_001);
     }
 
-    #[test]
+    #[rstest]
     fn test_hyperliquid_all_mids_clone_arc() {
         let mut mids = HashMap::new();
         mids.insert(
@@ -263,7 +264,7 @@ mod tests {
         assert_eq!(downcast.mids.len(), 1);
     }
 
-    #[test]
+    #[rstest]
     fn test_hyperliquid_all_mids_eq_arc() {
         let mut mids1 = HashMap::new();
         mids1.insert(

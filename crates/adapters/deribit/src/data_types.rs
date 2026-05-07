@@ -164,8 +164,9 @@ impl DeribitVolatilityIndex {
 mod tests {
     use super::*;
     use nautilus_model::data::CustomDataTrait;
+    use rstest::rstest;
 
-    #[test]
+    #[rstest]
     fn test_deribit_volatility_index_new() {
         let dvol = DeribitVolatilityIndex::new(
             "btc_usd".to_string(),
@@ -179,7 +180,7 @@ mod tests {
         assert_eq!(dvol.ts_init.as_u64(), 1_000_000_001);
     }
 
-    #[test]
+    #[rstest]
     fn test_deribit_volatility_index_type_name() {
         let dvol = DeribitVolatilityIndex::new(
             "eth_usd".to_string(),
@@ -194,7 +195,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_deribit_volatility_index_to_json() {
         let dvol = DeribitVolatilityIndex::new(
             "btc_usd".to_string(),
@@ -207,7 +208,7 @@ mod tests {
         assert!(json_str.contains("72.5"));
     }
 
-    #[test]
+    #[rstest]
     fn test_deribit_volatility_index_from_json() {
         let json_value = serde_json::json!({
             "index_name": "btc_usd",
@@ -226,7 +227,7 @@ mod tests {
         assert_eq!(dvol.ts_init.as_u64(), 1_000_000_001);
     }
 
-    #[test]
+    #[rstest]
     fn test_deribit_volatility_index_clone_arc() {
         let dvol = DeribitVolatilityIndex::new(
             "btc_usd".to_string(),
@@ -243,7 +244,7 @@ mod tests {
         assert_eq!(downcast.value, 72.5);
     }
 
-    #[test]
+    #[rstest]
     fn test_deribit_volatility_index_eq_arc() {
         let dvol1 = DeribitVolatilityIndex::new(
             "btc_usd".to_string(),

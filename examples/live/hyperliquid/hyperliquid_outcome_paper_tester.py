@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
 Hyperliquid outcome market paper trading example.
 
@@ -21,6 +20,7 @@ This example runs with:
 - Hyperliquid live outcome market data client
 - Sandbox execution client (simulated fills)
 - Python strategy (`ExecTester`) for paper-trading validation
+
 """
 
 from __future__ import annotations
@@ -72,20 +72,20 @@ async def discover_outcome_instrument_id(
         include_perps_hip3=False,
         include_outcomes=True,
     )
-    instrument_ids = [inst.id for inst in instruments]
+    instrument_ids = [InstrumentId.from_str(inst.id.value) for inst in instruments]
     return select_outcome_instrument_id(instrument_ids, preferred=preferred)
 
 
-async def main() -> None:
+def main() -> None:
     testnet = os.getenv("HYPERLIQUID_OUTCOME_TESTNET", "1").strip() == "1"
-    environment = (
-        HyperliquidEnvironment.TESTNET if testnet else HyperliquidEnvironment.MAINNET
-    )
+    environment = HyperliquidEnvironment.TESTNET if testnet else HyperliquidEnvironment.MAINNET
     preferred_instrument = os.getenv("HYPERLIQUID_OUTCOME_INSTRUMENT_ID")
 
-    instrument_id = await discover_outcome_instrument_id(
-        environment=environment,
-        preferred=preferred_instrument,
+    instrument_id = asyncio.run(
+        discover_outcome_instrument_id(
+            environment=environment,
+            preferred=preferred_instrument,
+        ),
     )
 
     config_node = TradingNodeConfig(
@@ -98,9 +98,9 @@ async def main() -> None:
         data_clients={
             HYPERLIQUID: HyperliquidDataClientConfig(
                 environment=environment,
-                testnet=testnet,
                 instrument_provider=InstrumentProviderConfig(load_all=True),
                 product_types=(HyperliquidProductType.OUTCOME,),
+                update_outcome_instruments_on_expiry=True,
             ),
         },
         exec_clients={
@@ -126,8 +126,8 @@ async def main() -> None:
             instrument_id=instrument_id,
             external_order_claims=[instrument_id],
             client_id=ClientId("SANDBOX"),
-            order_qty=Decimal("100"),
-            open_position_on_start_qty=Decimal("100"),
+            order_qty=Decimal(100),
+            open_position_on_start_qty=Decimal(100),
             open_position_time_in_force=TimeInForce.GTC,
             enable_limit_buys=True,
             enable_limit_sells=False,
@@ -142,12 +142,13 @@ async def main() -> None:
     node.build()
 
     try:
-        await node.run_async()
+        node.run(raise_exception=True)
+    except KeyboardInterrupt:
+        print("Keyboard interrupt received, shutting down...")
     finally:
-        await node.stop_async()
-        await asyncio.sleep(1)
+        node.stop()
         node.dispose()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

@@ -2302,7 +2302,7 @@ mod tests {
             .expect_err("outcome price above max should be rejected");
         assert!(
             err.to_string().contains("Outcome market price"),
-            "error should come from outcome validation, got: {err}",
+            "error should come from outcome validation, received: {err}",
         );
     }
 

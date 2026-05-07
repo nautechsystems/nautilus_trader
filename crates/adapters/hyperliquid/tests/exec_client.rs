@@ -2717,7 +2717,7 @@ fn make_submit_cmd_with_params(order: &OrderAny, params: Params) -> SubmitOrder 
 }
 
 #[rstest]
-#[case::unsupported_symbol("BTC-USD-FUT.HYPERLIQUID", "expected -PERP or -SPOT")]
+#[case::unsupported_symbol("BTC-USD-FUT.HYPERLIQUID", "expected -PERP, -SPOT, or -OUTCOME")]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_submit_order_unsupported_symbol_emits_denied(
     #[case] instrument_str: &str,

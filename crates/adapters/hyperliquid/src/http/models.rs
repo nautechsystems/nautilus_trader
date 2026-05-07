@@ -1607,6 +1607,10 @@ impl OutcomeAsset {
     /// Returns the instrument symbol for Nautilus (e.g., "OUTCOME-2-YES-OUTCOME").
     #[must_use]
     pub fn instrument_symbol(&self) -> String {
-        format!("OUTCOME-{}-{}-OUTCOME", self.outcome_id, self.side_name.to_uppercase())
+        format!(
+            "OUTCOME-{}-{}-OUTCOME",
+            self.outcome_id,
+            self.side_name.to_uppercase()
+        )
     }
 }

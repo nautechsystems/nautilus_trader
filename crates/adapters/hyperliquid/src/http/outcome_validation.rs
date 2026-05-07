@@ -123,15 +123,13 @@ pub fn validate_price_range(price: &Price) -> Result<(), String> {
 
     if price < &min {
         return Err(format!(
-            "Outcome market price {} is below minimum {}, market may be settled",
-            price, min
+            "Outcome market price {price} is below minimum {min}, market may be settled"
         ));
     }
 
     if price > &max {
         return Err(format!(
-            "Outcome market price {} is above maximum {}, market may be settled",
-            price, max
+            "Outcome market price {price} is above maximum {max}, market may be settled"
         ));
     }
 
@@ -184,13 +182,13 @@ mod tests {
         let result = validate_price_range(&price);
 
         if should_pass {
-            assert!(result.is_ok(), "Price {} should be valid", price_str);
+            assert!(result.is_ok(), "Price {price_str} should be valid");
         } else {
-            assert!(result.is_err(), "Price {} should be invalid", price_str);
+            assert!(result.is_err(), "Price {price_str} should be invalid");
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_get_outcome_price_range() {
         let (min, max) = get_outcome_price_range();
         assert_eq!(min.to_string(), "0.001");
@@ -227,14 +225,14 @@ mod tests {
         ))
     }
 
-    #[test]
+    #[rstest]
     fn test_validate_outcome_order_passes_for_valid_outcome_price() {
         let order = make_limit_order("0.650");
         let instrument_id = InstrumentId::from("OUTCOME-2-YES-OUTCOME.HYPERLIQUID");
         assert!(validate_outcome_order(&order, &instrument_id).is_ok());
     }
 
-    #[test]
+    #[rstest]
     fn test_validate_outcome_order_rejects_invalid_outcome_price() {
         let order = make_limit_order("1.100");
         let instrument_id = InstrumentId::from("OUTCOME-2-YES-OUTCOME.HYPERLIQUID");

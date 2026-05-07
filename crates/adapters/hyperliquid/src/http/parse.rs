@@ -14,7 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use anyhow::Context;
-use nautilus_core::{UUID4, UnixNanos};
+use chrono::{NaiveDateTime, Utc};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     enums::{
         AssetClass, CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
@@ -27,6 +28,7 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use ustr::Ustr;
 
 use super::models::{
@@ -432,10 +434,54 @@ pub fn create_instrument_from_def(
             let outcome_desc: serde_json::Result<OutcomeDescriptor> =
                 serde_json::from_str(&def.raw_data);
 
-            let description = outcome_desc
-                .as_ref()
-                .map(|o| o.description.as_str())
-                .unwrap_or("");
+            let raw_description = outcome_desc.as_ref().map_or("", |o| o.description.as_str());
+
+            let parsed_desc = parse_outcome_description(raw_description);
+
+            let (activation_ns, expiration_ns) =
+                match (parsed_desc.activation_ns, parsed_desc.expiration_ns) {
+                    (Some(a), Some(e)) => (a, e),
+                    (None, Some(e)) => (UnixNanos::default(), e),
+                    _ => (UnixNanos::default(), ts_init),
+                };
+
+            let outcome_side = parse_outcome_side_from_symbol(def.symbol.as_str())
+                .map(Ustr::from)
+                .or_else(|| {
+                    outcome_desc
+                        .as_ref()
+                        .ok()
+                        .and_then(|o| o.side_specs.first())
+                        .map(|s| Ustr::from(s.name.as_str()))
+                });
+
+            let description = parsed_desc
+                .question
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .or_else(|| (!raw_description.is_empty()).then_some(raw_description))
+                .map(Ustr::from);
+
+            let info: Option<Params> = serde_json::from_value(json!({
+                "hyperliquid": {
+                    "market_type": "outcome",
+                    "symbol": def.symbol.as_str(),
+                    "raw_symbol": def.raw_symbol.as_str(),
+                    "asset_index": def.asset_index,
+                    "outcome": outcome_desc.as_ref().ok(),
+                    "description_raw": raw_description,
+                    // Parsed `priceBinary` parameters (when available). For recurring markets,
+                    // `target_price` is the threshold used for settlement comparisons.
+                    "price_binary": {
+                        "underlying": parsed_desc.underlying,
+                        "period": parsed_desc.period,
+                        "expiry": parsed_desc.expiry,
+                        "target_price": parsed_desc.target_price,
+                    },
+                    "description_parsed": parsed_desc.fields,
+                }
+            }))
+            .ok();
 
             // For outcome markets, we use BinaryOption instrument
             let binary_option = BinaryOption::new_checked(
@@ -443,14 +489,14 @@ pub fn create_instrument_from_def(
                 raw_symbol,
                 AssetClass::Alternative, // Prediction markets are alternative assets
                 currency,
-                ts_init, // activation_ns - using current time as placeholder
-                ts_init, // expiration_ns - using current time as placeholder
+                activation_ns,
+                expiration_ns,
                 def.price_decimals as u8,
                 def.size_decimals as u8,
                 price_increment,
                 size_increment,
-                None, // outcome - determined at settlement
-                Some(Ustr::from(description)),
+                outcome_side,
+                description,
                 None,                       // max_quantity
                 None,                       // min_quantity
                 None,                       // max_notional
@@ -461,7 +507,7 @@ pub fn create_instrument_from_def(
                 None,                       // margin_maint - will use default
                 None,                       // maker_fee
                 None,                       // taker_fee
-                None,                       // info
+                info,
                 ts_init,
                 ts_init,
             )
@@ -470,6 +516,146 @@ pub fn create_instrument_from_def(
             Some(InstrumentAny::BinaryOption(binary_option))
         }
     }
+}
+
+#[derive(Debug, Clone, Default)]
+struct ParsedOutcomeDescription {
+    activation_ns: Option<UnixNanos>,
+    expiration_ns: Option<UnixNanos>,
+    question: Option<String>,
+    underlying: Option<String>,
+    period: Option<String>,
+    target_price: Option<String>,
+    expiry: Option<String>,
+    fields: serde_json::Value,
+}
+
+fn parse_outcome_description(description: &str) -> ParsedOutcomeDescription {
+    // Expected encoding:
+    // "class:priceBinary|underlying:BTC|expiry:20260507-0600|targetPrice:81287|period:1d"
+    let mut map = serde_json::Map::new();
+
+    for part in description.split('|') {
+        let Some((k, v)) = part.split_once(':') else {
+            continue;
+        };
+        map.insert(k.to_string(), json!(v));
+    }
+
+    let underlying_str = map
+        .get("underlying")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+    let period = map
+        .get("period")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+    let target_price_str = map
+        .get("targetPrice")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+    let expiry_str = map
+        .get("expiry")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+
+    let expiry = map
+        .get("expiry")
+        .and_then(|v| v.as_str())
+        .and_then(parse_outcome_expiry_to_nanos);
+
+    let period_nanos = map
+        .get("period")
+        .and_then(|v| v.as_str())
+        .and_then(parse_outcome_period_to_nanos);
+
+    let activation_ns = match (expiry, period_nanos) {
+        (Some(expiry_ns), Some(delta)) => expiry_ns.as_u64().checked_sub(delta).map(UnixNanos::new),
+        _ => None,
+    };
+
+    let (underlying_ref, target_price_ref, expiry_iso) = (
+        map.get("underlying").and_then(|v| v.as_str()),
+        map.get("targetPrice").and_then(|v| v.as_str()),
+        expiry.and_then(unix_nanos_to_iso),
+    );
+
+    let question = match (
+        map.get("class").and_then(|v| v.as_str()),
+        underlying_ref,
+        target_price_ref,
+        expiry_iso.as_deref(),
+    ) {
+        (Some("priceBinary"), Some(u), Some(tp), Some(exp)) => {
+            Some(format!("Will {u} be above {tp} at {exp}?"))
+        }
+        _ if !description.is_empty() => Some(description.to_string()),
+        _ => None,
+    };
+
+    ParsedOutcomeDescription {
+        activation_ns,
+        expiration_ns: expiry,
+        question,
+        underlying: underlying_str,
+        period,
+        target_price: target_price_str,
+        expiry: expiry_str,
+        fields: serde_json::Value::Object(map),
+    }
+}
+
+fn parse_outcome_expiry_to_nanos(expiry: &str) -> Option<UnixNanos> {
+    // "YYYYMMDD-HHMM" (UTC)
+    let naive = NaiveDateTime::parse_from_str(expiry, "%Y%m%d-%H%M").ok()?;
+    let dt = chrono::DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc);
+    let secs = dt.timestamp();
+    if secs < 0 {
+        return None;
+    }
+    let secs_u64 = secs as u64;
+    let nanos = secs_u64
+        .checked_mul(1_000_000_000)?
+        .checked_add(dt.timestamp_subsec_nanos() as u64)?;
+    Some(UnixNanos::new(nanos))
+}
+
+fn parse_outcome_period_to_nanos(period: &str) -> Option<u64> {
+    if period.len() < 2 {
+        return None;
+    }
+    let (n_str, unit) = period.split_at(period.len() - 1);
+    let n: i64 = n_str.parse().ok()?;
+
+    let seconds: i64 = match unit {
+        "d" => n.saturating_mul(86_400),
+        "h" => n.saturating_mul(3_600),
+        "m" => n.saturating_mul(60),
+        "s" => n,
+        _ => return None,
+    };
+
+    if seconds < 0 {
+        return None;
+    }
+    Some((seconds as u64).saturating_mul(1_000_000_000))
+}
+
+fn unix_nanos_to_iso(ns: UnixNanos) -> Option<String> {
+    let v = ns.as_u64();
+    let secs = (v / 1_000_000_000) as i64;
+    let nanos = (v % 1_000_000_000) as u32;
+    let dt = chrono::DateTime::<Utc>::from_timestamp(secs, nanos)?;
+    Some(dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+}
+
+fn parse_outcome_side_from_symbol(symbol: &str) -> Option<&str> {
+    // "OUTCOME-{id}-{YES|NO}-OUTCOME"
+    let mut parts = symbol.split('-');
+    let _prefix = parts.next()?;
+    let _id = parts.next()?;
+    let side = parts.next()?;
+    Some(side)
 }
 
 /// Convert a collection of Hyperliquid instrument definitions into Nautilus instruments,

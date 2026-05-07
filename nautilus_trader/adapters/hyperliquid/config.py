@@ -40,6 +40,18 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
         Optional proxy URL for HTTP and WebSocket transports.
     http_timeout_secs : PositiveInt, default 10
         The timeout (seconds) for HTTP requests.
+    update_outcome_instruments_on_expiry : bool, default False
+        If True, schedule instrument refresh aligned to the next loaded outcome
+        instrument expiry (typically 06:00 UTC for the recurring daily BTC outcome).
+        This avoids polling on a fixed interval.
+    outcome_expiry_refresh_delay_secs : PositiveInt, default 30
+        Delay (seconds) after the computed expiry timestamp before refreshing.
+        Use a small post-expiry delay to ensure the venue has published the
+        next "recycled" outcome parameters.
+    outcome_expiry_refresh_retries : PositiveInt, default 5
+        Number of refresh attempts after expiry if instruments still look stale.
+    outcome_expiry_refresh_retry_delay_secs : PositiveInt, default 15
+        Base delay (seconds) between post-expiry refresh attempts.
 
     """
 
@@ -48,6 +60,10 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws: str | None = None
     proxy_url: str | None = None
     http_timeout_secs: PositiveInt = 10
+    update_outcome_instruments_on_expiry: bool = False
+    outcome_expiry_refresh_delay_secs: PositiveInt = 30
+    outcome_expiry_refresh_retries: PositiveInt = 5
+    outcome_expiry_refresh_retry_delay_secs: PositiveInt = 15
 
 
 class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
