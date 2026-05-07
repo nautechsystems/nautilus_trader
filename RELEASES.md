@@ -72,6 +72,9 @@ Released on TBD (UTC).
 - Fixed `OrderMatchingEngine.reset` leaking `OrderBook.ts_last` across resets (Python) (#3992), thanks @YeeTsai
 - Fixed sandbox tick-size precision race that could panic on stale ticks (#3994), thanks @graceyangfan
 - Fixed `ExecutionEngine` reconciliation skipping `OrderUpdated` when both report and order were already `ACCEPTED`
+- Fixed reconciliation drift when a venue snapshot carries both a fill mismatch and a quantity/price amendment (Rust)
+- Fixed reconciliation premature `OrderUpdated` emission for pending venue states before venue confirmation (Rust)
+- Fixed reconciliation missing `MarketIfTouched`/`LimitIfTouched` price and trigger drift detection (Rust)
 - Fixed `Strategy`/`Actor` clock callback leak on dispose (#3967), thanks for reporting @frslvr
 - Fixed `Strategy` pending cancel and pending update events before order commands (Rust)
 - Fixed `Strategy` submit methods to publish `OrderInitialized` before cache updates (Rust)

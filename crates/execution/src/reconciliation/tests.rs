@@ -1727,6 +1727,36 @@ fn create_test_order_status_report(
     None,
     false
 )]
+#[case::limit_report_price_none_no_drift(
+    OrderType::Limit,
+    Quantity::from(100),
+    Some(Price::from("1.00000")),
+    None,
+    Quantity::from(100),
+    None,
+    None,
+    false
+)]
+#[case::stop_limit_report_fields_none_no_drift(
+    OrderType::StopLimit,
+    Quantity::from(100),
+    Some(Price::from("1.00000")),
+    Some(Price::from("0.99000")),
+    Quantity::from(100),
+    None,
+    None,
+    false
+)]
+#[case::stop_market_report_trigger_none_no_drift(
+    OrderType::StopMarket,
+    Quantity::from(100),
+    None,
+    Some(Price::from("0.99000")),
+    Quantity::from(100),
+    None,
+    None,
+    false
+)]
 fn test_should_reconciliation_update(
     instrument: InstrumentAny,
     #[case] order_type: OrderType,
@@ -4192,4 +4222,481 @@ fn test_reconcile_closed_order_within_tolerance_is_noop(instrument: InstrumentAn
         result.is_none(),
         "closed order with sub-tolerance jitter must not emit a new fill",
     );
+}
+
+fn apply_events(order: &OrderAny, events: &[OrderEventAny]) -> OrderAny {
+    let mut working = order.clone();
+    for event in events {
+        working
+            .apply(event.clone())
+            .expect("reconciliation event must apply cleanly");
+    }
+    working
+}
+
+#[rstest]
+fn test_continuous_reconciliation_converges_quantity_with_partial_fill(instrument: InstrumentAny) {
+    // The venue reports both a new partial fill AND an increased total quantity
+    // for the same order. A single reconciliation pass must converge the local
+    // projection so quantity matches the venue. Emitting only the inferred fill
+    // leaves quantity stale and forces the next cycle to repair it (the
+    // `reconcile_left_drift` + `reconcile_not_idempotent` failure observed
+    // under DST soak).
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let account_id = AccountId::from("SIM-001");
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(131))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::PartiallyFilled,
+        Quantity::from(1021),
+        Quantity::from(50),
+    );
+    report.price = Some(Price::from("1.00000"));
+    report.avg_px = Some(dec!(1.0));
+
+    let events = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+
+    let after = apply_events(&order, &events);
+    assert_eq!(
+        after.quantity(),
+        Quantity::from(1021),
+        "single reconciliation pass must converge local quantity to venue projection",
+    );
+    assert_eq!(after.filled_qty(), Quantity::from(50));
+    assert_eq!(after.status(), OrderStatus::PartiallyFilled);
+}
+
+#[rstest]
+fn test_continuous_reconciliation_converges_price_with_partial_fill(instrument: InstrumentAny) {
+    // Same convergence requirement as quantity, but for the limit price. Venue
+    // amended the price and produced a fill in the same window; one pass must
+    // bring the local price into sync.
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let account_id = AccountId::from("SIM-001");
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(684))
+        .price(Price::from("0.31970"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::PartiallyFilled,
+        Quantity::from(684),
+        Quantity::from(50),
+    );
+    report.price = Some(Price::from("2.48460"));
+    report.avg_px = Some(dec!(0.31970));
+
+    let events = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+
+    let after = apply_events(&order, &events);
+    assert_eq!(
+        after.price(),
+        Some(Price::from("2.48460")),
+        "single reconciliation pass must converge local price to venue projection",
+    );
+    assert_eq!(after.filled_qty(), Quantity::from(50));
+}
+
+#[rstest]
+fn test_continuous_reconciliation_idempotent_after_drift_recovery(instrument: InstrumentAny) {
+    // After the first pass converges the local projection a second pass over
+    // the same venue snapshot must be a no-op. A trailing OrderUpdated/Filled
+    // event here is the `reconcile_not_idempotent` companion symptom.
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let account_id = AccountId::from("SIM-001");
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(131))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::PartiallyFilled,
+        Quantity::from(1021),
+        Quantity::from(50),
+    );
+    report.price = Some(Price::from("1.00000"));
+    report.avg_px = Some(dec!(1.0));
+
+    let pass1 = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+    let after = apply_events(&order, &pass1);
+
+    let pass2 = generate_reconciliation_order_events(
+        &after,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+    assert!(
+        pass2.is_empty(),
+        "second pass over an unchanged venue snapshot must emit no events, found {pass2:?}",
+    );
+}
+
+#[rstest]
+fn test_continuous_reconciliation_amend_before_closing_fill(instrument: InstrumentAny) {
+    // Venue increased total quantity from 100 to 150 and reported a fill of
+    // 100 in the same window. Applying the inferred fill against the stale
+    // local quantity would close the order at qty=100/Filled and drop the
+    // remaining 50 leaves; the amendment must apply first so the fill lands
+    // against qty=150 and the order ends PartiallyFilled with 50 leaves.
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let account_id = AccountId::from("SIM-001");
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::PartiallyFilled,
+        Quantity::from(150),
+        Quantity::from(100),
+    );
+    report.price = Some(Price::from("1.00000"));
+    report.avg_px = Some(dec!(1.0));
+
+    let events = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+
+    let after = apply_events(&order, &events);
+    assert_eq!(after.quantity(), Quantity::from(150));
+    assert_eq!(after.filled_qty(), Quantity::from(100));
+    assert_eq!(after.leaves_qty(), Quantity::from(50));
+    assert_eq!(after.status(), OrderStatus::PartiallyFilled);
+}
+
+#[rstest]
+fn test_continuous_reconciliation_skips_pre_emit_when_local_pending_cancel(
+    instrument: InstrumentAny,
+) {
+    // PendingCancel has no Updated transition, so the local_accepts_amendment
+    // guard must skip the pre-emit rather than fail apply silently. The
+    // inferred Filled still flows; qty drift persists as a documented
+    // limitation until the pending cancel resolves.
+    use nautilus_model::events::OrderPendingCancel;
+
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let account_id = AccountId::from("SIM-001");
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    let pending_cancel = OrderPendingCancel::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account_id,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(venue_order_id),
+    );
+    order
+        .apply(OrderEventAny::PendingCancel(pending_cancel))
+        .unwrap();
+    assert_eq!(order.status(), OrderStatus::PendingCancel);
+
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::PartiallyFilled,
+        Quantity::from(150),
+        Quantity::from(50),
+    );
+    report.price = Some(Price::from("1.00000"));
+    report.avg_px = Some(dec!(1.0));
+
+    let events = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, OrderEventAny::Updated(_))),
+        "pending-cancel local must not receive a pre-emit OrderUpdated, found {events:?}",
+    );
+}
+
+#[rstest]
+fn test_continuous_reconciliation_skips_update_when_local_pending_update(
+    instrument: InstrumentAny,
+) {
+    // Local order is PendingUpdate (cache reflects an outbound amend) and the
+    // venue echoes PendingUpdate with the requested values. Until the venue
+    // surfaces a confirmed status, reconciliation must not synthesize an
+    // OrderUpdated; doing so resolves the local PendingUpdate back to the
+    // previous status and mutates qty/price ahead of venue confirmation.
+    use nautilus_model::events::OrderPendingUpdate;
+
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let account_id = AccountId::from("SIM-001");
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    let pending_update = OrderPendingUpdate::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account_id,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(venue_order_id),
+    );
+    order
+        .apply(OrderEventAny::PendingUpdate(pending_update))
+        .unwrap();
+    assert_eq!(order.status(), OrderStatus::PendingUpdate);
+
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::PendingUpdate,
+        Quantity::from(150),
+        Quantity::from(0),
+    );
+    report.price = Some(Price::from("1.00100"));
+
+    let events = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+
+    assert!(
+        events.is_empty(),
+        "matching pending statuses must not drive local mutations, found {events:?}",
+    );
+}
+
+#[rstest]
+fn test_continuous_reconciliation_skips_update_for_pending_status(instrument: InstrumentAny) {
+    // Venue reports PendingUpdate while echoing the requested qty/price. The
+    // amendment is unconfirmed, so reconciliation must not mutate the local
+    // projection until the venue surfaces an Accepted/PartiallyFilled state;
+    // the rejected-amend case otherwise leaves the cache holding values the
+    // venue never actually applied.
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let account_id = AccountId::from("SIM-001");
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::PendingUpdate,
+        Quantity::from(150),
+        Quantity::from(0),
+    );
+    report.price = Some(Price::from("1.00100"));
+
+    let events = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+
+    assert!(
+        events.is_empty(),
+        "pending venue states must not drive local mutations, found {events:?}",
+    );
+}
+
+#[rstest]
+fn test_continuous_reconciliation_detects_drift_on_if_touched_orders(instrument: InstrumentAny) {
+    // LimitIfTouched and MarketIfTouched both expose price/trigger amendments
+    // through OrderUpdated, so should_reconciliation_update must register
+    // drift on them or the projection silently lags the venue snapshot.
+    let venue_order_id = VenueOrderId::from("V-001");
+    let account_id = AccountId::from("SIM-001");
+
+    let mut limit_if_touched = OrderTestBuilder::new(OrderType::LimitIfTouched)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-LIT"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .trigger_price(Price::from("0.99000"))
+        .build();
+    submit_accept(&mut limit_if_touched, account_id, venue_order_id);
+    let mut report = create_test_order_status_report(
+        ClientOrderId::from("O-LIT"),
+        venue_order_id,
+        instrument.id(),
+        OrderType::LimitIfTouched,
+        OrderStatus::Accepted,
+        Quantity::from(100),
+        Quantity::from(0),
+    );
+    report.price = Some(Price::from("1.00100"));
+    report.trigger_price = Some(Price::from("0.99000"));
+    assert!(should_reconciliation_update(&limit_if_touched, &report));
+
+    let mut market_if_touched = OrderTestBuilder::new(OrderType::MarketIfTouched)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-MIT"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .trigger_price(Price::from("0.99000"))
+        .build();
+    submit_accept(&mut market_if_touched, account_id, venue_order_id);
+    let mut report = create_test_order_status_report(
+        ClientOrderId::from("O-MIT"),
+        venue_order_id,
+        instrument.id(),
+        OrderType::MarketIfTouched,
+        OrderStatus::Accepted,
+        Quantity::from(100),
+        Quantity::from(0),
+    );
+    report.trigger_price = Some(Price::from("0.98000"));
+    assert!(should_reconciliation_update(&market_if_touched, &report));
+}
+
+#[rstest]
+fn test_continuous_reconciliation_converges_quantity_on_working_order(instrument: InstrumentAny) {
+    // Venue amended quantity on a still-working (Accepted) order without any
+    // fill change. Single-event convergence here is already covered by the
+    // existing OrderUpdated path, but we lock it in alongside the fill+drift
+    // cases so a regression is caught uniformly.
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let account_id = AccountId::from("SIM-001");
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(131))
+        .price(Price::from("1.77100"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Accepted,
+        Quantity::from(1021),
+        Quantity::from(0),
+    );
+    report.price = Some(Price::from("1.77100"));
+
+    let events = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+    let after = apply_events(&order, &events);
+    assert_eq!(after.quantity(), Quantity::from(1021));
+
+    let pass2 = generate_reconciliation_order_events(
+        &after,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+    assert!(pass2.is_empty(), "second pass must be a no-op");
 }

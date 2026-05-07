@@ -987,3 +987,136 @@ proptest! {
         prop_assert_ne!(a, b);
     }
 }
+
+fn build_limit_order(instrument: &InstrumentAny, qty: u64, price_units: u64) -> OrderAny {
+    OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(qty))
+        .price(Price::from_decimal_dp(Decimal::new(price_units as i64, 5), 5).unwrap())
+        .build()
+}
+
+proptest! {
+    // Patch invariant: a single call to generate_reconciliation_order_events
+    // must converge the local projection to the venue snapshot for any open
+    // order whose venue snapshot reflects a confirmed (non-pending) state,
+    // and a second call against the same snapshot must produce no events.
+    #[rstest]
+    fn prop_continuous_reconciliation_converges_in_one_pass(
+        local_qty in 1u64..=2_000u64,
+        venue_qty in 1u64..=2_000u64,
+        local_px in 1u64..=100_000u64,
+        venue_px in 1u64..=100_000u64,
+        venue_filled in 0u64..=2_000u64,
+    ) {
+        prop_assume!(venue_filled <= venue_qty);
+        prop_assume!(venue_filled <= local_qty);
+
+        let inst = instrument();
+        let account_id = AccountId::from("SIM-001");
+        let voi = VenueOrderId::from("V-001");
+
+        let mut order = build_limit_order(&inst, local_qty, local_px);
+        submit_accept(&mut order, account_id, voi);
+
+        let venue_status = if venue_filled == 0 {
+            OrderStatus::Accepted
+        } else if venue_filled < venue_qty {
+            OrderStatus::PartiallyFilled
+        } else {
+            OrderStatus::Filled
+        };
+        let mut report = status_report_for(
+            order.client_order_id(),
+            voi,
+            inst.id(),
+            Quantity::from(venue_qty),
+            Quantity::from(venue_filled),
+            venue_status,
+        );
+        report.order_type = OrderType::Limit;
+        report.price = Some(Price::from_decimal_dp(Decimal::new(venue_px as i64, 5), 5).unwrap());
+        report.avg_px = Some(dec!(1.00000));
+
+        let pass1 = generate_reconciliation_order_events(
+            &order,
+            &report,
+            Some(&inst),
+            UnixNanos::default(),
+        );
+        let mut after = order.clone();
+        for ev in &pass1 {
+            after.apply(ev.clone()).expect("event must apply");
+        }
+
+        // All confirmed venue states must converge qty/price/filled in one pass.
+        // Closed snapshots additionally require the local order to be closed.
+        let expected_price =
+            Some(Price::from_decimal_dp(Decimal::new(venue_px as i64, 5), 5).unwrap());
+        prop_assert_eq!(after.quantity(), Quantity::from(venue_qty));
+        prop_assert_eq!(after.filled_qty(), Quantity::from(venue_filled));
+        prop_assert_eq!(after.price(), expected_price);
+        if matches!(venue_status, OrderStatus::Filled) {
+            prop_assert!(after.is_closed());
+        } else {
+            prop_assert_eq!(after.status(), venue_status);
+        }
+
+        let pass2 = generate_reconciliation_order_events(
+            &after,
+            &report,
+            Some(&inst),
+            UnixNanos::default(),
+        );
+        prop_assert!(
+            pass2.is_empty(),
+            "second pass over an unchanged snapshot must be a no-op, found {:?}",
+            pass2,
+        );
+    }
+
+    #[rstest]
+    fn prop_continuous_reconciliation_skips_pending_venue_states(
+        local_qty in 1u64..=2_000u64,
+        venue_qty in 1u64..=2_000u64,
+        local_px in 1u64..=100_000u64,
+        venue_px in 1u64..=100_000u64,
+        pending_kind in 0u8..2u8,
+    ) {
+        let inst = instrument();
+        let account_id = AccountId::from("SIM-001");
+        let voi = VenueOrderId::from("V-001");
+
+        let mut order = build_limit_order(&inst, local_qty, local_px);
+        submit_accept(&mut order, account_id, voi);
+
+        let pending = if pending_kind == 0 {
+            OrderStatus::PendingUpdate
+        } else {
+            OrderStatus::PendingCancel
+        };
+        let mut report = status_report_for(
+            order.client_order_id(),
+            voi,
+            inst.id(),
+            Quantity::from(venue_qty),
+            Quantity::from(0),
+            pending,
+        );
+        report.order_type = OrderType::Limit;
+        report.price = Some(Price::from_decimal_dp(Decimal::new(venue_px as i64, 5), 5).unwrap());
+
+        let events = generate_reconciliation_order_events(
+            &order,
+            &report,
+            Some(&inst),
+            UnixNanos::default(),
+        );
+        prop_assert!(
+            events.is_empty(),
+            "pending venue states must not drive local mutations, found {:?}",
+            events,
+        );
+    }
+}

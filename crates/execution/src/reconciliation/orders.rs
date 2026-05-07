@@ -382,19 +382,27 @@ pub fn create_reconciliation_updated(
 
 /// Checks if the order should be updated based on quantity, price, or trigger price
 /// differences from the venue report.
+///
+/// A `None` value in `report.price` or `report.trigger_price` is treated as
+/// "venue did not include this field" rather than as drift, so a partial
+/// snapshot (for example, a Filled report that omits price but supplies
+/// `avg_px`) does not trigger a spurious `OrderUpdated`.
 pub fn should_reconciliation_update(order: &OrderAny, report: &OrderStatusReport) -> bool {
-    // Quantity change only valid if new qty >= filled qty
     if report.quantity != order.quantity() && report.quantity >= order.filled_qty() {
         return true;
     }
 
+    let price_drift = report.price.is_some() && report.price != order.price();
+    let trigger_drift =
+        report.trigger_price.is_some() && report.trigger_price != order.trigger_price();
+
     match order.order_type() {
-        OrderType::Limit => report.price != order.price(),
-        OrderType::StopMarket | OrderType::TrailingStopMarket => {
-            report.trigger_price != order.trigger_price()
+        OrderType::Limit => price_drift,
+        OrderType::StopMarket | OrderType::TrailingStopMarket | OrderType::MarketIfTouched => {
+            trigger_drift
         }
-        OrderType::StopLimit | OrderType::TrailingStopLimit => {
-            report.trigger_price != order.trigger_price() || report.price != order.price()
+        OrderType::StopLimit | OrderType::TrailingStopLimit | OrderType::LimitIfTouched => {
+            trigger_drift || price_drift
         }
         _ => false,
     }
@@ -404,6 +412,10 @@ pub fn should_reconciliation_update(order: &OrderAny, report: &OrderStatusReport
 ///
 /// This is the core reconciliation logic that handles all order status transitions.
 /// For fill reconciliation with inferred fills, use `reconcile_order_with_fills`.
+///
+/// Returns `None` for pending venue states (`PendingUpdate`, `PendingCancel`)
+/// regardless of local state, since an unconfirmed amend or cancel must not
+/// drive any local mutation until the venue surfaces a confirmed status.
 #[must_use]
 pub fn reconcile_order_report(
     order: &OrderAny,
@@ -411,6 +423,18 @@ pub fn reconcile_order_report(
     instrument: Option<&InstrumentAny>,
     ts_now: UnixNanos,
 ) -> Option<OrderEventAny> {
+    if matches!(
+        report.order_status,
+        OrderStatus::PendingUpdate | OrderStatus::PendingCancel
+    ) {
+        log::debug!(
+            "Order {} venue report in pending state: {:?}",
+            order.client_order_id(),
+            report.order_status,
+        );
+        return None;
+    }
+
     if order.status() == report.order_status && order.filled_qty() == report.filled_qty {
         if should_reconciliation_update(order, report) {
             log::info!(
@@ -457,15 +481,7 @@ pub fn reconcile_order_report(
             reconcile_fill_quantity_mismatch(order, report, instrument, ts_now)
         }
 
-        // Pending states - venue will confirm, just log
-        OrderStatus::PendingUpdate | OrderStatus::PendingCancel => {
-            log::debug!(
-                "Order {} in pending state: {:?}",
-                order.client_order_id(),
-                report.order_status
-            );
-            None
-        }
+        OrderStatus::PendingUpdate | OrderStatus::PendingCancel => None,
 
         // Internal states - should not appear in venue reports
         OrderStatus::Initialized
@@ -485,9 +501,14 @@ pub fn reconcile_order_report(
 
 /// Generates reconciliation events for a live order status report.
 ///
-/// If a venue report advances a locally submitted order beyond `Submitted`,
-/// this synthesizes the missing `Accepted` event first so downstream order
-/// state transitions stay valid.
+/// Events are produced in venue-temporal order: any missing `Accepted` event
+/// first, then an `OrderUpdated` if the venue snapshot shows a confirmed
+/// quantity/price amendment, then any status/fill events from
+/// [`reconcile_order_report`]. Emitting the amendment before the fill matters
+/// when the venue increased the total quantity and reported a fill that would
+/// otherwise close the order under the stale local quantity. The `Updated`
+/// step is suppressed for pending venue states so a still-unconfirmed amend
+/// cannot mutate the local projection ahead of venue confirmation.
 #[must_use]
 pub fn generate_reconciliation_order_events(
     order: &OrderAny,
@@ -495,11 +516,12 @@ pub fn generate_reconciliation_order_events(
     instrument: Option<&InstrumentAny>,
     ts_now: UnixNanos,
 ) -> Vec<OrderEventAny> {
-    if should_accept_before_reconciliation(order, report) {
-        let accepted = create_reconciliation_accepted(order, report, ts_now);
-        let mut accepted_order = order.clone();
+    let mut working = order.clone();
+    let mut events: Vec<OrderEventAny> = Vec::new();
 
-        if let Err(e) = accepted_order.apply(accepted.clone()) {
+    if should_accept_before_reconciliation(&working, report) {
+        let accepted = create_reconciliation_accepted(&working, report, ts_now);
+        if let Err(e) = working.apply(accepted.clone()) {
             log::warn!(
                 "Failed to pre-apply reconciliation acceptance for {}: {e}",
                 order.client_order_id(),
@@ -508,18 +530,46 @@ pub fn generate_reconciliation_order_events(
                 .into_iter()
                 .collect();
         }
-
-        let mut events = vec![accepted];
-
-        if let Some(event) = reconcile_order_report(&accepted_order, report, instrument, ts_now) {
-            events.push(event);
-        }
-        return events;
+        events.push(accepted);
     }
 
-    reconcile_order_report(order, report, instrument, ts_now)
-        .into_iter()
-        .collect()
+    if report_is_confirmed_state(report)
+        && local_accepts_amendment(&working)
+        && should_reconciliation_update(&working, report)
+    {
+        let updated = create_reconciliation_updated(&working, report, ts_now);
+        if let Err(e) = working.apply(updated.clone()) {
+            log::warn!(
+                "Failed to pre-apply reconciliation update for {}: {e}",
+                order.client_order_id(),
+            );
+        } else {
+            events.push(updated);
+        }
+    }
+
+    if let Some(event) = reconcile_order_report(&working, report, instrument, ts_now) {
+        events.push(event);
+    }
+
+    events
+}
+
+fn report_is_confirmed_state(report: &OrderStatusReport) -> bool {
+    matches!(
+        report.order_status,
+        OrderStatus::Accepted
+            | OrderStatus::Triggered
+            | OrderStatus::PartiallyFilled
+            | OrderStatus::Filled
+    )
+}
+
+fn local_accepts_amendment(order: &OrderAny) -> bool {
+    matches!(
+        order.status(),
+        OrderStatus::Accepted | OrderStatus::Triggered | OrderStatus::PartiallyFilled
+    )
 }
 
 fn should_accept_before_reconciliation(order: &OrderAny, report: &OrderStatusReport) -> bool {
