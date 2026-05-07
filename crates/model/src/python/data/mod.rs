@@ -466,7 +466,6 @@ fn py_encode_custom_data_to_record_batch(
     })
 }
 
-#[allow(unsafe_code)]
 #[cfg(all(feature = "python", feature = "arrow"))]
 fn pyarrow_schema_to_arrow_schema(
     py_schema: &pyo3::Bound<'_, pyo3::PyAny>,
@@ -620,7 +619,11 @@ pub fn register_custom_data_class(data_class: &Bound<'_, PyAny>) -> PyResult<()>
     #[cfg(feature = "arrow")]
     {
         let data_class_for_decode = data_class.clone().unbind();
-        let schema = if let Ok(py_schema) = data_class.getattr("_schema") {
+        let pyarrow_schema = data_class
+            .getattr("_schema")
+            .ok()
+            .filter(|s| s.hasattr("_export_to_c").unwrap_or(false));
+        let schema = if let Some(py_schema) = pyarrow_schema {
             Arc::new(pyarrow_schema_to_arrow_schema(&py_schema)?)
         } else if let Some(schema) = registry::get_arrow_schema(&type_name) {
             schema

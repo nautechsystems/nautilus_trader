@@ -17,6 +17,7 @@ Released on TBD (UTC).
 - Added Coinbase CFM liquidation buffer warning when buffer drops below 20%
 - Added dYdX historical funding rate requests via the `request_funding_rates` HTTP method and PyO3 binding
 - Added Kraken Spot margin trading support (#3965), thanks @mcgrj
+- Added Kraken Spot WebSocket v2 order submission (#4007), thanks @mcgrj
 - Added OKX event contracts support
 - Added Polymarket `OrderStatusReport.filled_qty` dust snap at terminal `Filled` status to absorb venue truncation
 - Added Polymarket `PolymarketFeeModel` backtest fee model with maker-rebate inference
@@ -66,6 +67,7 @@ Released on TBD (UTC).
 - Fixed `Strategy` submit methods to publish `OrderInitialized` before cache updates (Rust)
 - Fixed `ExecTester` LIT pricing direction so reconciled BUY/SELL LIT orders satisfy the `trigger_price` invariant
 - Fixed wrangler v2 timestamp resolution to force nanoseconds before the int64 cast for pandas 3 compatibility (#3970), thanks @gzenz
+- Fixed custom data parquet schema registration and multi-file query (#4021), thanks @faysou
 - Fixed Binance Futures reduce-only orders not reconciling venue-side quantity reductions (Python and Rust) (#3983), thanks for reporting @KaizynX
 - Fixed Betfair Rust adapter dropped fills on reconnect by resyncing the fill tracker from cache
 - Fixed Betfair Rust adapter panic on blank `customerOrderRef`/`rfo` by normalizing empty strings to `None`
@@ -88,6 +90,8 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers spread fill races (#3957), thanks @taozle
 - Fixed Interactive Brokers callback ordering races (#3976), thanks @faysou
 - Fixed Interactive Brokers market data farm reconnects not resubscribing feeds (#3968), thanks @onixenix
+- Fixed Interactive Brokers market data dispatch on fractional tick sizes (#4022), thanks @faysou
+- Fixed Interactive Brokers shutdown reader `RuntimeError` on stop and dispose (#4023), thanks @faysou
 - Fixed Kraken Spot margin wallet balances for multi-asset collateral (#3997), thanks @mcgrj
 - Fixed Kraken symbol normalization for WS v2 compatibility (#3961), thanks @mcgrj
 - Fixed OKX missing `post_only` instrument status (#3966), thanks @jhavie

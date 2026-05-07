@@ -26,10 +26,7 @@ use nautilus_model::data::{
 use nautilus_serialization::arrow::{ArrowSchemaProvider, custom::CustomDataDecoder};
 use pyo3::{prelude::*, types::PyCapsule};
 
-use crate::backend::{
-    custom::schema_with_data_type_column,
-    session::{DataBackendSession, DataQueryResult},
-};
+use crate::backend::session::{DataBackendSession, DataQueryResult};
 
 /// Wrapper to pass a raw pointer across the GIL release boundary.
 struct SendPtr<T>(*mut T);
@@ -156,15 +153,11 @@ impl DataBackendSession {
                 "custom data type '{type_name}' is not registered with an Arrow schema containing ts_init"
             ))
         })?;
-        let schema = schema_with_data_type_column(&base_schema, type_name);
-        slf.add_file_with_schema::<CustomDataDecoder>(
-            table_name,
-            file_path,
-            sql_query,
-            Some(type_name),
-            Some(&schema),
-        )
-        .map_err(to_pyruntime_err)
+        // Use schemaless registration so DataFusion preserves the parquet file's
+        // schema metadata (e.g. `bar_type`) on output batches, since the
+        // explicit-schema variant strips per-batch metadata that decoders rely on.
+        slf.add_file::<CustomDataDecoder>(table_name, file_path, sql_query, Some(type_name))
+            .map_err(to_pyruntime_err)
     }
 
     fn to_query_result(mut slf: PyRefMut<'_, Self>) -> DataQueryResult {
