@@ -46,9 +46,12 @@ from nautilus_trader.adapters.polymarket.schemas.trade import PolymarketTradeRep
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketOpenOrder
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserOrder
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserTrade
+from nautilus_trader.adapters.polymarket.schemas.user import _sum_filled_quantity
+from nautilus_trader.adapters.polymarket.schemas.user import _weighted_average_price
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.model.currencies import USDC
 from nautilus_trader.model.currencies import pUSD
 from nautilus_trader.model.data import OrderBookDeltas
@@ -65,7 +68,9 @@ from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -1998,3 +2003,73 @@ def test_polymarket_trade_report_order_side(
 
     # Assert
     assert result == expected_order_side
+
+
+def _make_recovery_fill(qty: str, px: str) -> FillReport:
+    from nautilus_trader.core.uuid import UUID4
+
+    return FillReport(
+        account_id=AccountId("POLYMARKET-001"),
+        instrument_id=InstrumentId.from_str("TEST-TOKEN.POLYMARKET"),
+        venue_order_id=VenueOrderId("0xabc"),
+        trade_id=TradeId(f"trade-{qty}"),
+        order_side=OrderSide.BUY,
+        last_qty=Quantity.from_str(qty),
+        last_px=Price.from_str(px),
+        commission=Money(0, pUSD),
+        liquidity_side=LiquiditySide.TAKER,
+        client_order_id=None,
+        venue_position_id=None,
+        ts_event=0,
+        ts_init=0,
+        report_id=UUID4(),
+    )
+
+
+def test_sum_filled_quantity_empty_returns_zero():
+    assert _sum_filled_quantity([]) == 0.0
+
+
+def test_sum_filled_quantity_sums_multiple_fills():
+    # Arrange
+    fills = [
+        _make_recovery_fill("2.5", "0.50"),
+        _make_recovery_fill("1.0", "0.60"),
+        _make_recovery_fill("3.0", "0.55"),
+    ]
+
+    # Act
+    result = _sum_filled_quantity(fills)
+
+    # Assert
+    assert result == pytest.approx(6.5)
+
+
+def test_weighted_average_price_zero_total_returns_none():
+    assert _weighted_average_price([], 0.0) is None
+
+
+def test_weighted_average_price_single_fill():
+    # Arrange
+    fills = [_make_recovery_fill("10.0", "0.5")]
+
+    # Act
+    result = _weighted_average_price(fills, _sum_filled_quantity(fills))
+
+    # Assert
+    assert result == Decimal("0.5")
+
+
+def test_weighted_average_price_weighted_by_quantity():
+    # Arrange: 2 @ 0.50 + 2 @ 0.75 -> (1.0 + 1.5) / 4 = 0.625
+    # Values chosen so binary-float arithmetic is exact.
+    fills = [
+        _make_recovery_fill("2.0", "0.50"),
+        _make_recovery_fill("2.0", "0.75"),
+    ]
+
+    # Act
+    result = _weighted_average_price(fills, _sum_filled_quantity(fills))
+
+    # Assert
+    assert result == Decimal("0.625")

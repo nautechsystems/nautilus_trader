@@ -71,7 +71,8 @@ use self::{
     order_fill_tracker::OrderFillTrackerMap,
     parse::{
         compute_commission, instrument_fee_exponent, instrument_taker_fee, parse_balance_allowance,
-        parse_order_status_report,
+        parse_order_status_report, snap_filled_qty_to_quantity, sum_filled_quantity,
+        weighted_average_price,
     },
     reconciliation::{
         FillContext, apply_fill_filters, build_fill_reports_from_trades, build_position_reports,
@@ -83,7 +84,7 @@ use self::{
 };
 use crate::{
     common::{
-        consts::{BATCH_ORDER_LIMIT, POLYMARKET_VENUE},
+        consts::{BATCH_ORDER_LIMIT, DUST_SNAP_THRESHOLD_DEC, POLYMARKET_VENUE},
         credential::Secrets,
         enums::SignatureType,
     },
@@ -780,6 +781,139 @@ impl PolymarketExecutionClient {
             pusd: get_pusd_currency(),
             clock: self.clock,
         }
+    }
+
+    // Builds a terminal `OrderStatusReport` from trade history when
+    // `/data/order/{id}` is empty. See `docs/integrations/polymarket.md`
+    // (Single-order recovery from trades).
+    async fn recover_terminal_status_from_trades(
+        &self,
+        venue_order_id: VenueOrderId,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        size_prec: u8,
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
+        let ts_init = self.clock.get_time_ns();
+        let ctx = self.fill_context();
+
+        let trades = self
+            .http_client
+            .get_trades(GetTradesParams::default())
+            .await
+            .context("failed to fetch trades for order recovery")?;
+
+        let (mut order_fills, _) = build_fill_reports_from_trades(
+            &trades,
+            &ctx,
+            &self.shared_token_instruments,
+            Some(instrument_id),
+            ts_init,
+        );
+        order_fills.retain(|f| f.venue_order_id == venue_order_id);
+        self.fill_tracker.snap_fill_reports(&mut order_fills);
+
+        // Fall back to the venue_order_id index when client_order_id is absent.
+        let resolved_client_order_id =
+            client_order_id.or_else(|| self.core.cache().client_order_id(&venue_order_id).copied());
+        let cached =
+            resolved_client_order_id.and_then(|cid| self.core.cache().order(&cid).cloned());
+        let cached_quantity = cached.as_ref().map(Order::quantity);
+        let cached_order_type = cached.as_ref().map_or(OrderType::Limit, Order::order_type);
+        let cached_tif = cached
+            .as_ref()
+            .map_or(TimeInForce::Gtc, Order::time_in_force);
+        let cached_price = cached.as_ref().and_then(Order::price);
+        let cached_side = cached.as_ref().map(Order::order_side);
+
+        if order_fills.is_empty() {
+            // Nothing to recover; defer to the engine.
+            let Some(cached) = cached.as_ref() else {
+                log::info!(
+                    "Order {venue_order_id} not active at venue, no trades found, and no cached order; nothing to recover"
+                );
+                return Ok(None);
+            };
+            log::info!(
+                "Order {venue_order_id} not active at venue and no trades found; recovering as Canceled"
+            );
+            let mut report = OrderStatusReport::new(
+                self.core.account_id,
+                instrument_id,
+                resolved_client_order_id,
+                venue_order_id,
+                cached.order_side(),
+                cached.order_type(),
+                cached.time_in_force(),
+                OrderStatus::Canceled,
+                cached.quantity(),
+                cached.filled_qty(),
+                ts_init,
+                ts_init,
+                ts_init,
+                None,
+            );
+            report.price = cached_price;
+            report.cancel_reason = Some("ORDER_NOT_FOUND_AT_VENUE".to_string());
+            return Ok(Some(report));
+        }
+
+        // Don't synthesize an external order from trades alone.
+        let Some(quantity) = cached_quantity else {
+            log::info!(
+                "Order {venue_order_id} has trades but no cached order; deferring to engine"
+            );
+            return Ok(None);
+        };
+
+        let total_filled_dec = sum_filled_quantity(&order_fills);
+        let avg_px = weighted_average_price(&order_fills, total_filled_dec);
+        let raw_filled_qty = Quantity::from_decimal_dp(total_filled_dec, size_prec)
+            .unwrap_or_else(|_| Quantity::zero(size_prec));
+        let order_side = cached_side.unwrap_or(order_fills[0].order_side);
+        let ts_event = order_fills
+            .iter()
+            .map(|f| f.ts_event)
+            .max()
+            .unwrap_or(ts_init);
+
+        let dust_diff = (quantity.as_decimal() - raw_filled_qty.as_decimal()).abs();
+        let order_status = if raw_filled_qty >= quantity || dust_diff < DUST_SNAP_THRESHOLD_DEC {
+            OrderStatus::Filled
+        } else {
+            OrderStatus::Canceled
+        };
+        let filled_qty = snap_filled_qty_to_quantity(quantity, raw_filled_qty, order_status);
+
+        log::info!(
+            "Recovered {} status for {venue_order_id} from {} trade(s) (filled_qty={filled_qty}, quantity={quantity})",
+            if order_status == OrderStatus::Filled {
+                "Filled"
+            } else {
+                "Canceled (partially filled)"
+            },
+            order_fills.len(),
+        );
+
+        let mut report = OrderStatusReport::new(
+            self.core.account_id,
+            instrument_id,
+            resolved_client_order_id,
+            venue_order_id,
+            order_side,
+            cached_order_type,
+            cached_tif,
+            order_status,
+            quantity,
+            filled_qty,
+            ts_event,
+            ts_event,
+            ts_init,
+            None,
+        );
+        report.price = cached_price;
+        report.avg_px = avg_px;
+
+        Ok(Some(report))
     }
 }
 
@@ -1501,8 +1635,8 @@ impl ExecutionClient for PolymarketExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        let venue_order_id = match &cmd.venue_order_id {
-            Some(id) => id.to_string(),
+        let venue_order_id = match cmd.venue_order_id {
+            Some(id) => id,
             None => {
                 log::warn!("generate_order_status_report requires venue_order_id");
                 return Ok(None);
@@ -1517,18 +1651,11 @@ impl ExecutionClient for PolymarketExecutionClient {
             }
         };
 
-        let order = match self
+        let order = self
             .http_client
-            .get_order_optional(&venue_order_id)
+            .get_order_optional(venue_order_id.as_str())
             .await
-            .context("failed to fetch order")?
-        {
-            Some(o) => o,
-            None => {
-                log::info!("Order {venue_order_id} not found (empty response)");
-                return Ok(None);
-            }
-        };
+            .context("failed to fetch order")?;
 
         let instrument = self.core.cache().instrument(&instrument_id).cloned();
         let (price_prec, size_prec) = match &instrument {
@@ -1536,17 +1663,28 @@ impl ExecutionClient for PolymarketExecutionClient {
             None => (4, 6),
         };
 
-        let report = parse_order_status_report(
-            &order,
-            instrument_id,
-            self.core.account_id,
-            cmd.client_order_id,
-            price_prec,
-            size_prec,
-            self.clock.get_time_ns(),
-        );
+        if let Some(order) = order {
+            let report = parse_order_status_report(
+                &order,
+                instrument_id,
+                self.core.account_id,
+                cmd.client_order_id,
+                price_prec,
+                size_prec,
+                self.clock.get_time_ns(),
+            );
+            return Ok(Some(report));
+        }
 
-        Ok(Some(report))
+        // See `docs/integrations/polymarket.md` (Single-order recovery from trades).
+        Ok(self
+            .recover_terminal_status_from_trades(
+                venue_order_id,
+                instrument_id,
+                cmd.client_order_id,
+                size_prec,
+            )
+            .await?)
     }
 
     async fn generate_order_status_reports(

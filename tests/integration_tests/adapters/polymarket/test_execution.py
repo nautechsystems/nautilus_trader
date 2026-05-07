@@ -18,6 +18,7 @@ import pkgutil
 from datetime import UTC
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import Mock
@@ -1100,6 +1101,312 @@ class TestPolymarketExecutionClient:
 
         assert len(reports_no) == 1
         assert reports_no[0].instrument_id == instrument_no.id
+
+    @pytest.mark.asyncio
+    async def test_generate_order_status_report_recovers_filled_from_trades(self):
+        """
+        When the venue's `get_order` returns nothing for an `ACCEPTED` order, the
+        adapter must consult trade history and surface a `FILLED` report instead of
+        returning `None` (which the engine would otherwise resolve as `REJECTED`,
+        dropping fills).
+        """
+        from nautilus_trader.execution.messages import GenerateOrderStatusReport
+
+        venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12"
+        client_order_id, venue_order_id = self._setup_test_order_with_venue_id(
+            venue_order_id_str,
+            use_ws_instrument=True,
+            price=Price.from_str("0.500"),
+        )
+        order = self.cache.order(client_order_id)
+        order_quantity = order.quantity
+
+        market = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
+        asset_id = "21742633143463906290569050155826241533067272736897614950488156847949938836455"
+        trade_payload = {
+            "id": "trade-recovery-1",
+            "taker_order_id": venue_order_id_str,
+            "trader_side": "TAKER",
+            "side": "BUY",
+            "asset_id": asset_id,
+            "market": market,
+            "outcome": "Yes",
+            "price": "0.500",
+            "size": str(float(order_quantity)),
+            "match_time": "1700000000",
+            "last_update": "1700000001",
+            "fee_rate_bps": "0",
+            "status": "MATCHED",
+            "maker_address": "0xmaker",
+            "owner": self.http_client.creds.api_key,
+            "maker_orders": [],
+            "transaction_hash": "0xtx",
+            "bucket_index": 0,
+        }
+        self.http_client.get_order = MagicMock(return_value=None)
+        self.http_client.get_trades = MagicMock(return_value=[trade_payload])
+
+        command = GenerateOrderStatusReport(
+            instrument_id=order.instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        report = await self.exec_client.generate_order_status_report(command)
+
+        assert report is not None
+        assert report.order_status == OrderStatus.FILLED
+        assert report.venue_order_id == venue_order_id
+        assert report.client_order_id == client_order_id
+        assert report.filled_qty == order_quantity
+        assert report.quantity == order_quantity
+        assert report.avg_px == Decimal("0.5")
+
+    @pytest.mark.asyncio
+    async def test_generate_order_status_report_recovers_canceled_when_no_trades(self):
+        """
+        When the venue has no record of the order and no trades exist for it, surface
+        `CANCELED` so the engine retires the local entry gracefully instead of dropping
+        it via the not-found-at-venue rejection path.
+        """
+        from nautilus_trader.execution.messages import GenerateOrderStatusReport
+
+        venue_order_id_str = "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
+        client_order_id, venue_order_id = self._setup_test_order_with_venue_id(
+            venue_order_id_str,
+            use_ws_instrument=True,
+            price=Price.from_str("0.500"),
+        )
+
+        self.http_client.get_order = MagicMock(return_value=None)
+        # Trades exist for unrelated orders only.
+        self.http_client.get_trades = MagicMock(return_value=[])
+
+        command = GenerateOrderStatusReport(
+            instrument_id=self.cache.order(client_order_id).instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        report = await self.exec_client.generate_order_status_report(command)
+
+        assert report is not None
+        assert report.order_status == OrderStatus.CANCELED
+        assert report.venue_order_id == venue_order_id
+        assert report.client_order_id == client_order_id
+        assert report.cancel_reason == "ORDER_NOT_FOUND_AT_VENUE"
+
+    def _build_recovery_trade_payload(
+        self,
+        venue_order_id_str: str,
+        size: str,
+        price: str = "0.500",
+    ) -> dict[str, Any]:
+        market = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
+        asset_id = "21742633143463906290569050155826241533067272736897614950488156847949938836455"
+        return {
+            "id": f"trade-recovery-{size}",
+            "taker_order_id": venue_order_id_str,
+            "trader_side": "TAKER",
+            "side": "BUY",
+            "asset_id": asset_id,
+            "market": market,
+            "outcome": "Yes",
+            "price": price,
+            "size": size,
+            "match_time": "1700000000",
+            "last_update": "1700000001",
+            "fee_rate_bps": "0",
+            "status": "MATCHED",
+            "maker_address": "0xmaker",
+            "owner": self.http_client.creds.api_key,
+            "maker_orders": [],
+            "transaction_hash": "0xtx",
+            "bucket_index": 0,
+        }
+
+    @pytest.mark.asyncio
+    async def test_generate_order_status_report_recovers_filled_with_dust_snap(self):
+        """
+        CLOB cent-tick truncation: trade size lands within `DUST_SNAP_THRESHOLD` below
+        cached quantity. Recovery must surface `FILLED` with `filled_qty` snapped up to
+        the cached quantity. Uses a precision-6 instrument so a sub-0.01 diff is
+        representable.
+        """
+        from nautilus_trader.execution.messages import GenerateOrderStatusReport
+
+        market = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
+        asset_id = "21742633143463906290569050155826241533067272736897614950488156847949938836455"
+        instrument_id = get_polymarket_instrument_id(market, asset_id)
+        instrument = BinaryOption(
+            instrument_id=instrument_id,
+            raw_symbol=Symbol(instrument_id.symbol.value),
+            outcome="Yes",
+            description="Dust precision-6 BinaryOption",
+            asset_class=AssetClass.ALTERNATIVE,
+            currency=USDC,
+            price_precision=3,
+            price_increment=Price.from_str("0.001"),
+            size_precision=6,
+            size_increment=Quantity.from_str("0.000001"),
+            activation_ns=0,
+            expiration_ns=0,
+            max_quantity=None,
+            min_quantity=Quantity.from_str("1"),
+            maker_fee=Decimal(0),
+            taker_fee=Decimal(0),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(instrument)
+
+        venue_order_id = VenueOrderId(
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
+        )
+        order = self.strategy.order_factory.limit(
+            instrument_id=instrument_id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10.000000"),
+            price=Price.from_str("0.500"),
+        )
+        order.apply(TestEventStubs.order_submitted(order))
+        self.cache.add_order(order, None)
+        self.cache.add_venue_order_id(order.client_order_id, venue_order_id)
+
+        # Diff = 10.000000 - 9.995000 = 0.005, within the 0.01 dust band.
+        trade_payload = self._build_recovery_trade_payload(
+            venue_order_id.value,
+            "9.995000",
+        )
+        self.http_client.get_order = MagicMock(return_value=None)
+        self.http_client.get_trades = MagicMock(return_value=[trade_payload])
+
+        command = GenerateOrderStatusReport(
+            instrument_id=instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=venue_order_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        report = await self.exec_client.generate_order_status_report(command)
+
+        assert report is not None
+        assert report.order_status == OrderStatus.FILLED
+        assert report.filled_qty == Quantity.from_str("10.000000")
+        assert report.quantity == Quantity.from_str("10.000000")
+
+    @pytest.mark.asyncio
+    async def test_generate_order_status_report_recovers_canceled_with_partial_fill(self):
+        """
+        Recovered fills fall short of cached quantity by more than dust: surface
+        `CANCELED` with the partial `filled_qty` preserved.
+        """
+        from nautilus_trader.execution.messages import GenerateOrderStatusReport
+
+        venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef13"
+        client_order_id, venue_order_id = self._setup_test_order_with_venue_id(
+            venue_order_id_str,
+            use_ws_instrument=True,
+            price=Price.from_str("0.500"),
+        )
+        order = self.cache.order(client_order_id)
+
+        trade_payload = self._build_recovery_trade_payload(venue_order_id_str, "2.00")
+        self.http_client.get_order = MagicMock(return_value=None)
+        self.http_client.get_trades = MagicMock(return_value=[trade_payload])
+
+        command = GenerateOrderStatusReport(
+            instrument_id=order.instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        report = await self.exec_client.generate_order_status_report(command)
+
+        assert report is not None
+        assert report.order_status == OrderStatus.CANCELED
+        assert report.filled_qty == Quantity.from_str("2.00")
+        assert report.quantity == order.quantity
+        assert report.avg_px == Decimal("0.5")
+        assert report.cancel_reason is None
+
+    @pytest.mark.asyncio
+    async def test_generate_order_status_report_returns_none_without_cached_order(self):
+        """
+        Trades exist for a venue order ID with no matching cached order: don't
+        synthesize an external order from trade history alone, return ``None`` and
+        defer to the engine's not-found-at-venue path.
+        """
+        from nautilus_trader.execution.messages import GenerateOrderStatusReport
+
+        venue_order_id_str = "0xfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeedfeed"
+        venue_order_id = VenueOrderId(venue_order_id_str)
+
+        trade_payload = self._build_recovery_trade_payload(venue_order_id_str, "5.00")
+        self.http_client.get_order = MagicMock(return_value=None)
+        self.http_client.get_trades = MagicMock(return_value=[trade_payload])
+
+        instrument_id = get_polymarket_instrument_id(
+            "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+            "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        )
+        command = GenerateOrderStatusReport(
+            instrument_id=instrument_id,
+            client_order_id=None,
+            venue_order_id=venue_order_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        report = await self.exec_client.generate_order_status_report(command)
+
+        assert report is None
+
+    @pytest.mark.asyncio
+    async def test_generate_order_status_report_resolves_via_venue_order_id_index(self):
+        """
+        Command supplies only `venue_order_id`; recovery must look up the cached order
+        through the cache's venue->client index instead of returning ``None``.
+        """
+        from nautilus_trader.execution.messages import GenerateOrderStatusReport
+
+        venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef14"
+        client_order_id, venue_order_id = self._setup_test_order_with_venue_id(
+            venue_order_id_str,
+            use_ws_instrument=True,
+            price=Price.from_str("0.500"),
+        )
+        order = self.cache.order(client_order_id)
+
+        trade_payload = self._build_recovery_trade_payload(
+            venue_order_id_str,
+            str(float(order.quantity)),
+        )
+        self.http_client.get_order = MagicMock(return_value=None)
+        self.http_client.get_trades = MagicMock(return_value=[trade_payload])
+
+        command = GenerateOrderStatusReport(
+            instrument_id=order.instrument_id,
+            client_order_id=None,
+            venue_order_id=venue_order_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        report = await self.exec_client.generate_order_status_report(command)
+
+        assert report is not None
+        assert report.order_status == OrderStatus.FILLED
+        assert report.client_order_id == client_order_id
+        assert report.quantity == order.quantity
+        assert report.filled_qty == order.quantity
 
     def test_handle_ws_message_invalid_json(self):
         """

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Final
 
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
@@ -78,3 +79,6 @@ DUST_POSITION_THRESHOLD: Final[float] = 0.01
 # A diff at or above this threshold is left unsnapped and surfaces to the
 # engine. See ``docs/integrations/polymarket.md`` (Fill quantity normalization).
 DUST_SNAP_THRESHOLD: Final[float] = 0.01
+
+# Decimal form of ``DUST_SNAP_THRESHOLD`` for Decimal arithmetic paths.
+DUST_SNAP_THRESHOLD_DEC: Final[Decimal] = Decimal("0.01")

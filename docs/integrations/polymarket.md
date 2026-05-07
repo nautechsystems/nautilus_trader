@@ -545,6 +545,36 @@ An optional execution client configuration, `generate_order_history_from_trades`
 It is not recommended for production use at this time.
 :::
 
+### Single-order recovery from trades
+
+`/data/order/{id}` only returns active orders, so a `Filled` or `Canceled` order
+returns an empty response. To avoid the engine resolving a local `ACCEPTED`
+order as `REJECTED` (which discards fills that already happened at the venue),
+`generate_order_status_report` falls back to `/data/trades` filtered by the
+venue order ID. The cached order is resolved via `client_order_id`, falling
+back to the cache's `venue_order_id` index when only the venue ID is known.
+Recovery is keyed on the cached order; without one the recovery defers to the
+engine rather than synthesizing an external order from trade history alone:
+
+- Cached order + recovered fills covering the cached quantity (within
+  `DUST_SNAP_THRESHOLD` for CLOB cent-tick truncation): returns `Filled`. The
+  engine reconciles any delta over the cached `filled_qty` via inferred fill.
+- Cached order + recovered fills that fall short of the cached quantity by
+  more than dust: returns `Canceled` with the recovered `filled_qty`. The
+  engine's CANCELED branch transitions the order at the cached `filled_qty`,
+  so any newly recovered fills that arrived only via REST (not WS) are not
+  applied in this rare partial-cancel case. Closing the order is preferred
+  over leaving it stuck open; if exact fill metadata matters in this scenario
+  the venue trade history can be reviewed manually.
+- Cached order, no trades: returns `Canceled` with
+  `cancel_reason="ORDER_NOT_FOUND_AT_VENUE"`.
+- No cached order (regardless of trades): returns `None`; the engine's
+  not-found-at-venue path resolves the local entry.
+
+`open_check_interval_secs` is recommended for Polymarket so the engine
+periodically drives this recovery path for orders whose terminal WS update
+was missed.
+
 ## Fill quantity normalization
 
 Polymarket reports fill quantities that drift slightly from the submitted

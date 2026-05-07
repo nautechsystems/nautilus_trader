@@ -419,6 +419,27 @@ pub fn compute_commission(
     rounded.to_string().parse().unwrap_or(0.0)
 }
 
+/// Sums `last_qty` across fills as a decimal.
+pub(crate) fn sum_filled_quantity(fills: &[FillReport]) -> Decimal {
+    fills.iter().map(|f| f.last_qty.as_decimal()).sum()
+}
+
+/// Quantity-weighted average price across fills, or `None` when total filled
+/// is zero (avoids divide-by-zero on empty/all-zero fill lists).
+pub(crate) fn weighted_average_price(
+    fills: &[FillReport],
+    total_filled: Decimal,
+) -> Option<Decimal> {
+    if total_filled.is_zero() {
+        return None;
+    }
+    let weighted: Decimal = fills
+        .iter()
+        .map(|f| f.last_qty.as_decimal() * f.last_px.as_decimal())
+        .sum();
+    Some(weighted / total_filled)
+}
+
 /// At terminal `Filled` status, snap `filled_qty` to `quantity` when the
 /// difference is within `DUST_SNAP_THRESHOLD`. Polymarket reports `size_matched`
 /// directly from venue truncation: CLOB cent-tick rounding (underfill) or V2
@@ -607,6 +628,60 @@ mod tests {
             status,
         );
         assert_eq!(snapped, Quantity::new(expected, 6));
+    }
+
+    fn make_test_fill(qty: f64, px: f64) -> FillReport {
+        FillReport::new(
+            AccountId::from("POLY-001"),
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            VenueOrderId::from("0xabc"),
+            TradeId::from("trade-1"),
+            OrderSide::Buy,
+            Quantity::new(qty, 4),
+            Price::new(px, 4),
+            Money::new(0.0, Currency::pUSD()),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        )
+    }
+
+    #[rstest]
+    fn test_sum_filled_quantity_empty() {
+        assert_eq!(sum_filled_quantity(&[]), Decimal::ZERO);
+    }
+
+    #[rstest]
+    fn test_sum_filled_quantity_multiple() {
+        let fills = vec![
+            make_test_fill(2.5, 0.50),
+            make_test_fill(1.0, 0.60),
+            make_test_fill(3.0, 0.55),
+        ];
+        assert_eq!(sum_filled_quantity(&fills), dec!(6.5));
+    }
+
+    #[rstest]
+    fn test_weighted_average_price_zero_total_returns_none() {
+        assert!(weighted_average_price(&[], Decimal::ZERO).is_none());
+    }
+
+    #[rstest]
+    fn test_weighted_average_price_single_fill() {
+        let fills = vec![make_test_fill(10.0, 0.5)];
+        let total = sum_filled_quantity(&fills);
+        assert_eq!(weighted_average_price(&fills, total), Some(dec!(0.5)));
+    }
+
+    #[rstest]
+    fn test_weighted_average_price_weighted_by_quantity() {
+        // 2 @ 0.40 + 8 @ 0.60 -> (0.8 + 4.8) / 10 = 0.56
+        let fills = vec![make_test_fill(2.0, 0.40), make_test_fill(8.0, 0.60)];
+        let total = sum_filled_quantity(&fills);
+        assert_eq!(weighted_average_price(&fills, total), Some(dec!(0.56)));
     }
 
     #[rstest]

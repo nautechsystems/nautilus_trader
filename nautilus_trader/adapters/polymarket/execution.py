@@ -17,6 +17,7 @@ import asyncio
 import json
 from collections import OrderedDict
 from collections import defaultdict
+from decimal import Decimal
 from typing import Any
 
 import msgspec
@@ -38,6 +39,7 @@ from py_clob_client_v2.order_utils import ExchangeOrderBuilderV2
 
 from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trades_key
 from nautilus_trader.adapters.polymarket.common.constants import DUST_POSITION_THRESHOLD
+from nautilus_trader.adapters.polymarket.common.constants import DUST_SNAP_THRESHOLD_DEC
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_CANCEL_ALREADY_DONE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_FINALIZED_TRADE_STATUSES
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_INVALID_API_KEY
@@ -68,6 +70,9 @@ from nautilus_trader.adapters.polymarket.schemas.trade import PolymarketTradeRep
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketOpenOrder
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserOrder
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserTrade
+from nautilus_trader.adapters.polymarket.schemas.user import _snap_filled_qty_to_quantity
+from nautilus_trader.adapters.polymarket.schemas.user import _sum_filled_quantity
+from nautilus_trader.adapters.polymarket.schemas.user import _weighted_average_price
 from nautilus_trader.adapters.polymarket.websocket.client import PolymarketWebSocketChannel
 from nautilus_trader.adapters.polymarket.websocket.client import PolymarketWebSocketClient
 from nautilus_trader.adapters.polymarket.websocket.types import USER_WS_MESSAGE
@@ -117,6 +122,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 
@@ -585,7 +591,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
             )
 
             if not response:
-                return None
+                return await self._recover_terminal_status_from_trades(
+                    command=command,
+                    venue_order_id=venue_order_id,
+                )
             # Uncomment for development
             # self._log.info(str(response), LogColor.MAGENTA)
             raw_response = msgspec.json.encode(response)
@@ -610,6 +619,125 @@ class PolymarketExecutionClient(LiveExecutionClient):
             )
         finally:
             await self._retry_manager_pool.release(retry_manager)
+
+    async def _recover_terminal_status_from_trades(
+        self,
+        command: GenerateOrderStatusReport,
+        venue_order_id: VenueOrderId,
+    ) -> OrderStatusReport | None:
+        # See `docs/integrations/polymarket.md` (Single-order recovery from trades).
+        instrument_id = command.instrument_id
+        if instrument_id is None and command.client_order_id is not None:
+            cached_order_for_instrument = self._cache.order(command.client_order_id)
+            if cached_order_for_instrument is not None:
+                instrument_id = cached_order_for_instrument.instrument_id
+
+        if instrument_id is None:
+            self._log.warning(
+                f"Cannot recover terminal status for {venue_order_id!r}: instrument_id unknown",
+            )
+            return None
+
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            self._log.warning(
+                f"Cannot recover terminal status for {venue_order_id!r}: "
+                f"instrument {instrument_id} not found",
+            )
+            return None
+
+        fill_command = GenerateFillReports(
+            instrument_id=instrument_id,
+            venue_order_id=venue_order_id,
+            start=None,
+            end=None,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        fills = await self.generate_fill_reports(fill_command)
+        fills = [f for f in fills if f.venue_order_id == venue_order_id]
+
+        # Fall back to the venue_order_id index when client_order_id is absent.
+        resolved_client_order_id = command.client_order_id
+        if resolved_client_order_id is None:
+            resolved_client_order_id = self._cache.client_order_id(venue_order_id)
+        cached_order: Order | None = (
+            self._cache.order(resolved_client_order_id)
+            if resolved_client_order_id is not None
+            else None
+        )
+
+        if cached_order is None:
+            # Don't synthesize an external order from trades alone.
+            self._log.info(
+                f"Order {venue_order_id!r} not active at venue and no cached order; "
+                f"deferring to engine",
+            )
+            return None
+
+        ts_now = self._clock.timestamp_ns()
+        cached_price: Price | None = cached_order.price if cached_order.has_price else None
+
+        if not fills:
+            order_status = OrderStatus.CANCELED
+            quantity = cached_order.quantity
+            filled_qty = cached_order.filled_qty
+            order_side = cached_order.side
+            order_type = cached_order.order_type
+            time_in_force = cached_order.time_in_force
+            price = cached_price
+            avg_px: Decimal | None = None
+            cancel_reason: str | None = "ORDER_NOT_FOUND_AT_VENUE"
+            ts_event = ts_now
+            self._log.info(
+                f"Order {venue_order_id!r} not active at venue and no trades found; "
+                f"recovering as Canceled",
+            )
+        else:
+            total_filled = _sum_filled_quantity(fills)
+            avg_px = _weighted_average_price(fills, total_filled)
+            ts_event = max(f.ts_event for f in fills)
+            raw_filled_qty = instrument.make_qty(total_filled)
+            quantity = cached_order.quantity
+            order_side = cached_order.side
+            order_type = cached_order.order_type
+            time_in_force = cached_order.time_in_force
+            price = cached_price
+            # Mirror live-parser dust handling (see `docs/integrations/polymarket.md`).
+            dust_diff = abs(quantity.as_decimal() - raw_filled_qty.as_decimal())
+            order_status = (
+                OrderStatus.FILLED
+                if raw_filled_qty >= quantity or dust_diff < DUST_SNAP_THRESHOLD_DEC
+                else OrderStatus.CANCELED
+            )
+            filled_qty = _snap_filled_qty_to_quantity(quantity, raw_filled_qty, order_status)
+            cancel_reason = None
+            self._log.info(
+                f"Recovered {order_status.name} status for {venue_order_id!r} from "
+                f"{len(fills)} trade(s) (filled_qty={filled_qty}, quantity={quantity})",
+            )
+
+        return OrderStatusReport(
+            account_id=self.account_id,
+            instrument_id=instrument_id,
+            client_order_id=resolved_client_order_id,
+            order_list_id=None,
+            venue_order_id=venue_order_id,
+            order_side=order_side,
+            order_type=order_type,
+            contingency_type=ContingencyType.NO_CONTINGENCY,
+            time_in_force=time_in_force,
+            order_status=order_status,
+            price=price,
+            quantity=quantity,
+            filled_qty=filled_qty,
+            avg_px=avg_px,
+            cancel_reason=cancel_reason,
+            ts_accepted=ts_event,
+            ts_last=ts_event,
+            report_id=UUID4(),
+            ts_init=ts_now,
+        )
 
     async def generate_fill_reports(
         self,

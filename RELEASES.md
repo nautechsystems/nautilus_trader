@@ -99,6 +99,7 @@ Released on TBD (UTC).
 - Fixed OKX future instrument status parsing (#4005), thanks @cryptoSUN2049
 - Fixed Polymarket V2 BUY overfill rejection via overfill-only `last_qty` snap on WS, REST, and buffered drain paths
 - Fixed Polymarket REST fill paths bypassing dust normalization, causing engine state to diverge from venue across paths
+- Fixed Polymarket residual `ACCEPTED` orders via trade-history recovery (#4024), thanks for reporting @fedoraiver
 - Fixed Polymarket adapter book resync on `tick_size_change` (#3942), thanks for reporting @graceyangfan
 - Fixed Polymarket market IOC orders submitting as FOK (#4006), thanks for reporting @fedoraiver
 - Fixed Polymarket WS order parsing of venue cancellations with reason suffix (#3987), thanks for reporting @Javdu10

@@ -19,7 +19,7 @@ from typing import Any
 import msgspec
 import pandas as pd
 
-from nautilus_trader.adapters.polymarket.common.constants import DUST_SNAP_THRESHOLD
+from nautilus_trader.adapters.polymarket.common.constants import DUST_SNAP_THRESHOLD_DEC
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketEventType
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketLiquiditySide
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
@@ -53,6 +53,21 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Quantity
 
 
+def _sum_filled_quantity(fills: list[FillReport]) -> float:
+    return sum(float(f.last_qty) for f in fills)
+
+
+def _weighted_average_price(
+    fills: list[FillReport],
+    total_filled: float,
+) -> Decimal | None:
+    # Returns `None` for zero total to avoid divide-by-zero.
+    if total_filled <= 0:
+        return None
+    weighted = sum(float(f.last_qty) * float(f.last_px) for f in fills)
+    return Decimal(str(weighted / total_filled))
+
+
 def _snap_filled_qty_to_quantity(
     quantity: Quantity,
     filled_qty: Quantity,
@@ -64,8 +79,8 @@ def _snap_filled_qty_to_quantity(
     # `quantity` so the engine sees zero leaves at MATCHED.
     if order_status != OrderStatus.FILLED:
         return filled_qty
-    diff = float(quantity) - float(filled_qty)
-    if diff != 0.0 and abs(diff) < DUST_SNAP_THRESHOLD:
+    diff = quantity.as_decimal() - filled_qty.as_decimal()
+    if diff != 0 and abs(diff) < DUST_SNAP_THRESHOLD_DEC:
         return quantity
     return filled_qty
 
