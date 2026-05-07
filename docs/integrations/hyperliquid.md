@@ -101,6 +101,15 @@ export HYPERLIQUID_TESTNET_VAULT="vault_address_here"
 The adapter automatically loads these when `environment=HyperliquidEnvironment.TESTNET` in the
 configuration.
 
+:::warning
+**Agent / API wallets**: if `HYPERLIQUID_TESTNET_PK` is an
+[agent wallet](#agent-wallets) approved under a master account (the typical
+setup when you create an API wallet on the Hyperliquid UI), you must also
+set `HYPERLIQUID_ACCOUNT_ADDRESS` to the master account address. Without it,
+`OrderStatusReport` requests and WebSocket user feeds come back empty even
+though orders are live on the venue. See [GH-4010](https://github.com/nautechsystems/nautilus_trader/issues/4010).
+:::
+
 ## Product support
 
 Hyperliquid offers linear perpetual futures, HIP-3 builder-deployed perpetuals, and native
@@ -638,15 +647,53 @@ For Hyperliquid mainnet clients, you can set:
 
 - `HYPERLIQUID_PK`
 - `HYPERLIQUID_VAULT` (optional, for vault trading)
-- `HYPERLIQUID_ACCOUNT_ADDRESS` (optional, for agent wallet trading)
 
 For Hyperliquid testnet clients, you can set:
 
 - `HYPERLIQUID_TESTNET_PK`
 - `HYPERLIQUID_TESTNET_VAULT` (optional, for vault trading)
 
+For agent (API) wallet trading on either environment, you can also set:
+
+- `HYPERLIQUID_ACCOUNT_ADDRESS` (master account address; shared between mainnet and testnet)
+
 :::tip
 We recommend using environment variables to manage your credentials.
+:::
+
+## Agent wallets
+
+Hyperliquid lets a master account approve an [agent wallet](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/nonces-and-api-wallets)
+(also called an API wallet or sub-key) that signs orders on the master's
+behalf. Orders signed by the agent belong to the master account, not to the
+agent's address.
+
+If your `HYPERLIQUID_PK` (or `HYPERLIQUID_TESTNET_PK`) is an agent wallet, you
+must also set `account_address` (or the `HYPERLIQUID_ACCOUNT_ADDRESS`
+environment variable) to the master account address. Otherwise the adapter
+queries the agent's address for balances, orders, and WebSocket events, which
+owns nothing, and submitted orders will never reconcile (no
+`OrderStatusReport`, no fills surfaced).
+
+Resolution order for the user address used by info queries and WebSocket
+subscriptions:
+
+1. `account_address` (master account when using an agent wallet).
+2. `vault_address` (vault sub-account).
+3. The address derived from the private key (the wallet itself).
+
+:::note
+`HYPERLIQUID_ACCOUNT_ADDRESS` is a single env var shared by both mainnet and
+testnet (unlike `HYPERLIQUID_PK` / `HYPERLIQUID_TESTNET_PK`). If your agent
+wallet is approved under the same master address on both environments, one
+value covers both.
+:::
+
+:::tip
+Email-login wallets generate different addresses for mainnet and testnet, so
+the master address may differ. In that case, prefer setting `account_address`
+explicitly in `HyperliquidExecClientConfig` per environment rather than
+relying on the shared environment variable.
 :::
 
 ## Vault trading
