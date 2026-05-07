@@ -2856,6 +2856,10 @@ fn test_make_sql_safe_identifier() {
     // Test identifier with spaces (like option symbols)
     let safe_id = make_sql_safe_identifier("ESM4 P5230.XCME");
     assert_eq!(safe_id, "esm4_p5230_xcme");
+
+    // Test identifier with ampersand
+    let safe_id = make_sql_safe_identifier("M&M.NSE");
+    assert_eq!(safe_id, "m_m_nse");
 }
 
 #[rstest]
