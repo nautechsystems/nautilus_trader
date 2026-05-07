@@ -161,10 +161,12 @@ impl KrakenSpotExecutionClient {
         );
 
         let ws_dispatch_state = Arc::new(WsDispatchState::new());
-        let cmd_tx = get_runtime().block_on(ws.handler_command_sender());
+        // Connect() swaps in a live cmd_tx; capture the shared handle so the
+        // dispatcher reads the current sender, not the dropped placeholder.
+        let cmd_tx_handle = ws.handler_command_handle();
         let (order_event_tx, order_event_rx) = tokio::sync::mpsc::unbounded_channel();
         let order_request_state = Arc::new(OrderRequestState::new(
-            cmd_tx,
+            cmd_tx_handle,
             order_event_tx,
             Arc::clone(&ws_dispatch_state),
             ws.req_id_counter(),
@@ -316,15 +318,9 @@ impl KrakenSpotExecutionClient {
         // would never emit OrderAccepted to the strategy. Plus order.quantity()
         // for quote-qty is a quote amount that would be wrongly sent as `order_qty`
         // (base units) on the WS path. Force REST.
-        if self.config.use_ws_trade && self.ws.is_active() && !order.is_quote_quantity() {
-            match Self::submit_via_ws(
-                &self.ws,
-                &self.order_request_state,
-                command,
-                order,
-                leverage,
-                self.clock,
-            ) {
+        let use_ws_trade = resolve_use_ws_trade(command.params.as_ref(), self.config.use_ws_trade);
+        if use_ws_trade && self.ws.is_active() && !order.is_quote_quantity() {
+            match self.submit_via_ws(command, order, leverage) {
                 Ok(()) => return,
                 Err(e) => log::warn!("Kraken WS submit_order fallback to REST: {e}"),
             }
@@ -406,14 +402,13 @@ impl KrakenSpotExecutionClient {
     }
 
     fn submit_via_ws(
-        ws: &KrakenSpotWebSocketClient,
-        order_request_state: &Arc<OrderRequestState>,
+        &self,
         command: &SubmitOrder,
         order: &OrderAny,
         leverage: Option<u16>,
-        clock: &'static AtomicTime,
     ) -> anyhow::Result<()> {
-        let token = ws
+        let token = self
+            .ws
             .auth_token_blocking()
             .ok_or_else(|| anyhow::anyhow!("missing WS auth token"))?;
 
@@ -427,13 +422,15 @@ impl KrakenSpotExecutionClient {
             new_price: None,
             new_trigger_price: None,
         };
-        order_request_state.submit(params, identity, clock.get_time_ns().as_u64())?;
+        self.order_request_state
+            .submit(params, identity, self.clock.get_time_ns().as_u64())?;
         Ok(())
     }
 
     fn cancel_single_order(&self, cmd: &CancelOrder) {
-        if self.config.use_ws_trade && self.ws.is_active() {
-            match Self::cancel_via_ws(&self.ws, &self.order_request_state, cmd, self.clock) {
+        let use_ws_trade = resolve_use_ws_trade(cmd.params.as_ref(), self.config.use_ws_trade);
+        if use_ws_trade && self.ws.is_active() {
+            match self.cancel_via_ws(cmd) {
                 Ok(()) => return,
                 Err(e) => log::warn!("Kraken WS cancel_order fallback to REST: {e}"),
             }
@@ -482,13 +479,9 @@ impl KrakenSpotExecutionClient {
         });
     }
 
-    fn cancel_via_ws(
-        ws: &KrakenSpotWebSocketClient,
-        order_request_state: &Arc<OrderRequestState>,
-        cmd: &CancelOrder,
-        clock: &'static AtomicTime,
-    ) -> anyhow::Result<()> {
-        let token = ws
+    fn cancel_via_ws(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+        let token = self
+            .ws
             .auth_token_blocking()
             .ok_or_else(|| anyhow::anyhow!("missing WS auth token"))?;
 
@@ -502,7 +495,8 @@ impl KrakenSpotExecutionClient {
             new_price: None,
             new_trigger_price: None,
         };
-        order_request_state.cancel(params, identity, clock.get_time_ns().as_u64())?;
+        self.order_request_state
+            .cancel(params, identity, self.clock.get_time_ns().as_u64())?;
         Ok(())
     }
 
@@ -585,8 +579,9 @@ impl KrakenSpotExecutionClient {
     }
 
     fn modify_single_order(&self, cmd: &ModifyOrder) {
-        if self.config.use_ws_trade && self.ws.is_active() {
-            match Self::amend_via_ws(&self.ws, &self.order_request_state, cmd, self.clock) {
+        let use_ws_trade = resolve_use_ws_trade(cmd.params.as_ref(), self.config.use_ws_trade);
+        if use_ws_trade && self.ws.is_active() {
+            match self.amend_via_ws(cmd) {
                 Ok(()) => return,
                 Err(e) => log::warn!("Kraken WS amend_order fallback to REST: {e}"),
             }
@@ -638,13 +633,9 @@ impl KrakenSpotExecutionClient {
         });
     }
 
-    fn amend_via_ws(
-        ws: &KrakenSpotWebSocketClient,
-        order_request_state: &Arc<OrderRequestState>,
-        cmd: &ModifyOrder,
-        clock: &'static AtomicTime,
-    ) -> anyhow::Result<()> {
-        let token = ws
+    fn amend_via_ws(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+        let token = self
+            .ws
             .auth_token_blocking()
             .ok_or_else(|| anyhow::anyhow!("missing WS auth token"))?;
 
@@ -658,7 +649,8 @@ impl KrakenSpotExecutionClient {
             new_price: cmd.price,
             new_trigger_price: cmd.trigger_price,
         };
-        order_request_state.amend(params, identity, clock.get_time_ns().as_u64())?;
+        self.order_request_state
+            .amend(params, identity, self.clock.get_time_ns().as_u64())?;
         Ok(())
     }
 
@@ -837,14 +829,9 @@ impl KrakenSpotExecutionClient {
         });
     }
 
-    fn batch_add_via_ws(
-        ws: &KrakenSpotWebSocketClient,
-        order_request_state: &Arc<OrderRequestState>,
-        orders: &[OrderAny],
-        leverage: Option<u16>,
-        clock: &'static AtomicTime,
-    ) -> anyhow::Result<()> {
-        let token = ws
+    fn batch_add_via_ws(&self, orders: &[OrderAny], leverage: Option<u16>) -> anyhow::Result<()> {
+        let token = self
+            .ws
             .auth_token_blocking()
             .ok_or_else(|| anyhow::anyhow!("missing WS auth token"))?;
 
@@ -875,7 +862,8 @@ impl KrakenSpotExecutionClient {
             new_price: None,
             new_trigger_price: None,
         };
-        order_request_state.batch_add(params, identity, clock.get_time_ns().as_u64())?;
+        self.order_request_state
+            .batch_add(params, identity, self.clock.get_time_ns().as_u64())?;
         Ok(())
     }
 }
@@ -910,6 +898,22 @@ fn build_batch_order(
         OrderSide::Sell => KrakenOrderSide::Sell,
         side => anyhow::bail!("Invalid order side: {side:?}"),
     };
+
+    if matches!(
+        order_type,
+        OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+    ) {
+        anyhow::bail!(
+            "Trailing stop orders are not yet supported on the Kraken WS batch path; use REST",
+        );
+    }
+
+    if order.display_qty().is_some() {
+        anyhow::bail!(
+            "Iceberg (display_qty) orders are not supported on the Kraken WS batch path; use REST",
+        );
+    }
+
     let kraken_order_type = match order_type {
         OrderType::Market => KrakenOrderType::Market,
         OrderType::Limit => KrakenOrderType::Limit,
@@ -917,17 +921,12 @@ fn build_batch_order(
         OrderType::StopLimit => KrakenOrderType::StopLossLimit,
         OrderType::MarketIfTouched => KrakenOrderType::TakeProfit,
         OrderType::LimitIfTouched => KrakenOrderType::TakeProfitLimit,
-        OrderType::TrailingStopMarket => KrakenOrderType::TrailingStop,
-        OrderType::TrailingStopLimit => KrakenOrderType::TrailingStopLimit,
         ty => anyhow::bail!("Unsupported order type for Kraken WS batch: {ty:?}"),
     };
 
     let is_limit_order = matches!(
         order_type,
-        OrderType::Limit
-            | OrderType::StopLimit
-            | OrderType::LimitIfTouched
-            | OrderType::TrailingStopLimit
+        OrderType::Limit | OrderType::StopLimit | OrderType::LimitIfTouched
     );
 
     if is_limit_order && order.price().is_none() {
@@ -952,7 +951,10 @@ fn build_batch_order(
     let trigger = if is_conditional {
         let trigger_ref = match order.trigger_type() {
             Some(TriggerType::IndexPrice) => KrakenSpotTrigger::Index,
-            _ => KrakenSpotTrigger::Last,
+            Some(TriggerType::LastPrice | TriggerType::Default) | None => KrakenSpotTrigger::Last,
+            Some(other) => anyhow::bail!(
+                "Unsupported trigger type for Kraken Spot WS batch: {other:?} (only LastPrice and IndexPrice supported)",
+            ),
         };
         order.trigger_price().map(|tp| KrakenWsTriggerParams {
             reference: trigger_ref,
@@ -1461,7 +1463,8 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             return Ok(());
         }
 
-        if self.config.use_ws_trade && self.ws.is_active() {
+        let use_ws_trade = resolve_use_ws_trade(cmd.params.as_ref(), self.config.use_ws_trade);
+        if use_ws_trade && self.ws.is_active() {
             let any_quote_qty = prepared_orders.iter().any(|o| o.is_quote_quantity());
             let symbols_match = prepared_orders
                 .windows(2)
@@ -1473,13 +1476,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                     cmd.order_list.id,
                 );
             } else if symbols_match {
-                match Self::batch_add_via_ws(
-                    &self.ws,
-                    &self.order_request_state,
-                    &prepared_orders,
-                    leverage,
-                    self.clock,
-                ) {
+                match self.batch_add_via_ws(&prepared_orders, leverage) {
                     Ok(()) => return Ok(()),
                     Err(e) => log::warn!("Kraken WS batch_add fallback to REST: {e}"),
                 }
@@ -1613,6 +1610,27 @@ fn resolve_leverage(params: Option<&Params>, default: Option<u16>) -> Result<Opt
     Ok(Some(lev))
 }
 
+/// Resolves the per-call `params["use_ws_trade"]` override against the
+/// configured default. Non-boolean values warn and fall back to the default.
+fn resolve_use_ws_trade(params: Option<&Params>, default: bool) -> bool {
+    let Some(p) = params else {
+        return default;
+    };
+    let Some(raw) = p.get("use_ws_trade") else {
+        return default;
+    };
+
+    match raw.as_bool() {
+        Some(b) => b,
+        None => {
+            log::warn!(
+                "Invalid use_ws_trade param: expected boolean, received {raw}; using default {default}",
+            );
+            default
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, rc::Rc};
@@ -1622,7 +1640,7 @@ mod tests {
     use rstest::rstest;
     use serde_json::json;
 
-    use super::resolve_leverage;
+    use super::{resolve_leverage, resolve_use_ws_trade};
     use crate::{
         common::enums::KrakenProductType, config::KrakenExecClientConfig,
         factories::KrakenExecutionClientFactory,
@@ -1660,6 +1678,30 @@ mod tests {
         let p = params_with("leverage", json!(65539u64));
         let err = resolve_leverage(Some(&p), None).unwrap_err();
         assert!(err.contains("exceeds maximum"), "unexpected: {err}");
+    }
+
+    #[rstest]
+    fn test_resolve_use_ws_trade_absent_uses_default() {
+        let p = params_with("other", json!(1));
+        assert!(resolve_use_ws_trade(Some(&p), true));
+        assert!(!resolve_use_ws_trade(Some(&p), false));
+        assert!(resolve_use_ws_trade(None, true));
+        assert!(!resolve_use_ws_trade(None, false));
+    }
+
+    #[rstest]
+    fn test_resolve_use_ws_trade_overrides_default() {
+        let p_false = params_with("use_ws_trade", json!(false));
+        let p_true = params_with("use_ws_trade", json!(true));
+        assert!(!resolve_use_ws_trade(Some(&p_false), true));
+        assert!(resolve_use_ws_trade(Some(&p_true), false));
+    }
+
+    #[rstest]
+    fn test_resolve_use_ws_trade_non_boolean_falls_back_to_default() {
+        let p = params_with("use_ws_trade", json!("true"));
+        assert!(resolve_use_ws_trade(Some(&p), true));
+        assert!(!resolve_use_ws_trade(Some(&p), false));
     }
 
     #[rstest]

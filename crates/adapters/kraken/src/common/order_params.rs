@@ -59,6 +59,19 @@ pub fn build_add_order_params(
         _ => anyhow::bail!("Invalid order side: {order_side:?}"),
     };
 
+    if matches!(
+        order_type,
+        OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+    ) {
+        anyhow::bail!("Trailing stop orders are not yet supported on the Kraken WS path; use REST",);
+    }
+
+    if order.display_qty().is_some() {
+        anyhow::bail!(
+            "Iceberg (display_qty) orders are not supported on the Kraken WS path; use REST"
+        );
+    }
+
     let kraken_order_type = match order_type {
         OrderType::Market => KrakenOrderType::Market,
         OrderType::Limit => KrakenOrderType::Limit,
@@ -66,17 +79,12 @@ pub fn build_add_order_params(
         OrderType::StopLimit => KrakenOrderType::StopLossLimit,
         OrderType::MarketIfTouched => KrakenOrderType::TakeProfit,
         OrderType::LimitIfTouched => KrakenOrderType::TakeProfitLimit,
-        OrderType::TrailingStopMarket => KrakenOrderType::TrailingStop,
-        OrderType::TrailingStopLimit => KrakenOrderType::TrailingStopLimit,
         _ => anyhow::bail!("Unsupported order type for Kraken WS: {order_type:?}"),
     };
 
     let is_limit_order = matches!(
         order_type,
-        OrderType::Limit
-            | OrderType::StopLimit
-            | OrderType::LimitIfTouched
-            | OrderType::TrailingStopLimit
+        OrderType::Limit | OrderType::StopLimit | OrderType::LimitIfTouched
     );
 
     if is_limit_order && order.price().is_none() {
@@ -102,7 +110,10 @@ pub fn build_add_order_params(
     let trigger = if is_conditional {
         let trigger_ref = match order.trigger_type() {
             Some(TriggerType::IndexPrice) => KrakenSpotTrigger::Index,
-            _ => KrakenSpotTrigger::Last,
+            Some(TriggerType::LastPrice | TriggerType::Default) | None => KrakenSpotTrigger::Last,
+            Some(other) => anyhow::bail!(
+                "Unsupported trigger type for Kraken Spot WS: {other:?} (only LastPrice and IndexPrice supported)",
+            ),
         };
         order.trigger_price().map(|tp| KrakenWsTriggerParams {
             reference: trigger_ref,
@@ -260,6 +271,199 @@ mod tests {
         let ts = UnixNanos::from(u64::MAX);
         let formatted = format_expire_time(ts);
         assert!(formatted.starts_with("2554-"), "unexpected: {formatted}");
+    }
+
+    #[rstest]
+    fn test_build_add_order_params_trailing_stop_market_bails() {
+        use nautilus_model::{
+            enums::TrailingOffsetType,
+            orders::trailing_stop_market::TrailingStopMarketOrder,
+            types::{Price, Quantity},
+        };
+        use rust_decimal::Decimal;
+
+        let trader_id = TraderId::from("TESTER-001");
+        let strategy_id = StrategyId::from("S-001");
+        let instrument_id = InstrumentId::from("BTC/USD.KRAKEN");
+        let cl_ord_id = ClientOrderId::from("O-1");
+
+        let order = OrderAny::TrailingStopMarket(TrailingStopMarketOrder::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            cl_ord_id,
+            OrderSide::Buy,
+            Quantity::from("0.01"),
+            Price::from("50000.00"),
+            TriggerType::LastPrice,
+            Decimal::new(100, 0),
+            TrailingOffsetType::Price,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ));
+
+        let cmd = SubmitOrder {
+            trader_id,
+            client_id: None,
+            strategy_id,
+            instrument_id,
+            client_order_id: cl_ord_id,
+            order_init: order.init_event().clone(),
+            exec_algorithm_id: None,
+            position_id: None,
+            params: None,
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+        };
+
+        let err = build_add_order_params(&cmd, &order, "TKN".to_string(), None)
+            .expect_err("TrailingStopMarket must bail to REST");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("Trailing stop") && msg.contains("REST"),
+            "unexpected error: {msg}",
+        );
+    }
+
+    #[rstest]
+    fn test_build_add_order_params_iceberg_bails() {
+        use nautilus_model::{
+            orders::limit::LimitOrder,
+            types::{Price, Quantity},
+        };
+
+        let trader_id = TraderId::from("TESTER-001");
+        let strategy_id = StrategyId::from("S-001");
+        let instrument_id = InstrumentId::from("BTC/USD.KRAKEN");
+        let cl_ord_id = ClientOrderId::from("O-1");
+
+        let order = OrderAny::Limit(LimitOrder::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            cl_ord_id,
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            Price::from("50000.00"),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            Some(Quantity::from("0.1")), // display_qty -> iceberg
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ));
+
+        let cmd = SubmitOrder {
+            trader_id,
+            client_id: None,
+            strategy_id,
+            instrument_id,
+            client_order_id: cl_ord_id,
+            order_init: order.init_event().clone(),
+            exec_algorithm_id: None,
+            position_id: None,
+            params: None,
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+        };
+
+        let err = build_add_order_params(&cmd, &order, "TKN".to_string(), None)
+            .expect_err("Iceberg orders must bail to REST");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("Iceberg") && msg.contains("REST"),
+            "unexpected error: {msg}",
+        );
+    }
+
+    #[rstest]
+    fn test_build_add_order_params_unsupported_trigger_type_bails() {
+        use nautilus_model::{
+            orders::stop_market::StopMarketOrder,
+            types::{Price, Quantity},
+        };
+
+        let trader_id = TraderId::from("TESTER-001");
+        let strategy_id = StrategyId::from("S-001");
+        let instrument_id = InstrumentId::from("BTC/USD.KRAKEN");
+        let cl_ord_id = ClientOrderId::from("O-1");
+
+        let order = OrderAny::StopMarket(StopMarketOrder::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            cl_ord_id,
+            OrderSide::Buy,
+            Quantity::from("0.01"),
+            Price::from("50000.00"),
+            TriggerType::MarkPrice,
+            TimeInForce::Gtc,
+            None,  // expire_time
+            false, // reduce_only
+            false, // quote_quantity
+            None,  // display_qty
+            None,  // emulation_trigger
+            None,  // trigger_instrument_id
+            None,  // contingency_type
+            None,  // order_list_id
+            None,  // linked_order_ids
+            None,  // parent_order_id
+            None,  // exec_algorithm_id
+            None,  // exec_algorithm_params
+            None,  // exec_spawn_id
+            None,  // tags
+            UUID4::new(),
+            UnixNanos::default(),
+        ));
+
+        let cmd = SubmitOrder {
+            trader_id,
+            client_id: None,
+            strategy_id,
+            instrument_id,
+            client_order_id: cl_ord_id,
+            order_init: order.init_event().clone(),
+            exec_algorithm_id: None,
+            position_id: None,
+            params: None,
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+        };
+
+        let err = build_add_order_params(&cmd, &order, "TKN".to_string(), None)
+            .expect_err("MarkPrice trigger must bail to REST");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("trigger type") && msg.contains("LastPrice"),
+            "unexpected error: {msg}",
+        );
     }
 
     #[rstest]

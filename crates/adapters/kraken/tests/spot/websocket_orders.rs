@@ -136,8 +136,12 @@ fn make_pending_request() -> PendingRequest {
 }
 
 fn build_order_request_state(
-    cmd_tx: tokio::sync::mpsc::UnboundedSender<
-        nautilus_kraken::websocket::spot_v2::handler::SpotHandlerCommand,
+    cmd_tx_handle: Arc<
+        tokio::sync::RwLock<
+            tokio::sync::mpsc::UnboundedSender<
+                nautilus_kraken::websocket::spot_v2::handler::SpotHandlerCommand,
+            >,
+        >,
     >,
 ) -> Arc<OrderRequestState> {
     let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -145,7 +149,7 @@ fn build_order_request_state(
     let req_id_counter = Arc::new(std::sync::atomic::AtomicU64::new(0));
 
     Arc::new(OrderRequestState::new(
-        cmd_tx,
+        cmd_tx_handle,
         event_tx,
         dispatch_state,
         req_id_counter,
@@ -158,9 +162,9 @@ fn build_order_request_state(
     ))
 }
 
-/// Verifies that when a [`KrakenSpotWebSocketClient`] is connected and
-/// [`OrderRequestState::submit`] is called, the `add_order` JSON envelope is
-/// forwarded to the mock WebSocket server.
+/// Regression: build the dispatcher before `connect()`, like
+/// `KrakenSpotExecutionClient::new` does, and verify the swapped-in live
+/// cmd_tx is observed at send time.
 #[rstest]
 #[tokio::test]
 async fn test_submit_order_via_ws_sends_add_order_message() {
@@ -173,6 +177,10 @@ async fn test_submit_order_via_ws_sends_add_order_message() {
     };
 
     let mut ws_client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+
+    let cmd_tx_handle = ws_client.handler_command_handle();
+    let order_state = build_order_request_state(cmd_tx_handle);
+
     ws_client.connect().await.unwrap();
 
     wait_until_async(
@@ -185,9 +193,6 @@ async fn test_submit_order_via_ws_sends_add_order_message() {
     .await;
 
     assert!(ws_client.is_active() || ws_client.is_connected());
-
-    let cmd_tx = ws_client.handler_command_sender().await;
-    let order_state = build_order_request_state(cmd_tx);
 
     let params = make_add_order_params("BTC/USD");
     let pending = make_pending_request();
@@ -259,8 +264,8 @@ async fn test_submit_order_falls_back_to_rest_when_ws_inactive() {
     );
     assert!(ws_client.is_closed());
 
-    let cmd_tx = ws_client.handler_command_sender().await;
-    let order_state = build_order_request_state(cmd_tx);
+    let cmd_tx_handle = ws_client.handler_command_handle();
+    let order_state = build_order_request_state(cmd_tx_handle);
 
     let params = make_add_order_params("BTC/USD");
     let pending = make_pending_request();

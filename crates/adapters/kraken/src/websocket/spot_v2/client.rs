@@ -179,6 +179,16 @@ impl KrakenSpotWebSocketClient {
         self.cmd_tx.read().await.clone()
     }
 
+    /// Returns the shared `cmd_tx` handle. Unlike
+    /// [`handler_command_sender`](Self::handler_command_sender) (a snapshot
+    /// clone), this exposes the `RwLock` so callers see the live sender
+    /// after `connect()` swaps it in.
+    pub fn handler_command_handle(
+        &self,
+    ) -> Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<SpotHandlerCommand>>> {
+        self.cmd_tx.clone()
+    }
+
     /// Returns the current cached authentication token, if any.
     pub async fn auth_token(&self) -> Option<String> {
         self.auth_token.read().await.clone()

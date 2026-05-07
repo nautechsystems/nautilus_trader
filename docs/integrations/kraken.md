@@ -296,6 +296,79 @@ time rather than silently coercing them.
 | Bracket orders      | -    | -       | *Not supported*.                         |
 | Conditional orders  | ✓    | ✓       | Stop and take‑profit orders.             |
 
+## Order routing (Spot)
+
+The Rust Spot execution client routes `submit_order`, `modify_order`,
+`cancel_order`, and `submit_order_list` through Kraken's authenticated
+WebSocket v2 trade channel by default, with REST as the fallback. The Python
+live `KrakenExecutionClient` currently routes all orders via REST regardless
+of the knobs below; WebSocket trade routing is only active when the Rust
+execution client (`KrakenSpotExecutionClient`) is in use, either via the
+Rust factory or by constructing the pyo3-exposed
+`nautilus_trader.core.nautilus_pyo3.kraken.KrakenExecClientConfig` directly.
+
+### Order shapes routed via REST
+
+Some Spot order shapes always route via REST. They split into two
+categories: shapes Kraken's WS v2 API does not support at all, and shapes
+the WS API supports but this adapter does not yet encode.
+
+**Kraken WS v2 limitation:**
+
+| Shape                     | Reason                                                       |
+|---------------------------|--------------------------------------------------------------|
+| Unsupported trigger types | `triggers.reference` accepts only `last` and `index`.        |
+| `FOK` time in force       | Kraken WS v2 has no `FOK` value (only `GTC`, `IOC`, `GTD`).  |
+| Mixed‑symbol order lists  | `batch_add` requires a single shared symbol.                 |
+
+**Not yet encoded by this adapter (follow‑up work, currently REST):**
+
+| Shape                       | Notes                                                                                |
+|-----------------------------|--------------------------------------------------------------------------------------|
+| Trailing stop / stop‑limit  | Encodable via `triggers.price` + `triggers.price_type`, but the builder routes REST. |
+| Iceberg (`display_qty`)     | Encodable as `order_type: "iceberg"` + `display_qty`, but the builder routes REST.   |
+| Quote‑quantity orders       | Buy market quote‑qty is encodable via `cash_order_qty`; routed REST today.           |
+
+The per-call `params={"use_ws_trade": False}` override forces a single
+command through REST regardless of the configured default. Set it on
+`SubmitOrder`, `ModifyOrder`, `CancelOrder`, or `SubmitOrderList`.
+
+### WebSocket request timeout
+
+When a WebSocket round-trip exceeds `ws_request_timeout_secs` (default `5`)
+the dispatcher synthesises a local rejection event stamped with the
+timeout-fire timestamp:
+
+- Submit / batch_add: `OrderRejected` (one per leg for batches). The
+  dispatcher then sends a best-effort compensating `cancel_order` over the
+  same WebSocket so a delayed venue acceptance is not left as an orphan
+  order.
+- Modify: `OrderModifyRejected`.
+- Cancel: `OrderCancelRejected`.
+
+The timeout does not trigger an automatic REST retry; strategies must
+resubmit if they want to try again. If the venue actually accepted the
+order and the compensating cancel does not land, the live execution
+reconciliation engine (`open_check_interval_secs`) is the recovery path.
+
+:::tip
+Set `ws_request_timeout_secs` comfortably above your observed round-trip
+latency (the default `5` is roughly 25× typical) so the timeout only fires
+under genuine network failure.
+:::
+
+### Rust-side configuration knobs
+
+The Rust `KrakenExecClientConfig` (and its pyo3 wrapper) exposes:
+
+| Option                    | Default | Description                                                      |
+|---------------------------|---------|------------------------------------------------------------------|
+| `use_ws_trade`            | `True`  | Route orders via WS when the trade channel is active.            |
+| `ws_request_timeout_secs` | `5`     | WS round‑trip timeout before a synthesised rejection is emitted. |
+
+These are not exposed on the Python live `KrakenExecClientConfig` because
+the Python live execution client does not yet honour them.
+
 ## Reconciliation
 
 The Kraken adapter provides reconciliation capabilities for both
