@@ -53,6 +53,7 @@ Released on TBD (UTC).
 - Changed message bus subscription `priority` from `u8` to `u32` to match Cython `int priority` parity (Rust)
 
 ### Security
+- Fixed `DatabaseConfig` repr to fully redact passwords (#4028), thanks @faysou
 
 ### Fixes
 - Fixed `RefCell` reentrancy panic in `ExecutionEngine::handle_order_fill` for OTO parent fills (#3981), thanks for reporting @GreatLandmark
@@ -103,6 +104,7 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers market data farm reconnects not resubscribing feeds (#3968), thanks @onixenix
 - Fixed Interactive Brokers market data dispatch on fractional tick sizes (#4022), thanks @faysou
 - Fixed Interactive Brokers shutdown reader `RuntimeError` on stop and dispose (#4023), thanks @faysou
+- Fixed Interactive Brokers reconnect before server version handshake (#4027), thanks @faysou
 - Fixed Kraken Spot margin wallet balances for multi-asset collateral (#3997), thanks @mcgrj
 - Fixed Kraken symbol normalization for WS v2 compatibility (#3961), thanks @mcgrj
 - Fixed OKX missing `post_only` instrument status (#3966), thanks @jhavie

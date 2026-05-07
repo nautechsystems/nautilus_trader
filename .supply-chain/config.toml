@@ -2125,7 +2125,7 @@ version = "1.2.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.rust_decimal]]
-version = "1.41.0"
+version = "1.42.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.rust_decimal_macros]]
