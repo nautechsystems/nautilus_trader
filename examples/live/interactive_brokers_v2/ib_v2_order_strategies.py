@@ -429,7 +429,7 @@ class IbV2OrderStrategy(pyo3.Strategy):  # type: ignore[name-defined]
             f"{self.strategy_id}: auto-canceling accepted order {event.client_order_id}",
             flush=True,
         )
-        self.cancel_order(order, client_id=ib_client_id())
+        self.cancel_order(order.client_order_id, client_id=ib_client_id())
 
 
 class BracketOrderStrategy(IbV2OrderStrategy):

@@ -308,7 +308,7 @@ pub trait Strategy: DataActor {
     /// Returns an error if the strategy is not registered or order modification fails.
     fn modify_order(
         &mut self,
-        order: OrderAny,
+        client_order_id: ClientOrderId,
         quantity: Option<Quantity>,
         price: Option<Price>,
         trigger_price: Option<Price>,
@@ -324,6 +324,17 @@ pub trait Strategy: DataActor {
         };
 
         let params = params.filter(|params| !params.is_empty());
+
+        // TODO: Snapshot the order from the cache. See `cancel_order` for the rationale.
+        let order = match self
+            .core_mut()
+            .cache_rc()
+            .borrow()
+            .order_owned(&client_order_id)
+        {
+            Some(order) => order,
+            None => anyhow::bail!("Cannot modify order: {client_order_id} not found in cache"),
+        };
 
         let mut updating = false;
 
@@ -406,7 +417,7 @@ pub trait Strategy: DataActor {
     /// Returns an error if the strategy is not registered or order cancellation fails.
     fn cancel_order(
         &mut self,
-        order: OrderAny,
+        client_order_id: ClientOrderId,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) -> anyhow::Result<()> {
@@ -420,6 +431,19 @@ pub trait Strategy: DataActor {
         };
 
         let params = params.filter(|params| !params.is_empty());
+
+        // TODO: Snapshot the order from the cache. Callers identify it by ID; we own the
+        // snapshot so the helpers (which take `&OrderAny` and may re-enter the cache)
+        // run without holding a live cache borrow.
+        let order = match self
+            .core_mut()
+            .cache_rc()
+            .borrow()
+            .order_owned(&client_order_id)
+        {
+            Some(order) => order,
+            None => anyhow::bail!("Cannot cancel order: {client_order_id} not found in cache"),
+        };
 
         if !self.mark_order_pending_cancel(&order)? {
             return Ok(());
@@ -471,11 +495,11 @@ pub trait Strategy: DataActor {
     /// or contain emulated/local orders.
     fn cancel_orders(
         &mut self,
-        orders: Vec<OrderAny>,
+        client_order_ids: Vec<ClientOrderId>,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) -> anyhow::Result<()> {
-        if orders.is_empty() {
+        if client_order_ids.is_empty() {
             anyhow::bail!("Cannot batch cancel empty order list");
         }
 
@@ -486,6 +510,20 @@ pub trait Strategy: DataActor {
                 StrategyId::from(core.actor_id().inner().as_str()),
                 core.clock().timestamp_ns(),
             )
+        };
+
+        // TODO: Snapshot all orders from the cache. See `cancel_order` for the rationale.
+        let orders: Vec<OrderAny> = {
+            let cache_rc = self.core_mut().cache_rc();
+            let cache = cache_rc.borrow();
+            client_order_ids
+                .iter()
+                .map(|id| {
+                    cache.order_owned(id).ok_or_else(|| {
+                        anyhow::anyhow!("Cannot cancel order: {id} not found in cache")
+                    })
+                })
+                .collect::<Result<_, _>>()?
         };
 
         let instrument_id = orders[0].instrument_id();
@@ -688,35 +726,29 @@ pub trait Strategy: DataActor {
         let ts_init = core.clock().timestamp_ns();
         let cache = core.cache();
 
-        let open_count = cache
-            .orders_open(
-                None,
-                Some(&instrument_id),
-                Some(&strategy_id),
-                None,
-                order_side,
-            )
-            .len();
+        let open_count = cache.orders_open_count(
+            None,
+            Some(&instrument_id),
+            Some(&strategy_id),
+            None,
+            order_side,
+        );
 
-        let emulated_count = cache
-            .orders_emulated(
-                None,
-                Some(&instrument_id),
-                Some(&strategy_id),
-                None,
-                order_side,
-            )
-            .len();
+        let emulated_count = cache.orders_emulated_count(
+            None,
+            Some(&instrument_id),
+            Some(&strategy_id),
+            None,
+            order_side,
+        );
 
-        let inflight_count = cache
-            .orders_inflight(
-                None,
-                Some(&instrument_id),
-                Some(&strategy_id),
-                None,
-                order_side,
-            )
-            .len();
+        let inflight_count = cache.orders_inflight_count(
+            None,
+            Some(&instrument_id),
+            Some(&strategy_id),
+            None,
+            order_side,
+        );
 
         // Sort the algorithm IDs so the per-algo cancel cascade fires msgbus
         // events in a deterministic order across runs; the cache returns an
@@ -807,7 +839,7 @@ pub trait Strategy: DataActor {
         }
 
         for order in algo_orders {
-            self.cancel_order(order, client_id, None)?;
+            self.cancel_order(order.client_order_id(), client_id, None)?;
         }
 
         Ok(())
@@ -1392,15 +1424,13 @@ pub trait Strategy: DataActor {
 
         if attempts >= max_attempts {
             let cache = core.cache();
-            let open_orders_count = cache
-                .orders_open(None, None, Some(&strategy_id), None, None)
-                .len();
-            let inflight_orders_count = cache
-                .orders_inflight(None, None, Some(&strategy_id), None, None)
-                .len();
-            let open_positions_count = cache
-                .positions_open(None, None, Some(&strategy_id), None, None)
-                .len();
+            let open_orders_count =
+                cache.orders_open_count(None, None, Some(&strategy_id), None, None);
+            let inflight_orders_count =
+                cache.orders_inflight_count(None, None, Some(&strategy_id), None, None);
+            let open_positions_count =
+                cache.positions_open_count(None, None, Some(&strategy_id), None, None);
+
             drop(cache);
 
             log::warn!(
@@ -1693,7 +1723,7 @@ pub trait Strategy: DataActor {
 
         if current_time_ns >= expire_time.as_u64() {
             log::info!("GTD order {client_order_id} already expired, canceling immediately");
-            return self.cancel_order(order.clone(), None, None);
+            return self.cancel_order(order.client_order_id(), None, None);
         }
 
         {
@@ -1747,7 +1777,7 @@ pub trait Strategy: DataActor {
 
         log::info!("GTD order {client_order_id} expired");
 
-        if let Err(e) = self.cancel_order(order, None, None) {
+        if let Err(e) = self.cancel_order(order.client_order_id(), None, None) {
             log::error!("Failed to cancel expired GTD order {client_order_id}: {e}");
         }
     }
@@ -1779,7 +1809,7 @@ pub trait Strategy: DataActor {
 
             if current_time_ns >= expire_time_ns {
                 log::info!("GTD order {client_order_id} already expired, canceling immediately");
-                if let Err(e) = self.cancel_order(order, None, None) {
+                if let Err(e) = self.cancel_order(order.client_order_id(), None, None) {
                     log::error!("Failed to cancel expired GTD order {client_order_id}: {e}");
                 }
             } else if let Err(e) = self.set_gtd_expiry(&order) {
@@ -2648,9 +2678,17 @@ mod tests {
             None,
             None,
         ));
+        add_order_to_cache(&strategy, &order);
 
         strategy
-            .modify_order(order, Some(Quantity::from(200_000)), None, None, None, None)
+            .modify_order(
+                order.client_order_id(),
+                Some(Quantity::from(200_000)),
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
 
         let risk_messages = risk_messages.get_messages();
@@ -2685,7 +2723,7 @@ mod tests {
 
         strategy
             .modify_order(
-                order.clone(),
+                order.client_order_id(),
                 None,
                 Some(Price::from("51000.0")),
                 None,
@@ -2736,7 +2774,9 @@ mod tests {
         msgbus::subscribe_order_events(topic.clone().into(), event_handler.clone(), None);
         add_order_to_cache(&strategy, &order);
 
-        strategy.cancel_order(order.clone(), None, None).unwrap();
+        strategy
+            .cancel_order(order.client_order_id(), None, None)
+            .unwrap();
 
         msgbus::unsubscribe_order_events(topic.into(), &event_handler);
 
@@ -2784,7 +2824,11 @@ mod tests {
         add_order_to_cache(&strategy, &order2);
 
         strategy
-            .cancel_orders(vec![order1.clone(), order2.clone()], None, None)
+            .cancel_orders(
+                vec![order1.client_order_id(), order2.client_order_id()],
+                None,
+                None,
+            )
             .unwrap();
 
         msgbus::unsubscribe_order_events(topic.into(), &event_handler);
@@ -2830,7 +2874,9 @@ mod tests {
         let order = make_accepted_limit_order("O-20250208-CANCEL-OWN-BOOK-001");
         add_order_to_cache_and_own_book(&strategy, &order);
 
-        strategy.cancel_order(order.clone(), None, None).unwrap();
+        strategy
+            .cancel_order(order.client_order_id(), None, None)
+            .unwrap();
 
         let mut accepted = AHashSet::new();
         accepted.insert(OrderStatus::Accepted);
@@ -2842,6 +2888,84 @@ mod tests {
         assert!(own_book.bids_as_map(Some(&accepted), None, None).is_empty());
         let pending_bids = own_book.bids_as_map(Some(&pending_cancel), None, None);
         assert_eq!(pending_bids.values().map(Vec::len).sum::<usize>(), 1);
+    }
+
+    #[rstest]
+    fn test_cancel_order_returns_error_when_not_in_cache() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let missing_id = ClientOrderId::from("O-MISSING");
+        let err = strategy
+            .cancel_order(missing_id, None, None)
+            .expect_err("expected cancel_order to fail when order is not in cache");
+
+        assert!(
+            err.to_string().contains("not found in cache"),
+            "unexpected error: {err}"
+        );
+        assert!(exec_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_modify_order_returns_error_when_not_in_cache() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        let missing_id = ClientOrderId::from("O-MISSING");
+        let err = strategy
+            .modify_order(missing_id, Some(Quantity::from(1)), None, None, None, None)
+            .expect_err("expected modify_order to fail when order is not in cache");
+
+        assert!(
+            err.to_string().contains("not found in cache"),
+            "unexpected error: {err}"
+        );
+        assert!(risk_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_cancel_orders_returns_error_when_any_id_missing() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let order = make_accepted_limit_order("O-PRESENT");
+        add_order_to_cache(&strategy, &order);
+
+        let err = strategy
+            .cancel_orders(
+                vec![order.client_order_id(), ClientOrderId::from("O-MISSING")],
+                None,
+                None,
+            )
+            .expect_err("expected cancel_orders to fail when any id is missing");
+
+        assert!(
+            err.to_string().contains("not found in cache"),
+            "unexpected error: {err}"
+        );
+        assert!(exec_messages.get_messages().is_empty());
     }
 
     // -- GTD EXPIRY TESTS ----------------------------------------------------------------------------

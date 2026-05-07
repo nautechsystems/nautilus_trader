@@ -273,7 +273,7 @@ def test_modify_order_signature():
     strategy = Strategy()
     sig = inspect.signature(strategy.modify_order)
     params = list(sig.parameters.keys())
-    assert "order" in params
+    assert "client_order_id" in params
     assert "quantity" in params
     assert "price" in params
     assert "trigger_price" in params
@@ -290,7 +290,7 @@ def test_cancel_order_signature():
     sig = inspect.signature(strategy.cancel_order)
 
     params = list(sig.parameters.keys())
-    assert "order" in params
+    assert "client_order_id" in params
     assert "client_id" in params
 
 

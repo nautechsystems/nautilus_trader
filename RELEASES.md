@@ -43,6 +43,8 @@ Released on TBD (UTC).
 - Changed `nautilus-model` to make `arrow` support optional behind a Cargo feature; enable the `arrow` feature (or `python-arrow` for the Python bindings) to restore the previous behavior (#4008), thanks @sunlei
 - Changed `OrderMatchingEngineConfig` defaults to match the Cython per-engine constructor (Rust)
 - Changed `Strategy` order APIs to take `Option<Params>` to avoid unnecessary `IndexMap` allocations (Rust); use `None` or `Some(params)`
+- Changed `Strategy::cancel_order` and `modify_order` to take `ClientOrderId` instead of `OrderAny` (Rust v2)
+- Changed `Strategy::cancel_orders` to take `Vec<ClientOrderId>` instead of `Vec<OrderAny>` (Rust v2)
 - Changed Rust strategy registration to append `order_id_tag` to explicit strategy IDs, matching Cython
 - Changed Binance Futures to prefer `DEMO` endpoints for simulated trading
 - Changed Kraken Spot to reject `DEMO`; demo remains Futures-only
