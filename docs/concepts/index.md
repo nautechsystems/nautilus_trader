@@ -130,6 +130,11 @@ convention, builder patterns, and common fields shared across adapters and engin
 Deploying backtested strategies in real-time without code changes, and the key differences
 between backtesting and live trading.
 
+## Trader Control Plane
+
+Read-only trader-facing health, permission, operations, risk, source-health, and future AI-assistant
+snapshot concepts.
+
 ## Adapters
 
 Requirements and best practices for developing integration adapters for data providers and trading venues.

@@ -36,6 +36,9 @@ dependencies = [
   "uvloop==0.22.1,<1.0.0; sys_platform != \"win32\"", # Pinned to 0.22.1 for stability
 ]
 
+[project.scripts]
+nautilus = "nautilus_trader.control_plane.__main__:main"
+
 [project.urls]
 homepage = "https://nautilustrader.io"
 repository = "https://github.com/nautechsystems/nautilus_trader"
