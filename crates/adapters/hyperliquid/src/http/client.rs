@@ -87,8 +87,8 @@ use crate::{
         },
         parse::{
             HyperliquidInstrumentDef, instruments_from_defs_owned, parse_fill_report,
-            parse_order_status_report_from_basic, parse_perp_instruments,
-            parse_position_status_report, parse_spot_instruments,
+            parse_order_status_report_from_basic, parse_outcome_instruments,
+            parse_perp_instruments, parse_position_status_report, parse_spot_instruments,
             parse_spot_position_status_report,
         },
         query::{ExchangeAction, InfoRequest},
@@ -1316,6 +1316,27 @@ impl HyperliquidHttpClient {
             },
             Err(e) => {
                 log::warn!("Failed to load Hyperliquid spot metadata: {e}");
+            }
+        }
+
+        // HIP-4 outcome metadata is best-effort: the venue may not expose it
+        // and the response shape is still firming up. Treat any error as a
+        // soft skip so missing outcomes do not break perp/spot loading.
+        match self.inner.get_outcome_meta().await {
+            Ok(outcome_meta) => match parse_outcome_instruments(&outcome_meta) {
+                Ok(outcome_defs) => {
+                    log::debug!(
+                        "Loaded Hyperliquid outcome definitions: count={}",
+                        outcome_defs.len(),
+                    );
+                    defs.extend(outcome_defs);
+                }
+                Err(e) => {
+                    log::warn!("Failed to parse Hyperliquid outcome instruments: {e}");
+                }
+            },
+            Err(e) => {
+                log::debug!("Skipping Hyperliquid outcome metadata: {e}");
             }
         }
 
