@@ -293,7 +293,9 @@ impl WebSocketClient {
     ///
     /// # Errors
     ///
-    /// - Raises `PyRuntimeError` if not able to send data.
+    /// Returns an error if:
+    /// - The connection is not active or closes while waiting for rate limit (`WebSocketClientError`).
+    /// - The writer channel is broken (`PyRuntimeError`).
     #[pyo3(name = "send")]
     #[pyo3(signature = (data, keys=None))]
     #[expect(clippy::needless_pass_by_value)]
@@ -312,20 +314,20 @@ impl WebSocketClient {
             if !ConnectionMode::from_atomic(&mode).is_active() {
                 let msg = "Cannot send data: connection not active".to_string();
                 log::error!("{msg}");
-                return Err(to_pyruntime_err(std::io::Error::new(
+                return Err(to_websocket_pyerr(TransportError::Io(std::io::Error::new(
                     std::io::ErrorKind::NotConnected,
                     msg,
-                )));
+                ))));
             }
 
             tokio::select! {
                 biased;
                 () = rate_limiter.await_keys_ready(keys.as_deref()) => {}
                 () = poll_until_closed(&mode) => {
-                    return Err(to_pyruntime_err(std::io::Error::new(
+                    return Err(to_websocket_pyerr(TransportError::Io(std::io::Error::new(
                         std::io::ErrorKind::ConnectionAborted,
                         "Connection closed while waiting for rate limit",
-                    )));
+                    ))));
                 }
             }
 
@@ -360,21 +362,20 @@ impl WebSocketClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if !ConnectionMode::from_atomic(&mode).is_active() {
-                let e = std::io::Error::new(
+                return Err(to_websocket_pyerr(TransportError::Io(std::io::Error::new(
                     std::io::ErrorKind::NotConnected,
                     "Cannot send text: connection not active",
-                );
-                return Err(to_pyruntime_err(e));
+                ))));
             }
 
             tokio::select! {
                 biased;
                 () = rate_limiter.await_keys_ready(keys.as_deref()) => {}
                 () = poll_until_closed(&mode) => {
-                    return Err(to_pyruntime_err(std::io::Error::new(
+                    return Err(to_websocket_pyerr(TransportError::Io(std::io::Error::new(
                         std::io::ErrorKind::ConnectionAborted,
                         "Connection closed while waiting for rate limit",
-                    )));
+                    ))));
                 }
             }
 
@@ -388,6 +389,11 @@ impl WebSocketClient {
     }
 
     /// Sends a pong frame back to the server.
+    ///
+    /// Silently drops the pong when the connection is no longer active.
+    /// The reconnect path is owned by the controller's liveness watchdog,
+    /// so racing a pong against a transition out of `Active` is benign and
+    /// gives the caller nothing to act on.
     #[pyo3(name = "send_pong")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_send_pong<'py>(
@@ -401,11 +407,8 @@ impl WebSocketClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if !ConnectionMode::from_atomic(&mode).is_active() {
-                let e = std::io::Error::new(
-                    std::io::ErrorKind::NotConnected,
-                    "Cannot send pong: connection not active",
-                );
-                return Err(to_pyruntime_err(e));
+                log::debug!("Skipping pong: connection not active");
+                return Ok(());
             }
             log::trace!("Sending pong frame ({data_len} bytes)");
 

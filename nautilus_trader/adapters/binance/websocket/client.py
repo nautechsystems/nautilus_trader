@@ -255,7 +255,15 @@ class BinanceWebSocketClient:
 
     def _handle_ping(self, client_id: int, raw: bytes) -> None:
         task = self._loop.create_task(self.send_pong(client_id, raw))
+        task.add_done_callback(self._on_pong_task_done)
         self._tasks.add(task)
+
+    def _on_pong_task_done(self, task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            self._log.warning(f"Unhandled exception in send_pong task: {exc!r}")
 
     async def send_pong(self, client_id: int, raw: bytes) -> None:
         """
@@ -269,6 +277,10 @@ class BinanceWebSocketClient:
             await client.send_pong(raw)
         except WebSocketClientError as e:
             self._log.error(f"ws-client {client_id}: {e!s}")
+        except RuntimeError as e:
+            # Connection raced into a non-active state between the ping arriving
+            # and this task running; the Rust controller drives reconnect.
+            self._log.warning(f"ws-client {client_id}: dropped pong: {e!s}")
 
     def _handle_reconnect(self, client_id: int) -> None:
         """
