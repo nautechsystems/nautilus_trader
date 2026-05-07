@@ -40,11 +40,7 @@ use nautilus_serialization::arrow::custom::CustomDataDecoder;
 #[must_use]
 pub fn schema_with_data_type_column(base_schema: &Schema, type_name: &str) -> Schema {
     let mut fields: Vec<_> = base_schema.fields().iter().cloned().collect();
-    fields.push(Arc::new(Field::new(
-        "data_type",
-        ArrowDataType::Utf8,
-        false,
-    )));
+    fields.push(Arc::new(Field::new("data_type", ArrowDataType::Utf8, true)));
     let mut meta = base_schema.metadata().clone();
     meta.insert("type_name".to_string(), type_name.to_string());
     Schema::new_with_metadata(fields, meta)

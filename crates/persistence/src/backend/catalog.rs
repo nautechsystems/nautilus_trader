@@ -64,7 +64,7 @@
 
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::Debug,
     io::Cursor,
     ops::Bound as RangeBound,
@@ -103,8 +103,8 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 use nautilus_serialization::arrow::{
-    DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch, EncodeToRecordBatch,
-    custom::CustomDataDecoder,
+    ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch,
+    EncodeToRecordBatch, custom::CustomDataDecoder,
 };
 use object_store::{ObjectStore, ObjectStoreExt, path::Path as ObjectPath};
 use serde::Serialize;
@@ -114,7 +114,7 @@ use super::{
     custom::{
         custom_data_path_components, decode_batch_to_data as orchestration_decode_batch_to_data,
         decode_custom_batches_to_data as orchestration_decode_custom_batches_to_data,
-        prepare_custom_data_batch,
+        prepare_custom_data_batch, schema_with_data_type_column,
     },
     session::{self, DataBackendSession, QueryResult, build_query},
 };
@@ -1894,21 +1894,37 @@ impl ParquetDataCatalog {
             return Ok(Vec::new());
         }
 
-        let table_name = "custom_data_table";
-
         // Use CustomDataDecoder for all custom data. Pass type_name so decode can look up
         // the type when Parquet/DataFusion does not preserve schema metadata. Callers must
         // ensure Rust custom types are registered via ensure_custom_data_registered::<T>().
+        let mut custom_metadata = HashMap::new();
+        custom_metadata.insert("type_name".to_string(), type_name.to_string());
+        let base_schema = CustomDataDecoder::get_schema(Some(custom_metadata));
+        base_schema.field_with_name("ts_init").map_err(|_| {
+            anyhow::anyhow!(
+                "custom data type '{type_name}' is not registered with an Arrow schema containing ts_init; \
+                 call ensure_custom_data_registered::<T>() before querying"
+            )
+        })?;
+        let custom_schema = schema_with_data_type_column(&base_schema, type_name);
+
         for file in files {
+            let identifier = extract_identifier_from_path(&file);
+            let safe_type_name = make_sql_safe_identifier(type_name);
+            let safe_sql_identifier = make_sql_safe_identifier(&identifier);
+            let safe_filename = extract_sql_safe_filename(&file);
+            let table_name =
+                format!("custom_{safe_type_name}_{safe_sql_identifier}_{safe_filename}");
             let resolved_path = self.resolve_path_for_datafusion(&file);
-            let sql_query = build_query(table_name, start, end, where_clause);
+            let sql_query = build_query(&table_name, start, end, where_clause);
 
             self.session
-                .add_file::<CustomDataDecoder>(
-                    table_name,
+                .add_file_with_schema::<CustomDataDecoder>(
+                    &table_name,
                     &resolved_path,
                     Some(&sql_query),
                     Some(type_name),
+                    Some(&custom_schema),
                 )
                 .map_err(|e| anyhow::anyhow!(e.to_string()))?;
         }

@@ -161,12 +161,19 @@ fn strip_data_type_column(
     }
 
     let cols = batch.columns();
-    let string_col = extract_column_string(cols, "data_type", data_type_col_idx).map_err(|e| {
-        super::EncodingError::ParseError("custom_data", format!("data_type column: {e}"))
-    })?;
-    let first_value = string_col.value(0);
-    let data_type = DataType::from_persistence_json(first_value)
-        .map_err(|e| super::EncodingError::ParseError("custom_data", e.to_string()))?;
+    let data_type = if cols[data_type_col_idx].is_null(0) {
+        None
+    } else {
+        let string_col =
+            extract_column_string(cols, "data_type", data_type_col_idx).map_err(|e| {
+                super::EncodingError::ParseError("custom_data", format!("data_type column: {e}"))
+            })?;
+        let first_value = string_col.value(0);
+        Some(
+            DataType::from_persistence_json(first_value)
+                .map_err(|e| super::EncodingError::ParseError("custom_data", e.to_string()))?,
+        )
+    };
 
     let new_fields: Vec<_> = batch
         .schema()
@@ -188,7 +195,7 @@ fn strip_data_type_column(
     let stripped_batch = RecordBatch::try_new(Arc::new(new_schema), new_columns)
         .map_err(|e| super::EncodingError::ParseError("custom_data", e.to_string()))?;
 
-    Ok((stripped_batch, Some(data_type)))
+    Ok((stripped_batch, data_type))
 }
 
 impl DecodeDataFromRecordBatch for CustomDataDecoder {
