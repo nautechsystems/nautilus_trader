@@ -364,12 +364,10 @@ impl KrakenSpotHttpClient {
     /// callers attach to `AccountState.info`. In cash mode the metrics map is empty
     /// and `TradeBalance` is not called.
     ///
-    /// In margin mode, a synthetic `AccountBalance` for `margin_balance_asset`
-    /// replaces its raw wallet entry: `total = e` (equity across all collateral
-    /// assets), `free = mf`, `locked = m` (`= e - mf` per Kraken docs). This
-    /// exposes Kraken's venue-authoritative free margin to risk checks regardless
-    /// of how many assets contribute to equity — avoiding the multi-asset clamp
-    /// that occurs when `mf > single-currency wallet`.
+    /// In margin mode, replaces the raw `margin_balance_asset` wallet with a
+    /// synthetic `AccountBalance` using `total = e` and `free = mf` from
+    /// `TradeBalance`. Kraken reports these values across all collateral, which
+    /// avoids clamping free margin to one wallet bucket in multi-asset accounts.
     ///
     /// The single shared fetch keeps Kraken rate-limit usage symmetric with `Balance`
     /// (one request per account update), instead of two as if `request_account_state`

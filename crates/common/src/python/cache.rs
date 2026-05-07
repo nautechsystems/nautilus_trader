@@ -1401,7 +1401,12 @@ impl Cache {
         .map_err(to_pyvalue_err)
     }
 
-    /// Gets a reference to the order with the `client_order_id` (if found).
+    /// Gets a borrow of the order with the `client_order_id` (if found).
+    ///
+    /// The returned `OrderRef` is tied to the cache borrow's scope and panics at runtime if
+    /// held across a mutation of the same order. Drop the borrow before dispatching events; if
+    /// post-event state is required, perform a fresh lookup. Use `Self.order_owned` when an
+    /// owned snapshot is needed for a boundary handover.
     #[pyo3(name = "order")]
     fn py_order(&self, py: Python, client_order_id: ClientOrderId) -> PyResult<Option<Py<PyAny>>> {
         match self.order(&client_order_id) {
@@ -1437,7 +1442,7 @@ impl Cache {
         self.is_order_active_local(&client_order_id)
     }
 
-    /// Returns references to all locally active orders matching the optional filter parameters.
+    /// Returns borrows of all locally active orders matching the optional filter parameters.
     ///
     /// Locally active orders are in the `INITIALIZED`, `EMULATED`, or `RELEASED` state
     /// (a superset of emulated orders).
@@ -2016,7 +2021,11 @@ impl Cache {
         self.client_id(&client_order_id).copied()
     }
 
-    /// Returns references to all orders matching the optional filter parameters.
+    /// Returns borrows of all orders matching the optional filter parameters.
+    ///
+    /// Each `Ref` in the returned vector borrows its underlying cell; mutating any of
+    /// those orders while the vector is alive will panic at runtime. Drop the vector
+    /// before issuing writes.
     #[pyo3(name = "orders")]
     fn py_orders(
         &self,
@@ -2039,7 +2048,7 @@ impl Cache {
         .collect()
     }
 
-    /// Returns references to all open orders matching the optional filter parameters.
+    /// Returns borrows of all open orders matching the optional filter parameters.
     #[pyo3(name = "orders_open")]
     fn py_orders_open(
         &self,
@@ -2062,7 +2071,7 @@ impl Cache {
         .collect()
     }
 
-    /// Returns references to all closed orders matching the optional filter parameters.
+    /// Returns borrows of all closed orders matching the optional filter parameters.
     #[pyo3(name = "orders_closed")]
     fn py_orders_closed(
         &self,
@@ -2085,7 +2094,7 @@ impl Cache {
         .collect()
     }
 
-    /// Returns references to all emulated orders matching the optional filter parameters.
+    /// Returns borrows of all emulated orders matching the optional filter parameters.
     #[pyo3(name = "orders_emulated")]
     fn py_orders_emulated(
         &self,
@@ -2108,7 +2117,7 @@ impl Cache {
         .collect()
     }
 
-    /// Returns references to all in-flight orders matching the optional filter parameters.
+    /// Returns borrows of all in-flight orders matching the optional filter parameters.
     #[pyo3(name = "orders_inflight")]
     fn py_orders_inflight(
         &self,
@@ -2131,7 +2140,7 @@ impl Cache {
         .collect()
     }
 
-    /// Returns references to all orders for the `position_id`.
+    /// Returns borrows of all orders for the `position_id`.
     #[pyo3(name = "orders_for_position")]
     fn py_orders_for_position(
         &self,
