@@ -242,4 +242,24 @@ mod tests {
         let deserialized: TradeId = serde_json::from_str(&json).unwrap();
         assert_eq!(trade_id, deserialized);
     }
+
+    #[rstest]
+    fn test_trade_id_deserialize_inside_tagged_enum() {
+        #[derive(serde::Deserialize)]
+        #[serde(tag = "type")]
+        enum Wrapper {
+            Trade { id: TradeId },
+        }
+
+        let json = r#"{"type":"Trade","id":"TRADE12345"}"#;
+        let Wrapper::Trade { id } = serde_json::from_str(json).unwrap();
+        assert_eq!(id.as_str(), "TRADE12345");
+    }
+
+    #[rstest]
+    fn test_trade_id_deserialize_from_serde_json_value() {
+        let value = serde_json::json!("TRADE12345");
+        let id: TradeId = serde_json::from_value(value).unwrap();
+        assert_eq!(id.as_str(), "TRADE12345");
+    }
 }

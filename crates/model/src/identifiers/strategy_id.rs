@@ -245,4 +245,27 @@ mod tests {
             "`value` tag part (after '-') cannot be empty"
         );
     }
+
+    // Tagged enums force serde to buffer the content and replay it, which
+    // can only feed owned strings to the inner deserializer. The `&str`
+    // impl previously rejected this with "expected a borrowed string".
+    #[rstest]
+    fn test_deserialize_inside_tagged_enum() {
+        #[derive(serde::Deserialize)]
+        #[serde(tag = "type")]
+        enum Wrapper {
+            Strategy { id: StrategyId },
+        }
+
+        let json = r#"{"type":"Strategy","id":"EMACross-001"}"#;
+        let Wrapper::Strategy { id } = serde_json::from_str(json).unwrap();
+        assert_eq!(id.as_str(), "EMACross-001");
+    }
+
+    #[rstest]
+    fn test_deserialize_from_serde_json_value() {
+        let value = serde_json::json!("EMACross-001");
+        let id: StrategyId = serde_json::from_value(value).unwrap();
+        assert_eq!(id.as_str(), "EMACross-001");
+    }
 }

@@ -59,6 +59,7 @@ Released on TBD (UTC).
 - Fixed `RefCell` reentrancy panic in `ExecutionEngine::handle_order_fill` for OTO parent fills (#3981), thanks for reporting @GreatLandmark
 - Fixed `RefCell` reentrancy in `ExecutionEngine::load_cache` nested `borrow_mut` calls
 - Fixed `RefCell` double-borrow panic in `Portfolio::update_position` when `calculate_account_state` is true
+- Fixed identifier deserialization inside `#[serde(tag = "type")]` enums and `serde_json::Value`; all identifiers now accept owned strings via `Cow<'de, str>`
 - Fixed `AccountsManager::update_balances` discarding recalculated balances by mutating a dropped clone
 - Fixed Rust portfolio account event clone overhead (#4004), thanks for reporting @magnified103
 - Fixed margin `AccountState` events emitting empty balances when balances were populated
