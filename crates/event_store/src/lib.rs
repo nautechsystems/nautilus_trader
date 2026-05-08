@@ -39,3 +39,18 @@
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
+
+pub mod backend;
+pub mod entry;
+pub mod error;
+pub mod hash;
+pub mod headers;
+pub mod manifest;
+mod wire;
+
+pub use backend::{EventStore, IndexKind, ScanDirection};
+pub use entry::{EventStoreEntry, PayloadType, Topic};
+pub use error::EventStoreError;
+pub use hash::{EntryHash, compute_entry_hash};
+pub use headers::Headers;
+pub use manifest::{RegisteredComponents, RunId, RunManifest, RunStatus};

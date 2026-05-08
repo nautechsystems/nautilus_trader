@@ -29,6 +29,28 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
+nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
+
+bincode = { workspace = true }
+blake3 = { workspace = true }
+bytes = { workspace = true }
+indexmap = { workspace = true }
 redb = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+ustr = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
+rstest = { workspace = true }
+
+[[bench]]
+name = "hash"
+path = "benches/hash.rs"
+harness = false
+
+[[bench]]
+name = "codec"
+path = "benches/codec.rs"
+harness = false

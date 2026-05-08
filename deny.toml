@@ -153,6 +153,10 @@ skip = [
   { crate = "syn" },
   { crate = "strsim" },
 
+  # bincode 1.3.3 (transitive via madsim dev-dep and hypersync-client) vs
+  # 2.0.1 (event_store envelope codec)
+  { crate = "bincode" },
+
   # Enum derive macros - strum 0.27 (alloy, hypersync) vs 0.28 (nautilus)
   { crate = "strum" },
   { crate = "strum_macros" },
