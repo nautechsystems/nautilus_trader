@@ -1499,7 +1499,12 @@ impl OrderMatchingEngine {
                 self.last_bar_ask = Some(bar.to_owned());
                 self.process_quote_ticks_from_bar(bar);
             }
-            PriceType::Mark => panic!("Not implemented"),
+            PriceType::Mark => {
+                log::warn!(
+                    "Skipping bar for {}: `PriceType::Mark` is not supported for matching",
+                    bar.instrument_id()
+                );
+            }
         }
     }
 

@@ -8747,3 +8747,30 @@ fn test_process_bar_drops_precision_mismatch_after_instrument_update(
 
     assert!(engine.get_core().last.is_none());
 }
+
+#[rstest]
+fn test_process_bar_ignores_mark_price_type(instrument_eth_usdt: InstrumentAny) {
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(instrument_eth_usdt, None, None, Some(config), None);
+
+    let mark_bar_type = BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-MARK-EXTERNAL");
+    let mark_bar = Bar {
+        bar_type: mark_bar_type,
+        open: Price::from("1000.00"),
+        high: Price::from("1001.00"),
+        low: Price::from("999.00"),
+        close: Price::from("1000.50"),
+        volume: Quantity::from("100.000"),
+        ts_event: UnixNanos::from(1),
+        ts_init: UnixNanos::from(1),
+    };
+
+    // Should not panic; unsupported MARK bars are ignored.
+    engine.process_bar(&mark_bar);
+
+    assert!(engine.get_core().last.is_none());
+    assert!(!engine.get_core().is_last_initialized);
+}

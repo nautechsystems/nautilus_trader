@@ -61,6 +61,7 @@ cdef class MatchingCore:
     cdef void set_last_raw(self, PriceRaw last_raw)
 
     cpdef void update_price_increment(self, Price price_increment)
+    cpdef void clear_market_state(self)
 
     cpdef void reset(self)
     cpdef void add_order(self, Order order)

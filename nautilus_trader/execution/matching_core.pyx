@@ -206,16 +206,19 @@ cdef class MatchingCore:
         self._price_increment = price_increment
         self._price_precision = price_increment.precision
 
-    cpdef void reset(self):
-        self._orders.clear()
-        self._orders_bid.clear()
-        self._orders_ask.clear()
+    cpdef void clear_market_state(self):
         self.bid_raw = 0
         self.ask_raw = 0
         self.last_raw = 0
         self.is_bid_initialized = False
         self.is_ask_initialized = False
         self.is_last_initialized = False
+
+    cpdef void reset(self):
+        self._orders.clear()
+        self._orders_bid.clear()
+        self._orders_ask.clear()
+        self.clear_market_state()
 
     cpdef void add_order(self, Order order):
         Condition.not_none(order, "order")

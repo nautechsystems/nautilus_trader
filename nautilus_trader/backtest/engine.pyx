@@ -4068,17 +4068,48 @@ cdef class OrderMatchingEngine:
         Condition.not_none(instrument, "instrument")
         Condition.equal(instrument.id, self.instrument.id, "instrument.id", "self.instrument.id")
 
-        if (
+        cdef bint changed = (
             instrument.price_increment != self.instrument.price_increment
             or instrument.price_precision != self.instrument.price_precision
-        ):
+            or instrument.size_precision != self.instrument.size_precision
+        )
+
+        if changed:
             self._core.update_price_increment(instrument.price_increment)
+            self._book.reset()
+            self._bid_consumption.clear()
+            self._ask_consumption.clear()
+            self._trade_consumption = 0
+            self._queue_ahead.clear()
+            self._queue_excess.clear()
+            self._queue_pending.clear()
+            self._prev_bid_price_raw = 0
+            self._prev_bid_size_raw = 0
+            self._prev_ask_price_raw = 0
+            self._prev_ask_size_raw = 0
+            self._last_quote_bid_raw = 0
+            self._last_quote_ask_raw = 0
+            self._has_quote_context = False
+            self._tob_initialized = False
+            self._target_bid = 0
+            self._target_ask = 0
+            self._target_last = 0
+            self._has_targets = False
+            self._last_bid_bar = None
+            self._last_ask_bar = None
+            self._core.clear_market_state()
 
         self.instrument = instrument
         self._price_prec = instrument.price_precision
         self._size_prec = instrument.size_precision
 
-        self._log.debug(f"Updated instrument definition for {instrument.id}")
+        if changed:
+            self._log.info(
+                f"Updated instrument {instrument.id} "
+                f"(price_precision={self._price_prec} size_precision={self._size_prec})",
+            )
+        else:
+            self._log.debug(f"Updated instrument definition for {instrument.id}")
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
@@ -4162,13 +4193,6 @@ cdef class OrderMatchingEngine:
         delta : OrderBookDelta
             The order book delta to process.
 
-        Raises
-        ------
-        RuntimeError
-            If the delta price precision does not match the instrument for the matching engine.
-        RuntimeError
-            If the delta size precision does not match the instrument for the matching engine.
-
         """
         Condition.not_none(delta, "delta")
 
@@ -4178,15 +4202,19 @@ cdef class OrderMatchingEngine:
         # Validate precisions for ADD and UPDATE actions
         if delta._mem.action == BookAction.ADD or delta._mem.action == BookAction.UPDATE:
             if delta._mem.order.price.precision != self._price_prec:
-                raise RuntimeError(
+                self._log.warning(
+                    f"Skipping order book delta for {delta.instrument_id}: "
                     f"invalid delta price precision={delta._mem.order.price.precision} "
                     f"did not match instrument.price_precision={self._price_prec}",
                 )
+                return
             elif delta._mem.order.size.precision != self._size_prec:
-                raise RuntimeError(
+                self._log.warning(
+                    f"Skipping order book delta for {delta.instrument_id}: "
                     f"invalid delta size precision={delta._mem.order.size.precision} "
                     f"did not match instrument.size_precision={self._size_prec}",
                 )
+                return
 
         # L1 books are driven by top-of-book data only, ignore deltas
         if self.book_type == BookType.L1_MBP:
@@ -4235,13 +4263,6 @@ cdef class OrderMatchingEngine:
         delta : OrderBookDeltas
             The order book deltas to process.
 
-        Raises
-        ------
-        RuntimeError
-            If any delta price precision does not match the instrument for the matching engine.
-        RuntimeError
-            If any delta size precision does not match the instrument for the matching engine.
-
         """
         Condition.not_none(deltas, "deltas")
 
@@ -4253,15 +4274,19 @@ cdef class OrderMatchingEngine:
         for delta in deltas.deltas:
             if delta._mem.action == BookAction.ADD or delta._mem.action == BookAction.UPDATE:
                 if delta._mem.order.price.precision != self._price_prec:
-                    raise RuntimeError(
+                    self._log.warning(
+                        f"Skipping order book deltas for {deltas.instrument_id}: "
                         f"invalid delta price precision={delta._mem.order.price.precision} "
                         f"did not match instrument.price_precision={self._price_prec}",
                     )
+                    return
                 elif delta._mem.order.size.precision != self._size_prec:
-                    raise RuntimeError(
+                    self._log.warning(
+                        f"Skipping order book deltas for {deltas.instrument_id}: "
                         f"invalid delta size precision={delta._mem.order.size.precision} "
                         f"did not match instrument.size_precision={self._size_prec}",
                     )
+                    return
 
         # L1 books are driven by top-of-book data only, ignore deltas
         if self.book_type == BookType.L1_MBP:
@@ -4310,13 +4335,6 @@ cdef class OrderMatchingEngine:
         depth : OrderBookDepth10
             The order book depth to process.
 
-        Raises
-        ------
-        RuntimeError
-            If any order price precision does not match the instrument for the matching engine.
-        RuntimeError
-            If any order size precision does not match the instrument for the matching engine.
-
         """
         Condition.not_none(depth, "depth")
 
@@ -4329,29 +4347,37 @@ cdef class OrderMatchingEngine:
             if order._mem.side == OrderSide.NO_ORDER_SIDE:
                 continue  # Skip null orders
             elif order._mem.price.precision != self._price_prec:
-                raise RuntimeError(
+                self._log.warning(
+                    f"Skipping order book depth for {depth.instrument_id}: "
                     f"invalid depth bid price precision={order._mem.price.precision} "
                     f"did not match instrument.price_precision={self._price_prec}",
                 )
+                return
             elif order._mem.size.precision != self._size_prec:
-                raise RuntimeError(
+                self._log.warning(
+                    f"Skipping order book depth for {depth.instrument_id}: "
                     f"invalid depth bid size precision={order._mem.size.precision} "
                     f"did not match instrument.size_precision={self._size_prec}",
                 )
+                return
 
         for order in depth.asks:
             if order._mem.side == OrderSide.NO_ORDER_SIDE:
                 continue  # Skip null orders
             elif order._mem.price.precision != self._price_prec:
-                raise RuntimeError(
+                self._log.warning(
+                    f"Skipping order book depth for {depth.instrument_id}: "
                     f"invalid depth ask price precision={order._mem.price.precision} "
                     f"did not match instrument.price_precision={self._price_prec}",
                 )
+                return
             elif order._mem.size.precision != self._size_prec:
-                raise RuntimeError(
+                self._log.warning(
+                    f"Skipping order book depth for {depth.instrument_id}: "
                     f"invalid depth ask size precision={order._mem.size.precision} "
                     f"did not match instrument.size_precision={self._size_prec}",
                 )
+                return
 
         # Reset consumption tracking on snapshot (F_SNAPSHOT = 32)
         if self._liquidity_consumption and (depth._mem.flags & 32):
@@ -4399,13 +4425,6 @@ cdef class OrderMatchingEngine:
         tick : QuoteTick
             The tick to process.
 
-        Raises
-        ------
-        RuntimeError
-            If a price precision does not match the instrument for the matching engine.
-        RuntimeError
-            If a size precision does not match the instrument for the matching engine.
-
         """
         Condition.not_none(tick, "tick")
 
@@ -4414,21 +4433,33 @@ cdef class OrderMatchingEngine:
 
         # Validate precisions
         if tick._mem.bid_price.precision != self._price_prec:
-            raise RuntimeError(
-                f"invalid {tick.bid_price.precision=} did not match instrument.price_precision={self._price_prec}",
+            self._log.warning(
+                f"Skipping quote tick for {tick.instrument_id}: "
+                f"invalid {tick.bid_price.precision=} "
+                f"did not match instrument.price_precision={self._price_prec}",
             )
+            return
         elif tick._mem.ask_price.precision != self._price_prec:
-            raise RuntimeError(
-                f"invalid {tick.ask_price.precision=} did not match instrument.price_precision={self._price_prec}",
+            self._log.warning(
+                f"Skipping quote tick for {tick.instrument_id}: "
+                f"invalid {tick.ask_price.precision=} "
+                f"did not match instrument.price_precision={self._price_prec}",
             )
+            return
         elif tick._mem.bid_size.precision != self._size_prec:
-            raise RuntimeError(
-                f"invalid {tick.bid_size.precision=} did not match instrument.size_precision={self._size_prec}",
+            self._log.warning(
+                f"Skipping quote tick for {tick.instrument_id}: "
+                f"invalid {tick.bid_size.precision=} "
+                f"did not match instrument.size_precision={self._size_prec}",
             )
+            return
         elif tick._mem.ask_size.precision != self._size_prec:
-            raise RuntimeError(
-                f"invalid {tick.ask_size.precision=} did not match instrument.size_precision={self._size_prec}",
+            self._log.warning(
+                f"Skipping quote tick for {tick.instrument_id}: "
+                f"invalid {tick.ask_size.precision=} "
+                f"did not match instrument.size_precision={self._size_prec}",
             )
+            return
 
         if self.book_type == BookType.L1_MBP:
             # Stale update: skip book mutation and cache updates
@@ -4476,13 +4507,6 @@ cdef class OrderMatchingEngine:
         tick : TradeTick
             The tick to process.
 
-        Raises
-        ------
-        RuntimeError
-            If the trades price precision does not match the instrument for the matching engine.
-        RuntimeError
-            If the trades size precision does not match the instrument for the matching engine.
-
         """
         Condition.not_none(tick, "tick")
 
@@ -4491,13 +4515,19 @@ cdef class OrderMatchingEngine:
 
         # Validate precisions
         if tick._mem.price.precision != self._price_prec:
-            raise RuntimeError(
-                f"invalid {tick.price.precision=} did not match instrument.price_precision={self._price_prec}",
+            self._log.warning(
+                f"Skipping trade tick for {tick.instrument_id}: "
+                f"invalid {tick.price.precision=} "
+                f"did not match instrument.price_precision={self._price_prec}",
             )
+            return
         elif tick._mem.size.precision != self._size_prec:
-            raise RuntimeError(
-                f"invalid {tick.size.precision=} did not match instrument.size_precision={self._size_prec}",
+            self._log.warning(
+                f"Skipping trade tick for {tick.instrument_id}: "
+                f"invalid {tick.size.precision=} "
+                f"did not match instrument.size_precision={self._size_prec}",
             )
+            return
 
         if self.book_type == BookType.L1_MBP:
             # Stale update: skip book mutation and trade execution
@@ -4619,13 +4649,6 @@ cdef class OrderMatchingEngine:
         bar : Bar
             The bar to process.
 
-        Raises
-        ------
-        RuntimeError
-            If a price precision does not match the instrument for the matching engine.
-        RuntimeError
-            If a size precision does not match the instrument for the matching engine.
-
         """
         Condition.not_none(bar, "bar")
 
@@ -4641,25 +4664,40 @@ cdef class OrderMatchingEngine:
 
         # Validate precisions
         if bar._mem.open.precision != self._price_prec:
-            raise RuntimeError(
-                f"invalid {bar.open.precision=} did not match instrument.price_precision={self._price_prec}",
+            self._log.warning(
+                f"Skipping bar for {bar_type.instrument_id}: "
+                f"invalid {bar.open.precision=} "
+                f"did not match instrument.price_precision={self._price_prec}",
             )
+            return
         elif bar._mem.high.precision != self._price_prec:
-            raise RuntimeError(
-                f"invalid {bar.high.precision=} did not match instrument.price_precision={self._price_prec}",
+            self._log.warning(
+                f"Skipping bar for {bar_type.instrument_id}: "
+                f"invalid {bar.high.precision=} "
+                f"did not match instrument.price_precision={self._price_prec}",
             )
+            return
         elif bar._mem.low.precision != self._price_prec:
-            raise RuntimeError(
-                f"invalid {bar.low.precision=} did not match instrument.price_precision={self._price_prec}",
+            self._log.warning(
+                f"Skipping bar for {bar_type.instrument_id}: "
+                f"invalid {bar.low.precision=} "
+                f"did not match instrument.price_precision={self._price_prec}",
             )
+            return
         elif bar._mem.close.precision != self._price_prec:
-            raise RuntimeError(
-                f"invalid {bar.close.precision=} did not match instrument.price_precision={self._price_prec}",
+            self._log.warning(
+                f"Skipping bar for {bar_type.instrument_id}: "
+                f"invalid {bar.close.precision=} "
+                f"did not match instrument.price_precision={self._price_prec}",
             )
+            return
         elif bar._mem.volume.precision != self._size_prec:
-            raise RuntimeError(
-                f"invalid {bar.volume.precision=} did not match instrument.size_precision={self._size_prec}",
+            self._log.warning(
+                f"Skipping bar for {bar_type.instrument_id}: "
+                f"invalid {bar.volume.precision=} "
+                f"did not match instrument.size_precision={self._size_prec}",
             )
+            return
 
         cdef InstrumentId instrument_id = bar_type.instrument_id
         cdef BarType execution_bar_type = self._execution_bar_types.get(instrument_id)

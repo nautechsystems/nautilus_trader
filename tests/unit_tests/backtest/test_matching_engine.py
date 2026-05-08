@@ -34,7 +34,10 @@ from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
@@ -58,6 +61,7 @@ from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.objects import Price
@@ -137,6 +141,204 @@ class TestOrderMatchingEngine:
         self.matching_engine.process_status(MarketStatusAction.PRE_OPEN)
         self.matching_engine.process_status(MarketStatusAction.PAUSE)
         self.matching_engine.process_status(MarketStatusAction.TRADING)
+
+    def test_process_order_book_delta_with_precision_mismatch_does_not_raise(self) -> None:
+        # Arrange
+        delta = OrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.BUY,
+                price=Price.from_str("1000.001"),  # precision=3, instrument expects 2
+                size=Quantity.from_str("1.000"),
+                order_id=1,
+            ),
+            flags=0,
+            sequence=1,
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act - Should not raise
+        self.matching_engine.process_order_book_delta(delta)
+
+    def test_process_quote_tick_with_precision_mismatch_does_not_raise(self) -> None:
+        # Arrange
+        quote = QuoteTick(
+            instrument_id=self.instrument.id,
+            bid_price=Price.from_str("1000.001"),  # precision=3, instrument expects 2
+            ask_price=Price.from_str("1000.002"),  # precision=3, instrument expects 2
+            bid_size=Quantity.from_str("1.000"),
+            ask_size=Quantity.from_str("1.000"),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act - Should not raise
+        self.matching_engine.process_quote_tick(quote)
+
+    def test_process_trade_tick_with_precision_mismatch_does_not_raise(self) -> None:
+        # Arrange
+        trade = TradeTick(
+            instrument_id=self.instrument.id,
+            price=Price.from_str("1000.00"),
+            size=Quantity.from_str("1.0000"),  # precision=4, instrument expects 3
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("T-1"),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act - Should not raise
+        self.matching_engine.process_trade_tick(trade)
+
+    def test_process_bar_with_precision_mismatch_does_not_raise(self) -> None:
+        # Arrange
+        bar = Bar(
+            bar_type=BarType(
+                instrument_id=self.instrument.id,
+                bar_spec=BarSpecification(
+                    step=1,
+                    aggregation=BarAggregation.MINUTE,
+                    price_type=PriceType.LAST,
+                ),
+                aggregation_source=AggregationSource.EXTERNAL,
+            ),
+            open=Price.from_str("1000.001"),  # precision=3, instrument expects 2
+            high=Price.from_str("1000.002"),
+            low=Price.from_str("999.999"),
+            close=Price.from_str("1000.000"),
+            volume=Quantity.from_str("1.000"),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act - Should not raise
+        self.matching_engine.process_bar(bar)
+
+    def test_process_quote_tick_with_precision_mismatch_preserves_book_state(self) -> None:
+        # Arrange
+        self.matching_engine.process_quote_tick(
+            TestDataStubs.quote_tick(
+                instrument=self.instrument,
+                bid_price=1000.00,
+                ask_price=1000.01,
+                ts_event=1,
+                ts_init=1,
+            ),
+        )
+        bid_before = self.matching_engine.best_bid_price()
+        ask_before = self.matching_engine.best_ask_price()
+
+        mismatched = QuoteTick(
+            instrument_id=self.instrument.id,
+            bid_price=Price.from_str("1001.001"),  # precision=3, instrument expects 2
+            ask_price=Price.from_str("1001.002"),
+            bid_size=Quantity.from_str("1.000"),
+            ask_size=Quantity.from_str("1.000"),
+            ts_event=2,
+            ts_init=2,
+        )
+
+        # Act
+        self.matching_engine.process_quote_tick(mismatched)
+
+        # Assert
+        assert self.matching_engine.best_bid_price() == bid_before
+        assert self.matching_engine.best_ask_price() == ask_before
+        assert self.clock.timestamp_ns() == 1
+
+    def test_process_order_book_deltas_with_precision_mismatch_skips_batch(self) -> None:
+        # Arrange
+        matching_engine_l2 = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L2_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        deltas = OrderBookDeltas(
+            instrument_id=self.instrument.id,
+            deltas=[
+                OrderBookDelta(
+                    instrument_id=self.instrument.id,
+                    action=BookAction.ADD,
+                    order=BookOrder(
+                        side=OrderSide.BUY,
+                        price=Price.from_str("1000.001"),  # precision=3, expects 2
+                        size=Quantity.from_str("1.000"),
+                        order_id=1,
+                    ),
+                    flags=0,
+                    sequence=1,
+                    ts_event=10,
+                    ts_init=10,
+                ),
+            ],
+        )
+
+        # Act
+        matching_engine_l2.process_order_book_deltas(deltas)
+
+        # Assert
+        assert matching_engine_l2.best_bid_price() is None
+        assert matching_engine_l2.best_ask_price() is None
+        assert self.clock.timestamp_ns() == 0
+
+    def test_process_order_book_depth10_with_precision_mismatch_skips_snapshot(self) -> None:
+        # Arrange
+        matching_engine_l2 = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L2_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        depth = OrderBookDepth10(
+            instrument_id=self.instrument.id,
+            bids=[
+                BookOrder(
+                    side=OrderSide.BUY,
+                    price=Price.from_str("1000.001"),  # precision=3, expects 2
+                    size=Quantity.from_str("1.000"),
+                    order_id=1,
+                ),
+            ],
+            asks=[
+                BookOrder(
+                    side=OrderSide.SELL,
+                    price=Price.from_str("1000.01"),
+                    size=Quantity.from_str("1.000"),
+                    order_id=2,
+                ),
+            ],
+            bid_counts=[1],
+            ask_counts=[1],
+            flags=0,
+            sequence=1,
+            ts_event=11,
+            ts_init=11,
+        )
+
+        # Act
+        matching_engine_l2.process_order_book_depth10(depth)
+
+        # Assert
+        assert matching_engine_l2.best_bid_price() is None
+        assert matching_engine_l2.best_ask_price() is None
+        assert self.clock.timestamp_ns() == 0
 
     def test_process_market_on_close_order(self) -> None:
         order: MarketOrder = TestExecStubs.market_order(
@@ -4066,6 +4268,63 @@ def test_update_instrument_propagates_precision_only_change() -> None:
     assert rejected is not None
     assert "bid=1000.000" in rejected.reason
     assert "ask=1000.010" in rejected.reason
+
+
+def test_update_instrument_clears_stale_core_market_state_before_new_quote() -> None:
+    # Arrange
+    clock = TestClock()
+    account_id = TestIdStubs.account_id()
+    msgbus = MessageBus(trader_id=TestIdStubs.trader_id(), clock=clock)
+    instrument = _ETHUSDT_PERP_BINANCE
+    cache = TestComponentStubs.cache()
+    cache.add_instrument(instrument)
+
+    matching_engine = OrderMatchingEngine(
+        instrument=instrument,
+        raw_id=0,
+        fill_model=FillModel(),
+        fee_model=MakerTakerFeeModel(),
+        book_type=BookType.L1_MBP,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        reject_stop_orders=True,
+        trade_execution=True,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+    exec_messages: list[Any] = []
+    msgbus.register("ExecEngine.process", lambda x: exec_messages.append(x))
+
+    matching_engine.process_quote_tick(
+        TestDataStubs.quote_tick(
+            instrument=instrument,
+            bid_price=1000.00,
+            ask_price=1000.01,
+            ts_event=0,
+            ts_init=0,
+        ),
+    )
+
+    repriced = _ethusdt_perp_binance_with_tick(price_precision=3, increment="0.001")
+    cache.add_instrument(repriced)
+
+    # Act: update instrument then submit post-only order before any new quote
+    matching_engine.update_instrument(repriced)
+    post_only = TestExecStubs.limit_order(
+        instrument=repriced,
+        order_side=OrderSide.BUY,
+        price=repriced.make_price(1000.010),
+        post_only=True,
+        client_order_id=ClientOrderId("O-CLEAR-CORE"),
+    )
+    matching_engine.process_order(post_only, account_id)
+
+    # Assert: order is not rejected against stale pre-update quote context
+    accepted = next((m for m in exec_messages if isinstance(m, OrderAccepted)), None)
+    rejected = next((m for m in exec_messages if isinstance(m, OrderRejected)), None)
+    assert accepted is not None
+    assert rejected is None
 
 
 def _create_bar_execution_matching_engine() -> OrderMatchingEngine:
