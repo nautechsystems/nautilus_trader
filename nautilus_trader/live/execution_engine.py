@@ -96,6 +96,9 @@ from nautilus_trader.model.orders import OrderUnpacker
 from nautilus_trader.model.position import Position
 
 
+PositionReportKey = tuple[InstrumentId, AccountId]
+
+
 class LiveExecutionEngine(ExecutionEngine):
     """
     Provides a high-performance asynchronous live execution engine.
@@ -807,17 +810,18 @@ class LiveExecutionEngine(ExecutionEngine):
                 p for p in open_positions if p.instrument_id in self.reconciliation_instrument_ids
             ]
 
-        # Group positions by instrument_id (for netting)
-        positions_by_instrument: dict[InstrumentId, list[Position]] = {}
+        positions_by_key: dict[PositionReportKey, list[Position]] = {}
 
         for position in open_positions:
-            if position.instrument_id not in positions_by_instrument:
-                positions_by_instrument[position.instrument_id] = []
+            position_key = (position.instrument_id, position.account_id)
+            if position_key not in positions_by_key:
+                positions_by_key[position_key] = []
 
-            positions_by_instrument[position.instrument_id].append(position)
+            positions_by_key[position_key].append(position)
 
         self._log.debug(
-            f"Found {len(positions_by_instrument)} unique instrument(s) with open positions",
+            f"Found {len(positions_by_key)} unique instrument/account combination(s) "
+            "with open positions",
         )
 
         if not self._clients:
@@ -827,25 +831,27 @@ class LiveExecutionEngine(ExecutionEngine):
         venue_positions, failed_position_report_venues = await self._query_position_status_reports()
 
         await self._process_cached_position_discrepancies(
-            positions_by_instrument,
+            positions_by_key,
             venue_positions,
             failed_position_report_venues,
         )
 
         await self._process_venue_reported_positions(
-            positions_by_instrument,
+            positions_by_key,
             venue_positions,
         )
 
         # Prune retry counters for instruments no longer actively discrepant
-        active_instruments = set(positions_by_instrument) | set(venue_positions)
+        active_instruments = {key[0] for key in positions_by_key} | {
+            key[0] for key in venue_positions
+        }
         stale = [iid for iid in self._position_recon_retries if iid not in active_instruments]
         for iid in stale:
             self._position_recon_retries.pop(iid, None)
 
     async def _query_position_status_reports(
         self,
-    ) -> tuple[dict[InstrumentId, PositionStatusReport], set[Venue | None]]:
+    ) -> tuple[dict[PositionReportKey, PositionStatusReport], set[Venue | None]]:
         clients = list(self._clients.values())
 
         tasks = [
@@ -868,8 +874,7 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.error(f"Failed to gather position status reports: {e}")
             return {}, {client.venue for client in clients}
 
-        # Build mapping: instrument_id -> venue report
-        venue_positions: dict[InstrumentId, PositionStatusReport] = {}
+        venue_positions: dict[PositionReportKey, PositionStatusReport] = {}
         failed_venues: set[Venue | None] = set()
 
         for client, reports_or_exception in zip(clients, position_reports_all, strict=True):
@@ -883,20 +888,20 @@ class LiveExecutionEngine(ExecutionEngine):
 
             reports = cast("list[PositionStatusReport]", reports_or_exception)
             for report in reports:
-                venue_positions[report.instrument_id] = report
+                venue_positions[(report.instrument_id, report.account_id)] = report
 
         return venue_positions, failed_venues
 
     async def _process_cached_position_discrepancies(
         self,
-        positions_by_instrument: dict[InstrumentId, list[Position]],
-        venue_positions: dict[InstrumentId, PositionStatusReport],
+        positions_by_key: dict[PositionReportKey, list[Position]],
+        venue_positions: dict[PositionReportKey, PositionStatusReport],
         failed_position_report_venues: set[Venue | None] | None = None,
     ) -> None:
         clients = self._clients.values()
 
-        for instrument_id, cached_positions in positions_by_instrument.items():
-            venue_report = venue_positions.get(instrument_id)
+        for (instrument_id, account_id), cached_positions in positions_by_key.items():
+            venue_report = venue_positions.get((instrument_id, account_id))
 
             if venue_report is None and self._did_position_status_query_fail(
                 instrument_id,
@@ -950,7 +955,10 @@ class LiveExecutionEngine(ExecutionEngine):
             await self._reconcile_missing_fills(missing_fills, instrument_id)
 
             # Re-read positions from cache (may have changed during reconciliation)
-            current_positions = self._cache.positions_open(instrument_id=instrument_id)
+            current_positions = self._cache.positions_open(
+                instrument_id=instrument_id,
+                account_id=account_id,
+            )
             still_discrepant = self._check_position_discrepancy(
                 current_positions,
                 venue_report,
@@ -968,7 +976,10 @@ class LiveExecutionEngine(ExecutionEngine):
                     and self.generate_missing_orders
                     and self._reconcile_position_report(reconciliation_report)
                 ):
-                    current_positions = self._cache.positions_open(instrument_id=instrument_id)
+                    current_positions = self._cache.positions_open(
+                        instrument_id=instrument_id,
+                        account_id=account_id,
+                    )
                     still_discrepant = self._check_position_discrepancy(
                         current_positions,
                         venue_report,
@@ -1089,13 +1100,13 @@ class LiveExecutionEngine(ExecutionEngine):
 
     async def _process_venue_reported_positions(
         self,
-        positions_by_instrument: dict[InstrumentId, list[Position]],
-        venue_positions: dict[InstrumentId, PositionStatusReport],
+        positions_by_key: dict[PositionReportKey, list[Position]],
+        venue_positions: dict[PositionReportKey, PositionStatusReport],
     ) -> None:
         clients = self._clients.values()
 
-        for instrument_id, venue_report in venue_positions.items():
-            if instrument_id in positions_by_instrument:
+        for (instrument_id, account_id), venue_report in venue_positions.items():
+            if (instrument_id, account_id) in positions_by_key:
                 continue  # Already checked above
 
             # Apply instrument filter
@@ -1139,7 +1150,10 @@ class LiveExecutionEngine(ExecutionEngine):
             await self._reconcile_missing_fills(missing_fills, instrument_id)
 
             # Re-check using tolerance-aware comparison
-            cached_after = self._cache.positions_open(instrument_id=instrument_id)
+            cached_after = self._cache.positions_open(
+                instrument_id=instrument_id,
+                account_id=account_id,
+            )
             still_discrepant = self._check_position_discrepancy(
                 cached_after,
                 venue_report,
@@ -2456,6 +2470,7 @@ class LiveExecutionEngine(ExecutionEngine):
         positions_open: list[Position] = self._cache.positions_open(
             venue=None,  # Faster query filtering
             instrument_id=report.instrument_id,
+            account_id=report.account_id,
         )
 
         position_signed_decimal_qty: Decimal = Decimal()
