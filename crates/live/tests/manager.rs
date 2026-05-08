@@ -159,6 +159,26 @@ impl TestContext {
             .order(client_order_id)
             .map(|o| o.clone())
     }
+
+    fn add_margin_account(&self, account_id: AccountId) {
+        let account_state = AccountState::new(
+            account_id,
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                Money::from("1000000 USDT"),
+                Money::from("0 USDT"),
+                Money::from("1000000 USDT"),
+            )],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(Currency::USDT()),
+        );
+        let account = AccountAny::Margin(MarginAccount::new(account_state, true));
+        self.cache.borrow_mut().add_account(account).unwrap();
+    }
 }
 
 fn test_instrument() -> InstrumentAny {
@@ -3517,6 +3537,17 @@ fn create_test_position(
     qty: &str,
     price: &str,
 ) -> Position {
+    create_test_position_for_account(instrument, position_id, side, qty, price, test_account_id())
+}
+
+fn create_test_position_for_account(
+    instrument: &InstrumentAny,
+    position_id: PositionId,
+    side: OrderSide,
+    qty: &str,
+    price: &str,
+    account_id: AccountId,
+) -> Position {
     let order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument.id())
         .side(side)
@@ -3533,7 +3564,7 @@ fn create_test_position(
         None,
         None,
         None,
-        Some(test_account_id()),
+        Some(account_id),
     );
 
     let order_filled: OrderFilled = fill.into();
@@ -7448,5 +7479,291 @@ async fn test_position_check_nonflat_venue_report_protects_counter() {
     assert!(
         events.is_empty(),
         "Expected no events: non-flat venue report should protect retry counter"
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_retries_independent_per_account() {
+    // Two accounts on the same instrument must track their reconciliation
+    // retry counters independently. With instrument-only keying, account A's
+    // increment would suppress account B's first attempt entirely.
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+
+    let account_a = AccountId::from("BINANCE-A");
+    let account_b = AccountId::from("BINANCE-B");
+
+    ctx.add_margin_account(account_a);
+    ctx.add_margin_account(account_b);
+    // Instrument deliberately omitted from cache: forces the failed-retry
+    // path so each iteration that reaches it bumps the per-key counter.
+
+    let pos_a = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-RETRY-A"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        account_a,
+    );
+    let pos_b = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-RETRY-B"),
+        OrderSide::Buy,
+        "3.0",
+        "3100.00",
+        account_b,
+    );
+    ctx.add_position(&pos_a);
+    ctx.add_position(&pos_b);
+
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    ctx.manager.check_positions_consistency(&clients).await;
+
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_a)),
+        1,
+        "account A retry not incremented",
+    );
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_b)),
+        1,
+        "account B retry not incremented (would be 0 if dedup collapsed by instrument)",
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_activity_throttle_independent_per_account() {
+    // Recent activity recorded for one account on an instrument must not
+    // throttle reconciliation for another account on the same instrument.
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 60_000_000_000, // 60s
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+
+    let account_a = AccountId::from("BINANCE-A");
+    let account_b = AccountId::from("BINANCE-B");
+
+    ctx.add_margin_account(account_a);
+    ctx.add_margin_account(account_b);
+    ctx.add_instrument(instrument.clone());
+
+    let pos_b = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-ACT-B"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        account_b,
+    );
+    ctx.add_position(&pos_b);
+
+    // Simulate recent activity on account A only: B must remain unthrottled.
+    let ts_now = ctx.clock.borrow().get_time_ns();
+    ctx.manager
+        .record_position_activity(instrument_id, account_a, ts_now);
+
+    // No venue report for B: treated as flat, so a discrepancy.
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    let mut accounts_with_filled: HashSet<AccountId> = HashSet::new();
+
+    for event in &events {
+        if let OrderEventAny::Filled(fill) = event {
+            accounts_with_filled.insert(fill.account_id);
+        }
+    }
+
+    assert!(
+        accounts_with_filled.contains(&account_b),
+        "B's reconciliation must not be throttled by activity recorded for A",
+    );
+}
+
+#[tokio::test]
+async fn test_check_positions_consistency_processes_only_discrepant_account() {
+    // With cache and venue agreeing on account A and disagreeing on account B,
+    // only B should be reconciled. A must remain untouched.
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+
+    let account_a = AccountId::from("BINANCE-A");
+    let account_b = AccountId::from("BINANCE-B");
+
+    ctx.add_margin_account(account_a);
+    ctx.add_margin_account(account_b);
+    ctx.add_instrument(instrument.clone());
+
+    let pos_a = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-E2E-A"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        account_a,
+    );
+    let pos_b = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-E2E-B"),
+        OrderSide::Buy,
+        "3.0",
+        "3100.00",
+        account_b,
+    );
+    ctx.add_position(&pos_a);
+    ctx.add_position(&pos_b);
+
+    // Venue agrees with A; B has no report, so B is discrepant against flat.
+    let report_a = PositionStatusReport::new(
+        account_a,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![report_a]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    let mut accounts_with_filled: HashSet<AccountId> = HashSet::new();
+
+    for event in &events {
+        if let OrderEventAny::Filled(fill) = event {
+            accounts_with_filled.insert(fill.account_id);
+        }
+    }
+
+    assert!(
+        accounts_with_filled.contains(&account_b),
+        "expected reconciliation events for the discrepant account B",
+    );
+    assert!(
+        !accounts_with_filled.contains(&account_a),
+        "account A is not discrepant and must not be reconciled",
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_stale_retries_pruned_per_account() {
+    // Mixed staleness across accounts on the same instrument: only the closed
+    // account's retry counter should be pruned. The active account's counter
+    // must be retained.
+    let config = ExecutionManagerConfig {
+        position_check_retries: 5,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+
+    let account_a = AccountId::from("BINANCE-A");
+    let account_b = AccountId::from("BINANCE-B");
+
+    ctx.add_margin_account(account_a);
+    ctx.add_margin_account(account_b);
+    // Instrument deliberately omitted from cache: forces the failed-retry path.
+
+    let pos_a = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-STALE-A"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        account_a,
+    );
+    let pos_b = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-STALE-B"),
+        OrderSide::Buy,
+        "3.0",
+        "3100.00",
+        account_b,
+    );
+    ctx.add_position(&pos_a);
+    ctx.add_position(&pos_b);
+
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    // Cycle 1: both keys reach the failed-retry path, so counters land at 1 each.
+    ctx.manager.check_positions_consistency(&clients).await;
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_a)),
+        1,
+    );
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_b)),
+        1,
+    );
+
+    // Close account B's position so it disappears from open_positions.
+    let close_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("3.0"))
+        .build();
+    let close_fill = TestOrderEventStubs::filled(
+        &close_order,
+        &instrument,
+        Some(TradeId::new("T-CLOSE-B")),
+        Some(PositionId::from("P-STALE-B")),
+        Some(Price::from("3100.00")),
+        Some(Quantity::from("3.0")),
+        None,
+        None,
+        None,
+        Some(account_b),
+    );
+    let close_filled: OrderFilled = close_fill.into();
+    let mut pos_b = pos_b;
+    pos_b.apply(&close_filled);
+    ctx.cache.borrow_mut().update_position(&pos_b).unwrap();
+
+    // Cycle 2: A still active and discrepant, so its counter increments;
+    // B's position is closed and venue reports nothing, so its counter is pruned.
+    ctx.manager.check_positions_consistency(&clients).await;
+
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_a)),
+        2,
+        "account A's counter must be retained while it remains active",
+    );
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_b)),
+        0,
+        "account B's counter must be pruned once its position is closed",
     );
 }

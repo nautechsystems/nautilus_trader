@@ -81,12 +81,16 @@ Released on TBD (UTC).
 - Fixed reconciliation drift when a venue snapshot carries both a fill mismatch and a quantity/price amendment (Rust)
 - Fixed reconciliation premature `OrderUpdated` emission for pending venue states before venue confirmation (Rust)
 - Fixed reconciliation missing `MarketIfTouched`/`LimitIfTouched` price and trigger drift detection (Rust)
+- Fixed live position reconciliation conflating positions across accounts (#4029), thanks @faysou
+- Fixed live position reconciliation retry/throttle leaking across accounts on the same instrument (Python and Rust)
+- Fixed live position reconciliation collapsing multi-account positions on the same instrument (Rust)
 - Fixed `Strategy`/`Actor` clock callback leak on dispose (#3967), thanks for reporting @frslvr
 - Fixed `Strategy` pending cancel and pending update events before order commands (Rust)
 - Fixed `Strategy` submit methods to publish `OrderInitialized` before cache updates (Rust)
 - Fixed `ExecTester` LIT pricing direction so reconciled BUY/SELL LIT orders satisfy the `trigger_price` invariant
 - Fixed wrangler v2 timestamp resolution to force nanoseconds before the int64 cast for pandas 3 compatibility (#3970), thanks @gzenz
 - Fixed custom data parquet schema registration and multi-file query (#4021), thanks @faysou
+- Fixed SQL `ParserError` for symbols containing ampersand (#4025), thanks @arpankapoor
 - Fixed Binance Futures reduce-only orders not reconciling venue-side quantity reductions (Python and Rust) (#3983), thanks for reporting @KaizynX
 - Fixed Binance WebSocket pong unhandled `RuntimeError` blocking reconnect after server close (#4020), thanks for reporting @M-at-ti-a
 - Fixed Betfair Rust adapter dropped fills on reconnect by resyncing the fill tracker from cache
