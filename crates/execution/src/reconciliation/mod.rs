@@ -21,8 +21,10 @@
 //!
 //! Public entry points:
 //! - [`process_mass_status_for_reconciliation`] - partial-window fill reconstruction
-//! - [`reconcile_order_report`] - bring a cached order into line with a venue report
+//! - [`generate_reconciliation_order_events`] - venue-temporal event sequence for a report
+//! - [`reconcile_order_report`] - core order-state reconciliation
 //! - [`reconcile_fill_report`] - apply a venue fill to a cached order, with dedup
+//! - [`generate_external_order_status_events`] - synthesize events for an external order
 //! - [`check_position_reconciliation`] - final qty and avg-px tolerance check
 //!
 //! Invariants maintained across all paths:
@@ -46,19 +48,15 @@ mod tests;
 
 pub use ids::{
     create_inferred_reconciliation_trade_id, create_position_reconciliation_venue_order_id,
-    create_synthetic_trade_id, create_synthetic_venue_order_id,
 };
 pub use orders::{
-    create_incremental_inferred_fill, create_inferred_fill, create_inferred_fill_for_qty,
-    create_reconciliation_accepted, create_reconciliation_canceled, create_reconciliation_expired,
-    create_reconciliation_rejected, create_reconciliation_triggered, create_reconciliation_updated,
-    generate_external_order_status_events, generate_reconciliation_order_events,
-    reconcile_fill_report, reconcile_order_report, should_reconciliation_update,
+    create_incremental_inferred_fill, create_inferred_fill_for_qty, create_reconciliation_rejected,
+    create_reconciliation_triggered, generate_external_order_status_events,
+    generate_reconciliation_order_events, reconcile_fill_report, reconcile_order_report,
+    should_reconciliation_update,
 };
 pub use positions::{
-    adjust_fills_for_partial_window, calculate_reconciliation_price, check_position_match,
-    check_position_reconciliation, create_synthetic_fill_report, create_synthetic_order_report,
-    detect_zero_crossings, is_within_single_unit_tolerance, process_mass_status_for_reconciliation,
-    simulate_position,
+    calculate_reconciliation_price, check_position_reconciliation,
+    process_mass_status_for_reconciliation,
 };
-pub use types::{FillAdjustmentResult, FillSnapshot, ReconciliationResult, VenuePositionSnapshot};
+pub use types::ReconciliationResult;

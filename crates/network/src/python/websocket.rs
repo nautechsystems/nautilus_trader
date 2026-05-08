@@ -389,11 +389,6 @@ impl WebSocketClient {
     }
 
     /// Sends a pong frame back to the server.
-    ///
-    /// Silently drops the pong when the connection is no longer active.
-    /// The reconnect path is owned by the controller's liveness watchdog,
-    /// so racing a pong against a transition out of `Active` is benign and
-    /// gives the caller nothing to act on.
     #[pyo3(name = "send_pong")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_send_pong<'py>(

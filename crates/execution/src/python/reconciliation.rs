@@ -35,22 +35,20 @@ use crate::reconciliation::{
     create_position_reconciliation_venue_order_id, process_mass_status_for_reconciliation,
 };
 
-/// Process mass status for position reconciliation.
+/// Process fill reports from a mass status for position reconciliation.
 ///
-/// Takes `ExecutionMassStatus` and `Instrument`, performs all reconciliation logic in Rust,
-/// and returns tuple of (`order_reports`, `fill_reports`) ready for processing.
-///
-/// # Returns
-///
-/// Tuple of `(Dict[str, OrderStatusReport], Dict[str, List[FillReport]])`
+/// This is the main entry point for position reconciliation. It:
+/// 1. Extracts fills and position for the given instrument
+/// 2. Detects position discrepancies
+/// 3. Returns adjusted order/fill reports ready for processing
 ///
 /// # Errors
 ///
 /// Returns an error if instrument conversion or reconciliation fails.
-#[pyfunction(name = "adjust_fills_for_partial_window")]
+#[pyfunction(name = "process_mass_status_for_reconciliation")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]
 #[pyo3(signature = (mass_status, instrument, tolerance=None))]
-pub fn py_adjust_fills_for_partial_window(
+pub fn py_process_mass_status_for_reconciliation(
     py: Python<'_>,
     mass_status: &Bound<'_, PyAny>,
     instrument: Py<PyAny>,

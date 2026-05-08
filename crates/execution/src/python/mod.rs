@@ -31,7 +31,7 @@ use pyo3::prelude::*;
 #[pymodule]
 pub fn execution(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(
-        reconciliation::py_adjust_fills_for_partial_window,
+        reconciliation::py_process_mass_status_for_reconciliation,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(

@@ -23,10 +23,10 @@ __all__ = [
     "ThreeTierFillModel",
     "TwoTierFillModel",
     "VolumeSensitiveFillModel",
-    "adjust_fills_for_partial_window",
     "calculate_reconciliation_price",
     "create_inferred_reconciliation_trade_id",
     "create_position_reconciliation_venue_order_id",
+    "process_mass_status_for_reconciliation",
 ]
 
 @typing.final
@@ -166,9 +166,6 @@ class VolumeSensitiveFillModel:
         self, prob_fill_on_limit: float, prob_slippage: float, random_seed: int | None = ...
     ) -> None: ...
 
-def adjust_fills_for_partial_window(
-    mass_status: typing.Any, instrument: typing.Any, tolerance: str | None = None
-) -> tuple: ...
 def calculate_reconciliation_price(
     current_position_qty: decimal.Decimal,
     current_position_avg_px: decimal.Decimal | None,
@@ -199,3 +196,6 @@ def create_position_reconciliation_venue_order_id(
     ts_last: int = 0,
     tag: str | None = None,
 ) -> model.VenueOrderId: ...
+def process_mass_status_for_reconciliation(
+    mass_status: typing.Any, instrument: typing.Any, tolerance: str | None = None
+) -> tuple: ...
