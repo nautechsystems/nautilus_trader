@@ -489,7 +489,8 @@ class PolymarketDataClient(LiveMarketDataClient):
             else:
                 self._handle_ws_message(msg)
         except Exception as e:
-            self._log.exception(f"Failed to parse websocket message: {raw.decode()} with error", e)
+            raw_text = raw.decode(errors="replace")
+            self._log.exception(f"Failed to parse websocket message: {raw_text}", e)
 
     def _handle_ws_message(self, msg: Any) -> None:
         if isinstance(msg, PolymarketQuotes):
