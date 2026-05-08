@@ -1349,10 +1349,6 @@ impl OrderMatchingEngine {
     }
 
     /// Processes a quote tick to update the market state.
-    ///
-    /// # Panics
-    ///
-    /// - If updating the order book with the quote tick fails.
     pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
         log::debug!("Processing {quote}");
 
@@ -1404,7 +1400,10 @@ impl OrderMatchingEngine {
                 self.prev_ask_size_raw = quote.ask_size.raw;
                 self.tob_initialized = true;
             }
-            self.book.update_quote_tick(quote).unwrap();
+
+            if !self.update_quote_tick_or_skip(quote, "quote tick") {
+                return;
+            }
             self.last_quote_bid = Some(quote.bid_price);
             self.last_quote_ask = Some(quote.ask_price);
         }
@@ -1532,13 +1531,19 @@ impl OrderMatchingEngine {
         // Open: fill at market price (gap from previous bar)
         if !self.core.is_last_initialized {
             self.fill_at_market = true;
-            self.book.update_trade_tick(&trade_tick).unwrap();
+
+            if !self.update_trade_tick_or_skip(&trade_tick, "bar open trade tick") {
+                return;
+            }
             self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
             self.core.set_last_raw(trade_tick.price);
         } else if self.core.last.is_some_and(|last| bar.open != last) {
             // Gap between previous close and this bar's open
             self.fill_at_market = true;
-            self.book.update_trade_tick(&trade_tick).unwrap();
+
+            if !self.update_trade_tick_or_skip(&trade_tick, "bar gap-open trade tick") {
+                return;
+            }
             self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
             self.core.set_last_raw(trade_tick.price);
         }
@@ -1569,7 +1574,9 @@ impl OrderMatchingEngine {
             }
             trade_tick.trade_id = self.ids_generator.generate_trade_id(trade_tick.ts_init);
 
-            self.book.update_trade_tick(&trade_tick).unwrap();
+            if !self.update_trade_tick_or_skip(&trade_tick, "bar close trade tick") {
+                return;
+            }
             self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
 
             self.core.set_last_raw(trade_tick.price);
@@ -1585,7 +1592,9 @@ impl OrderMatchingEngine {
             trade_tick.aggressor_side = AggressorSide::Buyer;
             trade_tick.trade_id = self.ids_generator.generate_trade_id(trade_tick.ts_init);
 
-            self.book.update_trade_tick(trade_tick).unwrap();
+            if !self.update_trade_tick_or_skip(trade_tick, "bar high trade tick") {
+                return;
+            }
             self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
 
             self.core.set_last_raw(trade_tick.price);
@@ -1599,7 +1608,9 @@ impl OrderMatchingEngine {
             trade_tick.aggressor_side = AggressorSide::Seller;
             trade_tick.trade_id = self.ids_generator.generate_trade_id(trade_tick.ts_init);
 
-            self.book.update_trade_tick(trade_tick).unwrap();
+            if !self.update_trade_tick_or_skip(trade_tick, "bar low trade tick") {
+                return;
+            }
             self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
 
             self.core.set_last_raw(trade_tick.price);
@@ -1641,21 +1652,28 @@ impl OrderMatchingEngine {
 
         // Open: fill at market price (gap from previous bar)
         self.fill_at_market = true;
-        self.book.update_quote_tick(&quote_tick).unwrap();
+
+        if !self.update_quote_tick_or_skip(&quote_tick, "bar open quote tick") {
+            return;
+        }
         self.iterate(quote_tick.ts_init, AggressorSide::NoAggressor);
 
         // High: fill at trigger price (market moving through prices)
         self.fill_at_market = false;
         quote_tick.bid_price = bid_bar.high;
         quote_tick.ask_price = ask_bar.high;
-        self.book.update_quote_tick(&quote_tick).unwrap();
+        if !self.update_quote_tick_or_skip(&quote_tick, "bar high quote tick") {
+            return;
+        }
         self.iterate(quote_tick.ts_init, AggressorSide::NoAggressor);
 
         // Low: fill at trigger price (market moving through prices)
         self.fill_at_market = false;
         quote_tick.bid_price = bid_bar.low;
         quote_tick.ask_price = ask_bar.low;
-        self.book.update_quote_tick(&quote_tick).unwrap();
+        if !self.update_quote_tick_or_skip(&quote_tick, "bar low quote tick") {
+            return;
+        }
         self.iterate(quote_tick.ts_init, AggressorSide::NoAggressor);
 
         // Close: fill at trigger price (market moving through prices)
@@ -1664,7 +1682,9 @@ impl OrderMatchingEngine {
         quote_tick.ask_price = ask_bar.close;
         quote_tick.bid_size = bid_close_size;
         quote_tick.ask_size = ask_close_size;
-        self.book.update_quote_tick(&quote_tick).unwrap();
+        if !self.update_quote_tick_or_skip(&quote_tick, "bar close quote tick") {
+            return;
+        }
         self.last_quote_bid = Some(bid_bar.close);
         self.last_quote_ask = Some(ask_bar.close);
         self.iterate(quote_tick.ts_init, AggressorSide::NoAggressor);
@@ -1674,16 +1694,36 @@ impl OrderMatchingEngine {
         self.fill_at_market = true;
     }
 
+    fn update_quote_tick_or_skip(&mut self, quote: &QuoteTick, context: &str) -> bool {
+        if let Err(e) = self.book.update_quote_tick(quote) {
+            log::warn!(
+                "Skipping {context} for {}: update_quote_tick failed: {e}",
+                quote.instrument_id,
+            );
+            self.iterate(quote.ts_init, AggressorSide::NoAggressor);
+            return false;
+        }
+        true
+    }
+
+    fn update_trade_tick_or_skip(&mut self, trade: &TradeTick, context: &str) -> bool {
+        if let Err(e) = self.book.update_trade_tick(trade) {
+            log::warn!(
+                "Skipping {context} for {}: update_trade_tick failed: {e}",
+                trade.instrument_id,
+            );
+            self.iterate(trade.ts_init, AggressorSide::NoAggressor);
+            return false;
+        }
+        true
+    }
+
     /// Processes a trade tick to update the market state.
     ///
     /// For L1 books, always updates the order book with the trade tick to maintain
     /// market state. When `trade_execution` is disabled, order matching and maintenance
     /// operations (GTD order expiry, trailing stop activation, instrument expiration)
     /// are skipped. These maintenance operations will run on the next quote tick or bar.
-    ///
-    /// # Panics
-    ///
-    /// - If updating the order book with the trade tick fails.
     pub fn process_trade_tick(&mut self, trade: &TradeTick) {
         log::debug!("Processing {trade}");
 
@@ -1714,7 +1754,9 @@ impl OrderMatchingEngine {
                 return;
             }
 
-            self.book.update_trade_tick(trade).unwrap();
+            if !self.update_trade_tick_or_skip(trade, "trade tick") {
+                return;
+            }
         }
 
         self.core.set_last_raw(trade.price);
