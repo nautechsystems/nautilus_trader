@@ -21,6 +21,7 @@ use std::{
 use anyhow::Context;
 use nautilus_binance::{
     common::{
+        consts::BINANCE_CLIENT_ID,
         credential::resolve_credentials,
         enums::{BinanceEnvironment, BinanceFuturesOrderType, BinanceProductType},
         symbol::format_binance_symbol,
@@ -37,7 +38,7 @@ use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_live::node::{LiveNode, LiveNodeHandle};
 use nautilus_model::{
     enums::{OrderType, TrailingOffsetType, TriggerType},
-    identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
+    identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
@@ -52,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BINANCE-FUTURES-001");
     let node_name = "BINANCE-FUTURES-TRAILING-STOP-TESTER-001".to_string();
-    let client_id = ClientId::new("BINANCE");
+    let client_id = *BINANCE_CLIENT_ID;
     let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
     let product_type = BinanceProductType::UsdM;
     let order_qty = Quantity::from("0.001");

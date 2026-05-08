@@ -23,13 +23,14 @@
 
 use nautilus_common::enums::Environment;
 use nautilus_kraken::{
-    common::enums::KrakenProductType, config::KrakenDataClientConfig,
+    common::{consts::KRAKEN_CLIENT_ID, enums::KrakenProductType},
+    config::KrakenDataClientConfig,
     factories::KrakenDataClientFactory,
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::bar::BarType,
-    identifiers::{ClientId, InstrumentId, TraderId},
+    identifiers::{InstrumentId, TraderId},
     stubs::TestDefault,
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
@@ -78,7 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let environment = Environment::Live;
     let trader_id = TraderId::test_default();
     let node_name = "KRAKEN-TESTER-001".to_string();
-    let client_id = ClientId::new("KRAKEN");
+    let client_id = *KRAKEN_CLIENT_ID;
 
     let kraken_config = KrakenDataClientConfig {
         api_key: None,    // Will use 'KRAKEN_API_KEY' env var if available

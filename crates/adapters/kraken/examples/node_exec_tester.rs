@@ -23,13 +23,13 @@
 
 use nautilus_common::enums::Environment;
 use nautilus_kraken::{
-    common::{credential::KrakenCredential, enums::KrakenProductType},
+    common::{consts::KRAKEN_CLIENT_ID, credential::KrakenCredential, enums::KrakenProductType},
     config::{KrakenDataClientConfig, KrakenExecClientConfig},
     factories::{KrakenDataClientFactory, KrakenExecutionClientFactory},
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
+    identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("KRAKEN-001");
     let node_name = "KRAKEN-EXEC-TESTER-001".to_string();
-    let client_id = ClientId::new("KRAKEN");
+    let client_id = *KRAKEN_CLIENT_ID;
 
     let credential = match product_type {
         KrakenProductType::Spot => KrakenCredential::resolve_spot(None, None),

@@ -18,7 +18,7 @@
 use std::{num::NonZeroU32, sync::LazyLock};
 
 use ahash::AHashSet;
-use nautilus_model::identifiers::Venue;
+use nautilus_model::identifiers::{ClientId, Venue};
 use nautilus_network::ratelimiter::quota::Quota;
 use ustr::Ustr;
 
@@ -27,6 +27,10 @@ pub const DERIBIT: &str = "DERIBIT";
 
 /// Static venue instance.
 pub static DERIBIT_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(DERIBIT)));
+
+/// Static client ID instance.
+pub static DERIBIT_CLIENT_ID: LazyLock<ClientId> =
+    LazyLock::new(|| ClientId::new(Ustr::from(DERIBIT)));
 
 // Production URLs
 pub const DERIBIT_HTTP_URL: &str = "https://www.deribit.com";

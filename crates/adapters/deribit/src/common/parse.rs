@@ -785,7 +785,7 @@ pub fn bar_spec_to_resolution(bar_type: &BarType) -> String {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{identifiers::Venue, instruments::Instrument};
+    use nautilus_model::instruments::Instrument;
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
@@ -1281,7 +1281,7 @@ mod tests {
     }
 
     fn make_instrument_id(symbol: &str) -> InstrumentId {
-        InstrumentId::new(Symbol::from(symbol), Venue::from("DERIBIT"))
+        InstrumentId::new(Symbol::from(symbol), *DERIBIT_VENUE)
     }
 
     #[rstest]

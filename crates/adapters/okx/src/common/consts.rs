@@ -20,14 +20,20 @@ use std::sync::LazyLock;
 use ahash::AHashSet;
 use nautilus_model::{
     enums::{OrderType, TimeInForce},
-    identifiers::Venue,
+    identifiers::{ClientId, Venue},
 };
 use ustr::Ustr;
 
 use super::enums::OKXInstrumentType;
 
+/// Venue identifier string.
 pub const OKX: &str = "OKX";
+
+/// Static venue instance.
 pub static OKX_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(OKX)));
+
+/// Static client ID instance.
+pub static OKX_CLIENT_ID: LazyLock<ClientId> = LazyLock::new(|| ClientId::new(Ustr::from(OKX)));
 
 /// See <https://www.okx.com/docs-v5/en/#overview-broker-program> for further details.
 pub const OKX_NAUTILUS_BROKER_ID: &str = "5328c82e5542BCDE";

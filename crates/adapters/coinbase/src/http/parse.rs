@@ -1173,6 +1173,7 @@ mod tests {
     use super::*;
     use crate::{
         common::{
+            consts::COINBASE_VENUE,
             enums::{CoinbaseMarginLevel, CoinbaseMarginWindowType},
             testing::load_test_fixture,
         },
@@ -1180,7 +1181,7 @@ mod tests {
     };
 
     fn coinbase_venue() -> Venue {
-        Venue::new(Ustr::from("COINBASE"))
+        *COINBASE_VENUE
     }
 
     #[rstest]

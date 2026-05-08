@@ -20,7 +20,10 @@ mod common;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use nautilus_betfair::{
-    config::BetfairDataConfig, data::BetfairDataClient, provider::NavigationFilter,
+    common::consts::{BETFAIR_CLIENT_ID, BETFAIR_VENUE},
+    config::BetfairDataConfig,
+    data::BetfairDataClient,
+    provider::NavigationFilter,
 };
 use nautilus_common::{
     clients::DataClient,
@@ -32,7 +35,6 @@ use nautilus_core::UUID4;
 use nautilus_model::{
     data::Data,
     enums::{BookType, MarketStatusAction},
-    identifiers::{ClientId, Venue},
     types::Currency,
 };
 use rstest::rstest;
@@ -54,7 +56,7 @@ fn create_test_data_client(
     let currency = Currency::GBP();
 
     let client = BetfairDataClient::new(
-        ClientId::from("BETFAIR"),
+        *BETFAIR_CLIENT_ID,
         http_client,
         test_credential(),
         plain_stream_config(stream_port),
@@ -159,7 +161,7 @@ async fn test_data_client_subscribe_sends_market_subscription() {
         instrument_id,
         BookType::L2_MBP,
         None,
-        Some(Venue::from("BETFAIR")),
+        Some(*BETFAIR_VENUE),
         UUID4::new(),
         nautilus_core::UnixNanos::default(),
         None,
@@ -234,7 +236,7 @@ async fn test_data_client_deduplicates_same_market_subscription() {
         first_instrument_id,
         BookType::L2_MBP,
         None,
-        Some(Venue::from("BETFAIR")),
+        Some(*BETFAIR_VENUE),
         UUID4::new(),
         nautilus_core::UnixNanos::default(),
         None,
@@ -246,7 +248,7 @@ async fn test_data_client_deduplicates_same_market_subscription() {
         second_instrument_id,
         BookType::L2_MBP,
         None,
-        Some(Venue::from("BETFAIR")),
+        Some(*BETFAIR_VENUE),
         UUID4::new(),
         nautilus_core::UnixNanos::default(),
         None,

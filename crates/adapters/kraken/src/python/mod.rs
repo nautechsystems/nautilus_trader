@@ -26,7 +26,10 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
-    common::enums::{KrakenEnvironment, KrakenProductType},
+    common::{
+        consts::KRAKEN,
+        enums::{KrakenEnvironment, KrakenProductType},
+    },
     config::{KrakenDataClientConfig, KrakenExecClientConfig},
     factories::{KrakenDataClientFactory, KrakenExecutionClientFactory},
     http::{KrakenFuturesHttpClient, KrakenSpotHttpClient},
@@ -128,7 +131,7 @@ pub fn kraken(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let registry = get_global_pyo3_registry();
 
     if let Err(e) =
-        registry.register_factory_extractor("KRAKEN".to_string(), extract_kraken_data_factory)
+        registry.register_factory_extractor(KRAKEN.to_string(), extract_kraken_data_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Kraken data factory extractor: {e}"
@@ -136,7 +139,7 @@ pub fn kraken(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) =
-        registry.register_exec_factory_extractor("KRAKEN".to_string(), extract_kraken_exec_factory)
+        registry.register_exec_factory_extractor(KRAKEN.to_string(), extract_kraken_exec_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Kraken exec factory extractor: {e}"

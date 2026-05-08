@@ -520,7 +520,7 @@ fn parse_f64_price(
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        identifiers::{InstrumentId, Symbol, Venue},
+        identifiers::{InstrumentId, Symbol},
         instruments::CryptoPerpetual,
         types::currency::Currency,
     };
@@ -529,9 +529,12 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::enums::{
-            HyperliquidFillDirection, HyperliquidLiquidationMethod,
-            HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidSide,
+        common::{
+            consts::HYPERLIQUID_VENUE,
+            enums::{
+                HyperliquidFillDirection, HyperliquidLiquidationMethod,
+                HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidSide,
+            },
         },
         websocket::messages::{
             FillLiquidationData, PerpsAssetCtx, SharedAssetCtx, SpotAssetCtx, WsBasicOrderData,
@@ -540,7 +543,7 @@ mod tests {
     };
 
     fn create_test_instrument() -> InstrumentAny {
-        let instrument_id = InstrumentId::new(Symbol::new("BTC-PERP"), Venue::new("HYPERLIQUID"));
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-PERP"), *HYPERLIQUID_VENUE);
 
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
             instrument_id,

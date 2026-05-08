@@ -17,12 +17,20 @@
 
 use std::sync::LazyLock;
 
-use nautilus_model::identifiers::Venue;
+use nautilus_model::identifiers::{ClientId, Venue};
 use ustr::Ustr;
 
+/// Long-form venue identifier string.
 pub const INTERACTIVE_BROKERS: &str = "INTERACTIVE_BROKERS";
+
+/// Short-form venue identifier string used as the canonical venue and client ID.
 pub const IB: &str = "IB";
+
+/// Static venue instance.
 pub static IB_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(IB)));
+
+/// Static client ID instance.
+pub static IB_CLIENT_ID: LazyLock<ClientId> = LazyLock::new(|| ClientId::new(Ustr::from(IB)));
 
 /// Default host for IB Gateway/TWS.
 pub const DEFAULT_HOST: &str = "127.0.0.1";

@@ -912,7 +912,7 @@ mod tests {
     use ahash::{AHashMap, AHashSet};
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
-        identifiers::{InstrumentId, Symbol, Venue},
+        identifiers::{InstrumentId, Symbol},
         instruments::{CryptoPerpetual, InstrumentAny},
         types::{Currency, Price, Quantity},
     };
@@ -923,10 +923,11 @@ mod tests {
         super::messages::{NautilusWsMessage, WsBookData, WsLevelData},
         FeedHandler,
     };
+    use crate::common::consts::HYPERLIQUID_VENUE;
 
     fn btc_perp() -> InstrumentAny {
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            InstrumentId::new(Symbol::new("BTC-PERP"), Venue::new("HYPERLIQUID")),
+            InstrumentId::new(Symbol::new("BTC-PERP"), *HYPERLIQUID_VENUE),
             Symbol::new("BTC-PERP"),
             Currency::from("BTC"),
             Currency::from("USDC"),

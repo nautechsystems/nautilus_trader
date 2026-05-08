@@ -17,11 +17,17 @@
 
 use std::sync::LazyLock;
 
-use nautilus_model::identifiers::Venue;
+use nautilus_model::identifiers::{ClientId, Venue};
 use ustr::Ustr;
 
+/// Venue identifier string.
 pub const AX: &str = "AX";
+
+/// Static venue instance.
 pub static AX_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(AX)));
+
+/// Static client ID instance.
+pub static AX_CLIENT_ID: LazyLock<ClientId> = LazyLock::new(|| ClientId::new(Ustr::from(AX)));
 
 /// Order tag identifying orders placed by NautilusTrader.
 pub const AX_NAUTILUS_TAG: &str = "Nautilus";

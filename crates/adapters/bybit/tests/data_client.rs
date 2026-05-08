@@ -38,7 +38,10 @@ use axum::{
     routing::get,
 };
 use nautilus_bybit::{
-    common::enums::{BybitEnvironment, BybitProductType},
+    common::{
+        consts::{BYBIT_CLIENT_ID, BYBIT_VENUE},
+        enums::{BybitEnvironment, BybitProductType},
+    },
     config::BybitDataClientConfig,
     data::BybitDataClient,
 };
@@ -55,11 +58,7 @@ use nautilus_common::{
     testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_model::{
-    data::Data,
-    enums::BookType,
-    identifiers::{ClientId, InstrumentId, Venue},
-};
+use nautilus_model::{data::Data, enums::BookType, identifiers::InstrumentId};
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use serde_json::{Value, json};
@@ -405,7 +404,7 @@ async fn test_data_client_connect_disconnect() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
     assert!(!client.is_connected());
 
     client.connect().await.unwrap();
@@ -430,7 +429,7 @@ async fn test_data_client_subscribe_trades() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     wait_until_async(
@@ -444,7 +443,7 @@ async fn test_data_client_subscribe_trades() {
     let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
     let cmd = SubscribeTrades::new(
         instrument_id,
-        Some(ClientId::new("BYBIT")),
+        Some(*BYBIT_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -481,7 +480,7 @@ async fn test_data_client_subscribe_quotes_linear() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     wait_until_async(
@@ -496,7 +495,7 @@ async fn test_data_client_subscribe_quotes_linear() {
     let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
     let cmd = SubscribeQuotes::new(
         instrument_id,
-        Some(ClientId::new("BYBIT")),
+        Some(*BYBIT_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -540,7 +539,7 @@ async fn test_data_client_subscribe_book_deltas() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     wait_until_async(
@@ -555,7 +554,7 @@ async fn test_data_client_subscribe_book_deltas() {
     let cmd = SubscribeBookDeltas::new(
         instrument_id,
         BookType::L2_MBP,
-        Some(ClientId::new("BYBIT")),
+        Some(*BYBIT_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -601,7 +600,7 @@ async fn test_data_client_reset_clears_state() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
 
     client.reset().unwrap();
     assert!(!client.is_connected());
@@ -622,7 +621,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
 
     client.connect().await.unwrap();
 
@@ -659,7 +658,7 @@ async fn test_data_client_request_book_snapshot() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events from connect
@@ -671,7 +670,7 @@ async fn test_data_client_request_book_snapshot() {
     let request = RequestBookSnapshot::new(
         instrument_id,
         None,
-        Some(ClientId::new("BYBIT")),
+        Some(*BYBIT_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -699,7 +698,7 @@ async fn test_data_client_request_funding_rates() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events from connect
@@ -713,7 +712,7 @@ async fn test_data_client_request_funding_rates() {
         None,
         None,
         None,
-        Some(ClientId::new("BYBIT")),
+        Some(*BYBIT_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -741,7 +740,7 @@ async fn test_data_client_request_funding_rates_rejects_spot() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -752,7 +751,7 @@ async fn test_data_client_request_funding_rates_rejects_spot() {
         None,
         None,
         None,
-        Some(ClientId::new("BYBIT")),
+        Some(*BYBIT_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -777,7 +776,7 @@ async fn test_data_client_request_funding_rates_rejects_option() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -788,7 +787,7 @@ async fn test_data_client_request_funding_rates_rejects_option() {
         None,
         None,
         None,
-        Some(ClientId::new("BYBIT")),
+        Some(*BYBIT_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -813,7 +812,7 @@ async fn test_data_client_request_instruments() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events from connect
@@ -824,8 +823,8 @@ async fn test_data_client_request_instruments() {
     let request = RequestInstruments::new(
         None,
         None,
-        Some(ClientId::new("BYBIT")),
-        Some(Venue::new("BYBIT")),
+        Some(*BYBIT_CLIENT_ID),
+        Some(*BYBIT_VENUE),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -853,7 +852,7 @@ async fn test_data_client_request_instrument() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = BybitDataClient::new(ClientId::new("BYBIT"), config).unwrap();
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events from connect
@@ -866,7 +865,7 @@ async fn test_data_client_request_instrument() {
         instrument_id,
         None,
         None,
-        Some(ClientId::new("BYBIT")),
+        Some(*BYBIT_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,

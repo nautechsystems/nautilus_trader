@@ -2226,6 +2226,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::common::consts::IB_CLIENT_ID;
 
     #[rstest]
     #[case(true, ibapi::market_data::TradingHours::Regular)]
@@ -2297,7 +2298,7 @@ mod tests {
             config.instrument_provider.clone(),
         ));
         let mut client =
-            InteractiveBrokersDataClient::new(ClientId::from("IB"), config, provider).unwrap();
+            InteractiveBrokersDataClient::new(*IB_CLIENT_ID, config, provider).unwrap();
 
         client.stop().unwrap();
 

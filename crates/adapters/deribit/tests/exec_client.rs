@@ -46,15 +46,20 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_deribit::{
-    common::enums::DeribitEnvironment, config::DeribitExecClientConfig,
-    execution::DeribitExecutionClient, http::models::DeribitProductType,
+    common::{
+        consts::{DERIBIT_CLIENT_ID, DERIBIT_VENUE},
+        enums::DeribitEnvironment,
+    },
+    config::DeribitExecClientConfig,
+    execution::DeribitExecutionClient,
+    http::models::DeribitProductType,
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{AccountType, OmsType},
     events::AccountState,
-    identifiers::{AccountId, ClientId, TraderId, Venue},
+    identifiers::{AccountId, TraderId},
     types::{AccountBalance, Money},
 };
 use nautilus_network::http::HttpClient;
@@ -398,14 +403,14 @@ fn create_test_execution_client(
 ) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("DERIBIT-001");
-    let client_id = ClientId::from("DERIBIT");
+    let client_id = *DERIBIT_CLIENT_ID;
 
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("DERIBIT"),
+        *DERIBIT_VENUE,
         OmsType::Netting,
         account_id,
         AccountType::Margin,
@@ -451,8 +456,8 @@ async fn test_exec_client_creation() {
     let (addr, _state) = start_test_server().await.unwrap();
     let (client, _rx, _cache) = create_test_execution_client(addr);
 
-    assert_eq!(client.client_id(), ClientId::from("DERIBIT"));
-    assert_eq!(client.venue(), Venue::from("DERIBIT"));
+    assert_eq!(client.client_id(), *DERIBIT_CLIENT_ID);
+    assert_eq!(client.venue(), *DERIBIT_VENUE);
     assert_eq!(client.oms_type(), OmsType::Netting);
     assert!(!client.is_connected());
 }

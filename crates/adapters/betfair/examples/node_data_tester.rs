@@ -28,6 +28,7 @@
 use std::sync::Arc;
 
 use nautilus_betfair::{
+    common::consts::BETFAIR_CLIENT_ID,
     config::BetfairDataConfig,
     factories::BetfairDataClientFactory,
     http::client::BetfairHttpClient,
@@ -36,7 +37,7 @@ use nautilus_betfair::{
 use nautilus_common::{enums::Environment, providers::InstrumentProvider};
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    identifiers::{ClientId, InstrumentId, TraderId},
+    identifiers::{InstrumentId, TraderId},
     instruments::{Instrument, InstrumentAny},
     types::Currency,
 };
@@ -55,7 +56,7 @@ async fn main() -> anyhow::Result<()> {
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");
     let node_name = "BETFAIR-DATA-TESTER-001".to_string();
-    let client_id = ClientId::new("BETFAIR");
+    let client_id = *BETFAIR_CLIENT_ID;
 
     let data_config = BetfairDataConfig {
         account_currency,

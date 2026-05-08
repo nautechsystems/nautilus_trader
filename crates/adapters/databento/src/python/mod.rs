@@ -38,7 +38,10 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 #[cfg(feature = "live")]
-use crate::factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig};
+use crate::{
+    common::DATABENTO,
+    factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig},
+};
 
 #[cfg(feature = "live")]
 #[expect(clippy::needless_pass_by_value)]
@@ -118,7 +121,7 @@ pub fn databento(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         let registry = get_global_pyo3_registry();
 
         if let Err(e) = registry
-            .register_factory_extractor("DATABENTO".to_string(), extract_databento_data_factory)
+            .register_factory_extractor(DATABENTO.to_string(), extract_databento_data_factory)
         {
             return Err(to_pyruntime_err(format!(
                 "Failed to register Databento data factory extractor: {e}"

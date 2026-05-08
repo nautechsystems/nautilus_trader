@@ -49,14 +49,12 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_deribit::{
-    common::enums::DeribitEnvironment, config::DeribitDataClientConfig, data::DeribitDataClient,
+    common::{consts::DERIBIT_CLIENT_ID, enums::DeribitEnvironment},
+    config::DeribitDataClientConfig,
+    data::DeribitDataClient,
     http::models::DeribitProductType,
 };
-use nautilus_model::{
-    data::Data,
-    enums::BookType,
-    identifiers::{ClientId, InstrumentId},
-};
+use nautilus_model::{data::Data, enums::BookType, identifiers::InstrumentId};
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use serde_json::{Value, json};
@@ -418,7 +416,7 @@ async fn test_data_client_connect_disconnect() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = DeribitDataClient::new(ClientId::new("DERIBIT"), config).unwrap();
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
     assert!(!client.is_connected());
 
     client.connect().await.unwrap();
@@ -443,7 +441,7 @@ async fn test_data_client_subscribe_trades() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = DeribitDataClient::new(ClientId::new("DERIBIT"), config).unwrap();
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     wait_until_async(
@@ -457,7 +455,7 @@ async fn test_data_client_subscribe_trades() {
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     let cmd = SubscribeTrades::new(
         instrument_id,
-        Some(ClientId::new("DERIBIT")),
+        Some(*DERIBIT_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -493,7 +491,7 @@ async fn test_data_client_subscribe_quotes() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = DeribitDataClient::new(ClientId::new("DERIBIT"), config).unwrap();
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     wait_until_async(
@@ -507,7 +505,7 @@ async fn test_data_client_subscribe_quotes() {
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     let cmd = SubscribeQuotes::new(
         instrument_id,
-        Some(ClientId::new("DERIBIT")),
+        Some(*DERIBIT_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -550,7 +548,7 @@ async fn test_data_client_subscribe_book_deltas() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = DeribitDataClient::new(ClientId::new("DERIBIT"), config).unwrap();
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     wait_until_async(
@@ -565,7 +563,7 @@ async fn test_data_client_subscribe_book_deltas() {
     let cmd = SubscribeBookDeltas::new(
         instrument_id,
         BookType::L2_MBP,
-        Some(ClientId::new("DERIBIT")),
+        Some(*DERIBIT_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -610,7 +608,7 @@ async fn test_data_client_reset_clears_state() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = DeribitDataClient::new(ClientId::new("DERIBIT"), config).unwrap();
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
 
     client.reset().unwrap();
     assert!(!client.is_connected());
@@ -630,7 +628,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     set_data_event_sender(tx);
 
     let config = create_test_config(addr);
-    let mut client = DeribitDataClient::new(ClientId::new("DERIBIT"), config).unwrap();
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
 
     client.connect().await.unwrap();
 

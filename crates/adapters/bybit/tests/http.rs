@@ -26,9 +26,12 @@ use axum::{
 };
 use chrono::Utc;
 use nautilus_bybit::{
-    common::enums::{
-        BybitAccountType, BybitBboSideType, BybitMarginMode, BybitPositionIdx, BybitProductType,
-        BybitUnifiedMarginStatus,
+    common::{
+        consts::BYBIT_VENUE,
+        enums::{
+            BybitAccountType, BybitBboSideType, BybitMarginMode, BybitPositionIdx,
+            BybitProductType, BybitUnifiedMarginStatus,
+        },
     },
     http::{
         client::{BybitHttpClient, BybitRawHttpClient},
@@ -42,7 +45,7 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderType, PositionSideSpecified, TimeInForce, TriggerType},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, Venue},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol},
     instruments::{CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
@@ -1632,7 +1635,7 @@ async fn test_order_deduplication_by_order_id() {
 
     // Test deduplication by querying both realtime and history for a specific instrument
     // This avoids the settle coin iteration complexity
-    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), Venue::from("BYBIT"));
+    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE);
 
     let reports = client
         .request_order_status_reports(
@@ -2626,7 +2629,7 @@ async fn test_submit_order_stop_market_with_trigger_price() {
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
-    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT"));
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), *BYBIT_VENUE);
     let client_order_id = ClientOrderId::from("stop-market-test-1");
     let quantity = Quantity::new(0.001, 3);
     let trigger_price = Price::new(100_000.0, 2);
@@ -2712,7 +2715,7 @@ async fn test_submit_order_stop_limit_with_trigger_price_and_limit_price() {
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
-    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT"));
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), *BYBIT_VENUE);
     let client_order_id = ClientOrderId::from("stop-limit-test-1");
     let quantity = Quantity::new(0.001, 3);
     let trigger_price = Price::new(99_000.0, 2);
@@ -2800,7 +2803,7 @@ async fn test_submit_order_market_if_touched_trigger_direction() {
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
-    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT"));
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), *BYBIT_VENUE);
     let client_order_id = ClientOrderId::from("mit-test-1");
     let quantity = Quantity::new(0.001, 3);
     let trigger_price = Price::new(95_000.0, 2);
@@ -2872,7 +2875,7 @@ async fn test_submit_order_post_only() {
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
-    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT"));
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), *BYBIT_VENUE);
     let client_order_id = ClientOrderId::from("post-only-test-1");
     let quantity = Quantity::new(0.001, 3);
     let price = Price::new(100_000.0, 2);
@@ -2945,7 +2948,7 @@ async fn test_submit_order_with_bbo_sends_bbo_and_omits_price() {
         .submit_order(
             AccountId::from("BYBIT-UNIFIED"),
             BybitProductType::Linear,
-            InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT")),
+            InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), *BYBIT_VENUE),
             ClientOrderId::from("bbo-test-1"),
             OrderSide::Buy,
             OrderType::Limit,
@@ -3004,7 +3007,7 @@ async fn test_submit_order_spot_market_base_quantity() {
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
-    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-SPOT"), Venue::from("BYBIT"));
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-SPOT"), *BYBIT_VENUE);
     let client_order_id = ClientOrderId::from("spot-base-qty-test-1");
     let quantity = Quantity::new(0.001, 3);
 
@@ -3079,7 +3082,7 @@ async fn test_submit_order_spot_market_quote_quantity() {
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
-    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-SPOT"), Venue::from("BYBIT"));
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-SPOT"), *BYBIT_VENUE);
     let client_order_id = ClientOrderId::from("spot-quote-qty-test-1");
     let quantity = Quantity::new(100.0, 2); // 100 USDT worth
 
@@ -3154,7 +3157,7 @@ async fn test_submit_order_linear_does_not_send_market_unit() {
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
-    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT"));
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), *BYBIT_VENUE);
     let client_order_id = ClientOrderId::from("linear-market-test-1");
     let quantity = Quantity::new(0.001, 3);
 
@@ -3226,7 +3229,7 @@ async fn test_submit_order_limit_if_touched_trigger_direction() {
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
-    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT"));
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), *BYBIT_VENUE);
     let client_order_id = ClientOrderId::from("lit-test-1");
     let quantity = Quantity::new(0.001, 3);
     let trigger_price = Price::new(105_000.0, 2);
@@ -3320,7 +3323,7 @@ async fn test_submit_order_serializes_position_idx(
         .submit_order(
             AccountId::from("BYBIT-UNIFIED"),
             BybitProductType::Linear,
-            InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT")),
+            InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), *BYBIT_VENUE),
             ClientOrderId::from("posidx-test"),
             OrderSide::Buy,
             OrderType::Limit,
@@ -3427,10 +3430,7 @@ async fn test_query_order_option_not_found_returns_none() {
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
-    let instrument_id = InstrumentId::new(
-        Symbol::from("BTC-27MAR26-70000-C-OPTION"),
-        Venue::from("BYBIT"),
-    );
+    let instrument_id = InstrumentId::new(Symbol::from("BTC-27MAR26-70000-C-OPTION"), *BYBIT_VENUE);
     let client_order_id = ClientOrderId::from("option-query-test-1");
 
     let result = client
@@ -3538,7 +3538,7 @@ async fn test_request_order_status_reports_tp_sl_orders() {
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
-    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), Venue::from("BYBIT"));
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), *BYBIT_VENUE);
 
     let reports = client
         .request_order_status_reports(

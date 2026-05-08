@@ -15,14 +15,25 @@
 
 //! Common functions to support Databento adapter operations.
 
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::LazyLock};
 
 use databento::historical::DateTimeRange;
 use nautilus_core::{UnixNanos, string::secret::REDACTED};
+use nautilus_model::identifiers::{ClientId, Venue};
 use time::OffsetDateTime;
+use ustr::Ustr;
 use zeroize::ZeroizeOnDrop;
 
+/// Venue identifier string.
 pub const DATABENTO: &str = "DATABENTO";
+
+/// Static venue instance.
+pub static DATABENTO_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(DATABENTO)));
+
+/// Static client ID instance.
+pub static DATABENTO_CLIENT_ID: LazyLock<ClientId> =
+    LazyLock::new(|| ClientId::new(Ustr::from(DATABENTO)));
+
 pub const ALL_SYMBOLS: &str = "ALL_SYMBOLS";
 
 /// API credentials required for Databento API requests.

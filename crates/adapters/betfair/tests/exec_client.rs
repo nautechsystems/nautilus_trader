@@ -29,7 +29,10 @@ use std::{
 };
 
 use nautilus_betfair::{
-    common::consts::{METHOD_CANCEL_ORDERS, METHOD_LIST_CURRENT_ORDERS, METHOD_PLACE_ORDERS},
+    common::consts::{
+        BETFAIR_CLIENT_ID, BETFAIR_VENUE, METHOD_CANCEL_ORDERS, METHOD_LIST_CURRENT_ORDERS,
+        METHOD_PLACE_ORDERS,
+    },
     config::BetfairExecConfig,
     execution::BetfairExecutionClient,
 };
@@ -57,8 +60,7 @@ use nautilus_model::{
     enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce},
     events::OrderEventAny,
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, Venue,
-        VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
     },
     orders::{Order, OrderAny, OrderList, builder::OrderTestBuilder},
     types::{Currency, Price, Quantity},
@@ -80,13 +82,13 @@ fn create_test_execution_client_with_config(
 ) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BETFAIR-001");
-    let client_id = ClientId::from("BETFAIR");
+    let client_id = *BETFAIR_CLIENT_ID;
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("BETFAIR"),
+        *BETFAIR_VENUE,
         OmsType::Netting,
         account_id,
         AccountType::Betting,
@@ -135,9 +137,9 @@ async fn test_exec_client_creation() {
     let (stream_port, _listener) = start_mock_stream().await;
     let (client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
 
-    assert_eq!(client.client_id(), ClientId::from("BETFAIR"));
+    assert_eq!(client.client_id(), *BETFAIR_CLIENT_ID);
     assert_eq!(client.account_id(), AccountId::from("BETFAIR-001"));
-    assert_eq!(client.venue(), Venue::from("BETFAIR"));
+    assert_eq!(client.venue(), *BETFAIR_VENUE);
     assert_eq!(client.oms_type(), OmsType::Netting);
     assert!(!client.is_connected());
 }
@@ -321,7 +323,7 @@ fn make_cancel_order(
 ) -> CancelOrder {
     CancelOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from(instrument_id),
         ClientOrderId::from(client_order_id),
@@ -541,7 +543,7 @@ fn make_test_order(
 fn add_order_to_cache(cache: &Rc<RefCell<Cache>>, order: OrderAny) {
     cache
         .borrow_mut()
-        .add_order(order, None, Some(ClientId::from("BETFAIR")), false)
+        .add_order(order, None, Some(*BETFAIR_CLIENT_ID), false)
         .unwrap();
 }
 
@@ -549,7 +551,7 @@ fn make_submit_order_cmd(order: &OrderAny) -> SubmitOrder {
     SubmitOrder::from_order(
         order,
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -696,7 +698,7 @@ async fn test_modify_order_price_and_quantity_rejects() {
 
     let cmd = ModifyOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from("1.179082386-235-0.BETFAIR"),
         ClientOrderId::from("O-MOD-001"),
@@ -756,7 +758,7 @@ async fn test_modify_order_no_effective_change_rejects() {
 
     let cmd = ModifyOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from("1.179082386-235-0.BETFAIR"),
         ClientOrderId::from("O-MOD-002"),
@@ -810,7 +812,7 @@ async fn test_cancel_all_orders_sends_request() {
 
     let cmd = CancelAllOrders::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from("1.179082386-235-0.BETFAIR"),
         OrderSide::NoOrderSide,
@@ -1348,7 +1350,7 @@ async fn test_query_order_emits_order_status_report() {
     let instrument_id = InstrumentId::from("1.180575118-39980.BETFAIR");
     let cmd = QueryOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         instrument_id,
         client_order_id,
@@ -1411,7 +1413,7 @@ async fn test_query_order_no_match_emits_nothing() {
 
     let cmd = QueryOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from("1.180575118-39980.BETFAIR"),
         ClientOrderId::from("O-20260418-MISS"),
@@ -1456,7 +1458,7 @@ fn make_submit_order_list_cmd(
     let order_inits = orders.iter().map(|o| o.init_event().clone()).collect();
     let cmd = SubmitOrderList::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         order_list.clone(),
         order_inits,
@@ -1657,7 +1659,7 @@ fn make_batch_cancel_cmd(
         .map(|(client_oid, venue_oid)| {
             CancelOrder::new(
                 TraderId::from("TESTER-001"),
-                Some(ClientId::from("BETFAIR")),
+                Some(*BETFAIR_CLIENT_ID),
                 StrategyId::from("S-001"),
                 InstrumentId::from(instrument_id),
                 client_oid,
@@ -1670,7 +1672,7 @@ fn make_batch_cancel_cmd(
         .collect();
     BatchCancelOrders::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from(instrument_id),
         cancel_orders,
@@ -1878,7 +1880,7 @@ async fn test_modify_order_quantity_reduction_does_not_reject() {
 
     let cmd = ModifyOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from("1.179082386-235-0.BETFAIR"),
         ClientOrderId::from("O-MOD-QTY"),
@@ -1940,7 +1942,7 @@ async fn test_modify_order_without_venue_id_returns_error() {
 
     let cmd = ModifyOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from("1.179082386-235-0.BETFAIR"),
         ClientOrderId::from("O-MOD-NOID"),
@@ -2389,7 +2391,7 @@ async fn test_cancel_order_without_venue_id_returns_error() {
 
     let cmd = CancelOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from("1.179082386-235-0.BETFAIR"),
         ClientOrderId::from("O-CN-NOID"),
@@ -2434,7 +2436,7 @@ async fn test_modify_order_quantity_increase_rejects() {
 
     let cmd = ModifyOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from("1.179082386-235-0.BETFAIR"),
         ClientOrderId::from("O-MOD-INC"),
@@ -2553,7 +2555,7 @@ async fn test_modify_price_dispatches_replace_orders_with_new_price() {
 
     let cmd = ModifyOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from("1.179082386-235-0.BETFAIR"),
         ClientOrderId::from("O-MOD-PX"),
@@ -2818,7 +2820,7 @@ async fn test_query_order_recovers_from_no_session() {
     let instrument_id = InstrumentId::from("1.180575118-39980.BETFAIR");
     let cmd = QueryOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         instrument_id,
         client_order_id,
@@ -2928,7 +2930,7 @@ async fn test_replace_flow_suppresses_ocm_cancel_for_old_bet_id() {
     // spawned task inserts the old bet id into replaced_venue_order_ids.
     let modify_cmd = ModifyOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BETFAIR")),
+        Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from("1.181005744-86362-0.BETFAIR"),
         ClientOrderId::from("O-RPL-001"),

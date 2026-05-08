@@ -41,7 +41,10 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_dydx::{
-    common::enums::{DydxCandleResolution, DydxNetwork},
+    common::{
+        consts::{DYDX_CLIENT_ID, DYDX_VENUE},
+        enums::{DydxCandleResolution, DydxNetwork},
+    },
     config::DydxDataClientConfig,
     data::DydxDataClient,
     http::client::DydxHttpClient,
@@ -49,7 +52,7 @@ use nautilus_dydx::{
 };
 use nautilus_model::{
     data::BarType,
-    identifiers::{ClientId, InstrumentId, Symbol, Venue},
+    identifiers::{InstrumentId, Symbol},
     instruments::Instrument,
 };
 use nautilus_network::{http::HttpClient, retry::RetryConfig, websocket::TransportBackend};
@@ -248,8 +251,7 @@ async fn create_dydx_data_client(
     let creation_lock = DATA_CLIENT_CREATION_LOCK.lock().unwrap();
     replace_data_event_sender(sender);
 
-    let client =
-        DydxDataClient::new(ClientId::new("DYDX"), config, http_client, ws_client).unwrap();
+    let client = DydxDataClient::new(*DYDX_CLIENT_ID, config, http_client, ws_client).unwrap();
     drop(creation_lock);
 
     (client, receiver)
@@ -273,13 +275,13 @@ async fn recv_data_response(
 async fn test_data_client_request_book_snapshot_sends_empty_book_on_error() {
     let addr = start_data_request_error_server().await;
     let (client, mut rx) = create_dydx_data_client(addr).await;
-    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
     let request_id = UUID4::new();
 
     let request = RequestBookSnapshot::new(
         instrument_id,
         None,
-        Some(ClientId::new("DYDX")),
+        Some(*DYDX_CLIENT_ID),
         request_id,
         UnixNanos::default(),
         None,
@@ -302,7 +304,7 @@ async fn test_data_client_request_book_snapshot_sends_empty_book_on_error() {
 async fn test_data_client_request_trades_sends_empty_response_on_error() {
     let addr = start_data_request_error_server().await;
     let (client, mut rx) = create_dydx_data_client(addr).await;
-    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
     let request_id = UUID4::new();
 
     let request = RequestTrades::new(
@@ -310,7 +312,7 @@ async fn test_data_client_request_trades_sends_empty_response_on_error() {
         None,
         None,
         None,
-        Some(ClientId::new("DYDX")),
+        Some(*DYDX_CLIENT_ID),
         request_id,
         UnixNanos::default(),
         None,
@@ -340,7 +342,7 @@ async fn test_data_client_request_bars_sends_empty_response_on_error() {
         None,
         None,
         None,
-        Some(ClientId::new("DYDX")),
+        Some(*DYDX_CLIENT_ID),
         request_id,
         UnixNanos::default(),
         None,
@@ -362,7 +364,7 @@ async fn test_data_client_request_bars_sends_empty_response_on_error() {
 async fn test_data_client_request_funding_rates_sends_empty_response_on_error() {
     let addr = start_data_request_error_server().await;
     let (client, mut rx) = create_dydx_data_client(addr).await;
-    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
     let request_id = UUID4::new();
 
     let request = RequestFundingRates::new(
@@ -370,7 +372,7 @@ async fn test_data_client_request_funding_rates_sends_empty_response_on_error() 
         None,
         None,
         None,
-        Some(ClientId::new("DYDX")),
+        Some(*DYDX_CLIENT_ID),
         request_id,
         UnixNanos::default(),
         None,
@@ -463,7 +465,7 @@ async fn test_instrument_caching() {
     client.cache_instruments(instruments);
 
     // Retrieve from cache
-    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
     let cached = client.get_instrument(&btc_id);
     assert!(cached.is_some(), "BTC-USD-PERP should be cached");
     assert_eq!(cached.unwrap().id().symbol.as_str(), "BTC-USD-PERP");
@@ -485,11 +487,11 @@ async fn test_cache_single_instrument() {
 
     client.cache_instrument(btc);
 
-    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
     assert!(client.get_instrument(&btc_id).is_some());
 
     // ETH should not be cached
-    let eth_id = InstrumentId::new(Symbol::new("ETH-USD-PERP"), Venue::new("DYDX"));
+    let eth_id = InstrumentId::new(Symbol::new("ETH-USD-PERP"), *DYDX_VENUE);
     assert!(client.get_instrument(&eth_id).is_none());
 }
 

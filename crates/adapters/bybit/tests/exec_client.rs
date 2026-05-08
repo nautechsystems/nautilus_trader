@@ -42,7 +42,10 @@ use axum::{
     routing::{get, post},
 };
 use nautilus_bybit::{
-    common::enums::{BybitEnvironment, BybitMarginMode, BybitPositionMode, BybitProductType},
+    common::{
+        consts::{BYBIT_CLIENT_ID, BYBIT_VENUE},
+        enums::{BybitEnvironment, BybitMarginMode, BybitPositionMode, BybitProductType},
+    },
     config::BybitExecClientConfig,
     execution::BybitExecutionClient,
 };
@@ -60,8 +63,7 @@ use nautilus_model::{
     enums::{AccountType, OmsType, OrderSide, TimeInForce, TrailingOffsetType, TriggerType},
     events::AccountState,
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol,
-        TraderId, Venue,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TraderId,
     },
     orders::{MarketOrder, OrderAny, TrailingStopMarketOrder},
     types::{AccountBalance, Money, Price, Quantity},
@@ -622,14 +624,14 @@ fn create_test_execution_client(
 ) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BYBIT-001");
-    let client_id = ClientId::from("BYBIT");
+    let client_id = *BYBIT_CLIENT_ID;
 
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("BYBIT"),
+        *BYBIT_VENUE,
         OmsType::Netting,
         account_id,
         AccountType::Margin,
@@ -675,8 +677,8 @@ async fn test_exec_client_creation() {
     let (addr, _state) = start_test_server().await.unwrap();
     let (client, _rx, _cache) = create_test_execution_client(addr);
 
-    assert_eq!(client.client_id(), ClientId::from("BYBIT"));
-    assert_eq!(client.venue(), Venue::from("BYBIT"));
+    assert_eq!(client.client_id(), *BYBIT_CLIENT_ID);
+    assert_eq!(client.venue(), *BYBIT_VENUE);
     assert_eq!(client.oms_type(), OmsType::Netting);
     assert!(!client.is_connected());
 }
@@ -721,7 +723,7 @@ async fn test_exec_client_connect_applies_position_mode_for_derivative_symbols()
     let (addr, state) = start_test_server().await.unwrap();
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BYBIT-001");
-    let client_id = ClientId::from("BYBIT");
+    let client_id = *BYBIT_CLIENT_ID;
 
     let cache = Rc::new(RefCell::new(Cache::default()));
     add_test_account_to_cache(&cache, account_id);
@@ -729,7 +731,7 @@ async fn test_exec_client_connect_applies_position_mode_for_derivative_symbols()
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("BYBIT"),
+        *BYBIT_VENUE,
         OmsType::Netting,
         account_id,
         AccountType::Margin,
@@ -793,7 +795,7 @@ async fn test_exec_client_connect_applies_leverage_and_margin_mode() {
     let (addr, state) = start_test_server().await.unwrap();
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BYBIT-001");
-    let client_id = ClientId::from("BYBIT");
+    let client_id = *BYBIT_CLIENT_ID;
 
     let cache = Rc::new(RefCell::new(Cache::default()));
     add_test_account_to_cache(&cache, account_id);
@@ -801,7 +803,7 @@ async fn test_exec_client_connect_applies_leverage_and_margin_mode() {
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("BYBIT"),
+        *BYBIT_VENUE,
         OmsType::Netting,
         account_id,
         AccountType::Margin,
@@ -861,7 +863,7 @@ async fn test_exec_client_demo_mode_skips_trade_ws() {
     let (addr, state) = start_test_server().await.unwrap();
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BYBIT-001");
-    let client_id = ClientId::from("BYBIT");
+    let client_id = *BYBIT_CLIENT_ID;
 
     let cache = Rc::new(RefCell::new(Cache::default()));
     add_test_account_to_cache(&cache, account_id);
@@ -869,7 +871,7 @@ async fn test_exec_client_demo_mode_skips_trade_ws() {
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("BYBIT"),
+        *BYBIT_VENUE,
         OmsType::Netting,
         account_id,
         AccountType::Margin,
@@ -949,9 +951,9 @@ async fn test_exec_client_query_order() {
 
     let cmd = QueryOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BYBIT")),
+        Some(*BYBIT_CLIENT_ID),
         StrategyId::from("S-001"),
-        InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), Venue::from("BYBIT")),
+        InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE),
         ClientOrderId::from("client-open-1"),
         None,
         UUID4::new(),
@@ -1001,7 +1003,7 @@ async fn test_query_account_does_not_block_within_runtime() {
 
     let cmd = QueryAccount::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BYBIT")),
+        Some(*BYBIT_CLIENT_ID),
         AccountId::from("BYBIT-001"),
         UUID4::new(),
         UnixNanos::default(),
@@ -1032,9 +1034,9 @@ async fn test_exec_client_submit_order_list_demo() {
     let (addr, state) = start_test_server().await.unwrap();
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BYBIT-001");
-    let client_id = ClientId::from("BYBIT");
+    let client_id = *BYBIT_CLIENT_ID;
     let strategy_id = StrategyId::from("S-001");
-    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), Venue::from("BYBIT"));
+    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE);
 
     let cache = Rc::new(RefCell::new(Cache::default()));
     add_test_account_to_cache(&cache, account_id);
@@ -1042,7 +1044,7 @@ async fn test_exec_client_submit_order_list_demo() {
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("BYBIT"),
+        *BYBIT_VENUE,
         OmsType::Netting,
         account_id,
         AccountType::Margin,
@@ -1202,9 +1204,9 @@ async fn test_exec_client_submit_order_list_denies_all_on_invalid_leg() {
     let (addr, state) = start_test_server().await.unwrap();
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BYBIT-001");
-    let client_id = ClientId::from("BYBIT");
+    let client_id = *BYBIT_CLIENT_ID;
     let strategy_id = StrategyId::from("S-001");
-    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), Venue::from("BYBIT"));
+    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE);
 
     let cache = Rc::new(RefCell::new(Cache::default()));
     add_test_account_to_cache(&cache, account_id);
@@ -1212,7 +1214,7 @@ async fn test_exec_client_submit_order_list_denies_all_on_invalid_leg() {
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("BYBIT"),
+        *BYBIT_VENUE,
         OmsType::Netting,
         account_id,
         AccountType::Margin,

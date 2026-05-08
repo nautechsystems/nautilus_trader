@@ -1916,14 +1916,17 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::enums::BybitMarketUnit;
+    use crate::common::{
+        consts::{BYBIT_CLIENT_ID, BYBIT_VENUE},
+        enums::BybitMarketUnit,
+    };
 
     fn test_execution_client() -> (BybitExecutionClient, Rc<RefCell<Cache>>) {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let core = ExecutionClientCore::new(
             TraderId::from("TESTER-001"),
-            ClientId::from("BYBIT"),
-            Venue::from("BYBIT"),
+            *BYBIT_CLIENT_ID,
+            *BYBIT_VENUE,
             OmsType::Netting,
             AccountId::from("BYBIT-001"),
             AccountType::Margin,

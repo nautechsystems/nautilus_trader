@@ -35,7 +35,7 @@ use pyo3::prelude::*;
 
 use crate::{
     common::{
-        consts::HYPERLIQUID_POST_ONLY_WOULD_MATCH,
+        consts::{HYPERLIQUID, HYPERLIQUID_POST_ONLY_WOULD_MATCH},
         enums::{
             HyperliquidConditionalOrderType, HyperliquidEnvironment, HyperliquidProductType,
             HyperliquidTpSl, HyperliquidTrailingOffsetType,
@@ -158,17 +158,16 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let registry = get_global_pyo3_registry();
 
     if let Err(e) = registry
-        .register_factory_extractor("HYPERLIQUID".to_string(), extract_hyperliquid_data_factory)
+        .register_factory_extractor(HYPERLIQUID.to_string(), extract_hyperliquid_data_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Hyperliquid data factory extractor: {e}"
         )));
     }
 
-    if let Err(e) = registry.register_exec_factory_extractor(
-        "HYPERLIQUID".to_string(),
-        extract_hyperliquid_exec_factory,
-    ) {
+    if let Err(e) = registry
+        .register_exec_factory_extractor(HYPERLIQUID.to_string(), extract_hyperliquid_exec_factory)
+    {
         return Err(to_pyruntime_err(format!(
             "Failed to register Hyperliquid exec factory extractor: {e}"
         )));

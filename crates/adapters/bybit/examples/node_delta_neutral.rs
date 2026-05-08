@@ -35,13 +35,13 @@
 //! Run with: `cargo run --example bybit-delta-neutral --package nautilus-bybit --features examples`
 
 use nautilus_bybit::{
-    common::enums::BybitProductType,
+    common::{consts::BYBIT_CLIENT_ID, enums::BybitProductType},
     config::{BybitDataClientConfig, BybitExecClientConfig},
     factories::{BybitDataClientFactory, BybitExecutionClientFactory},
 };
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;
-use nautilus_model::identifiers::{AccountId, ClientId, InstrumentId, TraderId};
+use nautilus_model::identifiers::{AccountId, InstrumentId, TraderId};
 use nautilus_trading::examples::strategies::delta_neutral_vol::{
     DeltaNeutralVol, DeltaNeutralVolConfig,
 };
@@ -53,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BYBIT-001");
-    let client_id = ClientId::new("BYBIT");
+    let client_id = *BYBIT_CLIENT_ID;
 
     let data_config = BybitDataClientConfig {
         api_key: None,

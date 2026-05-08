@@ -22,11 +22,13 @@ use std::num::NonZeroUsize;
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_dydx::{
-    common::enums::DydxNetwork, config::DydxDataClientConfig, factories::DydxDataClientFactory,
+    common::{consts::DYDX_CLIENT_ID, enums::DydxNetwork},
+    config::DydxDataClientConfig,
+    factories::DydxDataClientFactory,
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    identifiers::{ClientId, InstrumentId, TraderId},
+    identifiers::{InstrumentId, TraderId},
     stubs::TestDefault,
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
@@ -49,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let client_factory = DydxDataClientFactory::new();
-    let client_id = ClientId::new("DYDX");
+    let client_id = *DYDX_CLIENT_ID;
 
     let log_config = LoggerConfig {
         stdout_level: LevelFilter::Info,

@@ -30,7 +30,9 @@ use axum::{
     routing::{delete, get, post},
 };
 use nautilus_binance::{
-    config::BinanceExecClientConfig, futures::execution::BinanceFuturesExecutionClient,
+    common::consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
+    config::BinanceExecClientConfig,
+    futures::execution::BinanceFuturesExecutionClient,
 };
 use nautilus_common::{
     cache::Cache,
@@ -48,9 +50,7 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{AccountType, OmsType, OrderSide, TimeInForce, TrailingOffsetType, TriggerType},
     events::{AccountState, OrderEventAny},
-    identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
-    },
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     orders::{LimitOrder, Order, OrderAny, TrailingStopMarketOrder},
     types::{AccountBalance, Money, Price, Quantity},
 };
@@ -575,14 +575,14 @@ fn create_test_execution_client(
 ) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BINANCE-001");
-    let client_id = ClientId::from("BINANCE");
+    let client_id = *BINANCE_CLIENT_ID;
 
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("BINANCE"),
+        *BINANCE_VENUE,
         OmsType::Hedging,
         account_id,
         AccountType::Margin,
@@ -639,8 +639,8 @@ async fn test_client_creation() {
 
     let (client, _rx, _cache) = create_test_execution_client(base_url_http, base_url_ws);
 
-    assert_eq!(client.client_id(), ClientId::from("BINANCE"));
-    assert_eq!(client.venue(), Venue::from("BINANCE"));
+    assert_eq!(client.client_id(), *BINANCE_CLIENT_ID);
+    assert_eq!(client.venue(), *BINANCE_VENUE);
     assert_eq!(client.oms_type(), OmsType::Hedging);
     assert!(!client.is_connected());
 }
@@ -732,7 +732,7 @@ async fn test_submit_order_generates_submitted_event() {
 
     let submit_cmd = SubmitOrder::new(
         trader_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         strategy_id,
         instrument_id,
         order_any.client_order_id(),
@@ -817,7 +817,7 @@ async fn test_submit_trailing_stop_order_uses_activate_price_and_precise_callbac
 
     let submit_cmd = SubmitOrder::new(
         trader_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         strategy_id,
         instrument_id,
         client_order_id,
@@ -865,7 +865,7 @@ async fn test_cancel_all_orders_completes() {
 
     let cancel_all_cmd = CancelAllOrders::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         StrategyId::from("TEST-STRATEGY"),
         instrument_id,
         OrderSide::NoOrderSide,
@@ -933,7 +933,7 @@ async fn test_cancel_order_completes() {
 
     let cancel_cmd = CancelOrder::new(
         trader_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         strategy_id,
         instrument_id,
         client_order_id,
@@ -1004,7 +1004,7 @@ async fn test_modify_order_completes() {
 
     let modify_cmd = ModifyOrder::new(
         trader_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         strategy_id,
         instrument_id,
         client_order_id,
@@ -1091,7 +1091,7 @@ async fn test_cancel_order_ws_rejection_emits_cancel_rejected() {
 
     let submit_cmd = SubmitOrder::new(
         trader_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         strategy_id,
         instrument_id,
         client_order_id,
@@ -1107,7 +1107,7 @@ async fn test_cancel_order_ws_rejection_emits_cancel_rejected() {
 
     let cancel_cmd = CancelOrder::new(
         trader_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         strategy_id,
         instrument_id,
         client_order_id,
@@ -1194,7 +1194,7 @@ async fn test_modify_order_ws_rejection_emits_modify_rejected() {
 
     let submit_cmd = SubmitOrder::new(
         trader_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         strategy_id,
         instrument_id,
         client_order_id,
@@ -1210,7 +1210,7 @@ async fn test_modify_order_ws_rejection_emits_modify_rejected() {
 
     let modify_cmd = ModifyOrder::new(
         trader_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         strategy_id,
         instrument_id,
         client_order_id,
@@ -1322,7 +1322,7 @@ async fn test_submit_order_with_price_match_sends_price_match_and_omits_price() 
 
     let submit_cmd = SubmitOrder::new(
         trader_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         strategy_id,
         instrument_id,
         client_order_id,
@@ -1383,14 +1383,14 @@ fn create_test_execution_client_with_ws_trading(
 ) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BINANCE-001");
-    let client_id = ClientId::from("BINANCE");
+    let client_id = *BINANCE_CLIENT_ID;
 
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("BINANCE"),
+        *BINANCE_VENUE,
         OmsType::Hedging,
         account_id,
         AccountType::Margin,
@@ -1597,7 +1597,7 @@ async fn test_query_account_does_not_block_within_runtime() {
 
     let cmd = QueryAccount::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         AccountId::from("BINANCE-001"),
         nautilus_core::UUID4::new(),
         UnixNanos::default(),

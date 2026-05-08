@@ -58,8 +58,8 @@ use nautilus_model::{
     },
     events::{AccountState, OrderEventAny, OrderPendingCancel},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol,
-        TraderId, Venue, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TraderId,
+        VenueOrderId,
     },
     instruments::{BinaryOption, InstrumentAny},
     orders::{
@@ -70,7 +70,9 @@ use nautilus_model::{
 };
 use nautilus_network::http::HttpClient;
 use nautilus_polymarket::{
-    config::PolymarketExecClientConfig, execution::PolymarketExecutionClient,
+    common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
+    config::PolymarketExecClientConfig,
+    execution::PolymarketExecutionClient,
 };
 use rstest::rstest;
 use rust_decimal_macros::dec;
@@ -188,14 +190,14 @@ fn create_test_execution_client(
 ) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("POLYMARKET-001");
-    let client_id = ClientId::from("POLYMARKET");
+    let client_id = *POLYMARKET_CLIENT_ID;
 
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("POLYMARKET"),
+        *POLYMARKET_VENUE,
         OmsType::Netting,
         account_id,
         AccountType::Cash,
@@ -223,14 +225,14 @@ fn create_test_execution_client_with_retries(
 ) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("POLYMARKET-001");
-    let client_id = ClientId::from("POLYMARKET");
+    let client_id = *POLYMARKET_CLIENT_ID;
 
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("POLYMARKET"),
+        *POLYMARKET_VENUE,
         OmsType::Netting,
         account_id,
         AccountType::Cash,
@@ -503,9 +505,9 @@ async fn test_exec_client_creation() {
     let addr = start_mock_server(state).await;
     let (client, _rx, _cache) = create_test_execution_client(addr);
 
-    assert_eq!(client.client_id(), ClientId::from("POLYMARKET"));
+    assert_eq!(client.client_id(), *POLYMARKET_CLIENT_ID);
     assert_eq!(client.account_id(), AccountId::from("POLYMARKET-001"));
-    assert_eq!(client.venue(), Venue::from("POLYMARKET"));
+    assert_eq!(client.venue(), *POLYMARKET_VENUE);
     assert_eq!(client.oms_type(), OmsType::Netting);
 }
 
@@ -1201,7 +1203,7 @@ async fn test_modify_order_emits_rejection() {
 
     let cmd = ModifyOrder {
         trader_id: TraderId::from("TESTER-001"),
-        client_id: Some(ClientId::from("POLYMARKET")),
+        client_id: Some(*POLYMARKET_CLIENT_ID),
         strategy_id: StrategyId::from("S-001"),
         instrument_id,
         client_order_id,
@@ -1270,7 +1272,7 @@ async fn test_submit_market_order_denied_buy_without_quote_quantity() {
 
     let cmd = SubmitOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("POLYMARKET")),
+        Some(*POLYMARKET_CLIENT_ID),
         StrategyId::from("S-001"),
         instrument_id,
         client_order_id,
@@ -1329,7 +1331,7 @@ async fn test_submit_market_order_denied_sell_with_quote_quantity() {
 
     let cmd = SubmitOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("POLYMARKET")),
+        Some(*POLYMARKET_CLIENT_ID),
         StrategyId::from("S-001"),
         instrument_id,
         client_order_id,
@@ -1981,7 +1983,7 @@ fn make_limit_order(
 fn make_submit_cmd(order: &OrderAny, instrument_id: InstrumentId) -> SubmitOrder {
     SubmitOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("POLYMARKET")),
+        Some(*POLYMARKET_CLIENT_ID),
         StrategyId::from("S-001"),
         instrument_id,
         order.client_order_id(),
@@ -2010,7 +2012,7 @@ fn make_submit_order_list_cmd(instrument_id: InstrumentId, orders: &[OrderAny]) 
 
     SubmitOrderList::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("POLYMARKET")),
+        Some(*POLYMARKET_CLIENT_ID),
         strategy_id,
         order_list,
         order_inits,
@@ -2025,7 +2027,7 @@ fn make_submit_order_list_cmd(instrument_id: InstrumentId, orders: &[OrderAny]) 
 fn make_cancel_cmd(client_order_id: &str, instrument_id: InstrumentId) -> CancelOrder {
     CancelOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("POLYMARKET")),
+        Some(*POLYMARKET_CLIENT_ID),
         StrategyId::from("S-001"),
         instrument_id,
         ClientOrderId::from(client_order_id),
@@ -3452,7 +3454,7 @@ async fn test_batch_cancel_orders_with_partial_failure() {
 
     let cmd = BatchCancelOrders::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("POLYMARKET")),
+        Some(*POLYMARKET_CLIENT_ID),
         StrategyId::from("S-001"),
         instrument_id,
         cancels,
@@ -3772,7 +3774,7 @@ async fn test_query_order_does_not_block_within_runtime() {
 
     let cmd = QueryOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("POLYMARKET")),
+        Some(*POLYMARKET_CLIENT_ID),
         StrategyId::from("S-001"),
         instrument_id,
         ClientOrderId::from("O-QUERY-001"),
@@ -3804,7 +3806,7 @@ async fn test_query_account_does_not_block_within_runtime() {
 
     let cmd = QueryAccount::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("POLYMARKET")),
+        Some(*POLYMARKET_CLIENT_ID),
         AccountId::from("POLYMARKET-001"),
         UUID4::new(),
         UnixNanos::default(),

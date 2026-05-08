@@ -30,6 +30,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
+        consts::TARDIS,
         enums::{TardisExchange, TardisInstrumentType},
         parse::normalize_symbol_str,
     },
@@ -144,7 +145,7 @@ pub fn tardis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let registry = get_global_pyo3_registry();
 
     if let Err(e) =
-        registry.register_factory_extractor("TARDIS".to_string(), extract_tardis_data_factory)
+        registry.register_factory_extractor(TARDIS.to_string(), extract_tardis_data_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Tardis data factory extractor: {e}"

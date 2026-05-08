@@ -33,6 +33,7 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
+    common::consts::DERIBIT,
     config::{DeribitDataClientConfig, DeribitExecClientConfig},
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
 };
@@ -112,15 +113,15 @@ pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let registry = get_global_pyo3_registry();
 
     if let Err(e) =
-        registry.register_factory_extractor("DERIBIT".to_string(), extract_deribit_data_factory)
+        registry.register_factory_extractor(DERIBIT.to_string(), extract_deribit_data_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Deribit data factory extractor: {e}"
         )));
     }
 
-    if let Err(e) = registry
-        .register_exec_factory_extractor("DERIBIT".to_string(), extract_deribit_exec_factory)
+    if let Err(e) =
+        registry.register_exec_factory_extractor(DERIBIT.to_string(), extract_deribit_exec_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Deribit exec factory extractor: {e}"

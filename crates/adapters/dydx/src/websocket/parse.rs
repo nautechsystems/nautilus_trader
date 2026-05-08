@@ -880,7 +880,7 @@ mod tests {
             AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType,
             PositionSideSpecified,
         },
-        identifiers::{AccountId, InstrumentId, Symbol, Venue},
+        identifiers::{AccountId, InstrumentId, Symbol},
         instruments::{CryptoPerpetual, InstrumentAny},
         types::{Currency, Price, Quantity},
     };
@@ -891,6 +891,7 @@ mod tests {
     use super::*;
     use crate::{
         common::{
+            consts::DYDX_VENUE,
             enums::{
                 DydxFillType, DydxLiquidity, DydxMarketStatus, DydxOrderStatus, DydxOrderType,
                 DydxPositionSide, DydxPositionStatus, DydxTickerType, DydxTimeInForce,
@@ -943,7 +944,7 @@ mod tests {
     }
 
     fn create_test_instrument() -> InstrumentAny {
-        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
 
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
             instrument_id,
@@ -1146,7 +1147,7 @@ mod tests {
     #[rstest]
     fn test_parse_ws_fill_report_success() {
         let instrument_cache = create_test_instrument_cache();
-        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
 
         // dYdX WS fills use market format "BTC-USD" (not "BTC-USD-PERP")
         // but the instrument symbol is "BTC-USD-PERP"
@@ -1358,7 +1359,7 @@ mod tests {
     #[rstest]
     fn test_parse_ws_position_report_success() {
         let instrument_cache = create_test_instrument_cache();
-        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
 
         let ws_position = DydxPerpetualPosition {
             market: "BTC-USD".into(),
@@ -1394,7 +1395,7 @@ mod tests {
     #[rstest]
     fn test_parse_ws_position_report_short() {
         let instrument_cache = create_test_instrument_cache();
-        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
 
         let ws_position = DydxPerpetualPosition {
             market: "BTC-USD".into(),
@@ -1679,7 +1680,7 @@ mod tests {
     #[rstest]
     fn test_parse_ws_position_closed() {
         let instrument_cache = create_test_instrument_cache();
-        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
 
         let ws_position = DydxPerpetualPosition {
             market: "BTC-USD".into(),

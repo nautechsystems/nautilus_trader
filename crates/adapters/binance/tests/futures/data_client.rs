@@ -25,7 +25,11 @@ use axum::{
     routing::get,
 };
 use nautilus_binance::{
-    common::enums::BinanceProductType, config::BinanceDataClientConfig,
+    common::{
+        consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
+        enums::BinanceProductType,
+    },
+    config::BinanceDataClientConfig,
     futures::BinanceFuturesDataClient,
 };
 use nautilus_common::{
@@ -43,10 +47,7 @@ use nautilus_common::{
     testing::wait_until_async,
 };
 use nautilus_core::UnixNanos;
-use nautilus_model::{
-    enums::BookType,
-    identifiers::{ClientId, InstrumentId, Venue},
-};
+use nautilus_model::{enums::BookType, identifiers::InstrumentId};
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use serde_json::json;
@@ -254,7 +255,7 @@ fn create_test_data_client(
     };
 
     let client =
-        BinanceFuturesDataClient::new(ClientId::from("BINANCE"), config, BinanceProductType::UsdM)
+        BinanceFuturesDataClient::new(*BINANCE_CLIENT_ID, config, BinanceProductType::UsdM)
             .unwrap();
 
     (client, rx)
@@ -269,8 +270,8 @@ async fn test_client_creation() {
 
     let (client, _rx) = create_test_data_client(base_url_http, base_url_ws);
 
-    assert_eq!(client.client_id(), ClientId::from("BINANCE"));
-    assert_eq!(client.venue(), Some(Venue::from("BINANCE")));
+    assert_eq!(client.client_id(), *BINANCE_CLIENT_ID);
+    assert_eq!(client.venue(), Some(*BINANCE_VENUE));
     assert!(!client.is_connected());
 }
 
@@ -342,7 +343,7 @@ async fn test_subscribe_trades() {
     let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
     let cmd = SubscribeTrades::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -390,7 +391,7 @@ async fn test_subscribe_quotes() {
     let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
     let cmd = SubscribeQuotes::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -439,7 +440,7 @@ async fn test_subscribe_book_deltas() {
     let cmd = SubscribeBookDeltas::new(
         instrument_id,
         BookType::L2_MBP,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -489,7 +490,7 @@ async fn test_subscribe_mark_prices() {
     let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
     let cmd = SubscribeMarkPrices::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -538,7 +539,7 @@ async fn test_unsubscribe_trades() {
 
     let sub_cmd = SubscribeTrades::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -560,7 +561,7 @@ async fn test_unsubscribe_trades() {
 
     let unsub_cmd = UnsubscribeTrades::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -600,7 +601,7 @@ async fn test_unsubscribe_quotes() {
 
     let sub_cmd = SubscribeQuotes::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -622,7 +623,7 @@ async fn test_unsubscribe_quotes() {
 
     let unsub_cmd = UnsubscribeQuotes::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -706,7 +707,7 @@ async fn test_subscribe_trades_and_quotes_simultaneously() {
 
     let trades_cmd = SubscribeTrades::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
@@ -715,7 +716,7 @@ async fn test_subscribe_trades_and_quotes_simultaneously() {
     );
     let quotes_cmd = SubscribeQuotes::new(
         instrument_id,
-        Some(ClientId::from("BINANCE")),
+        Some(*BINANCE_CLIENT_ID),
         None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),

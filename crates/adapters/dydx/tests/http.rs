@@ -27,11 +27,14 @@ use axum::{
 use chrono::{Duration as ChronoDuration, Utc};
 use nautilus_common::{live::get_runtime, testing::wait_until_async};
 use nautilus_dydx::{
-    common::enums::{DydxCandleResolution, DydxNetwork},
+    common::{
+        consts::DYDX_VENUE,
+        enums::{DydxCandleResolution, DydxNetwork},
+    },
     http::client::{DydxHttpClient, DydxRawHttpClient},
 };
 use nautilus_model::{
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::{InstrumentId, Symbol},
     instruments::Instrument,
 };
 use nautilus_network::{http::HttpClient, retry::RetryConfig};
@@ -319,7 +322,7 @@ async fn test_instrument_caching() {
 
     client.cache_instruments(instruments);
 
-    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
     let cached_instrument = client.get_instrument(&btc_id);
     assert!(cached_instrument.is_some(), "BTC-USD-PERP should be cached");
     assert_eq!(
@@ -327,7 +330,7 @@ async fn test_instrument_caching() {
         "BTC-USD-PERP"
     );
 
-    let eth_id = InstrumentId::new(Symbol::new("ETH-USD-PERP"), Venue::new("DYDX"));
+    let eth_id = InstrumentId::new(Symbol::new("ETH-USD-PERP"), *DYDX_VENUE);
     let eth_instrument = client.get_instrument(&eth_id);
     assert!(eth_instrument.is_some(), "ETH-USD-PERP should be cached");
 }
@@ -347,7 +350,7 @@ async fn test_cache_single_instrument() {
         .unwrap();
     client.cache_instrument(btc_inst);
 
-    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let btc_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
     let cached = client.get_instrument(&btc_id);
     assert!(cached.is_some(), "BTC-USD-PERP should be cached");
 }
@@ -2135,7 +2138,7 @@ async fn test_request_funding_rates_parses_to_domain_types() {
     let base_url = format!("http://{addr}");
     let client = DydxHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
 
-    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
     let rates = client
         .request_funding_rates(instrument_id, None, None, None)
         .await
@@ -2284,7 +2287,7 @@ async fn test_request_orderbook_snapshot_sets_snapshot_flags() {
     let instruments = client.request_instruments(None, None, None).await.unwrap();
     client.cache_instruments(instruments);
 
-    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
     let deltas = client
         .request_orderbook_snapshot(instrument_id)
         .await
@@ -2336,7 +2339,7 @@ async fn test_request_orderbook_snapshot_empty_book() {
     let instruments = client.request_instruments(None, None, None).await.unwrap();
     client.cache_instruments(instruments);
 
-    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
     let deltas = client
         .request_orderbook_snapshot(instrument_id)
         .await
@@ -2455,7 +2458,7 @@ async fn test_request_trade_ticks_paginates_across_blocks() {
     let instruments = client.request_instruments(None, None, None).await.unwrap();
     client.cache_instruments(instruments);
 
-    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
     let ticks = client
         .request_trade_ticks(instrument_id, None, None, None)
         .await
@@ -2519,7 +2522,7 @@ async fn test_request_trade_ticks_dedups_cross_page_overlap() {
     let instruments = client.request_instruments(None, None, None).await.unwrap();
     client.cache_instruments(instruments);
 
-    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
     let ticks = client
         .request_trade_ticks(instrument_id, None, None, None)
         .await
@@ -2573,7 +2576,7 @@ async fn test_request_trade_ticks_respects_start_boundary() {
     let instruments = client.request_instruments(None, None, None).await.unwrap();
     client.cache_instruments(instruments);
 
-    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
     let start = chrono::DateTime::parse_from_rfc3339("2024-01-01T00:01:45.000Z")
         .unwrap()
         .with_timezone(&chrono::Utc);

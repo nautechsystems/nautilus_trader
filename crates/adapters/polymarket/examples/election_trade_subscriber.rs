@@ -38,12 +38,17 @@ use nautilus_common::{
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::TradeTick,
-    identifiers::{ClientId, InstrumentId, TraderId, Venue},
+    identifiers::{ClientId, InstrumentId, TraderId},
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_polymarket::{
-    common::models::PolymarketLabel, config::PolymarketDataClientConfig,
-    factories::PolymarketDataClientFactory, filters::EventSlugFilter,
+    common::{
+        consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
+        models::PolymarketLabel,
+    },
+    config::PolymarketDataClientConfig,
+    factories::PolymarketDataClientFactory,
+    filters::EventSlugFilter,
 };
 
 // ---------------------------------------------------------------------------
@@ -83,7 +88,7 @@ nautilus_actor!(ElectionTradeSubscriber);
 
 impl DataActor for ElectionTradeSubscriber {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        let venue = Venue::from("POLYMARKET");
+        let venue = *POLYMARKET_VENUE;
         let client_id = Some(self.config.client_id);
 
         // Read instruments from cache and build human-readable label index
@@ -153,7 +158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");
-    let client_id = ClientId::new("POLYMARKET");
+    let client_id = *POLYMARKET_CLIENT_ID;
 
     let event_filter =
         EventSlugFilter::from_slugs(vec!["presidential-election-winner-2028".to_string()]);

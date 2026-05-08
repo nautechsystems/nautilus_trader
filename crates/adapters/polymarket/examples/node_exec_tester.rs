@@ -36,11 +36,11 @@ use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
+    identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
 use nautilus_polymarket::{
-    common::enums::SignatureType,
+    common::{consts::POLYMARKET_CLIENT_ID, enums::SignatureType},
     config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
     filters::EventSlugFilter,
@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("POLYMARKET-001");
     let node_name = "POLYMARKET-EXEC-TESTER-001".to_string();
-    let client_id = ClientId::new("POLYMARKET");
+    let client_id = *POLYMARKET_CLIENT_ID;
 
     // GTA VI Released Before June 2026 (Yes)
     // https://polymarket.com/event/gta-vi-released-before-june-2026

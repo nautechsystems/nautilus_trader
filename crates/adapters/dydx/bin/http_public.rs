@@ -41,13 +41,13 @@ use std::{collections::HashMap, env};
 use chrono::{Duration, Utc};
 use nautilus_dydx::{
     common::{
-        consts::DYDX_TESTNET_HTTP_URL,
+        consts::{DYDX_TESTNET_HTTP_URL, DYDX_VENUE},
         enums::{DydxCandleResolution, DydxNetwork},
     },
     http::client::DydxHttpClient,
 };
 use nautilus_model::{
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::{InstrumentId, Symbol},
     instruments::{Instrument, InstrumentAny},
 };
 
@@ -112,7 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Construct InstrumentId for lookup (symbol is in format "BTC-USD", need "BTC-USD-PERP")
     let perp_symbol = format!("{symbol}-PERP");
-    let instrument_id = InstrumentId::new(Symbol::new(&perp_symbol), Venue::new("DYDX"));
+    let instrument_id = InstrumentId::new(Symbol::new(&perp_symbol), *DYDX_VENUE);
     let start = std::time::Instant::now();
     let instrument = client.get_instrument(&instrument_id);
     let elapsed = start.elapsed();

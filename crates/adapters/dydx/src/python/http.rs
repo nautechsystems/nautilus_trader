@@ -31,7 +31,10 @@ use pyo3::{
 };
 use rust_decimal::Decimal;
 
-use crate::{common::enums::DydxNetwork, http::client::DydxHttpClient};
+use crate::{
+    common::{consts::DYDX_VENUE, enums::DydxNetwork},
+    http::client::DydxHttpClient,
+};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -166,8 +169,8 @@ impl DydxHttpClient {
     /// Gets an instrument from the cache by InstrumentId.
     #[pyo3(name = "get_instrument")]
     fn py_get_instrument(&self, py: Python<'_>, symbol: &str) -> PyResult<Option<Py<PyAny>>> {
-        use nautilus_model::identifiers::{Symbol, Venue};
-        let instrument_id = InstrumentId::new(Symbol::new(symbol), Venue::new("DYDX"));
+        use nautilus_model::identifiers::Symbol;
+        let instrument_id = InstrumentId::new(Symbol::new(symbol), *DYDX_VENUE);
         let instrument = self.get_instrument(&instrument_id);
         match instrument {
             Some(inst) => Ok(Some(instrument_any_to_pyobject(py, inst)?)),

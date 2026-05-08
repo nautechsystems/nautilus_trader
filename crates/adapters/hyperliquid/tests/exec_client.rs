@@ -57,8 +57,13 @@ use nautilus_common::{
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_hyperliquid::{
-    common::enums::HyperliquidEnvironment, config::HyperliquidExecClientConfig,
-    execution::HyperliquidExecutionClient, http::models::Cloid,
+    common::{
+        consts::{HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE},
+        enums::HyperliquidEnvironment,
+    },
+    config::HyperliquidExecClientConfig,
+    execution::HyperliquidExecutionClient,
+    http::models::Cloid,
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
@@ -72,8 +77,8 @@ use nautilus_model::{
         AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderInitialized, OrderSubmitted,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId,
-        TraderId, Venue, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
+        VenueOrderId,
     },
     orders::{LimitOrder, MarketOrder, Order, OrderAny, OrderList, StopMarketOrder},
     reports::OrderStatusReport,
@@ -855,14 +860,14 @@ fn create_test_execution_client(
 ) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("HYPERLIQUID-001");
-    let client_id = ClientId::from("HYPERLIQUID");
+    let client_id = *HYPERLIQUID_CLIENT_ID;
 
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("HYPERLIQUID"),
+        *HYPERLIQUID_VENUE,
         OmsType::Netting,
         account_id,
         AccountType::Margin,
@@ -908,8 +913,8 @@ async fn test_exec_client_creation() {
     let addr = start_mock_server(state).await;
     let (client, _rx, _cache) = create_test_execution_client(addr);
 
-    assert_eq!(client.client_id(), ClientId::from("HYPERLIQUID"));
-    assert_eq!(client.venue(), Venue::from("HYPERLIQUID"));
+    assert_eq!(client.client_id(), *HYPERLIQUID_CLIENT_ID);
+    assert_eq!(client.venue(), *HYPERLIQUID_VENUE);
     assert_eq!(client.oms_type(), OmsType::Netting);
     assert!(!client.is_connected());
 }
@@ -941,7 +946,7 @@ async fn test_query_account_does_not_block_within_runtime() {
 
     let cmd = QueryAccount::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         AccountId::from("HYPERLIQUID-001"),
         UUID4::new(),
         UnixNanos::default(),
@@ -980,7 +985,7 @@ async fn test_query_account_emits_spot_balances() {
 
     let cmd = QueryAccount::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         AccountId::from("HYPERLIQUID-001"),
         UUID4::new(),
         UnixNanos::default(),
@@ -1041,7 +1046,7 @@ async fn test_query_account_propagates_spot_endpoint_failure() {
 
     let cmd = QueryAccount::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         AccountId::from("HYPERLIQUID-001"),
         UUID4::new(),
         UnixNanos::default(),
@@ -1131,7 +1136,7 @@ async fn test_submit_order_inner_error_cleans_up_dispatch_state() {
     let cmd = SubmitOrder::from_order(
         &order,
         order.trader_id(),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -1196,7 +1201,7 @@ async fn test_modify_order_marks_pending_modify_before_http_completes() {
     let old_voi = VenueOrderId::from("88888");
     let cmd = ModifyOrder::new(
         order.trader_id(),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
@@ -1269,7 +1274,7 @@ async fn test_modify_order_success_marks_pending_modify() {
     let old_voi = VenueOrderId::from("99999");
     let cmd = ModifyOrder::new(
         order.trader_id(),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
@@ -1326,7 +1331,7 @@ async fn test_modify_order_rejection_does_not_mark_pending_modify() {
     let old_voi = VenueOrderId::from("77777");
     let cmd = ModifyOrder::new(
         order.trader_id(),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
@@ -1387,7 +1392,7 @@ async fn test_modify_order_inner_error_clears_pending_modify() {
     let old_voi = VenueOrderId::from("66666");
     let cmd = ModifyOrder::new(
         order.trader_id(),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
@@ -1442,7 +1447,7 @@ async fn test_modify_order_transport_failure_clears_pending_modify() {
     let old_voi = VenueOrderId::from("55555");
     let cmd = ModifyOrder::new(
         order.trader_id(),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
@@ -1729,7 +1734,7 @@ async fn test_generate_order_status_report_oid_only_returns_terminal() {
 fn make_cancel_entry(coid: ClientOrderId, voi: VenueOrderId) -> CancelOrder {
     CancelOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
         coid,
@@ -1812,7 +1817,7 @@ async fn test_batch_cancel_orders_per_item_error_emits_cancel_rejected() {
 
     let batch = BatchCancelOrders::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
         vec![
@@ -1862,7 +1867,7 @@ async fn test_batch_cancel_orders_http_error_rejects_all_sent() {
     let coid_b = ClientOrderId::new("O-BATCH-B");
     let batch = BatchCancelOrders::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
         vec![
@@ -1912,7 +1917,7 @@ async fn test_batch_cancel_orders_missing_asset_index_skips_and_rejects() {
     let unknown_coid = ClientOrderId::new("O-BATCH-UNKNOWN");
     let unknown_entry = CancelOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from("NOPE-USD-PERP.HYPERLIQUID"),
         unknown_coid,
@@ -1924,7 +1929,7 @@ async fn test_batch_cancel_orders_missing_asset_index_skips_and_rejects() {
 
     let batch = BatchCancelOrders::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
         vec![
@@ -2009,7 +2014,7 @@ fn open_limit_order_in_cache(
 fn make_cancel_all_cmd(instrument_id: &str, side: OrderSide) -> CancelAllOrders {
     CancelAllOrders::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from(instrument_id),
         side,
@@ -2257,7 +2262,7 @@ async fn test_cancel_order_missing_emits_cancel_rejected() {
     let coid = ClientOrderId::new("O-CANCEL-GONE");
     let cmd = CancelOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
         coid,
@@ -2314,7 +2319,7 @@ fn make_query_order_cmd(
 ) -> QueryOrder {
     QueryOrder::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
         client_order_id,
@@ -2693,7 +2698,7 @@ fn make_submit_cmd(order: &OrderAny) -> SubmitOrder {
     SubmitOrder::from_order(
         order,
         order.trader_id(),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -2703,7 +2708,7 @@ fn make_submit_cmd(order: &OrderAny) -> SubmitOrder {
 fn make_submit_cmd_with_params(order: &OrderAny, params: Params) -> SubmitOrder {
     SubmitOrder::new(
         order.trader_id(),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
@@ -3084,7 +3089,7 @@ async fn test_modify_order_qty_at_filled_emits_modify_rejected() {
 
     let cmd = ModifyOrder::new(
         order.trader_id(),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
@@ -3144,7 +3149,7 @@ async fn test_modify_order_subtracts_filled_from_target_total() {
 
     let cmd = ModifyOrder::new(
         order.trader_id(),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
@@ -3238,7 +3243,7 @@ async fn test_submit_order_list_per_order_inner_error_rejects_only_failing() {
 
     let cmd = SubmitOrderList::new(
         trader_id,
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         strategy_id,
         order_list,
         vec![init_a, init_b],
@@ -3414,7 +3419,7 @@ async fn test_submit_order_list_grouped_error_broadcast_to_all() {
 
     let cmd = SubmitOrderList::new(
         trader_id,
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         strategy_id,
         order_list,
         vec![init_p, init_tp, init_sl],
@@ -3472,7 +3477,7 @@ async fn test_query_account_perp_endpoint_failure_emits_no_state() {
 
     let cmd = QueryAccount::new(
         TraderId::from("TESTER-001"),
-        Some(ClientId::from("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         AccountId::from("HYPERLIQUID-001"),
         UUID4::new(),
         UnixNanos::default(),
@@ -3743,13 +3748,13 @@ async fn test_get_account_address_uses_explicit_account_address() {
 
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("HYPERLIQUID-001");
-    let client_id = ClientId::from("HYPERLIQUID");
+    let client_id = *HYPERLIQUID_CLIENT_ID;
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let core = ExecutionClientCore::new(
         trader_id,
         client_id,
-        Venue::from("HYPERLIQUID"),
+        *HYPERLIQUID_VENUE,
         OmsType::Netting,
         account_id,
         AccountType::Margin,

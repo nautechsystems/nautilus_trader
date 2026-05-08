@@ -21,6 +21,7 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
+    common::consts::IB,
     config::{InteractiveBrokersDataClientConfig, InteractiveBrokersExecClientConfig},
     factories::{InteractiveBrokersDataClientFactory, InteractiveBrokersExecutionClientFactory},
 };
@@ -167,7 +168,7 @@ pub fn interactive_brokers(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult
     let registry = get_global_pyo3_registry();
 
     if let Err(e) = registry
-        .register_factory_extractor("IB".to_string(), extract_interactive_brokers_data_factory)
+        .register_factory_extractor(IB.to_string(), extract_interactive_brokers_data_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Interactive Brokers data factory extractor: {e}"
@@ -175,7 +176,7 @@ pub fn interactive_brokers(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult
     }
 
     if let Err(e) = registry
-        .register_exec_factory_extractor("IB".to_string(), extract_interactive_brokers_exec_factory)
+        .register_exec_factory_extractor(IB.to_string(), extract_interactive_brokers_exec_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Interactive Brokers exec factory extractor: {e}"

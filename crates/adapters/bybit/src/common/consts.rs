@@ -17,11 +17,17 @@
 
 use std::sync::LazyLock;
 
-use nautilus_model::identifiers::Venue;
+use nautilus_model::identifiers::{ClientId, Venue};
 use ustr::Ustr;
 
+/// Venue identifier string.
 pub const BYBIT: &str = "BYBIT";
+
+/// Static venue instance.
 pub static BYBIT_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(BYBIT)));
+
+/// Static client ID instance.
+pub static BYBIT_CLIENT_ID: LazyLock<ClientId> = LazyLock::new(|| ClientId::new(Ustr::from(BYBIT)));
 
 pub const BYBIT_PONG: &str = "pong";
 

@@ -17,7 +17,7 @@
 
 use std::sync::LazyLock;
 
-use nautilus_model::identifiers::Venue;
+use nautilus_model::identifiers::{ClientId, Venue};
 use nautilus_network::http::StatusCode;
 use ustr::Ustr;
 
@@ -26,6 +26,9 @@ pub const DYDX: &str = "DYDX";
 
 /// dYdX venue identifier.
 pub static DYDX_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(DYDX)));
+
+/// dYdX client ID.
+pub static DYDX_CLIENT_ID: LazyLock<ClientId> = LazyLock::new(|| ClientId::new(Ustr::from(DYDX)));
 
 /// dYdX mainnet chain ID.
 pub const DYDX_CHAIN_ID: &str = "dydx-mainnet-1";

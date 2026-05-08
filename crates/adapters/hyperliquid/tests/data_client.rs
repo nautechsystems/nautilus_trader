@@ -49,7 +49,10 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_hyperliquid::{
-    common::enums::HyperliquidEnvironment,
+    common::{
+        consts::{HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE},
+        enums::HyperliquidEnvironment,
+    },
     config::HyperliquidDataClientConfig,
     data::HyperliquidDataClient,
     http::{
@@ -58,10 +61,7 @@ use nautilus_hyperliquid::{
     },
 };
 use nautilus_model::{
-    data::Data,
-    enums::BookType,
-    identifiers::{ClientId, InstrumentId, Venue},
-    instruments::Instrument,
+    data::Data, enums::BookType, identifiers::InstrumentId, instruments::Instrument,
 };
 use nautilus_network::http::{HttpClient, Method};
 use rstest::rstest;
@@ -509,7 +509,7 @@ async fn test_data_client_connect_disconnect() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     assert!(!client.is_connected());
 
     client.connect().await.unwrap();
@@ -528,7 +528,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     let mut instrument_count = 0;
@@ -556,7 +556,7 @@ async fn test_data_client_emits_hip3_instruments() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     let mut standard_perp_symbols = Vec::new();
@@ -596,7 +596,7 @@ async fn test_data_client_subscribe_trades() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events from connect
@@ -605,7 +605,7 @@ async fn test_data_client_subscribe_trades() {
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
     let cmd = SubscribeTrades::new(
         instrument_id,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -641,7 +641,7 @@ async fn test_data_client_subscribe_quotes() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     while rx.try_recv().is_ok() {}
@@ -649,7 +649,7 @@ async fn test_data_client_subscribe_quotes() {
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
     let cmd = SubscribeQuotes::new(
         instrument_id,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -680,7 +680,7 @@ async fn test_data_client_subscribe_book_deltas() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     while rx.try_recv().is_ok() {}
@@ -689,7 +689,7 @@ async fn test_data_client_subscribe_book_deltas() {
     let cmd = SubscribeBookDeltas::new(
         instrument_id,
         BookType::L2_MBP,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         None,
         UUID4::new(),
         UnixNanos::default(),
@@ -722,7 +722,7 @@ async fn test_data_client_reset_clears_state() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
 
     client.reset().unwrap();
     assert!(!client.is_connected());
@@ -743,7 +743,7 @@ async fn test_data_client_request_instruments() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events from connect
@@ -754,8 +754,8 @@ async fn test_data_client_request_instruments() {
     let request = RequestInstruments::new(
         None,
         None,
-        Some(ClientId::new("HYPERLIQUID")),
-        Some(Venue::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        Some(*HYPERLIQUID_VENUE),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -784,7 +784,7 @@ async fn test_data_client_request_instrument() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events from connect
@@ -797,7 +797,7 @@ async fn test_data_client_request_instrument() {
         instrument_id,
         None,
         None,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -826,7 +826,7 @@ async fn test_data_client_request_book_snapshot() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events from connect
@@ -838,7 +838,7 @@ async fn test_data_client_request_book_snapshot() {
     let request = RequestBookSnapshot::new(
         instrument_id,
         None,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -872,7 +872,7 @@ async fn test_data_client_request_book_snapshot_with_depth() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events from connect
@@ -884,7 +884,7 @@ async fn test_data_client_request_book_snapshot_with_depth() {
     let request = RequestBookSnapshot::new(
         instrument_id,
         Some(NonZeroUsize::new(2).unwrap()),
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -923,14 +923,14 @@ async fn test_request_trades_returns_not_supported_error() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
 
     let cmd = RequestTrades::new(
         InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
         None,
         None,
         None,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -956,7 +956,7 @@ async fn test_request_funding_rates_non_perp_bails() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     let spot_id = InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID");
@@ -965,7 +965,7 @@ async fn test_request_funding_rates_non_perp_bails() {
         None,
         None,
         None,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -994,7 +994,7 @@ async fn test_request_funding_rates_emits_data_response_from_mock() {
     set_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(ClientId::new("HYPERLIQUID"), config).unwrap();
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
     // Drain instrument events emitted on connect.
@@ -1006,7 +1006,7 @@ async fn test_request_funding_rates_emits_data_response_from_mock() {
         None,
         None,
         None,
-        Some(ClientId::new("HYPERLIQUID")),
+        Some(*HYPERLIQUID_CLIENT_ID),
         UUID4::new(),
         UnixNanos::default(),
         None,

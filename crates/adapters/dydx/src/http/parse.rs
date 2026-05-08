@@ -1667,7 +1667,7 @@ mod reconciliation_tests {
     use chrono::Utc;
     use nautilus_model::{
         enums::{OrderSide, OrderStatus, TimeInForce},
-        identifiers::{AccountId, InstrumentId, Symbol, Venue},
+        identifiers::{AccountId, InstrumentId, Symbol},
         instruments::{CryptoPerpetual, Instrument},
         types::Currency,
     };
@@ -1677,9 +1677,10 @@ mod reconciliation_tests {
     use ustr::Ustr;
 
     use super::*;
+    use crate::common::consts::DYDX_VENUE;
 
     fn create_test_instrument() -> InstrumentAny {
-        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), Venue::new("DYDX"));
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), *DYDX_VENUE);
 
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
             instrument_id,

@@ -26,7 +26,10 @@ use nautilus_common::{
     timer::TimeEvent,
 };
 use nautilus_core::{Params, env::get_env_var};
-use nautilus_databento::factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig};
+use nautilus_databento::{
+    common::DATABENTO_CLIENT_ID,
+    factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig},
+};
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::{QuoteTick, TradeTick},
@@ -77,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let instrument_id = InstrumentId::from("6EM6.XCME");
     // let price_precision = Some(5); // Override default
 
-    let client_id = ClientId::new("DATABENTO");
+    let client_id = *DATABENTO_CLIENT_ID;
     let instrument_ids = vec![instrument_id];
 
     let mut node = LiveNode::builder(trader_id, environment)?

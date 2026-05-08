@@ -17,7 +17,7 @@
 
 use std::{num::NonZeroU32, sync::LazyLock};
 
-use nautilus_model::identifiers::Venue;
+use nautilus_model::identifiers::{ClientId, Venue};
 use nautilus_network::ratelimiter::quota::Quota;
 use ustr::Ustr;
 
@@ -27,7 +27,11 @@ use super::enums::{BinanceRateLimitInterval, BinanceRateLimitType};
 pub const BINANCE: &str = "BINANCE";
 
 /// Static venue instance for Binance.
-pub static BINANCE_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(BINANCE));
+pub static BINANCE_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(BINANCE)));
+
+/// Static client ID instance for Binance.
+pub static BINANCE_CLIENT_ID: LazyLock<ClientId> =
+    LazyLock::new(|| ClientId::new(Ustr::from(BINANCE)));
 
 /// Binance Link and Trade broker ID for Spot.
 ///

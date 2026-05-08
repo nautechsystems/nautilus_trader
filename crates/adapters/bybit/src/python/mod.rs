@@ -35,7 +35,7 @@ use pyo3::prelude::*;
 
 use crate::{
     common::{
-        consts::BYBIT_NAUTILUS_BROKER_ID,
+        consts::{BYBIT, BYBIT_NAUTILUS_BROKER_ID},
         enums::{BybitOrderSide, BybitPositionIdx, BybitPositionMode},
         parse::{
             bar_spec_to_bybit_interval, extract_raw_symbol, make_hedge_venue_position_id,
@@ -237,7 +237,7 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let registry = get_global_pyo3_registry();
 
     if let Err(e) =
-        registry.register_factory_extractor("BYBIT".to_string(), extract_bybit_data_factory)
+        registry.register_factory_extractor(BYBIT.to_string(), extract_bybit_data_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Bybit data factory extractor: {e}"
@@ -245,7 +245,7 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) = registry
-        .register_exec_factory_extractor("BYBIT".to_string(), extract_bybit_exec_factory)
+        .register_exec_factory_extractor(BYBIT.to_string(), extract_bybit_exec_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Bybit exec factory extractor: {e}"

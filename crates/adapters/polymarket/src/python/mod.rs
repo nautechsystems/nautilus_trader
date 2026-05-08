@@ -30,6 +30,7 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
+    common::consts::POLYMARKET,
     config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
 };
@@ -102,8 +103,8 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     let registry = get_global_pyo3_registry();
 
-    if let Err(e) = registry
-        .register_factory_extractor("POLYMARKET".to_string(), extract_polymarket_data_factory)
+    if let Err(e) =
+        registry.register_factory_extractor(POLYMARKET.to_string(), extract_polymarket_data_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Polymarket data factory extractor: {e}"
@@ -111,7 +112,7 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) = registry
-        .register_exec_factory_extractor("POLYMARKET".to_string(), extract_polymarket_exec_factory)
+        .register_exec_factory_extractor(POLYMARKET.to_string(), extract_polymarket_exec_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Polymarket exec factory extractor: {e}"

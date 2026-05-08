@@ -19,13 +19,15 @@
 
 use nautilus_common::enums::Environment;
 use nautilus_deribit::{
-    common::enums::DeribitEnvironment, config::DeribitDataClientConfig,
-    factories::DeribitDataClientFactory, http::models::DeribitProductType,
+    common::{consts::DERIBIT_CLIENT_ID, enums::DeribitEnvironment},
+    config::DeribitDataClientConfig,
+    factories::DeribitDataClientFactory,
+    http::models::DeribitProductType,
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::bar::BarType,
-    identifiers::{ClientId, InstrumentId, TraderId},
+    identifiers::{InstrumentId, TraderId},
     stubs::TestDefault,
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
@@ -51,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let client_factory = DeribitDataClientFactory::new();
-    let client_id = ClientId::new("DERIBIT");
+    let client_id = *DERIBIT_CLIENT_ID;
 
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name(node_name)

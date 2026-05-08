@@ -919,11 +919,10 @@ impl DataClient for KrakenSpotDataClient {
 #[cfg(test)]
 mod tests {
     use nautilus_common::{live::runner::set_data_event_sender, messages::DataEvent};
-    use nautilus_model::identifiers::ClientId;
     use rstest::rstest;
 
     use super::*;
-    use crate::config::KrakenDataClientConfig;
+    use crate::{common::consts::KRAKEN_CLIENT_ID, config::KrakenDataClientConfig};
 
     fn setup_test_env() {
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -934,11 +933,11 @@ mod tests {
     fn test_spot_data_client_new() {
         setup_test_env();
         let config = KrakenDataClientConfig::default();
-        let client = KrakenSpotDataClient::new(ClientId::from("KRAKEN"), config);
+        let client = KrakenSpotDataClient::new(*KRAKEN_CLIENT_ID, config);
         assert!(client.is_ok());
 
         let client = client.unwrap();
-        assert_eq!(client.client_id(), ClientId::from("KRAKEN"));
+        assert_eq!(client.client_id(), *KRAKEN_CLIENT_ID);
         assert_eq!(client.venue(), Some(*KRAKEN_VENUE));
         assert!(!client.is_connected());
         assert!(client.is_disconnected());
@@ -949,7 +948,7 @@ mod tests {
     fn test_spot_data_client_start_stop() {
         setup_test_env();
         let config = KrakenDataClientConfig::default();
-        let mut client = KrakenSpotDataClient::new(ClientId::from("KRAKEN"), config).unwrap();
+        let mut client = KrakenSpotDataClient::new(*KRAKEN_CLIENT_ID, config).unwrap();
 
         assert!(client.start().is_ok());
         assert!(client.stop().is_ok());

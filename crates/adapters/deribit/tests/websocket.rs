@@ -38,14 +38,14 @@ use futures_util::{StreamExt, pin_mut};
 use nautilus_common::testing::wait_until_async;
 use nautilus_core::{AtomicSet, UnixNanos};
 use nautilus_deribit::{
-    common::enums::DeribitEnvironment,
+    common::{consts::DERIBIT_VENUE, enums::DeribitEnvironment},
     websocket::{
         auth::DERIBIT_DATA_SESSION_NAME, client::DeribitWebSocketClient,
         enums::DeribitUpdateInterval, messages::NautilusWsMessage,
     },
 };
 use nautilus_model::{
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::{InstrumentId, Symbol},
     instruments::{CryptoPerpetual, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
@@ -69,7 +69,7 @@ fn load_json(filename: &str) -> Value {
 /// Creates a mock BTC-PERPETUAL instrument for testing.
 fn create_btc_perpetual() -> InstrumentAny {
     InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-        InstrumentId::new(Symbol::from("BTC-PERPETUAL"), Venue::from("DERIBIT")),
+        InstrumentId::new(Symbol::from("BTC-PERPETUAL"), *DERIBIT_VENUE),
         Symbol::from("BTC-PERPETUAL"),
         Currency::BTC(),
         Currency::USD(),

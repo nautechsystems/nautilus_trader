@@ -23,14 +23,14 @@
 //! Run with: `cargo run --example bitmex-exec-tester --package nautilus-bitmex --features examples`
 
 use nautilus_bitmex::{
-    common::enums::BitmexEnvironment,
+    common::{consts::BITMEX_CLIENT_ID, enums::BitmexEnvironment},
     config::{BitmexDataClientConfig, BitmexExecClientConfig},
     factories::{BitmexDataClientFactory, BitmexExecFactoryConfig, BitmexExecutionClientFactory},
 };
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    identifiers::{ClientId, InstrumentId, StrategyId, TraderId},
+    identifiers::{InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ..Default::default()
         })
         .instrument_id(instrument_id)
-        .client_id(ClientId::new("BITMEX"))
+        .client_id(*BITMEX_CLIENT_ID)
         .order_qty(Quantity::from("100"))
         .use_post_only(true)
         .log_data(false)

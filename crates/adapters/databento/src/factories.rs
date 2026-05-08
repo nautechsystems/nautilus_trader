@@ -30,7 +30,7 @@ use nautilus_core::{
 use nautilus_model::identifiers::ClientId;
 
 use crate::{
-    common::Credential,
+    common::{Credential, DATABENTO},
     data::{DatabentoDataClient, DatabentoDataClientConfig},
     historical::DatabentoHistoricalClient,
 };
@@ -201,7 +201,7 @@ impl DataClientFactory for DatabentoDataClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "DATABENTO"
+        DATABENTO
     }
 
     fn config_type(&self) -> &'static str {

@@ -28,14 +28,14 @@
 
 use nautilus_common::enums::Environment;
 use nautilus_kraken::{
-    common::{credential::KrakenCredential, enums::KrakenProductType},
+    common::{consts::KRAKEN_CLIENT_ID, credential::KrakenCredential, enums::KrakenProductType},
     config::{KrakenDataClientConfig, KrakenExecClientConfig},
     factories::{KrakenDataClientFactory, KrakenExecutionClientFactory},
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::BarType,
-    identifiers::{AccountId, ClientId, InstrumentId, TraderId},
+    identifiers::{AccountId, InstrumentId, TraderId},
     types::Quantity,
 };
 use nautilus_trading::examples::strategies::{HurstVpinDirectional, HurstVpinDirectionalConfig};
@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("KRAKEN-001");
     let node_name = "KRAKEN-HURST-VPIN-001".to_string();
-    let client_id = ClientId::new("KRAKEN");
+    let client_id = *KRAKEN_CLIENT_ID;
 
     let credential = KrakenCredential::resolve_futures(None, None, false)
         .ok_or("API credentials required (set KRAKEN_FUTURES_API_KEY/KRAKEN_FUTURES_API_SECRET)")?;

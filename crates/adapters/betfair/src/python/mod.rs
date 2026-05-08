@@ -24,6 +24,7 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
+    common::consts::BETFAIR,
     config::{BetfairDataConfig, BetfairExecConfig},
     factories::{BetfairDataClientFactory, BetfairExecutionClientFactory},
 };
@@ -97,15 +98,15 @@ pub fn betfair(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let registry = get_global_pyo3_registry();
 
     if let Err(e) =
-        registry.register_factory_extractor("BETFAIR".to_string(), extract_betfair_data_factory)
+        registry.register_factory_extractor(BETFAIR.to_string(), extract_betfair_data_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Betfair data factory extractor: {e}"
         )));
     }
 
-    if let Err(e) = registry
-        .register_exec_factory_extractor("BETFAIR".to_string(), extract_betfair_exec_factory)
+    if let Err(e) =
+        registry.register_exec_factory_extractor(BETFAIR.to_string(), extract_betfair_exec_factory)
     {
         return Err(to_pyruntime_err(format!(
             "Failed to register Betfair exec factory extractor: {e}"

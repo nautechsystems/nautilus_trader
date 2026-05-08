@@ -1769,11 +1769,11 @@ impl DydxHttpClient {
 #[cfg(test)]
 mod tests {
     use axum::{Router, routing::get};
-    use nautilus_model::identifiers::{Symbol, Venue};
+    use nautilus_model::identifiers::Symbol;
     use rstest::rstest;
 
     use super::*;
-    use crate::http::error;
+    use crate::{common::consts::DYDX_VENUE, http::error};
 
     #[tokio::test]
     async fn test_raw_client_creation() {
@@ -1844,7 +1844,7 @@ mod tests {
     #[rstest]
     fn test_domain_client_get_instrument_not_found() {
         let client = DydxHttpClient::default();
-        let instrument_id = InstrumentId::new(Symbol::new("ETH-USD-PERP"), Venue::new("DYDX"));
+        let instrument_id = InstrumentId::new(Symbol::new("ETH-USD-PERP"), *DYDX_VENUE);
         let result = client.get_instrument(&instrument_id);
         assert!(result.is_none());
     }

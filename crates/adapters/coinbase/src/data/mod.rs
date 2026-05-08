@@ -1027,6 +1027,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::common::consts::COINBASE_CLIENT_ID;
 
     // Coinbase Advanced Trade does not publish live mark prices for its
     // perpetuals, so `subscribe_mark_prices` must return an explicit error
@@ -1039,13 +1040,13 @@ mod tests {
         set_data_event_sender(tx);
 
         let config = CoinbaseDataClientConfig::default();
-        let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config)
-            .expect("client construction");
+        let mut client =
+            CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).expect("client construction");
 
         let instrument_id = InstrumentId::from("BIP-20DEC30-CDE.COINBASE");
         let cmd = SubscribeMarkPrices::new(
             instrument_id,
-            Some(ClientId::new("COINBASE")),
+            Some(*COINBASE_CLIENT_ID),
             None,
             UUID4::new(),
             UnixNanos::default(),

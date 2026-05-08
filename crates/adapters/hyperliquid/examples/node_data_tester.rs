@@ -23,11 +23,11 @@ use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_hyperliquid::{
     HyperliquidDataClientConfig, HyperliquidDataClientFactory,
-    common::enums::HyperliquidEnvironment,
+    common::{consts::HYPERLIQUID_CLIENT_ID, enums::HyperliquidEnvironment},
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    identifiers::{ClientId, InstrumentId, TraderId},
+    identifiers::{InstrumentId, TraderId},
     stubs::TestDefault,
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let client_factory = HyperliquidDataClientFactory::new();
-    let client_id = ClientId::new("HYPERLIQUID");
+    let client_id = *HYPERLIQUID_CLIENT_ID;
 
     let log_config = LoggerConfig {
         stdout_level: LevelFilter::Info,
