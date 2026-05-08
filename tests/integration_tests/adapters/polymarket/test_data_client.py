@@ -135,8 +135,18 @@ def _make_data_client(
     client._ws_client.is_connected = MagicMock(return_value=True)
     client._ws_client.subscribe = AsyncMock()
     client._ws_client.unsubscribe = AsyncMock()
+    client._ws_client.disconnect = AsyncMock()
 
     return client, provider
+
+
+def test_handle_raw_ws_message_with_non_utf8_payload_does_not_raise(event_loop) -> None:
+    client, _ = _make_data_client(event_loop)
+    client._decoder_market_msg = MagicMock()
+    client._decoder_market_msg.decode.side_effect = ValueError("invalid payload")
+
+    # Non-UTF8 bytes should still be safely logged on parser failure.
+    client._handle_raw_ws_message(b"\xff")
 
 
 def test_tick_size_change_clears_book_and_marks_pending(event_loop) -> None:
@@ -366,6 +376,7 @@ def _make_client_for_auto_load(
     client._ws_client.is_connected = MagicMock(return_value=True)
     client._ws_client.subscribe = AsyncMock()
     client._ws_client.add_subscription = MagicMock()
+    client._ws_client.disconnect = AsyncMock()
 
     return client, provider
 
