@@ -301,7 +301,7 @@ impl Portfolio {
                 log::error!("Cannot get balances locked: no account generated for {venue}");
                 IndexMap::new()
             },
-            AccountAny::balances_locked,
+            |account| account.balances_locked(),
         )
     }
 
@@ -317,7 +317,7 @@ impl Portfolio {
                 );
                 IndexMap::new()
             },
-            |account| match account {
+            |account| match &*account {
                 AccountAny::Margin(margin_account) => margin_account.initial_margins(),
                 AccountAny::Cash(_) | AccountAny::Betting(_) => {
                     log::warn!("Initial margins not applicable for cash account");
@@ -339,7 +339,7 @@ impl Portfolio {
                 );
                 IndexMap::new()
             },
-            |account| match account {
+            |account| match &*account {
                 AccountAny::Margin(margin_account) => margin_account.maintenance_margins(),
                 AccountAny::Cash(_) | AccountAny::Betting(_) => {
                     log::warn!("Maintenance margins not applicable for cash account");
@@ -491,8 +491,8 @@ impl Portfolio {
                 continue; // Nothing to calculate
             }
 
-            let price = self.get_price(position)?;
-            let xrate = if let Some(xrate) = self.calculate_xrate_to_base(instrument, account) {
+            let price = self.get_price(&position)?;
+            let xrate = if let Some(xrate) = self.calculate_xrate_to_base(instrument, &account) {
                 xrate
             } else {
                 log::error!(
@@ -686,7 +686,7 @@ impl Portfolio {
                         .into_iter()
                         .map(|(c, m)| (c, m.as_f64()))
                         .collect();
-                    (equity, matches!(account, AccountAny::Margin(_)))
+                    (equity, matches!(&*account, AccountAny::Margin(_)))
                 }
                 None => return IndexMap::new(),
             }
@@ -829,7 +829,7 @@ impl Portfolio {
                 }
             };
 
-            let price = match self.get_price(position) {
+            let price = match self.get_price(&position) {
                 Some(p) => p,
                 None => {
                     unpriced.insert(position.instrument_id);
@@ -839,7 +839,7 @@ impl Portfolio {
 
             let settlement = instrument.settlement_currency();
             let (xrate, currency) = if self.config.convert_to_account_base_currency
-                && let Some(account) = account
+                && let Some(account) = account.as_ref()
                 && let Some(base_currency) = account.base_currency()
             {
                 let xrate_opt = *xrate_cache
@@ -888,7 +888,6 @@ impl Portfolio {
 
         let mut net_exposure = 0.0;
         let mut first_base_currency: Option<Currency> = None;
-        let mut first_account: Option<&AccountAny> = None;
 
         for position in &positions_open {
             // Get account for THIS position
@@ -907,7 +906,6 @@ impl Portfolio {
                 match first_base_currency {
                     None => {
                         first_base_currency = Some(base);
-                        first_account = Some(account);
                     }
                     Some(first) if first != base => {
                         log::error!(
@@ -922,7 +920,7 @@ impl Portfolio {
             }
 
             let price = self.get_price(position)?;
-            let xrate = if let Some(xrate) = self.calculate_xrate_to_base(instrument, account) {
+            let xrate = if let Some(xrate) = self.calculate_xrate_to_base(instrument, &account) {
                 xrate
             } else {
                 log::error!(
@@ -938,9 +936,8 @@ impl Portfolio {
             net_exposure += notional_value.as_f64() * xrate;
         }
 
-        let settlement_currency = first_account
-            .and_then(|a| a.base_currency())
-            .unwrap_or_else(|| instrument.settlement_currency());
+        let settlement_currency =
+            first_base_currency.unwrap_or_else(|| instrument.settlement_currency());
 
         Some(Money::new(net_exposure, settlement_currency))
     }
@@ -1098,7 +1095,7 @@ impl Portfolio {
             all_positions_open = cache
                 .positions_open(None, None, None, None, None)
                 .into_iter()
-                .cloned()
+                .map(|p| p.cloned())
                 .collect();
 
             for position in &all_positions_open {
@@ -1114,7 +1111,7 @@ impl Portfolio {
                 cache
                     .positions_open(None, Some(&instrument_id), None, None, None)
                     .into_iter()
-                    .cloned()
+                    .map(|p| p.cloned())
                     .collect()
             };
 
@@ -1148,7 +1145,7 @@ impl Portfolio {
             }
 
             let cache = self.cache.borrow();
-            let Some(account) = cache.account_for_venue(&instrument_id.venue).cloned() else {
+            let Some(account) = cache.account_for_venue_owned(&instrument_id.venue) else {
                 log::error!(
                     "Cannot update maintenance (position) margin: no account registered for {}",
                     instrument_id.venue
@@ -1172,7 +1169,7 @@ impl Portfolio {
             let positions: Vec<Position> = cache
                 .positions_open(None, Some(&instrument_id), None, None, None)
                 .into_iter()
-                .cloned()
+                .map(|p| p.cloned())
                 .collect();
             drop(cache);
 
@@ -1306,7 +1303,7 @@ impl Portfolio {
                 continue; // Nothing to calculate
             }
 
-            let price = if let Some(price) = self.get_price(position) {
+            let price = if let Some(price) = self.get_price(&position) {
                 price
             } else {
                 log::debug!("Cannot calculate unrealized PnL: no prices for {instrument_id}");
@@ -1317,7 +1314,8 @@ impl Portfolio {
             let mut pnl = position.unrealized_pnl(price).as_f64();
 
             if let Some(base_currency) = account.base_currency() {
-                let xrate = if let Some(xrate) = self.calculate_xrate_to_base(instrument, account) {
+                let xrate = if let Some(xrate) = self.calculate_xrate_to_base(instrument, &account)
+                {
                     xrate
                 } else {
                     log::error!(
@@ -1587,7 +1585,7 @@ impl Portfolio {
                             && positions.iter().any(|p| p.id == *position_id)
                         {
                             let xrate = if let Some(xrate) =
-                                self.calculate_xrate_to_base(instrument, account)
+                                self.calculate_xrate_to_base(instrument, &account)
                             {
                                 xrate
                             } else {
@@ -1657,7 +1655,7 @@ impl Portfolio {
 
                     if let Some(base_currency) = account.base_currency() {
                         let xrate = if let Some(xrate) =
-                            self.calculate_xrate_to_base(instrument, account)
+                            self.calculate_xrate_to_base(instrument, &account)
                         {
                             xrate
                         } else {
@@ -1728,7 +1726,7 @@ impl Portfolio {
 
                     if let Some(base_currency) = account.base_currency() {
                         let xrate = if let Some(xrate) =
-                            self.calculate_xrate_to_base(instrument, account)
+                            self.calculate_xrate_to_base(instrument, &account)
                         {
                             xrate
                         } else {
@@ -1958,7 +1956,7 @@ fn update_order(
             return;
         };
 
-        match account {
+        match &*account {
             AccountAny::Margin(margin_account) => {
                 if !margin_account.base.calculate_account_state {
                     return;
@@ -2165,7 +2163,7 @@ fn update_position(
             .insert(event.instrument_id());
     }
 
-    let account = cache.borrow().account(&event.account_id()).cloned();
+    let account = cache.borrow().account_owned(&event.account_id());
 
     match account {
         Some(AccountAny::Margin(margin_account)) => {

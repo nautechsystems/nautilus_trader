@@ -839,9 +839,9 @@ impl RiskEngine {
             let cache = self.cache.borrow();
 
             if let Some(account_id) = account_id {
-                cache.account(&account_id).cloned()
+                cache.account_owned(&account_id)
             } else {
-                cache.account_for_venue(&instrument.id().venue).cloned()
+                cache.account_for_venue_owned(&instrument.id().venue)
             }
         };
 

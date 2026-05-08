@@ -26,7 +26,6 @@ use nautilus_model::{
     enums::{AssetClass, PriceType},
     identifiers::InstrumentId,
     instruments::Instrument,
-    position::Position,
     types::{Currency, Money},
 };
 
@@ -226,7 +225,7 @@ impl FXRolloverInterestModule {
         }
 
         for (instrument_id, &mid) in &mid_prices {
-            let positions: Vec<&Position> =
+            let positions =
                 ctx.cache
                     .positions_open(Some(&ctx.venue), Some(instrument_id), None, None, None);
 

@@ -520,7 +520,7 @@ impl SimulatedExchange {
                         current_balance.total = current_balance.total + adjustment;
                         current_balance.free = current_balance.free + adjustment;
 
-                        let margins = match account {
+                        let margins = match &*account {
                             AccountAny::Margin(margin_account) => margin_account.margins.clone(),
                             _ => IndexMap::new(),
                         };
@@ -1683,7 +1683,7 @@ mod tests {
 
         let cache_ref = cache.borrow();
         let account = cache_ref.account(&AccountId::from("SIM-001")).unwrap();
-        match account {
+        match &*account {
             AccountAny::Margin(margin) => {
                 assert!(margin.base.calculate_account_state);
             }
@@ -1734,7 +1734,7 @@ mod tests {
 
         let cache_ref = cache.borrow();
         let account = cache_ref.account(&AccountId::from("SIM-001")).unwrap();
-        match account {
+        match &*account {
             AccountAny::Cash(cash) => {
                 assert!(cash.base.calculate_account_state);
                 assert!(cash.allow_borrowing);
@@ -1761,7 +1761,7 @@ mod tests {
 
         let cache_ref = cache.borrow();
         let account = cache_ref.account(&AccountId::from("SIM-001")).unwrap();
-        match account {
+        match &*account {
             AccountAny::Margin(margin) => {
                 assert!(!margin.base.calculate_account_state);
             }

@@ -545,7 +545,7 @@ impl ExecutionClient for BybitExecutionClient {
     }
 
     fn get_account(&self) -> Option<AccountAny> {
-        self.core.cache().account(&self.core.account_id).cloned()
+        self.core.cache().account_owned(&self.core.account_id)
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {

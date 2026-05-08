@@ -32,7 +32,12 @@ use nautilus_model::{
     types::Price,
 };
 
-use crate::{cache::Cache, clock::Clock, msgbus, msgbus::TypedHandler};
+use crate::{
+    cache::{Cache, refs::PositionRef},
+    clock::Clock,
+    msgbus,
+    msgbus::TypedHandler,
+};
 
 /// Type alias for a greeks filter function.
 pub type GreeksFilter = Box<dyn Fn(&GreeksData) -> bool>;
@@ -887,7 +892,8 @@ impl GreeksCalculator {
             None, // account_id
             Some(side),
         );
-        let open_positions: Vec<Position> = open_positions.iter().map(|&p| p.clone()).collect();
+        let open_positions: Vec<Position> =
+            open_positions.iter().map(PositionRef::cloned).collect();
 
         for position in open_positions {
             let position_instrument_id = position.instrument_id;

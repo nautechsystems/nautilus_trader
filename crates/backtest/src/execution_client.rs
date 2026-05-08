@@ -160,7 +160,7 @@ impl ExecutionClient for BacktestExecutionClient {
     }
 
     fn get_account(&self) -> Option<AccountAny> {
-        self.cache.borrow().account(&self.core.account_id).cloned()
+        self.cache.borrow().account_owned(&self.core.account_id)
     }
 
     fn generate_account_state(

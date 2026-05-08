@@ -936,7 +936,11 @@ impl BacktestEngine {
         let orders = cache.orders(None, None, None, None, None);
         let total_events: usize = orders.iter().map(|o| o.event_count()).sum();
         let total_orders = orders.len();
-        let positions = cache.positions(None, None, None, None, None);
+        let positions: Vec<Position> = cache
+            .positions(None, None, None, None, None)
+            .into_iter()
+            .map(|p| p.cloned())
+            .collect();
         let total_positions = positions.len();
 
         let analyzer = self.build_analyzer(&cache, &positions);
@@ -972,9 +976,8 @@ impl BacktestEngine {
         }
     }
 
-    fn build_analyzer(&self, cache: &Cache, positions: &[&Position]) -> PortfolioAnalyzer {
+    fn build_analyzer(&self, cache: &Cache, positions: &[Position]) -> PortfolioAnalyzer {
         let mut analyzer = PortfolioAnalyzer::default();
-        let positions_owned: Vec<_> = positions.iter().map(|p| (*p).clone()).collect();
         let mut snapshot_positions = Vec::new();
 
         for position in positions {
@@ -984,7 +987,7 @@ impl BacktestEngine {
         // Aggregate starting and current balances across all venue accounts
         for venue in self.venues.keys() {
             if let Some(account) = cache.account_for_venue(venue) {
-                let account_ref: &dyn Account = match account {
+                let account_ref: &dyn Account = match &*account {
                     AccountAny::Margin(margin) => margin,
                     AccountAny::Cash(cash) => cash,
                     AccountAny::Betting(betting) => betting,
@@ -1008,7 +1011,7 @@ impl BacktestEngine {
             }
         }
 
-        analyzer.add_positions(&positions_owned);
+        analyzer.add_positions(positions);
         analyzer.add_positions(&snapshot_positions);
         analyzer
     }
@@ -1321,7 +1324,7 @@ impl BacktestEngine {
 
             if let Some(account) = cache.account_for_venue(&ex.id) {
                 log::info!("Balances starting:");
-                let account_ref: &dyn Account = match account {
+                let account_ref: &dyn Account = match &*account {
                     AccountAny::Margin(margin) => margin,
                     AccountAny::Cash(cash) => cash,
                     AccountAny::Betting(betting) => betting,
@@ -1358,7 +1361,11 @@ impl BacktestEngine {
         let orders = cache.orders(None, None, None, None, None);
         let total_events: usize = orders.iter().map(|o| o.event_count()).sum();
         let total_orders = orders.len();
-        let positions = cache.positions(None, None, None, None, None);
+        let positions: Vec<Position> = cache
+            .positions(None, None, None, None, None)
+            .into_iter()
+            .map(|p| p.cloned())
+            .collect();
         let total_positions = positions.len();
 
         let config_id = self.run_config_id.as_deref().unwrap_or("None");

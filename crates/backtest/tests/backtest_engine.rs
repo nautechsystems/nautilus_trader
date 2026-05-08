@@ -825,39 +825,46 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
     engine.run(None, None, None, false).unwrap();
 
     let cache_rc = engine.kernel().cache();
-    let cache = cache_rc.borrow();
-    let positions = cache.positions(None, None, None, None, None);
+    let (expected_total, cache_realized_count, snapshots_realized, snapshots_realized_count) = {
+        let cache = cache_rc.borrow();
+        let positions = cache.positions(None, None, None, None, None);
 
-    let cache_realized: f64 = positions
-        .iter()
-        .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
-        .sum();
-    let cache_realized_count = positions
-        .iter()
-        .filter(|p| p.realized_pnl.is_some())
-        .count() as f64;
+        let cache_realized: f64 = positions
+            .iter()
+            .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
+            .sum();
+        let cache_realized_count = positions
+            .iter()
+            .filter(|p| p.realized_pnl.is_some())
+            .count() as f64;
 
-    let snapshot_positions: Vec<Position> = positions
-        .iter()
-        .flat_map(|p| cache.position_snapshots(Some(&p.id), None))
-        .collect();
-    let snapshots_realized: f64 = snapshot_positions
-        .iter()
-        .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
-        .sum();
-    let snapshots_realized_count = snapshot_positions
-        .iter()
-        .filter(|p| p.realized_pnl.is_some())
-        .count() as f64;
+        let snapshot_positions: Vec<Position> = positions
+            .iter()
+            .flat_map(|p| cache.position_snapshots(Some(&p.id), None))
+            .collect();
+        let snapshots_realized: f64 = snapshot_positions
+            .iter()
+            .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
+            .sum();
+        let snapshots_realized_count = snapshot_positions
+            .iter()
+            .filter(|p| p.realized_pnl.is_some())
+            .count() as f64;
 
-    assert!(
-        snapshots_realized.abs() > 0.0,
-        "expected non-zero snapshot realized history"
-    );
+        assert!(
+            snapshots_realized.abs() > 0.0,
+            "expected non-zero snapshot realized history"
+        );
 
-    let expected_total = cache_realized + snapshots_realized;
+        (
+            cache_realized + snapshots_realized,
+            cache_realized_count,
+            snapshots_realized,
+            snapshots_realized_count,
+        )
+    };
+
     let expected_expectancy = expected_total / (cache_realized_count + snapshots_realized_count);
-    drop(cache);
 
     let bt_result = engine.get_result();
     let expectancy = bt_result

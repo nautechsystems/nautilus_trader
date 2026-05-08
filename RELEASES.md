@@ -5,13 +5,15 @@ Released on TBD (UTC).
 ### Enhancements
 - Added continuous futures support for aggregated bars (#3921), thanks @faysou
 - Added `purge_instrument` cache method for trimming unused instruments (#3945), thanks for reporting @fedoraiver
-- Added Rust `Cache::order_owned` returning an owned `OrderAny` snapshot for boundary handover
 - Added `LoggerConfig.file_config` and `clear_log_file` support to the Rust `LiveNode` runtime (#3955), thanks @filipmacek
 - Added `LoggerConfig` Python constructor for direct construction without `from_spec` (#3955), thanks @filipmacek
 - Added `limit_aggressive` and `test_modify_rejected` flags to `ExecTesterConfig` for marketable/modify-rejection tests
 - Added `CompositeMarketMaker` example strategy with book-mid quoting and synthetic-signal skew (Rust)
 - Added `#[custom_data_field(json)]` for JSON-backed Arrow `Utf8` storage of Serde-serializable fields, with typed PyO3 dict conversion for supported `IndexMap<K, V>` and `HashMap<K, V>` element types (#4003), thanks @faysou
 - Added `priority` parameter to `DataActor.subscribe_signal` for ordered dispatch between subscribers (Rust and PyO3)
+- Added `Cache::order_owned` returning an owned `OrderAny` snapshot for boundary handover (Rust)
+- Added `Cache::account_mut`, `account_owned`, `account_for_venue_owned` with `AccountRefMut`/`AccountAny` returns (Rust)
+- Added `Cache::position_mut` and `position_owned` with `PositionRefMut`/`Position` returns (Rust)
 - Added Betfair Rust adapter post-reconnect mass-status reconciliation that halts submits via `STREAM_RECONCILING`
 - Added Betfair Rust adapter `stream_gap_recovery_lookback_mins` config for the reconciliation lookback window
 - Added Bybit hedge-mode venue position IDs for order, position, and fill events
@@ -35,6 +37,9 @@ Released on TBD (UTC).
 - Renamed `time_bars_origins` config param to `time_bars_origin_offset` in `DataEngineConfig`/`LiveDataEngineConfig` (Rust)
 - Renamed `Cache::mut_order` to `order_mut`; takes `&mut Cache` and returns `OrderRefMut<'_>` (Rust)
 - Changed `Cache::order` and `orders_*` to return `OrderRef<'_>` (newtype borrow, was `&OrderAny`) (Rust)
+- Changed `Cache::account`, `account_for_venue`, `accounts` to return `AccountRef<'_>` (was `&AccountAny`) (Rust)
+- Changed `Cache::position`, `position_for_order`, `positions_*` to return `PositionRef<'_>` (was `&Position`) (Rust)
+- Changed `Cache::take_account` to move the account out of its cell and panic on alias instead of cloning (Rust)
 - Changed to deny `submit_order`/`submit_order_list` with a custom `position_id` under `NETTING` OMS; use `HEDGING` for custom position IDs
 - Changed JSON log file extension from `.json` to `.jsonl`; update log shippers watching `.json` (#3955), thanks @filipmacek
 - Changed Python order `create()` methods to raise `ValueError` on invalid `OrderInitialized` instead of panicking

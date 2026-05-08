@@ -1890,7 +1890,7 @@ impl ExecutionManager {
 
         let position = {
             let cache = self.cache.borrow();
-            cache.position(&venue_position_id).cloned()
+            cache.position_owned(&venue_position_id)
         };
 
         match position {

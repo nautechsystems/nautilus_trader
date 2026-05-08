@@ -929,6 +929,7 @@ pub trait Strategy: DataActor {
             .iter()
             .map(|p| (p.id, p.instrument_id, p.side, p.quantity, p.is_closed()))
             .collect();
+        drop(positions_open);
 
         drop(cache);
 

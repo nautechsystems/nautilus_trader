@@ -73,7 +73,7 @@ use nautilus_model::{
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };
-pub use refs::{OrderRef, OrderRefMut};
+pub use refs::{AccountRef, AccountRefMut, OrderRef, OrderRefMut, PositionRef, PositionRefMut};
 use ustr::Ustr;
 
 use crate::xrate::get_exchange_rate;
@@ -136,10 +136,10 @@ pub struct Cache {
     greeks: AHashMap<InstrumentId, GreeksData>,
     option_greeks: AHashMap<InstrumentId, OptionGreeks>,
     yield_curves: AHashMap<String, YieldCurveData>,
-    accounts: AHashMap<AccountId, AccountAny>,
+    accounts: AHashMap<AccountId, SharedCell<AccountAny>>,
     orders: AHashMap<ClientOrderId, SharedCell<OrderAny>>,
     order_lists: AHashMap<OrderListId, OrderList>,
-    positions: AHashMap<PositionId, Position>,
+    positions: AHashMap<PositionId, SharedCell<Position>>,
     position_snapshots: AHashMap<PositionId, Vec<Bytes>>,
     #[cfg(feature = "defi")]
     pub(crate) defi: crate::defi::cache::DefiCache,
@@ -273,13 +273,21 @@ impl Cache {
         self.currencies = cache_map.currencies;
         self.instruments = cache_map.instruments;
         self.synthetics = cache_map.synthetics;
-        self.accounts = cache_map.accounts;
+        self.accounts = cache_map
+            .accounts
+            .into_iter()
+            .map(|(id, account)| (id, SharedCell::new(account)))
+            .collect();
         self.orders = cache_map
             .orders
             .into_iter()
             .map(|(id, order)| (id, SharedCell::new(order)))
             .collect();
-        self.positions = cache_map.positions;
+        self.positions = cache_map
+            .positions
+            .into_iter()
+            .map(|(id, position)| (id, SharedCell::new(position)))
+            .collect();
 
         self.assign_position_ids_to_contingencies();
         Ok(())
@@ -340,7 +348,12 @@ impl Cache {
     /// Returns an error if loading accounts cache fails.
     pub async fn cache_accounts(&mut self) -> anyhow::Result<()> {
         self.accounts = match &mut self.database {
-            Some(db) => db.load_accounts().await?,
+            Some(db) => db
+                .load_accounts()
+                .await?
+                .into_iter()
+                .map(|(id, account)| (id, SharedCell::new(account)))
+                .collect(),
             None => AHashMap::new(),
         };
 
@@ -380,7 +393,12 @@ impl Cache {
     /// Returns an error if loading positions cache fails.
     pub async fn cache_positions(&mut self) -> anyhow::Result<()> {
         self.positions = match &mut self.database {
-            Some(db) => db.load_positions().await?,
+            Some(db) => db
+                .load_positions()
+                .await?
+                .into_iter()
+                .map(|(id, position)| (id, SharedCell::new(position)))
+                .collect(),
             None => AHashMap::new(),
         };
 
@@ -514,7 +532,8 @@ impl Cache {
         }
 
         // Index positions
-        for (position_id, position) in &self.positions {
+        for (position_id, position_cell) in &self.positions {
+            let position = position_cell.borrow();
             let instrument_id = position.instrument_id;
             let venue = instrument_id.venue;
             let strategy_id = position.strategy_id;
@@ -711,7 +730,9 @@ impl Cache {
             }
         }
 
-        for (position_id, position) in &self.positions {
+        for (position_id, position_cell) in &self.positions {
+            let position = position_cell.borrow();
+
             if !self.index.position_strategy.contains_key(position_id) {
                 log::error!(
                     "{failure} in positions: {position_id} not found in `self.index.position_strategy`",
@@ -1086,11 +1107,15 @@ impl Cache {
         let buffer_ns = secs_to_nanos_unchecked(buffer_secs as f64);
 
         for position_id in self.index.positions_closed.clone() {
-            if let Some(position) = self.positions.get(&position_id)
-                && position.is_closed()
-                && let Some(ts_closed) = position.ts_closed
-                && ts_closed + buffer_ns <= ts_now
-            {
+            let should_purge = self.positions.get(&position_id).is_some_and(|cell| {
+                let position = cell.borrow();
+                position.is_closed()
+                    && position
+                        .ts_closed
+                        .is_some_and(|ts_closed| ts_closed + buffer_ns <= ts_now)
+            });
+
+            if should_purge {
                 self.purge_position(position_id);
             }
         }
@@ -1231,8 +1256,11 @@ impl Cache {
     ///
     /// For safety, a position is prevented from being purged if it's open.
     pub fn purge_position(&mut self, position_id: PositionId) {
-        // Check if position exists and is safe to purge before removing
-        let position = self.positions.get(&position_id).cloned();
+        // Snapshot the position so we can release the borrow before mutating indexes.
+        let position = self
+            .positions
+            .get(&position_id)
+            .map(|cell| cell.borrow().clone());
 
         // Prevent purging open positions
         if let Some(ref pos) = position
@@ -1412,7 +1440,8 @@ impl Cache {
             }
         );
 
-        for account in self.accounts.values_mut() {
+        for account_cell in self.accounts.values() {
+            let mut account = account_cell.borrow_mut();
             let event_count = account.event_count();
             account.purge_account_events(ts_now, lookback_secs);
             let count_diff = event_count - account.event_count();
@@ -1959,7 +1988,7 @@ impl Cache {
         }
 
         let account_id = account.id();
-        self.accounts.insert(account_id, account);
+        self.accounts.insert(account_id, SharedCell::new(account));
         self.index
             .venue_account
             .insert(account_id.get_issuer(), account_id);
@@ -2291,7 +2320,8 @@ impl Cache {
     ///
     /// Returns an error if persisting the position to the backing database fails.
     pub fn add_position(&mut self, position: &Position, _oms_type: OmsType) -> anyhow::Result<()> {
-        self.positions.insert(position.id, position.clone());
+        self.positions
+            .insert(position.id, SharedCell::new(position.clone()));
         self.index.positions.insert(position.id);
         self.index.positions_open.insert(position.id);
         self.index.positions_closed.remove(&position.id); // Cleanup for NETTING reopen
@@ -2342,12 +2372,21 @@ impl Cache {
 
     /// Updates the `account` in the cache.
     ///
+    /// Reuses the existing cell when present so any held [`AccountRef`] handles continue to point
+    /// at the canonical entry; only inserts a new cell when the account is unknown.
+    ///
     /// # Errors
     ///
     /// Returns an error if updating the account in the database fails.
     pub fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
         let account_id = account.id();
-        self.accounts.insert(account_id, account.clone());
+        match self.accounts.get(&account_id) {
+            Some(account_cell) => *account_cell.borrow_mut() = account.clone(),
+            None => {
+                self.accounts
+                    .insert(account_id, SharedCell::new(account.clone()));
+            }
+        }
 
         if let Some(database) = &mut self.database {
             database.update_account(account)?;
@@ -2358,10 +2397,26 @@ impl Cache {
     /// Removes the `account` from the cache and returns it.
     ///
     /// This supports hot paths which need owned account mutation without
-    /// cloning the account event history.
+    /// cloning the account event history. The cache is the sole owner of the
+    /// account cell (the field is private and accessors only hand out
+    /// lifetime-scoped [`AccountRef`] borrows), so the value is moved out of
+    /// its cell rather than cloned.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache no longer holds the only strong handle to the
+    /// account cell. This indicates an internal invariant violation: some
+    /// component cloned the underlying [`SharedCell`] and held it past the
+    /// scope of a single cache method.
     #[must_use]
     pub fn take_account(&mut self, account_id: &AccountId) -> Option<AccountAny> {
-        self.accounts.remove(account_id)
+        self.accounts.remove(account_id).map(|cell| {
+            let rc: Rc<RefCell<AccountAny>> = cell.into();
+            Rc::try_unwrap(rc).map_or_else(
+                |_| panic!("take_account: cache must be sole owner of {account_id} cell"),
+                RefCell::into_inner,
+            )
+        })
     }
 
     /// Caches the `account` in memory without updating the database.
@@ -2370,7 +2425,12 @@ impl Cache {
         self.index
             .venue_account
             .insert(account_id.get_issuer(), account_id);
-        self.accounts.insert(account_id, account);
+        match self.accounts.get(&account_id) {
+            Some(account_cell) => *account_cell.borrow_mut() = account,
+            None => {
+                self.accounts.insert(account_id, SharedCell::new(account));
+            }
+        }
     }
 
     /// Updates the `account` in the cache, taking ownership of the updated account.
@@ -2383,34 +2443,32 @@ impl Cache {
         self.cache_account_owned(account);
 
         if let Some(database) = &mut self.database {
-            let Some(account) = self.accounts.get(&account_id) else {
+            let Some(account_cell) = self.accounts.get(&account_id) else {
                 anyhow::bail!("Account {account_id} not found after cache update");
             };
-            database.update_account(account)?;
+            database.update_account(&account_cell.borrow())?;
         }
         Ok(())
     }
 
     /// Applies an account state event to the cached account.
     ///
+    /// Mutates the cached account in place to avoid cloning the account event
+    /// history on the hot path; long-running sessions accumulate many events
+    /// per account, so a snapshot-clone here would be O(history) per update.
+    ///
     /// # Errors
     ///
     /// Returns an error if applying or persisting the account state fails.
     pub fn update_account_state(&mut self, event: &AccountState) -> anyhow::Result<()> {
-        if let Some(account) = self.accounts.get_mut(&event.account_id) {
-            account.apply(event.clone())?;
-        } else {
+        let Some(cell) = self.accounts.get(&event.account_id) else {
             return self.add_account(AccountAny::from_events(std::slice::from_ref(event))?);
-        }
+        };
+
+        cell.borrow_mut().apply(event.clone())?;
 
         if let Some(database) = &mut self.database {
-            let Some(account) = self.accounts.get(&event.account_id) else {
-                anyhow::bail!(
-                    "Account {} not found after account state update",
-                    event.account_id
-                );
-            };
-            database.update_account(account)?;
+            database.update_account(&cell.borrow())?;
         }
         Ok(())
     }
@@ -2566,6 +2624,9 @@ impl Cache {
 
     /// Updates the `position` in the cache.
     ///
+    /// Reuses the existing cell when present so any held [`PositionRef`] handles continue to point
+    /// at the canonical entry; only inserts a new cell when the position is unknown.
+    ///
     /// # Errors
     ///
     /// Returns an error if updating the position in the database fails.
@@ -2588,7 +2649,13 @@ impl Cache {
             // }
         }
 
-        self.positions.insert(position.id, position.clone());
+        match self.positions.get(&position.id) {
+            Some(position_cell) => *position_cell.borrow_mut() = position.clone(),
+            None => {
+                self.positions
+                    .insert(position.id, SharedCell::new(position.clone()));
+            }
+        }
 
         Ok(())
     }
@@ -2755,8 +2822,8 @@ impl Cache {
 
         for (position_id, _) in &self.position_snapshots {
             // Check if this position is for the requested instrument
-            if let Some(position) = self.positions.get(position_id)
-                && position.instrument_id == *instrument_id
+            if let Some(position_cell) = self.positions.get(position_id)
+                && position_cell.borrow().instrument_id == *instrument_id
             {
                 result.insert(*position_id);
             }
@@ -2974,6 +3041,10 @@ impl Cache {
 
     /// Retrieves positions corresponding to the `position_ids`, optionally filtering by `side`.
     ///
+    /// Each [`PositionRef`] in the returned vector borrows its underlying cell; mutating any of
+    /// those positions while the vector is alive will panic at runtime. Drop the vector before
+    /// issuing writes.
+    ///
     /// # Panics
     ///
     /// Panics if any `position_id` in the set is not found in the cache.
@@ -2981,15 +3052,16 @@ impl Cache {
         &self,
         position_ids: &AHashSet<PositionId>,
         side: Option<PositionSide>,
-    ) -> Vec<&Position> {
+    ) -> Vec<PositionRef<'_>> {
         let side = side.unwrap_or(PositionSide::NoPositionSide);
         let mut positions = Vec::new();
 
         for position_id in position_ids {
-            let position = self
+            let position_cell = self
                 .positions
                 .get(position_id)
                 .unwrap_or_else(|| panic!("Position {position_id} not found"));
+            let position = PositionRef::new(position_cell.borrow());
 
             if side == PositionSide::NoPositionSide || side == position.side {
                 positions.push(position);
@@ -3705,19 +3777,49 @@ impl Cache {
 
     // -- POSITION QUERIES ------------------------------------------------------------------------
 
-    /// Returns a reference to the position with the `position_id` (if found).
+    /// Returns a borrow of the position with the `position_id` (if found).
     #[must_use]
-    pub fn position(&self, position_id: &PositionId) -> Option<&Position> {
-        self.positions.get(position_id)
+    pub fn position(&self, position_id: &PositionId) -> Option<PositionRef<'_>> {
+        self.positions
+            .get(position_id)
+            .map(|position_cell| PositionRef::new(position_cell.borrow()))
     }
 
-    /// Returns a reference to the position for the `client_order_id` (if found).
+    /// Gets an exclusive write borrow of the position with the `position_id` (if found).
+    ///
+    /// Requires `&mut Cache` so cache writes are reachable only by privileged crates that hold
+    /// `Rc<RefCell<Cache>>` directly. Adapter-facing code receives [`CacheView`], which only
+    /// exposes immutable cache borrows and therefore cannot reach this method.
+    ///
+    /// While the returned [`PositionRefMut`] is alive, no other read or write of the same position
+    /// is permitted. Drop the borrow before dispatching events or taking any other cache borrow
+    /// that may re-enter the same position.
     #[must_use]
-    pub fn position_for_order(&self, client_order_id: &ClientOrderId) -> Option<&Position> {
+    pub fn position_mut(&mut self, position_id: &PositionId) -> Option<PositionRefMut<'_>> {
+        self.positions
+            .get(position_id)
+            .map(|position_cell| PositionRefMut::new(position_cell.borrow_mut()))
+    }
+
+    /// Gets an owned snapshot of the position with the `position_id` (if found).
+    ///
+    /// Use when downstream needs an owned [`Position`] that crosses a boundary. The snapshot will
+    /// not reflect later cache mutations.
+    #[must_use]
+    pub fn position_owned(&self, position_id: &PositionId) -> Option<Position> {
+        self.positions
+            .get(position_id)
+            .map(|position_cell| position_cell.borrow().clone())
+    }
+
+    /// Returns a borrow of the position for the `client_order_id` (if found).
+    #[must_use]
+    pub fn position_for_order(&self, client_order_id: &ClientOrderId) -> Option<PositionRef<'_>> {
         self.index
             .order_position
             .get(client_order_id)
             .and_then(|position_id| self.positions.get(position_id))
+            .map(|position_cell| PositionRef::new(position_cell.borrow()))
     }
 
     /// Returns a reference to the position ID for the `client_order_id` (if found).
@@ -3726,7 +3828,11 @@ impl Cache {
         self.index.order_position.get(client_order_id)
     }
 
-    /// Returns a reference to all positions matching the optional filter parameters.
+    /// Returns borrows of all positions matching the optional filter parameters.
+    ///
+    /// Each [`PositionRef`] in the returned vector borrows its underlying cell; mutating any of
+    /// those positions while the vector is alive will panic at runtime. Drop the vector before
+    /// issuing writes.
     #[must_use]
     pub fn positions(
         &self,
@@ -3735,12 +3841,12 @@ impl Cache {
         strategy_id: Option<&StrategyId>,
         account_id: Option<&AccountId>,
         side: Option<PositionSide>,
-    ) -> Vec<&Position> {
+    ) -> Vec<PositionRef<'_>> {
         let position_ids = self.position_ids(venue, instrument_id, strategy_id, account_id);
         self.get_positions_for_ids(&position_ids, side)
     }
 
-    /// Returns a reference to all open positions matching the optional filter parameters.
+    /// Returns borrows of all open positions matching the optional filter parameters.
     #[must_use]
     pub fn positions_open(
         &self,
@@ -3749,12 +3855,12 @@ impl Cache {
         strategy_id: Option<&StrategyId>,
         account_id: Option<&AccountId>,
         side: Option<PositionSide>,
-    ) -> Vec<&Position> {
+    ) -> Vec<PositionRef<'_>> {
         let position_ids = self.position_open_ids(venue, instrument_id, strategy_id, account_id);
         self.get_positions_for_ids(&position_ids, side)
     }
 
-    /// Returns a reference to all closed positions matching the optional filter parameters.
+    /// Returns borrows of all closed positions matching the optional filter parameters.
     #[must_use]
     pub fn positions_closed(
         &self,
@@ -3763,7 +3869,7 @@ impl Cache {
         strategy_id: Option<&StrategyId>,
         account_id: Option<&AccountId>,
         side: Option<PositionSide>,
-    ) -> Vec<&Position> {
+    ) -> Vec<PositionRef<'_>> {
         let position_ids = self.position_closed_ids(venue, instrument_id, strategy_id, account_id);
         self.get_positions_for_ids(&position_ids, side)
     }
@@ -4300,19 +4406,62 @@ impl Cache {
 
     // -- ACCOUNT QUERIES -----------------------------------------------------------------------
 
-    /// Returns a reference to the account for the `account_id` (if found).
+    /// Returns a borrow of the account for the `account_id` (if found).
     #[must_use]
-    pub fn account(&self, account_id: &AccountId) -> Option<&AccountAny> {
-        self.accounts.get(account_id)
+    pub fn account(&self, account_id: &AccountId) -> Option<AccountRef<'_>> {
+        self.accounts
+            .get(account_id)
+            .map(|account_cell| AccountRef::new(account_cell.borrow()))
     }
 
-    /// Returns a reference to the account for the `venue` (if found).
+    /// Gets an exclusive write borrow of the account with the `account_id` (if found).
+    ///
+    /// Requires `&mut Cache` so cache writes are reachable only by privileged crates that hold
+    /// `Rc<RefCell<Cache>>` directly. Adapter-facing code receives [`CacheView`], which only
+    /// exposes immutable cache borrows and therefore cannot reach this method.
+    ///
+    /// While the returned [`AccountRefMut`] is alive, no other read or write of the same account
+    /// is permitted. Drop the borrow before dispatching events or taking any other cache borrow
+    /// that may re-enter the same account.
     #[must_use]
-    pub fn account_for_venue(&self, venue: &Venue) -> Option<&AccountAny> {
+    pub fn account_mut(&mut self, account_id: &AccountId) -> Option<AccountRefMut<'_>> {
+        self.accounts
+            .get(account_id)
+            .map(|account_cell| AccountRefMut::new(account_cell.borrow_mut()))
+    }
+
+    /// Gets an owned snapshot of the account with the `account_id` (if found).
+    ///
+    /// Use when downstream needs an owned [`AccountAny`] that crosses a boundary. The snapshot
+    /// will not reflect later cache mutations.
+    #[must_use]
+    pub fn account_owned(&self, account_id: &AccountId) -> Option<AccountAny> {
+        self.accounts
+            .get(account_id)
+            .map(|account_cell| account_cell.borrow().clone())
+    }
+
+    /// Returns a borrow of the account for the `venue` (if found).
+    #[must_use]
+    pub fn account_for_venue(&self, venue: &Venue) -> Option<AccountRef<'_>> {
         self.index
             .venue_account
             .get(venue)
             .and_then(|account_id| self.accounts.get(account_id))
+            .map(|account_cell| AccountRef::new(account_cell.borrow()))
+    }
+
+    /// Returns an owned snapshot of the account for the `venue` (if found).
+    ///
+    /// Use when downstream needs an owned [`AccountAny`] that crosses a boundary. The snapshot
+    /// will not reflect later cache mutations.
+    #[must_use]
+    pub fn account_for_venue_owned(&self, venue: &Venue) -> Option<AccountAny> {
+        self.index
+            .venue_account
+            .get(venue)
+            .and_then(|account_id| self.accounts.get(account_id))
+            .map(|account_cell| account_cell.borrow().clone())
     }
 
     /// Returns a reference to the account ID for the `venue` (if found).
@@ -4321,12 +4470,17 @@ impl Cache {
         self.index.venue_account.get(venue)
     }
 
-    /// Returns references to all accounts for the `account_id`.
+    /// Returns borrows of all accounts for the `account_id`.
+    ///
+    /// Each [`AccountRef`] in the returned vector borrows its underlying cell; mutating any of
+    /// those accounts while the vector is alive will panic at runtime. Drop the vector before
+    /// issuing writes.
     #[must_use]
-    pub fn accounts(&self, account_id: &AccountId) -> Vec<&AccountAny> {
+    pub fn accounts(&self, account_id: &AccountId) -> Vec<AccountRef<'_>> {
         self.accounts
             .values()
-            .filter(|account| &account.id() == account_id)
+            .filter(|account_cell| &account_cell.borrow().id() == account_id)
+            .map(|account_cell| AccountRef::new(account_cell.borrow()))
             .collect()
     }
 

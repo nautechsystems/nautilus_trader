@@ -84,7 +84,7 @@ impl AccountsManager {
                 .id
         };
 
-        let position = self.cache.borrow().position(&position_id).cloned();
+        let position = self.cache.borrow().position_owned(&position_id);
 
         let pnls = account.calculate_pnls(instrument, &fill, position);
 

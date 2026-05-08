@@ -834,7 +834,7 @@ impl ExecutionEngine {
             .borrow()
             .positions_open(None, None, None, None, None)
             .into_iter()
-            .cloned()
+            .map(|p| p.cloned())
             .collect();
 
         for position in positions {
@@ -2353,7 +2353,7 @@ impl ExecutionEngine {
         } else {
             self.handle_position_update(&instrument, fill, oms_type);
             let position_id = fill.position_id.unwrap();
-            self.cache.borrow().position(&position_id).cloned()
+            self.cache.borrow().position_owned(&position_id)
         };
 
         // Handle contingent orders for both spread and non-spread instruments
@@ -2422,7 +2422,7 @@ impl ExecutionEngine {
             return;
         };
 
-        let position_opt = self.cache.borrow().position(&position_id).cloned();
+        let position_opt = self.cache.borrow().position_owned(&position_id);
 
         match position_opt {
             None => {

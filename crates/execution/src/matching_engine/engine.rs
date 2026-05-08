@@ -2137,7 +2137,7 @@ impl OrderMatchingEngine {
             }
 
             // Get position if exists
-            let position: Option<&Position> = cache_borrow
+            let position = cache_borrow
                 .position_for_order(&order.client_order_id())
                 .or_else(|| {
                     if self.oms_type == OmsType::Netting {
@@ -2154,10 +2154,13 @@ impl OrderMatchingEngine {
             if order.order_side() == OrderSide::Sell
                 && self.account_type != AccountType::Margin
                 && matches!(self.instrument, InstrumentAny::Equity(_))
-                && (position.is_none()
-                    || !order.would_reduce_only(position.unwrap().side, position.unwrap().quantity))
+                && position
+                    .as_ref()
+                    .is_none_or(|pos| !order.would_reduce_only(pos.side, pos.quantity))
             {
-                let position_string = position.map_or("None".to_string(), |pos| pos.id.to_string());
+                let position_string = position
+                    .as_ref()
+                    .map_or("None".to_string(), |pos| pos.id.to_string());
                 break 'validate Some(
                     format!(
                         "Short selling not permitted on a CASH account with position {position_string} and order {order}",
@@ -2170,7 +2173,7 @@ impl OrderMatchingEngine {
             if self.config.use_reduce_only
                 && order.is_reduce_only()
                 && !order.is_closed()
-                && position.is_none_or(|pos| {
+                && position.as_ref().is_none_or(|pos| {
                     pos.is_closed()
                         || (order.is_buy() && pos.is_long())
                         || (order.is_sell() && pos.is_short())
@@ -3552,7 +3555,7 @@ impl OrderMatchingEngine {
         let venue_position_id = self.ids_generator.get_position_id(&order, Some(true));
         let position: Option<Position> = if let Some(venue_position_id) = venue_position_id {
             let cache = self.cache.as_ref().borrow();
-            cache.position(&venue_position_id).cloned()
+            cache.position_owned(&venue_position_id)
         } else {
             None
         };
@@ -3721,7 +3724,7 @@ impl OrderMatchingEngine {
                 let venue_position_id = self.ids_generator.get_position_id(&order, None);
                 let position = if let Some(venue_position_id) = venue_position_id {
                     let cache = self.cache.as_ref().borrow();
-                    cache.position(&venue_position_id).cloned()
+                    cache.position_owned(&venue_position_id)
                 } else {
                     None
                 };
