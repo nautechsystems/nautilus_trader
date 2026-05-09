@@ -21,8 +21,10 @@
 //! trait surface.
 
 pub mod memory;
+pub mod redb;
 
 pub use memory::MemoryBackend;
+pub use redb::RedbBackend;
 
 use crate::{
     entry::EventStoreEntry,

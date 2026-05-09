@@ -48,7 +48,9 @@ pub mod headers;
 pub mod manifest;
 mod wire;
 
-pub use backend::{AppendEntry, EventStore, IndexKey, IndexKind, MemoryBackend, ScanDirection};
+pub use backend::{
+    AppendEntry, EventStore, IndexKey, IndexKind, MemoryBackend, RedbBackend, ScanDirection,
+};
 pub use entry::{EventStoreEntry, PayloadType, Topic};
 pub use error::EventStoreError;
 pub use hash::{EntryHash, compute_entry_hash};

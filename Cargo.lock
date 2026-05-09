@@ -5886,9 +5886,11 @@ dependencies = [
  "indexmap 2.14.0",
  "nautilus-common",
  "nautilus-core",
+ "proptest",
  "redb",
  "rstest",
  "serde",
+ "tempfile",
  "thiserror 2.0.18",
  "ustr",
 ]
