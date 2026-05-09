@@ -1346,10 +1346,6 @@ impl OrderMatchingEngine {
     }
 
     /// Processes a quote tick to update the market state.
-    ///
-    /// # Panics
-    ///
-    /// - If updating the order book with the quote tick fails.
     pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
         log::debug!("Processing {quote}");
 
