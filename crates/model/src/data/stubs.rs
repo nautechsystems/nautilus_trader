@@ -374,6 +374,7 @@ pub struct OrderBookDeltaTestBuilder {
     flags: Option<u8>,
     sequence: Option<u64>,
     ts_event: Option<UnixNanos>,
+    ts_init: Option<UnixNanos>,
 }
 
 impl OrderBookDeltaTestBuilder {
@@ -386,6 +387,7 @@ impl OrderBookDeltaTestBuilder {
             flags: None,
             sequence: None,
             ts_event: None,
+            ts_init: None,
         }
     }
 
@@ -435,6 +437,11 @@ impl OrderBookDeltaTestBuilder {
         self
     }
 
+    pub fn ts_init(&mut self, ts_init: UnixNanos) -> &mut Self {
+        self.ts_init = Some(ts_init);
+        self
+    }
+
     #[must_use]
     pub fn build(&self) -> OrderBookDelta {
         OrderBookDelta::new(
@@ -444,7 +451,7 @@ impl OrderBookDeltaTestBuilder {
             self.get_flags(),
             self.get_sequence(),
             self.ts_event.unwrap_or(UnixNanos::from(1)),
-            UnixNanos::from(2),
+            self.ts_init.unwrap_or(UnixNanos::from(2)),
         )
     }
 }

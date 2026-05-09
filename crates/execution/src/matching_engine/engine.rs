@@ -2975,14 +2975,6 @@ impl OrderMatchingEngine {
             }
         }
 
-        // Process expiration before matching to prevent fills on expired instruments
-        self.check_instrument_expiration();
-
-        // Expire GTD orders before matching to prevent fills on expired orders
-        if self.config.support_gtd_orders {
-            self.expire_gtd_orders(timestamp_ns);
-        }
-
         // Process bid actions before snapshotting asks so cross-side
         // contingencies (OCO/OUO) mutate state between sides
         for action in self.core.iterate_bids() {
@@ -2999,12 +2991,22 @@ impl OrderMatchingEngine {
             }
         }
 
+        // Expire GTD orders after matching so orders at the exact expire-time
+        // tick get a chance to fill before being canceled.
+        if self.config.support_gtd_orders {
+            self.expire_gtd_orders(timestamp_ns);
+        }
+
         self.activate_trailing_stops();
 
         // Restore core bid/ask to book values after trailing-stop activation
         // (during trade execution, transient override was used for matching)
         self.core.bid = self.book.best_bid_price();
         self.core.ask = self.book.best_ask_price();
+
+        // Process instrument expiration last so orders at the expiration tick
+        // get a chance to fill before positions are closed.
+        self.check_instrument_expiration();
     }
 
     fn get_trailing_activation_price(

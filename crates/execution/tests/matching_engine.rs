@@ -6111,17 +6111,34 @@ fn test_gtd_order_partially_filled_then_expired(
 
     clear_order_event_handler_messages(&order_event_handler);
 
-    // Process a trade tick AFTER expire_time to trigger GTD expiration
-    let tick = TradeTick::new(
+    // The engine doesn't deplete book liquidity on fills, so explicitly
+    // remove the consumed ask level before driving the boundary tick.
+    // Without this, the matching pass would re-fill the resting buy.
+    let delete_delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Delete)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("0.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&delete_delta).unwrap();
+
+    clear_order_event_handler_messages(&order_event_handler);
+
+    // Drive iterate past expire_time. With no matching liquidity, the
+    // resting buy cannot fill and GTD expiry fires.
+    let quote = QuoteTick::new(
         instrument_eth_usdt.id(),
-        Price::from("1500.00"),
+        Price::from("1490.00"),
+        Price::from("1510.00"),
         Quantity::from("1.000"),
-        AggressorSide::Buyer,
-        TradeId::new("1"),
+        Quantity::from("1.000"),
         UnixNanos::from(expire_ns + 1),
         UnixNanos::from(expire_ns + 1),
     );
-    engine_l2.process_trade_tick(&tick);
+    engine_l2.process_quote_tick(&quote);
 
     // Remaining quantity should expire
     let saved_messages = get_order_event_handler_messages(&order_event_handler);
@@ -6133,6 +6150,79 @@ fn test_gtd_order_partially_filled_then_expired(
         })
         .expect("Expected OrderExpired event for GTD order");
     assert_eq!(expired.client_order_id, client_order_id);
+}
+
+#[rstest]
+fn test_gtd_order_at_boundary_tick_fills_before_expiry(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    // A GTD order whose expire_time matches the tick that would fill it
+    // should fill, not expire. Matching runs before GTD-expire in iterate.
+    let config = OrderMatchingEngineConfig {
+        support_gtd_orders: true,
+        ..Default::default()
+    };
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let initial_delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1505.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&initial_delta).unwrap();
+
+    let expire_ns: u64 = 1_500_000_000_000_000_000;
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(TimeInForce::Gtd)
+        .expire_time(UnixNanos::from(expire_ns))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut limit_order, account_id);
+
+    clear_order_event_handler_messages(&order_event_handler);
+
+    // Cross the spread at the exact expire timestamp: ask drops to 1500
+    let crossing_delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            2,
+        ))
+        .ts_init(UnixNanos::from(expire_ns))
+        .build();
+    engine_l2.process_order_book_delta(&crossing_delta).unwrap();
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fill = saved_messages
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .expect("Expected OrderFilled event at boundary tick");
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
+
+    let expired_count = saved_messages
+        .iter()
+        .filter(|e| matches!(e, OrderEventAny::Expired(_)))
+        .count();
+    assert_eq!(expired_count, 0, "Order should not expire after filling");
 }
 
 #[rstest]
