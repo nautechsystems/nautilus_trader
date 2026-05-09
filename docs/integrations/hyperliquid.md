@@ -112,19 +112,20 @@ though orders are live on the venue. See [GH-4010](https://github.com/nautechsys
 
 ## Product support
 
-Hyperliquid offers linear perpetual futures, HIP-3 builder-deployed perpetuals, and native
-spot markets.
+Hyperliquid offers linear perpetual futures, HIP-3 builder-deployed perpetuals, native
+spot markets, and HIP-4 binary outcome markets.
 
-| Product Type      | Data Feed | Trading | Notes                                           |
-|-------------------|-----------|---------|-------------------------------------------------|
-| Perpetual Futures | ✓         | ✓       | USDC‑settled linear perps (validator‑operated). |
-| HIP‑3 Perpetuals  | ✓         | ✓       | Builder‑deployed perps. Excluded by default.    |
-| Spot              | ✓         | ✓       | Native spot markets.                            |
+| Product Type      | Data Feed | Trading   | Notes                                                 |
+|-------------------|-----------|-----------|-------------------------------------------------------|
+| Perpetual Futures | ✓         | ✓         | USDC‑settled linear perps (validator‑operated).       |
+| HIP‑3 Perpetuals  | ✓         | ✓         | Builder‑deployed perps. Excluded by default.          |
+| Spot              | ✓         | ✓         | Native spot markets.                                  |
+| HIP‑4 Outcomes    | ✓         | Partial   | Binary outcome side tokens. Excluded by default.      |
 
 :::note
 All perpetual futures on Hyperliquid are settled in USDC. Spot markets are standard
 currency pairs. See [HIP-3 builder-deployed perpetuals](#hip-3-builder-deployed-perpetuals)
-for configuration and opt-in details.
+and [HIP-4 outcome markets](#hip-4-outcome-markets) for configuration and opt-in details.
 :::
 
 ## Symbology
@@ -188,6 +189,32 @@ InstrumentId.from_str("PURR-USDC-SPOT.HYPERLIQUID")
 Spot instruments may include vault tokens (prefixed with `vntls:`). These are automatically
 handled by the instrument provider.
 :::
+
+### HIP-4 outcome side tokens
+
+Format: `+{encoding}` (token form) or `#{encoding}` (spot-coin form), where
+`encoding = 10 * outcome + side`.
+
+[HIP-4](https://hyperliquid.gitbook.io/hyperliquid-docs/hyperliquid-improvement-proposals-hips/hip-4-outcome-markets)
+side tokens are fully-collateralized binary contracts that settle in `[0, 1]` at the
+expiry stamped on the market. The Nautilus instrument symbol uses the token form
+(`+{encoding}.HYPERLIQUID`); the wire `raw_symbol` uses the coin form
+(`#{encoding}`) which is what `l2Book` and `allMids` accept.
+
+Examples:
+
+- `+50.HYPERLIQUID` - Yes side of outcome 5
+- `+51.HYPERLIQUID` - No side of outcome 5
+- `#50` is the equivalent wire symbol used by market-data subscriptions
+
+To subscribe in your strategy:
+
+```python
+InstrumentId.from_str("+50.HYPERLIQUID")
+```
+
+See [HIP-4 outcome markets](#hip-4-outcome-markets) for the full opt-in flow,
+expiry handling, and trading restrictions.
 
 ## HIP-3 builder-deployed perpetuals
 
@@ -295,6 +322,84 @@ The substitution is lossy: two distinct venue names such as `dex:FOO*` and
 loader detects collisions, keeps the first definition, and logs a warning
 with the dropped venue name; the dropped instrument will not be tradeable
 through Nautilus until the venue rename resolves the collision.
+
+## HIP-4 outcome markets
+
+[HIP-4](https://hyperliquid.gitbook.io/hyperliquid-docs/hyperliquid-improvement-proposals-hips/hip-4-outcome-markets)
+markets are fully-collateralized, expiry-dated binary contracts. Each market
+has two side tokens (`Yes` / `No`) that settle to `1` (winner) or `0` (loser)
+when the underlying condition resolves.
+
+The first live HIP-4 market is the recurring BTC daily binary, which settles
+each day at 06:00 UTC against the BTC mark price.
+
+### Loading outcome instruments
+
+Outcome instruments are excluded from the standard provider load. To opt in,
+set `include_outcomes=True` (Python) or pass the equivalent flag through
+`load_instrument_definitions`:
+
+```python
+instruments = await provider.load_instrument_definitions(include_outcomes=True)
+```
+
+The provider emits two `BinaryOption` instruments per outcome (one per side),
+priced in USDC. The instrument's `expiration_ns` is parsed from the venue's
+description field (`expiry:YYYYMMDD-HHMM`, UTC); standalone binary outcomes
+carry their own expiry while named-outcome / fallback markets inherit it from
+their parent question.
+
+Default precision is `0.0001` per tick (4 decimals) and `0.01` per lot
+(2 decimals); these are conservative starting values that may be refined as
+the venue exposes per-market values.
+
+### Trading restrictions
+
+Outcome side tokens behave like spot tokens (no margin, no funding, no
+liquidation). The execution client rejects features that don't apply:
+
+- `reduce_only` orders are rejected.
+- Trigger order types (`StopMarket`, `StopLimit`, `MarketIfTouched`,
+  `LimitIfTouched`, trailing stops) are rejected.
+
+`Limit` and `Market` orders with `GTC`, `IOC`, or `ALO` time-in-force are
+supported.
+
+The venue enforces a minimum order notional of 10 USDC (the rejection
+string is `Order must have minimum value of 10 USDH`; "USDH" is the
+venue's display label for USDC on outcome markets). Pick an `order_qty`
+such that `order_qty * limit_price >= 10`.
+
+### Settlement
+
+For multi-outcome `priceBucket` questions, the venue surfaces resolution
+via `outcomeMeta.questions[*].settledNamedOutcomes` (Rust:
+`settled_named_outcomes`). When that array is non-empty, the helper
+`derive_outcome_settlements` resolves every named outcome and the
+fallback for that question to a final side value (`1` for the winning
+named outcome, `0` for the losing named outcomes and the fallback).
+
+Coverage gaps the helper does not yet handle:
+
+- **Standalone `priceBinary` outcomes** (those not referenced by any
+  question, such as the recurring BTC daily binary). They do not appear
+  in the question list, so their resolution needs a separate venue
+  signal (for example a `settledOutcome` request) which is not yet
+  implemented.
+- **Fallback-wins**: when no named outcome resolves and the fallback
+  branch wins. The helper currently only emits side values when a named
+  outcome wins; the fallback-wins wire signal has not been observed yet.
+
+Settlement event emission against open positions is not yet wired up in
+either path.
+
+### Multi-outcome (priceBucket) markets
+
+The venue exposes multi-outcome markets via the top-level `questions`
+array in `outcomeMeta`. Each question references a fallback outcome plus
+a sequence of named outcomes whose individual descriptions point back at
+the question via `index:N`. The Rust model decodes this shape today; the
+adapter currently treats each side token as an independent binary.
 
 ## Instrument provider
 

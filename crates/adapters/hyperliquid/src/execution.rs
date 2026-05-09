@@ -54,6 +54,7 @@ use crate::{
     common::{
         consts::HYPERLIQUID_VENUE,
         credential::Secrets,
+        enums::HyperliquidProductType,
         parse::{
             clamp_price_to_precision, client_order_id_to_cancel_request_with_asset,
             derive_limit_from_trigger, derive_market_order_price, extract_error_message,
@@ -134,58 +135,7 @@ impl HyperliquidExecutionClient {
     }
 
     fn validate_order_submission(&self, order: &OrderAny) -> anyhow::Result<()> {
-        // Check if instrument symbol is supported
-        // Hyperliquid instruments: {base}-USD-PERP or {base}-{quote}-SPOT
-        let instrument_id = order.instrument_id();
-        let symbol = instrument_id.symbol.as_str();
-        if !symbol.ends_with("-PERP") && !symbol.ends_with("-SPOT") {
-            anyhow::bail!(
-                "Unsupported instrument symbol format for Hyperliquid: {symbol} (expected -PERP or -SPOT suffix)"
-            );
-        }
-
-        // Check if order type is supported
-        match order.order_type() {
-            OrderType::Market
-            | OrderType::Limit
-            | OrderType::StopMarket
-            | OrderType::StopLimit
-            | OrderType::MarketIfTouched
-            | OrderType::LimitIfTouched => {}
-            _ => anyhow::bail!(
-                "Unsupported order type for Hyperliquid: {:?}",
-                order.order_type()
-            ),
-        }
-
-        // Check if conditional orders have trigger price
-        if matches!(
-            order.order_type(),
-            OrderType::StopMarket
-                | OrderType::StopLimit
-                | OrderType::MarketIfTouched
-                | OrderType::LimitIfTouched
-        ) && order.trigger_price().is_none()
-        {
-            anyhow::bail!(
-                "Conditional orders require a trigger price for Hyperliquid: {:?}",
-                order.order_type()
-            );
-        }
-
-        // Check if limit-based orders have price
-        if matches!(
-            order.order_type(),
-            OrderType::Limit | OrderType::StopLimit | OrderType::LimitIfTouched
-        ) && order.price().is_none()
-        {
-            anyhow::bail!(
-                "Limit orders require a limit price for Hyperliquid: {:?}",
-                order.order_type()
-            );
-        }
-
-        Ok(())
+        validate_order_for_hyperliquid(order)
     }
 
     /// Creates a new [`HyperliquidExecutionClient`].
@@ -649,6 +599,12 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let mut hyperliquid_orders = Vec::new();
 
         for order in &orders {
+            if let Err(e) = validate_order_for_hyperliquid(order) {
+                self.emitter
+                    .emit_order_denied(order, &format!("Validation failed: {e}"));
+                continue;
+            }
+
             let symbol = order.instrument_id().symbol.to_string();
             let asset = match http_client.get_asset_index(&symbol) {
                 Some(a) => a,
@@ -1877,6 +1833,81 @@ fn register_order_identity_into(state: &WsDispatchState, order: &OrderAny) {
     );
 }
 
+/// Validates that an order is acceptable for submission to Hyperliquid.
+///
+/// Checks symbol format, order type support, and HIP-4-specific restrictions
+/// (no reduce-only, no trigger order types on outcome side tokens).
+///
+/// # Errors
+///
+/// Returns an error describing the first validation failure encountered.
+pub fn validate_order_for_hyperliquid(order: &OrderAny) -> anyhow::Result<()> {
+    let instrument_id = order.instrument_id();
+    let symbol = instrument_id.symbol.as_str();
+    let product_type = HyperliquidProductType::from_symbol(symbol).map_err(|_| {
+        anyhow::anyhow!(
+            "Unsupported instrument symbol format for Hyperliquid: {symbol} \
+             (expected -PERP, -SPOT, or HIP-4 outcome `+E`/`#E`)"
+        )
+    })?;
+
+    match order.order_type() {
+        OrderType::Market
+        | OrderType::Limit
+        | OrderType::StopMarket
+        | OrderType::StopLimit
+        | OrderType::MarketIfTouched
+        | OrderType::LimitIfTouched => {}
+        _ => anyhow::bail!(
+            "Unsupported order type for Hyperliquid: {:?}",
+            order.order_type()
+        ),
+    }
+
+    // HIP-4 outcomes are fully-collateralized side tokens with no margin,
+    // funding, or trigger machinery. Reject features that don't apply.
+    if product_type == HyperliquidProductType::Outcome {
+        if order.is_reduce_only() {
+            anyhow::bail!("Reduce-only is not supported for Hyperliquid HIP-4 outcomes: {symbol}");
+        }
+
+        if !matches!(order.order_type(), OrderType::Market | OrderType::Limit) {
+            anyhow::bail!(
+                "Trigger order types are not supported for Hyperliquid HIP-4 outcomes: \
+                 {symbol} (received {:?})",
+                order.order_type()
+            );
+        }
+    }
+
+    if matches!(
+        order.order_type(),
+        OrderType::StopMarket
+            | OrderType::StopLimit
+            | OrderType::MarketIfTouched
+            | OrderType::LimitIfTouched
+    ) && order.trigger_price().is_none()
+    {
+        anyhow::bail!(
+            "Conditional orders require a trigger price for Hyperliquid: {:?}",
+            order.order_type()
+        );
+    }
+
+    if matches!(
+        order.order_type(),
+        OrderType::Limit | OrderType::StopLimit | OrderType::LimitIfTouched
+    ) && order.price().is_none()
+    {
+        anyhow::bail!(
+            "Limit orders require a limit price for Hyperliquid: {:?}",
+            order.order_type()
+        );
+    }
+
+    Ok(())
+}
+
 /// Routes a single execution report through the two-tier dispatch.
 ///
 /// For tracked orders this emits typed `OrderEventAny` events via the
@@ -1980,7 +2011,7 @@ mod tests {
     use super::{
         Cloid, ExecutionReport, FifoCache, HyperliquidWebSocketClient, OrderIdentity,
         WsDispatchState, determine_order_list_grouping, handle_execution_report,
-        register_order_identity_into,
+        register_order_identity_into, validate_order_for_hyperliquid,
     };
     use crate::{common::enums::HyperliquidEnvironment, http::models::HyperliquidExecGrouping};
 
@@ -2707,6 +2738,167 @@ mod tests {
         assert_eq!(
             ws_client.get_cloid_mapping(&cloid_for("O-HER-ACC")),
             Some(cid)
+        );
+    }
+
+    fn outcome_limit_order(id: &str, reduce_only: bool) -> OrderAny {
+        outcome_limit_order_full(id, reduce_only, false, TimeInForce::Gtc)
+    }
+
+    fn outcome_limit_order_full(
+        id: &str,
+        reduce_only: bool,
+        post_only: bool,
+        time_in_force: TimeInForce,
+    ) -> OrderAny {
+        OrderAny::Limit(LimitOrder::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from("+10.HYPERLIQUID"),
+            ClientOrderId::from(id),
+            OrderSide::Buy,
+            Quantity::from("1"),
+            Price::from("0.5000"),
+            time_in_force,
+            None,
+            post_only,
+            reduce_only,
+            false,
+            None,
+            None,
+            None,
+            Some(ContingencyType::NoContingency),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Default::default(),
+            Default::default(),
+        ))
+    }
+
+    fn outcome_stop_order(id: &str) -> OrderAny {
+        OrderAny::StopMarket(StopMarketOrder::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from("+10.HYPERLIQUID"),
+            ClientOrderId::from(id),
+            OrderSide::Sell,
+            Quantity::from("1"),
+            Price::from("0.4000"),
+            TriggerType::LastPrice,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            None,
+            None,
+            None,
+            Some(ContingencyType::NoContingency),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Default::default(),
+            Default::default(),
+        ))
+    }
+
+    fn perp_with_unsupported_symbol(id: &str) -> OrderAny {
+        OrderAny::Limit(LimitOrder::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from("BTC-USD-FOO.HYPERLIQUID"),
+            ClientOrderId::from(id),
+            OrderSide::Buy,
+            Quantity::from("1"),
+            Price::from("100.0"),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            Some(ContingencyType::NoContingency),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Default::default(),
+            Default::default(),
+        ))
+    }
+
+    #[rstest]
+    fn test_validate_accepts_perp_limit_order() {
+        let order = limit_order(
+            "O-VAL-PERP",
+            false,
+            ContingencyType::NoContingency,
+            None,
+            None,
+        );
+        validate_order_for_hyperliquid(&order).unwrap();
+    }
+
+    #[rstest]
+    #[case::gtc_post_only(true, TimeInForce::Gtc)]
+    #[case::gtc_taker(false, TimeInForce::Gtc)]
+    #[case::ioc_post_only(true, TimeInForce::Ioc)]
+    #[case::ioc_taker(false, TimeInForce::Ioc)]
+    fn test_validate_accepts_outcome_limit_order(
+        #[case] post_only: bool,
+        #[case] time_in_force: TimeInForce,
+    ) {
+        let order = outcome_limit_order_full(
+            "O-VAL-OUTCOME",
+            /* reduce_only */ false,
+            post_only,
+            time_in_force,
+        );
+        validate_order_for_hyperliquid(&order).unwrap();
+    }
+
+    #[rstest]
+    fn test_validate_rejects_outcome_reduce_only() {
+        let order = outcome_limit_order("O-VAL-RO", true);
+        let err = validate_order_for_hyperliquid(&order).unwrap_err();
+        assert!(
+            err.to_string().contains("Reduce-only is not supported"),
+            "unexpected error: {err}",
+        );
+    }
+
+    #[rstest]
+    fn test_validate_rejects_outcome_trigger_order() {
+        let order = outcome_stop_order("O-VAL-TRIG");
+        let err = validate_order_for_hyperliquid(&order).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Trigger order types are not supported"),
+            "unexpected error: {err}",
+        );
+    }
+
+    #[rstest]
+    fn test_validate_rejects_unsupported_symbol_suffix() {
+        let order = perp_with_unsupported_symbol("O-VAL-BAD");
+        let err = validate_order_for_hyperliquid(&order).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Unsupported instrument symbol format"),
+            "unexpected error: {err}",
         );
     }
 }

@@ -260,6 +260,22 @@ pub struct SpotPair {
 pub struct OutcomeMeta {
     /// Outcome markets available.
     pub outcomes: Vec<OutcomeMarket>,
+    /// Multi-outcome `priceBucket` questions that reference outcomes by
+    /// `named_outcomes` / `fallback_outcome`. Empty when the venue exposes
+    /// only standalone binary outcomes.
+    #[serde(default)]
+    pub questions: Vec<OutcomeQuestion>,
+}
+
+impl OutcomeMeta {
+    /// Returns the question that references the given outcome via
+    /// `fallback_outcome` or `named_outcomes`, if any.
+    #[must_use]
+    pub fn parent_question(&self, outcome_index: u32) -> Option<&OutcomeQuestion> {
+        self.questions.iter().find(|q| {
+            q.fallback_outcome == Some(outcome_index) || q.named_outcomes.contains(&outcome_index)
+        })
+    }
 }
 
 /// A single outcome market from the outcome metadata response.
@@ -283,6 +299,31 @@ pub struct OutcomeMarket {
 pub struct OutcomeSideSpec {
     /// Side name (for example, "Yes" or "No").
     pub name: String,
+}
+
+/// A multi-outcome `priceBucket` question referenced by one or more outcomes.
+///
+/// Questions group a fallback outcome plus a sequence of named outcomes whose
+/// `description` field holds an `index:N` pointer back into `named_outcomes`.
+/// Settlement is signalled when `settled_named_outcomes` becomes non-empty.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutcomeQuestion {
+    /// Question identifier.
+    pub question: u32,
+    /// Question name.
+    pub name: String,
+    /// Venue-provided question description (carries `class`, `expiry`, etc).
+    pub description: String,
+    /// Fallback outcome triggered when no named outcome resolves.
+    #[serde(default)]
+    pub fallback_outcome: Option<u32>,
+    /// Named outcome indices in the order their `index:N` descriptions reference.
+    #[serde(default)]
+    pub named_outcomes: Vec<u32>,
+    /// Outcomes that have settled. Non-empty implies the question has resolved.
+    #[serde(default)]
+    pub settled_named_outcomes: Vec<u32>,
 }
 
 /// Optional perpetuals metadata with asset contexts from `{ "type": "metaAndAssetCtxs" }`.

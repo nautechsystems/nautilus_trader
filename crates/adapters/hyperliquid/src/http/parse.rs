@@ -305,6 +305,10 @@ const OUTCOME_SIZE_DECIMALS: u32 = 2;
 /// spot-coin form (`#<encoding>`) which is what `l2Book`, `trades`, and `bbo`
 /// subscriptions accept.
 ///
+/// Expiry is read from the market's own description when it carries
+/// `class:priceBinary`; for outcomes that point at a parent question (`other`
+/// or `index:N`), the expiry is inherited from that question's description.
+///
 /// `side_name` is left unset on the resulting metadata when the venue payload
 /// does not supply `sideSpecs`.
 pub fn parse_outcome_instruments(
@@ -314,14 +318,18 @@ pub fn parse_outcome_instruments(
 
     for market in &meta.outcomes {
         for side in 0u8..=1u8 {
-            defs.push(build_outcome_def(market, side)?);
+            defs.push(build_outcome_def(market, side, meta)?);
         }
     }
 
     Ok(defs)
 }
 
-fn build_outcome_def(market: &OutcomeMarket, side: u8) -> Result<HyperliquidInstrumentDef, String> {
+fn build_outcome_def(
+    market: &OutcomeMarket,
+    side: u8,
+    meta: &OutcomeMeta,
+) -> Result<HyperliquidInstrumentDef, String> {
     let outcome = market.outcome;
     let asset_id = HyperliquidAssetId::outcome(outcome, side);
     let encoding = asset_id
@@ -342,6 +350,8 @@ fn build_outcome_def(market: &OutcomeMarket, side: u8) -> Result<HyperliquidInst
         Some(Ustr::from(market.description.as_str()))
     };
 
+    let expiration_ns = resolve_outcome_expiration_ns(market, meta);
+
     let outcome = HyperliquidOutcomeMetadata {
         outcome_index: market.outcome,
         outcome_side: side,
@@ -349,7 +359,7 @@ fn build_outcome_def(market: &OutcomeMarket, side: u8) -> Result<HyperliquidInst
         side_name,
         description,
         activation_ns: UnixNanos::default(),
-        expiration_ns: UnixNanos::default(),
+        expiration_ns,
     };
 
     Ok(HyperliquidInstrumentDef {
@@ -379,6 +389,133 @@ fn pow10_neg(decimals: u32) -> Decimal {
 
     // Build 1 / 10^decimals using integer arithmetic
     Decimal::from_i128_with_scale(1, decimals)
+}
+
+// Direct binary outcomes carry `expiry:` in their own description. Named
+// outcomes (`index:N`) and the `other` fallback inherit expiry from the
+// parent question. Returns zero when no expiry can be located.
+fn resolve_outcome_expiration_ns(market: &OutcomeMarket, meta: &OutcomeMeta) -> UnixNanos {
+    if let Some(ns) = parse_expiry_from_description(&market.description) {
+        return ns;
+    }
+
+    meta.parent_question(market.outcome)
+        .and_then(|q| parse_expiry_from_description(&q.description))
+        .unwrap_or_default()
+}
+
+fn parse_expiry_from_description(description: &str) -> Option<UnixNanos> {
+    description
+        .split('|')
+        .filter_map(|piece| piece.split_once(':'))
+        .find_map(|(key, value)| (key == "expiry").then_some(value))
+        .and_then(parse_outcome_expiry_ns)
+}
+
+// Parses a Hyperliquid outcome expiry stamp `YYYYMMDD-HHMM` (UTC) to UnixNanos.
+fn parse_outcome_expiry_ns(s: &str) -> Option<UnixNanos> {
+    let (date_part, time_part) = s.split_once('-')?;
+    if date_part.len() != 8 || time_part.len() != 4 {
+        return None;
+    }
+
+    let year: i32 = date_part[0..4].parse().ok()?;
+    let month: u32 = date_part[4..6].parse().ok()?;
+    let day: u32 = date_part[6..8].parse().ok()?;
+    let hour: u32 = time_part[0..2].parse().ok()?;
+    let minute: u32 = time_part[2..4].parse().ok()?;
+
+    let datetime = chrono::NaiveDate::from_ymd_opt(year, month, day)?
+        .and_hms_opt(hour, minute, 0)?
+        .and_utc();
+    let nanos = datetime.timestamp_nanos_opt()?;
+    u64::try_from(nanos).ok().map(UnixNanos::from)
+}
+
+/// Settlement state for a single HIP-4 outcome side token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OutcomeSettlement {
+    /// Outcome index from `outcomeMeta`.
+    pub outcome_index: u32,
+    /// Side token (`0` or `1`).
+    pub outcome_side: u8,
+    /// Final settlement value: `1` for the winning side, `0` for losing sides.
+    pub final_value: u8,
+}
+
+/// Derives per-side settlement values from an `outcomeMeta` snapshot.
+///
+/// Returns one [`OutcomeSettlement`] for every side of every outcome whose
+/// resolution can be inferred from the snapshot:
+///
+/// - For each question with non-empty `settled_named_outcomes`, every named
+///   outcome and the fallback are emitted: the winning named outcomes get
+///   `Yes -> 1, No -> 0`, every other named outcome and the fallback get
+///   `Yes -> 0, No -> 1`.
+/// - Standalone outcomes (not referenced by any question) are skipped because
+///   the venue does not expose their resolution in `outcomeMeta`. They will
+///   need a separate signal (status flag, fill, or position-state event).
+///
+/// Outcomes referenced by a question that has not yet settled are also
+/// skipped. This lets a caller poll `outcomeMeta` and emit settlement events
+/// when entries first appear in the result.
+#[must_use]
+pub fn derive_outcome_settlements(meta: &OutcomeMeta) -> Vec<OutcomeSettlement> {
+    let mut settlements = Vec::new();
+
+    for question in &meta.questions {
+        if question.settled_named_outcomes.is_empty() {
+            continue;
+        }
+
+        let losing_sides_won = |outcome_index: u32| -> [OutcomeSettlement; 2] {
+            // Named outcome did not win; Yes side -> 0, No side -> 1.
+            [
+                OutcomeSettlement {
+                    outcome_index,
+                    outcome_side: 0,
+                    final_value: 0,
+                },
+                OutcomeSettlement {
+                    outcome_index,
+                    outcome_side: 1,
+                    final_value: 1,
+                },
+            ]
+        };
+
+        let winning_sides = |outcome_index: u32| -> [OutcomeSettlement; 2] {
+            // Named outcome won; Yes side -> 1, No side -> 0.
+            [
+                OutcomeSettlement {
+                    outcome_index,
+                    outcome_side: 0,
+                    final_value: 1,
+                },
+                OutcomeSettlement {
+                    outcome_index,
+                    outcome_side: 1,
+                    final_value: 0,
+                },
+            ]
+        };
+
+        for outcome_index in &question.named_outcomes {
+            if question.settled_named_outcomes.contains(outcome_index) {
+                settlements.extend(winning_sides(*outcome_index));
+            } else {
+                settlements.extend(losing_sides_won(*outcome_index));
+            }
+        }
+
+        // The fallback is the "no named outcome resolved" branch; it loses
+        // whenever any named outcome won.
+        if let Some(fallback) = question.fallback_outcome {
+            settlements.extend(losing_sides_won(fallback));
+        }
+    }
+
+    settlements
 }
 
 pub fn get_currency(code: &str) -> Currency {
@@ -857,8 +994,8 @@ mod tests {
 
     use super::{
         super::models::{
-            HyperliquidL2Book, OutcomeMarket, OutcomeMeta, OutcomeSideSpec, PerpAsset, SpotPair,
-            SpotToken,
+            HyperliquidL2Book, OutcomeMarket, OutcomeMeta, OutcomeQuestion, OutcomeSideSpec,
+            PerpAsset, SpotPair, SpotToken,
         },
         *,
     };
@@ -1272,6 +1409,7 @@ mod tests {
                     },
                 ],
             }],
+            questions: vec![],
         };
 
         let defs = parse_outcome_instruments(&meta).unwrap();
@@ -1317,6 +1455,7 @@ mod tests {
                 description: String::new(),
                 side_specs: vec![],
             }],
+            questions: vec![],
         };
 
         let defs = parse_outcome_instruments(&meta).unwrap();
@@ -1348,6 +1487,7 @@ mod tests {
                     },
                 ],
             }],
+            questions: vec![],
         };
 
         let defs = parse_outcome_instruments(&meta).unwrap();
@@ -1366,5 +1506,181 @@ mod tests {
             }
             other => panic!("Expected BinaryOption, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn test_parse_outcome_expiry_ns_round_trip() {
+        // 2026-05-08 06:00:00 UTC == 1778652000 seconds since epoch
+        let ns = parse_outcome_expiry_ns("20260508-0600").unwrap();
+        assert_eq!(ns.as_u64(), 1_778_220_000_000_000_000);
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("20260508")]
+    #[case("20260508-")]
+    #[case("20260508-0600 ")]
+    #[case("2026-05-08-06-00")]
+    #[case("20261308-0600")]
+    fn test_parse_outcome_expiry_ns_rejects_bad_input(#[case] input: &str) {
+        assert!(parse_outcome_expiry_ns(input).is_none());
+    }
+
+    #[rstest]
+    fn test_parse_outcome_instruments_pulls_expiry_from_price_binary() {
+        let meta = OutcomeMeta {
+            outcomes: vec![OutcomeMarket {
+                outcome: 5,
+                name: "Recurring".to_string(),
+                description:
+                    "class:priceBinary|underlying:BTC|expiry:20260508-0600|targetPrice:81041|period:1d"
+                        .to_string(),
+                side_specs: vec![
+                    OutcomeSideSpec {
+                        name: "Yes".to_string(),
+                    },
+                    OutcomeSideSpec {
+                        name: "No".to_string(),
+                    },
+                ],
+            }],
+            questions: vec![],
+        };
+
+        let defs = parse_outcome_instruments(&meta).unwrap();
+        let yes_meta = defs[0].outcome.as_ref().unwrap();
+        assert_eq!(yes_meta.expiration_ns.as_u64(), 1_778_220_000_000_000_000);
+    }
+
+    #[rstest]
+    fn test_parse_outcome_instruments_inherits_expiry_from_parent_question() {
+        // outcome=7 has `index:0` description and is referenced by question 0's
+        // `named_outcomes`. outcome=6 has `other` description and is the
+        // `fallback_outcome`. Both should pick up the question's expiry.
+        let meta = OutcomeMeta {
+            outcomes: vec![
+                OutcomeMarket {
+                    outcome: 6,
+                    name: "Recurring Fallback".to_string(),
+                    description: "other".to_string(),
+                    side_specs: vec![],
+                },
+                OutcomeMarket {
+                    outcome: 7,
+                    name: "Recurring Named Outcome".to_string(),
+                    description: "index:0".to_string(),
+                    side_specs: vec![],
+                },
+            ],
+            questions: vec![OutcomeQuestion {
+                question: 0,
+                name: "Recurring".to_string(),
+                description:
+                    "class:priceBucket|underlying:BTC|expiry:20260508-0600|priceThresholds:79303,82540|period:1d"
+                        .to_string(),
+                fallback_outcome: Some(6),
+                named_outcomes: vec![7, 8, 9],
+                settled_named_outcomes: vec![],
+            }],
+        };
+
+        let defs = parse_outcome_instruments(&meta).unwrap();
+        let expected_ns: u64 = 1_778_220_000_000_000_000;
+
+        for def in &defs {
+            let outcome = def.outcome.as_ref().unwrap();
+            assert_eq!(
+                outcome.expiration_ns.as_u64(),
+                expected_ns,
+                "outcome {} side {} should inherit expiry",
+                outcome.outcome_index,
+                outcome.outcome_side,
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_derive_outcome_settlements_returns_empty_when_no_questions() {
+        let meta = OutcomeMeta {
+            outcomes: vec![],
+            questions: vec![],
+        };
+        assert!(derive_outcome_settlements(&meta).is_empty());
+    }
+
+    #[rstest]
+    fn test_derive_outcome_settlements_returns_empty_when_no_questions_settled() {
+        let meta = OutcomeMeta {
+            outcomes: vec![],
+            questions: vec![OutcomeQuestion {
+                question: 0,
+                name: "Recurring".to_string(),
+                description: "class:priceBucket|expiry:20260508-0600".to_string(),
+                fallback_outcome: Some(6),
+                named_outcomes: vec![7, 8, 9],
+                settled_named_outcomes: vec![],
+            }],
+        };
+
+        assert!(derive_outcome_settlements(&meta).is_empty());
+    }
+
+    #[rstest]
+    fn test_derive_outcome_settlements_marks_winners_losers_and_fallback() {
+        let meta = OutcomeMeta {
+            outcomes: vec![],
+            questions: vec![OutcomeQuestion {
+                question: 0,
+                name: "Recurring".to_string(),
+                description: "class:priceBucket|expiry:20260508-0600".to_string(),
+                fallback_outcome: Some(6),
+                named_outcomes: vec![7, 8, 9],
+                settled_named_outcomes: vec![8],
+            }],
+        };
+
+        let settlements = derive_outcome_settlements(&meta);
+        let lookup: ahash::AHashMap<(u32, u8), u8> = settlements
+            .into_iter()
+            .map(|s| ((s.outcome_index, s.outcome_side), s.final_value))
+            .collect();
+
+        // Winning named outcome 8: Yes -> 1, No -> 0
+        assert_eq!(lookup[&(8, 0)], 1);
+        assert_eq!(lookup[&(8, 1)], 0);
+
+        // Losing named outcomes 7, 9 and fallback 6: Yes -> 0, No -> 1
+        for losing in [7, 9, 6] {
+            assert_eq!(lookup[&(losing, 0)], 0, "outcome {losing} Yes side");
+            assert_eq!(lookup[&(losing, 1)], 1, "outcome {losing} No side");
+        }
+
+        assert_eq!(lookup.len(), 8);
+    }
+
+    #[rstest]
+    fn test_parse_outcome_meta_question_settlement_round_trip() {
+        let json = r#"{
+            "outcomes": [{"outcome": 5, "name": "Recurring", "description": "class:priceBinary|expiry:20260508-0600", "sideSpecs": []}],
+            "questions": [{
+                "question": 0,
+                "name": "Recurring",
+                "description": "class:priceBucket|expiry:20260508-0600",
+                "fallbackOutcome": 6,
+                "namedOutcomes": [7, 8, 9],
+                "settledNamedOutcomes": [8]
+            }]
+        }"#;
+
+        let meta: OutcomeMeta = serde_json::from_str(json).unwrap();
+        assert_eq!(meta.questions.len(), 1);
+        let q = &meta.questions[0];
+        assert_eq!(q.fallback_outcome, Some(6));
+        assert_eq!(q.named_outcomes, vec![7, 8, 9]);
+        assert_eq!(q.settled_named_outcomes, vec![8]);
+
+        assert!(meta.parent_question(7).is_some());
+        assert!(meta.parent_question(6).is_some());
+        assert!(meta.parent_question(99).is_none());
     }
 }

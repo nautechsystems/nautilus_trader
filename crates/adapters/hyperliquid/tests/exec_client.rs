@@ -2722,16 +2722,16 @@ fn make_submit_cmd_with_params(order: &OrderAny, params: Params) -> SubmitOrder 
 }
 
 #[rstest]
-#[case::unsupported_symbol("BTC-USD-FUT.HYPERLIQUID", "expected -PERP or -SPOT")]
+#[case::unsupported_symbol("BTC-USD-FUT.HYPERLIQUID", "Unsupported instrument symbol format")]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_submit_order_unsupported_symbol_emits_denied(
     #[case] instrument_str: &str,
     #[case] reason_substr: &str,
 ) {
-    // Symbol does not end in -PERP or -SPOT, so `validate_order_submission`
-    // bails before any HTTP work and the client emits OrderDenied. A regression
-    // that drops the suffix check would land orders on a venue that cannot
-    // route them.
+    // Symbol does not match -PERP, -SPOT, or HIP-4 outcome wire forms, so
+    // `validate_order_submission` bails before any HTTP work and the client
+    // emits OrderDenied. A regression that drops the suffix check would land
+    // orders on a venue that cannot route them.
     let state = TestServerState::default();
     let exchange_count = state.exchange_request_count.clone();
     let addr = start_mock_server(state).await;
@@ -2761,6 +2761,110 @@ async fn test_submit_order_unsupported_symbol_emits_denied(
         events[0].1,
     );
     assert_eq!(*exchange_count.lock().await, 0);
+
+    client.disconnect().await.unwrap();
+}
+
+fn make_outcome_limit_order(id: &str, reduce_only: bool) -> OrderAny {
+    OrderAny::Limit(LimitOrder::new(
+        TraderId::from("TESTER-001"),
+        StrategyId::from("S-001"),
+        InstrumentId::from("+50.HYPERLIQUID"),
+        ClientOrderId::from(id),
+        OrderSide::Buy,
+        Quantity::from("1"),
+        Price::from("0.5000"),
+        TimeInForce::Gtc,
+        None,
+        false,
+        reduce_only,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ))
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_list_denies_outcome_reduce_only() {
+    // submit_order_list runs validate_order_for_hyperliquid before asset
+    // resolution. An outcome order with reduce_only=true must be denied
+    // without any exchange request being sent. A regression that drops
+    // the validation gate from the list path would route the request to
+    // the venue and rely on the venue to reject it.
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("S-001");
+    let instrument_id = InstrumentId::from("+50.HYPERLIQUID");
+    let cid = ClientOrderId::new("O-OUTCOME-LIST-RO");
+
+    let order = make_outcome_limit_order(cid.as_str(), true);
+    let init = order.init_event().clone();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let order_list = OrderList::new(
+        OrderListId::from("outcome-ro-list"),
+        instrument_id,
+        strategy_id,
+        vec![cid],
+        UnixNanos::default(),
+    );
+
+    let cmd = SubmitOrderList::new(
+        trader_id,
+        Some(*HYPERLIQUID_CLIENT_ID),
+        strategy_id,
+        order_list,
+        vec![init],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order_list(cmd).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let denied = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(denied.len(), 1, "outcome reduce_only must be denied");
+    assert_eq!(denied[0].0, cid);
+    assert!(
+        denied[0].1.contains("Reduce-only is not supported"),
+        "reason: {}",
+        denied[0].1,
+    );
+    assert_eq!(
+        *exchange_count.lock().await,
+        0,
+        "no HTTP request should reach the venue",
+    );
 
     client.disconnect().await.unwrap();
 }
