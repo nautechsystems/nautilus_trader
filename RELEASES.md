@@ -71,6 +71,7 @@ Released on TBD (UTC).
 - Fixed margin `AccountState` events emitting empty balances when balances were populated
 - Fixed `allow_cash_borrowing` not applied to cached cash accounts during simulated venue initialization
 - Fixed cache venue order ID updates and own-book cleanup for cancel-replace flows (Rust)
+- Fixed `Cache::orders_for_exec_algorithm` discarding query filters when applying intersection (Rust)
 - Fixed `OwnOrderBook` tracking for reconciled external open orders (Rust)
 - Fixed `OrderAny::from_events` panic on malformed `OrderInitialized`; reconciliation returns `Err` instead of crashing
 - Fixed `BacktestEngine` not enabling `calculate_account_state` on accounts (#3988), thanks for reporting @magnified103
@@ -169,6 +170,8 @@ Released on TBD (UTC).
 - Improved Betfair Rust adapter with explicit info-level no-op overrides for unsupported unsubscribe methods
 - Improved Betfair Rust integration test coverage to cover OCM, replace flow, batch ops, and session recovery
 - Improved Interactive Brokers Python 3.14 installation and integration test coverage
+- Optimized `Cache` order and position query methods to a single size-ordered intersection pass (Rust)
+- Optimized `Cache::*_count` methods to count via index without materializing a sorted `Vec` (Rust)
 - Optimized `OrderMatchingCore` storage to split `BTreeMap` limit/stop books per side for price-time priority (Rust)
 - Optimized live node biased select to dispatch exec commands ahead of market data (Rust)
 - Optimized live node loop by collapsing six maintenance timers into one shared maintenance dispatcher (Rust)

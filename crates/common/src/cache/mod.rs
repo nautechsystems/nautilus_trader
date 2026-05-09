@@ -110,6 +110,72 @@ impl From<Rc<RefCell<Cache>>> for CacheView {
     }
 }
 
+// Filter sources resolved from an order or position query.
+//
+// Captures the three states of a multi-key index intersection without committing to an owned
+// result set: no filters at all (the caller iterates the bucket directly), one or more filter
+// sources resolved successfully (intersect them lazily), or one filter resolved to no entries
+// at all (the result is unconditionally empty).
+enum FilterSources<'a, K> {
+    Unfiltered,
+    Empty,
+    Sets(Vec<&'a AHashSet<K>>),
+}
+
+// Intersects a non-empty collection of filter sources by sorting them ascending by length and
+// driving the loop from the smallest set, collecting one `AHashSet` of matching keys.
+//
+// Single-source inputs short-circuit to a direct `AHashSet::clone` (memcopy of the bucket
+// table) rather than rehashing each entry through `iter().copied().collect()`.
+fn intersect_filter_sources<K>(mut sources: Vec<&AHashSet<K>>) -> AHashSet<K>
+where
+    K: Copy + Eq + std::hash::Hash,
+{
+    debug_assert!(!sources.is_empty());
+    sources.sort_unstable_by_key(|s| s.len());
+    let driver = sources[0];
+    let rest = &sources[1..];
+
+    if rest.is_empty() {
+        return driver.clone();
+    }
+
+    driver
+        .iter()
+        .filter(|id| rest.iter().all(|s| s.contains(id)))
+        .copied()
+        .collect()
+}
+
+// Intersects `bucket` with one or more filter sources.
+//
+// For exactly one filter source, iterates the larger of (bucket, filter) and looks up in the
+// smaller. The larger set scans linearly (HW-prefetcher friendly) and the smaller stays hot in
+// cache, which empirically beats the size-ordered approach when the smaller filter is too
+// large to fit in L1 (e.g., a 20k-entry venue filter against a 100k-entry bucket). For two or
+// more filters the size-ordered driver is reinstated and the bucket joins the source list.
+fn intersect_pair_or_many<'a, K>(
+    bucket: &'a AHashSet<K>,
+    mut sources: Vec<&'a AHashSet<K>>,
+) -> AHashSet<K>
+where
+    K: Copy + Eq + std::hash::Hash,
+{
+    debug_assert!(!sources.is_empty());
+    if sources.len() == 1 {
+        let filter = sources[0];
+        let (larger, smaller) = if bucket.len() >= filter.len() {
+            (bucket, filter)
+        } else {
+            (filter, bucket)
+        };
+        return larger.intersection(smaller).copied().collect();
+    }
+
+    sources.push(bucket);
+    intersect_filter_sources(sources)
+}
+
 /// A common in-memory `Cache` for market and execution related data.
 #[cfg_attr(
     feature = "python",
@@ -2850,162 +2916,232 @@ impl Cache {
 
     // -- IDENTIFIER QUERIES ----------------------------------------------------------------------
 
-    fn build_order_query_filter_set(
-        &self,
+    // Collects references to the index sets that constrain an order query.
+    //
+    // Returns:
+    // - `FilterSources::Unfiltered` when no filter is provided (the caller should iterate
+    //   the full bucket).
+    // - `FilterSources::Empty` when a filter is provided but the index has no entry for it
+    //   (the resolved set is unconditionally empty, no further work needed).
+    // - `FilterSources::Sets` with borrowed references to each filter source set.
+    fn collect_order_filter_sources<'a>(
+        &'a self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
         account_id: Option<&AccountId>,
-    ) -> Option<AHashSet<ClientOrderId>> {
-        let mut query: Option<AHashSet<ClientOrderId>> = None;
+    ) -> FilterSources<'a, ClientOrderId> {
+        let mut sources: Vec<&AHashSet<ClientOrderId>> = Vec::with_capacity(4);
 
         if let Some(venue) = venue {
-            query = Some(
-                self.index
-                    .venue_orders
-                    .get(venue)
-                    .cloned()
-                    .unwrap_or_default(),
-            );
+            match self.index.venue_orders.get(venue) {
+                Some(set) => sources.push(set),
+                None => return FilterSources::Empty,
+            }
         }
 
         if let Some(instrument_id) = instrument_id {
-            let instrument_orders = self
-                .index
-                .instrument_orders
-                .get(instrument_id)
-                .cloned()
-                .unwrap_or_default();
-
-            if let Some(existing_query) = &mut query {
-                *existing_query = existing_query
-                    .intersection(&instrument_orders)
-                    .copied()
-                    .collect();
-            } else {
-                query = Some(instrument_orders);
+            match self.index.instrument_orders.get(instrument_id) {
+                Some(set) => sources.push(set),
+                None => return FilterSources::Empty,
             }
         }
 
         if let Some(strategy_id) = strategy_id {
-            let strategy_orders = self
-                .index
-                .strategy_orders
-                .get(strategy_id)
-                .cloned()
-                .unwrap_or_default();
-
-            if let Some(existing_query) = &mut query {
-                *existing_query = existing_query
-                    .intersection(&strategy_orders)
-                    .copied()
-                    .collect();
-            } else {
-                query = Some(strategy_orders);
+            match self.index.strategy_orders.get(strategy_id) {
+                Some(set) => sources.push(set),
+                None => return FilterSources::Empty,
             }
         }
 
         if let Some(account_id) = account_id {
-            let account_orders = self
-                .index
-                .account_orders
-                .get(account_id)
-                .cloned()
-                .unwrap_or_default();
-
-            if let Some(existing_query) = &mut query {
-                *existing_query = existing_query
-                    .intersection(&account_orders)
-                    .copied()
-                    .collect();
-            } else {
-                query = Some(account_orders);
+            match self.index.account_orders.get(account_id) {
+                Some(set) => sources.push(set),
+                None => return FilterSources::Empty,
             }
         }
 
-        query
+        if sources.is_empty() {
+            FilterSources::Unfiltered
+        } else {
+            FilterSources::Sets(sources)
+        }
     }
 
-    fn build_position_query_filter_set(
-        &self,
+    fn collect_position_filter_sources<'a>(
+        &'a self,
         venue: Option<&Venue>,
         instrument_id: Option<&InstrumentId>,
         strategy_id: Option<&StrategyId>,
         account_id: Option<&AccountId>,
-    ) -> Option<AHashSet<PositionId>> {
-        let mut query: Option<AHashSet<PositionId>> = None;
+    ) -> FilterSources<'a, PositionId> {
+        let mut sources: Vec<&AHashSet<PositionId>> = Vec::with_capacity(4);
 
         if let Some(venue) = venue {
-            query = Some(
-                self.index
-                    .venue_positions
-                    .get(venue)
-                    .cloned()
-                    .unwrap_or_default(),
-            );
+            match self.index.venue_positions.get(venue) {
+                Some(set) => sources.push(set),
+                None => return FilterSources::Empty,
+            }
         }
 
         if let Some(instrument_id) = instrument_id {
-            let instrument_positions = self
-                .index
-                .instrument_positions
-                .get(instrument_id)
-                .cloned()
-                .unwrap_or_default();
-
-            if let Some(existing_query) = query {
-                query = Some(
-                    existing_query
-                        .intersection(&instrument_positions)
-                        .copied()
-                        .collect(),
-                );
-            } else {
-                query = Some(instrument_positions);
+            match self.index.instrument_positions.get(instrument_id) {
+                Some(set) => sources.push(set),
+                None => return FilterSources::Empty,
             }
         }
 
         if let Some(strategy_id) = strategy_id {
-            let strategy_positions = self
-                .index
-                .strategy_positions
-                .get(strategy_id)
-                .cloned()
-                .unwrap_or_default();
-
-            if let Some(existing_query) = query {
-                query = Some(
-                    existing_query
-                        .intersection(&strategy_positions)
-                        .copied()
-                        .collect(),
-                );
-            } else {
-                query = Some(strategy_positions);
+            match self.index.strategy_positions.get(strategy_id) {
+                Some(set) => sources.push(set),
+                None => return FilterSources::Empty,
             }
         }
 
         if let Some(account_id) = account_id {
-            let account_positions = self
-                .index
-                .account_positions
-                .get(account_id)
-                .cloned()
-                .unwrap_or_default();
-
-            if let Some(existing_query) = query {
-                query = Some(
-                    existing_query
-                        .intersection(&account_positions)
-                        .copied()
-                        .collect(),
-                );
-            } else {
-                query = Some(account_positions);
+            match self.index.account_positions.get(account_id) {
+                Some(set) => sources.push(set),
+                None => return FilterSources::Empty,
             }
         }
 
-        query
+        if sources.is_empty() {
+            FilterSources::Unfiltered
+        } else {
+            FilterSources::Sets(sources)
+        }
+    }
+
+    // Materializes the `ClientOrderId`s in `bucket` matching the optional filter parameters.
+    //
+    // Folds the bucket into the filter sources and runs a single size-ordered intersection,
+    // avoiding the legacy two-step build-filter-set + bucket-intersection that allocated and
+    // rehashed twice.
+    fn query_orders_in_bucket(
+        &self,
+        bucket: &AHashSet<ClientOrderId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> AHashSet<ClientOrderId> {
+        match self.collect_order_filter_sources(venue, instrument_id, strategy_id, account_id) {
+            FilterSources::Empty => AHashSet::new(),
+            FilterSources::Unfiltered => bucket.clone(),
+            FilterSources::Sets(sources) => intersect_pair_or_many(bucket, sources),
+        }
+    }
+
+    fn query_positions_in_bucket(
+        &self,
+        bucket: &AHashSet<PositionId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> AHashSet<PositionId> {
+        match self.collect_position_filter_sources(venue, instrument_id, strategy_id, account_id) {
+            FilterSources::Empty => AHashSet::new(),
+            FilterSources::Unfiltered => bucket.clone(),
+            FilterSources::Sets(sources) => intersect_pair_or_many(bucket, sources),
+        }
+    }
+
+    // Counts orders in `bucket` matching the optional filter parameters.
+    //
+    // Drives intersection from the smallest filter source (or the bucket itself when no filter
+    // is provided) and short-circuits by counting rather than collecting. With a side filter,
+    // each candidate order is borrowed via its cell only long enough to inspect the side.
+    fn count_orders_in_bucket(
+        &self,
+        bucket: &AHashSet<ClientOrderId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> usize {
+        let side = side.unwrap_or(OrderSide::NoOrderSide);
+
+        match self.collect_order_filter_sources(venue, instrument_id, strategy_id, account_id) {
+            FilterSources::Empty => 0,
+            FilterSources::Unfiltered => {
+                if side == OrderSide::NoOrderSide {
+                    bucket.len()
+                } else {
+                    bucket
+                        .iter()
+                        .filter(|id| self.order_side_matches(id, side))
+                        .count()
+                }
+            }
+            FilterSources::Sets(mut sources) => {
+                sources.push(bucket);
+                sources.sort_unstable_by_key(|s| s.len());
+                let driver = sources[0];
+                let rest = &sources[1..];
+
+                driver
+                    .iter()
+                    .filter(|id| rest.iter().all(|s| s.contains(id)))
+                    .filter(|id| {
+                        side == OrderSide::NoOrderSide || self.order_side_matches(id, side)
+                    })
+                    .count()
+            }
+        }
+    }
+
+    fn count_positions_in_bucket(
+        &self,
+        bucket: &AHashSet<PositionId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<PositionSide>,
+    ) -> usize {
+        let side = side.unwrap_or(PositionSide::NoPositionSide);
+
+        match self.collect_position_filter_sources(venue, instrument_id, strategy_id, account_id) {
+            FilterSources::Empty => 0,
+            FilterSources::Unfiltered => {
+                if side == PositionSide::NoPositionSide {
+                    bucket.len()
+                } else {
+                    bucket
+                        .iter()
+                        .filter(|id| self.position_side_matches(id, side))
+                        .count()
+                }
+            }
+            FilterSources::Sets(mut sources) => {
+                sources.push(bucket);
+                sources.sort_unstable_by_key(|s| s.len());
+                let driver = sources[0];
+                let rest = &sources[1..];
+
+                driver
+                    .iter()
+                    .filter(|id| rest.iter().all(|s| s.contains(id)))
+                    .filter(|id| {
+                        side == PositionSide::NoPositionSide || self.position_side_matches(id, side)
+                    })
+                    .count()
+            }
+        }
+    }
+
+    fn order_side_matches(&self, client_order_id: &ClientOrderId, side: OrderSide) -> bool {
+        self.orders
+            .get(client_order_id)
+            .is_some_and(|cell| cell.borrow().order_side() == side)
+    }
+
+    fn position_side_matches(&self, position_id: &PositionId, side: PositionSide) -> bool {
+        self.positions
+            .get(position_id)
+            .is_some_and(|cell| cell.borrow().side == side)
     }
 
     /// Retrieves orders corresponding to the `client_order_ids`, optionally filtering by `side`.
@@ -3083,13 +3219,13 @@ impl Cache {
         strategy_id: Option<&StrategyId>,
         account_id: Option<&AccountId>,
     ) -> AHashSet<ClientOrderId> {
-        let query =
-            self.build_order_query_filter_set(venue, instrument_id, strategy_id, account_id);
-
-        match query {
-            Some(query) => self.index.orders.intersection(&query).copied().collect(),
-            None => self.index.orders.clone(),
-        }
+        self.query_orders_in_bucket(
+            &self.index.orders,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
     }
 
     /// Returns the `ClientOrderId`s of all open orders.
@@ -3101,18 +3237,13 @@ impl Cache {
         strategy_id: Option<&StrategyId>,
         account_id: Option<&AccountId>,
     ) -> AHashSet<ClientOrderId> {
-        let query =
-            self.build_order_query_filter_set(venue, instrument_id, strategy_id, account_id);
-
-        match query {
-            Some(query) => self
-                .index
-                .orders_open
-                .intersection(&query)
-                .copied()
-                .collect(),
-            None => self.index.orders_open.clone(),
-        }
+        self.query_orders_in_bucket(
+            &self.index.orders_open,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
     }
 
     /// Returns the `ClientOrderId`s of all closed orders.
@@ -3124,18 +3255,13 @@ impl Cache {
         strategy_id: Option<&StrategyId>,
         account_id: Option<&AccountId>,
     ) -> AHashSet<ClientOrderId> {
-        let query =
-            self.build_order_query_filter_set(venue, instrument_id, strategy_id, account_id);
-
-        match query {
-            Some(query) => self
-                .index
-                .orders_closed
-                .intersection(&query)
-                .copied()
-                .collect(),
-            None => self.index.orders_closed.clone(),
-        }
+        self.query_orders_in_bucket(
+            &self.index.orders_closed,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
     }
 
     /// Returns the `ClientOrderId`s of all locally active orders.
@@ -3150,18 +3276,13 @@ impl Cache {
         strategy_id: Option<&StrategyId>,
         account_id: Option<&AccountId>,
     ) -> AHashSet<ClientOrderId> {
-        let query =
-            self.build_order_query_filter_set(venue, instrument_id, strategy_id, account_id);
-
-        match query {
-            Some(query) => self
-                .index
-                .orders_active_local
-                .intersection(&query)
-                .copied()
-                .collect(),
-            None => self.index.orders_active_local.clone(),
-        }
+        self.query_orders_in_bucket(
+            &self.index.orders_active_local,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
     }
 
     /// Returns the `ClientOrderId`s of all emulated orders.
@@ -3173,18 +3294,13 @@ impl Cache {
         strategy_id: Option<&StrategyId>,
         account_id: Option<&AccountId>,
     ) -> AHashSet<ClientOrderId> {
-        let query =
-            self.build_order_query_filter_set(venue, instrument_id, strategy_id, account_id);
-
-        match query {
-            Some(query) => self
-                .index
-                .orders_emulated
-                .intersection(&query)
-                .copied()
-                .collect(),
-            None => self.index.orders_emulated.clone(),
-        }
+        self.query_orders_in_bucket(
+            &self.index.orders_emulated,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
     }
 
     /// Returns the `ClientOrderId`s of all in-flight orders.
@@ -3196,18 +3312,13 @@ impl Cache {
         strategy_id: Option<&StrategyId>,
         account_id: Option<&AccountId>,
     ) -> AHashSet<ClientOrderId> {
-        let query =
-            self.build_order_query_filter_set(venue, instrument_id, strategy_id, account_id);
-
-        match query {
-            Some(query) => self
-                .index
-                .orders_inflight
-                .intersection(&query)
-                .copied()
-                .collect(),
-            None => self.index.orders_inflight.clone(),
-        }
+        self.query_orders_in_bucket(
+            &self.index.orders_inflight,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
     }
 
     /// Returns `PositionId`s of all positions.
@@ -3219,13 +3330,13 @@ impl Cache {
         strategy_id: Option<&StrategyId>,
         account_id: Option<&AccountId>,
     ) -> AHashSet<PositionId> {
-        let query =
-            self.build_position_query_filter_set(venue, instrument_id, strategy_id, account_id);
-
-        match query {
-            Some(query) => self.index.positions.intersection(&query).copied().collect(),
-            None => self.index.positions.clone(),
-        }
+        self.query_positions_in_bucket(
+            &self.index.positions,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
     }
 
     /// Returns the `PositionId`s of all open positions.
@@ -3237,18 +3348,13 @@ impl Cache {
         strategy_id: Option<&StrategyId>,
         account_id: Option<&AccountId>,
     ) -> AHashSet<PositionId> {
-        let query =
-            self.build_position_query_filter_set(venue, instrument_id, strategy_id, account_id);
-
-        match query {
-            Some(query) => self
-                .index
-                .positions_open
-                .intersection(&query)
-                .copied()
-                .collect(),
-            None => self.index.positions_open.clone(),
-        }
+        self.query_positions_in_bucket(
+            &self.index.positions_open,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
     }
 
     /// Returns the `PositionId`s of all closed positions.
@@ -3260,18 +3366,13 @@ impl Cache {
         strategy_id: Option<&StrategyId>,
         account_id: Option<&AccountId>,
     ) -> AHashSet<PositionId> {
-        let query =
-            self.build_position_query_filter_set(venue, instrument_id, strategy_id, account_id);
-
-        match query {
-            Some(query) => self
-                .index
-                .positions_closed
-                .intersection(&query)
-                .copied()
-                .collect(),
-            None => self.index.positions_closed.clone(),
-        }
+        self.query_positions_in_bucket(
+            &self.index.positions_closed,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
     }
 
     /// Returns the `ComponentId`s of all actors.
@@ -3468,11 +3569,8 @@ impl Cache {
     /// Returns borrows of all orders for the `position_id`.
     #[must_use]
     pub fn orders_for_position(&self, position_id: &PositionId) -> Vec<OrderRef<'_>> {
-        let client_order_ids = self.index.position_orders.get(position_id);
-        match client_order_ids {
-            Some(client_order_ids) => {
-                self.get_orders_for_ids(&client_order_ids.iter().copied().collect(), None)
-            }
+        match self.index.position_orders.get(position_id) {
+            Some(client_order_ids) => self.get_orders_for_ids(client_order_ids, None),
             None => Vec::new(),
         }
     }
@@ -3532,8 +3630,14 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<OrderSide>,
     ) -> usize {
-        self.orders_open(venue, instrument_id, strategy_id, account_id, side)
-            .len()
+        self.count_orders_in_bucket(
+            &self.index.orders_open,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
     }
 
     /// Returns the count of all closed orders.
@@ -3546,8 +3650,14 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<OrderSide>,
     ) -> usize {
-        self.orders_closed(venue, instrument_id, strategy_id, account_id, side)
-            .len()
+        self.count_orders_in_bucket(
+            &self.index.orders_closed,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
     }
 
     /// Returns the count of all locally active orders.
@@ -3563,8 +3673,14 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<OrderSide>,
     ) -> usize {
-        self.orders_active_local(venue, instrument_id, strategy_id, account_id, side)
-            .len()
+        self.count_orders_in_bucket(
+            &self.index.orders_active_local,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
     }
 
     /// Returns the count of all emulated orders.
@@ -3577,8 +3693,14 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<OrderSide>,
     ) -> usize {
-        self.orders_emulated(venue, instrument_id, strategy_id, account_id, side)
-            .len()
+        self.count_orders_in_bucket(
+            &self.index.orders_emulated,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
     }
 
     /// Returns the count of all in-flight orders.
@@ -3591,8 +3713,14 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<OrderSide>,
     ) -> usize {
-        self.orders_inflight(venue, instrument_id, strategy_id, account_id, side)
-            .len()
+        self.count_orders_in_bucket(
+            &self.index.orders_inflight,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
     }
 
     /// Returns the count of all orders.
@@ -3605,8 +3733,14 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<OrderSide>,
     ) -> usize {
-        self.orders(venue, instrument_id, strategy_id, account_id, side)
-            .len()
+        self.count_orders_in_bucket(
+            &self.index.orders,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
     }
 
     /// Returns the order list for the `order_list_id`.
@@ -3671,33 +3805,29 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<OrderSide>,
     ) -> Vec<OrderRef<'_>> {
-        let query =
-            self.build_order_query_filter_set(venue, instrument_id, strategy_id, account_id);
-        let exec_algorithm_order_ids = self.index.exec_algorithm_orders.get(exec_algorithm_id);
+        let Some(exec_algorithm_order_ids) =
+            self.index.exec_algorithm_orders.get(exec_algorithm_id)
+        else {
+            return Vec::new();
+        };
 
-        if let Some(query) = query
-            && let Some(exec_algorithm_order_ids) = exec_algorithm_order_ids
-        {
-            let _exec_algorithm_order_ids = exec_algorithm_order_ids.intersection(&query);
-        }
-
-        if let Some(exec_algorithm_order_ids) = exec_algorithm_order_ids {
-            self.get_orders_for_ids(exec_algorithm_order_ids, side)
-        } else {
-            Vec::new()
-        }
+        let filtered = self.query_orders_in_bucket(
+            exec_algorithm_order_ids,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        );
+        self.get_orders_for_ids(&filtered, side)
     }
 
     /// Returns references to all orders with the `exec_spawn_id`.
     #[must_use]
     pub fn orders_for_exec_spawn(&self, exec_spawn_id: &ClientOrderId) -> Vec<OrderRef<'_>> {
-        self.get_orders_for_ids(
-            self.index
-                .exec_spawn_orders
-                .get(exec_spawn_id)
-                .unwrap_or(&AHashSet::new()),
-            None,
-        )
+        match self.index.exec_spawn_orders.get(exec_spawn_id) {
+            Some(ids) => self.get_orders_for_ids(ids, None),
+            None => Vec::new(),
+        }
     }
 
     /// Returns the total order quantity for the `exec_spawn_id`.
@@ -3902,8 +4032,14 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<PositionSide>,
     ) -> usize {
-        self.positions_open(venue, instrument_id, strategy_id, account_id, side)
-            .len()
+        self.count_positions_in_bucket(
+            &self.index.positions_open,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
     }
 
     /// Returns the count of all closed positions.
@@ -3916,8 +4052,14 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<PositionSide>,
     ) -> usize {
-        self.positions_closed(venue, instrument_id, strategy_id, account_id, side)
-            .len()
+        self.count_positions_in_bucket(
+            &self.index.positions_closed,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
     }
 
     /// Returns the count of all positions.
@@ -3930,8 +4072,14 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<PositionSide>,
     ) -> usize {
-        self.positions(venue, instrument_id, strategy_id, account_id, side)
-            .len()
+        self.count_positions_in_bucket(
+            &self.index.positions,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
     }
 
     // -- STRATEGY QUERIES ------------------------------------------------------------------------
