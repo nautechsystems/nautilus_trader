@@ -268,7 +268,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
   "rust_decimal",
 ] }
 strum = { version = "0.28.0", features = ["derive"] }
-sysinfo = { version = "0.38.4", default-features = false, features = [
+sysinfo = { version = "0.39.0", default-features = false, features = [
   "system",
 ] }
 tabled = { version = "0.20.0", default-features = false, features = [
@@ -276,7 +276,7 @@ tabled = { version = "0.20.0", default-features = false, features = [
   "derive",
 ] }
 thiserror = "2.0.18"
-tokio = { version = "1.52.2", default-features = false, features = [
+tokio = { version = "1.52.3", default-features = false, features = [
   "rt-multi-thread",
   "sync",
   "fs",
@@ -384,10 +384,10 @@ walkdir = "2.5.0"
 # -----------------------------------------------------------------------------
 [workspace.metadata.tools]
 cargo-audit = "0.22.1"
-cargo-deny = "0.19.4"
+cargo-deny = "0.19.5"
 cargo-edit = "0.13.10"
 cargo-fuzz = "0.13.1"
-cargo-llvm-cov = "0.8.5"
+cargo-llvm-cov = "0.8.6"
 cargo-machete = "0.9.2"
 cargo-nextest = "0.9.133"
 cargo-vet = "0.10.2"

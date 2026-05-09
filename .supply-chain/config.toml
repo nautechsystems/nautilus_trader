@@ -197,7 +197,7 @@ version = "0.6.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-eip7928]]
-version = "0.3.5"
+version = "0.3.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-eips]]
@@ -366,10 +366,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.ark-std]]
 version = "0.5.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrayref]]
-version = "0.3.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow]]
@@ -665,7 +661,7 @@ version = "0.29.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.cc]]
-version = "1.2.61"
+version = "1.2.62"
 criteria = "safe-to-deploy"
 
 [[exemptions.chrono]]
@@ -1445,7 +1441,7 @@ version = "0.1.34"
 criteria = "safe-to-deploy"
 
 [[exemptions.js-sys]]
-version = "0.3.97"
+version = "0.3.98"
 criteria = "safe-to-deploy"
 
 [[exemptions.json-writer]]
@@ -1537,11 +1533,11 @@ version = "0.1.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.lz4_flex]]
-version = "0.12.0"
+version = "0.12.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.lz4_flex]]
-version = "0.13.0"
+version = "0.13.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.macro-string]]
@@ -1746,10 +1742,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.num-complex]]
 version = "0.4.6"
-criteria = "safe-to-deploy"
-
-[[exemptions.num-conv]]
-version = "0.2.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.num_cpus]]
@@ -1993,7 +1985,7 @@ version = "1.2.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.quick-xml]]
-version = "0.39.3"
+version = "0.39.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.quinn]]
@@ -2018,10 +2010,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.radium]]
 version = "0.7.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.rand]]
-version = "0.9.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.rand_core]]
@@ -2481,7 +2469,7 @@ version = "1.0.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.sysinfo]]
-version = "0.38.2"
+version = "0.39.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.tabled]]
@@ -2549,7 +2537,7 @@ version = "1.10.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio]]
-version = "1.52.2"
+version = "1.52.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio-macros]]
@@ -2589,7 +2577,7 @@ version = "0.5.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.tower-http]]
-version = "0.6.9"
+version = "0.6.10"
 criteria = "safe-to-deploy"
 
 [[exemptions.tower-layer]]
@@ -2729,23 +2717,23 @@ version = "0.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen]]
-version = "0.2.120"
+version = "0.2.121"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-futures]]
-version = "0.4.70"
+version = "0.4.71"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-macro]]
-version = "0.2.120"
+version = "0.2.121"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-macro-support]]
-version = "0.2.120"
+version = "0.2.121"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-shared]]
-version = "0.2.120"
+version = "0.2.121"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-streams]]
@@ -2761,7 +2749,7 @@ version = "0.4.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.web-sys]]
-version = "0.3.97"
+version = "0.3.98"
 criteria = "safe-to-deploy"
 
 [[exemptions.web-time]]

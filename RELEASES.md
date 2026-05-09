@@ -136,6 +136,7 @@ Released on TBD (UTC).
 - Fixed Polymarket adapter book resync on `tick_size_change` (#3942), thanks for reporting @graceyangfan
 - Fixed Polymarket market IOC orders submitting as FOK (#4006), thanks for reporting @fedoraiver
 - Fixed Polymarket WS order parsing of venue cancellations with reason suffix (#3987), thanks for reporting @Javdu10
+- Fixed Polymarket WebSocket parse-error logging raising a secondary exception on non-UTF8 payloads (#4038), thanks @graceyangfan
 - Fixed Polymarket `parse_trades` TradeId collisions on multi-fill `transactionHash` (Python and Rust)
 - Fixed Polymarket `parse_trades` `ts_event` collisions on same-second fills (Python and Rust)
 - Fixed Polymarket `fetch_trades` aborting on historical-offset ceiling; warns and returns partial (Python and Rust)
