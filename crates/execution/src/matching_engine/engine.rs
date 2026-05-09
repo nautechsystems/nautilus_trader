@@ -948,6 +948,12 @@ impl OrderMatchingEngine {
     }
 
     #[must_use]
+    /// Returns the number of partial-fill counters tracked by the engine.
+    pub fn cached_filled_qty_len(&self) -> usize {
+        self.cached_filled_qty.len()
+    }
+
+    #[must_use]
     pub const fn get_core(&self) -> &OrderMatchingCore {
         &self.core
     }
@@ -2670,16 +2676,18 @@ impl OrderMatchingEngine {
             .copied()
             .unwrap_or_default();
         let leaves_qty = order.quantity().saturating_sub(filled_qty);
-        if !leaves_qty.is_zero() {
-            // Re-fetch from cache to get updated price from partial fill
-            let updated_order = self
-                .cache
-                .borrow()
-                .order(&client_order_id)
-                .map(|o| o.clone());
-            if let Some(mut updated_order) = updated_order {
-                self.accept_order(&mut updated_order);
-            }
+        if leaves_qty.is_zero() {
+            self.cached_filled_qty.swap_remove(&client_order_id);
+            return;
+        }
+
+        let updated_order = self
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .map(|o| o.clone());
+        if let Some(mut updated_order) = updated_order {
+            self.accept_order(&mut updated_order);
         }
     }
 
@@ -4031,10 +4039,9 @@ impl OrderMatchingEngine {
             if self.core.order_exists(order.client_order_id()) {
                 let _ = self.core.delete_order(order.client_order_id());
             }
-
-            // Only clear cached fills when the order status reflects closure,
-            // callers like process_market_to_limit_order still need the entry
-            if order.is_closed() {
+            // MarketToLimit reads `cached_filled_qty` in its caller to compute leaves;
+            // its own cleanup happens there after the read.
+            if order.order_type() != OrderType::MarketToLimit {
                 self.cached_filled_qty.swap_remove(&order.client_order_id());
             }
         }

@@ -183,7 +183,7 @@ Released on TBD (UTC).
 - Upgraded `alloy` crate to v2.0.4
 - Upgraded `databento` crate to v0.50.0
 - Upgraded `redis` crate to v1.2.1
-- Upgraded `tokio` crate to v1.52.2 (fixes a performance regression)
+- Upgraded `tokio` crate to v1.52.3 (fixes a performance regression)
 
 ### Documentation Updates
 - Added DST docs caveats for process-global lazy state RNG consumption and `CacheView` factory blocker

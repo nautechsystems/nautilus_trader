@@ -7784,6 +7784,11 @@ fn test_fully_filled_limit_order_removed_from_core(
         !engine.order_exists(client_order_id),
         "Filled limit order should be removed from matching core",
     );
+    assert_eq!(
+        engine.cached_filled_qty_len(),
+        0,
+        "cached_filled_qty should be cleared after full fill",
+    );
 }
 
 #[rstest]
@@ -7888,6 +7893,11 @@ fn test_fully_filled_market_to_limit_not_in_core(
     assert!(
         !engine.order_exists(client_order_id),
         "Fully filled MarketToLimit should not rest in matching core",
+    );
+    assert_eq!(
+        engine.cached_filled_qty_len(),
+        0,
+        "cached_filled_qty should be cleared after MarketToLimit full fill",
     );
 }
 
