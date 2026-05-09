@@ -1000,9 +1000,6 @@ impl OrderMatchingEngine {
             self.core.bid = None;
             self.core.ask = None;
             self.core.last = None;
-            self.core.is_bid_initialized = false;
-            self.core.is_ask_initialized = false;
-            self.core.is_last_initialized = false;
             log::info!(
                 "Updated instrument {} (price_precision={} size_precision={})",
                 instrument.id(),
@@ -1511,8 +1508,7 @@ impl OrderMatchingEngine {
         let size = Quantity::from_raw(quarter_raw, bar.volume.precision);
         let close_size = Quantity::from_raw(quarter_raw + remainder_raw, bar.volume.precision);
 
-        let aggressor_side = if !self.core.is_last_initialized || bar.open > self.core.last.unwrap()
-        {
+        let aggressor_side = if self.core.last.is_none_or(|last| bar.open > last) {
             AggressorSide::Buyer
         } else {
             AggressorSide::Seller
@@ -1530,7 +1526,7 @@ impl OrderMatchingEngine {
         );
 
         // Open: fill at market price (gap from previous bar)
-        if !self.core.is_last_initialized {
+        if self.core.last.is_none() {
             self.fill_at_market = true;
             self.book.update_trade_tick(&trade_tick).unwrap();
             self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
@@ -2511,8 +2507,8 @@ impl OrderMatchingEngine {
         }
 
         // Check if market exists
-        if (order.order_side() == OrderSide::Buy && !self.core.is_ask_initialized)
-            || (order.order_side() == OrderSide::Sell && !self.core.is_bid_initialized)
+        if (order.order_side() == OrderSide::Buy && self.core.ask.is_none())
+            || (order.order_side() == OrderSide::Sell && self.core.bid.is_none())
         {
             self.generate_order_rejected(
                 order,
@@ -2641,8 +2637,8 @@ impl OrderMatchingEngine {
 
     fn process_market_to_limit_order(&mut self, order: &OrderAny) {
         // Check that market exists
-        if (order.order_side() == OrderSide::Buy && !self.core.is_ask_initialized)
-            || (order.order_side() == OrderSide::Sell && !self.core.is_bid_initialized)
+        if (order.order_side() == OrderSide::Buy && self.core.ask.is_none())
+            || (order.order_side() == OrderSide::Sell && self.core.bid.is_none())
         {
             self.generate_order_rejected(
                 order,

@@ -812,17 +812,13 @@ fn test_bid_ask_initialized(instrument_es: InstrumentAny) {
         .process_order_book_delta(&orderbook_delta_buy)
         .unwrap();
     assert_eq!(engine_l2.get_core().bid, Some(Price::from("100.00")));
-    assert!(engine_l2.get_core().is_bid_initialized);
     assert_eq!(engine_l2.get_core().ask, None);
-    assert!(!engine_l2.get_core().is_ask_initialized);
 
     engine_l2
         .process_order_book_delta(&orderbook_delta_sell)
         .unwrap();
     assert_eq!(engine_l2.get_core().bid, Some(Price::from("100.00")));
-    assert!(engine_l2.get_core().is_bid_initialized);
     assert_eq!(engine_l2.get_core().ask, Some(Price::from("101.00")));
-    assert!(engine_l2.get_core().is_ask_initialized);
 }
 
 #[rstest]
@@ -3661,7 +3657,7 @@ fn test_process_monthly_bar_not_skipped(instrument_eth_usdt: InstrumentAny) {
 
     // Monthly bars should now be processed for execution (LAST price type bars update last price)
     assert!(
-        engine.get_core().is_last_initialized,
+        engine.get_core().last.is_some(),
         "Monthly bar should be processed and update market state"
     );
 }
@@ -3692,7 +3688,7 @@ fn test_process_yearly_bar_not_skipped(instrument_eth_usdt: InstrumentAny) {
 
     // Yearly bars should now be processed for execution (LAST price type bars update last price)
     assert!(
-        engine.get_core().is_last_initialized,
+        engine.get_core().last.is_some(),
         "Yearly bar should be processed and update market state"
     );
 }

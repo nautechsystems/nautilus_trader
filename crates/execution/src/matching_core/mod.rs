@@ -227,15 +227,6 @@ pub struct OrderMatchingCore {
     pub ask: Option<Price>,
     /// The last price for the matching core.
     pub last: Option<Price>,
-    /// Tracks whether [`Self::bid`] has been set via [`Self::set_bid_raw`].
-    /// Direct mutation of `bid` does not update this flag.
-    pub is_bid_initialized: bool,
-    /// Tracks whether [`Self::ask`] has been set via [`Self::set_ask_raw`].
-    /// Direct mutation of `ask` does not update this flag.
-    pub is_ask_initialized: bool,
-    /// Tracks whether [`Self::last`] has been set via [`Self::set_last_raw`].
-    /// Direct mutation of `last` does not update this flag.
-    pub is_last_initialized: bool,
     fill_limit_inside_spread: bool,
     bid_limits: BTreeMap<Price, OrderBucket>,
     ask_limits: BTreeMap<Price, OrderBucket>,
@@ -256,9 +247,6 @@ impl OrderMatchingCore {
             bid: None,
             ask: None,
             last: None,
-            is_bid_initialized: false,
-            is_ask_initialized: false,
-            is_last_initialized: false,
             fill_limit_inside_spread: false,
             bid_limits: BTreeMap::new(),
             ask_limits: BTreeMap::new(),
@@ -377,19 +365,16 @@ impl OrderMatchingCore {
     /// Sets the last traded price.
     pub const fn set_last_raw(&mut self, last: Price) {
         self.last = Some(last);
-        self.is_last_initialized = true;
     }
 
     /// Sets the best bid price.
     pub const fn set_bid_raw(&mut self, bid: Price) {
         self.bid = Some(bid);
-        self.is_bid_initialized = true;
     }
 
     /// Sets the best ask price.
     pub const fn set_ask_raw(&mut self, ask: Price) {
         self.ask = Some(ask);
-        self.is_ask_initialized = true;
     }
 
     /// Updates the price increment (tick size) for the matching core.
@@ -402,9 +387,6 @@ impl OrderMatchingCore {
         self.bid = None;
         self.ask = None;
         self.last = None;
-        self.is_bid_initialized = false;
-        self.is_ask_initialized = false;
-        self.is_last_initialized = false;
         self.bid_limits.clear();
         self.ask_limits.clear();
         self.bid_stops.clear();
