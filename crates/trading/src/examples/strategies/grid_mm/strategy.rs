@@ -207,10 +207,8 @@ impl DataActor for GridMarketMaker {
             let cache = self.cache();
             let inst = Some(&instrument_id);
             let sid = Some(&strategy_id);
-            !cache.orders_open(None, inst, sid, None, None).is_empty()
-                || !cache
-                    .orders_inflight(None, inst, sid, None, None)
-                    .is_empty()
+            cache.orders_open_count(None, inst, sid, None, None) > 0
+                || cache.orders_inflight_count(None, inst, sid, None, None) > 0
         };
 
         if !self.should_requote(mid) && has_resting {

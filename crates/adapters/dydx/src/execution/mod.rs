@@ -2185,14 +2185,11 @@ impl ExecutionClient for DydxExecutionClient {
 
         let order_data: Vec<CancelAllOrderData> = {
             let cache = self.core.cache();
+            let side_filter =
+                (order_side_filter != OrderSide::NoOrderSide).then_some(order_side_filter);
             cache
-                .orders_open(None, None, None, None, None)
+                .orders_open(None, Some(&instrument_id), None, None, side_filter)
                 .into_iter()
-                .filter(|order| order.instrument_id() == instrument_id)
-                .filter(|order| {
-                    order_side_filter == OrderSide::NoOrderSide
-                        || order.order_side() == order_side_filter
-                })
                 .map(|order| {
                     (
                         order.strategy_id(),
