@@ -29,6 +29,7 @@ mod index;
 mod tests;
 
 use std::{
+    borrow::Cow,
     cell::{Ref, RefCell},
     collections::VecDeque,
     fmt::{Debug, Display},
@@ -3047,6 +3048,94 @@ impl Cache {
         }
     }
 
+    // Returns a borrowed or owned view of the orders in `bucket` matching the optional filter
+    // parameters. Avoids cloning the bucket when no filter narrows it.
+    fn view_orders_in_bucket<'a>(
+        &'a self,
+        bucket: &'a AHashSet<ClientOrderId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Cow<'a, AHashSet<ClientOrderId>> {
+        match self.collect_order_filter_sources(venue, instrument_id, strategy_id, account_id) {
+            FilterSources::Empty => Cow::Owned(AHashSet::new()),
+            FilterSources::Unfiltered => Cow::Borrowed(bucket),
+            FilterSources::Sets(sources) => Cow::Owned(intersect_pair_or_many(bucket, sources)),
+        }
+    }
+
+    fn view_positions_in_bucket<'a>(
+        &'a self,
+        bucket: &'a AHashSet<PositionId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Cow<'a, AHashSet<PositionId>> {
+        match self.collect_position_filter_sources(venue, instrument_id, strategy_id, account_id) {
+            FilterSources::Empty => Cow::Owned(AHashSet::new()),
+            FilterSources::Unfiltered => Cow::Borrowed(bucket),
+            FilterSources::Sets(sources) => Cow::Owned(intersect_pair_or_many(bucket, sources)),
+        }
+    }
+
+    // Returns a lazy iterator yielding the [`ClientOrderId`]s in `bucket` matching the optional
+    // filter parameters. Avoids any [`Vec`] or [`AHashSet`] materialization in the result path,
+    // and (for multi-filter calls) drives intersection from the smallest source while looking
+    // up membership in the rest.
+    fn iter_orders_in_bucket<'a>(
+        &'a self,
+        bucket: &'a AHashSet<ClientOrderId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Box<dyn Iterator<Item = ClientOrderId> + 'a> {
+        match self.collect_order_filter_sources(venue, instrument_id, strategy_id, account_id) {
+            FilterSources::Empty => Box::new(std::iter::empty()),
+            FilterSources::Unfiltered => Box::new(bucket.iter().copied()),
+            FilterSources::Sets(mut sources) => {
+                sources.push(bucket);
+                sources.sort_unstable_by_key(|s| s.len());
+                let driver = sources[0];
+                let rest: Vec<&'a AHashSet<ClientOrderId>> = sources[1..].to_vec();
+                Box::new(
+                    driver
+                        .iter()
+                        .copied()
+                        .filter(move |id| rest.iter().all(|s| s.contains(id))),
+                )
+            }
+        }
+    }
+
+    fn iter_positions_in_bucket<'a>(
+        &'a self,
+        bucket: &'a AHashSet<PositionId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Box<dyn Iterator<Item = PositionId> + 'a> {
+        match self.collect_position_filter_sources(venue, instrument_id, strategy_id, account_id) {
+            FilterSources::Empty => Box::new(std::iter::empty()),
+            FilterSources::Unfiltered => Box::new(bucket.iter().copied()),
+            FilterSources::Sets(mut sources) => {
+                sources.push(bucket);
+                sources.sort_unstable_by_key(|s| s.len());
+                let driver = sources[0];
+                let rest: Vec<&'a AHashSet<PositionId>> = sources[1..].to_vec();
+                Box::new(
+                    driver
+                        .iter()
+                        .copied()
+                        .filter(move |id| rest.iter().all(|s| s.contains(id))),
+                )
+            }
+        }
+    }
+
     // Counts orders in `bucket` matching the optional filter parameters.
     //
     // Drives intersection from the smallest filter source (or the bucket itself when no filter
@@ -3128,6 +3217,81 @@ impl Cache {
                         side == PositionSide::NoPositionSide || self.position_side_matches(id, side)
                     })
                     .count()
+            }
+        }
+    }
+
+    // Returns whether any order in `bucket` matches the optional filter parameters.
+    //
+    // Mirrors `count_orders_in_bucket` but short-circuits on the first match. Useful for
+    // `is_empty`-style gating in hot paths where the caller only needs to know whether at
+    // least one matching order exists.
+    fn any_orders_in_bucket(
+        &self,
+        bucket: &AHashSet<ClientOrderId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> bool {
+        let side = side.unwrap_or(OrderSide::NoOrderSide);
+
+        match self.collect_order_filter_sources(venue, instrument_id, strategy_id, account_id) {
+            FilterSources::Empty => false,
+            FilterSources::Unfiltered => {
+                if side == OrderSide::NoOrderSide {
+                    !bucket.is_empty()
+                } else {
+                    bucket.iter().any(|id| self.order_side_matches(id, side))
+                }
+            }
+            FilterSources::Sets(mut sources) => {
+                sources.push(bucket);
+                sources.sort_unstable_by_key(|s| s.len());
+                let driver = sources[0];
+                let rest = &sources[1..];
+
+                driver
+                    .iter()
+                    .filter(|id| rest.iter().all(|s| s.contains(id)))
+                    .any(|id| side == OrderSide::NoOrderSide || self.order_side_matches(id, side))
+            }
+        }
+    }
+
+    fn any_positions_in_bucket(
+        &self,
+        bucket: &AHashSet<PositionId>,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<PositionSide>,
+    ) -> bool {
+        let side = side.unwrap_or(PositionSide::NoPositionSide);
+
+        match self.collect_position_filter_sources(venue, instrument_id, strategy_id, account_id) {
+            FilterSources::Empty => false,
+            FilterSources::Unfiltered => {
+                if side == PositionSide::NoPositionSide {
+                    !bucket.is_empty()
+                } else {
+                    bucket.iter().any(|id| self.position_side_matches(id, side))
+                }
+            }
+            FilterSources::Sets(mut sources) => {
+                sources.push(bucket);
+                sources.sort_unstable_by_key(|s| s.len());
+                let driver = sources[0];
+                let rest = &sources[1..];
+
+                driver
+                    .iter()
+                    .filter(|id| rest.iter().all(|s| s.contains(id)))
+                    .any(|id| {
+                        side == PositionSide::NoPositionSide || self.position_side_matches(id, side)
+                    })
             }
         }
     }
@@ -3367,6 +3531,330 @@ impl Cache {
         account_id: Option<&AccountId>,
     ) -> AHashSet<PositionId> {
         self.query_positions_in_bucket(
+            &self.index.positions_closed,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a borrowed view over the [`ClientOrderId`]s of all orders matching the optional
+    /// filter parameters.
+    ///
+    /// The returned [`Cow`] borrows the underlying index when no filter is provided and only
+    /// allocates an owned [`AHashSet`] when an intersection is required. Prefer this over
+    /// [`Self::client_order_ids`] when the caller only needs to iterate or read membership.
+    #[must_use]
+    pub fn client_order_ids_view(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Cow<'_, AHashSet<ClientOrderId>> {
+        self.view_orders_in_bucket(
+            &self.index.orders,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a borrowed view over the [`ClientOrderId`]s of all open orders.
+    #[must_use]
+    pub fn client_order_ids_open_view(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Cow<'_, AHashSet<ClientOrderId>> {
+        self.view_orders_in_bucket(
+            &self.index.orders_open,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a borrowed view over the [`ClientOrderId`]s of all closed orders.
+    #[must_use]
+    pub fn client_order_ids_closed_view(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Cow<'_, AHashSet<ClientOrderId>> {
+        self.view_orders_in_bucket(
+            &self.index.orders_closed,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a borrowed view over the [`ClientOrderId`]s of all locally active orders.
+    #[must_use]
+    pub fn client_order_ids_active_local_view(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Cow<'_, AHashSet<ClientOrderId>> {
+        self.view_orders_in_bucket(
+            &self.index.orders_active_local,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a borrowed view over the [`ClientOrderId`]s of all emulated orders.
+    #[must_use]
+    pub fn client_order_ids_emulated_view(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Cow<'_, AHashSet<ClientOrderId>> {
+        self.view_orders_in_bucket(
+            &self.index.orders_emulated,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a borrowed view over the [`ClientOrderId`]s of all in-flight orders.
+    #[must_use]
+    pub fn client_order_ids_inflight_view(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Cow<'_, AHashSet<ClientOrderId>> {
+        self.view_orders_in_bucket(
+            &self.index.orders_inflight,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a borrowed view over the [`PositionId`]s of all positions.
+    #[must_use]
+    pub fn position_ids_view(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Cow<'_, AHashSet<PositionId>> {
+        self.view_positions_in_bucket(
+            &self.index.positions,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a borrowed view over the [`PositionId`]s of all open positions.
+    #[must_use]
+    pub fn position_open_ids_view(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Cow<'_, AHashSet<PositionId>> {
+        self.view_positions_in_bucket(
+            &self.index.positions_open,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a borrowed view over the [`PositionId`]s of all closed positions.
+    #[must_use]
+    pub fn position_closed_ids_view(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Cow<'_, AHashSet<PositionId>> {
+        self.view_positions_in_bucket(
+            &self.index.positions_closed,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a lazy iterator yielding [`ClientOrderId`]s of all orders matching the optional
+    /// filter parameters.
+    ///
+    /// Avoids the [`AHashSet`] allocation performed by [`Self::client_order_ids`]. Useful when
+    /// the caller iterates the result once and discards it.
+    pub fn iter_client_order_ids(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Box<dyn Iterator<Item = ClientOrderId> + '_> {
+        self.iter_orders_in_bucket(
+            &self.index.orders,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a lazy iterator yielding [`ClientOrderId`]s of all open orders.
+    pub fn iter_client_order_ids_open(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Box<dyn Iterator<Item = ClientOrderId> + '_> {
+        self.iter_orders_in_bucket(
+            &self.index.orders_open,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a lazy iterator yielding [`ClientOrderId`]s of all closed orders.
+    pub fn iter_client_order_ids_closed(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Box<dyn Iterator<Item = ClientOrderId> + '_> {
+        self.iter_orders_in_bucket(
+            &self.index.orders_closed,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a lazy iterator yielding [`ClientOrderId`]s of all locally active orders.
+    pub fn iter_client_order_ids_active_local(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Box<dyn Iterator<Item = ClientOrderId> + '_> {
+        self.iter_orders_in_bucket(
+            &self.index.orders_active_local,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a lazy iterator yielding [`ClientOrderId`]s of all emulated orders.
+    pub fn iter_client_order_ids_emulated(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Box<dyn Iterator<Item = ClientOrderId> + '_> {
+        self.iter_orders_in_bucket(
+            &self.index.orders_emulated,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a lazy iterator yielding [`ClientOrderId`]s of all in-flight orders.
+    pub fn iter_client_order_ids_inflight(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Box<dyn Iterator<Item = ClientOrderId> + '_> {
+        self.iter_orders_in_bucket(
+            &self.index.orders_inflight,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a lazy iterator yielding [`PositionId`]s of all positions matching the filters.
+    pub fn iter_position_ids(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Box<dyn Iterator<Item = PositionId> + '_> {
+        self.iter_positions_in_bucket(
+            &self.index.positions,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a lazy iterator yielding [`PositionId`]s of all open positions.
+    pub fn iter_position_open_ids(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Box<dyn Iterator<Item = PositionId> + '_> {
+        self.iter_positions_in_bucket(
+            &self.index.positions_open,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+        )
+    }
+
+    /// Returns a lazy iterator yielding [`PositionId`]s of all closed positions.
+    pub fn iter_position_closed_ids(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+    ) -> Box<dyn Iterator<Item = PositionId> + '_> {
+        self.iter_positions_in_bucket(
             &self.index.positions_closed,
             venue,
             instrument_id,
@@ -3743,6 +4231,132 @@ impl Cache {
         )
     }
 
+    /// Returns whether any open order matches the optional filter parameters.
+    ///
+    /// Short-circuits on the first match, avoiding the full intersection walk performed by
+    /// [`Self::orders_open_count`]. Prefer this over `orders_open_count(...) > 0` when only
+    /// existence matters.
+    #[must_use]
+    pub fn has_orders_open(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> bool {
+        self.any_orders_in_bucket(
+            &self.index.orders_open,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
+    }
+
+    /// Returns whether any closed order matches the optional filter parameters.
+    #[must_use]
+    pub fn has_orders_closed(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> bool {
+        self.any_orders_in_bucket(
+            &self.index.orders_closed,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
+    }
+
+    /// Returns whether any locally active order matches the optional filter parameters.
+    ///
+    /// Locally active orders are in the `INITIALIZED`, `EMULATED`, or `RELEASED` state.
+    #[must_use]
+    pub fn has_orders_active_local(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> bool {
+        self.any_orders_in_bucket(
+            &self.index.orders_active_local,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
+    }
+
+    /// Returns whether any emulated order matches the optional filter parameters.
+    #[must_use]
+    pub fn has_orders_emulated(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> bool {
+        self.any_orders_in_bucket(
+            &self.index.orders_emulated,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
+    }
+
+    /// Returns whether any in-flight order matches the optional filter parameters.
+    #[must_use]
+    pub fn has_orders_inflight(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> bool {
+        self.any_orders_in_bucket(
+            &self.index.orders_inflight,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
+    }
+
+    /// Returns whether any order (in any state) matches the optional filter parameters.
+    #[must_use]
+    pub fn has_orders(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<OrderSide>,
+    ) -> bool {
+        self.any_orders_in_bucket(
+            &self.index.orders,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
+    }
+
     /// Returns the order list for the `order_list_id`.
     #[must_use]
     pub fn order_list(&self, order_list_id: &OrderListId) -> Option<&OrderList> {
@@ -4073,6 +4687,70 @@ impl Cache {
         side: Option<PositionSide>,
     ) -> usize {
         self.count_positions_in_bucket(
+            &self.index.positions,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
+    }
+
+    /// Returns whether any open position matches the optional filter parameters.
+    ///
+    /// Short-circuits on the first match, avoiding the full intersection walk performed by
+    /// [`Self::positions_open_count`]. Prefer this over `positions_open_count(...) > 0` when
+    /// only existence matters.
+    #[must_use]
+    pub fn has_positions_open(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<PositionSide>,
+    ) -> bool {
+        self.any_positions_in_bucket(
+            &self.index.positions_open,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
+    }
+
+    /// Returns whether any closed position matches the optional filter parameters.
+    #[must_use]
+    pub fn has_positions_closed(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<PositionSide>,
+    ) -> bool {
+        self.any_positions_in_bucket(
+            &self.index.positions_closed,
+            venue,
+            instrument_id,
+            strategy_id,
+            account_id,
+            side,
+        )
+    }
+
+    /// Returns whether any position (open or closed) matches the optional filter parameters.
+    #[must_use]
+    pub fn has_positions(
+        &self,
+        venue: Option<&Venue>,
+        instrument_id: Option<&InstrumentId>,
+        strategy_id: Option<&StrategyId>,
+        account_id: Option<&AccountId>,
+        side: Option<PositionSide>,
+    ) -> bool {
+        self.any_positions_in_bucket(
             &self.index.positions,
             venue,
             instrument_id,

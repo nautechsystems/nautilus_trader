@@ -1001,13 +1001,14 @@ impl Portfolio {
         let mut initialized = true;
         let orders_and_instruments = {
             let cache = self.cache.borrow();
-            let all_orders_open = cache.orders_open(None, None, None, None, None);
 
             let mut instruments_with_orders = Vec::new();
             let mut instruments = AHashSet::new();
 
-            for order in &all_orders_open {
-                instruments.insert(order.instrument_id());
+            for client_order_id in cache.iter_client_order_ids_open(None, None, None, None) {
+                if let Some(order) = cache.order(&client_order_id) {
+                    instruments.insert(order.instrument_id());
+                }
             }
 
             for instrument_id in instruments {

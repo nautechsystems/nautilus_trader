@@ -1338,16 +1338,26 @@ pub trait Strategy: DataActor {
 
         let mut instruments: AHashSet<InstrumentId> = AHashSet::new();
 
-        for order in cache.orders_open(None, None, Some(&strategy_id), None, None) {
-            instruments.insert(order.instrument_id());
+        for client_order_id in
+            cache.iter_client_order_ids_open(None, None, Some(&strategy_id), None)
+        {
+            if let Some(order) = cache.order(&client_order_id) {
+                instruments.insert(order.instrument_id());
+            }
         }
 
-        for order in cache.orders_inflight(None, None, Some(&strategy_id), None, None) {
-            instruments.insert(order.instrument_id());
+        for client_order_id in
+            cache.iter_client_order_ids_inflight(None, None, Some(&strategy_id), None)
+        {
+            if let Some(order) = cache.order(&client_order_id) {
+                instruments.insert(order.instrument_id());
+            }
         }
 
-        for position in cache.positions_open(None, None, Some(&strategy_id), None, None) {
-            instruments.insert(position.instrument_id);
+        for position_id in cache.iter_position_open_ids(None, None, Some(&strategy_id), None) {
+            if let Some(position) = cache.position(&position_id) {
+                instruments.insert(position.instrument_id);
+            }
         }
 
         let market_exit_tag = core.market_exit_tag;

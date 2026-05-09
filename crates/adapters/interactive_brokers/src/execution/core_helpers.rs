@@ -16,12 +16,14 @@ impl InteractiveBrokersExecutionClient {
     ) -> Vec<InstrumentId> {
         let mut spread_ids = ahash::AHashSet::new();
 
-        for order in cache.orders(None, None, None, None, None) {
-            let instrument_id = order.instrument_id();
-            if is_spread_instrument_id(&instrument_id)
-                && instrument_provider.find(&instrument_id).is_none()
-            {
-                spread_ids.insert(instrument_id);
+        for client_order_id in cache.iter_client_order_ids(None, None, None, None) {
+            if let Some(order) = cache.order(&client_order_id) {
+                let instrument_id = order.instrument_id();
+                if is_spread_instrument_id(&instrument_id)
+                    && instrument_provider.find(&instrument_id).is_none()
+                {
+                    spread_ids.insert(instrument_id);
+                }
             }
         }
 
