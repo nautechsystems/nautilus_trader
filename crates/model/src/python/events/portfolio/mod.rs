@@ -13,9 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Events for the trading domain model.
-
-pub mod account;
-pub mod order;
-pub mod portfolio;
-pub mod position;
+pub mod snapshot;

@@ -15,7 +15,7 @@
 
 //! Provides a generic `Portfolio` for all environments.
 
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, collections::VecDeque, fmt::Debug, rc::Rc};
 
 use ahash::{AHashMap, AHashSet};
 use indexmap::{IndexMap, IndexSet};
@@ -25,18 +25,19 @@ use nautilus_common::{
     clock::Clock,
     enums::LogColor,
     msgbus::{self, MessagingSwitchboard, TypedHandler},
+    timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{WeakCell, datetime::NANOSECONDS_IN_MILLISECOND};
+use nautilus_core::{UUID4, WeakCell, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{Bar, MarkPriceUpdate, QuoteTick},
     enums::{OmsType, OrderType, PositionSide, PriceType},
-    events::{AccountState, OrderEventAny, position::PositionEvent},
+    events::{AccountState, OrderEventAny, PortfolioSnapshot, position::PositionEvent},
     identifiers::{AccountId, InstrumentId, PositionId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     position::Position,
-    types::{Currency, Money, Price},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price},
 };
 use rust_decimal::Decimal;
 
@@ -58,7 +59,14 @@ struct PortfolioState {
     last_account_state_log_ts: AHashMap<AccountId, u64>,
     min_account_state_logging_interval_ns: u64,
     venues_missing_price: AHashMap<Venue, AHashSet<InstrumentId>>,
+    account_open_positions: AHashMap<AccountId, usize>,
+    portfolio_snapshots: AHashMap<AccountId, VecDeque<PortfolioSnapshot>>,
 }
+
+// Sized for post-run backtest analysis (e.g. ~11 days at 1s cadence, or years
+// at per-minute cadence), long-lived live deployments should consume snapshots
+// via the message bus instead of relying on this buffer.
+const SNAPSHOT_BUFFER_CAP: usize = 1_000_000;
 
 impl PortfolioState {
     fn new(
@@ -86,6 +94,8 @@ impl PortfolioState {
             last_account_state_log_ts: AHashMap::new(),
             min_account_state_logging_interval_ns,
             venues_missing_price: AHashMap::new(),
+            account_open_positions: AHashMap::new(),
+            portfolio_snapshots: AHashMap::new(),
         }
     }
 
@@ -102,6 +112,8 @@ impl PortfolioState {
         self.bar_close_prices.clear();
         self.last_account_state_log_ts.clear();
         self.venues_missing_price.clear();
+        self.account_open_positions.clear();
+        self.portfolio_snapshots.clear();
         self.analyzer.reset();
         self.initialized = false;
         log::debug!("READY");
@@ -275,6 +287,19 @@ impl Portfolio {
 
     pub fn reset(&mut self) {
         log::debug!("RESETTING");
+        let account_ids: Vec<AccountId> = self
+            .inner
+            .borrow()
+            .account_open_positions
+            .keys()
+            .copied()
+            .collect();
+
+        for account_id in account_ids {
+            self.clock
+                .borrow_mut()
+                .cancel_timer(&snapshot_timer_name(&account_id));
+        }
         self.inner.borrow_mut().reset();
         log::debug!("READY");
     }
@@ -283,6 +308,12 @@ impl Portfolio {
     #[must_use]
     pub fn cache(&self) -> &Rc<RefCell<Cache>> {
         &self.cache
+    }
+
+    /// Returns a reference to the clock.
+    #[must_use]
+    pub fn clock(&self) -> &Rc<RefCell<dyn Clock>> {
+        &self.clock
     }
 
     /// Returns `true` if the portfolio has been initialized.
@@ -751,6 +782,125 @@ impl Portfolio {
             .collect()
     }
 
+    /// Builds a [`PortfolioSnapshot`] for the given account at the current clock time.
+    ///
+    /// Unrealized PnL and mark values span the venues the account currently
+    /// holds open positions on; realized PnL spans every venue the account has
+    /// touched (open or closed) so a multi-venue account where one venue is
+    /// now flat still reports its accumulated realized PnL. Returns `None` if
+    /// no account is registered.
+    #[must_use]
+    pub fn build_snapshot(&mut self, account_id: &AccountId) -> Option<PortfolioSnapshot> {
+        let account = self.cache.borrow().account_owned(account_id)?;
+
+        let balances: Vec<AccountBalance> = account.balances().into_values().collect();
+        let margins: Vec<MarginBalance> = match &account {
+            AccountAny::Margin(m) => m
+                .margins
+                .values()
+                .copied()
+                .chain(m.account_margins.values().copied())
+                .collect(),
+            AccountAny::Cash(_) | AccountAny::Betting(_) => Vec::new(),
+        };
+
+        // Collect venues the account has touched. `open_venues` drives the
+        // unrealized PnL and mark-value sums; `all_venues` extends to closed
+        // positions so realized PnL on a venue with no open exposure (a
+        // multi-venue account where one venue is now flat) still rolls up.
+        let open_venues: AHashSet<Venue> = self
+            .cache
+            .borrow()
+            .positions_open(None, None, None, Some(account_id), None)
+            .iter()
+            .map(|p| p.instrument_id.venue)
+            .collect();
+        let all_venues: AHashSet<Venue> = self
+            .cache
+            .borrow()
+            .positions(None, None, None, Some(account_id), None)
+            .iter()
+            .map(|p| p.instrument_id.venue)
+            .collect();
+
+        let mut unrealized: IndexMap<Currency, f64> = IndexMap::new();
+        let mut realized: IndexMap<Currency, f64> = IndexMap::new();
+        let mut equity: IndexMap<Currency, f64> = account
+            .balances_total()
+            .into_iter()
+            .map(|(c, m)| (c, m.as_f64()))
+            .collect();
+
+        for venue in &open_venues {
+            for (currency, money) in self.unrealized_pnls(venue, Some(account_id)) {
+                *unrealized.entry(currency).or_insert(0.0) += money.as_f64();
+            }
+        }
+
+        for venue in &all_venues {
+            for (currency, money) in self.realized_pnls(venue, Some(account_id)) {
+                *realized.entry(currency).or_insert(0.0) += money.as_f64();
+            }
+        }
+
+        match &account {
+            AccountAny::Margin(_) => {
+                for (currency, value) in &unrealized {
+                    *equity.entry(*currency).or_insert(0.0) += *value;
+                }
+            }
+            AccountAny::Cash(_) | AccountAny::Betting(_) => {
+                for venue in &open_venues {
+                    for (currency, money) in self.mark_values(venue, Some(account_id)) {
+                        *equity.entry(currency).or_insert(0.0) += money.as_f64();
+                    }
+                }
+            }
+        }
+
+        let unrealized_pnls: Vec<Money> = unrealized
+            .into_iter()
+            .map(|(c, v)| Money::new(v, c))
+            .collect();
+        let realized_pnls: Vec<Money> = realized
+            .into_iter()
+            .map(|(c, v)| Money::new(v, c))
+            .collect();
+        let total_equity: Vec<Money> = equity.into_iter().map(|(c, v)| Money::new(v, c)).collect();
+
+        let ts_now = self.clock.borrow().timestamp_ns();
+
+        Some(PortfolioSnapshot::new(
+            account.id(),
+            account.account_type(),
+            account.base_currency(),
+            balances,
+            margins,
+            unrealized_pnls,
+            realized_pnls,
+            total_equity,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+        ))
+    }
+
+    /// Returns the recorded portfolio snapshots for the given account, in order of emission.
+    ///
+    /// Snapshots accumulate whenever `snapshot_interval_ms` is set and the account
+    /// holds at least one open position. The ring is bounded; long-lived live
+    /// deployments should consume snapshots via the message bus instead of relying
+    /// on this buffer. Cleared on [`Portfolio::reset`].
+    #[must_use]
+    pub fn snapshots(&self, account_id: &AccountId) -> Vec<PortfolioSnapshot> {
+        self.inner
+            .borrow()
+            .portfolio_snapshots
+            .get(account_id)
+            .map(|ring| ring.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
     /// Returns the instruments currently flagged as unpriced for the given venue.
     ///
     /// An entry is added the first time [`Portfolio::mark_values`] cannot source a
@@ -1202,6 +1352,21 @@ impl Portfolio {
             open_count,
             if open_count == 1 { "" } else { "s" }
         );
+
+        if self.config.snapshot_interval_ms.is_some() {
+            let account_ids: AHashSet<AccountId> =
+                all_positions_open.iter().map(|p| p.account_id).collect();
+
+            for account_id in account_ids {
+                update_snapshot_timer_state(
+                    &self.cache,
+                    &self.clock,
+                    &self.inner,
+                    self.config,
+                    &account_id,
+                );
+            }
+        }
     }
 
     /// Updates portfolio calculations based on a new quote tick.
@@ -1936,7 +2101,7 @@ fn update_order(
     cache: &Rc<RefCell<Cache>>,
     clock: &Rc<RefCell<dyn Clock>>,
     inner: &Rc<RefCell<PortfolioState>>,
-    _config: PortfolioConfig,
+    config: PortfolioConfig,
     event: &OrderEventAny,
 ) {
     let account_id = match event.account_id() {
@@ -2042,7 +2207,7 @@ fn update_order(
             clock: clock.clone(),
             cache: cache.clone(),
             inner: inner.clone(),
-            config: PortfolioConfig::default(), // TODO: TBD
+            config,
         };
 
         match portfolio_clone.calculate_unrealized_pnl(&order_filled.instrument_id, None) {
@@ -2102,10 +2267,11 @@ fn update_position(
     cache: &Rc<RefCell<Cache>>,
     clock: &Rc<RefCell<dyn Clock>>,
     inner: &Rc<RefCell<PortfolioState>>,
-    _config: PortfolioConfig,
+    config: PortfolioConfig,
     event: &PositionEvent,
 ) {
     let instrument_id = event.instrument_id();
+    let account_id = event.account_id();
 
     let positions_open: Vec<Position> = {
         let cache_ref = cache.borrow();
@@ -2119,11 +2285,13 @@ fn update_position(
 
     log::debug!("position fresh from cache -> {positions_open:?}");
 
+    update_snapshot_timer_state(cache, clock, inner, config, &account_id);
+
     let portfolio_clone = Portfolio {
         clock: clock.clone(),
         cache: cache.clone(),
         inner: inner.clone(),
-        config: PortfolioConfig::default(), // TODO: TBD
+        config,
     };
 
     portfolio_clone.update_net_position(&instrument_id, &positions_open);
@@ -2239,5 +2407,183 @@ fn update_account(
 
     if should_log {
         log::info!("Updated {event}");
+    }
+}
+
+fn snapshot_timer_name(account_id: &AccountId) -> String {
+    format!("portfolio_snapshot.{account_id}")
+}
+
+fn update_snapshot_timer_state(
+    cache: &Rc<RefCell<Cache>>,
+    clock: &Rc<RefCell<dyn Clock>>,
+    inner: &Rc<RefCell<PortfolioState>>,
+    config: PortfolioConfig,
+    account_id: &AccountId,
+) {
+    if config.snapshot_interval_ms.is_none() {
+        return;
+    }
+
+    let current_count = cache
+        .borrow()
+        .positions_open(None, None, None, Some(account_id), None)
+        .len();
+
+    let prev_count = inner
+        .borrow()
+        .account_open_positions
+        .get(account_id)
+        .copied()
+        .unwrap_or(0);
+
+    inner
+        .borrow_mut()
+        .account_open_positions
+        .insert(*account_id, current_count);
+
+    if prev_count == 0 && current_count > 0 {
+        arm_snapshot_timer(cache, clock, inner, config, account_id);
+    } else if prev_count > 0 && current_count == 0 {
+        clock
+            .borrow_mut()
+            .cancel_timer(&snapshot_timer_name(account_id));
+    }
+}
+
+fn arm_snapshot_timer(
+    cache: &Rc<RefCell<Cache>>,
+    clock: &Rc<RefCell<dyn Clock>>,
+    inner: &Rc<RefCell<PortfolioState>>,
+    config: PortfolioConfig,
+    account_id: &AccountId,
+) {
+    let interval_ms = match config.snapshot_interval_ms {
+        Some(ms) if ms > 0 => ms,
+        _ => return,
+    };
+    let interval_ns = interval_ms * NANOSECONDS_IN_MILLISECOND;
+    let timer_name = snapshot_timer_name(account_id);
+    let account_id = *account_id;
+
+    let cache_weak = Rc::downgrade(cache);
+    let clock_weak = Rc::downgrade(clock);
+    let inner_weak = Rc::downgrade(inner);
+
+    let callback: Rc<dyn Fn(TimeEvent)> = Rc::new(move |event| {
+        let cache = match cache_weak.upgrade() {
+            Some(c) => c,
+            None => return,
+        };
+        let clock = match clock_weak.upgrade() {
+            Some(c) => c,
+            None => return,
+        };
+        let inner = match inner_weak.upgrade() {
+            Some(i) => i,
+            None => return,
+        };
+        emit_snapshot(&cache, &clock, &inner, config, &account_id, event.ts_event);
+    });
+
+    if let Err(e) = clock.borrow_mut().set_timer_ns(
+        &timer_name,
+        interval_ns,
+        None,
+        None,
+        Some(TimeEventCallback::from(callback)),
+        Some(true),
+        Some(false),
+    ) {
+        log::error!("Failed to arm portfolio snapshot timer for {account_id}: {e}");
+    }
+}
+
+fn emit_snapshot(
+    cache: &Rc<RefCell<Cache>>,
+    clock: &Rc<RefCell<dyn Clock>>,
+    inner: &Rc<RefCell<PortfolioState>>,
+    config: PortfolioConfig,
+    account_id: &AccountId,
+    ts_event: nautilus_core::UnixNanos,
+) {
+    let mut portfolio = Portfolio {
+        cache: cache.clone(),
+        clock: clock.clone(),
+        inner: inner.clone(),
+        config,
+    };
+
+    let mut snapshot = match portfolio.build_snapshot(account_id) {
+        Some(snapshot) => snapshot,
+        None => return,
+    };
+    // Stamp the snapshot with the timer's scheduled fire time so the cadence
+    // is preserved even if the dispatcher batches or runs late. ts_init stays
+    // the construction time set by build_snapshot.
+    snapshot.ts_event = ts_event;
+
+    msgbus::publish_portfolio_snapshot(format!("events.portfolio.{account_id}").into(), &snapshot);
+
+    let mut inner_mut = inner.borrow_mut();
+    push_bounded(
+        &mut inner_mut.portfolio_snapshots,
+        *account_id,
+        snapshot,
+        SNAPSHOT_BUFFER_CAP,
+    );
+}
+
+/// Appends `snapshot` onto the per-account ring, dropping the oldest entry when at `cap`.
+fn push_bounded(
+    snapshots: &mut AHashMap<AccountId, VecDeque<PortfolioSnapshot>>,
+    account_id: AccountId,
+    snapshot: PortfolioSnapshot,
+    cap: usize,
+) {
+    let ring = snapshots.entry(account_id).or_default();
+    if ring.len() == cap {
+        ring.pop_front();
+    }
+    ring.push_back(snapshot);
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::{enums::AccountType, identifiers::AccountId};
+    use rstest::rstest;
+
+    use super::*;
+
+    fn mk_snapshot(seq: u64) -> PortfolioSnapshot {
+        PortfolioSnapshot::new(
+            AccountId::new("SIM-001"),
+            AccountType::Cash,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            UUID4::new(),
+            UnixNanos::from(seq),
+            UnixNanos::from(seq),
+        )
+    }
+
+    #[rstest]
+    fn push_bounded_drops_oldest_when_at_cap() {
+        let account_id = AccountId::new("SIM-001");
+        let mut snapshots: AHashMap<AccountId, VecDeque<PortfolioSnapshot>> = AHashMap::new();
+
+        for seq in 0..5 {
+            push_bounded(&mut snapshots, account_id, mk_snapshot(seq), 3);
+        }
+
+        let ring = snapshots.get(&account_id).expect("ring exists");
+        assert_eq!(ring.len(), 3);
+        assert_eq!(ring.front().unwrap().ts_event, UnixNanos::from(2));
+        assert_eq!(ring.back().unwrap().ts_event, UnixNanos::from(4));
     }
 }

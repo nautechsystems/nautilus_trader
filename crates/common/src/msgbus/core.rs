@@ -100,7 +100,7 @@ use nautilus_model::{
         OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
-    events::{AccountState, OrderEventAny, PositionEvent},
+    events::{AccountState, OrderEventAny, PortfolioSnapshot, PositionEvent},
     identifiers::TraderId,
     orderbook::OrderBook,
     orders::OrderAny,
@@ -239,6 +239,7 @@ pub struct MessageBus {
     pub(crate) router_account_state: TopicRouter<AccountState>,
     pub(crate) router_orders: TopicRouter<OrderAny>,
     pub(crate) router_positions: TopicRouter<Position>,
+    pub(crate) router_portfolio: TopicRouter<PortfolioSnapshot>,
     pub(crate) router_greeks: TopicRouter<GreeksData>,
     pub(crate) router_option_greeks: TopicRouter<OptionGreeks>,
     pub(crate) router_option_chain: TopicRouter<OptionChainSlice>,
@@ -312,6 +313,7 @@ impl MessageBus {
             router_order_events: TopicRouter::new(),
             router_position_events: TopicRouter::new(),
             router_account_state: TopicRouter::new(),
+            router_portfolio: TopicRouter::new(),
             router_orders: TopicRouter::new(),
             router_positions: TopicRouter::new(),
             router_greeks: TopicRouter::new(),
@@ -403,6 +405,7 @@ impl MessageBus {
         self.router_order_events.clear();
         self.router_position_events.clear();
         self.router_account_state.clear();
+        self.router_portfolio.clear();
         self.router_orders.clear();
         self.router_positions.clear();
         self.router_greeks.clear();

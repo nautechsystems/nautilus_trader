@@ -36,7 +36,7 @@ use nautilus_model::{
         OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
-    events::{AccountState, OrderEventAny, PositionEvent},
+    events::{AccountState, OrderEventAny, PortfolioSnapshot, PositionEvent},
     orderbook::OrderBook,
     orders::OrderAny,
     position::Position,
@@ -48,7 +48,8 @@ use super::{
     ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BOOK_HANDLERS, DELTAS_HANDLERS,
     DEPTH10_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP,
     INDEX_PRICE_HANDLERS, MARK_PRICE_HANDLERS, OPTION_CHAIN_HANDLERS, OPTION_GREEKS_HANDLERS,
-    ORDER_EVENT_HANDLERS, POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, TRADE_HANDLERS,
+    ORDER_EVENT_HANDLERS, PORTFOLIO_SNAPSHOT_HANDLERS, POSITION_EVENT_HANDLERS, QUOTE_HANDLERS,
+    TRADE_HANDLERS,
     core::{MessageBus, Subscription},
     get_message_bus,
     matching::is_matching_backtracking,
@@ -435,6 +436,19 @@ pub fn subscribe_position_events(
         .subscribe(pattern, handler, priority.unwrap_or(0));
 }
 
+/// Subscribes a handler to positions matching a pattern.
+pub fn subscribe_positions(
+    pattern: MStr<Pattern>,
+    handler: TypedHandler<Position>,
+    priority: Option<u32>,
+) {
+    get_message_bus().borrow_mut().router_positions.subscribe(
+        pattern,
+        handler,
+        priority.unwrap_or(0),
+    );
+}
+
 /// Subscribes a handler to account state updates matching a pattern.
 pub fn subscribe_account_state(
     pattern: MStr<Pattern>,
@@ -447,13 +461,13 @@ pub fn subscribe_account_state(
         .subscribe(pattern, handler, priority.unwrap_or(0));
 }
 
-/// Subscribes a handler to positions matching a pattern.
-pub fn subscribe_positions(
+/// Subscribes a handler to portfolio snapshots matching a pattern.
+pub fn subscribe_portfolio_snapshot(
     pattern: MStr<Pattern>,
-    handler: TypedHandler<Position>,
+    handler: TypedHandler<PortfolioSnapshot>,
     priority: Option<u32>,
 ) {
-    get_message_bus().borrow_mut().router_positions.subscribe(
+    get_message_bus().borrow_mut().router_portfolio.subscribe(
         pattern,
         handler,
         priority.unwrap_or(0),
@@ -632,6 +646,17 @@ pub fn unsubscribe_account_state(pattern: MStr<Pattern>, handler: &TypedHandler<
     get_message_bus()
         .borrow_mut()
         .router_account_state
+        .unsubscribe(pattern, handler);
+}
+
+/// Unsubscribes a handler from portfolio snapshots.
+pub fn unsubscribe_portfolio_snapshot(
+    pattern: MStr<Pattern>,
+    handler: &TypedHandler<PortfolioSnapshot>,
+) {
+    get_message_bus()
+        .borrow_mut()
+        .router_portfolio
         .unsubscribe(pattern, handler);
 }
 
@@ -969,6 +994,17 @@ pub fn publish_account_state(topic: MStr<Topic>, state: &AccountState) {
         &ACCOUNT_STATE_HANDLERS,
         |bus, h| bus.router_account_state.fill_matching_handlers(topic, h),
         state,
+    );
+}
+
+/// Publishes a portfolio snapshot to subscribers on a topic.
+pub fn publish_portfolio_snapshot(topic: MStr<Topic>, snapshot: &PortfolioSnapshot) {
+    publish_typed(
+        &PORTFOLIO_SNAPSHOT_HANDLERS,
+        |bus, h| {
+            bus.router_portfolio.fill_matching_handlers(topic, h);
+        },
+        snapshot,
     );
 }
 

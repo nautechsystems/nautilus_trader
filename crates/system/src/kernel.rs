@@ -503,6 +503,7 @@ impl NautilusKernel {
         self.data_engine.borrow_mut().reset();
         self.exec_engine.borrow_mut().reset();
         self.risk_engine.borrow_mut().reset();
+        self.portfolio.borrow_mut().reset();
 
         self.ts_started = None;
         self.ts_shutdown = None;
@@ -519,6 +520,8 @@ impl NautilusKernel {
         }
 
         self.stop_engines();
+        self.portfolio.borrow_mut().reset();
+        self.cancel_timers();
 
         self.data_engine.borrow_mut().dispose();
         self.exec_engine.borrow_mut().dispose();
