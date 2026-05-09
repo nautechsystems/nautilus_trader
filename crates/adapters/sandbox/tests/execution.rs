@@ -603,7 +603,10 @@ fn test_message_handler_drops_precision_mismatched_trade(
     test_context.client.start().unwrap();
 
     let trade = create_mismatched_trade_tick(instrument.id());
-    msgbus::publish_trade(format!("data.trades.{}", instrument.id()).into(), &trade);
+    msgbus::publish_trade(
+        format!("data.trades.{}.{}", instrument.id().venue, instrument.id()).into(),
+        &trade,
+    );
 
     assert_eq!(test_context.client.matching_engine_count(), 0);
     test_context.client.stop().unwrap();
