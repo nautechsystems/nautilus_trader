@@ -31,7 +31,6 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **nightly-tests.yml**: extended test suites too slow for PR builds - turmoil network tests plus macOS, Windows, and Linux ARM build-and-test jobs that run daily at 12:00 UTC to give early visibility on develop before `nightly-merge` at 14:00 UTC.
 - **performance.yml**: Rust/Python benchmarks on `nightly`, reporting to CodSpeed.
 - **security-audit.yml**: nightly supply chain security checks (cargo-audit, cargo-deny, cargo-vet, osv-scanner).
-- **trigger-reindexing.yml**: triggers documentation reindexing for search.
 
 ## Security
 
