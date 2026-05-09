@@ -37,16 +37,16 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, BookAction, BookType, ContingencyType,
-        InstrumentCloseType, LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OrderSide,
-        OrderSideSpecified, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce,
-        TriggerType,
+        InstrumentCloseType, LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OptionKind,
+        OrderSide, OrderSideSpecified, OrderStatus, OrderType, PositionSide, PriceType,
+        TimeInForce, TriggerType,
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
         OrderFilled, OrderModifyRejected, OrderRejected, OrderTriggered, OrderUpdated,
     },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId, Venue,
+        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId, Venue,
         VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
@@ -1898,13 +1898,22 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn check_instrument_expiration(&mut self) {
-        if self.expiration_processed || self.instrument_close.is_none() {
+    fn check_instrument_expiration(&mut self, timestamp_ns: UnixNanos) {
+        if self.expiration_processed {
+            return;
+        }
+
+        let timestamp_triggered = self
+            .instrument
+            .expiration_ns()
+            .is_some_and(|ns| timestamp_ns >= ns);
+
+        if !timestamp_triggered && self.instrument_close.is_none() {
             return;
         }
 
         self.expiration_processed = true;
-        let close = self.instrument_close.take().unwrap();
+        let close = self.instrument_close.take();
         log::info!("{} reached expiration", self.instrument.id());
 
         let open_orders: Vec<RestingOrder> = self.get_open_orders();
@@ -1917,6 +1926,14 @@ impl OrderMatchingEngine {
             if let Some(order) = order {
                 self.cancel_order(&order, None);
             }
+        }
+
+        if matches!(
+            self.instrument,
+            InstrumentAny::OptionContract(_) | InstrumentAny::CryptoOption(_)
+        ) {
+            self.process_option_expiry(timestamp_ns);
+            return;
         }
 
         let instrument_id = self.instrument.id();
@@ -1943,6 +1960,7 @@ impl OrderMatchingEngine {
         };
 
         let ts_now = self.clock.borrow().timestamp_ns();
+        let close_price_fallback = close.as_ref().map(|c| c.close_price);
 
         for (trader_id, strategy_id, position_id, closing_side, quantity) in positions {
             let client_order_id =
@@ -1984,15 +2002,392 @@ impl OrderMatchingEngine {
 
             let venue_order_id = self.ids_generator.get_venue_order_id(&order).unwrap();
             self.generate_order_accepted(&order, venue_order_id);
-            let fill_price = self.settlement_price.unwrap_or(close.close_price);
-            self.apply_fills(
-                &order,
-                &[(fill_price, quantity)],
-                LiquiditySide::Taker,
-                Some(position_id),
-                None,
+
+            let fill_price = self.settlement_price.or(close_price_fallback);
+            if let Some(fill_price) = fill_price {
+                self.apply_fills(
+                    &order,
+                    &[(fill_price, quantity)],
+                    LiquiditySide::Taker,
+                    Some(position_id),
+                    None,
+                );
+            } else {
+                self.fill_market_order(client_order_id);
+            }
+        }
+    }
+
+    fn process_option_expiry(&mut self, ts_now: UnixNanos) {
+        let instrument_id = self.instrument.id();
+
+        let positions: Vec<Position> = {
+            let cache = self.cache.borrow();
+            cache
+                .positions_open(None, Some(&instrument_id), None, None, None)
+                .into_iter()
+                .map(|p| p.cloned())
+                .collect()
+        };
+
+        if positions.is_empty() {
+            return;
+        }
+
+        let underlying = match self.instrument.underlying() {
+            Some(u) => u,
+            None => {
+                log::error!("No underlying for option {instrument_id}");
+                return;
+            }
+        };
+        let underlying_id = InstrumentId::from(format!("{underlying}.{}", self.venue).as_str());
+
+        let (underlying_instrument, underlying_price) = {
+            let cache = self.cache.borrow();
+            (
+                cache.instrument(&underlying_id).cloned(),
+                cache.price(&underlying_id, PriceType::Last),
+            )
+        };
+
+        let underlying_instrument = match underlying_instrument {
+            Some(u) => u,
+            None => {
+                log::error!("No underlying instrument for option {instrument_id}");
+                return;
+            }
+        };
+
+        let underlying_price = match underlying_price {
+            Some(p) => p,
+            None => {
+                log::error!("No underlying price for option {instrument_id}");
+                return;
+            }
+        };
+
+        let custom_option_price = self.settlement_price;
+        let should_exercise = self.option_should_exercise(underlying_price);
+
+        for position in positions {
+            self.account_ids
+                .insert(position.trader_id, position.account_id);
+
+            if should_exercise {
+                self.option_exercise_position(
+                    &position,
+                    &underlying_instrument,
+                    underlying_price,
+                    ts_now,
+                    custom_option_price,
+                );
+            } else {
+                self.option_otm_expiry(&position, ts_now, custom_option_price);
+            }
+        }
+    }
+
+    fn option_should_exercise(&self, underlying_price: Price) -> bool {
+        let strike = match self.instrument.strike_price() {
+            Some(p) => p.as_f64(),
+            None => return false,
+        };
+        let spot = underlying_price.as_f64();
+        match self.instrument.option_kind() {
+            Some(OptionKind::Call) => spot > strike,
+            Some(OptionKind::Put) => strike > spot,
+            None => false,
+        }
+    }
+
+    fn option_settlement_price(&self, underlying_price: Price, cash_settled: bool) -> Price {
+        let strike = self
+            .instrument
+            .strike_price()
+            .expect("option must have strike");
+        if !cash_settled {
+            return strike;
+        }
+
+        let spot = underlying_price.as_f64();
+        let strike_f = strike.as_f64();
+        let value = match self.instrument.option_kind() {
+            Some(OptionKind::Call) => (spot - strike_f).max(0.0),
+            _ => (strike_f - spot).max(0.0),
+        };
+        Price::new(value, strike.precision)
+    }
+
+    fn option_exercise_position(
+        &self,
+        position: &Position,
+        underlying_instrument: &InstrumentAny,
+        underlying_price: Price,
+        ts_now: UnixNanos,
+        custom_option_price: Option<Price>,
+    ) {
+        if matches!(underlying_instrument, InstrumentAny::IndexInstrument(_)) {
+            self.option_cash_settlement(position, underlying_price, ts_now, custom_option_price);
+        } else {
+            self.option_physical_settlement(
+                position,
+                underlying_instrument,
+                underlying_price,
+                ts_now,
+                custom_option_price,
             );
         }
+    }
+
+    fn option_cash_settlement(
+        &self,
+        position: &Position,
+        underlying_price: Price,
+        ts_now: UnixNanos,
+        custom_option_price: Option<Price>,
+    ) {
+        let venue = self.venue;
+        let trade_id = format!("{venue}-LEG-CASH-{}", &UUID4::new().to_string()[..8]);
+        let close_px = custom_option_price
+            .unwrap_or_else(|| self.option_settlement_price(underlying_price, true));
+        let close_side = OrderCore::closing_side(position.side);
+        self.option_register_settlement_order(
+            position,
+            self.instrument.id(),
+            close_side,
+            position.quantity,
+            ClientOrderId::from(trade_id.as_str()),
+            VenueOrderId::from(trade_id.as_str()),
+            Some(position.id),
+            true,
+            &format!("EXPIRATION_{venue}_CASH"),
+        );
+        let fill = self.option_create_close_fill(position, close_px, &trade_id, ts_now);
+        self.dispatch_order_event(OrderEventAny::Filled(fill));
+    }
+
+    fn option_physical_settlement(
+        &self,
+        position: &Position,
+        underlying_instrument: &InstrumentAny,
+        underlying_price: Price,
+        ts_now: UnixNanos,
+        custom_option_price: Option<Price>,
+    ) {
+        let multiplier = self.instrument.multiplier();
+        let underlying_qty = Quantity::new(
+            position.quantity.as_f64() * multiplier.as_f64(),
+            underlying_instrument.size_precision(),
+        );
+
+        let underlying_side = if self.instrument.option_kind() == Some(OptionKind::Call) {
+            position.side
+        } else {
+            match position.side {
+                PositionSide::Long => PositionSide::Short,
+                PositionSide::Short => PositionSide::Long,
+                other => other,
+            }
+        };
+
+        let venue = self.venue;
+        let trade_base = format!("{venue}-LEG-EX-{}", &UUID4::new().to_string()[..8]);
+        let close_trade_id = format!("{trade_base}-CLOSE");
+        let open_trade_id = format!("{trade_base}-OPEN");
+        let settlement_px = self.option_settlement_price(underlying_price, false);
+        let option_close_px = custom_option_price
+            .unwrap_or_else(|| Price::new(0.0, self.instrument.price_precision()));
+        let close_side = OrderCore::closing_side(position.side);
+        let underlying_order_side = match underlying_side {
+            PositionSide::Long => OrderSide::Buy,
+            _ => OrderSide::Sell,
+        };
+
+        self.option_register_settlement_order(
+            position,
+            self.instrument.id(),
+            close_side,
+            position.quantity,
+            ClientOrderId::from(close_trade_id.as_str()),
+            VenueOrderId::from(close_trade_id.as_str()),
+            Some(position.id),
+            true,
+            &format!("EXPIRATION_{venue}_PHYSICAL_CLOSE"),
+        );
+        self.option_register_settlement_order(
+            position,
+            underlying_instrument.id(),
+            underlying_order_side,
+            underlying_qty,
+            ClientOrderId::from(open_trade_id.as_str()),
+            VenueOrderId::from(open_trade_id.as_str()),
+            None,
+            false,
+            &format!("EXPIRATION_{venue}_PHYSICAL_OPEN"),
+        );
+
+        let option_fill =
+            self.option_create_close_fill(position, option_close_px, &close_trade_id, ts_now);
+        let underlying_fill = self.option_create_underlying_fill(
+            position,
+            underlying_instrument,
+            underlying_qty,
+            underlying_side,
+            settlement_px,
+            &open_trade_id,
+            ts_now,
+        );
+        self.dispatch_order_event(OrderEventAny::Filled(option_fill));
+        self.dispatch_order_event(OrderEventAny::Filled(underlying_fill));
+    }
+
+    fn option_otm_expiry(
+        &self,
+        position: &Position,
+        ts_now: UnixNanos,
+        custom_option_price: Option<Price>,
+    ) {
+        let venue = self.venue;
+        let trade_id = format!("{venue}-LEG-OTM-{}", &UUID4::new().to_string()[..8]);
+        let close_px = custom_option_price
+            .unwrap_or_else(|| Price::new(0.0, self.instrument.price_precision()));
+        let close_side = OrderCore::closing_side(position.side);
+        self.option_register_settlement_order(
+            position,
+            self.instrument.id(),
+            close_side,
+            position.quantity,
+            ClientOrderId::from(trade_id.as_str()),
+            VenueOrderId::from(trade_id.as_str()),
+            Some(position.id),
+            true,
+            &format!("EXPIRATION_{venue}_OTM"),
+        );
+        let fill = self.option_create_close_fill(position, close_px, &trade_id, ts_now);
+        self.dispatch_order_event(OrderEventAny::Filled(fill));
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    fn option_register_settlement_order(
+        &self,
+        position: &Position,
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        position_id: Option<PositionId>,
+        reduce_only: bool,
+        tag: &str,
+    ) {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let order = OrderAny::Market(MarketOrder::new(
+            position.trader_id,
+            position.strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            quantity,
+            TimeInForce::Gtc,
+            UUID4::new(),
+            ts_now,
+            reduce_only,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(vec![Ustr::from(tag)]),
+        ));
+
+        {
+            let mut cache = self.cache.borrow_mut();
+            if let Err(e) = cache.add_order(order.clone(), position_id, None, false) {
+                log::debug!("Settlement order already in cache: {e}");
+            } else {
+                drop(cache);
+                self.publish_order_initialized(&order);
+                self.cache
+                    .borrow_mut()
+                    .add_venue_order_id(&client_order_id, &venue_order_id, false)
+                    .ok();
+            }
+        }
+
+        self.generate_order_accepted(&order, venue_order_id);
+    }
+
+    fn option_create_close_fill(
+        &self,
+        position: &Position,
+        price: Price,
+        trade_id_str: &str,
+        ts_now: UnixNanos,
+    ) -> OrderFilled {
+        let close_side = OrderCore::closing_side(position.side);
+        OrderFilled::new(
+            position.trader_id,
+            position.strategy_id,
+            self.instrument.id(),
+            ClientOrderId::from(trade_id_str),
+            VenueOrderId::from(trade_id_str),
+            position.account_id,
+            TradeId::from(trade_id_str),
+            close_side,
+            OrderType::Market,
+            position.quantity,
+            price,
+            self.instrument.quote_currency(),
+            LiquiditySide::Taker,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            Some(position.id),
+            Some(Money::new(0.0, self.instrument.quote_currency())),
+        )
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    fn option_create_underlying_fill(
+        &self,
+        position: &Position,
+        underlying_instrument: &InstrumentAny,
+        quantity: Quantity,
+        side: PositionSide,
+        price: Price,
+        trade_id_str: &str,
+        ts_now: UnixNanos,
+    ) -> OrderFilled {
+        let order_side = match side {
+            PositionSide::Long => OrderSide::Buy,
+            _ => OrderSide::Sell,
+        };
+        OrderFilled::new(
+            position.trader_id,
+            position.strategy_id,
+            underlying_instrument.id(),
+            ClientOrderId::from(trade_id_str),
+            VenueOrderId::from(trade_id_str),
+            position.account_id,
+            TradeId::from(trade_id_str),
+            order_side,
+            OrderType::Market,
+            quantity,
+            price,
+            underlying_instrument.quote_currency(),
+            LiquiditySide::Taker,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            None,
+            Some(Money::new(0.0, underlying_instrument.quote_currency())),
+        )
     }
 
     /// Processes a new order submission.
@@ -3014,7 +3409,7 @@ impl OrderMatchingEngine {
 
         // Process instrument expiration last so orders at the expiration tick
         // get a chance to fill before positions are closed.
-        self.check_instrument_expiration();
+        self.check_instrument_expiration(timestamp_ns);
     }
 
     fn get_trailing_activation_price(
