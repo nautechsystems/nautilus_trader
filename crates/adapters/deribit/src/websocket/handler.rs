@@ -1559,12 +1559,29 @@ impl DeribitWsFeedHandler {
                                         ts_init,
                                     );
 
-                                    if data_vec.is_empty() {
-                                        log::debug!(
-                                            "No trades parsed - instrument cache size: {}",
-                                            self.instruments_cache.len()
-                                        );
-                                    } else {
+                                    if data_vec.is_empty() && !trades.is_empty() {
+                                        let missing: Vec<&Ustr> = trades
+                                            .iter()
+                                            .map(|t| &t.instrument_name)
+                                            .filter(|name| {
+                                                !self.instruments_cache.contains_key(name)
+                                            })
+                                            .collect();
+
+                                        if missing.is_empty() {
+                                            log::warn!(
+                                                "Received {} trades but parsed 0 (parse failures); cache size: {}",
+                                                trades.len(),
+                                                self.instruments_cache.len()
+                                            );
+                                        } else {
+                                            log::warn!(
+                                                "Trade message received but instrument(s) not found in cache: {:?} (cache size: {})",
+                                                missing,
+                                                self.instruments_cache.len()
+                                            );
+                                        }
+                                    } else if !data_vec.is_empty() {
                                         log::debug!("Parsed {} trade ticks", data_vec.len());
                                         return Some(NautilusWsMessage::Data(data_vec));
                                     }
@@ -1686,57 +1703,77 @@ impl DeribitWsFeedHandler {
                             }
                         }
                         DeribitWsChannel::Ticker => {
-                            if let Ok(ticker_msg) =
-                                serde_json::from_value::<DeribitTickerMsg>(data.clone())
-                                && let Some(instrument) =
-                                    self.instruments_cache.get(&ticker_msg.instrument_name)
-                            {
-                                // Emit OptionGreeks only if subscribed
-                                if self.option_greeks_subs.contains(&instrument.id())
-                                    && let Some(option_greeks) = parse_ticker_to_option_greeks(
-                                        &ticker_msg,
-                                        instrument,
-                                        ts_init,
-                                    )
-                                {
-                                    let _ = self
-                                        .out_tx
-                                        .send(NautilusWsMessage::OptionGreeks(option_greeks));
-                                }
-
-                                let instrument_id = instrument.id();
-                                let mut data_vec = Vec::new();
-
-                                // Emit MarkPriceUpdate only if subscribed
-                                if self.mark_price_subs.contains(&instrument_id) {
-                                    match parse_ticker_to_mark_price(
-                                        &ticker_msg,
-                                        instrument,
-                                        ts_init,
-                                    ) {
-                                        Ok(mark_price) => {
-                                            data_vec.push(Data::MarkPriceUpdate(mark_price));
+                            match serde_json::from_value::<DeribitTickerMsg>(data.clone()) {
+                                Ok(ticker_msg) => {
+                                    if let Some(instrument) =
+                                        self.instruments_cache.get(&ticker_msg.instrument_name)
+                                    {
+                                        // Emit OptionGreeks only if subscribed
+                                        if self.option_greeks_subs.contains(&instrument.id())
+                                            && let Some(option_greeks) =
+                                                parse_ticker_to_option_greeks(
+                                                    &ticker_msg,
+                                                    instrument,
+                                                    ts_init,
+                                                )
+                                        {
+                                            let _ = self.out_tx.send(
+                                                NautilusWsMessage::OptionGreeks(option_greeks),
+                                            );
                                         }
-                                        Err(e) => log::warn!("Failed to parse mark price: {e}"),
+
+                                        let instrument_id = instrument.id();
+                                        let mut data_vec = Vec::new();
+
+                                        // Emit MarkPriceUpdate only if subscribed
+                                        if self.mark_price_subs.contains(&instrument_id) {
+                                            match parse_ticker_to_mark_price(
+                                                &ticker_msg,
+                                                instrument,
+                                                ts_init,
+                                            ) {
+                                                Ok(mark_price) => {
+                                                    data_vec
+                                                        .push(Data::MarkPriceUpdate(mark_price));
+                                                }
+                                                Err(e) => {
+                                                    log::warn!("Failed to parse mark price: {e}");
+                                                }
+                                            }
+                                        }
+
+                                        // Emit IndexPriceUpdate only if subscribed
+                                        if self.index_price_subs.contains(&instrument_id) {
+                                            match parse_ticker_to_index_price(
+                                                &ticker_msg,
+                                                instrument,
+                                                ts_init,
+                                            ) {
+                                                Ok(index_price) => {
+                                                    data_vec
+                                                        .push(Data::IndexPriceUpdate(index_price));
+                                                }
+                                                Err(e) => {
+                                                    log::warn!("Failed to parse index price: {e}");
+                                                }
+                                            }
+                                        }
+
+                                        if !data_vec.is_empty() {
+                                            return Some(NautilusWsMessage::Data(data_vec));
+                                        }
+                                    } else {
+                                        log::warn!(
+                                            "Ticker message received but instrument '{}' not found in cache (cache size: {})",
+                                            ticker_msg.instrument_name,
+                                            self.instruments_cache.len()
+                                        );
                                     }
                                 }
-
-                                // Emit IndexPriceUpdate only if subscribed
-                                if self.index_price_subs.contains(&instrument_id) {
-                                    match parse_ticker_to_index_price(
-                                        &ticker_msg,
-                                        instrument,
-                                        ts_init,
-                                    ) {
-                                        Ok(index_price) => {
-                                            data_vec.push(Data::IndexPriceUpdate(index_price));
-                                        }
-                                        Err(e) => log::warn!("Failed to parse index price: {e}"),
-                                    }
-                                }
-
-                                if !data_vec.is_empty() {
-                                    return Some(NautilusWsMessage::Data(data_vec));
+                                Err(e) => {
+                                    log::warn!(
+                                        "Failed to deserialize ticker message: {e}, channel: {channel}"
+                                    );
                                 }
                             }
                         }
@@ -1780,20 +1817,33 @@ impl DeribitWsFeedHandler {
                         }
                         DeribitWsChannel::Quote => {
                             // Parse quote messages
-                            if let Ok(quote_msg) =
-                                serde_json::from_value::<DeribitQuoteMsg>(data.clone())
-                                && let Some(instrument) =
-                                    self.instruments_cache.get(&quote_msg.instrument_name)
-                            {
-                                match parse_quote_msg(&quote_msg, instrument, ts_init) {
-                                    Ok(quote) => {
-                                        return Some(NautilusWsMessage::Data(vec![Data::Quote(
-                                            quote,
-                                        )]));
+                            match serde_json::from_value::<DeribitQuoteMsg>(data.clone()) {
+                                Ok(quote_msg) => {
+                                    if let Some(instrument) =
+                                        self.instruments_cache.get(&quote_msg.instrument_name)
+                                    {
+                                        match parse_quote_msg(&quote_msg, instrument, ts_init) {
+                                            Ok(quote) => {
+                                                return Some(NautilusWsMessage::Data(vec![
+                                                    Data::Quote(quote),
+                                                ]));
+                                            }
+                                            Err(e) => {
+                                                log::warn!("Failed to parse quote message: {e}");
+                                            }
+                                        }
+                                    } else {
+                                        log::warn!(
+                                            "Quote message received but instrument '{}' not found in cache (cache size: {})",
+                                            quote_msg.instrument_name,
+                                            self.instruments_cache.len()
+                                        );
                                     }
-                                    Err(e) => {
-                                        log::warn!("Failed to parse quote message: {e}");
-                                    }
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "Failed to deserialize quote message: {e}, channel: {channel}"
+                                    );
                                 }
                             }
                         }

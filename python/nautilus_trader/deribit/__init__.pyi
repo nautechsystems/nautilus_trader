@@ -39,6 +39,7 @@ class DeribitDataClientConfig:
         retry_delay_max_ms: int | None = None,
         heartbeat_interval_secs: int | None = None,
         update_instruments_interval_mins: int | None = None,
+        auto_load_missing_instruments: bool | None = None,
     ) -> None: ...
 
 @typing.final

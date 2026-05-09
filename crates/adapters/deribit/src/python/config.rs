@@ -43,6 +43,7 @@ impl DeribitDataClientConfig {
         retry_delay_max_ms = None,
         heartbeat_interval_secs = None,
         update_instruments_interval_mins = None,
+        auto_load_missing_instruments = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -59,6 +60,7 @@ impl DeribitDataClientConfig {
         retry_delay_max_ms: Option<u64>,
         heartbeat_interval_secs: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
+        auto_load_missing_instruments: Option<bool>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -78,6 +80,8 @@ impl DeribitDataClientConfig {
                 .unwrap_or(defaults.heartbeat_interval_secs),
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
+            auto_load_missing_instruments: auto_load_missing_instruments
+                .unwrap_or(defaults.auto_load_missing_instruments),
             transport_backend: defaults.transport_backend,
         }
     }

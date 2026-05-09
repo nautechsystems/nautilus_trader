@@ -543,6 +543,19 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 | `retry_delay_initial_ms`           | `1,000`    | Initial delay (milliseconds) before retrying. |
 | `retry_delay_max_ms`               | `10,000`   | Maximum delay (milliseconds) between retries. |
 | `update_instruments_interval_mins` | `60`       | Interval (minutes) between instrument refreshes. |
+| `auto_load_missing_instruments`    | `False`    | Lazy‑load uncached instruments on subscribe; see [Lazy‑load on subscribe](#lazy-load-on-subscribe). |
+
+#### Lazy-load on subscribe
+
+`subscribe_*` commands look up the instrument in the local cache before sending the
+WebSocket subscribe so the handler can parse the inbound frames. With
+`auto_load_missing_instruments = False` (the default), a subscribe for an instrument that
+was not preloaded (because of the configured `product_types`) returns an error up front
+rather than silently succeeding and dropping subsequent frames at the handler.
+
+Set `auto_load_missing_instruments = True` to instead fetch the instrument over HTTP on
+the first subscribe, seed the WebSocket handler cache, and then forward the subscribe.
+HTTP failures are logged and the WebSocket subscribe is skipped.
 
 ### Execution client configuration options
 

@@ -72,6 +72,9 @@ pub struct DeribitDataClientConfig {
     /// Interval for refreshing instruments (in minutes).
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
+    /// If `true`, subscribes for uncached instruments lazy-load via HTTP; otherwise fail fast.
+    #[builder(default = false)]
+    pub auto_load_missing_instruments: bool,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[builder(default)]
     pub transport_backend: TransportBackend,

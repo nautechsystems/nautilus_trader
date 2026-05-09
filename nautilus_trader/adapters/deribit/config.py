@@ -58,6 +58,9 @@ class DeribitDataClientConfig(LiveDataClientConfig, frozen=True):
         The maximum delay (milliseconds) between retries.
     update_instruments_interval_mins : PositiveInt, default 60
         The interval (minutes) between reloading instruments from the venue.
+    auto_load_missing_instruments : bool, default False
+        If ``True``, subscribes for uncached instruments lazy-load via HTTP; otherwise fail fast.
+        See the Deribit integration guide for details.
 
     """
 
@@ -73,6 +76,7 @@ class DeribitDataClientConfig(LiveDataClientConfig, frozen=True):
     retry_delay_initial_ms: PositiveInt | None = 1_000
     retry_delay_max_ms: PositiveInt | None = 10_000
     update_instruments_interval_mins: PositiveInt | None = 60
+    auto_load_missing_instruments: bool = False
 
 
 class DeribitExecClientConfig(LiveExecClientConfig, frozen=True):

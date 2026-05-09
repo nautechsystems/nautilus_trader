@@ -20,6 +20,7 @@ Released on TBD (UTC).
 - Added Bybit BBO order support for linear and inverse limit-style orders
 - Added Coinbase liquidation/ADL warning on forced-close order events
 - Added Coinbase CFM liquidation buffer warning when buffer drops below 20%
+- Added Deribit `auto_load_missing_instruments` config flag to lazy-load uncached instruments on subscribe
 - Added dYdX historical funding rate requests via the `request_funding_rates` HTTP method and PyO3 binding
 - Added Kraken Spot margin trading support (#3965), thanks @mcgrj
 - Added Kraken Spot WebSocket v2 order submission (#4007), thanks @mcgrj
@@ -108,6 +109,7 @@ Released on TBD (UTC).
 - Fixed dYdX Python `_subscribe_order_book_depth` to log a graceful warning instead of raising `NotImplementedError`
 - Fixed Deribit `StopMarket` `OrderRejected` when the order response omits `filled_amount` (#3995), thanks for reporting @marco-rigoni
 - Fixed Deribit cross-margin balance overcounting where `margin_balance` per currency re-denominates the entire cross-collateral portfolio; cross-margin accounts now report `equity` for total and `available_withdrawal_funds` for free (#4009), thanks @filipmacek
+- Fixed Deribit subscriptions silently dropping data for uncached instruments (#4035), thanks for reporting @linimin
 - Fixed Hyperliquid modify-after-partial-fill sending absolute total quantity to the cancel-replace leg, causing the engine to overfill the order (#3986)
 - Fixed Hyperliquid testnet orders rejected with "Builder fee has not been approved"; testnet orders now omit builder attribution to match the vault-order behavior (#3989)
 - Fixed Hyperliquid spurious `OrderCanceled` on concurrent modifies (Python and Rust) (#3971), thanks @M-Advis
