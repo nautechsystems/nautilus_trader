@@ -48,9 +48,11 @@ pub enum EventStoreError {
         /// The sequence number whose stored hash did not match.
         seq: u64,
     },
-    /// The writer received an entry whose sequence number is not strictly above the
-    /// current high-watermark.
-    #[error("out-of-order seq: expected > {high_watermark}, received {seq}")]
+    /// The writer received an entry whose sequence number is not contiguous after the
+    /// current durable high-watermark.
+    #[error(
+        "out-of-order seq: received {seq}, expected contiguous after high-watermark {high_watermark}"
+    )]
     OutOfOrder {
         /// The current durable high-watermark.
         high_watermark: u64,

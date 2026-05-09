@@ -20,6 +20,10 @@
 //! consumers. Backend-specific types (`redb::Database`, `redb::Error`) never appear in this
 //! trait surface.
 
+pub mod memory;
+
+pub use memory::MemoryBackend;
+
 use crate::{
     entry::EventStoreEntry,
     error::EventStoreError,
@@ -48,6 +52,62 @@ pub enum ScanDirection {
     Forward,
     /// Reverse scan: descending `seq`.
     Reverse,
+}
+
+/// A single sidecar index entry recorded atomically with an event store entry.
+///
+/// The writer (or its encoder) produces one [`IndexKey`] per `(IndexKind, key)` pair the
+/// entry should be locatable under. The backend records the first occurrence of each pair;
+/// subsequent occurrences for the same `(kind, key)` are no-ops, so [`EventStore::lookup`]
+/// always returns the earliest `seq` that mentioned the key.
+///
+/// Keys are stringified at the encoder boundary: `intent_id` from headers stringifies the
+/// UUID, `client_order_id` and `venue_order_id` are already strings on the wire types.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct IndexKey {
+    /// The secondary index this key belongs to.
+    pub kind: IndexKind,
+    /// The stringified key. Owned because the backend retains it.
+    pub key: String,
+}
+
+impl IndexKey {
+    /// Creates a new [`IndexKey`].
+    #[must_use]
+    pub const fn new(kind: IndexKind, key: String) -> Self {
+        Self { kind, key }
+    }
+}
+
+/// One entry plus its sidecar index keys, as accepted by [`EventStore::append_batch`].
+///
+/// Keeping the indices alongside the entry makes the commit atomic: the backend records
+/// the entry and its index keys in a single transaction, so a reader can never observe a
+/// committed `seq` whose secondary indices are missing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AppendEntry {
+    /// The captured entry. The writer has already assigned `seq`, `ts_publish`, and the
+    /// canonical `entry_hash` before constructing this value.
+    pub entry: EventStoreEntry,
+    /// Sidecar index keys produced for this entry. May be empty.
+    pub index_keys: Vec<IndexKey>,
+}
+
+impl AppendEntry {
+    /// Creates a new [`AppendEntry`].
+    #[must_use]
+    pub const fn new(entry: EventStoreEntry, index_keys: Vec<IndexKey>) -> Self {
+        Self { entry, index_keys }
+    }
+
+    /// Creates a new [`AppendEntry`] with no sidecar index keys.
+    #[must_use]
+    pub const fn without_indices(entry: EventStoreEntry) -> Self {
+        Self {
+            entry,
+            index_keys: Vec::new(),
+        }
+    }
 }
 
 /// The single-node embedded event store.
@@ -79,10 +139,13 @@ pub trait EventStore: Send {
     /// [`EventStoreError::Disk`] for disk pressure during creation.
     fn open_run(&mut self, manifest: RunManifest) -> Result<(), EventStoreError>;
 
-    /// Appends a batch of entries in a single backend transaction.
+    /// Appends a batch of `(entry, index_keys)` pairs in a single backend transaction.
     ///
-    /// The writer assigns `seq` and `ts_publish` before calling this method. The backend
-    /// rejects batches whose first `seq` is not strictly above the current high-watermark.
+    /// The writer assigns `seq`, `ts_publish`, and the canonical `entry_hash`, plus any
+    /// sidecar [`IndexKey`]s the encoder produced, before constructing each
+    /// [`AppendEntry`]. The backend rejects batches whose first `seq` is not exactly
+    /// `high_watermark + 1`, and whose subsequent seqs are not contiguous (each successor
+    /// is `prev + 1`).
     ///
     /// On successful commit, the backend advances its high-watermark and returns the new
     /// value.
@@ -90,10 +153,11 @@ pub trait EventStore: Send {
     /// # Errors
     ///
     /// Returns [`EventStoreError::Closed`] when the run is sealed,
-    /// [`EventStoreError::OutOfOrder`] when the first seq is not above the high-watermark,
+    /// [`EventStoreError::OutOfOrder`] when the first seq is not exactly
+    /// `high_watermark + 1` or a within-batch seq is not contiguous,
     /// [`EventStoreError::Disk`] when the backing storage refuses the write, and
     /// [`EventStoreError::Backend`] for unclassified backend failures.
-    fn append_batch(&mut self, entries: &[EventStoreEntry]) -> Result<u64, EventStoreError>;
+    fn append_batch(&mut self, entries: &[AppendEntry]) -> Result<u64, EventStoreError>;
 
     /// Scans entries by `seq` over the inclusive range `[from, to]`.
     ///
