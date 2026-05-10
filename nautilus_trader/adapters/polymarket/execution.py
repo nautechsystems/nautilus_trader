@@ -244,6 +244,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._finalized_trades: OrderedDict[TradeId, None] = OrderedDict()
         self._ack_events_order: dict[VenueOrderId, asyncio.Event] = {}
         self._ack_events_trade: dict[VenueOrderId, asyncio.Event] = {}
+        self._order_timing_starts: dict[VenueOrderId, float] = {}
+        self._order_ack_seen_at: dict[VenueOrderId, float] = {}
         self._collateral_balance_pusd: float | None = None
 
     def calculate_commission(self, instrument, last_qty, last_px, liquidity_side):
@@ -1315,6 +1317,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             await self._maintain_active_market(order.instrument_id)
 
         # Sign all orders (individual failures are rejected during signing)
+        timing_start = self._clock.timestamp()
         signed_orders, signed_orders_args = await self._sign_orders_for_batch(orders)
 
         if not signed_orders:
@@ -1336,6 +1339,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             signed_orders,
             signed_orders_args,
             post_only=post_only,
+            timing_start=timing_start,
         )
 
     async def _sign_orders_for_batch(
@@ -1398,8 +1402,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         interval = self._clock.timestamp() - signing_start
         self._log.info(
-            f"Signed {len(successfully_signed_orders)}/{len(orders)} Polymarket orders "
-            f"in {interval:.3f}s",
+            "POLYMARKET_ORDER_TIMING sign_order_batch "
+            f"signed_count={len(successfully_signed_orders)} "
+            f"order_count={len(orders)} elapsed={interval:.3f}s",
             LogColor.BLUE,
         )
 
@@ -1410,6 +1415,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         orders: list[Order],
         signed_orders_args: list[PostOrdersV2Args],
         post_only: bool = False,
+        timing_start: float | None = None,
     ) -> None:
         """
         Post a batch of signed orders to Polymarket.
@@ -1431,6 +1437,13 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 return
 
             self._process_batch_response(orders, response)
+            if timing_start is not None:
+                elapsed = self._clock.timestamp() - timing_start
+                self._log.info(
+                    "POLYMARKET_ORDER_TIMING sign_and_post_order_batch "
+                    f"order_count={len(orders)} elapsed={elapsed:.3f}s",
+                    LogColor.BLUE,
+                )
 
         except Exception as e:
             self._log.error(f"Error submitting order batch: {e}")
@@ -1573,7 +1586,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
             options=self._create_order_options(instrument),
         )
         interval = self._clock.timestamp() - signing_start
-        self._log.info(f"Signed Polymarket market order in {interval:.3f}s", LogColor.BLUE)
+        self._log.info(
+            f"POLYMARKET_ORDER_TIMING sign_order client_order_id={order.client_order_id} "
+            f"order_type=market elapsed={interval:.3f}s",
+            LogColor.BLUE,
+        )
 
         self.generate_order_submitted(
             strategy_id=order.strategy_id,
@@ -1596,6 +1613,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             signed_order,
             order_type_override=PolyOrderType.FOK,
             base_quantity=base_quantity,
+            timing_start=signing_start,
         )
 
     async def _submit_limit_order(self, command: SubmitOrder, instrument) -> None:
@@ -1634,7 +1652,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
             options=self._create_order_options(instrument),
         )
         interval = self._clock.timestamp() - signing_start
-        self._log.info(f"Signed Polymarket order in {interval:.3f}s", LogColor.BLUE)
+        self._log.info(
+            f"POLYMARKET_ORDER_TIMING sign_order client_order_id={order.client_order_id} "
+            f"order_type=limit elapsed={interval:.3f}s",
+            LogColor.BLUE,
+        )
 
         self.generate_order_submitted(
             strategy_id=order.strategy_id,
@@ -1643,7 +1665,12 @@ class PolymarketExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        await self._post_signed_order(order, signed_order, post_only=order.is_post_only)
+        await self._post_signed_order(
+            order,
+            signed_order,
+            post_only=order.is_post_only,
+            timing_start=signing_start,
+        )
 
     async def _post_signed_order(
         self,
@@ -1652,6 +1679,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         post_only: bool = False,
         order_type_override=None,
         base_quantity: Quantity | None = None,
+        timing_start: float | None = None,
     ) -> None:
         retry_manager = await self._retry_manager_pool.acquire()
         try:
@@ -1679,6 +1707,31 @@ class PolymarketExecutionClient(LiveExecutionClient):
             else:
                 venue_order_id = VenueOrderId(response["orderID"])
                 self._cache.add_venue_order_id(order.client_order_id, venue_order_id)
+
+                if timing_start is not None:
+                    elapsed = self._clock.timestamp() - timing_start
+                    self._order_timing_starts[venue_order_id] = timing_start
+                    self._log.info(
+                        "POLYMARKET_ORDER_TIMING sign_and_post_order "
+                        f"client_order_id={order.client_order_id} "
+                        f"venue_order_id={venue_order_id} elapsed={elapsed:.3f}s",
+                        LogColor.BLUE,
+                    )
+                    ack_seen_at = self._order_ack_seen_at.pop(venue_order_id, None)
+                    if ack_seen_at is not None:
+                        self._log_order_ack_timing(
+                            venue_order_id=venue_order_id,
+                            client_order_id=order.client_order_id,
+                            ack_seen_at=ack_seen_at,
+                            store_if_missing=False,
+                        )
+                    if venue_order_id in self._order_timing_starts:
+                        self.create_task(
+                            self._expire_order_ack_timing(
+                                venue_order_id=venue_order_id,
+                                client_order_id=order.client_order_id,
+                            ),
+                        )
 
                 # Emit quote-to-base conversion after successful submission
                 if base_quantity is not None:
@@ -1738,6 +1791,46 @@ class PolymarketExecutionClient(LiveExecutionClient):
         finally:
             await self._retry_manager_pool.release(retry_manager)
 
+    def _log_order_ack_timing(
+        self,
+        venue_order_id: VenueOrderId,
+        client_order_id: ClientOrderId | None,
+        ack_seen_at: float,
+        store_if_missing: bool,
+    ) -> None:
+        timing_start = self._order_timing_starts.pop(venue_order_id, None)
+        if timing_start is None:
+            if store_if_missing:
+                self._order_ack_seen_at[venue_order_id] = ack_seen_at
+            return
+
+        elapsed = ack_seen_at - timing_start
+        self._log.info(
+            "POLYMARKET_ORDER_TIMING order_ack "
+            f"client_order_id={client_order_id} "
+            f"venue_order_id={venue_order_id} elapsed={elapsed:.3f}s",
+            LogColor.BLUE,
+        )
+
+    async def _expire_order_ack_timing(
+        self,
+        venue_order_id: VenueOrderId,
+        client_order_id: ClientOrderId,
+    ) -> None:
+        await asyncio.sleep(self._config.ack_timeout_secs)
+
+        timing_start = self._order_timing_starts.pop(venue_order_id, None)
+        self._order_ack_seen_at.pop(venue_order_id, None)
+        if timing_start is None:
+            return
+
+        elapsed = self._clock.timestamp() - timing_start
+        self._log.warning(
+            "POLYMARKET_ORDER_TIMING order_ack_missing "
+            f"client_order_id={client_order_id} "
+            f"venue_order_id={venue_order_id} elapsed={elapsed:.3f}s",
+        )
+
     def _handle_ws_message(self, raw: bytes) -> None:
         try:
             if self._config.log_raw_ws_messages:
@@ -1776,16 +1869,23 @@ class PolymarketExecutionClient(LiveExecutionClient):
         msg: PolymarketUserOrder,
         venue_order_id: VenueOrderId,
     ) -> None:
+        ack_seen_at = self._clock.timestamp()
         client_order_id = self._cache.client_order_id(venue_order_id)
+        event = self._ack_events_order.get(venue_order_id)
+        if client_order_id is None and event is None:
+            event = asyncio.Event()
+            self._ack_events_order[venue_order_id] = event
+
+        if msg.type == PolymarketEventType.PLACEMENT:
+            self._log_order_ack_timing(
+                venue_order_id=venue_order_id,
+                client_order_id=client_order_id,
+                ack_seen_at=ack_seen_at,
+                store_if_missing=client_order_id is None,
+            )
         if client_order_id is not None:
             self._handle_ws_order_msg(msg, wait_for_ack=False)
             return
-
-        # Reuse existing event if present to avoid overwriting a pending waiter
-        event = self._ack_events_order.get(venue_order_id)
-        if event is None:
-            event = asyncio.Event()
-            self._ack_events_order[venue_order_id] = event
 
         try:
             await asyncio.wait_for(event.wait(), timeout=self._config.ack_timeout_secs)
