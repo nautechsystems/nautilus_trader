@@ -75,7 +75,7 @@ chain attacks and vulnerabilities:
 - **Pre-commit security**: Gitleaks credential screening, private key detection, Zizmor GitHub Actions auditing, and Unicode control character detection.
 - **CODEOWNERS**: Critical infrastructure files require Core team review before merge.
 - **Branch protection**: Develop branch requires PR reviews and passing CI checks.
-- **Build integrity**: SLSA build provenance attestations, immutable GitHub Actions pinned to commit SHAs, container digest pinning, Docker image signing via Sigstore cosign, SPDX SBOM generation for container images, and hardened CI runners with network egress monitoring.
+- **Build integrity**: SLSA build provenance attestations, immutable GitHub Actions pinned to commit SHAs, container digest pinning, Docker image signing via Sigstore cosign, SPDX SBOM generation and Sigstore attestation for container images, and hardened CI runners with network egress blocked to an explicit allow-list.
 - **Publish authentication**: PyPI uploads use Trusted Publishing (OIDC) bound to the `release` GitHub Environment, eliminating long-lived API tokens. Each publish mints a short-lived token scoped to the specific repo, workflow, and environment.
 - **License compliance**: Automated checks ensuring LGPL-3.0 compatibility.
 - **Source restrictions**: Rust packages sourced exclusively from crates.io; git dependencies and unknown registries are prohibited.
