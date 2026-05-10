@@ -51,6 +51,7 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 ### Build integrity
 
 - **Build attestations**: All published artifacts include cryptographic SLSA build provenance attestations, linking each artifact to a specific commit SHA. Verify via `gh attestation verify`.
+- **PyPI Trusted Publishing**: `publish-wheels-master` and `publish-sdist` upload to PyPI via OIDC trusted publishing rather than a long-lived API token. The trusted publisher on PyPI is bound to repo `nautechsystems/nautilus_trader`, workflow `build.yml`, and environment `release`; `uv publish --trusted-publishing automatic` mints a short-lived token at publish time. No `PYPI_*` secret is required.
 - **Immutable action pinning**: All third-party GitHub Actions are pinned to specific commit SHAs.
 - **Docker image pinning**: Base images in Dockerfiles and service containers in workflows are pinned to SHA256 digests to prevent supply-chain attacks via tag mutation.
 - **Caching**: Rust target directory cache (`Swatinem/rust-cache`), prek hook environments, and test data caches speed up workflows while preserving hermetic (reproducible) builds. Rust cache saves are restricted to push events to prevent PR cache pollution.

@@ -64,6 +64,7 @@ Released on TBD (UTC).
 
 ### Security
 - Fixed `DatabaseConfig` repr to fully redact passwords (#4028), thanks @faysou
+- Hardened PyPI publishing with OIDC trusted publishing, eliminating long-lived API tokens
 
 ### Fixes
 - Fixed `RefCell` reentrancy panic in `ExecutionEngine::handle_order_fill` for OTO parent fills (#3981), thanks for reporting @GreatLandmark
