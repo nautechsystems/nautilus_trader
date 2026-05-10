@@ -165,6 +165,7 @@ Released on TBD (UTC).
 - Improved `OwnBookLadder` to defer error logging to callers, removing duplicate own-book error noise
 - Improved `OrderMatchingEngine` trailing-stop activation to use the `OrderMatchingCore` `iter_*` API (Rust)
 - Improved `OrderMatchingEngine.iterate` per-order loop to align trailing-stop and GTD timing with Cython (Rust)
+- Improved `OrderMatchingEngine` queue-position fill gating to match Cython on cross-through trades (Rust)
 - Improved `update_balance_multi_currency` to delegate negative-balance enforcement to per-account `update_balances`
 - Improved live exec clients to log ERROR with `timeout_post_stop` hint when cancel tasks abort on disconnect
 - Improved `ExecTester` to refresh tracked orders from cache before modify/cancel-replace so they see venue acks

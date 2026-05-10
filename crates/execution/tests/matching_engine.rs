@@ -7277,6 +7277,62 @@ fn test_l1_queue_position_at_bbo_trades_decrement_queue(
     assert_eq!(fills[0].last_qty, Quantity::from("100.000"));
 }
 
+// A trade printing through the order's price must not bypass an active
+// queue. With `queue_ahead > 0` the order does not fill even when the
+// trade price crosses through.
+#[rstest]
+fn test_l1_queue_position_cross_through_with_queue_ahead_does_not_fill(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let (mut engine, _cache, handler) = get_l1_queue_position_engine(instrument_eth_usdt.clone());
+
+    let quote0 = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("99.00"),
+        Price::from("101.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote0);
+
+    // BUY LIMIT at the bid: tracked queue_ahead = 10
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("99.00"))
+        .quantity(Quantity::from("5.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    // Trade prints at 98 (below the bid): a cross-through for the BUY at 99.
+    // Cython behavior: still blocked by `queue_ahead > 0`.
+    let trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("98.00"),
+        Quantity::from("5.000"),
+        AggressorSide::Seller,
+        TradeId::new("1"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    engine.process_trade_tick(&trade);
+
+    assert_eq!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+            .count(),
+        0,
+        "cross-through trade must not fill while queue_ahead > 0",
+    );
+}
+
 #[rstest]
 fn test_l1_queue_position_trade_partial_does_not_fill(
     account_id: AccountId,

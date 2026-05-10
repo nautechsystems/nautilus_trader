@@ -557,20 +557,7 @@ impl OrderMatchingEngine {
             && order_price.raw == tracked_price_raw
             && ahead_raw > 0
         {
-            // Allow fill when a current trade has crossed through the order's price
-            let crossed = self.last_trade_size.is_some()
-                && self
-                    .core
-                    .last
-                    .is_some_and(|trade_price| match order.order_side() {
-                        OrderSide::Buy => trade_price.raw < order_price.raw,
-                        OrderSide::Sell => trade_price.raw > order_price.raw,
-                        _ => false,
-                    });
-
-            if !crossed {
-                return None;
-            }
+            return None;
         }
 
         let leaves_raw = order.leaves_qty().raw;
