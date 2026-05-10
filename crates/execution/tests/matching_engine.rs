@@ -8538,6 +8538,251 @@ fn test_trailing_stop_no_recompute_skips_resync(
     );
 }
 
+// GTD expiry and trail recompute must fire in the same `iterate` call.
+#[rstest]
+fn test_gtd_expiry_and_trailing_recompute_in_same_iterate(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let config = OrderMatchingEngineConfig {
+        support_gtd_orders: true,
+        ..Default::default()
+    };
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let initial_ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&initial_ask).unwrap();
+    let initial_bid = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1485.00"),
+            Quantity::from("1.000"),
+            2,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&initial_bid).unwrap();
+
+    let expire_ns: u64 = 1_500_000_000_000_000_000;
+
+    let gtd_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut gtd_limit = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1490.00"))
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(TimeInForce::Gtd)
+        .expire_time(UnixNanos::from(expire_ns))
+        .client_order_id(gtd_id)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut gtd_limit, account_id);
+
+    let trail_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut trailing = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .trigger_price(Price::from("1510.00"))
+        .trigger_type(TriggerType::BidAsk)
+        .trailing_offset(dec!(5))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .client_order_id(trail_id)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut trailing, account_id);
+
+    clear_order_event_handler_messages(&order_event_handler);
+
+    // Better ask at the GTD expire timestamp triggers iterate at the boundary
+    let new_ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1495.00"),
+            Quantity::from("1.000"),
+            3,
+        ))
+        .ts_init(UnixNanos::from(expire_ns))
+        .build();
+    engine_l2.process_order_book_delta(&new_ask).unwrap();
+
+    let saved = get_order_event_handler_messages(&order_event_handler);
+
+    let expired = saved
+        .iter()
+        .find(|e| matches!(e, OrderEventAny::Expired(ev) if ev.client_order_id == gtd_id));
+    assert!(
+        expired.is_some(),
+        "GTD limit should expire at boundary tick within the per-order loop",
+    );
+
+    let trail_update = saved.iter().rev().find_map(|e| match e {
+        OrderEventAny::Updated(ev) if ev.client_order_id == trail_id => Some(ev),
+        _ => None,
+    });
+    let upd = trail_update
+        .expect("Trailing-stop should emit OrderUpdated in the same iterate as the GTD expiry");
+    assert_eq!(
+        upd.trigger_price.unwrap(),
+        Price::from("1500.00"),
+        "Inline trail recompute must use ask(1495) + offset(5)",
+    );
+}
+
+// When a Maker fill closes the only resting order, the per-order loop has
+// nothing eligible for the inline restore; the end-of-iterate fallback must
+// pull `core.last` back so the fill override doesn't leak.
+#[rstest]
+fn test_fallback_target_restore_preserves_core_last_after_maker_fill(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    // Seed `core.last` via a trade tick (quote ticks don't set last)
+    let seed_trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1500.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Buyer,
+        TradeId::from("seed"),
+        UnixNanos::from(1u64),
+        UnixNanos::from(1u64),
+    );
+    engine_l2.process_trade_tick(&seed_trade);
+
+    let pre_fill_last = engine_l2
+        .get_core()
+        .last
+        .expect("trade tick should seed core.last");
+    assert_eq!(pre_fill_last, Price::from("1500.00"));
+
+    let limit_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1490.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(limit_id)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut limit, account_id);
+
+    // Crossing SELL at 1480 fires a Maker fill on the BUY at 1490, which
+    // closes the only order. Inline restore is skipped (closed); only the
+    // fallback can pull `core.last` back.
+    let crossing = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1480.00"),
+            Quantity::from("1.000"),
+            2,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&crossing).unwrap();
+
+    assert_eq!(
+        engine_l2.get_core().last,
+        Some(pre_fill_last),
+        "fallback restore should return core.last to the pre-fill value",
+    );
+}
+
+// A trailing-stop visited after a Maker-trigger fill in the same per-order
+// loop must recompute against the mutated `core.last`, not the pre-fill
+// value.
+#[rstest]
+fn test_trailing_stop_recompute_after_maker_fill_uses_mutated_core(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    // Seed `core.last` so the Maker fill saves a non-trivial `target_last`.
+    let seed_trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1500.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Buyer,
+        TradeId::from("seed"),
+        UnixNanos::from(1u64),
+        UnixNanos::from(1u64),
+    );
+    engine_l2.process_trade_tick(&seed_trade);
+
+    let limit_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1490.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(limit_id)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut limit, account_id);
+
+    let trail_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut trail = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .trigger_price(Price::from("1485.00"))
+        .trigger_type(TriggerType::LastPrice)
+        .trailing_offset(dec!(3))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .client_order_id(trail_id)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut trail, account_id);
+
+    clear_order_event_handler_messages(&order_event_handler);
+
+    // Maker fill on the BUY at 1490 mutates `core.last` to 1490; the trail
+    // SELL is visited next and recomputes against the mutated last.
+    // Expected new trigger: 1490 - 3 = 1487.
+    let crossing = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1480.00"),
+            Quantity::from("1.000"),
+            2,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&crossing).unwrap();
+
+    let saved = get_order_event_handler_messages(&order_event_handler);
+
+    let trail_update = saved
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            OrderEventAny::Updated(ev) if ev.client_order_id == trail_id => Some(ev),
+            _ => None,
+        })
+        .expect("trailing-stop should recompute trigger after the Maker fill");
+    assert_eq!(
+        trail_update.trigger_price.unwrap(),
+        Price::from("1487.00"),
+        "trail recompute must use mutated `core.last` (1490) minus offset(3)",
+    );
+}
+
 #[rstest]
 fn test_update_instrument_resets_market_state(instrument_eth_usdt: InstrumentAny) {
     let cache = Rc::new(RefCell::new(Cache::default()));

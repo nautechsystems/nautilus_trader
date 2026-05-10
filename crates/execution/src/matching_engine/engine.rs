@@ -3342,11 +3342,12 @@ impl OrderMatchingEngine {
             return;
         }
 
-        // Order is valid and accepted
-        self.accept_order(order);
-
-        // Add passive order to cache for later modify/cancel operations
+        // Set Maker before `accept_order` so trail-on-accept's cache write
+        // captures it (a later `set_liquidity_side` would be dropped by the
+        // `add_order` no-op below).
         order.set_liquidity_side(LiquiditySide::Maker);
+
+        self.accept_order(order);
 
         if let Err(e) = self
             .cache
@@ -3394,15 +3395,85 @@ impl OrderMatchingEngine {
             }
         }
 
-        // Expire GTD orders after matching so orders at the exact expire-time
-        // tick get a chance to fill before being canceled.
-        if self.config.support_gtd_orders {
-            self.expire_gtd_orders(timestamp_ns);
+        let order_ids: Vec<ClientOrderId> =
+            self.core.iter_orders().map(|m| m.client_order_id).collect();
+
+        for client_order_id in order_ids {
+            let order = match self
+                .cache
+                .borrow()
+                .order(&client_order_id)
+                .map(|o| o.clone())
+            {
+                Some(order) => order,
+                None => continue,
+            };
+
+            if order.is_closed() {
+                self.cached_filled_qty.swap_remove(&client_order_id);
+                continue;
+            }
+
+            if self.config.support_gtd_orders
+                && let Some(expire_ns) = order.expire_time()
+                && timestamp_ns >= expire_ns
+            {
+                let _ = self.core.delete_order(client_order_id);
+                self.cached_filled_qty.swap_remove(&client_order_id);
+                self.expire_order(&order);
+                continue;
+            }
+
+            if matches!(
+                order.order_type(),
+                OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+            ) {
+                let mut any = order;
+                if self.maybe_activate_trailing_stop(
+                    &mut any,
+                    self.core.bid,
+                    self.core.ask,
+                    self.core.last,
+                ) {
+                    self.update_trailing_stop_order(&any);
+                    self.resync_core_entry(client_order_id);
+                }
+            }
+
+            // Single-shot: only the first order after a trigger fill sees
+            // the mutated core; the restore clears the override here.
+            if self.target_bid.is_some() || self.target_ask.is_some() || self.target_last.is_some()
+            {
+                if let Some(t) = self.target_bid.take() {
+                    self.core.bid = Some(t);
+                }
+
+                if let Some(t) = self.target_ask.take() {
+                    self.core.ask = Some(t);
+                }
+
+                if let Some(t) = self.target_last.take() {
+                    self.core.last = Some(t);
+                }
+            }
         }
 
-        self.activate_trailing_stops();
+        // Fallback for when the per-order loop hit no eligible order (e.g.,
+        // all closed by the matching pass) so the fill override on
+        // `core.last` cannot leak into the next iterate.
+        if let Some(t) = self.target_bid.take() {
+            self.core.bid = Some(t);
+        }
 
-        // Restore core bid/ask to book values after trailing-stop activation
+        if let Some(t) = self.target_ask.take() {
+            self.core.ask = Some(t);
+        }
+
+        if let Some(t) = self.target_last.take() {
+            self.core.last = Some(t);
+        }
+
+        // Restore core bid/ask to book values after iteration
         // (during trade execution, transient override was used for matching)
         self.core.bid = self.book.best_bid_price();
         self.core.ask = self.book.best_ask_price();
@@ -3529,104 +3600,6 @@ impl OrderMatchingEngine {
                 hit
             }
             _ => true,
-        }
-    }
-
-    fn expire_gtd_orders(&mut self, timestamp_ns: UnixNanos) {
-        // Collect just the orders to expire by borrowing the core's iterator
-        // (avoids the per-tick clone of every resting order). The cache lookup
-        // through `RefCell::borrow` is compatible with the `&self.core` borrow.
-        let to_expire: Vec<OrderAny> = self
-            .core
-            .iter_orders()
-            .filter_map(|match_info| {
-                let order = self
-                    .cache
-                    .borrow()
-                    .order(&match_info.client_order_id)
-                    .map(|o| o.clone())?;
-
-                if order.is_closed() {
-                    return None;
-                }
-
-                order
-                    .expire_time()
-                    .filter(|expire_ns| timestamp_ns >= *expire_ns)
-                    .map(|_| order)
-            })
-            .collect();
-
-        for order in to_expire {
-            let id = order.client_order_id();
-            let _ = self.core.delete_order(id);
-            self.cached_filled_qty.swap_remove(&id);
-            self.expire_order(&order);
-        }
-    }
-
-    fn activate_trailing_stops(&mut self) {
-        // Restore market values from any transient overrides set during fill processing
-        if let Some(target_bid) = self.target_bid.take() {
-            self.core.bid = Some(target_bid);
-        }
-
-        if let Some(target_ask) = self.target_ask.take() {
-            self.core.ask = Some(target_ask);
-        }
-
-        if let Some(target_last) = self.target_last.take() {
-            self.core.last = Some(target_last);
-        }
-
-        // Collect ids first to drop the core borrow before the delete+add below
-        let trailing_ids: Vec<ClientOrderId> = self
-            .core
-            .iter_orders()
-            .filter(|m| {
-                matches!(
-                    m.order_type,
-                    OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
-                )
-            })
-            .map(|m| m.client_order_id)
-            .collect();
-
-        for client_order_id in trailing_ids {
-            let order = match self
-                .cache
-                .borrow()
-                .order(&client_order_id)
-                .map(|o| o.clone())
-            {
-                Some(order) => order,
-                None => {
-                    log::warn!(
-                        "Order {client_order_id} not found in cache during trailing-stop activation, skipping",
-                    );
-                    continue;
-                }
-            };
-
-            if order.is_closed() {
-                continue;
-            }
-
-            let mut any = order;
-
-            if !self.maybe_activate_trailing_stop(
-                &mut any,
-                self.core.bid,
-                self.core.ask,
-                self.core.last,
-            ) {
-                continue;
-            }
-
-            self.update_trailing_stop_order(&any);
-
-            // Re-key from the cache so any new trigger/limit shows on next iterate
-            self.resync_core_entry(client_order_id);
         }
     }
 
@@ -4858,10 +4831,18 @@ impl OrderMatchingEngine {
             let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
             self.generate_order_accepted(order, venue_order_id);
 
+            // Activate before emitting `OrderUpdated` so `match_info` below
+            // carries the activation flag.
             if matches!(
                 order.order_type(),
                 OrderType::TrailingStopLimit | OrderType::TrailingStopMarket
             ) && order.trigger_price().is_none()
+                && self.maybe_activate_trailing_stop(
+                    order,
+                    self.core.bid,
+                    self.core.ask,
+                    self.core.last,
+                )
             {
                 self.update_trailing_stop_order(order);
             }
