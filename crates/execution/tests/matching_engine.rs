@@ -5669,6 +5669,86 @@ fn test_trade_execution_crossing_limit_fills_regardless_of_fill_model(
     }
 }
 
+// A no-aggressor trade tick overrides both core sides to the trade price;
+// `iterate` must not reset the override from the book mid-call. The
+// `last_trade_size` gate keeps the override in place so a resting limit at
+// the trade price matches in the same iterate.
+#[rstest]
+fn test_no_aggressor_trade_fills_resting_limit_at_trade_price(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        ..Default::default()
+    };
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    // Wide spread: bid 95, ask 105
+    let bid_delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("95.00"),
+            Quantity::from("10.000"),
+            1,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&bid_delta).unwrap();
+    let ask_delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("105.00"),
+            Quantity::from("10.000"),
+            2,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&ask_delta).unwrap();
+
+    // Resting BUY at 100 sits in core (Maker), inside the spread
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut limit, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    // No-aggressor trade at 100. process_trade_tick overrides both core sides
+    // to 100 before calling iterate; the gate must hold that override.
+    let trade = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("100.00"),
+        Quantity::from("1.000"),
+        AggressorSide::NoAggressor,
+        TradeId::new("1"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    engine_l2.process_trade_tick(&trade);
+
+    let fills: Vec<_> = get_order_event_handler_messages(&order_event_handler)
+        .iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(*f),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills.len(),
+        1,
+        "no-aggressor trade at the limit price must fill the resting BUY",
+    );
+    assert_eq!(fills[0].client_order_id, client_order_id);
+}
+
 #[rstest]
 #[case(OrderSide::Buy, AggressorSide::Seller)]
 #[case(OrderSide::Sell, AggressorSide::Buyer)]
@@ -7281,9 +7361,15 @@ fn test_l1_queue_position_at_bbo_trades_decrement_queue(
 // queue. With `queue_ahead > 0` the order does not fill even when the
 // trade price crosses through.
 #[rstest]
+#[case::buy(OrderSide::Buy, "99.00", "98.00", AggressorSide::Seller)]
+#[case::sell(OrderSide::Sell, "101.00", "102.00", AggressorSide::Buyer)]
 fn test_l1_queue_position_cross_through_with_queue_ahead_does_not_fill(
     account_id: AccountId,
     instrument_eth_usdt: InstrumentAny,
+    #[case] order_side: OrderSide,
+    #[case] order_price: &str,
+    #[case] trade_price: &str,
+    #[case] aggressor_side: AggressorSide,
 ) {
     let (mut engine, _cache, handler) = get_l1_queue_position_engine(instrument_eth_usdt.clone());
 
@@ -7298,11 +7384,11 @@ fn test_l1_queue_position_cross_through_with_queue_ahead_does_not_fill(
     );
     engine.process_quote_tick(&quote0);
 
-    // BUY LIMIT at the bid: tracked queue_ahead = 10
+    // Limit at the BBO: tracked queue_ahead = 10
     let mut order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_eth_usdt.id())
-        .side(OrderSide::Buy)
-        .price(Price::from("99.00"))
+        .side(order_side)
+        .price(Price::from(order_price))
         .quantity(Quantity::from("5.000"))
         .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
         .submit(true)
@@ -7310,13 +7396,12 @@ fn test_l1_queue_position_cross_through_with_queue_ahead_does_not_fill(
     engine.process_order(&mut order, account_id);
     clear_order_event_handler_messages(&handler);
 
-    // Trade prints at 98 (below the bid): a cross-through for the BUY at 99.
-    // Cython behavior: still blocked by `queue_ahead > 0`.
+    // Trade prints through the order price.
     let trade = TradeTick::new(
         instrument_eth_usdt.id(),
-        Price::from("98.00"),
+        Price::from(trade_price),
         Quantity::from("5.000"),
-        AggressorSide::Seller,
+        aggressor_side,
         TradeId::new("1"),
         UnixNanos::from(1),
         UnixNanos::from(1),

@@ -3355,8 +3355,11 @@ impl OrderMatchingEngine {
         // TODO implement correct clock fixed time setting self.clock.set_time(ts_now);
 
         // Only reset bid/ask from book when not processing trade execution
-        // (preserves transient trade price override for L2/L3 books)
-        if aggressor_side == AggressorSide::NoAggressor {
+        // (preserves transient trade price override for L2/L3 books). The
+        // `last_trade_size` gate covers the no-aggressor trade-tick path
+        // where `process_trade_tick` overrides both sides to the trade
+        // price; without it the override is undone here.
+        if aggressor_side == AggressorSide::NoAggressor && self.last_trade_size.is_none() {
             if let Some(bid) = self.book.best_bid_price() {
                 self.core.set_bid_raw(bid);
             }
