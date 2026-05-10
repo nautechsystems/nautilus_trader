@@ -93,7 +93,8 @@ use nautilus_model::{
         option_chain::{OptionGreeks, StrikeRange},
     },
     enums::{
-        AggregationSource, BarAggregation, BookType, MarketStatusAction, PriceType, RecordFlag,
+        AggregationSource, BarAggregation, BookType, MarketStatusAction, OrderSide, PriceType,
+        RecordFlag,
     },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
@@ -461,7 +462,7 @@ impl DataEngine {
         }
     }
 
-    /// Resets all registered data clients and clears bar aggregator state.
+    /// Resets all registered data clients and clears engine state.
     pub fn reset(&mut self) {
         for client in self.get_clients_mut() {
             if let Err(e) = client.reset() {
@@ -475,6 +476,40 @@ impl DataEngine {
                 log::error!("Error stopping bar aggregator during reset for {bar_type}: {e}");
             }
         }
+
+        // Tear down option chain managers to unregister their msgbus handlers
+        let managers: Vec<_> = self.option_chain_managers.drain().collect();
+        for (_, manager) in managers {
+            manager.borrow_mut().teardown(&self.clock);
+        }
+        self.option_chain_instrument_index.clear();
+        self.pending_option_chain_requests.clear();
+
+        // Unsubscribe BookUpdaters before dropping; otherwise the typed router
+        // keeps dispatching to abandoned updaters
+        let book_updaters: Vec<(InstrumentId, Rc<BookUpdater>)> =
+            self.book_updaters.drain().collect();
+        for (instrument_id, updater) in book_updaters {
+            let deltas_topic = switchboard::get_book_deltas_topic(instrument_id);
+            let depth_topic = switchboard::get_book_depth10_topic(instrument_id);
+            let deltas_handler: TypedHandler<OrderBookDeltas> = TypedHandler::new(updater.clone());
+            let depth_handler: TypedHandler<OrderBookDepth10> = TypedHandler::new(updater);
+            msgbus::unsubscribe_book_deltas(deltas_topic.into(), &deltas_handler);
+            msgbus::unsubscribe_book_depth10(depth_topic.into(), &depth_handler);
+        }
+
+        self.book_deltas_subs.clear();
+        self.book_depth10_subs.clear();
+        self.book_intervals.clear();
+        self.book_snapshot_counts.clear();
+        self.book_snapshotters.clear();
+        self.buffered_deltas_map.clear();
+
+        // synthetic_*_feeds are unused stubs and intentionally not cleared
+
+        self.deferred_cmd_queue.borrow_mut().clear();
+
+        self.clock.borrow_mut().cancel_timers();
 
         self.command_count = 0;
         self.data_count = 0;
@@ -639,6 +674,31 @@ impl DataEngine {
 
         // Fallback to default client
         self.get_default_client()
+    }
+
+    /// Resolves the client for a subscribe/unsubscribe command.
+    ///
+    /// When `BACKTEST` is registered, all commands route through it regardless of
+    /// the command's `client_id` or `venue`. Request paths skip this override.
+    fn get_command_client(
+        &mut self,
+        client_id: Option<&ClientId>,
+        venue: Option<&Venue>,
+    ) -> Option<&mut DataClientAdapter> {
+        let backtest_id = ClientId::new("BACKTEST");
+        // BACKTEST may live in `clients` or as the default (venue=None branch in
+        // `register_client`)
+        if self.clients.contains_key(&backtest_id) {
+            return self.clients.get_mut(&backtest_id);
+        }
+        let default_is_backtest = self
+            .default_client
+            .as_ref()
+            .is_some_and(|c| c.client_id() == backtest_id);
+        if default_is_backtest {
+            return self.default_client.as_mut();
+        }
+        self.get_client(client_id, venue)
     }
 
     const fn get_default_client(&mut self) -> Option<&mut DataClientAdapter> {
@@ -807,7 +867,7 @@ impl DataEngine {
             return Ok(());
         }
 
-        if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
+        if let Some(client) = self.get_command_client(cmd.client_id(), cmd.venue()) {
             client.execute_subscribe(cmd);
         } else {
             log::error!(
@@ -873,7 +933,7 @@ impl DataEngine {
             return Ok(());
         }
 
-        if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
+        if let Some(client) = self.get_command_client(cmd.client_id(), cmd.venue()) {
             client.execute_unsubscribe(cmd);
         } else {
             log::error!(
@@ -1070,7 +1130,7 @@ impl DataEngine {
         };
 
         let clock = self.clock.clone();
-        let client = self.get_client(None, Some(&venue));
+        let client = self.get_command_client(None, Some(&venue));
 
         if manager_rc
             .borrow_mut()
@@ -1145,6 +1205,12 @@ impl DataEngine {
     fn handle_depth10(&self, depth: OrderBookDepth10) {
         let topic = switchboard::get_book_depth10_topic(depth.instrument_id);
         msgbus::publish_depth10(topic, &depth);
+
+        if self.config.emit_quotes_from_book_depths
+            && let Some(quote) = derive_quote_from_depth(&depth)
+        {
+            book::publish_quote_if_changed(&self.cache, quote);
+        }
     }
 
     fn handle_quote(&self, quote: QuoteTick) {
@@ -1170,34 +1236,7 @@ impl DataEngine {
     }
 
     fn handle_bar(&self, bar: Bar) {
-        // TODO: Handle additional bar logic
-        if self.config.validate_data_sequence
-            && let Some(last_bar) = self.cache.as_ref().borrow().bar(&bar.bar_type)
-        {
-            if bar.ts_event < last_bar.ts_event {
-                log::warn!(
-                    "Bar {bar} was prior to last bar `ts_event` {}",
-                    last_bar.ts_event
-                );
-                return; // Bar is out of sequence
-            }
-
-            if bar.ts_init < last_bar.ts_init {
-                log::warn!(
-                    "Bar {bar} was prior to last bar `ts_init` {}",
-                    last_bar.ts_init
-                );
-                return; // Bar is out of sequence
-            }
-            // TODO: Implement `bar.is_revision` logic
-        }
-
-        if let Err(e) = self.cache.as_ref().borrow_mut().add_bar(bar) {
-            log_error_on_cache_insert(&e);
-        }
-
-        let topic = switchboard::get_bars_topic(bar.bar_type);
-        msgbus::publish_bar(topic, &bar);
+        process_engine_bar(&self.cache, self.config.validate_data_sequence, true, bar);
     }
 
     fn handle_mark_price(&self, mark_price: MarkPriceUpdate) {
@@ -1325,13 +1364,13 @@ impl DataEngine {
             for cmd in commands {
                 match cmd {
                     DeferredCommand::Subscribe(sub) => {
-                        let client = self.get_client(sub.client_id(), sub.venue());
+                        let client = self.get_command_client(sub.client_id(), sub.venue());
                         if let Some(client) = client {
                             client.execute_subscribe(sub);
                         }
                     }
                     DeferredCommand::Unsubscribe(unsub) => {
-                        let client = self.get_client(unsub.client_id(), unsub.venue());
+                        let client = self.get_command_client(unsub.client_id(), unsub.venue());
                         if let Some(client) = client {
                             client.execute_unsubscribe(&unsub);
                         }
@@ -1380,7 +1419,9 @@ impl DataEngine {
         }
 
         self.book_deltas_subs.insert(cmd.instrument_id);
-        self.setup_book_updater(&cmd.instrument_id, cmd.book_type, true, cmd.managed)?;
+        if cmd.managed {
+            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, true)?;
+        }
 
         Ok(())
     }
@@ -1391,7 +1432,9 @@ impl DataEngine {
         }
 
         self.book_depth10_subs.insert(cmd.instrument_id);
-        self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, cmd.managed)?;
+        if cmd.managed {
+            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false)?;
+        }
 
         Ok(())
     }
@@ -1405,7 +1448,7 @@ impl DataEngine {
         let inserted = self.increment_book_snapshot_subscription(cmd);
 
         if inserted && !had_snapshots && !self.book_deltas_subs.contains(&cmd.instrument_id) {
-            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false, true)?;
+            self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false)?;
         }
 
         if had_snapshots || self.book_deltas_subs.contains(&cmd.instrument_id) {
@@ -1428,7 +1471,7 @@ impl DataEngine {
             cmd.venue,
         );
 
-        if let Some(client) = self.get_client(cmd.client_id.as_ref(), cmd.venue.as_ref()) {
+        if let Some(client) = self.get_command_client(cmd.client_id.as_ref(), cmd.venue.as_ref()) {
             let deltas_cmd = SubscribeBookDeltas::new(
                 cmd.instrument_id,
                 cmd.book_type,
@@ -1528,7 +1571,7 @@ impl DataEngine {
             return;
         }
 
-        if let Some(client) = self.get_client(cmd.client_id.as_ref(), cmd.venue.as_ref()) {
+        if let Some(client) = self.get_command_client(cmd.client_id.as_ref(), cmd.venue.as_ref()) {
             let deltas_cmd = UnsubscribeBookDeltas::new(
                 cmd.instrument_id,
                 cmd.client_id,
@@ -1655,7 +1698,7 @@ impl DataEngine {
         let deferred_cmd_queue = self.deferred_cmd_queue.clone();
 
         let manager_rc = {
-            let client = self.get_client(cmd.client_id.as_ref(), Some(&series_id.venue));
+            let client = self.get_command_client(cmd.client_id.as_ref(), Some(&series_id.venue));
             OptionChainManager::create_and_setup(
                 series_id,
                 &cache,
@@ -1710,7 +1753,7 @@ impl DataEngine {
     ) {
         let ts_init = self.clock.borrow().timestamp_ns();
 
-        let Some(client) = self.get_client(client_id.as_ref(), Some(&venue)) else {
+        let Some(client) = self.get_command_client(client_id.as_ref(), Some(&venue)) else {
             log::error!(
                 "Cannot forward option chain unsubscribes: no client found for venue={venue}",
             );
@@ -2017,10 +2060,30 @@ impl DataEngine {
         instrument_id: &InstrumentId,
         book_type: BookType,
         only_deltas: bool,
-        managed: bool,
     ) -> anyhow::Result<()> {
         let mut cache = self.cache.borrow_mut();
-        if managed && !cache.has_order_book(instrument_id) {
+
+        if instrument_id.symbol.is_composite() {
+            // Composite root expands to one book per underlying. The msgbus
+            // subscription below uses the literal composite topic, so
+            // per-underlying updates only reach these books once
+            // `get_book_*_topic` wildcards composites via `symbol.topic()`.
+            let venue = instrument_id.venue;
+            let root = Ustr::from(instrument_id.symbol.root());
+            let underlying_ids: Vec<InstrumentId> = cache
+                .instruments(&venue, Some(&root))
+                .iter()
+                .map(|i| i.id())
+                .collect();
+
+            for underlying_id in underlying_ids {
+                if !cache.has_order_book(&underlying_id) {
+                    let book = OrderBook::new(underlying_id, book_type);
+                    log::debug!("Created {book}");
+                    cache.add_order_book(book)?;
+                }
+            }
+        } else if !cache.has_order_book(instrument_id) {
             let book = OrderBook::new(*instrument_id, book_type);
             log::debug!("Created {book}");
             cache.add_order_book(book)?;
@@ -2030,7 +2093,13 @@ impl DataEngine {
         let updater = self
             .book_updaters
             .entry(*instrument_id)
-            .or_insert_with(|| Rc::new(BookUpdater::new(instrument_id, self.cache.clone())))
+            .or_insert_with(|| {
+                Rc::new(BookUpdater::new(
+                    instrument_id,
+                    self.cache.clone(),
+                    self.config.emit_quotes_from_book,
+                ))
+            })
             .clone();
 
         // Subscribe to deltas (typed router handles duplicates)
@@ -2054,14 +2123,10 @@ impl DataEngine {
         bar_type: BarType,
     ) -> Box<dyn BarAggregator> {
         let cache = self.cache.clone();
+        let validate_sequence = self.config.validate_data_sequence;
 
         let handler = move |bar: Bar| {
-            if let Err(e) = cache.as_ref().borrow_mut().add_bar(bar) {
-                log_error_on_cache_insert(&e);
-            }
-
-            let topic = switchboard::get_bars_topic(bar.bar_type);
-            msgbus::publish_bar(topic, &bar);
+            process_engine_bar(&cache, validate_sequence, true, bar);
         };
 
         let clock = self.clock.clone();
@@ -2244,26 +2309,12 @@ impl DataEngine {
         })?;
 
         // Set historical mode and handler
-        let handler: Box<dyn FnMut(Bar)> = if historical {
-            // Historical handler - process_historical equivalent
-            let cache = self.cache.clone();
-            Box::new(move |bar: Bar| {
-                if let Err(e) = cache.as_ref().borrow_mut().add_bar(bar) {
-                    log_error_on_cache_insert(&e);
-                }
-                // In historical mode, bars are processed but not published to message bus
-            })
-        } else {
-            // Regular handler - process equivalent
-            let cache = self.cache.clone();
-            Box::new(move |bar: Bar| {
-                if let Err(e) = cache.as_ref().borrow_mut().add_bar(bar) {
-                    log_error_on_cache_insert(&e);
-                }
-                let topic = switchboard::get_bars_topic(bar.bar_type);
-                msgbus::publish_bar(topic, &bar);
-            })
-        };
+        let cache = self.cache.clone();
+        let validate_sequence = self.config.validate_data_sequence;
+        let publish = !historical;
+        let handler: Box<dyn FnMut(Bar)> = Box::new(move |bar: Bar| {
+            process_engine_bar(&cache, validate_sequence, publish, bar);
+        });
 
         aggregator
             .borrow_mut()
@@ -2327,6 +2378,69 @@ impl DataEngine {
 #[inline(always)]
 fn log_error_on_cache_insert<T: Display>(e: &T) {
     log::error!("Error on cache insert: {e}");
+}
+
+// Top-of-book `QuoteTick` from an `OrderBookDepth10`. Returns `None` for
+// `NoOrderSide` padding or zero size.
+fn derive_quote_from_depth(depth: &OrderBookDepth10) -> Option<QuoteTick> {
+    let bid = depth.bids.first()?;
+    let ask = depth.asks.first()?;
+
+    if bid.side == OrderSide::NoOrderSide
+        || ask.side == OrderSide::NoOrderSide
+        || bid.size.raw == 0
+        || ask.size.raw == 0
+    {
+        return None;
+    }
+
+    Some(QuoteTick::new(
+        depth.instrument_id,
+        bid.price,
+        ask.price,
+        bid.size,
+        ask.size,
+        depth.ts_event,
+        depth.ts_init,
+    ))
+}
+
+// Validates a bar against `last_bar` before writing and (optionally) publishing.
+// Shared by `handle_bar` and aggregator-emitted bars so both honour
+// `validate_data_sequence`.
+fn process_engine_bar(
+    cache: &Rc<RefCell<Cache>>,
+    validate_sequence: bool,
+    publish: bool,
+    bar: Bar,
+) {
+    if validate_sequence && let Some(last_bar) = cache.as_ref().borrow().bar(&bar.bar_type) {
+        if bar.ts_event < last_bar.ts_event {
+            log::warn!(
+                "Bar {bar} was prior to last bar `ts_event` {}",
+                last_bar.ts_event,
+            );
+            return;
+        }
+
+        if bar.ts_init < last_bar.ts_init {
+            log::warn!(
+                "Bar {bar} was prior to last bar `ts_init` {}",
+                last_bar.ts_init,
+            );
+            return;
+        }
+        // TODO: Implement `bar.is_revision` logic
+    }
+
+    if let Err(e) = cache.as_ref().borrow_mut().add_bar(bar) {
+        log_error_on_cache_insert(&e);
+    }
+
+    if publish {
+        let topic = switchboard::get_bars_topic(bar.bar_type);
+        msgbus::publish_bar(topic, &bar);
+    }
 }
 
 #[inline(always)]

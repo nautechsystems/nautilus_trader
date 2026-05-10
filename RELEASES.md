@@ -104,6 +104,9 @@ Released on TBD (UTC).
 - Fixed wrangler v2 timestamp resolution to force nanoseconds before the int64 cast for pandas 3 compatibility (#3970), thanks @gzenz
 - Fixed custom data parquet schema registration and multi-file query (#4021), thanks @faysou
 - Fixed SQL `ParserError` for symbols containing ampersand (#4025), thanks @arpankapoor
+- Fixed `DataEngine` to route subscribe/unsubscribe commands to the `BACKTEST` client when registered (Rust)
+- Fixed `DataEngine` to apply `validate_data_sequence` to bars emitted by internal aggregators (Rust)
+- Fixed `emit_quotes_from_book` and `emit_quotes_from_book_depths` config flags being silently ignored (Rust)
 - Fixed Binance Futures reduce-only orders not reconciling venue-side quantity reductions (Python and Rust) (#3983), thanks for reporting @KaizynX
 - Fixed Binance WebSocket pong unhandled `RuntimeError` blocking reconnect after server close (#4020), thanks for reporting @M-at-ti-a
 - Fixed Betfair Rust adapter dropped fills on reconnect by resyncing the fill tracker from cache
@@ -166,6 +169,8 @@ Released on TBD (UTC).
 - Added Interactive Brokers PyO3 live client config support in `TradingNodeConfig` (#3964), thanks @faysou
 - Added Interactive Brokers Rust adapter support for v2 live trading (#3974), thanks @faysou
 - Refined data engine request workflow (#3928), thanks @faysou
+- Improved `DataEngine.reset` to clear book updaters, snapshotters, option chain managers, and timers (Rust)
+- Improved `DataEngine` to create per-underlying books for composite-symbol book subscriptions (Rust)
 - Improved object materialization in Rust stream Feather to parquet conversion (#3954), thanks @faysou
 - Improved cache order storage to per-order `Rc<RefCell<OrderAny>>` cells, closing stale-clone bug class (Rust)
 - Improved `OwnBookLadder` to defer error logging to callers, removing duplicate own-book error noise

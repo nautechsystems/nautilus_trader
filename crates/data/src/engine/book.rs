@@ -22,13 +22,14 @@ use std::{
 use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
-    msgbus::{self, Handler, MStr, Topic},
+    msgbus::{self, Handler, MStr, Topic, switchboard},
     timer::TimeEvent,
 };
 use nautilus_model::{
-    data::{OrderBookDeltas, OrderBookDepth10},
+    data::{OrderBookDeltas, OrderBookDepth10, QuoteTick},
     identifiers::{InstrumentId, Venue},
     instruments::Instrument,
+    orderbook::OrderBook,
 };
 use ustr::Ustr;
 
@@ -72,15 +73,21 @@ pub struct BookUpdater {
     pub id: Ustr,
     pub instrument_id: InstrumentId,
     pub cache: Rc<RefCell<Cache>>,
+    pub emit_quotes_from_book: bool,
 }
 
 impl BookUpdater {
     /// Creates a new [`BookUpdater`] instance.
-    pub fn new(instrument_id: &InstrumentId, cache: Rc<RefCell<Cache>>) -> Self {
+    pub fn new(
+        instrument_id: &InstrumentId,
+        cache: Rc<RefCell<Cache>>,
+        emit_quotes_from_book: bool,
+    ) -> Self {
         Self {
             id: Ustr::from(&format!("{}-{}", stringify!(BookUpdater), instrument_id)),
             instrument_id: *instrument_id,
             cache,
+            emit_quotes_from_book,
         }
     }
 }
@@ -91,13 +98,23 @@ impl Handler<OrderBookDeltas> for BookUpdater {
     }
 
     fn handle(&self, deltas: &OrderBookDeltas) {
-        if let Some(book) = self
-            .cache
-            .borrow_mut()
-            .order_book_mut(&deltas.instrument_id)
-            && let Err(e) = book.apply_deltas(deltas)
+        let mut emit: Option<QuoteTick> = None;
         {
-            log::error!("Failed to apply deltas: {e}");
+            let mut cache = self.cache.borrow_mut();
+            if let Some(book) = cache.order_book_mut(&deltas.instrument_id) {
+                if let Err(e) = book.apply_deltas(deltas) {
+                    log::error!("Failed to apply deltas: {e}");
+                    return;
+                }
+
+                if self.emit_quotes_from_book {
+                    emit = derive_quote_from_book(book);
+                }
+            }
+        }
+
+        if let Some(quote) = emit {
+            publish_quote_if_changed(&self.cache, quote);
         }
     }
 }
@@ -108,12 +125,76 @@ impl Handler<OrderBookDepth10> for BookUpdater {
     }
 
     fn handle(&self, depth: &OrderBookDepth10) {
-        if let Some(book) = self.cache.borrow_mut().order_book_mut(&depth.instrument_id)
-            && let Err(e) = book.apply_depth(depth)
+        let mut emit: Option<QuoteTick> = None;
         {
-            log::error!("Failed to apply depth: {e}");
+            let mut cache = self.cache.borrow_mut();
+            if let Some(book) = cache.order_book_mut(&depth.instrument_id) {
+                if let Err(e) = book.apply_depth(depth) {
+                    log::error!("Failed to apply depth: {e}");
+                    return;
+                }
+
+                if self.emit_quotes_from_book {
+                    emit = derive_quote_from_book(book);
+                }
+            }
+        }
+
+        if let Some(quote) = emit {
+            publish_quote_if_changed(&self.cache, quote);
         }
     }
+}
+
+fn derive_quote_from_book(book: &OrderBook) -> Option<QuoteTick> {
+    let bid_price = book.best_bid_price()?;
+    let ask_price = book.best_ask_price()?;
+    let bid_size = book.best_bid_size()?;
+    let ask_size = book.best_ask_size()?;
+
+    if bid_size.raw == 0 || ask_size.raw == 0 {
+        return None;
+    }
+
+    Some(QuoteTick::new(
+        book.instrument_id,
+        bid_price,
+        ask_price,
+        bid_size,
+        ask_size,
+        book.ts_last,
+        book.ts_last,
+    ))
+}
+
+/// Publishes the derived `QuoteTick` if top-of-book changed.
+///
+/// Writes to cache and republishes only when bid/ask price or size differs
+/// from the cached quote.
+pub(crate) fn publish_quote_if_changed(cache: &Rc<RefCell<Cache>>, quote: QuoteTick) {
+    let publish = {
+        let cache_ref = cache.borrow();
+        match cache_ref.quote(&quote.instrument_id) {
+            None => true,
+            Some(last) => {
+                last.bid_price != quote.bid_price
+                    || last.ask_price != quote.ask_price
+                    || last.bid_size != quote.bid_size
+                    || last.ask_size != quote.ask_size
+            }
+        }
+    };
+
+    if !publish {
+        return;
+    }
+
+    if let Err(e) = cache.borrow_mut().add_quote(quote) {
+        log::error!("Error on cache insert: {e}");
+    }
+
+    let topic = switchboard::get_quotes_topic(quote.instrument_id);
+    msgbus::publish_quote(topic, &quote);
 }
 
 /// Creates periodic snapshots of order books at configured intervals.
