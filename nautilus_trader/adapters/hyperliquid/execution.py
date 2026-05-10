@@ -890,7 +890,14 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 venue_order_id=pyo3_venue_order_id,
             )
             self._log.info(f"Order cancellation requested for {command.client_order_id}")
+
         except Exception as e:
+            if isinstance(e, (TimeoutError, OSError)):
+                self._log.warning(
+                    f"Cancel request timed out for {command.client_order_id} "
+                    f"— order may be canceled on exchange, awaiting WS reconciliation",
+                )
+                return
             self.generate_order_cancel_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
@@ -939,6 +946,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                     venue_order_id=pyo3_venue_order_id,
                 )
             except Exception as e:
+                if isinstance(e, (TimeoutError, OSError)):
+                    self._log.warning(
+                        f"Cancel request timed out for {order.client_order_id} "
+                        f"— order may be canceled on exchange, awaiting WS reconciliation",
+                    )
+                    continue
                 self.generate_order_cancel_rejected(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
@@ -978,6 +991,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                     venue_order_id=pyo3_venue_order_id,
                 )
             except Exception as e:
+                if isinstance(e, (TimeoutError, OSError)):
+                    self._log.warning(
+                        f"Cancel request timed out for {order.client_order_id} "
+                        f"— order may be canceled on exchange, awaiting WS reconciliation",
+                    )
+                    continue
                 self.generate_order_cancel_rejected(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
