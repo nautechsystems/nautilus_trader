@@ -644,6 +644,13 @@ mod tests {
                 .lookup(kind, key)
         }
 
+        fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
+            self.0
+                .lock()
+                .expect("shared memory poisoned")
+                .iter_index_keys(kind)
+        }
+
         fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
             self.0.lock().expect("shared memory poisoned").seal(status)
         }
@@ -721,6 +728,13 @@ mod tests {
             self.inner.lock().expect("inner poisoned").lookup(kind, key)
         }
 
+        fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
+            self.inner
+                .lock()
+                .expect("inner poisoned")
+                .iter_index_keys(kind)
+        }
+
         fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
             self.inner.lock().expect("inner poisoned").seal(status)
         }
@@ -765,6 +779,10 @@ mod tests {
 
         fn lookup(&self, _: IndexKind, _: &str) -> Result<Option<u64>, EventStoreError> {
             Ok(None)
+        }
+
+        fn iter_index_keys(&self, _: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
+            Ok(Vec::new())
         }
 
         fn seal(&mut self, _: RunStatus) -> Result<(), EventStoreError> {

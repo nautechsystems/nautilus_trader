@@ -48,6 +48,7 @@ pub mod hash;
 pub mod headers;
 pub mod manifest;
 pub mod reader;
+pub mod verifier;
 mod wire;
 pub mod writer;
 
@@ -66,6 +67,9 @@ pub use hash::{EntryHash, compute_entry_hash};
 pub use headers::Headers;
 pub use manifest::{RegisteredComponents, RunId, RunManifest, RunStatus};
 pub use reader::{DEFAULT_SCAN_CHUNK_SIZE, EventStoreReader, RangeScan};
+pub use verifier::{
+    GapRange, IndexDrift, ManifestField, Verifier, VerifyError, VerifyFinding, VerifyReport,
+};
 pub use writer::{
     DEFAULT_CHANNEL_CAPACITY, DEFAULT_HALT_THRESHOLD, DEFAULT_MAX_BATCH_ENTRIES,
     DEFAULT_MAX_BATCH_LATENCY, EntryDraft, EventStoreWriter, HaltCallback, HaltReason, SubmitError,

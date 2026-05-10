@@ -996,3 +996,64 @@ proptest! {
         prop_assert_eq!(reversed_seqs, expected_reversed);
     }
 }
+
+#[rstest]
+fn iter_index_keys_enumerates_first_write_wins_pairs() {
+    // RedbBackend pins the same iter_index_keys contract MemoryBackend has: the
+    // verifier's cross-check depends on enumerating every (key, seq) under each
+    // sidecar table, with first-write-wins on duplicate keys and per-kind
+    // isolation. Direct coverage so a backend regression cannot hide behind the
+    // verifier's transitive use.
+    let (_tmp, mut backend) = open_backend();
+    backend
+        .append_batch(&[
+            AppendEntry::new(
+                build_entry(1, Headers::empty(), 10),
+                vec![
+                    IndexKey::new(IndexKind::ClientOrderId, "O-1".to_string()),
+                    IndexKey::new(IndexKind::VenueOrderId, "V-1".to_string()),
+                ],
+            ),
+            AppendEntry::new(
+                build_entry(2, Headers::empty(), 11),
+                vec![
+                    IndexKey::new(IndexKind::ClientOrderId, "O-1".to_string()),
+                    IndexKey::new(IndexKind::ClientOrderId, "O-2".to_string()),
+                ],
+            ),
+        ])
+        .expect("append");
+
+    let mut client = backend
+        .iter_index_keys(IndexKind::ClientOrderId)
+        .expect("iter");
+    client.sort();
+    assert_eq!(
+        client,
+        vec![("O-1".to_string(), 1u64), ("O-2".to_string(), 2u64)],
+    );
+
+    let venue = backend
+        .iter_index_keys(IndexKind::VenueOrderId)
+        .expect("iter");
+    assert_eq!(venue, vec![("V-1".to_string(), 1u64)]);
+
+    assert!(
+        backend
+            .iter_index_keys(IndexKind::IntentId)
+            .expect("iter")
+            .is_empty(),
+    );
+}
+
+#[rstest]
+fn iter_index_keys_errors_when_no_run_open() {
+    let (_tmp, backend) = fresh_backend();
+
+    match backend.iter_index_keys(IndexKind::IntentId) {
+        Err(EventStoreError::Backend(msg)) => {
+            assert!(msg.contains("no run open"), "msg was: {msg}");
+        }
+        other => panic!("expected Backend, was {other:?}"),
+    }
+}

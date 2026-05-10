@@ -220,6 +220,16 @@ impl EventStore for MemoryBackend {
         Ok(state.indices.map_for(kind).get(key).copied())
     }
 
+    fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
+        let state = self.state()?;
+        Ok(state
+            .indices
+            .map_for(kind)
+            .iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect())
+    }
+
     fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
         let state = self.state_mut()?;
 
@@ -765,5 +775,67 @@ mod tests {
                 .expect("lookup")
                 .is_none(),
         );
+    }
+
+    #[rstest]
+    fn iter_index_keys_enumerates_first_write_wins_pairs(mut open_backend: MemoryBackend) {
+        // Walks every (key, seq) pair the verifier needs to cross-check the
+        // sidecar indices: distinct kinds stay isolated, duplicate keys hold the
+        // first-seen seq, and unrelated kinds return empty without leaking pairs
+        // across kind boundaries.
+        open_backend
+            .append_batch(&[
+                AppendEntry::new(
+                    build_entry(1, Headers::empty(), 10),
+                    vec![
+                        IndexKey::new(IndexKind::ClientOrderId, "O-1".to_string()),
+                        IndexKey::new(IndexKind::VenueOrderId, "V-1".to_string()),
+                    ],
+                ),
+                AppendEntry::new(
+                    build_entry(2, Headers::empty(), 11),
+                    vec![
+                        // Re-emit O-1: first-write-wins must keep the seq=1 entry.
+                        IndexKey::new(IndexKind::ClientOrderId, "O-1".to_string()),
+                        IndexKey::new(IndexKind::ClientOrderId, "O-2".to_string()),
+                    ],
+                ),
+            ])
+            .expect("append");
+
+        let mut client = open_backend
+            .iter_index_keys(IndexKind::ClientOrderId)
+            .expect("iter");
+        client.sort();
+        assert_eq!(
+            client,
+            vec![("O-1".to_string(), 1u64), ("O-2".to_string(), 2u64)],
+        );
+
+        let venue = open_backend
+            .iter_index_keys(IndexKind::VenueOrderId)
+            .expect("iter");
+        assert_eq!(venue, vec![("V-1".to_string(), 1u64)]);
+
+        // No intent_id pairs were emitted; the iter must return an empty vec
+        // rather than reusing the client/venue contents.
+        assert!(
+            open_backend
+                .iter_index_keys(IndexKind::IntentId)
+                .expect("iter")
+                .is_empty(),
+        );
+    }
+
+    #[rstest]
+    fn iter_index_keys_errors_when_no_run_open() {
+        let backend = MemoryBackend::new();
+
+        match backend.iter_index_keys(IndexKind::IntentId) {
+            Err(EventStoreError::Backend(msg)) => {
+                assert!(msg.contains("no run open"), "msg was: {msg}");
+            }
+            other => panic!("expected Backend, was {other:?}"),
+        }
     }
 }

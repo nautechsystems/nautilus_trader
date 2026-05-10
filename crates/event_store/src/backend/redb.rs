@@ -598,6 +598,25 @@ impl EventStore for RedbBackend {
         Ok(value.map(|v| v.value()))
     }
 
+    fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
+        let state = self.state()?;
+        let txn = state.db.begin_read().map_err(map_transaction_err)?;
+        let definition = match kind {
+            IndexKind::IntentId => INTENT_INDEX,
+            IndexKind::ClientOrderId => CLIENT_ORDER_INDEX,
+            IndexKind::VenueOrderId => VENUE_ORDER_INDEX,
+        };
+        let table = txn.open_table(definition).map_err(map_table_err)?;
+        let iter = table.iter().map_err(map_storage_err)?;
+        let mut out = Vec::new();
+
+        for row in iter {
+            let (k, v) = row.map_err(map_storage_err)?;
+            out.push((k.value().to_string(), v.value()));
+        }
+        Ok(out)
+    }
+
     fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
         let state = self.state_mut()?;
 

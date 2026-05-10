@@ -392,6 +392,10 @@ mod tests {
             self.0.lock().expect("shared").lookup(kind, key)
         }
 
+        fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
+            self.0.lock().expect("shared").iter_index_keys(kind)
+        }
+
         fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
             self.0.lock().expect("shared").seal(status)
         }

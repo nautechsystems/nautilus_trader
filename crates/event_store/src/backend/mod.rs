@@ -195,6 +195,17 @@ pub trait EventStore: Send {
     /// Returns [`EventStoreError::Backend`] for unclassified backend failures.
     fn lookup(&self, kind: IndexKind, key: &str) -> Result<Option<u64>, EventStoreError>;
 
+    /// Enumerates every `(key, seq)` pair stored under the given secondary index.
+    ///
+    /// Used by the verifier to cross-check the stored sidecar indices against the
+    /// projection rebuilt from the entry table. The returned vector's order is
+    /// backend-defined; callers that need a stable comparison sort it themselves.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EventStoreError::Backend`] for unclassified backend failures.
+    fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError>;
+
     /// Seals the open run with the given final status and persists the manifest update.
     ///
     /// Subsequent calls to [`EventStore::append_batch`] return [`EventStoreError::Closed`].
