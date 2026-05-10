@@ -281,6 +281,67 @@ async def test_load_markets_without_filter_includes_all_markets(
 
 
 @pytest.mark.asyncio
+async def test_load_markets_applies_generic_market_filters(
+    instrument_provider,
+    mock_clob_client,
+):
+    mock_clob_client.get_markets.return_value = {
+        "data": [
+            ACTIVE_OPEN_MARKET,
+            ACTIVE_CLOSED_MARKET,
+            INACTIVE_OPEN_MARKET,
+        ],
+        "next_cursor": "LTE=",
+    }
+
+    await instrument_provider._load_markets([], filters={"market_slug": "market-a"})
+
+    instruments = instrument_provider.list_all()
+    assert len(instruments) == 2
+    assert {instrument.info["market_slug"] for instrument in instruments} == {"market-a"}
+
+
+@pytest.mark.asyncio
+async def test_load_markets_supports_cursor_list_and_page_limit(
+    instrument_provider,
+    mock_clob_client,
+):
+    responses = {
+        "CURSOR-A": {
+            "data": [ACTIVE_OPEN_MARKET],
+            "next_cursor": "CURSOR-A-NEXT",
+        },
+        "CURSOR-B": {
+            "data": [ACTIVE_CLOSED_MARKET],
+            "next_cursor": "LTE=",
+        },
+    }
+
+    def get_markets(next_cursor):
+        return responses[next_cursor]
+
+    mock_clob_client.get_markets.side_effect = get_markets
+
+    await instrument_provider._load_markets(
+        [],
+        filters={
+            "next_cursor_list": ["CURSOR-A", "CURSOR-B"],
+            "pages_per_cursor": 1,
+        },
+    )
+
+    assert [call.kwargs["next_cursor"] for call in mock_clob_client.get_markets.call_args_list] == [
+        "CURSOR-A",
+        "CURSOR-B",
+    ]
+    condition_ids = {instrument.info["condition_id"] for instrument in instrument_provider.list_all()}
+    assert condition_ids == {
+        ACTIVE_OPEN_MARKET["condition_id"],
+        ACTIVE_CLOSED_MARKET["condition_id"],
+    }
+
+
+@pytest.mark.asyncio
 async def test_load_markets_seq_with_is_active_filter_excludes_closed_markets(
     instrument_provider,
     mock_clob_client,

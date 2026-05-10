@@ -836,6 +836,18 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return False
         return instrument.info.get("neg_risk", False)
 
+    def _create_order_options(self, instrument) -> PartialCreateOrderOptions:
+        """
+        Build CLOB signing options from cached instrument metadata.
+
+        Passing both tick_size and neg_risk avoids SDK-side market metadata
+        lookups on the order signing path.
+        """
+        return PartialCreateOrderOptions(
+            tick_size=format(instrument.price_increment.as_decimal(), "f"),
+            neg_risk=self._get_neg_risk_for_instrument(instrument),
+        )
+
     async def _query_account(self, _command: QueryAccount) -> None:
         # Specific account ID (sub account) not yet supported
         await self._update_account_state()
@@ -1357,13 +1369,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     builder_code=POLYMARKET_NAUTILUS_BUILDER_CODE,
                 )
 
-                neg_risk = self._get_neg_risk_for_instrument(instrument)
-                options = PartialCreateOrderOptions(neg_risk=neg_risk)
-
                 signed_order = await asyncio.to_thread(
                     self._http_client.create_order,
                     order_args,
-                    options=options,
+                    options=self._create_order_options(instrument),
                 )
 
                 order_type = convert_tif_to_polymarket_order_type(order.time_in_force)
@@ -1516,20 +1525,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-    async def _get_collateral_balance_pusd(self) -> float:
-        if self._collateral_balance_pusd is not None:
-            return self._collateral_balance_pusd
-
-        params = BalanceAllowanceParams(
-            asset_type=AssetType.COLLATERAL,
-            signature_type=self._config.signature_type,
-        )
-        response: dict[str, Any] = await asyncio.to_thread(
-            self._http_client.get_balance_allowance,
-            params,
-        )
-        self._collateral_balance_pusd = int(response["balance"]) / 1_000_000
-        return self._collateral_balance_pusd
+    def _cached_collateral_balance_pusd(self) -> float:
+        return self._collateral_balance_pusd if self._collateral_balance_pusd is not None else 0.0
 
     async def _submit_market_order(self, command: SubmitOrder, instrument) -> None:
         self._log.debug("Creating Polymarket order", LogColor.MAGENTA)
@@ -1555,7 +1552,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         amount = float(order.quantity)
         user_usdc_balance = (
-            await self._get_collateral_balance_pusd()
+            self._cached_collateral_balance_pusd()
             if order.side == OrderSide.BUY and order.is_quote_quantity
             else 0.0
         )
@@ -1569,13 +1566,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
             builder_code=POLYMARKET_NAUTILUS_BUILDER_CODE,
         )
 
-        neg_risk = self._get_neg_risk_for_instrument(instrument)
-        options = PartialCreateOrderOptions(neg_risk=neg_risk)
         signing_start = self._clock.timestamp()
         signed_order = await asyncio.to_thread(
             self._http_client.create_market_order,
             market_order_args,
-            options=options,
+            options=self._create_order_options(instrument),
         )
         interval = self._clock.timestamp() - signing_start
         self._log.info(f"Signed Polymarket market order in {interval:.3f}s", LogColor.BLUE)
@@ -1632,13 +1627,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
             builder_code=POLYMARKET_NAUTILUS_BUILDER_CODE,
         )
 
-        neg_risk = self._get_neg_risk_for_instrument(instrument)
-        options = PartialCreateOrderOptions(neg_risk=neg_risk)
         signing_start = self._clock.timestamp()
         signed_order = await asyncio.to_thread(
             self._http_client.create_order,
             order_args,
-            options=options,
+            options=self._create_order_options(instrument),
         )
         interval = self._clock.timestamp() - signing_start
         self._log.info(f"Signed Polymarket order in {interval:.3f}s", LogColor.BLUE)

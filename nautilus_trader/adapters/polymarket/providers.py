@@ -16,6 +16,7 @@
 import asyncio
 import traceback
 from typing import Any
+from typing import Final
 
 import msgspec
 from py_clob_client_v2.client import ClobClient
@@ -39,6 +40,15 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BinaryOption
+
+
+_PROVIDER_FILTER_KEYS: Final[set[str]] = {
+    "next_cursor",
+    "next_cursor_list",
+    "pages_per_cursor",
+    "n_expected_markets",
+    "is_active",
+}
 
 
 class PolymarketInstrumentProviderConfig(InstrumentProviderConfig, frozen=True, kw_only=True):
@@ -370,29 +380,69 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         filter_is_active = filters.get("is_active", False)
 
         markets_visited = 0
-        next_cursor = filters.get("next_cursor", "MA==")
+        instruments_loaded_start = len(self._instruments)
+        n_expected_markets = filters.get("n_expected_markets")
+        next_cursor_list: list[str] | None = filters.get("next_cursor_list")
+        pages_per_cursor: int = filters.get("pages_per_cursor", 5)
 
-        while next_cursor != "LTE=":
-            self._log.info(f"Cursor = '{next_cursor}', markets visited = {markets_visited}")
-            response: dict[str, Any] | str = await asyncio.to_thread(
-                self._client.get_markets,
-                next_cursor=next_cursor,
-            )
-            response = check_clob_response(response)
+        if next_cursor_list is not None:
+            cursor_queue = list(next_cursor_list)
+            page_limit = pages_per_cursor
+        else:
+            cursor_queue = [filters.get("next_cursor", "MA==")]
+            page_limit = None
 
-            page_markets = self._filter_page_markets(response["data"], condition_ids)
-            await self._enrich_with_gamma_fee_schedules(page_markets)
-            self._load_page_instruments(page_markets, filter_is_active)
+        for start_cursor in cursor_queue:
+            instruments_loaded = len(self._instruments) - instruments_loaded_start
+            if n_expected_markets is not None and instruments_loaded >= n_expected_markets:
+                break
 
-            next_cursor = response["next_cursor"]
-            markets_visited += len(response["data"])
+            next_cursor = start_cursor
+            pages_done = 0
+
+            while next_cursor != "LTE=":
+                if page_limit is not None and pages_done >= page_limit:
+                    self._log.info(
+                        f"Reached page limit ({page_limit}) for cursor '{start_cursor}', "
+                        "jumping to next cursor in list",
+                    )
+                    break
+
+                self._log.info(
+                    f"Cursor = '{next_cursor}', page {pages_done + 1}"
+                    + (f"/{page_limit}" if page_limit is not None else "")
+                    + f", markets visited = {markets_visited}, markets loaded = {len(self._instruments)}",
+                )
+                response: dict[str, Any] | str = await asyncio.to_thread(
+                    self._client.get_markets,
+                    next_cursor=next_cursor,
+                )
+                response = check_clob_response(response)
+
+                page_markets = self._filter_page_markets(
+                    response["data"],
+                    condition_ids,
+                    filters,
+                )
+                await self._enrich_with_gamma_fee_schedules(page_markets)
+                self._load_page_instruments(page_markets, filter_is_active)
+
+                next_cursor = response["next_cursor"]
+                markets_visited += len(response["data"])
+                pages_done += 1
+
+                instruments_loaded = len(self._instruments) - instruments_loaded_start
+                if n_expected_markets is not None and instruments_loaded >= n_expected_markets:
+                    break
 
     @staticmethod
     def _filter_page_markets(
         markets: list[dict[str, Any]],
         condition_ids: list[str],
+        filters: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         page_markets: list[dict[str, Any]] = []
+        filters = filters or {}
 
         for market_info in markets:
             condition_id = market_info.get("condition_id")
@@ -400,9 +450,23 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 continue  # Archived
             if condition_ids and condition_id not in condition_ids:
                 continue  # Filtering
+            if not PolymarketInstrumentProvider._market_matches_filters(market_info, filters):
+                continue
             page_markets.append(market_info)
 
         return page_markets
+
+    @staticmethod
+    def _market_matches_filters(market_info: dict[str, Any], filters: dict[str, Any]) -> bool:
+        for key, value in filters.items():
+            if key in _PROVIDER_FILTER_KEYS or key not in market_info:
+                continue
+            if isinstance(value, tuple):
+                if market_info[key] not in value:
+                    return False
+            elif market_info[key] != value:
+                return False
+        return True
 
     def _load_page_instruments(
         self,

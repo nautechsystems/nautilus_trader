@@ -1202,6 +1202,7 @@ class TestPolymarketExecutionClient:
         mock_signed.takerAmount = "20000000"
         mock_create_market_order.return_value = mock_signed
         mock_post_order.return_value = {"success": True, "orderID": "test_market_order_id"}
+        self.exec_client._collateral_balance_pusd = 1000.0
 
         market_order = self.strategy.order_factory.market(
             instrument_id=ELECTION_INSTRUMENT.id,
@@ -1230,11 +1231,14 @@ class TestPolymarketExecutionClient:
 
         # Verify MarketOrderArgs were created correctly
         call_args = mock_create_market_order.call_args[0][0]  # First positional argument
+        call_options = mock_create_market_order.call_args.kwargs["options"]
         assert call_args.amount == 10.0
         assert call_args.side == "BUY"
         assert call_args.price == 0  # Market order should have price 0 (calculated server-side)
         assert call_args.order_type == "FOK"  # Market orders always use FOK
         assert call_args.user_usdc_balance == 1000.0
+        assert call_options.tick_size == format(ELECTION_INSTRUMENT.price_increment.as_decimal(), "f")
+        assert call_options.neg_risk == ELECTION_INSTRUMENT.info.get("neg_risk", False)
 
         # Check that venue order ID was cached
         venue_order_id = VenueOrderId("test_market_order_id")
@@ -1242,20 +1246,7 @@ class TestPolymarketExecutionClient:
         assert cached_client_order_id == market_order.client_order_id
 
     @pytest.mark.asyncio
-    async def test_market_buy_collateral_balance_cached_until_account_state_refresh(self, mocker):
-        # Pins the contract for `_collateral_balance_pusd`: the cache is
-        # populated lazily and only refreshed by `generate_account_state`.
-        # Two market BUYs in a row (no account state in between) must use
-        # the same `user_usdc_balance` value, even if the venue balance
-        # has changed underneath; once account state runs, the next BUY
-        # picks up the new value.
-        balance_responses = [
-            {"balance": str(7_000_000)},  # 7 pUSD on first BUY
-            {"balance": str(99_000_000)},  # 99 pUSD if the cache were re-fetched (must NOT be)
-            {"balance": str(42_000_000)},  # 42 pUSD picked up by generate_account_state
-        ]
-        self.http_client.get_balance_allowance.side_effect = balance_responses
-
+    async def test_market_buy_uses_cached_collateral_balance_without_fetching(self, mocker):
         mock_create_market_order = mocker.patch.object(self.http_client, "create_market_order")
         mock_post_order = mocker.patch.object(self.http_client, "post_order")
         mock_signed = MagicMock()
@@ -1282,27 +1273,23 @@ class TestPolymarketExecutionClient:
             )
             await self.exec_client._submit_order(cmd)
 
-        # First BUY: cache miss, fetches balance #1 (7 pUSD).
+        self.exec_client._collateral_balance_pusd = 7.0
         await submit_buy("first")
         first_call_balance = mock_create_market_order.call_args_list[0][0][0].user_usdc_balance
         assert first_call_balance == 7.0
 
-        # Second BUY without an account-state refresh: cache holds 7 pUSD.
-        # Even though the next get_balance_allowance() would return 99 pUSD,
-        # we must observe the cached value because the cache is not invalidated
-        # by individual submissions.
+        self.exec_client._collateral_balance_pusd = None
         await submit_buy("second")
         second_call_balance = mock_create_market_order.call_args_list[1][0][0].user_usdc_balance
-        assert second_call_balance == 7.0
+        assert second_call_balance == 0.0
 
-        # Run account state: refreshes the cache from balance #2 (99 pUSD).
-        # That consumes the second side_effect entry.
+        self.http_client.get_balance_allowance.return_value = {"balance": str(99_000_000)}
         await self.exec_client._update_account_state()
 
-        # Third BUY now sees the refreshed cache value (99 pUSD).
         await submit_buy("third")
         third_call_balance = mock_create_market_order.call_args_list[2][0][0].user_usdc_balance
         assert third_call_balance == 99.0
+        self.http_client.get_balance_allowance.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_submit_market_buy_quote_to_base_conversion(self, mocker):
@@ -1446,9 +1433,12 @@ class TestPolymarketExecutionClient:
 
         # Verify OrderArgs were created correctly for limit order
         call_args = mock_create_order.call_args[0][0]
+        call_options = mock_create_order.call_args.kwargs["options"]
         assert call_args.size == 10.0
         assert call_args.side == "BUY"
         assert call_args.price == 0.50  # Limit order should have specific price
+        assert call_options.tick_size == format(ELECTION_INSTRUMENT.price_increment.as_decimal(), "f")
+        assert call_options.neg_risk == ELECTION_INSTRUMENT.info.get("neg_risk", False)
 
     @pytest.mark.asyncio
     async def test_submit_order_invalid_time_in_force(self):
@@ -2871,6 +2861,13 @@ class TestPolymarketBatchOrderSubmission:
         # Assert
         assert mock_create_order.call_count == 2
         mock_post_orders.assert_called_once()
+        for call in mock_create_order.call_args_list:
+            options = call.kwargs["options"]
+            assert options.tick_size == format(
+                ELECTION_INSTRUMENT.price_increment.as_decimal(),
+                "f",
+            )
+            assert options.neg_risk == ELECTION_INSTRUMENT.info.get("neg_risk", False)
 
         # Check that venue order IDs were cached
         venue_order_id_1 = VenueOrderId("batch_order_1")

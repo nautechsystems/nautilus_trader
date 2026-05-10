@@ -21,11 +21,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.config import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket.data import PolymarketDataClient
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookLevel
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookSnapshot
+from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuote
+from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuotes
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
@@ -175,6 +178,60 @@ def test_tick_size_change_rebuilds_local_book_precision(event_loop) -> None:
         and item.bid_price.precision == item.ask_price.precision == 3
         for item in client.emitted
     )
+
+
+def test_quote_missing_side_uses_zero_one_boundary_fallbacks(event_loop) -> None:
+    # Arrange
+    loop = event_loop
+    clock = LiveClock()
+    msgbus = MessageBus(trader_id=TraderId("TEST-001"), clock=clock)
+    cache = Cache()
+    provider = MagicMock(spec=PolymarketInstrumentProvider)
+    http_client = MagicMock()
+
+    client = _RecordingPolymarketDataClient(
+        loop=loop,
+        http_client=http_client,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        instrument_provider=provider,
+        config=PolymarketDataClientConfig(drop_quotes_missing_side=False),
+        name="TEST-POLYMARKET",
+    )
+
+    instrument = _make_binary_option("0.01")
+    client._cache.add_instrument(instrument)
+    client._add_subscription_quote_ticks(instrument.id)
+
+    ws_message = PolymarketQuotes(
+        market="0xMARKET",
+        price_changes=[],
+        timestamp="1700000000000",
+    )
+    price_change = PolymarketQuote(
+        asset_id="0xASSET",
+        price="0.42",
+        side=PolymarketOrderSide.BUY,
+        size="5",
+        hash="0xHASH",
+    )
+
+    # Act
+    client._handle_quote(
+        instrument=instrument,
+        ws_message=ws_message,
+        price_change=price_change,
+    )
+
+    # Assert
+    quotes = [item for item in client.emitted if isinstance(item, QuoteTick)]
+    assert len(quotes) == 1
+    quote = quotes[0]
+    assert quote.bid_price == instrument.make_price(0.42)
+    assert quote.ask_price == instrument.make_price(1.0)
+    assert quote.bid_size == instrument.make_qty(5.0)
+    assert quote.ask_size == instrument.make_qty(0.0)
 
 
 def _make_client_for_auto_load(

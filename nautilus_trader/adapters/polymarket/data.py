@@ -18,8 +18,6 @@ from typing import Any
 import msgspec
 from py_clob_client_v2.client import ClobClient
 
-from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
-from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.deltas import compute_effective_deltas
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
@@ -631,13 +629,13 @@ class PolymarketDataClient(LiveMarketDataClient):
                     return
                 else:
                     # Use boundary prices with zero volume for missing sides
-                    # POLYMARKET_MIN_PRICE = 0.001, POLYMARKET_MAX_PRICE = 0.999
-                    if bid_price is None:
-                        bid_price = instrument.make_price(POLYMARKET_MIN_PRICE)
-                        bid_size = instrument.make_qty(0.0)
-                    if ask_price is None:
-                        ask_price = instrument.make_price(POLYMARKET_MAX_PRICE)
-                        ask_size = instrument.make_qty(0.0)
+                    bid_price = self._safe_price(bid_price, 0.0, instrument)
+                    ask_price = self._safe_price(ask_price, 1.0, instrument)
+                    bid_size = self._safe_quantity(bid_size, 0.0, instrument)
+                    ask_size = self._safe_quantity(ask_size, 0.0, instrument)
+
+            bid_size = self._safe_quantity(bid_size, 0.0, instrument)
+            ask_size = self._safe_quantity(ask_size, 0.0, instrument)
 
             quote = QuoteTick(
                 instrument_id=instrument.id,
@@ -661,6 +659,14 @@ class PolymarketDataClient(LiveMarketDataClient):
 
             self._last_quotes[instrument.id] = quote
             self._handle_data(quote)
+
+    @staticmethod
+    def _safe_price(price_obj, default: float, instrument: BinaryOption):
+        return price_obj if price_obj is not None else instrument.make_price(default)
+
+    @staticmethod
+    def _safe_quantity(qty_obj, default: float, instrument: BinaryOption):
+        return qty_obj if qty_obj is not None else instrument.make_qty(default)
 
     def _handle_trade(
         self,
