@@ -15,9 +15,10 @@
 
 //! Macro-generated enum utilities for PyO3.
 
-use ::pyo3::exceptions::PyValueError;
 use ::strum::{IntoEnumIterator, ParseError};
 use pyo3::PyResult;
+
+use super::to_pyvalue_err;
 
 /// Converts a raw string to the enum `E`, returning a nicely‑formatted
 /// `PyValueError` if the string does not match any variant.
@@ -38,7 +39,7 @@ where
             .map(|v| v.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        PyValueError::new_err(format!(
+        to_pyvalue_err(format!(
             "unknown {param} `{input}`; valid values: {allowed}"
         ))
     })

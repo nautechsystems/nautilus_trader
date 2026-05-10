@@ -13,42 +13,43 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-The dYdX cryptocurrency decentralized exchange integration adapter.
+DYdX v4 cryptocurrency exchange adapter (Rust-backed implementation).
 
-This subpackage provides instrument provider, data and execution client configurations,
-factories, and common constants/functions for connecting to and interacting with the
-dYdX API.
+The v4 adapter uses Rust-backed HTTP, WebSocket, and gRPC clients for:
+- Native Cosmos SDK transaction signing via Rust
+- Direct validator node communication
+- Improved performance and reliability
+- Real-time market data streaming
 
-For convenience, the most commonly used symbols are re-exported at the subpackage's
-top level, so downstream code can simply import from ``nautilus_trader.adapters.dydx``.
+Usage:
+    from nautilus_trader.adapters.dydx import DydxDataClientConfig
+    from nautilus_trader.adapters.dydx import DydxExecClientConfig
+    from nautilus_trader.adapters.dydx import DydxLiveDataClientFactory
+    from nautilus_trader.adapters.dydx import DydxLiveExecClientFactory
 
 """
 
-from nautilus_trader.adapters.dydx.common.common import DYDXOrderTags
-from nautilus_trader.adapters.dydx.common.constants import DYDX
-from nautilus_trader.adapters.dydx.common.constants import DYDX_CLIENT_ID
-from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
-from nautilus_trader.adapters.dydx.config import DYDXDataClientConfig
-from nautilus_trader.adapters.dydx.config import DYDXExecClientConfig
-from nautilus_trader.adapters.dydx.factories import DYDXLiveDataClientFactory
-from nautilus_trader.adapters.dydx.factories import DYDXLiveExecClientFactory
-from nautilus_trader.adapters.dydx.factories import get_dydx_grcp_client
-from nautilus_trader.adapters.dydx.factories import get_dydx_http_client
-from nautilus_trader.adapters.dydx.factories import get_dydx_instrument_provider
-from nautilus_trader.adapters.dydx.providers import DYDXInstrumentProvider
+from nautilus_trader.adapters.dydx.config import DydxDataClientConfig
+from nautilus_trader.adapters.dydx.config import DydxExecClientConfig
+from nautilus_trader.adapters.dydx.constants import DYDX
+from nautilus_trader.adapters.dydx.constants import DYDX_CLIENT_ID
+from nautilus_trader.adapters.dydx.constants import DYDX_VENUE
+from nautilus_trader.adapters.dydx.data import DydxDataClient
+from nautilus_trader.adapters.dydx.execution import DydxExecutionClient
+from nautilus_trader.adapters.dydx.factories import DydxLiveDataClientFactory
+from nautilus_trader.adapters.dydx.factories import DydxLiveExecClientFactory
+from nautilus_trader.adapters.dydx.providers import DydxInstrumentProvider
 
 
 __all__ = [
     "DYDX",
     "DYDX_CLIENT_ID",
     "DYDX_VENUE",
-    "DYDXDataClientConfig",
-    "DYDXExecClientConfig",
-    "DYDXInstrumentProvider",
-    "DYDXLiveDataClientFactory",
-    "DYDXLiveExecClientFactory",
-    "DYDXOrderTags",
-    "get_dydx_grcp_client",
-    "get_dydx_http_client",
-    "get_dydx_instrument_provider",
+    "DydxDataClient",
+    "DydxDataClientConfig",
+    "DydxExecClientConfig",
+    "DydxExecutionClient",
+    "DydxInstrumentProvider",
+    "DydxLiveDataClientFactory",
+    "DydxLiveExecClientFactory",
 ]

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime as dt
+from collections import OrderedDict
 from enum import Enum
 from io import TextIOWrapper
 from typing import Any
@@ -30,8 +31,10 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import Clock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -135,6 +138,7 @@ class StreamingFeatherWriter:
             "order_book_depths",
             "quote_tick",
             "trade_tick",
+            "funding_rate_update",
         }
         self.rotation_mode = rotation_mode
         self.max_file_size = max_file_size
@@ -150,6 +154,8 @@ class StreamingFeatherWriter:
         self.flush_interval_ms = flush_interval_ms or 1000
         self._last_flush = self.clock.utc_now()
         self.missing_writers: set[type] = set()
+        self._seen_event_ids: OrderedDict = OrderedDict()
+        self._seen_event_ids_maxlen = 10_000
 
     def _create_writers(self) -> None:
         for cls in self._schemas:
@@ -182,6 +188,15 @@ class StreamingFeatherWriter:
         # Check if an include types filter has been specified
         if self.include_types is not None and cls not in self.include_types:
             return
+
+        # Deduplicate events published on multiple message bus topics
+        event_id = getattr(obj, "id", None)
+        if isinstance(event_id, UUID4) and event_id in self._seen_event_ids:
+            return
+        if isinstance(event_id, UUID4):
+            self._seen_event_ids[event_id] = None
+            if len(self._seen_event_ids) > self._seen_event_ids_maxlen:
+                self._seen_event_ids.popitem(last=False)
 
         table = class_to_filename(cls)
 
@@ -423,7 +438,7 @@ class StreamingFeatherWriter:
         if self.include_types is not None and cls not in self.include_types:
             return
 
-        table_name = table_name if table_name else class_to_filename(cls)
+        table_name = table_name or class_to_filename(cls)
 
         if table_name in self._writers:
             return
@@ -454,10 +469,17 @@ class StreamingFeatherWriter:
 
         self.log.info(f"Created writer for table '{table_name}'")
 
-    def _extract_obj_metadata(
+    def _extract_obj_metadata(  # noqa: C901
         self,
-        obj: TradeTick | QuoteTick | Bar | OrderBookDelta | OrderBookDepth10 | object,
+        obj: TradeTick
+        | QuoteTick
+        | Bar
+        | OrderBookDelta
+        | OrderBookDepth10
+        | FundingRateUpdate
+        | object,
     ) -> dict[bytes, bytes]:
+        # Derive instrument_id and (when possible) precision from the object to match catalog/Rust metadata.
         if isinstance(obj, Bar):
             instrument_id = obj.bar_type.instrument_id
         elif hasattr(obj, "instrument_id"):
@@ -467,18 +489,70 @@ class StreamingFeatherWriter:
                 f"Object of type '{type(obj).__name__}' does not have an instrument_id attribute",
             )
 
-        instrument = self.cache.instrument(instrument_id)
         metadata = {b"instrument_id": instrument_id.value.encode()}
 
         if isinstance(obj, Bar):
             metadata.update(
                 {
                     b"bar_type": str(obj.bar_type).encode(),
-                    b"price_precision": str(instrument.price_precision).encode(),
-                    b"size_precision": str(instrument.size_precision).encode(),
+                    b"price_precision": str(obj.open.precision).encode(),
+                    b"size_precision": str(obj.volume.precision).encode(),
                 },
             )
+        elif isinstance(obj, QuoteTick):
+            metadata.update(
+                {
+                    b"price_precision": str(obj.bid_price.precision).encode(),
+                    b"size_precision": str(obj.bid_size.precision).encode(),
+                },
+            )
+        elif isinstance(obj, TradeTick):
+            metadata.update(
+                {
+                    b"price_precision": str(obj.price.precision).encode(),
+                    b"size_precision": str(obj.size.precision).encode(),
+                },
+            )
+        elif isinstance(obj, OrderBookDelta):
+            metadata.update(
+                {
+                    b"price_precision": str(obj.order.price.precision).encode(),
+                    b"size_precision": str(obj.order.size.precision).encode(),
+                },
+            )
+        elif isinstance(obj, OrderBookDepth10):
+            if obj.bids:
+                first_bid = obj.bids[0]
+                metadata.update(
+                    {
+                        b"price_precision": str(first_bid.price.precision).encode(),
+                        b"size_precision": str(first_bid.size.precision).encode(),
+                    },
+                )
+            else:
+                instrument = self.cache.instrument(instrument_id)
+                if instrument is None:
+                    raise ValueError(
+                        f"Cannot determine precision for OrderBookDepth10 with empty bids: "
+                        f"instrument '{instrument_id}' not found in cache",
+                    )
+                metadata.update(
+                    {
+                        b"price_precision": str(instrument.price_precision).encode(),
+                        b"size_precision": str(instrument.size_precision).encode(),
+                    },
+                )
+        elif isinstance(obj, FundingRateUpdate):
+            # FundingRateUpdate only has instrument_id in Rust metadata; no precision.
+            pass
         else:
+            # Fallback for custom or legacy types: use cache
+            instrument = self.cache.instrument(instrument_id)
+            if instrument is None:
+                raise ValueError(
+                    f"Cannot determine precision for type '{type(obj).__name__}': "
+                    f"instrument '{instrument_id}' not found in cache",
+                )
             metadata.update(
                 {
                     b"price_precision": str(instrument.price_precision).encode(),

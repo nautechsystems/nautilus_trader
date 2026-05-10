@@ -15,13 +15,16 @@
 
 use std::{sync::Arc, vec::IntoIter};
 
-use binary_heap_plus::{BinaryHeap, PeekMut};
-use compare::Compare;
 use futures::{Stream, StreamExt};
 use tokio::{
     runtime::Runtime,
     sync::mpsc::{self, Receiver},
     task::JoinHandle,
+};
+
+use super::{
+    binary_heap::{BinaryHeap, PeekMut},
+    compare::Compare,
 };
 
 pub struct EagerStream<T> {
@@ -36,15 +39,15 @@ impl<T> EagerStream<T> {
         S: Stream<Item = T> + Send + 'static,
         T: Send + 'static,
     {
-        let _guard = runtime.enter();
         let (tx, rx) = mpsc::channel(1);
 
-        let task = tokio::spawn(async move {
-            stream
-                .for_each(|item| async {
-                    let _ = tx.send(item).await;
-                })
-                .await;
+        let task = runtime.spawn(async move {
+            futures::pin_mut!(stream);
+            while let Some(item) = stream.next().await {
+                if tx.send(item).await.is_err() {
+                    break;
+                }
+            }
         });
 
         Self { rx, task, runtime }
@@ -83,14 +86,12 @@ where
 {
     fn new_from_iter(mut iter: I) -> Option<Self> {
         loop {
-            match iter.next() {
-                Some(mut batch) => match batch.next() {
-                    Some(item) => {
-                        break Some(Self { item, batch, iter });
-                    }
-                    None => continue,
-                },
-                None => break None,
+            let Some(mut batch) = iter.next() else {
+                break None;
+            };
+
+            if let Some(item) = batch.next() {
+                break Some(Self { item, batch, iter });
             }
         }
     }
@@ -147,22 +148,18 @@ where
                     // Otherwise get the next batch and the element from it
                     // Unless the underlying iterator is exhausted
                     None => loop {
-                        if let Some(mut batch) = heap_elem.iter.next() {
-                            match batch.next() {
-                                Some(mut item) => {
-                                    heap_elem.batch = batch;
-                                    std::mem::swap(&mut item, &mut heap_elem.item);
-                                    break Some(item);
-                                }
-                                // Get next batch from iterator
-                                None => continue,
-                            }
-                        } else {
+                        let Some(mut batch) = heap_elem.iter.next() else {
                             let ElementBatchIter {
                                 item,
                                 batch: _,
                                 iter: _,
                             } = PeekMut::pop(heap_elem);
+                            break Some(item);
+                        };
+
+                        if let Some(mut item) = batch.next() {
+                            heap_elem.batch = batch;
+                            std::mem::swap(&mut item, &mut heap_elem.item);
                             break Some(item);
                         }
                     },
@@ -175,7 +172,6 @@ where
 
 #[cfg(test)]
 mod tests {
-
     use proptest::prelude::*;
     use rstest::rstest;
 
@@ -303,10 +299,6 @@ mod tests {
                 .boxed()
         })
     }
-
-    ////////////////////////////////////////////////////////////////////////////////
-    // Property-based testing
-    ////////////////////////////////////////////////////////////////////////////////
 
     proptest! {
         /// Property: K-way merge should produce the same result as sorting all data together

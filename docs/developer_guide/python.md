@@ -22,7 +22,7 @@ We welcome all feedback on where the codebase departs from PEP-8 for no apparent
 
 ### Type hints
 
-All function and method signatures *must* include comprehensive type annotations:
+All function and method signatures *must* include type annotations:
 
 ```python
 def __init__(self, config: EMACrossConfig) -> None:
@@ -85,7 +85,7 @@ def test_sma_with_single_input_returns_expected_value(self):
 
 ### Ruff
 
-[ruff](https://astral.sh/ruff) is utilized to lint the codebase. Ruff rules can be found in the top-level `pyproject.toml`, with ignore justifications typically commented.
+[ruff](https://astral.sh/ruff) is used to lint the codebase. Ruff rules can be found in the top-level `pyproject.toml`, with ignore justifications typically commented.
 
 ## Cython (legacy)
 

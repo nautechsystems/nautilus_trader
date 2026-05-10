@@ -28,7 +28,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -66,7 +66,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -76,13 +76,13 @@ jobs:
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
         with:
           driver-opts: network=host
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -207,7 +207,7 @@ jobs:
   #         merge-multiple: true
   #
   #     - name: Set up Docker Buildx
-  #       uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+  #       uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
   #
   #     - name: Login to GHCR
   #       uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
@@ -242,7 +242,7 @@ jobs:
   #         merge-multiple: true
   #
   #     - name: Set up Docker Buildx
-  #       uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+  #       uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
   #
   #     - name: Login to GHCR
   #       uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
@@ -284,7 +284,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -322,18 +322,18 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
           fetch-depth: 1
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -352,7 +352,7 @@ jobs:
       - name: Prepare Docker metadata
         id: meta
         # https://github.com/docker/metadata-action
-        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/nautilus_trader
           tags: |
@@ -381,7 +381,7 @@ jobs:
           touch "/tmp/digests/nautilus_trader/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: digests-nautilus_trader-${{ strategy.job-index }}
           path: /tmp/digests/nautilus_trader/*
@@ -393,10 +393,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
+      id-token: write
     needs: build-docker-images-nautilus-trader
     steps:
       - name: Download digests
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           path: /tmp/digests/nautilus_trader
           pattern: digests-nautilus_trader-*
@@ -404,11 +405,11 @@ jobs:
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -422,7 +423,7 @@ jobs:
       - name: Prepare Docker metadata
         id: meta
         # https://github.com/docker/metadata-action
-        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/nautilus_trader
           tags: |
@@ -430,18 +431,36 @@ jobs:
             type=raw,value=latest,enable=${{ steps.branch-name.outputs.current_branch == 'master' }}
 
       - name: Create manifest list and push
+        id: push
         working-directory: /tmp/digests/nautilus_trader
         shell: bash
         run: |
           mapfile -t tags < <(jq -cr '.tags[] | "-t", .' <<< "$DOCKER_METADATA_OUTPUT_JSON")
           mapfile -t digests < <(printf 'ghcr.io/${{ github.repository_owner }}/nautilus_trader@sha256:%s\n' *)
           docker buildx imagetools create "${tags[@]}" "${digests[@]}"
+          TAG=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
+          IMAGE="ghcr.io/${{ github.repository_owner }}/nautilus_trader:$TAG"
+          DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' | jq -r '.digest')
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Inspect image
         run: |
-          TAGS=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
           docker buildx imagetools inspect \
-            "ghcr.io/${{ github.repository_owner }}/nautilus_trader:$TAGS"
+            "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+
+      - name: Sign image with cosign
+        run: |
+          cosign sign --yes \
+            "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
+
+      - name: Generate and attach SBOM
+        uses: anchore/sbom-action@28d71544de8eaf1b958d335707167c5f783590ad # v0.22.2
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}
+          output-file: sbom.spdx.json
 
   build-docker-images-jupyterlab:
     name: build-docker-images (jupyterlab-${{ matrix.platform }})
@@ -462,7 +481,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
         with:
           egress-policy: audit
           allowed-endpoints: |
@@ -500,18 +519,18 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
           fetch-depth: 1
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -539,7 +558,7 @@ jobs:
       - name: Prepare Docker metadata
         id: meta
         # https://github.com/docker/metadata-action
-        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/jupyterlab
           tags: |
@@ -570,7 +589,7 @@ jobs:
           touch "/tmp/digests/jupyterlab/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: digests-jupyterlab-${{ strategy.job-index }}
           path: /tmp/digests/jupyterlab/*
@@ -582,10 +601,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
+      id-token: write
     needs: build-docker-images-jupyterlab
     steps:
       - name: Download digests
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           path: /tmp/digests/jupyterlab
           pattern: digests-jupyterlab-*
@@ -593,11 +613,11 @@ jobs:
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -611,7 +631,7 @@ jobs:
       - name: Prepare Docker metadata
         id: meta
         # https://github.com/docker/metadata-action
-        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/jupyterlab
           tags: |
@@ -619,15 +639,33 @@ jobs:
             type=raw,value=latest,enable=${{ steps.branch-name.outputs.current_branch == 'master' }}
 
       - name: Create manifest list and push
+        id: push
         working-directory: /tmp/digests/jupyterlab
         shell: bash
         run: |
           mapfile -t tags < <(jq -cr '.tags[] | "-t", .' <<< "$DOCKER_METADATA_OUTPUT_JSON")
           mapfile -t digests < <(printf 'ghcr.io/${{ github.repository_owner }}/jupyterlab@sha256:%s\n' *)
           docker buildx imagetools create "${tags[@]}" "${digests[@]}"
+          TAG=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
+          IMAGE="ghcr.io/${{ github.repository_owner }}/jupyterlab:$TAG"
+          DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' | jq -r '.digest')
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Inspect image
         run: |
-          TAGS=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
           docker buildx imagetools inspect \
-            "ghcr.io/${{ github.repository_owner }}/jupyterlab:$TAGS"
+            "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+
+      - name: Sign image with cosign
+        run: |
+          cosign sign --yes \
+            "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
+
+      - name: Generate and attach SBOM
+        uses: anchore/sbom-action@28d71544de8eaf1b958d335707167c5f783590ad # v0.22.2
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}
+          output-file: sbom.spdx.json

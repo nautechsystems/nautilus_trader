@@ -17,7 +17,10 @@ use std::{ffi::c_char, str::FromStr};
 
 use nautilus_core::{
     MUTEX_POISONED,
-    ffi::string::{cstr_as_str, str_to_cstr},
+    ffi::{
+        abort_on_panic,
+        string::{cstr_as_str, str_to_cstr},
+    },
 };
 
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType, types::Currency};
@@ -73,10 +76,12 @@ pub extern "C" fn currency_hash(currency: &Currency) -> u64 {
 /// Panics if the internal mutex `CURRENCY_MAP` is poisoned when locking.
 #[unsafe(no_mangle)]
 pub extern "C" fn currency_register(currency: Currency) {
-    CURRENCY_MAP
-        .lock()
-        .unwrap()
-        .insert(currency.code.to_string(), currency);
+    abort_on_panic(|| {
+        CURRENCY_MAP
+            .lock()
+            .unwrap()
+            .insert(currency.code.to_string(), currency);
+    });
 }
 
 /// Checks whether a currency code exists in the global map for FFI.
@@ -90,13 +95,15 @@ pub extern "C" fn currency_register(currency: Currency) {
 /// Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn currency_exists(code_ptr: *const c_char) -> u8 {
-    let code = unsafe { cstr_as_str(code_ptr) };
-    u8::from(
-        CURRENCY_MAP
-            .lock()
-            .expect(MUTEX_POISONED)
-            .contains_key(code),
-    )
+    abort_on_panic(|| {
+        let code = unsafe { cstr_as_str(code_ptr) };
+        u8::from(
+            CURRENCY_MAP
+                .lock()
+                .expect(MUTEX_POISONED)
+                .contains_key(code),
+        )
+    })
 }
 
 /// Converts a C string pointer to a `Currency` for FFI.
@@ -110,8 +117,10 @@ pub unsafe extern "C" fn currency_exists(code_ptr: *const c_char) -> u8 {
 /// Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency {
-    let code = unsafe { cstr_as_str(code_ptr) };
-    Currency::from_str(code).unwrap()
+    abort_on_panic(|| {
+        let code = unsafe { cstr_as_str(code_ptr) };
+        Currency::from_str(code).unwrap()
+    })
 }
 
 #[cfg(test)]

@@ -1,0 +1,20 @@
+{
+  "funding_rates": [
+    {
+      "symbol": "JPYUSD-PERP",
+      "timestamp_ns": 1770307200000000000,
+      "funding_rate": "0.001234560000",
+      "funding_amount": "0.50",
+      "benchmark_price": "0.006580",
+      "settlement_price": "0.006582"
+    },
+    {
+      "symbol": "JPYUSD-PERP",
+      "timestamp_ns": 1770393600000000000,
+      "funding_rate": "0.003558290026",
+      "funding_amount": "1.25",
+      "benchmark_price": "0.006584",
+      "settlement_price": "0.006586"
+    }
+  ]
+}

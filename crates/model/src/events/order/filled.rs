@@ -40,7 +40,7 @@ use crate::{
 #[cfg_attr(any(test, feature = "stubs"), builder(default))]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct OrderFilled {
     /// The trader ID associated with the event.
@@ -438,7 +438,7 @@ mod tests {
             Price::from("1.0500"),
             Currency::USD(),
             LiquiditySide::Taker,
-            Default::default(),
+            UUID4::default(),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
             false,

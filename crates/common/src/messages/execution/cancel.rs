@@ -16,8 +16,7 @@
 use std::fmt::Display;
 
 use derive_builder::Builder;
-use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     enums::OrderSide,
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
@@ -35,7 +34,7 @@ pub struct CancelOrder {
     pub venue_order_id: Option<VenueOrderId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl CancelOrder {
@@ -51,7 +50,7 @@ impl CancelOrder {
         venue_order_id: Option<VenueOrderId>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             trader_id,
@@ -87,7 +86,7 @@ pub struct CancelAllOrders {
     pub order_side: OrderSide,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl CancelAllOrders {
@@ -102,7 +101,7 @@ impl CancelAllOrders {
         order_side: OrderSide,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             trader_id,
@@ -137,7 +136,7 @@ pub struct BatchCancelOrders {
     pub cancels: Vec<CancelOrder>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl BatchCancelOrders {
@@ -152,7 +151,7 @@ impl BatchCancelOrders {
         cancels: Vec<CancelOrder>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             trader_id,

@@ -17,13 +17,10 @@ use std::str::FromStr;
 
 use nautilus_bitmex::http::client::BitmexHttpClient;
 use nautilus_model::identifiers::InstrumentId;
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::TRACE)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let client = BitmexHttpClient::from_env()?;
 
@@ -31,8 +28,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let instrument = client.request_instrument(instrument_id).await?;
 
     match instrument {
-        Some(inst) => tracing::info!(instrument = ?inst, "Retrieved instrument"),
-        None => tracing::warn!("Instrument XBTUSD.BITMEX not returned from BitMEX"),
+        Some(inst) => log::info!("Retrieved instrument: {inst:?}"),
+        None => log::warn!("Instrument XBTUSD.BITMEX not returned from BitMEX"),
     }
 
     Ok(())

@@ -1,16 +1,6 @@
 # Developer Guide
 
-Welcome to the developer guide for NautilusTrader!
-
-Here you'll find guidance on developing and extending NautilusTrader to meet your trading needs or to contribute improvements back to the project.
-
-:::info
-This guide is structured so that automated tooling can consume it alongside human readers.
-:::
-
-We believe in using the right tool for the job. The overall design philosophy is to fully utilize
-the high-level power of Python, with its rich ecosystem of frameworks and libraries, whilst
-leveraging Rust for performance-critical components and comprehensive type safety.
+Guidance on developing and extending NautilusTrader, or contributing back to the project.
 
 NautilusTrader uses a **Rust core with Python bindings** architecture:
 
@@ -27,8 +17,11 @@ This approach combines Python's simplicity and ecosystem with Rust's performance
 - [Rust](rust.md)
 - [Python](python.md)
 - [Testing](testing.md)
+- [Test Datasets](test_datasets.md)
 - [Docs Style](docs.md)
 - [Release Notes](releases.md)
 - [Adapters](adapters.md)
+- [Data Testing Spec](spec_data_testing.md)
+- [Execution Testing Spec](spec_exec_testing.md)
 - [Benchmarking](benchmarking.md)
 - [FFI Memory Contract](ffi.md)

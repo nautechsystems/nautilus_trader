@@ -436,8 +436,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                     min_notional=min_notional,
                     max_price=max_price,
                     min_price=min_price,
-                    margin_init=Decimal(symbol_info.requiredMarginPercent) / 100,
-                    margin_maint=Decimal(symbol_info.maintMarginPercent) / 100,
+                    margin_init=Decimal(1),  # Binance docs: ignore API values
+                    margin_maint=Decimal(1),  # Binance docs: ignore API values
                     maker_fee=maker_fee,
                     taker_fee=taker_fee,
                     ts_event=ts_event,
@@ -471,8 +471,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                     min_notional=min_notional,
                     max_price=max_price,
                     min_price=min_price,
-                    margin_init=Decimal(symbol_info.requiredMarginPercent) / 100,
-                    margin_maint=Decimal(symbol_info.maintMarginPercent) / 100,
+                    margin_init=Decimal(1),  # Binance docs: ignore API values
+                    margin_maint=Decimal(1),  # Binance docs: ignore API values
                     maker_fee=maker_fee,
                     taker_fee=taker_fee,
                     ts_event=ts_event,

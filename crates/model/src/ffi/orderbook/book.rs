@@ -18,17 +18,17 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use nautilus_core::ffi::{cvec::CVec, string::str_to_cstr};
+use nautilus_core::ffi::{abort_on_panic, cvec::CVec, string::str_to_cstr};
 
 use super::level::BookLevel_API;
 use crate::{
     data::{
         BookOrder, OrderBookDelta, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
     },
-    enums::{BookType, OrderSide},
+    enums::{BookType, OrderSide, OrderSideSpecified},
     identifiers::InstrumentId,
-    orderbook::{OrderBook, analysis::book_check_integrity},
-    types::{Price, Quantity},
+    orderbook::{OrderBook, analysis::book_check_integrity, ladder::BookPrice},
+    types::{ERROR_PRICE, Price, Quantity, price::PriceRaw},
 };
 
 /// C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
@@ -164,6 +164,31 @@ pub extern "C" fn orderbook_apply_deltas(book: &mut OrderBook_API, deltas: &Orde
     }
 }
 
+/// Creates an `OrderBookDeltas` snapshot from the current order book state.
+///
+/// This is the reverse operation of `orderbook_apply_deltas`: it converts the current book state
+/// back into a snapshot format with a `Clear` delta followed by `Add` deltas for all orders.
+///
+/// # Parameters
+///
+/// * `book` - The order book to convert.
+/// * `sequence` - The message sequence number for the snapshot.
+/// * `ts_event` - UNIX timestamp (nanoseconds) when the book event occurred.
+/// * `ts_init` - UNIX timestamp (nanoseconds) when the instance was created.
+///
+/// # Returns
+///
+/// An `OrderBookDeltas_API` containing a snapshot of the current order book state.
+#[unsafe(no_mangle)]
+pub extern "C" fn orderbook_to_snapshot_deltas(
+    book: &OrderBook_API,
+    ts_event: u64,
+    ts_init: u64,
+) -> OrderBookDeltas_API {
+    use nautilus_core::UnixNanos;
+    OrderBookDeltas_API::new(book.to_deltas(UnixNanos::from(ts_event), UnixNanos::from(ts_init)))
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_apply_depth(book: &mut OrderBook_API, depth: &OrderBookDepth10) {
     if let Err(e) = book.apply_depth_unchecked(depth) {
@@ -192,6 +217,40 @@ pub extern "C" fn orderbook_asks(book: &mut OrderBook_API) -> CVec {
 }
 
 #[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_bids_down_to(
+    book: &mut OrderBook_API,
+    price_raw: PriceRaw,
+    price_prec: u8,
+) -> CVec {
+    let price = Price::from_raw(price_raw, price_prec);
+    let bound = BookPrice::new(price, OrderSideSpecified::Buy);
+    book.bids
+        .levels
+        .range(..=bound)
+        .map(|(_, level)| BookLevel_API::new(level.clone()))
+        .collect::<Vec<BookLevel_API>>()
+        .into()
+}
+
+#[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_asks_up_to(
+    book: &mut OrderBook_API,
+    price_raw: PriceRaw,
+    price_prec: u8,
+) -> CVec {
+    let price = Price::from_raw(price_raw, price_prec);
+    let bound = BookPrice::new(price, OrderSideSpecified::Sell);
+    book.asks
+        .levels
+        .range(..=bound)
+        .map(|(_, level)| BookLevel_API::new(level.clone()))
+        .collect::<Vec<BookLevel_API>>()
+        .into()
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_has_bid(book: &mut OrderBook_API) -> u8 {
     u8::from(book.has_bid())
 }
@@ -207,8 +266,10 @@ pub extern "C" fn orderbook_has_ask(book: &mut OrderBook_API) -> u8 {
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_bid_price(book: &mut OrderBook_API) -> Price {
-    book.best_bid_price()
-        .expect("Error: No bid orders for best bid price")
+    abort_on_panic(|| {
+        book.best_bid_price()
+            .expect("Error: No bid orders for best bid price")
+    })
 }
 
 /// # Panics
@@ -217,8 +278,10 @@ pub extern "C" fn orderbook_best_bid_price(book: &mut OrderBook_API) -> Price {
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_ask_price(book: &mut OrderBook_API) -> Price {
-    book.best_ask_price()
-        .expect("Error: No ask orders for best ask price")
+    abort_on_panic(|| {
+        book.best_ask_price()
+            .expect("Error: No ask orders for best ask price")
+    })
 }
 
 /// # Panics
@@ -227,8 +290,10 @@ pub extern "C" fn orderbook_best_ask_price(book: &mut OrderBook_API) -> Price {
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_bid_size(book: &mut OrderBook_API) -> Quantity {
-    book.best_bid_size()
-        .expect("Error: No bid orders for best bid size")
+    abort_on_panic(|| {
+        book.best_bid_size()
+            .expect("Error: No bid orders for best bid size")
+    })
 }
 
 /// # Panics
@@ -237,8 +302,10 @@ pub extern "C" fn orderbook_best_bid_size(book: &mut OrderBook_API) -> Quantity 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_ask_size(book: &mut OrderBook_API) -> Quantity {
-    book.best_ask_size()
-        .expect("Error: No ask orders for best ask size")
+    abort_on_panic(|| {
+        book.best_ask_size()
+            .expect("Error: No ask orders for best ask size")
+    })
 }
 
 /// # Panics
@@ -246,8 +313,10 @@ pub extern "C" fn orderbook_best_ask_size(book: &mut OrderBook_API) -> Quantity 
 /// Panics if unable to calculate spread (requires at least one bid and one ask).
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_spread(book: &mut OrderBook_API) -> f64 {
-    book.spread()
-        .expect("Error: Unable to calculate `spread` (no bid or ask)")
+    abort_on_panic(|| {
+        book.spread()
+            .expect("Error: Unable to calculate `spread` (no bid or ask)")
+    })
 }
 
 /// # Panics
@@ -255,8 +324,10 @@ pub extern "C" fn orderbook_spread(book: &mut OrderBook_API) -> f64 {
 /// Panics if unable to calculate midpoint (requires at least one bid and one ask).
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_midpoint(book: &mut OrderBook_API) -> f64 {
-    book.midpoint()
-        .expect("Error: Unable to calculate `midpoint` (no bid or ask)")
+    abort_on_panic(|| {
+        book.midpoint()
+            .expect("Error: Unable to calculate `midpoint` (no bid or ask)")
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -271,12 +342,34 @@ pub extern "C" fn orderbook_get_avg_px_for_quantity(
 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_get_worst_px_for_quantity(
+    book: &mut OrderBook_API,
+    qty: Quantity,
+    order_side: OrderSide,
+) -> Price {
+    book.get_worst_px_for_quantity(qty, order_side)
+        .unwrap_or(ERROR_PRICE)
+}
+
+#[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_get_quantity_for_price(
     book: &mut OrderBook_API,
     price: Price,
     order_side: OrderSide,
 ) -> f64 {
     book.get_quantity_for_price(price, order_side)
+}
+
+#[unsafe(no_mangle)]
+#[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
+pub extern "C" fn orderbook_get_quantity_at_level(
+    book: &OrderBook_API,
+    price: Price,
+    order_side: OrderSide,
+    size_precision: u8,
+) -> Quantity {
+    book.get_quantity_at_level(price, order_side, size_precision)
 }
 
 /// Updates the order book with a quote tick.

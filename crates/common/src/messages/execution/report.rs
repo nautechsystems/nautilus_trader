@@ -15,18 +15,33 @@
 
 use std::fmt::Display;
 
+use derive_builder::Builder;
 use nautilus_core::{Params, UUID4, UnixNanos};
-use nautilus_model::identifiers::{ClientId, ClientOrderId, InstrumentId, TraderId, Venue};
+use nautilus_model::identifiers::{
+    ClientId, ClientOrderId, InstrumentId, TraderId, Venue, VenueOrderId,
+};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+use crate::enums::LogLevel;
+
+const fn default_report_log_level() -> LogLevel {
+    LogLevel::Info
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Builder)]
 pub struct GenerateOrderStatusReport {
+    #[builder(default = "UUID4::new()")]
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    #[builder(default)]
     pub instrument_id: Option<InstrumentId>,
+    #[builder(default)]
     pub client_order_id: Option<ClientOrderId>,
-    pub venue_order_id: Option<ClientOrderId>,
+    #[builder(default)]
+    pub venue_order_id: Option<VenueOrderId>,
+    #[builder(default)]
     pub params: Option<Params>,
+    #[builder(default)]
     pub correlation_id: Option<UUID4>,
 }
 
@@ -37,7 +52,7 @@ impl GenerateOrderStatusReport {
         ts_init: UnixNanos,
         instrument_id: Option<InstrumentId>,
         client_order_id: Option<ClientOrderId>,
-        venue_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
         params: Option<Params>,
         correlation_id: Option<UUID4>,
     ) -> Self {
@@ -67,15 +82,25 @@ impl Display for GenerateOrderStatusReport {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Builder)]
 pub struct GenerateOrderStatusReports {
+    #[builder(default = "UUID4::new()")]
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub open_only: bool,
+    #[builder(default)]
     pub instrument_id: Option<InstrumentId>,
+    #[builder(default)]
     pub start: Option<UnixNanos>,
+    #[builder(default)]
     pub end: Option<UnixNanos>,
+    #[builder(default)]
     pub params: Option<Params>,
+    /// The log level for receipt logging.
+    #[builder(default = "default_report_log_level()")]
+    #[serde(default = "default_report_log_level")]
+    pub log_receipt_level: LogLevel,
+    #[builder(default)]
     pub correlation_id: Option<UUID4>,
 }
 
@@ -100,6 +125,7 @@ impl GenerateOrderStatusReports {
             start,
             end,
             params,
+            log_receipt_level: LogLevel::Info,
             correlation_id,
         }
     }
@@ -118,15 +144,26 @@ impl Display for GenerateOrderStatusReports {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Builder)]
 pub struct GenerateFillReports {
+    #[builder(default = "UUID4::new()")]
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    #[builder(default)]
     pub instrument_id: Option<InstrumentId>,
-    pub venue_order_id: Option<ClientOrderId>,
+    #[builder(default)]
+    pub venue_order_id: Option<VenueOrderId>,
+    #[builder(default)]
     pub start: Option<UnixNanos>,
+    #[builder(default)]
     pub end: Option<UnixNanos>,
+    #[builder(default)]
     pub params: Option<Params>,
+    /// The log level for receipt logging.
+    #[builder(default = "default_report_log_level()")]
+    #[serde(default = "default_report_log_level")]
+    pub log_receipt_level: LogLevel,
+    #[builder(default)]
     pub correlation_id: Option<UUID4>,
 }
 
@@ -137,7 +174,7 @@ impl GenerateFillReports {
         command_id: UUID4,
         ts_init: UnixNanos,
         instrument_id: Option<InstrumentId>,
-        venue_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         params: Option<Params>,
@@ -151,6 +188,7 @@ impl GenerateFillReports {
             start,
             end,
             params,
+            log_receipt_level: LogLevel::Info,
             correlation_id,
         }
     }
@@ -169,14 +207,24 @@ impl Display for GenerateFillReports {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Builder)]
 pub struct GeneratePositionStatusReports {
+    #[builder(default = "UUID4::new()")]
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    #[builder(default)]
     pub instrument_id: Option<InstrumentId>,
+    #[builder(default)]
     pub start: Option<UnixNanos>,
+    #[builder(default)]
     pub end: Option<UnixNanos>,
+    #[builder(default)]
     pub params: Option<Params>,
+    /// The log level for receipt logging.
+    #[builder(default = "default_report_log_level()")]
+    #[serde(default = "default_report_log_level")]
+    pub log_receipt_level: LogLevel,
+    #[builder(default)]
     pub correlation_id: Option<UUID4>,
 }
 
@@ -198,6 +246,7 @@ impl GeneratePositionStatusReports {
             start,
             end,
             params,
+            log_receipt_level: LogLevel::Info,
             correlation_id,
         }
     }
@@ -215,14 +264,18 @@ impl Display for GeneratePositionStatusReports {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Builder)]
 pub struct GenerateExecutionMassStatus {
     pub trader_id: TraderId,
     pub client_id: ClientId,
+    #[builder(default)]
     pub venue: Option<Venue>,
+    #[builder(default = "UUID4::new()")]
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    #[builder(default)]
     pub params: Option<Params>,
+    #[builder(default)]
     pub correlation_id: Option<UUID4>,
 }
 

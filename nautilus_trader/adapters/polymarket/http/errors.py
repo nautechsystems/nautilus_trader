@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any
+
 from py_clob_client.exceptions import PolyApiException
 
 
@@ -70,3 +72,28 @@ def should_retry(error: BaseException) -> bool:
             return True
 
     return False
+
+
+def check_clob_response(response: dict[str, Any] | str) -> dict[str, Any]:
+    """
+    Check CLOB API response and raise exception if error string returned.
+
+    Parameters
+    ----------
+    response : dict[str, Any] | str
+        The response from the CLOB API.
+
+    Returns
+    -------
+    dict[str, Any]
+        The validated response dictionary.
+
+    Raises
+    ------
+    PolymarketAPIError
+        If response is an error string.
+
+    """
+    if isinstance(response, str):
+        raise PolymarketAPIError(response)
+    return response

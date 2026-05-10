@@ -17,12 +17,17 @@
 
 use nautilus_model::identifiers::AccountId;
 
-use crate::common::consts::{
-    BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL, BITMEX_WS_TESTNET_URL, BITMEX_WS_URL,
+use crate::common::{
+    consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL, BITMEX_WS_TESTNET_URL, BITMEX_WS_URL},
+    credential::credential_env_vars,
 };
 
 /// Configuration for the BitMEX live data client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
+)]
 pub struct BitmexDataClientConfig {
     /// Optional API key used for authenticated REST/WebSocket requests.
     pub api_key: Option<String>,
@@ -108,10 +113,14 @@ impl BitmexDataClientConfig {
         Self::default()
     }
 
-    /// Returns `true` if both API key and secret are available.
+    /// Returns `true` if both API key and secret are available
+    /// (either explicitly set or resolvable from environment variables).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        self.api_key.is_some() && self.api_secret.is_some()
+        let (key_var, secret_var) = credential_env_vars(self.use_testnet);
+        let has_key = self.api_key.is_some() || std::env::var(key_var).is_ok();
+        let has_secret = self.api_secret.is_some() || std::env::var(secret_var).is_ok();
+        has_key && has_secret
     }
 
     /// Returns the REST base URL, considering overrides and the testnet flag.
@@ -141,6 +150,10 @@ impl BitmexDataClientConfig {
 
 /// Configuration for the BitMEX live execution client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
+)]
 pub struct BitmexExecClientConfig {
     /// API key used for authenticated requests.
     pub api_key: Option<String>,
@@ -201,6 +214,13 @@ pub struct BitmexExecClientConfig {
     pub submitter_proxy_urls: Option<Vec<String>>,
     /// Optional list of proxy URLs for cancel broadcaster pool (path diversity).
     pub canceller_proxy_urls: Option<Vec<String>>,
+    /// Optional dead man's switch timeout in seconds.
+    ///
+    /// When set, a background task periodically calls the BitMEX `cancelAllAfter` endpoint
+    /// to keep a server-side timer alive. If the client loses connectivity the timer expires
+    /// and BitMEX cancels all open orders. Calling with `timeout=0` disarms the switch.
+    /// The refresh interval is derived as `timeout / 4` (minimum 1 second).
+    pub deadmans_switch_timeout_secs: Option<u64>,
 }
 
 impl Default for BitmexExecClientConfig {
@@ -227,6 +247,7 @@ impl Default for BitmexExecClientConfig {
             canceller_pool_size: None,
             submitter_proxy_urls: None,
             canceller_proxy_urls: None,
+            deadmans_switch_timeout_secs: None,
         }
     }
 }
@@ -238,10 +259,14 @@ impl BitmexExecClientConfig {
         Self::default()
     }
 
-    /// Returns `true` if both API key and secret are available.
+    /// Returns `true` if both API key and secret are available
+    /// (either explicitly set or resolvable from environment variables).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        self.api_key.is_some() && self.api_secret.is_some()
+        let (key_var, secret_var) = credential_env_vars(self.use_testnet);
+        let has_key = self.api_key.is_some() || std::env::var(key_var).is_ok();
+        let has_secret = self.api_secret.is_some() || std::env::var(secret_var).is_ok();
+        has_key && has_secret
     }
 
     /// Returns the REST base URL, considering overrides and the testnet flag.

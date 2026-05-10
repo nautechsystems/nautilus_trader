@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "availableToBetBalance": 1000.00,
+    "exposure": 0.0,
+    "retainedCommission": 0.0,
+    "exposureLimit": -15000.0,
+    "discountRate": 0.0,
+    "pointsBalance": 10,
+    "wallet": "UK"
+  }
+}

@@ -13,45 +13,134 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A common in-memory `MessageBus` supporting multiple messaging patterns:
+//! In-memory message bus for intra-process communication.
 //!
-//! - Point-to-Point
-//! - Pub/Sub
-//! - Request/Response
+//! # Messaging patterns
+//!
+//! - **Point-to-point**: Send messages to named endpoints via `send_*` functions.
+//! - **Pub/sub**: Publish messages to topics via `publish_*`, subscribers receive
+//!   all messages matching their pattern.
+//! - **Request/response**: Register correlation IDs for response sequence tracking.
+//!
+//! # Architecture
+//!
+//! The bus uses thread-local storage for single-threaded async runtimes. Each
+//! thread gets its own `MessageBus` instance, avoiding synchronization overhead.
+//!
+//! Two routing mechanisms serve different needs:
+//!
+//! - **Typed routing** (`publish_quote`, `subscribe_quotes`): Zero-cost dispatch
+//!   for known types. Handlers receive `&T` directly with no runtime type checking.
+//! - **Any-based routing** (`publish_any`, `subscribe_any`): Flexible dispatch for
+//!   custom types and Python interop. Handlers receive `&dyn Any`.
+//!
+//! See [`core`] module documentation for design decisions and performance details.
 
+mod api;
 pub mod core;
 pub mod database;
-pub mod handler;
 pub mod matching;
 pub mod message;
+pub mod mstr;
 pub mod stubs;
 pub mod switchboard;
+pub mod typed_endpoints;
+pub mod typed_handler;
+pub mod typed_router;
 
-#[cfg(test)]
-mod tests;
-
-pub use core::{Endpoint, MStr, MessageBus, Pattern, Subscription, Topic};
 use std::{
-    self,
-    any::Any,
     cell::{OnceCell, RefCell},
     rc::Rc,
 };
 
-use handler::ShareableMessageHandler;
-use matching::is_matching_backtracking;
-use nautilus_core::UUID4;
-use nautilus_model::data::Data;
-use ustr::Ustr;
+#[cfg(feature = "defi")]
+use nautilus_model::defi::{Block, Pool, PoolFeeCollect, PoolFlash, PoolLiquidityUpdate, PoolSwap};
+use nautilus_model::{
+    data::{
+        Bar, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
+        OrderBookDepth10, QuoteTick, TradeTick,
+    },
+    events::{AccountState, OrderEventAny, PositionEvent},
+    orderbook::OrderBook,
+};
+use smallvec::SmallVec;
 
-use crate::messages::data::DataResponse;
-pub use crate::msgbus::message::BusMessage;
+pub use self::{
+    api::*,
+    core::{MessageBus, Subscription},
+    message::BusMessage,
+    mstr::{Endpoint, MStr, Pattern, Topic},
+    switchboard::MessagingSwitchboard,
+    typed_endpoints::{EndpointMap, IntoEndpointMap},
+    typed_handler::{
+        CallbackHandler, Handler, IntoHandler, ShareableMessageHandler, TypedHandler,
+        TypedIntoHandler,
+    },
+    typed_router::{TopicRouter, TypedSubscription},
+};
 
-// Thread-local storage for MessageBus instances. Each thread (including async runtimes)
-// gets its own MessageBus instance, eliminating the need for unsafe Send/Sync implementations
-// while maintaining the global singleton access pattern that the framework expects.
+/// Inline capacity for handler buffers before heap allocation.
+pub(super) const HANDLER_BUFFER_CAP: usize = 64;
+
+// MessageBus is designed for single-threaded use within each async runtime.
+// Thread-local storage ensures each thread gets its own instance, eliminating
+// the need for unsafe Send/Sync implementations.
+//
+// Handler buffers provide zero-allocation publish on hot paths.
+// Each buffer stores up to 64 handlers inline before spilling to heap.
+// Publish functions use move-out/move-back to avoid holding RefCell borrows
+// during handler calls (enabling re-entrant publishes).
 thread_local! {
-    static MESSAGE_BUS: OnceCell<Rc<RefCell<MessageBus>>> = const { OnceCell::new() };
+    pub(super) static MESSAGE_BUS: OnceCell<Rc<RefCell<MessageBus>>> = const { OnceCell::new() };
+
+    pub(super) static ANY_HANDLERS: RefCell<SmallVec<[ShareableMessageHandler; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+
+    pub(super) static DELTAS_HANDLERS: RefCell<SmallVec<[TypedHandler<OrderBookDeltas>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static DEPTH10_HANDLERS: RefCell<SmallVec<[TypedHandler<OrderBookDepth10>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static BOOK_HANDLERS: RefCell<SmallVec<[TypedHandler<OrderBook>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static QUOTE_HANDLERS: RefCell<SmallVec<[TypedHandler<QuoteTick>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static TRADE_HANDLERS: RefCell<SmallVec<[TypedHandler<TradeTick>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static BAR_HANDLERS: RefCell<SmallVec<[TypedHandler<Bar>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static MARK_PRICE_HANDLERS: RefCell<SmallVec<[TypedHandler<MarkPriceUpdate>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static INDEX_PRICE_HANDLERS: RefCell<SmallVec<[TypedHandler<IndexPriceUpdate>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static FUNDING_RATE_HANDLERS: RefCell<SmallVec<[TypedHandler<FundingRateUpdate>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static GREEKS_HANDLERS: RefCell<SmallVec<[TypedHandler<GreeksData>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static ACCOUNT_STATE_HANDLERS: RefCell<SmallVec<[TypedHandler<AccountState>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static ORDER_EVENT_HANDLERS: RefCell<SmallVec<[TypedHandler<OrderEventAny>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static POSITION_EVENT_HANDLERS: RefCell<SmallVec<[TypedHandler<PositionEvent>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+
+    #[cfg(feature = "defi")]
+    pub(super) static DEFI_BLOCK_HANDLERS: RefCell<SmallVec<[TypedHandler<Block>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    #[cfg(feature = "defi")]
+    pub(super) static DEFI_POOL_HANDLERS: RefCell<SmallVec<[TypedHandler<Pool>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    #[cfg(feature = "defi")]
+    pub(super) static DEFI_SWAP_HANDLERS: RefCell<SmallVec<[TypedHandler<PoolSwap>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    #[cfg(feature = "defi")]
+    pub(super) static DEFI_LIQUIDITY_HANDLERS: RefCell<SmallVec<[TypedHandler<PoolLiquidityUpdate>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    #[cfg(feature = "defi")]
+    pub(super) static DEFI_COLLECT_HANDLERS: RefCell<SmallVec<[TypedHandler<PoolFeeCollect>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    #[cfg(feature = "defi")]
+    pub(super) static DEFI_FLASH_HANDLERS: RefCell<SmallVec<[TypedHandler<PoolFlash>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
 }
 
 /// Sets the thread-local message bus.
@@ -61,17 +150,16 @@ thread_local! {
 /// Panics if a message bus has already been set for this thread.
 pub fn set_message_bus(msgbus: Rc<RefCell<MessageBus>>) {
     MESSAGE_BUS.with(|bus| {
-        if bus.set(msgbus).is_err() {
-            panic!("Failed to set MessageBus: already initialized for this thread");
-        }
+        assert!(
+            bus.set(msgbus).is_ok(),
+            "Failed to set MessageBus: already initialized for this thread"
+        );
     });
 }
 
 /// Gets the thread-local message bus.
 ///
 /// If no message bus has been set for this thread, a default one is created and initialized.
-/// This ensures each thread gets its own MessageBus instance, preventing data races while
-/// maintaining the singleton pattern that the codebase expects.
 pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
     MESSAGE_BUS.with(|bus| {
         bus.get_or_init(|| {
@@ -80,199 +168,4 @@ pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
         })
         .clone()
     })
-}
-
-/// Sends the `message` to the `endpoint`.
-pub fn send_any(endpoint: MStr<Endpoint>, message: &dyn Any) {
-    let handler = get_message_bus().borrow().get_endpoint(endpoint).cloned();
-    if let Some(handler) = handler {
-        handler.0.handle(message);
-    } else {
-        log::error!("send_any: no registered endpoint '{endpoint}'");
-    }
-}
-
-/// Sends the `message` to the `endpoint`.
-pub fn send<T: 'static>(endpoint: MStr<Endpoint>, message: T) {
-    let handler = get_message_bus().borrow().get_endpoint(endpoint).cloned();
-    if let Some(handler) = handler {
-        handler.0.handle(&message);
-    } else {
-        log::error!("send: no registered endpoint '{endpoint}'");
-    }
-}
-
-/// Sends the [`DataResponse`] to the registered correlation ID handler.
-pub fn send_response(correlation_id: &UUID4, message: &DataResponse) {
-    let handler = get_message_bus()
-        .borrow()
-        .get_response_handler(correlation_id)
-        .cloned();
-
-    if let Some(handler) = handler {
-        match message {
-            DataResponse::Data(resp) => handler.0.handle(resp),
-            DataResponse::Instrument(resp) => handler.0.handle(resp.as_ref()),
-            DataResponse::Instruments(resp) => handler.0.handle(resp),
-            DataResponse::Book(resp) => handler.0.handle(resp),
-            DataResponse::Quotes(resp) => handler.0.handle(resp),
-            DataResponse::Trades(resp) => handler.0.handle(resp),
-            DataResponse::Bars(resp) => handler.0.handle(resp),
-        }
-    } else {
-        log::error!("send_response: handler not found for correlation_id '{correlation_id}'");
-    }
-}
-
-/// Publish [`Data`] to a topic.
-pub fn publish_data(topic: &Ustr, message: Data) {
-    let matching_subs = get_message_bus()
-        .borrow_mut()
-        .matching_subscriptions(*topic);
-
-    for sub in matching_subs {
-        sub.handler.0.handle(&message);
-    }
-}
-
-pub fn register_response_handler(correlation_id: &UUID4, handler: ShareableMessageHandler) {
-    if let Err(e) = get_message_bus()
-        .borrow_mut()
-        .register_response_handler(correlation_id, handler)
-    {
-        log::error!("Failed to register request handler: {e}");
-    }
-}
-
-/// Publishes the `message` to the `topic`.
-pub fn publish(topic: MStr<Topic>, message: &dyn Any) {
-    let matching_subs = get_message_bus()
-        .borrow_mut()
-        .inner_matching_subscriptions(topic);
-
-    for sub in matching_subs {
-        sub.handler.0.handle(message);
-    }
-}
-
-/// Registers the `handler` for the `endpoint` address.
-pub fn register(endpoint: MStr<Endpoint>, handler: ShareableMessageHandler) {
-    log::debug!(
-        "Registering endpoint '{endpoint}' with handler ID {}",
-        handler.0.id(),
-    );
-
-    // Updates value if key already exists
-    get_message_bus()
-        .borrow_mut()
-        .endpoints
-        .insert(endpoint, handler);
-}
-
-/// Deregisters the handler for the `endpoint` address.
-pub fn deregister(endpoint: MStr<Endpoint>) {
-    log::debug!("Deregistering endpoint '{endpoint}'");
-
-    // Removes entry if it exists for endpoint
-    get_message_bus()
-        .borrow_mut()
-        .endpoints
-        .shift_remove(&endpoint);
-}
-
-/// Subscribes the `handler` to the `pattern` with an optional `priority`.
-///
-/// # Warnings
-///
-/// Assigning priority handling is an advanced feature which *shouldn't
-/// normally be needed by most users*. **Only assign a higher priority to the
-/// subscription if you are certain of what you're doing**. If an inappropriate
-/// priority is assigned then the handler may receive messages before core
-/// system components have been able to process necessary calculations and
-/// produce potential side effects for logically sound behavior.
-pub fn subscribe(pattern: MStr<Pattern>, handler: ShareableMessageHandler, priority: Option<u8>) {
-    let msgbus = get_message_bus();
-    let mut msgbus_ref_mut = msgbus.borrow_mut();
-    let sub = Subscription::new(pattern, handler, priority);
-
-    log::debug!(
-        "Subscribing {:?} for pattern '{}'",
-        sub.handler,
-        sub.pattern
-    );
-
-    // Prevent duplicate subscriptions for the exact pattern regardless of handler identity. This
-    // guards against callers accidentally registering multiple handlers for the same topic, which
-    // can lead to duplicated message delivery and unexpected side-effects.
-    if msgbus_ref_mut.subscriptions.contains(&sub) {
-        log::warn!("{sub:?} already exists");
-        return;
-    }
-
-    // Find existing patterns which match this topic
-    for (topic, subs) in &mut msgbus_ref_mut.topics {
-        if is_matching_backtracking(*topic, sub.pattern) {
-            // TODO: Consider binary_search and then insert
-            subs.push(sub.clone());
-            subs.sort();
-            log::debug!("Added subscription for '{topic}'");
-        }
-    }
-
-    msgbus_ref_mut.subscriptions.insert(sub);
-}
-
-pub fn subscribe_topic(topic: MStr<Topic>, handler: ShareableMessageHandler, priority: Option<u8>) {
-    subscribe(topic.into(), handler, priority);
-}
-
-pub fn subscribe_str<T: AsRef<str>>(
-    pattern: T,
-    handler: ShareableMessageHandler,
-    priority: Option<u8>,
-) {
-    subscribe(MStr::from(pattern.as_ref()), handler, priority);
-}
-
-/// Unsubscribes the `handler` from the `pattern`.
-pub fn unsubscribe(pattern: MStr<Pattern>, handler: ShareableMessageHandler) {
-    log::debug!("Unsubscribing {handler:?} from pattern '{pattern}'");
-
-    let sub = core::Subscription::new(pattern, handler, None);
-
-    get_message_bus()
-        .borrow_mut()
-        .topics
-        .values_mut()
-        .for_each(|subs| {
-            if let Ok(index) = subs.binary_search(&sub) {
-                subs.remove(index);
-            }
-        });
-
-    let removed = get_message_bus().borrow_mut().subscriptions.remove(&sub);
-
-    if removed {
-        log::debug!("Handler for pattern '{pattern}' was removed");
-    } else {
-        log::debug!("No matching handler for pattern '{pattern}' was found");
-    }
-}
-
-pub fn unsubscribe_topic(topic: MStr<Topic>, handler: ShareableMessageHandler) {
-    unsubscribe(topic.into(), handler);
-}
-
-pub fn unsubscribe_str<T: AsRef<str>>(pattern: T, handler: ShareableMessageHandler) {
-    unsubscribe(MStr::from(pattern.as_ref()), handler);
-}
-
-pub fn is_subscribed<T: AsRef<str>>(pattern: T, handler: ShareableMessageHandler) -> bool {
-    let pattern = MStr::from(pattern.as_ref());
-    let sub = Subscription::new(pattern, handler, None);
-    get_message_bus().borrow().subscriptions.contains(&sub)
-}
-
-pub fn subscriptions_count<T: AsRef<str>>(topic: T) -> usize {
-    get_message_bus().borrow().subscriptions_count(topic)
 }

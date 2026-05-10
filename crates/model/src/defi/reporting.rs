@@ -110,7 +110,7 @@ impl BlockchainSyncReporter {
         let blocks_completed = block_number.saturating_sub(self.from_block);
         let progress_pct = (blocks_completed as f64 / self.total_blocks as f64 * 100.0).min(100.0);
 
-        tracing::info!(
+        log::info!(
             "Syncing {} progress: {:.1}% | Block: {} | Rate: {} blocks/s | Avg: {} blocks/s",
             self.item,
             progress_pct,
@@ -128,7 +128,7 @@ impl BlockchainSyncReporter {
     pub fn log_final_stats(&self) {
         let total_elapsed = self.start_time.elapsed();
         let avg_rate = self.blocks_processed as f64 / total_elapsed.as_secs_f64();
-        tracing::info!(
+        log::info!(
             "Finished syncing {} | Total: {} blocks in {:.1}s | Avg rate: {} blocks/s",
             self.item,
             self.blocks_processed.separate_with_commas(),

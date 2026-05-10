@@ -69,6 +69,7 @@ pub fn create_currency_pair(
         Some(margin_maint),
         Some(maker_fee),
         Some(taker_fee),
+        None,
         ts_event,
         ts_init,
     ))
@@ -115,6 +116,7 @@ pub fn create_crypto_perpetual(
         Some(margin_maint),
         Some(maker_fee),
         Some(taker_fee),
+        None,
         ts_event,
         ts_init,
     ))
@@ -165,6 +167,7 @@ pub fn create_crypto_future(
         Some(margin_maint),
         Some(maker_fee),
         Some(taker_fee),
+        None,
         ts_event,
         ts_init,
     ))
@@ -235,6 +238,7 @@ pub fn create_crypto_option(
         Some(margin_maint),
         Some(maker_fee),
         Some(taker_fee),
+        None,
         ts_event,
         ts_init,
     )))
@@ -277,7 +281,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::tests::load_test_json;
+    use crate::common::testing::load_test_json;
 
     // Helper to create a basic instrument info for testing
     fn create_test_instrument(

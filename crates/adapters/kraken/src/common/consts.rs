@@ -24,7 +24,7 @@ pub const KRAKEN: &str = "KRAKEN";
 pub static KRAKEN_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(KRAKEN)));
 
 // API Partner integration identifier
-pub const NAUTILUS_KRAKEN_BROKER_ID: &str = "AA36 N84G VVFC BKUQ";
+pub const NAUTILUS_KRAKEN_BROKER_ID: &str = "AA98 N84G GOPN GL6Y";
 
 // WebSocket-specific constants
 pub const KRAKEN_PONG: &str = "pong";

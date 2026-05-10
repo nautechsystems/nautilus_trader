@@ -83,7 +83,7 @@ pub fn get_atomic_clock_static() -> &'static AtomicTime {
 #[inline(always)]
 #[must_use]
 pub fn duration_since_unix_epoch() -> Duration {
-    // SAFETY: The expect() is acceptable here because:
+    // The expect() is acceptable here because:
     // - SystemTime failure indicates catastrophic system clock issues
     // - This would affect the entire application's ability to function
     // - Alternative error handling would complicate all time-dependent code paths

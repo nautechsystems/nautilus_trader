@@ -94,6 +94,12 @@ class InstrumentProvider:
         Load the instruments for the given IDs into the provider, optionally applying
         the given filters.
 
+        The default implementation calls ``load_all_async`` (since many venue APIs
+        only support bulk fetches) and then filters the provider to retain only the
+        requested instruments plus any previously loaded ones.
+
+        Subclasses with per-instrument fetch capability should override this method.
+
         Parameters
         ----------
         instrument_ids : list[InstrumentId]
@@ -101,15 +107,22 @@ class InstrumentProvider:
         filters : frozendict[str, Any] or dict[str, Any], optional
             The venue specific instrument loading filters to apply.
 
-        Raises
-        ------
-        ValueError
-            If any `instrument_id.venue` is not equal to `self.venue`.
-
         """
-        raise NotImplementedError(
-            "method `load_ids_async` must be implemented in the subclass",
-        )  # pragma: no cover
+        if not instrument_ids:
+            return
+
+        existing = dict(self._instruments)
+
+        await self.load_all_async(filters)
+
+        instrument_ids_set = set(instrument_ids)
+        self._instruments = {
+            iid: inst for iid, inst in self._instruments.items() if iid in instrument_ids_set
+        }
+
+        # Restore previously loaded instruments
+        for iid, inst in existing.items():
+            self._instruments.setdefault(iid, inst)
 
     async def load_async(
         self,
@@ -120,6 +133,9 @@ class InstrumentProvider:
         Load the instrument for the given ID into the provider asynchronously,
         optionally applying the given filters.
 
+        The default implementation delegates to ``load_ids_async``.
+        Subclasses with per-instrument fetch capability should override this method.
+
         Parameters
         ----------
         instrument_id : InstrumentId
@@ -127,15 +143,11 @@ class InstrumentProvider:
         filters : frozendict[str, Any] or dict[str, Any], optional
             The venue specific instrument loading filters to apply.
 
-        Raises
-        ------
-        ValueError
-            If `instrument_id.venue` is not equal to `self.venue`.
-
         """
-        raise NotImplementedError(
-            "method `load_async` must be implemented in the subclass",
-        )  # pragma: no cover
+        if self.find(instrument_id) is not None:
+            return
+
+        await self.load_ids_async([instrument_id], filters)
 
     async def initialize(self, reload: bool = False) -> None:
         """

@@ -34,7 +34,7 @@
 //! rules for memory safety straightforward: foreign callers must treat the memory region pointed
 //! to by `ptr` as **opaque** and interact with it solely through the functions provided here.
 
-use std::{ffi::c_void, fmt::Display, ptr::null};
+use std::{ffi::c_void, fmt::Display, ptr::NonNull};
 
 use crate::ffi::abort_on_panic;
 
@@ -80,12 +80,13 @@ impl CVec {
     ///
     /// This is primarily useful for constructing a sentinel value that represents the
     /// absence of data when crossing the FFI boundary.
+    ///
+    /// Uses a dangling pointer (like `Vec::new()`) rather than null to satisfy
+    /// `Vec::from_raw_parts` preconditions when the CVec is later dropped.
     #[must_use]
-    pub const fn empty() -> Self {
+    pub fn empty() -> Self {
         Self {
-            // Explicitly type cast the pointer to some type to satisfy the
-            // compiler. Since the pointer is null it works for any type.
-            ptr: null::<bool>() as *mut c_void,
+            ptr: NonNull::<u8>::dangling().as_ptr().cast::<c_void>(),
             len: 0,
             cap: 0,
         }
@@ -173,11 +174,13 @@ mod tests {
         }
     }
 
-    /// An empty vector gets converted to a null pointer wrapped in a [`CVec`].
+    /// An empty vector gets converted to a dangling (non-null) pointer in a [`CVec`].
     #[rstest]
-    fn empty_vec_should_give_null_ptr() {
+    fn empty_vec_should_give_dangling_ptr() {
         let data: Vec<u64> = vec![];
         let cvec: CVec = data.into();
-        assert_eq!(cvec.ptr.cast::<u64>(), std::ptr::null_mut::<u64>());
+        assert!(!cvec.ptr.is_null());
+        assert_eq!(cvec.len, 0);
+        assert_eq!(cvec.cap, 0);
     }
 }

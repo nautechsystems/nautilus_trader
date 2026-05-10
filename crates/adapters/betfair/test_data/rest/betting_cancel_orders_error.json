@@ -1,0 +1,18 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "customerRef": "d32e64db841763cb0e207d9f7a385b1e",
+    "status": "SUCCESS",
+    "marketId": "1.179082386",
+    "instructionReports": [
+      {
+        "status": "FAILURE",
+        "errorCode": "ERROR_IN_ORDER",
+        "instruction": {
+          "betId": "1"
+        }
+      }
+    ]
+  }
+}

@@ -15,6 +15,7 @@
 
 //! Binance Spot-specific enumerations.
 
+use nautilus_model::enums::OrderType;
 use serde::{Deserialize, Serialize};
 
 /// Spot order type enumeration.
@@ -61,4 +62,23 @@ pub enum BinanceCancelReplaceMode {
     StopOnFailure,
     /// Continue with new order even if cancel fails.
     AllowFailure,
+}
+
+/// Converts a Nautilus order type to Binance Spot order type.
+///
+/// # Errors
+///
+/// Returns an error if the order type is not supported on Binance Spot.
+pub fn order_type_to_binance_spot(
+    order_type: OrderType,
+    post_only: bool,
+) -> anyhow::Result<BinanceSpotOrderType> {
+    match (order_type, post_only) {
+        (OrderType::Market, _) => Ok(BinanceSpotOrderType::Market),
+        (OrderType::Limit, true) => Ok(BinanceSpotOrderType::LimitMaker),
+        (OrderType::Limit, false) => Ok(BinanceSpotOrderType::Limit),
+        (OrderType::StopMarket, _) => Ok(BinanceSpotOrderType::StopLoss),
+        (OrderType::StopLimit, _) => Ok(BinanceSpotOrderType::StopLossLimit),
+        _ => anyhow::bail!("Unsupported order type for Binance Spot: {order_type:?}"),
+    }
 }

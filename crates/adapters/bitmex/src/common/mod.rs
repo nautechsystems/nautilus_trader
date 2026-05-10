@@ -26,6 +26,7 @@ pub mod consts;
 pub mod credential;
 pub mod enums;
 pub mod parse;
+pub mod retry;
 pub mod urls;
 
 #[cfg(test)]

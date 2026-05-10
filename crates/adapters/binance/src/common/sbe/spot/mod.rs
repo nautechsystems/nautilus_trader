@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 #![allow(clippy::all)]
+#![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::return_self_not_must_use)]
 #![allow(clippy::semicolon_if_nothing_returned)]

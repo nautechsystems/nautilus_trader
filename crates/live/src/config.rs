@@ -113,6 +113,8 @@ pub struct LiveExecEngineConfig {
     pub position_check_lookback_mins: u32,
     /// The minimum elapsed time (milliseconds) since a position update before acting on discrepancies.
     pub position_check_threshold_ms: u32,
+    /// The maximum number of reconciliation attempts for a position discrepancy.
+    pub position_check_retries: u32,
     /// The interval (minutes) between purging closed orders from the in-memory cache.
     pub purge_closed_orders_interval_mins: Option<u32>,
     /// The time buffer (minutes) before closed orders can be purged.
@@ -159,6 +161,7 @@ impl Default for LiveExecEngineConfig {
             position_check_interval_secs: None,
             position_check_lookback_mins: 60,
             position_check_threshold_ms: 60_000,
+            position_check_retries: 3,
             purge_closed_orders_interval_mins: None,
             purge_closed_orders_buffer_mins: None,
             purge_closed_positions_interval_mins: None,
@@ -435,6 +438,7 @@ mod tests {
         assert_eq!(config.open_check_lookback_mins, Some(60));
         assert_eq!(config.open_check_missing_retries, 5);
         assert!(config.open_check_open_only);
+        assert_eq!(config.position_check_retries, 3);
         assert!(!config.purge_from_database);
         assert!(!config.graceful_shutdown_on_error);
         assert_eq!(config.qsize, 100_000);

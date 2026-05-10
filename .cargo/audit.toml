@@ -1,0 +1,12 @@
+# cargo-audit configuration
+# https://github.com/rustsec/rustsec/blob/main/cargo-audit/audit.toml.example
+#
+# Keep in sync with deny.toml [advisories] ignore list.
+
+[advisories]
+ignore = [
+  # capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix
+  "RUSTSEC-2025-0143",
+  # rsa Marvin Attack, transitive via sqlx-mysql, no fix available
+  "RUSTSEC-2023-0071",
+]

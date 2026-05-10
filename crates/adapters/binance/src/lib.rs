@@ -46,6 +46,8 @@
 //! - `python`: Enables Python bindings via [PyO3](https://pyo3.rs).
 //! - `extension-module`: Builds as a Python extension module (used together with `python`).
 //!
+//! [High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
+//!
 //! # Documentation
 //!
 //! See <https://docs.rs/nautilus-binance> for the latest API documentation.
@@ -54,19 +56,15 @@
 #![deny(unsafe_code)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
-// #![deny(clippy::missing_errors_doc)]
+#![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod common;
 pub mod config;
-pub mod data;
-pub mod error;
-pub mod execution;
+pub mod factories;
 pub mod futures;
-pub mod http;
 pub mod spot;
-pub mod websocket;
 
 #[cfg(feature = "python")]
 pub mod python;

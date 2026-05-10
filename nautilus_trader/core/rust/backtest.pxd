@@ -2,25 +2,41 @@
 
 from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t, uint64_t, uintptr_t
-from nautilus_trader.core.rust.common cimport TestClock_API, LiveClock_API
+from nautilus_trader.core.rust.common cimport TestClock_API, LiveClock_API, TimeEventHandler_t
 from nautilus_trader.core.rust.core cimport CVec, UUID4_t
 
 cdef extern from "../includes/backtest.h":
 
-    # Provides a means of accumulating and draining time event handlers.
+    # Provides a means of accumulating and draining time event handlers using a priority queue.
+    #
+    # Events are maintained in timestamp order using a binary heap, allowing efficient
+    # retrieval of the next event to process.
     cdef struct TimeEventAccumulator:
         pass
 
-    cdef struct TimeEventAccumulatorAPI:
+    # FFI wrapper for [`TimeEventAccumulator`].
+    cdef struct TimeEventAccumulator_API:
         TimeEventAccumulator *_0;
 
-    TimeEventAccumulatorAPI time_event_accumulator_new();
+    # Creates a new [`TimeEventAccumulator_API`] instance.
+    TimeEventAccumulator_API time_event_accumulator_new();
 
-    void time_event_accumulator_drop(TimeEventAccumulatorAPI accumulator);
+    # Drops a [`TimeEventAccumulator_API`] instance.
+    void time_event_accumulator_drop(TimeEventAccumulator_API accumulator);
 
-    void time_event_accumulator_advance_clock(TimeEventAccumulatorAPI *accumulator,
+    # Advance the clock and push events to the heap.
+    void time_event_accumulator_advance_clock(TimeEventAccumulator_API *accumulator,
                                               TestClock_API *clock,
                                               uint64_t to_time_ns,
                                               uint8_t set_time);
 
-    CVec time_event_accumulator_drain(TimeEventAccumulatorAPI *accumulator);
+    # Peek at the next event timestamp.
+    #
+    # Returns `u64::MAX` if the heap is empty.
+    uint64_t time_event_accumulator_peek_next_time(const TimeEventAccumulator_API *accumulator);
+
+    # Pop the next event if its timestamp is at or before `ts`.
+    #
+    # Returns a handler with `callback_ptr = NULL` if no event is available.
+    TimeEventHandler_t time_event_accumulator_pop_next_at_or_before(TimeEventAccumulator_API *accumulator,
+                                                                    uint64_t ts);

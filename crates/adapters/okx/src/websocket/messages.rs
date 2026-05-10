@@ -17,7 +17,7 @@
 
 use derive_builder::Builder;
 use nautilus_model::{
-    data::{Data, FundingRateUpdate, OrderBookDeltas},
+    data::{Data, FundingRateUpdate, InstrumentStatus, OrderBookDeltas},
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderExpired,
         OrderModifyRejected, OrderRejected, OrderTriggered, OrderUpdated,
@@ -49,7 +49,8 @@ pub enum NautilusWsMessage {
     Data(Vec<Data>),
     Deltas(OrderBookDeltas),
     FundingRates(Vec<FundingRateUpdate>),
-    Instrument(Box<InstrumentAny>),
+    Instrument(Box<InstrumentAny>, Option<InstrumentStatus>),
+    InstrumentStatus(InstrumentStatus),
     AccountUpdate(AccountState),
     PositionUpdate(PositionStatusReport),
     OrderAccepted(OrderAccepted),
@@ -69,7 +70,7 @@ pub enum NautilusWsMessage {
 
 /// Represents an OKX WebSocket error.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(feature = "python", pyo3::pyclass(from_py_object))]
 pub struct OKXWebSocketError {
     /// Error code from OKX (e.g., "50101").
     pub code: String,
@@ -823,8 +824,8 @@ pub struct OKXAlgoOrderMsg {
     pub inst_id: Ustr,
     /// Instrument type.
     pub inst_type: OKXInstrumentType,
-    /// Order type (always "trigger" for conditional orders).
-    pub ord_type: OKXOrderType,
+    /// Algo order type (trigger, move_order_stop, oco, iceberg, twap).
+    pub ord_type: OKXAlgoOrderType,
     /// Order state.
     pub state: OKXOrderStatus,
     /// Side.
@@ -836,6 +837,7 @@ pub struct OKXAlgoOrderMsg {
     /// Trigger price.
     pub trigger_px: String,
     /// Trigger price type (last, mark, index).
+    #[serde(default)]
     pub trigger_px_type: OKXTriggerType,
     /// Order price (-1 for market orders).
     pub ord_px: String,
@@ -862,6 +864,15 @@ pub struct OKXAlgoOrderMsg {
     /// Tag.
     #[serde(default)]
     pub tag: String,
+    /// Callback price ratio for trailing stop (e.g. "0.01" for 1%).
+    #[serde(default)]
+    pub callback_ratio: String,
+    /// Callback price spread for trailing stop (absolute distance).
+    #[serde(default)]
+    pub callback_spread: String,
+    /// Activation price for trailing stop.
+    #[serde(default)]
+    pub active_px: String,
 }
 
 /// Parameters for WebSocket place order operation.
@@ -875,6 +886,10 @@ pub struct WsPostOrderParams {
     pub inst_type: Option<OKXInstrumentType>,
     /// Instrument ID, e.g. "BTC-USDT".
     pub inst_id: Ustr,
+    /// Instrument ID code (numeric). Required for WebSocket order operations per OKX deprecation.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inst_id_code: Option<u64>,
     /// Trading mode: cash, isolated, cross.
     pub td_mode: OKXTradeMode,
     /// Margin currency (only for isolated margin).
@@ -925,6 +940,9 @@ pub struct WsPostOrderParams {
 pub struct WsCancelOrderParams {
     /// Instrument ID, e.g. "BTC-USDT".
     pub inst_id: Ustr,
+    /// Instrument ID code (numeric). Required for WebSocket order operations per OKX deprecation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inst_id_code: Option<u64>,
     /// Exchange-assigned order ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ord_id: Option<String>,
@@ -953,6 +971,9 @@ pub struct WsMassCancelParams {
 pub struct WsAmendOrderParams {
     /// Instrument ID, e.g. "BTC-USDT".
     pub inst_id: Ustr,
+    /// Instrument ID code (numeric). Required for WebSocket order operations per OKX deprecation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inst_id_code: Option<u64>,
     /// Exchange-assigned order ID (optional if using clOrdId).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ord_id: Option<String>,
@@ -977,6 +998,10 @@ pub struct WsAmendOrderParams {
 pub struct WsPostAlgoOrderParams {
     /// Instrument ID, e.g. "BTC-USDT".
     pub inst_id: Ustr,
+    /// Instrument ID code (numeric). Required for WebSocket order operations per OKX deprecation.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inst_id_code: Option<u64>,
     /// Trading mode: cash, isolated, cross.
     pub td_mode: OKXTradeMode,
     /// Order side: buy or sell.
@@ -1012,6 +1037,18 @@ pub struct WsPostAlgoOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    /// Callback rate for trailing stop (e.g., "0.01" for 1%).
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub callback_ratio: Option<String>,
+    /// Callback spread for trailing stop (fixed price distance).
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub callback_spread: Option<String>,
+    /// Activation price for trailing stop.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_px: Option<String>,
 }
 
 /// Parameters for WebSocket cancel algo order operation.
@@ -1021,6 +1058,10 @@ pub struct WsPostAlgoOrderParams {
 pub struct WsCancelAlgoOrderParams {
     /// Instrument ID, e.g. "BTC-USDT".
     pub inst_id: Ustr,
+    /// Instrument ID code (numeric). Required for WebSocket order operations per OKX deprecation.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inst_id_code: Option<u64>,
     /// Algo order ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub algo_id: Option<String>,
@@ -1690,5 +1731,127 @@ mod tests {
         assert_eq!(parsed["op"], "order");
         assert!(parsed["args"].is_array());
         assert_eq!(parsed["args"].as_array().unwrap().len(), 1);
+    }
+
+    #[rstest]
+    fn test_ws_post_order_params_with_inst_id_code() {
+        use super::WsPostOrderParamsBuilder;
+        use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
+
+        let params = WsPostOrderParamsBuilder::default()
+            .inst_id(Ustr::from("BTC-USDT-SWAP"))
+            .inst_id_code(10459u64)
+            .td_mode(OKXTradeMode::Cross)
+            .side(OKXSide::Buy)
+            .ord_type(OKXOrderType::Limit)
+            .sz("0.01".to_string())
+            .px("50000".to_string())
+            .build()
+            .unwrap();
+
+        let json = serde_json::to_string(&params).unwrap();
+
+        // Verify instIdCode is serialized correctly
+        assert!(json.contains("\"instIdCode\":10459"));
+        assert!(json.contains("\"instId\":\"BTC-USDT-SWAP\""));
+    }
+
+    #[rstest]
+    fn test_ws_post_order_params_without_inst_id_code() {
+        use super::WsPostOrderParamsBuilder;
+        use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
+
+        let params = WsPostOrderParamsBuilder::default()
+            .inst_id(Ustr::from("BTC-USDT"))
+            .td_mode(OKXTradeMode::Cash)
+            .side(OKXSide::Buy)
+            .ord_type(OKXOrderType::Market)
+            .sz("0.01".to_string())
+            .build()
+            .unwrap();
+
+        let json = serde_json::to_string(&params).unwrap();
+
+        // Verify instIdCode is NOT included when None
+        assert!(!json.contains("instIdCode"));
+        assert!(json.contains("\"instId\":\"BTC-USDT\""));
+    }
+
+    #[rstest]
+    fn test_ws_cancel_order_params_with_inst_id_code() {
+        use super::WsCancelOrderParamsBuilder;
+
+        let params = WsCancelOrderParamsBuilder::default()
+            .inst_id(Ustr::from("ETH-USDT-SWAP"))
+            .inst_id_code(10461u64)
+            .ord_id("12345678".to_string())
+            .build()
+            .unwrap();
+
+        let json = serde_json::to_string(&params).unwrap();
+
+        assert!(json.contains("\"instIdCode\":10461"));
+        assert!(json.contains("\"instId\":\"ETH-USDT-SWAP\""));
+        assert!(json.contains("\"ordId\":\"12345678\""));
+    }
+
+    #[rstest]
+    fn test_ws_amend_order_params_with_inst_id_code() {
+        use super::WsAmendOrderParamsBuilder;
+
+        let params = WsAmendOrderParamsBuilder::default()
+            .inst_id(Ustr::from("BTC-USDT-SWAP"))
+            .inst_id_code(10459u64)
+            .cl_ord_id("client123".to_string())
+            .new_px("51000".to_string())
+            .build()
+            .unwrap();
+
+        let json = serde_json::to_string(&params).unwrap();
+
+        assert!(json.contains("\"instIdCode\":10459"));
+        assert!(json.contains("\"instId\":\"BTC-USDT-SWAP\""));
+        assert!(json.contains("\"newPx\":\"51000\""));
+    }
+
+    #[rstest]
+    fn test_ws_post_algo_order_params_with_inst_id_code() {
+        use super::WsPostAlgoOrderParamsBuilder;
+        use crate::common::enums::{OKXAlgoOrderType, OKXSide, OKXTradeMode, OKXTriggerType};
+
+        let params = WsPostAlgoOrderParamsBuilder::default()
+            .inst_id(Ustr::from("BTC-USDT-SWAP"))
+            .inst_id_code(10459u64)
+            .td_mode(OKXTradeMode::Cross)
+            .side(OKXSide::Buy)
+            .ord_type(OKXAlgoOrderType::Trigger)
+            .sz("0.01".to_string())
+            .trigger_px("48000".to_string())
+            .trigger_px_type(OKXTriggerType::Last)
+            .build()
+            .unwrap();
+
+        let json = serde_json::to_string(&params).unwrap();
+
+        assert!(json.contains("\"instIdCode\":10459"));
+        assert!(json.contains("\"instId\":\"BTC-USDT-SWAP\""));
+        assert!(json.contains("\"triggerPx\":\"48000\""));
+    }
+
+    #[rstest]
+    fn test_ws_cancel_algo_order_params_with_inst_id_code() {
+        // Test using direct struct construction since builder requires both algo_id and algo_cl_ord_id
+        let params = WsCancelAlgoOrderParams {
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
+            inst_id_code: Some(10459),
+            algo_id: Some("987654321".to_string()),
+            algo_cl_ord_id: None,
+        };
+
+        let json = serde_json::to_string(&params).unwrap();
+
+        assert!(json.contains("\"instIdCode\":10459"));
+        assert!(json.contains("\"instId\":\"BTC-USDT-SWAP\""));
+        assert!(json.contains("\"algoId\":\"987654321\""));
     }
 }

@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::serialization::default_true;
 use nautilus_model::identifiers::ClientId;
 use serde::{Deserialize, Serialize};
 
@@ -54,10 +55,6 @@ pub struct ExecutionEngineConfig {
     /// If debug mode is active (will provide extra debug logging).
     #[serde(default)]
     pub debug: bool,
-}
-
-const fn default_true() -> bool {
-    true
 }
 
 impl Default for ExecutionEngineConfig {

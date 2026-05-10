@@ -76,8 +76,14 @@ impl Money {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract::<f64>()?;
             (self.as_f64() + other_float).into_py_any(py)
-        } else if let Ok(other_qty) = other.extract::<Self>() {
-            (self.as_decimal() + other_qty.as_decimal()).into_py_any(py)
+        } else if let Ok(other_money) = other.extract::<Self>() {
+            if self.currency != other_money.currency {
+                return Err(to_pyvalue_err(format!(
+                    "Currency mismatch: cannot add {} to {}",
+                    other_money.currency.code, self.currency.code
+                )));
+            }
+            (*self + other_money).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             (self.as_decimal() + other_dec).into_py_any(py)
         } else {
@@ -92,8 +98,14 @@ impl Money {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float + self.as_f64()).into_py_any(py)
-        } else if let Ok(other_qty) = other.extract::<Self>() {
-            (other_qty.as_decimal() + self.as_decimal()).into_py_any(py)
+        } else if let Ok(other_money) = other.extract::<Self>() {
+            if self.currency != other_money.currency {
+                return Err(to_pyvalue_err(format!(
+                    "Currency mismatch: cannot add {} to {}",
+                    self.currency.code, other_money.currency.code
+                )));
+            }
+            (other_money + *self).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             (other_dec + self.as_decimal()).into_py_any(py)
         } else {
@@ -108,8 +120,14 @@ impl Money {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() - other_float).into_py_any(py)
-        } else if let Ok(other_qty) = other.extract::<Self>() {
-            (self.as_decimal() - other_qty.as_decimal()).into_py_any(py)
+        } else if let Ok(other_money) = other.extract::<Self>() {
+            if self.currency != other_money.currency {
+                return Err(to_pyvalue_err(format!(
+                    "Currency mismatch: cannot subtract {} from {}",
+                    other_money.currency.code, self.currency.code
+                )));
+            }
+            (*self - other_money).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             (self.as_decimal() - other_dec).into_py_any(py)
         } else {
@@ -124,8 +142,14 @@ impl Money {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float - self.as_f64()).into_py_any(py)
-        } else if let Ok(other_qty) = other.extract::<Self>() {
-            (other_qty.as_decimal() - self.as_decimal()).into_py_any(py)
+        } else if let Ok(other_money) = other.extract::<Self>() {
+            if self.currency != other_money.currency {
+                return Err(to_pyvalue_err(format!(
+                    "Currency mismatch: cannot subtract {} from {}",
+                    self.currency.code, other_money.currency.code
+                )));
+            }
+            (other_money - *self).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             (other_dec - self.as_decimal()).into_py_any(py)
         } else {
@@ -324,6 +348,12 @@ impl Money {
     #[pyo3(name = "from_raw")]
     fn py_from_raw(raw: MoneyRaw, currency: Currency) -> PyResult<Self> {
         Ok(Self::from_raw(raw, currency))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_decimal")]
+    fn py_from_decimal(value: Decimal, currency: Currency) -> PyResult<Self> {
+        Self::from_decimal(value, currency).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]

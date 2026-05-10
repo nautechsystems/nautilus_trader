@@ -163,7 +163,7 @@ mod tests {
             realized_pnl: Some(Money::new(112.50, Currency::USD())),
             unrealized_pnl: Money::new(0.0, Currency::USD()),
             duration: 3_600_000_000_000, // 1 hour in nanoseconds
-            event_id: Default::default(),
+            event_id: UUID4::default(),
             ts_opened: UnixNanos::from(1_000_000_000),
             ts_closed: Some(UnixNanos::from(4_600_000_000)),
             ts_event: UnixNanos::from(4_600_000_000),
@@ -186,7 +186,7 @@ mod tests {
             Price::from("1.0600"),
             Currency::USD(),
             LiquiditySide::Taker,
-            Default::default(),
+            UUID4::default(),
             UnixNanos::from(4_600_000_000),
             UnixNanos::from(5_000_000_000),
             false,
@@ -261,7 +261,7 @@ mod tests {
             Price::from("0.8000"),
             Currency::USD(),
             LiquiditySide::Taker,
-            Default::default(),
+            UUID4::default(),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
             false,
@@ -271,7 +271,7 @@ mod tests {
 
         let position = Position::new(&InstrumentAny::CurrencyPair(instrument), initial_fill);
         let closing_fill = create_test_order_filled();
-        let event_id = Default::default();
+        let event_id = UUID4::default();
         let ts_init = UnixNanos::from(6_000_000_000);
 
         let position_closed = PositionClosed::create(&position, &closing_fill, event_id, ts_init);
@@ -331,7 +331,7 @@ mod tests {
     fn test_position_closed_partial_eq() {
         let mut position_closed1 = create_test_position_closed();
         let mut position_closed2 = create_test_position_closed();
-        let event_id = Default::default();
+        let event_id = UUID4::default();
         position_closed1.event_id = event_id;
         position_closed2.event_id = event_id;
 

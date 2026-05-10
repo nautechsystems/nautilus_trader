@@ -138,9 +138,7 @@ The `TradingState` enum has three variants:
 - `HALTED`: Does not process further order commands until state changes.
 - `REDUCING`: Only processes cancels or commands that reduce open positions.
 
-:::info
-See the `RiskEngineConfig` [API Reference](../api_reference/config#risk) for further details.
-:::
+See the [`RiskEngineConfig` API Reference](../api_reference/config#risk) for further details.
 
 ## Execution algorithms
 
@@ -160,7 +158,7 @@ minimizing the concentration of trade size at any given time.
 The algorithm will immediately submit the first order, with the final order submitted being the
 primary order at the end of the horizon period.
 
-Using the TWAP algorithm as an example (found in ``/examples/algorithms/twap.py``), this example
+Using the TWAP algorithm as an example (found in `/examples/algorithms/twap.py`), this example
 demonstrates how to initialize and register a TWAP execution algorithm directly with a
 `BacktestEngine` (assuming an engine is already initialized):
 
@@ -234,7 +232,7 @@ The order may also carry the `exec_algorithm_params` being a `dict[str, Any]`.
 :::warning
 Because of the flexibility of the `exec_algorithm_params` dictionary, it's important to thoroughly
 validate all of the key value pairs for correct operation of the algorithm (for starters that the
-dictionary is not ``None`` and all necessary parameters actually exist).
+dictionary is not `None` and all necessary parameters actually exist).
 :::
 
 Received orders will arrive via the following `on_order(...)` method. These received orders are
@@ -261,7 +259,12 @@ Each of these methods takes the primary (original) `Order` as the first argument
 quantity will be reduced by the `quantity` passed in (becoming the spawned orders quantity).
 
 :::warning
-There must be enough primary order quantity remaining (this is validated).
+The spawned quantity must not exceed the primary order's `leaves_qty` (remaining unfilled quantity).
+:::
+
+:::note
+If a spawned order is denied or rejected before acceptance, the deducted quantity is automatically
+restored to the primary order. Once accepted by the venue, the reduction is considered committed.
 :::
 
 Once the desired number of secondary orders have been spawned, and the execution routine is over,
@@ -497,3 +500,9 @@ When `allow_overfills=False` (the default), rejected fills may cause position di
 between the system and the venue. Use the [reconciliation](live.md#execution-reconciliation)
 features to detect and resolve such discrepancies.
 :::
+
+## Related guides
+
+- [Orders](orders.md) - Order types and management.
+- [Positions](positions.md) - Position tracking from executions.
+- [Strategies](strategies.md) - Order submission from strategies.

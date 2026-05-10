@@ -28,6 +28,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import IndexPriceUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -62,10 +63,12 @@ class DataTesterConfig(ActorConfig, frozen=True):
     subscribe_params: dict[str, Any] | None = None
     can_unsubscribe: bool = True
     request_instruments: bool = False
+    request_book_snapshot: bool = False
+    request_book_deltas: bool = False
     request_quotes: bool = False
     request_trades: bool = False
     request_bars: bool = False
-    request_book_snapshot: bool = False
+    request_funding_rates: bool = False
     request_params: dict[str, Any] | None = None
     requests_start_delta: pd.Timedelta | None = None
     book_type: BookType = BookType.L2_MBP
@@ -203,6 +206,22 @@ class DataTester(Actor):
                     params=self.config.subscribe_params,
                 )
 
+            if self.config.request_book_snapshot:
+                self.request_order_book_snapshot(
+                    instrument_id=instrument_id,
+                    limit=self.config.book_depth or 0,
+                    client_id=client_id,
+                    params=self.config.request_params,
+                )
+
+            if self.config.request_book_deltas:
+                self.request_order_book_deltas(
+                    instrument_id=instrument_id,
+                    start=requests_start,
+                    client_id=client_id,
+                    params=self.config.request_params,
+                )
+
             if self.config.request_quotes:
                 self.request_quote_ticks(
                     instrument_id=instrument_id,
@@ -219,10 +238,11 @@ class DataTester(Actor):
                     params=self.config.request_params,
                 )
 
-            if self.config.request_book_snapshot:
-                self.request_order_book_snapshot(
+            if self.config.request_funding_rates:
+                funding_start = self.clock.utc_now() - pd.Timedelta(days=7)
+                self.request_funding_rates(
                     instrument_id=instrument_id,
-                    limit=self.config.book_depth or 0,
+                    start=funding_start,
                     client_id=client_id,
                     params=self.config.request_params,
                 )
@@ -434,6 +454,14 @@ class DataTester(Actor):
         """
         if self.config.log_data:
             self.log.info(repr(index_price), LogColor.CYAN)
+
+    def on_instrument_status(self, data: InstrumentStatus) -> None:
+        """
+        Actions to be performed when the actor is running and receives an instrument
+        status update.
+        """
+        if self.config.log_data:
+            self.log.info(repr(data), LogColor.CYAN)
 
     def on_funding_rate(self, funding_rate: FundingRateUpdate) -> None:
         """

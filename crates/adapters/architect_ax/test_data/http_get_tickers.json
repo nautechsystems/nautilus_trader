@@ -1,0 +1,40 @@
+{
+  "tickers": [
+    {
+      "symbol": "EURUSD-PERP",
+      "bid": "1.08450",
+      "ask": "1.08460",
+      "last": "1.08455",
+      "mark": "1.08452",
+      "index": "1.08448",
+      "volume_24h": "125000",
+      "high_24h": "1.08750",
+      "low_24h": "1.08100",
+      "timestamp": "2024-01-15T10:30:00Z"
+    },
+    {
+      "symbol": "GBPUSD-PERP",
+      "bid": "1.27150",
+      "ask": "1.27170",
+      "last": "1.27160",
+      "mark": "1.27155",
+      "index": "1.27145",
+      "volume_24h": "85000",
+      "high_24h": "1.27500",
+      "low_24h": "1.26800",
+      "timestamp": "2024-01-15T10:30:00Z"
+    },
+    {
+      "symbol": "JPYUSD-PERP",
+      "bid": null,
+      "ask": null,
+      "last": null,
+      "mark": null,
+      "index": null,
+      "volume_24h": null,
+      "high_24h": null,
+      "low_24h": null,
+      "timestamp": null
+    }
+  ]
+}

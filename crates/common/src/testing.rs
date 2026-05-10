@@ -87,7 +87,9 @@ where
 
         assert!(
             start_time.elapsed() <= timeout,
-            "Timeout waiting for condition"
+            "Timeout waiting for condition after {:.1}s (limit {:.1}s)",
+            start_time.elapsed().as_secs_f64(),
+            timeout.as_secs_f64(),
         );
 
         thread::sleep(Duration::from_millis(100));
@@ -112,7 +114,9 @@ where
 
         assert!(
             start_time.elapsed() <= timeout,
-            "Timeout waiting for condition"
+            "Timeout waiting for condition after {:.1}s (limit {:.1}s)",
+            start_time.elapsed().as_secs_f64(),
+            timeout.as_secs_f64(),
         );
 
         tokio::time::sleep(Duration::from_millis(100)).await;

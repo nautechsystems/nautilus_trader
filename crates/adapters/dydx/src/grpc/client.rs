@@ -18,12 +18,14 @@
 //! This module provides the main gRPC client for interacting with dYdX v4 validator nodes.
 //! It handles transaction signing, broadcasting, and querying account state.
 
+use cosmrs::Tx;
 use prost::Message as ProstMessage;
 use tonic::transport::Channel;
 
 use crate::{
     error::DydxError,
     proto::{
+        AccountAuthenticator, AccountPlusClient, GetAuthenticatorsRequest,
         cosmos_sdk_proto::cosmos::{
             auth::v1beta1::{
                 BaseAccount, QueryAccountRequest, query_client::QueryClient as AuthClient,
@@ -78,6 +80,7 @@ pub struct DydxGrpcClient {
     clob: ClobClient<Channel>,
     perpetuals: PerpetualsClient<Channel>,
     subaccounts: SubaccountsClient<Channel>,
+    accountplus: AccountPlusClient<Channel>,
     current_url: String,
 }
 
@@ -113,6 +116,7 @@ impl DydxGrpcClient {
             clob: ClobClient::new(channel.clone()),
             perpetuals: PerpetualsClient::new(channel.clone()),
             subaccounts: SubaccountsClient::new(channel.clone()),
+            accountplus: AccountPlusClient::new(channel.clone()),
             channel,
             current_url: grpc_url,
         })
@@ -136,7 +140,7 @@ impl DydxGrpcClient {
 
         for (idx, url) in grpc_urls.iter().enumerate() {
             let url_str = url.as_ref();
-            tracing::debug!(
+            log::debug!(
                 "Attempting to connect to gRPC node: {url_str} (attempt {}/{})",
                 idx + 1,
                 grpc_urls.len()
@@ -144,11 +148,11 @@ impl DydxGrpcClient {
 
             match Self::new(url_str.to_string()).await {
                 Ok(client) => {
-                    tracing::info!("Successfully connected to gRPC node: {url_str}");
+                    log::info!("Successfully connected to gRPC node: {url_str}");
                     return Ok(client);
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to connect to gRPC node {url_str}: {e}");
+                    log::warn!("Failed to connect to gRPC node {url_str}: {e}");
                     last_error = Some(e);
                 }
             }
@@ -185,29 +189,41 @@ impl DydxGrpcClient {
 
             // Skip if it's the same URL we're currently connected to
             if url_str == self.current_url {
-                tracing::debug!("Skipping current URL: {url_str}");
+                log::debug!("Skipping current URL: {url_str}");
                 continue;
             }
 
-            tracing::debug!(
+            log::debug!(
                 "Attempting to reconnect to gRPC node: {url_str} (attempt {}/{})",
                 idx + 1,
                 grpc_urls.len()
             );
 
-            let channel = match Channel::from_shared(url_str.to_string())
+            let mut endpoint = match Channel::from_shared(url_str.to_string())
                 .map_err(|e| DydxError::Config(format!("Invalid gRPC URL: {e}")))
             {
-                Ok(ch) => ch,
+                Ok(ep) => ep,
                 Err(e) => {
                     last_error = Some(e);
                     continue;
                 }
             };
 
-            match channel.connect().await {
+            // Enable TLS for HTTPS URLs (required for public gRPC nodes)
+            if url_str.starts_with("https://") {
+                let tls = tonic::transport::ClientTlsConfig::new().with_enabled_roots();
+                endpoint = match endpoint.tls_config(tls) {
+                    Ok(ep) => ep,
+                    Err(e) => {
+                        last_error = Some(DydxError::Config(format!("TLS config failed: {e}")));
+                        continue;
+                    }
+                };
+            }
+
+            match endpoint.connect().await {
                 Ok(connected_channel) => {
-                    tracing::info!("Successfully reconnected to gRPC node: {url_str}");
+                    log::info!("Successfully reconnected to gRPC node: {url_str}");
 
                     // Update all service clients with the new channel
                     self.channel = connected_channel.clone();
@@ -223,7 +239,7 @@ impl DydxGrpcClient {
                     return Ok(());
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to reconnect to gRPC node {url_str}: {e}");
+                    log::warn!("Failed to reconnect to gRPC node {url_str}: {e}");
                     last_error = Some(DydxError::Grpc(Box::new(tonic::Status::unavailable(
                         format!("Connection failed: {e}"),
                     ))));
@@ -317,6 +333,25 @@ impl DydxGrpcClient {
         };
         let balances = self.bank.all_balances(req).await?.into_inner().balances;
         Ok(balances)
+    }
+
+    /// Query for authenticators registered for an account.
+    ///
+    /// Authenticators enable permissioned key trading, allowing API wallets
+    /// to sign transactions on behalf of a main account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub async fn get_authenticators(
+        &mut self,
+        address: &str,
+    ) -> Result<Vec<AccountAuthenticator>, anyhow::Error> {
+        let req = GetAuthenticatorsRequest {
+            account: address.to_string(),
+        };
+        let resp = self.accountplus.get_authenticators(req).await?.into_inner();
+        Ok(resp.account_authenticators)
     }
 
     /// Query for node info.
@@ -461,7 +496,7 @@ impl DydxGrpcClient {
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    pub async fn get_tx(&mut self, hash: &str) -> Result<cosmrs::Tx, anyhow::Error> {
+    pub async fn get_tx(&mut self, hash: &str) -> Result<Tx, anyhow::Error> {
         let req = GetTxRequest {
             hash: hash.to_string(),
         };
@@ -470,7 +505,7 @@ impl DydxGrpcClient {
         if let Some(tx) = response.tx {
             // Convert through bytes since the types are incompatible
             let tx_bytes = tx.encode_to_vec();
-            cosmrs::Tx::try_from(tx_bytes.as_slice()).map_err(|e| anyhow::anyhow!("{e}"))
+            Tx::try_from(tx_bytes.as_slice()).map_err(|e| anyhow::anyhow!("{e}"))
         } else {
             anyhow::bail!("Transaction not found")
         }

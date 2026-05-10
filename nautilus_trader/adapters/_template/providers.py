@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.model.identifiers import InstrumentId
 
 
 # The 'pragma: no cover' comment excludes a method from test coverage.
@@ -32,6 +31,11 @@ class TemplateInstrumentProvider(InstrumentProvider):
     """
     An example template of an ``InstrumentProvider`` showing the minimal methods which
     must be implemented for an integration to be complete.
+
+    The base class provides default implementations for ``load_ids_async`` and
+    ``load_async`` that delegate to ``load_all_async`` with filtering. Override
+    those methods only if the venue API supports per-instrument fetching.
+
     """
 
     async def load_all_async(
@@ -40,22 +44,4 @@ class TemplateInstrumentProvider(InstrumentProvider):
     ) -> None:
         raise NotImplementedError(
             "method `load_all_async` must be implemented in the subclass",
-        )  # pragma: no cover
-
-    async def load_ids_async(
-        self,
-        instrument_ids: list[InstrumentId],
-        filters: dict | None = None,
-    ) -> None:
-        raise NotImplementedError(
-            "method `load_ids_async` must be implemented in the subclass",
-        )  # pragma: no cover
-
-    async def load_async(
-        self,
-        instrument_id: InstrumentId,
-        filters: dict | None = None,
-    ) -> None:
-        raise NotImplementedError(
-            "method `load_async` must be implemented in the subclass",
         )  # pragma: no cover

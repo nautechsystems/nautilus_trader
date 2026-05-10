@@ -50,7 +50,7 @@ fn bench_futures_classification(c: &mut Criterion) {
         ("pong", FUTURES_PONG),
     ];
 
-    for (name, msg) in messages.iter() {
+    for (name, msg) in &messages {
         let value: Value = serde_json::from_str(msg).unwrap();
 
         group.bench_with_input(BenchmarkId::new("classify", name), &value, |b, value| {
@@ -74,7 +74,7 @@ fn bench_futures_full_flow(c: &mut Criterion) {
         ("heartbeat", FUTURES_HEARTBEAT),
     ];
 
-    for (name, msg) in messages.iter() {
+    for (name, msg) in &messages {
         group.bench_with_input(
             BenchmarkId::new("parse_and_classify", name),
             msg,
@@ -135,7 +135,7 @@ fn bench_spot_parsing(c: &mut Criterion) {
         ("book_update", SPOT_BOOK_UPDATE),
     ];
 
-    for (name, msg) in messages.iter() {
+    for (name, msg) in &messages {
         group.bench_with_input(BenchmarkId::new("to_value", name), msg, |b, msg| {
             b.iter(|| {
                 let value: Value = serde_json::from_str(black_box(msg)).unwrap();
@@ -157,7 +157,7 @@ fn bench_spot_full_flow(c: &mut Criterion) {
         ("book_update", SPOT_BOOK_UPDATE),
     ];
 
-    for (name, msg) in messages.iter() {
+    for (name, msg) in &messages {
         group.bench_with_input(BenchmarkId::new("parse_to_struct", name), msg, |b, msg| {
             b.iter(|| {
                 let ws_msg: KrakenWsMessage = serde_json::from_str(black_box(msg)).unwrap();

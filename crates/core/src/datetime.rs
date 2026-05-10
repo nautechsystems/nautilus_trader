@@ -125,6 +125,7 @@ pub fn millis_to_nanos(millis: f64) -> anyhow::Result<u64> {
         millis.is_finite(),
         "milliseconds must be finite, was {millis}"
     );
+
     if millis <= 0.0 {
         return Ok(0);
     }
@@ -156,6 +157,7 @@ pub fn micros_to_nanos(micros: f64) -> anyhow::Result<u64> {
         micros.is_finite(),
         "microseconds must be finite, was {micros}"
     );
+
     if micros <= 0.0 {
         return Ok(0);
     }

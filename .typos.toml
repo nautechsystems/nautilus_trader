@@ -34,6 +34,8 @@ SUPERSEED = "SUPERSEED" # Superseed blockchain constant
 ba = "ba" # Hex digit in UUID test strings
 BA = "BA" # Base64/encoded characters in test data
 datas = "datas" # Intentional plural variable naming for vectors
+UE = "UE" # Base64 encoded certificate data (GA1UE pattern)
+Fo = "Fo" # Base64 encoded certificate data
 
 # NumPy/scientific computing functions
 arange = "arange" # NumPy array range function (not a typo of "arrange")

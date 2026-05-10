@@ -208,17 +208,13 @@ impl PortfolioAnalyzer {
 
     /// Calculates total PnL including unrealized PnL if provided.
     ///
-    /// # Panics
-    ///
-    /// This function does not panic. The internal `expect` is guarded by a length
-    /// check ensuring at least one currency exists.
-    ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - No currency is specified in a multi-currency portfolio.
     /// - The specified currency is not found in account balances.
     /// - The unrealized PnL currency does not match the specified currency.
+    #[allow(clippy::missing_panics_doc)] // Guarded by length check
     pub fn total_pnl(
         &self,
         currency: Option<&Currency>,
@@ -232,7 +228,6 @@ impl PortfolioAnalyzer {
         let currency = match currency {
             Some(c) => c,
             None if self.account_balances.len() == 1 => {
-                // SAFETY: Length is 1, so next() always returns Some
                 self.account_balances.keys().next().expect("len is 1")
             }
             None => return Err("Currency must be specified for multi-currency portfolio"),
@@ -261,17 +256,13 @@ impl PortfolioAnalyzer {
 
     /// Calculates total PnL as a percentage of starting balance.
     ///
-    /// # Panics
-    ///
-    /// This function does not panic. The internal `expect` is guarded by a length
-    /// check ensuring at least one currency exists.
-    ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - No currency is specified in a multi-currency portfolio.
     /// - The specified currency is not found in account balances.
     /// - The unrealized PnL currency does not match the specified currency.
+    #[allow(clippy::missing_panics_doc)] // Guarded by length check
     pub fn total_pnl_percentage(
         &self,
         currency: Option<&Currency>,
@@ -285,7 +276,6 @@ impl PortfolioAnalyzer {
         let currency = match currency {
             Some(c) => c,
             None if self.account_balances.len() == 1 => {
-                // SAFETY: Length is 1, so next() always returns Some
                 self.account_balances.keys().next().expect("len is 1")
             }
             None => return Err("Currency must be specified for multi-currency portfolio"),
@@ -407,8 +397,11 @@ impl PortfolioAnalyzer {
         let max_length = self.get_max_length_name();
         let stats = self.get_performance_stats_pnls(currency, unrealized_pnl)?;
 
+        let mut entries: Vec<_> = stats.into_iter().collect();
+        entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+
         let mut output = Vec::new();
-        for (k, v) in stats {
+        for (k, v) in entries {
             let padding = if max_length > k.len() {
                 max_length - k.len() + 1
             } else {
@@ -426,8 +419,11 @@ impl PortfolioAnalyzer {
         let max_length = self.get_max_length_name();
         let stats = self.get_performance_stats_returns();
 
+        let mut entries: Vec<_> = stats.into_iter().collect();
+        entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+
         let mut output = Vec::new();
-        for (k, v) in stats {
+        for (k, v) in entries {
             let padding = max_length - k.len() + 1;
             output.push(format!("{}: {}{:.2}", k, " ".repeat(padding), v));
         }
@@ -441,8 +437,11 @@ impl PortfolioAnalyzer {
         let max_length = self.get_max_length_name();
         let stats = self.get_performance_stats_general();
 
+        let mut entries: Vec<_> = stats.into_iter().collect();
+        entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+
         let mut output = Vec::new();
-        for (k, v) in stats {
+        for (k, v) in entries {
             let padding = max_length - k.len() + 1;
             output.push(format!("{}: {}{}", k, " ".repeat(padding), v));
         }
@@ -612,12 +611,12 @@ mod tests {
         fn balances(&self) -> AHashMap<Currency, AccountBalance> {
             todo!()
         }
-        fn apply(&mut self, _: AccountState) {
+        fn apply(&mut self, _: AccountState) -> anyhow::Result<()> {
             todo!()
         }
         fn calculate_balance_locked(
             &mut self,
-            _: InstrumentAny,
+            _: &InstrumentAny,
             _: OrderSide,
             _: Quantity,
             _: Price,
@@ -627,15 +626,15 @@ mod tests {
         }
         fn calculate_pnls(
             &self,
-            _: InstrumentAny,
-            _: OrderFilled,
+            _: &InstrumentAny,
+            _: &OrderFilled,
             _: Option<Position>,
         ) -> Result<Vec<Money>, anyhow::Error> {
             todo!()
         }
         fn calculate_commission(
             &self,
-            _: InstrumentAny,
+            _: &InstrumentAny,
             _: Quantity,
             _: Price,
             _: LiquiditySide,

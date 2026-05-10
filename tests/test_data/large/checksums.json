@@ -1,3 +1,5 @@
 {
-  "databento_mbo_xnas_itch.csv": "sha256:5481466e7776659f7f093b1ca8b05c7e88b8d586036692089cca5decc7965099"
+  "databento_mbo_xnas_itch.csv": "sha256:5481466e7776659f7f093b1ca8b05c7e88b8d586036692089cca5decc7965099",
+  "itch_AAPL.XNAS_2019-01-30_deltas.parquet": "sha256:a31aa366ab939e36c9fd484c5d2d5d0760fa84d47bd66e89c135655e9d2a360c",
+  "tardis_BTC-PERPETUAL.DERIBIT_2020-04-01_deltas.parquet": "sha256:ba4024e394f6425049827607bc479afe93c4015f8331b9c2942929abce43a9f1"
 }

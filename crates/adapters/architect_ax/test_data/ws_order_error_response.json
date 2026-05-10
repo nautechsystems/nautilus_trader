@@ -1,0 +1,7 @@
+{
+  "rid": 1,
+  "err": {
+    "code": 400,
+    "msg": "initial margin required for order (88.82) is greater than available initial margin (0.00)"
+  }
+}

@@ -32,7 +32,8 @@ use crate::indicator::Indicator;
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.indicators"
+        module = "nautilus_trader.core.nautilus_pyo3.indicators",
+        from_py_object,
     )
 )]
 pub enum CandleBodySize {
@@ -54,7 +55,8 @@ pub enum CandleBodySize {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.indicators"
+        module = "nautilus_trader.core.nautilus_pyo3.indicators",
+        from_py_object,
     )
 )]
 pub enum CandleDirection {
@@ -74,7 +76,8 @@ pub enum CandleDirection {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.indicators"
+        module = "nautilus_trader.core.nautilus_pyo3.indicators",
+        from_py_object,
     )
 )]
 pub enum CandleSize {
@@ -98,7 +101,8 @@ pub enum CandleSize {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.indicators"
+        module = "nautilus_trader.core.nautilus_pyo3.indicators",
+        from_py_object,
     )
 )]
 pub enum CandleWickSize {
@@ -112,7 +116,10 @@ pub enum CandleWickSize {
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.indicators",
+        from_py_object
+    )
 )]
 pub struct FuzzyCandle {
     pub direction: CandleDirection,
@@ -393,6 +400,7 @@ impl FuzzyCandlesticks {
             mean_length + self.threshold2 * sd_lengths, // Large
             mean_length + self.threshold3 * sd_lengths, // VeryLarge
         ];
+
         if length <= thresholds[0] {
             CandleSize::VerySmall
         } else if length <= thresholds[1] {

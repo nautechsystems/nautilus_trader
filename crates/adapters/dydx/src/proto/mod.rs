@@ -41,7 +41,10 @@ pub use dydx_proto::{
     },
     dydxprotocol,
     dydxprotocol::{
-        accountplus::TxExtension,
+        accountplus::{
+            AccountAuthenticator, GetAuthenticatorsRequest, GetAuthenticatorsResponse, TxExtension,
+            query_client::QueryClient as AccountPlusClient,
+        },
         clob::{
             ClobPair, MsgBatchCancel, MsgCancelOrder, MsgPlaceOrder, Order, OrderBatch, OrderId,
             QueryAllClobPairRequest,

@@ -55,7 +55,7 @@ def test_account_identifier() -> None:
     # Assert
     assert account_id1 == account_id1
     assert account_id1 != account_id2
-    assert "SIM-02851908", account_id1.value
+    assert account_id1.value == "SIM-02851908"
     assert account_id1 == AccountId("SIM-02851908")
 
 
@@ -442,6 +442,90 @@ def test_instrument_id_new_spread_to_list_roundtrip() -> None:
 
     # Assert
     assert result_list == original_list
+
+
+@pytest.mark.parametrize(
+    ("legs", "expected_symbol"),
+    [
+        # 2 legs - vertical spread (call spread), sorted alphabetically
+        (
+            [
+                (InstrumentId(Symbol("ESH6 C7000"), Venue("XCME")), 1),
+                (InstrumentId(Symbol("ESH6 C7050"), Venue("XCME")), -1),
+            ],
+            "(1)ESH6 C7000___((1))ESH6 C7050",
+        ),
+        # 2 legs - ratio spread with different ratios (put spread)
+        (
+            [
+                (InstrumentId(Symbol("ESH6 P6950"), Venue("XCME")), 1),
+                (InstrumentId(Symbol("ESH6 P6900"), Venue("XCME")), -2),
+            ],
+            "((2))ESH6 P6900___(1)ESH6 P6950",
+        ),
+        # 3 legs - butterfly spread, sorted alphabetically
+        (
+            [
+                (InstrumentId(Symbol("ESH6 C7000"), Venue("XCME")), 1),
+                (InstrumentId(Symbol("ESH6 C7050"), Venue("XCME")), -2),
+                (InstrumentId(Symbol("ESH6 P6950"), Venue("XCME")), 1),
+            ],
+            "(1)ESH6 C7000___((2))ESH6 C7050___(1)ESH6 P6950",
+        ),
+        # 3 legs - all long legs (unusual but valid)
+        (
+            [
+                (InstrumentId(Symbol("ESH6 C7000"), Venue("XCME")), 1),
+                (InstrumentId(Symbol("ESH6 C7050"), Venue("XCME")), 2),
+                (InstrumentId(Symbol("ESH6 P6900"), Venue("XCME")), 3),
+            ],
+            "(1)ESH6 C7000___(2)ESH6 C7050___(3)ESH6 P6900",
+        ),
+        # 4 legs - iron condor, sorted alphabetically
+        (
+            [
+                (InstrumentId(Symbol("ESH6 C7000"), Venue("XCME")), 1),
+                (InstrumentId(Symbol("ESH6 C7050"), Venue("XCME")), -1),
+                (InstrumentId(Symbol("ESH6 P6950"), Venue("XCME")), 1),
+                (InstrumentId(Symbol("ESH6 P6900"), Venue("XCME")), -1),
+            ],
+            "(1)ESH6 C7000___((1))ESH6 C7050___((1))ESH6 P6900___(1)ESH6 P6950",
+        ),
+        # 4 legs - complex spread with different ratios
+        (
+            [
+                (InstrumentId(Symbol("ESH6 C7000"), Venue("XCME")), 1),
+                (InstrumentId(Symbol("ESH6 C7050"), Venue("XCME")), -2),
+                (InstrumentId(Symbol("ESH6 P6950"), Venue("XCME")), 3),
+                (InstrumentId(Symbol("ESH6 P6900"), Venue("XCME")), -4),
+            ],
+            "(1)ESH6 C7000___((2))ESH6 C7050___((4))ESH6 P6900___(3)ESH6 P6950",
+        ),
+    ],
+)
+def test_instrument_id_new_spread_id_string_format(legs, expected_symbol) -> None:
+    """
+    Test that new_generic_spread_id produces the correct string format for 2, 3, and 4
+    legs.
+
+    Format rules:
+    - Positive ratios: (ratio)symbol
+    - Negative ratios: ((ratio))symbol
+    - Separator: ___ (triple underscore)
+    - Legs sorted alphabetically by symbol
+
+    """
+    # Act
+    spread_id = new_generic_spread_id(legs)
+
+    # Assert - Check the symbol format
+    assert spread_id.symbol.value == expected_symbol
+
+    # Assert - Verify roundtrip (can parse back)
+    parsed_legs = generic_spread_id_to_list(spread_id)
+    # Note: The parsed legs are sorted, so we need to sort our input for comparison
+    sorted_legs = sorted(legs, key=lambda x: x[0].symbol.value)
+    assert parsed_legs == sorted_legs
 
 
 def test_instrument_id_is_spread_false_for_simple_symbol() -> None:

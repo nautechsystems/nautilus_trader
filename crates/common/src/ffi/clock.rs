@@ -18,9 +18,10 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+#[cfg(feature = "python")]
+use nautilus_core::correctness::FAILED;
 use nautilus_core::{
     UnixNanos,
-    correctness::FAILED,
     ffi::{
         cvec::CVec,
         parsing::u8_as_bool,
@@ -30,11 +31,13 @@ use nautilus_core::{
 #[cfg(feature = "python")]
 use pyo3::{ffi, prelude::*};
 
-use super::timer::TimeEventHandler;
+use super::timer::TimeEventHandler_API;
+#[cfg(feature = "python")]
+use crate::timer::TimeEventCallback;
 use crate::{
     clock::{Clock, TestClock},
     live::clock::LiveClock,
-    timer::{TimeEvent, TimeEventCallback},
+    timer::TimeEvent,
 };
 
 /// C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
@@ -46,8 +49,8 @@ use crate::{
 /// dereferenced to `TestClock`, providing access to `TestClock`'s methods without
 /// having to manually access the underlying `TestClock` instance.
 #[repr(C)]
-#[allow(non_camel_case_types)]
 #[derive(Debug)]
+#[allow(non_camel_case_types)]
 pub struct TestClock_API(Box<TestClock>);
 
 impl Deref for TestClock_API {
@@ -92,7 +95,9 @@ pub unsafe extern "C" fn test_clock_register_default_handler(
     assert!(!callback_ptr.is_null());
     assert!(unsafe { ffi::Py_None() } != callback_ptr);
 
-    let callback = Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
+    let callback = Python::attach(|py| unsafe {
+        Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
+    });
     let callback = TimeEventCallback::from(callback);
 
     clock.register_default_handler(callback);
@@ -159,8 +164,9 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
     let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {
-        let callback =
-            Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
+        let callback = Python::attach(|py| unsafe {
+            Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
+        });
         Some(TimeEventCallback::from(callback))
     };
 
@@ -204,8 +210,9 @@ pub unsafe extern "C" fn test_clock_set_timer(
     let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {
-        let callback =
-            Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
+        let callback = Python::attach(|py| unsafe {
+            Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
+        });
         Some(TimeEventCallback::from(callback))
     };
 
@@ -232,7 +239,7 @@ pub unsafe extern "C" fn test_clock_advance_time(
     set_time: u8,
 ) -> CVec {
     let events: Vec<TimeEvent> = clock.advance_time(to_time_ns.into(), u8_as_bool(set_time));
-    let t: Vec<TimeEventHandler> = clock
+    let t: Vec<TimeEventHandler_API> = clock
         .match_handlers(events)
         .into_iter()
         .map(Into::into)
@@ -242,7 +249,7 @@ pub unsafe extern "C" fn test_clock_advance_time(
 
 // TODO: This drop helper may leak Python callbacks when handlers own Python objects.
 //       We need to mirror the `ffi::timer` registry so reference counts are decremented properly.
-/// Drops a `CVec` of `TimeEventHandler` values.
+/// Drops a `CVec` of `TimeEventHandler_API` values.
 ///
 /// # Panics
 ///
@@ -261,8 +268,8 @@ pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
         "vec_time_event_handlers_drop: null ptr with non-zero len ({len}) - memory corruption or wrong drop helper"
     );
 
-    let data: Vec<TimeEventHandler> =
-        unsafe { Vec::from_raw_parts(ptr.cast::<TimeEventHandler>(), len, cap) };
+    let data: Vec<TimeEventHandler_API> =
+        unsafe { Vec::from_raw_parts(ptr.cast::<TimeEventHandler_API>(), len, cap) };
     drop(data); // Memory freed here
 }
 
@@ -305,8 +312,8 @@ pub extern "C" fn test_clock_cancel_timers(clock: &mut TestClock_API) {
 /// having to manually access the underlying `LiveClock` instance. This includes
 /// both mutable and immutable access.
 #[repr(C)]
-#[allow(non_camel_case_types)]
 #[derive(Debug)]
+#[allow(non_camel_case_types)]
 pub struct LiveClock_API(Box<LiveClock>);
 
 impl Deref for LiveClock_API {
@@ -350,7 +357,9 @@ pub unsafe extern "C" fn live_clock_register_default_handler(
     assert!(!callback_ptr.is_null());
     assert!(unsafe { ffi::Py_None() } != callback_ptr);
 
-    let callback = Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
+    let callback = Python::attach(|py| unsafe {
+        Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
+    });
     let callback = TimeEventCallback::from(callback);
 
     clock.register_default_handler(callback);
@@ -414,8 +423,9 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
     let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {
-        let callback =
-            Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
+        let callback = Python::attach(|py| unsafe {
+            Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
+        });
         Some(TimeEventCallback::from(callback))
     };
 
@@ -461,8 +471,9 @@ pub unsafe extern "C" fn live_clock_set_timer(
     let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {
-        let callback =
-            Python::attach(|py| unsafe { Py::<PyAny>::from_borrowed_ptr(py, callback_ptr) });
+        let callback = Python::attach(|py| unsafe {
+            Bound::<PyAny>::from_borrowed_ptr(py, callback_ptr).unbind()
+        });
         Some(TimeEventCallback::from(callback))
     };
 

@@ -135,7 +135,7 @@ cdef class StandardMarginModel(MarginModel):
         margin = notional * instrument.margin_init
 
         if instrument.is_inverse and not use_quote_for_inverse:
-            return Money(margin, instrument.base_currency)
+            return Money(margin, instrument.get_base_currency())
         else:
             return Money(margin, instrument.quote_currency)
 
@@ -163,7 +163,7 @@ cdef class StandardMarginModel(MarginModel):
         margin = notional * instrument.margin_maint
 
         if instrument.is_inverse and not use_quote_for_inverse:
-            return Money(margin, instrument.base_currency)
+            return Money(margin, instrument.get_base_currency())
         else:
             return Money(margin, instrument.quote_currency)
 
@@ -208,7 +208,7 @@ cdef class LeveragedMarginModel(MarginModel):
         margin = adjusted_notional * instrument.margin_init
 
         if instrument.is_inverse and not use_quote_for_inverse:
-            return Money(margin, instrument.base_currency)
+            return Money(margin, instrument.get_base_currency())
         else:
             return Money(margin, instrument.quote_currency)
 
@@ -239,6 +239,6 @@ cdef class LeveragedMarginModel(MarginModel):
         margin = adjusted_notional * instrument.margin_maint
 
         if instrument.is_inverse and not use_quote_for_inverse:
-            return Money(margin, instrument.base_currency)
+            return Money(margin, instrument.get_base_currency())
         else:
             return Money(margin, instrument.quote_currency)

@@ -796,13 +796,8 @@ impl DatabaseQueries {
         .map_err(|e| anyhow::anyhow!("Failed to load order ids: {e}"))?;
         for id in client_order_ids {
             let order = Self::load_order(pool, &id).await.unwrap();
-            match order {
-                Some(order) => {
-                    orders.push(order);
-                }
-                None => {
-                    continue;
-                }
+            if let Some(order) = order {
+                orders.push(order);
             }
         }
         Ok(orders)
@@ -950,13 +945,8 @@ impl DatabaseQueries {
         .map_err(|e| anyhow::anyhow!("Failed to load account ids: {e}"))?;
         for id in account_ids {
             let account = Self::load_account(pool, &id).await.unwrap();
-            match account {
-                Some(account) => {
-                    accounts.push(account);
-                }
-                None => {
-                    continue;
-                }
+            if let Some(account) = account {
+                accounts.push(account);
             }
         }
         Ok(accounts)

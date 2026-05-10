@@ -1,0 +1,330 @@
+{
+  "type": "GROUP",
+  "name": "ROOT",
+  "id": 0,
+  "children": [
+    {
+      "type": "EVENT_TYPE",
+      "name": "American Football",
+      "id": "6423",
+      "children": [
+        {
+          "type": "EVENT",
+          "name": "NFL",
+          "id": "29678534",
+          "countryCode": "GB",
+          "children": [
+            {
+              "type": "MARKET",
+              "name": "AFC Conference Winner",
+              "id": "1.179082386",
+              "exchangeId": "1",
+              "marketType": "SPECIAL",
+              "marketStartTime": "2022-02-07T23:30:00.000Z",
+              "numberOfWinners": 1
+            },
+            {
+              "type": "MARKET",
+              "name": "NFC Conference Winner",
+              "id": "1.179082387",
+              "exchangeId": "1",
+              "marketType": "SPECIAL",
+              "marketStartTime": "2022-02-07T23:30:00.000Z",
+              "numberOfWinners": 1
+            },
+            {
+              "type": "MARKET",
+              "name": "Super Bowl Winner",
+              "id": "1.179077539",
+              "exchangeId": "1",
+              "marketType": "TOURNAMENT_WINNER",
+              "marketStartTime": "2022-02-07T23:30:00.000Z",
+              "numberOfWinners": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "EVENT_TYPE",
+      "name": "Horse Racing",
+      "id": "7",
+      "children": [
+        {
+          "type": "EVENT",
+          "name": "Specials",
+          "id": "27088631",
+          "countryCode": "GB",
+          "children": [
+            {
+              "type": "EVENT",
+              "name": "#WhatOddsPaddy",
+              "id": "28417498",
+              "countryCode": "",
+              "children": [
+                {
+                  "type": "MARKET",
+                  "name": "Tanrudy 15:20 & From Eden 15:25  Both To Win",
+                  "id": "1.165003060",
+                  "exchangeId": "1",
+                  "marketType": "ACCA",
+                  "marketStartTime": "2019-11-12T15:20:00.000Z",
+                  "numberOfWinners": ""
+                }
+              ]
+            },
+            {
+              "type": "MARKET",
+              "name": "Cheltenham Festival Top Jockey",
+              "id": "1.180241757",
+              "exchangeId": "1",
+              "marketType": "ANTEPOST_WIN",
+              "marketStartTime": "2021-03-16T13:20:00.000Z",
+              "numberOfWinners": 1
+            }
+          ]
+        },
+        {
+          "type": "GROUP",
+          "name": "ANTEPOST",
+          "id": "1556571289",
+          "children": [
+            {
+              "type": "GROUP",
+              "name": "AUS",
+              "id": "1556571295",
+              "children": [
+                {
+                  "type": "EVENT",
+                  "name": "Caul (AUS) 16th Oct",
+                  "id": "30103915",
+                  "countryCode": "AU",
+                  "children": [
+                    {
+                      "type": "MARKET",
+                      "name": "Caulfield Cup 2021",
+                      "id": "1.175078042",
+                      "exchangeId": "1",
+                      "marketType": "ANTEPOST_WIN",
+                      "marketStartTime": "2021-10-16T04:00:00.000Z",
+                      "numberOfWinners": 1
+                    }
+                  ]
+                },
+                {
+                  "type": "EVENT",
+                  "name": "Flem (AUS) 2nd Nov",
+                  "id": "30103912",
+                  "countryCode": "AU",
+                  "children": [
+                    {
+                      "type": "MARKET",
+                      "name": "Melbourne Cup 2021",
+                      "id": "1.175077943",
+                      "exchangeId": "1",
+                      "marketType": "ANTEPOST_WIN",
+                      "marketStartTime": "2021-11-02T04:00:00.000Z",
+                      "numberOfWinners": 1
+                    }
+                  ]
+                },
+                {
+                  "type": "EVENT",
+                  "name": "MVal (AUS) 19th Mar",
+                  "id": "30283693",
+                  "countryCode": "AU",
+                  "children": [
+                    {
+                      "type": "MARKET",
+                      "name": "William Reid Stakes 2021",
+                      "id": "1.179261389",
+                      "exchangeId": "1",
+                      "marketType": "ANTEPOST_WIN",
+                      "marketStartTime": "2021-03-19T09:00:00.000Z",
+                      "numberOfWinners": 1
+                    }
+                  ]
+                },
+                {
+                  "type": "EVENT",
+                  "name": "MVal (AUS) 23rd Oct",
+                  "id": "30103917",
+                  "countryCode": "AU",
+                  "children": [
+                    {
+                      "type": "MARKET",
+                      "name": "Cox Plate 2021",
+                      "id": "1.175078059",
+                      "exchangeId": "1",
+                      "marketType": "ANTEPOST_WIN",
+                      "marketStartTime": "2021-10-23T04:00:00.000Z",
+                      "numberOfWinners": 1
+                    }
+                  ]
+                },
+                {
+                  "type": "EVENT",
+                  "name": "Rand (AUS) 10th Apr",
+                  "id": "30299131",
+                  "countryCode": "AU",
+                  "children": [
+                    {
+                      "type": "MARKET",
+                      "name": "Queen Elizabeth Stakes 2021",
+                      "id": "1.179563986",
+                      "exchangeId": "1",
+                      "marketType": "ANTEPOST_WIN",
+                      "marketStartTime": "2021-04-10T04:00:00.000Z",
+                      "numberOfWinners": 1
+                    },
+                    {
+                      "type": "MARKET",
+                      "name": "Sydney Cup 2021",
+                      "id": "1.179564030",
+                      "exchangeId": "1",
+                      "marketType": "ANTEPOST_WIN",
+                      "marketStartTime": "2021-04-10T04:30:00.000Z",
+                      "numberOfWinners": 1
+                    },
+                    {
+                      "type": "MARKET",
+                      "name": "Australian Oaks 2021",
+                      "id": "1.179564031",
+                      "exchangeId": "1",
+                      "marketType": "ANTEPOST_WIN",
+                      "marketStartTime": "2021-04-10T05:00:00.000Z",
+                      "numberOfWinners": 1
+                    },
+                    {
+                      "type": "MARKET",
+                      "name": "Coolmore Legacy Stakes 2021",
+                      "id": "1.179564032",
+                      "exchangeId": "1",
+                      "marketType": "ANTEPOST_WIN",
+                      "marketStartTime": "2021-04-10T05:30:00.000Z",
+                      "numberOfWinners": 1
+                    }
+                  ]
+                },
+                {
+                  "type": "EVENT",
+                  "name": "Rand (AUS) 3rd Apr",
+                  "id": "30299130",
+                  "countryCode": "AU",
+                  "children": [
+                    {
+                      "type": "MARKET",
+                      "name": "Doncaster Mile 2021",
+                      "id": "1.179563982",
+                      "exchangeId": "1",
+                      "marketType": "ANTEPOST_WIN",
+                      "marketStartTime": "2021-04-03T03:00:00.000Z",
+                      "numberOfWinners": 1
+                    },
+                    {
+                      "type": "MARKET",
+                      "name": "TJ Smith Stakes 2021",
+                      "id": "1.179563983",
+                      "exchangeId": "1",
+                      "marketType": "ANTEPOST_WIN",
+                      "marketStartTime": "2021-04-03T03:30:00.000Z",
+                      "numberOfWinners": 1
+                    },
+                    {
+                      "type": "MARKET",
+                      "name": "Australian Derby 2021",
+                      "id": "1.179563984",
+                      "exchangeId": "1",
+                      "marketType": "ANTEPOST_WIN",
+                      "marketStartTime": "2021-04-03T04:00:00.000Z",
+                      "numberOfWinners": 1
+                    },
+                    {
+                      "type": "MARKET",
+                      "name": "Inglis Sires 2021",
+                      "id": "1.179563985",
+                      "exchangeId": "1",
+                      "marketType": "ANTEPOST_WIN",
+                      "marketStartTime": "2021-04-03T05:30:00.000Z",
+                      "numberOfWinners": 1
+                    }
+                  ]
+                },
+                {
+                  "type": "EVENT",
+                  "name": "Rose (AUS) 20th Mar",
+                  "id": "30191231",
+                  "countryCode": "AU",
+                  "children": [
+                    {
+                      "type": "MARKET",
+                      "name": "Golden Slipper 2021",
+                      "id": "1.176980101",
+                      "exchangeId": "1",
+                      "marketType": "ANTEPOST_WIN",
+                      "marketStartTime": "2021-03-20T04:00:00.000Z",
+                      "numberOfWinners": 1
+                    },
+                    {
+                      "type": "MARKET",
+                      "name": "George Ryder Stakes 2021",
+                      "id": "1.179261599",
+                      "exchangeId": "1",
+                      "marketType": "ANTEPOST_WIN",
+                      "marketStartTime": "2021-03-20T04:30:00.000Z",
+                      "numberOfWinners": 1
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "GROUP",
+              "name": "FRA",
+              "id": "1556571293",
+              "children": [
+                {
+                  "type": "EVENT",
+                  "name": "Longchamp 3rd Oct",
+                  "id": "30051260",
+                  "countryCode": "FR",
+                  "children": [
+                    {
+                      "type": "MARKET",
+                      "name": "Prix de l'Arc de Triomphe 2021",
+                      "id": "1.173863396",
+                      "exchangeId": "1",
+                      "marketType": "ANTEPOST_WIN",
+                      "marketStartTime": "2021-10-03T14:05:00.000Z",
+                      "numberOfWinners": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "RACE",
+          "name": "R5 5f Claim",
+          "id": "30360283.1943",
+          "countryCode": "US",
+          "venue": "Delta Downs",
+          "startTime": "2021-03-17T19:43:00.000Z",
+          "raceNumber": "R5",
+          "children": [
+            {
+              "type": "MARKET",
+              "name": "R5 5f Claim",
+              "id": "1.180714483",
+              "exchangeId": "1",
+              "marketType": "WIN",
+              "marketStartTime": "2021-03-17T19:43:00.000Z",
+              "numberOfWinners": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

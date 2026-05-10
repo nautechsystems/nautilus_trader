@@ -33,7 +33,7 @@ use nautilus_model::{
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column,
+    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column, validate_precision_bytes,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -155,6 +155,10 @@ impl DecodeFromRecordBatch for TradeTick {
             1,
             DataType::FixedSizeBinary(PRECISION_BYTES),
         )?;
+
+        validate_precision_bytes(price_values, "price")?;
+        validate_precision_bytes(size_values, "size")?;
+
         let aggressor_side_values =
             extract_column::<UInt8Array>(cols, "aggressor_side", 2, DataType::UInt8)?;
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
@@ -456,7 +460,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("NULL value at row 0"),
-            "Expected NULL error, got: {err}"
+            "Expected NULL error, was: {err}"
         );
     }
 
@@ -493,7 +497,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("price") && err.to_string().contains("row 0"),
-            "Expected price error at row 0, got: {err}"
+            "Expected price error at row 0, was: {err}"
         );
     }
 
@@ -532,7 +536,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("size") && err.to_string().contains("row 0"),
-            "Expected size error at row 0, got: {err}"
+            "Expected size error at row 0, was: {err}"
         );
     }
 
@@ -570,7 +574,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("AggressorSide"),
-            "Expected AggressorSide error, got: {err}"
+            "Expected AggressorSide error, was: {err}"
         );
     }
 
@@ -608,7 +612,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("instrument_id"),
-            "Expected missing instrument_id error, got: {err}"
+            "Expected missing instrument_id error, was: {err}"
         );
     }
 
@@ -646,7 +650,7 @@ mod tests {
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("price_precision"),
-            "Expected missing price_precision error, got: {err}"
+            "Expected missing price_precision error, was: {err}"
         );
     }
 

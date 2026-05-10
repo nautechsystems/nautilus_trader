@@ -12,6 +12,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Sandbox test for the Binance WebSocket API user data stream.
+
+Uses session.logon and userDataStream.subscribe instead of listenKey. Supports both
+Ed25519 and HMAC API keys.
+
+"""
 
 import asyncio
 import os
@@ -19,37 +26,46 @@ import os
 import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
-from nautilus_trader.adapters.binance.spot.http.user import BinanceSpotUserDataHttpAPI
-from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+from nautilus_trader.adapters.binance.common.urls import get_ws_api_base_url
+from nautilus_trader.adapters.binance.websocket.user import BinanceUserDataWebSocketClient
 from nautilus_trader.common.component import LiveClock
 
 
 @pytest.mark.asyncio
-async def test_binance_websocket_client():
+async def test_binance_websocket_api_user_data():
     clock = LiveClock()
-
-    client = get_cached_binance_http_client(
-        clock=clock,
-        account_type=BinanceAccountType.SPOT,
-        api_key=os.getenv("BINANCE_API_KEY"),
-        api_secret=os.getenv("BINANCE_API_SECRET"),
-    )
-
-    user = BinanceSpotUserDataHttpAPI(client=client)
-    response = await user.create_listen_key()
-    key = response["listenKey"]
-
     loop = asyncio.get_running_loop()
 
-    ws = BinanceWebSocketClient(
+    api_key = os.getenv("BINANCE_API_KEY")
+    api_secret = os.getenv("BINANCE_API_SECRET")
+
+    if not api_key or not api_secret:
+        pytest.skip("BINANCE_API_KEY and BINANCE_API_SECRET not set")
+
+    ws_api_url = get_ws_api_base_url(
+        account_type=BinanceAccountType.SPOT,
+        environment=BinanceEnvironment.LIVE,
+        is_us=False,
+    )
+
+    client = BinanceUserDataWebSocketClient(
         clock=clock,
-        handler=print,
+        base_url=ws_api_url,
+        handler=lambda raw: print(f"Received: {raw}"),
+        api_key=api_key,
+        api_secret=api_secret,
         loop=loop,
     )
 
-    ws.subscribe(key=key)
+    await client.connect()
+    await client.session_logon()
+    subscription_id = await client.subscribe_user_data_stream()
 
-    await ws.connect()
-    await asyncio.sleep(4)
-    await ws.disconnect()
+    print(f"Subscribed to user data stream: {subscription_id}")
+
+    # Wait for events
+    await asyncio.sleep(10)
+
+    await client.unsubscribe_user_data_stream()
+    await client.disconnect()

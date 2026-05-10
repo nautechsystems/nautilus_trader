@@ -150,9 +150,9 @@ pub async fn create_redis_connection(
     con_name: &str,
     config: DatabaseConfig,
 ) -> anyhow::Result<redis::aio::ConnectionManager> {
-    tracing::debug!("Creating {con_name} redis connection");
+    log::debug!("Creating {con_name} redis connection");
     let (redis_url, redacted_url) = get_redis_url(config.clone());
-    tracing::debug!("Connecting to {redacted_url}");
+    log::debug!("Connecting to {redacted_url}");
 
     let connection_timeout = Duration::from_secs(u64::from(config.connection_timeout));
     let response_timeout = Duration::from_secs(u64::from(config.response_timeout));
@@ -182,10 +182,8 @@ pub async fn create_redis_connection(
     let con_msg = format!("Connected to redis v{version}");
 
     if version >= min_version {
-        tracing::info!(con_msg);
+        log::info!("{con_msg}");
     } else {
-        // TODO: Using `log` error here so that the message is displayed regardless of whether
-        // the logging config has pyo3 enabled. Later we can standardize this to `tracing`.
         log::error!("{con_msg}, but minimum supported version is {REDIS_MIN_VERSION}");
     }
 

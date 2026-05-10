@@ -16,7 +16,7 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    UnixNanos,
+    Params, UnixNanos,
     correctness::{FAILED, check_equal_u8},
 };
 use rust_decimal::Decimal;
@@ -38,10 +38,10 @@ use crate::{
 
 /// Represents a betting instrument with complete market and selection details.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct BettingInstrument {
     /// The instrument ID.
@@ -110,6 +110,8 @@ pub struct BettingInstrument {
     pub max_price: Option<Price>,
     /// The minimum allowable quoted price.
     pub min_price: Option<Price>,
+    /// Additional instrument metadata as a JSON-serializable dictionary.
+    pub info: Option<Params>,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the data object was initialized.
@@ -160,6 +162,7 @@ impl BettingInstrument {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
@@ -212,6 +215,7 @@ impl BettingInstrument {
             margin_maint: margin_maint.unwrap_or(dec!(1)),
             maker_fee: maker_fee.unwrap_or_default(),
             taker_fee: taker_fee.unwrap_or_default(),
+            info,
             ts_event,
             ts_init,
         })
@@ -257,6 +261,7 @@ impl BettingInstrument {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
@@ -294,6 +299,7 @@ impl BettingInstrument {
             margin_maint,
             maker_fee,
             taker_fee,
+            info,
             ts_event,
             ts_init,
         )
@@ -445,7 +451,7 @@ mod tests {
 
     #[rstest]
     fn test_equality(betting: BettingInstrument) {
-        let cloned = betting;
+        let cloned = betting.clone();
         assert_eq!(betting, cloned);
     }
 }

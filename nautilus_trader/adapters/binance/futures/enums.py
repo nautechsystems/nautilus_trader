@@ -145,9 +145,14 @@ class BinanceFuturesEnumParser(BinanceEnumParser):
             BinanceOrderType.TAKE_PROFIT: OrderType.LIMIT_IF_TOUCHED,
             BinanceOrderType.TAKE_PROFIT_MARKET: OrderType.MARKET_IF_TOUCHED,
             BinanceOrderType.TRAILING_STOP_MARKET: OrderType.TRAILING_STOP_MARKET,
+            BinanceOrderType.LIQUIDATION: OrderType.MARKET,
+            BinanceOrderType.ADL: OrderType.MARKET,
         }
+        # Exclude exchange-generated order types (LIQUIDATION, ADL) from outbound mapping
         self.futures_int_to_ext_order_type = {
-            b: a for a, b in self.futures_ext_to_int_order_type.items()
+            b: a
+            for a, b in self.futures_ext_to_int_order_type.items()
+            if a not in (BinanceOrderType.LIQUIDATION, BinanceOrderType.ADL)
         }
 
         self.futures_valid_time_in_force = {

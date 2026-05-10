@@ -22,21 +22,6 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
-extension-module = [
-  "nautilus-common/extension-module",
-  "nautilus-core/extension-module",
-  "nautilus-execution/extension-module",
-  "nautilus-model/extension-module",
-  "python",
-  "pyo3/extension-module",
-]
-python = [
-  "nautilus-common/python",
-  "nautilus-core/python",
-  "nautilus-execution/python",
-  "nautilus-model/python",
-  "pyo3",
-]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -47,17 +32,13 @@ nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
-
-ahash = { workspace = true }
 nautilus-portfolio = { workspace = true }
 
+ahash = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
-thiserror = { workspace = true }
 ustr = { workspace = true }
-
-pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

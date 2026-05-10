@@ -18,6 +18,3 @@
 pub mod adapter;
 pub mod emulator;
 pub mod handlers;
-
-#[cfg(test)]
-mod tests;

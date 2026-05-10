@@ -1,0 +1,14 @@
+{
+  "candle": {
+    "symbol": "EURUSD-PERP",
+    "ts": 1705314600,
+    "open": "1.08450",
+    "high": "1.08520",
+    "low": "1.08430",
+    "close": "1.08490",
+    "buy_volume": 6500,
+    "sell_volume": 5800,
+    "volume": 12300,
+    "width": "1m"
+  }
+}

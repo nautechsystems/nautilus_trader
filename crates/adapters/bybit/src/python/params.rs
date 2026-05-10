@@ -25,7 +25,7 @@ use crate::{
 };
 
 /// Parameters for placing an order via WebSocket.
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Debug)]
 pub struct BybitWsPlaceOrderParams {
     #[pyo3(get, set)]
@@ -325,7 +325,7 @@ impl From<messages::BybitWsPlaceOrderParams> for BybitWsPlaceOrderParams {
 }
 
 /// Parameters for amending an order via WebSocket.
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Debug)]
 pub struct BybitWsAmendOrderParams {
     #[pyo3(get, set)]
@@ -455,7 +455,7 @@ impl From<messages::BybitWsAmendOrderParams> for BybitWsAmendOrderParams {
 }
 
 /// Parameters for canceling an order via WebSocket.
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Debug)]
 pub struct BybitWsCancelOrderParams {
     #[pyo3(get, set)]
@@ -511,7 +511,7 @@ impl From<messages::BybitWsCancelOrderParams> for BybitWsCancelOrderParams {
 }
 
 /// Parameters for fetching tickers via HTTP API.
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Debug)]
 pub struct BybitTickersParams {
     #[pyo3(get, set)]

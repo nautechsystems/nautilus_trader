@@ -47,13 +47,18 @@ pub struct TickMap {
 
 impl Default for TickMap {
     fn default() -> Self {
-        Self::new(0)
+        Self::new(1)
     }
 }
 
 impl TickMap {
     /// Creates a new [`TickMap`] with the specified tick spacing.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `tick_spacing` is zero.
     pub fn new(tick_spacing: u32) -> Self {
+        assert!(tick_spacing > 0, "Tick spacing must be greater than zero");
         Self {
             ticks: AHashMap::new(),
             tick_bitmap: TickBitmap::new(tick_spacing),

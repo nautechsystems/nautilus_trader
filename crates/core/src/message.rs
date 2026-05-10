@@ -15,15 +15,12 @@
 
 //! Common message types.
 //!
-//! The [`Params`] type uses `IndexMap<String, String>` for consistent ordering
-//! and simpler, predictable serialization.
+//! The [`Params`] type uses `IndexMap<String, Value>` for consistent ordering
+//! and JSON value support.
 
-use indexmap::IndexMap;
-
+// Re-export Params from the centralized params module
+pub use crate::params::Params;
 use crate::{UUID4, UnixNanos};
-
-/// Additional parameters for messages.
-pub type Params = IndexMap<String, String>;
 
 /// Represents different types of messages in the system.
 #[derive(Debug, Clone)]

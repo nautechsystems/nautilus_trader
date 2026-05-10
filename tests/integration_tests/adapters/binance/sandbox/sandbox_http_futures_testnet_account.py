@@ -18,6 +18,7 @@ import os
 import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
 from nautilus_trader.common.component import LiveClock
@@ -32,7 +33,7 @@ async def test_binance_spot_account_http_client():
         account_type=BinanceAccountType.USDT_FUTURES,
         api_key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
         api_secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
-        is_testnet=True,
+        environment=BinanceEnvironment.TESTNET,
     )
 
     http_account = BinanceFuturesAccountHttpAPI(

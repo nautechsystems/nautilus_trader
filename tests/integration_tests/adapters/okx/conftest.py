@@ -158,7 +158,7 @@ def mock_http_client():
     mock.api_secret = "test_api_secret"
     mock.api_passphrase = "test_passphrase"
 
-    mock.request_instruments = AsyncMock(return_value=[])
+    mock.request_instruments = AsyncMock(return_value=([], []))
     mock.cache_instrument = MagicMock()
     mock.cancel_all_requests = MagicMock()
     mock.is_initialized = MagicMock(return_value=True)
@@ -207,6 +207,7 @@ def _create_ws_mock() -> MagicMock:
     mock.subscribe_instruments = AsyncMock()
     mock.subscribe_instrument = AsyncMock()
     mock.cache_instruments = MagicMock()
+    mock.cache_inst_id_codes = MagicMock()
     mock.subscribe_book = AsyncMock()
     mock.subscribe_book50_l2_tbt = AsyncMock()
     mock.subscribe_book_l2_tbt = AsyncMock()
@@ -248,6 +249,7 @@ def mock_instrument_provider(instrument):
     provider = MagicMock(spec=OKXInstrumentProvider)
     provider.initialize = AsyncMock()
     provider.instruments_pyo3 = MagicMock(return_value=[MagicMock(name="py_instrument")])
+    provider.inst_id_codes = MagicMock(return_value=[])
     provider.get_all = MagicMock(return_value={instrument.id: instrument})
     provider.currencies = MagicMock(return_value={})
     provider.find = MagicMock(return_value=instrument)

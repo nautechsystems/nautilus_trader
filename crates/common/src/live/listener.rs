@@ -148,7 +148,7 @@ mod tests {
         // Wait for the message to be processed
         tokio::select! {
             _ = notify_rx.recv() => {},
-            _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
+            () = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
                 panic!("Timeout waiting for message");
             }
         }
@@ -269,7 +269,7 @@ mod tests {
         // Wait for the message to be processed
         tokio::select! {
             _ = notify_rx.recv() => {},
-            _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
+            () = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
                 panic!("Timeout waiting for message");
             }
         }
@@ -303,7 +303,7 @@ mod tests {
 
         tokio::select! {
             _ = notify_rx.recv() => {},
-            _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
+            () = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
                 panic!("Timeout waiting for message");
             }
         }

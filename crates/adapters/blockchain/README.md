@@ -1,7 +1,16 @@
 # nautilus-blockchain
 
-A high-performance, universal, extensible adapter for ingesting DeFi data from decentralized exchanges (DEXs),
-liquidity pools, and on-chain events. It enables you to power analytics pipelines and trading strategies with real-time and historical on-chain data.
+[![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
+[![Documentation](https://img.shields.io/docsrs/nautilus-blockchain)](https://docs.rs/nautilus-blockchain/latest/nautilus-blockchain/)
+[![crates.io version](https://img.shields.io/crates/v/nautilus-blockchain.svg)](https://crates.io/crates/nautilus-blockchain)
+![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
+
+[NautilusTrader](http://nautilustrader.io) blockchain adapter for DeFi data ingestion.
+
+The `nautilus-blockchain` crate provides a high-performance, universal, extensible adapter for ingesting
+DeFi data from decentralized exchanges (DEXs), liquidity pools, and on-chain events. It enables you to
+power analytics pipelines and trading strategies with real-time and historical on-chain data.
 
 ## Platform
 
@@ -19,7 +28,7 @@ This crate provides feature flags to control source code inclusion during compil
 
 - `hypersync`: Enables the [HyperSync](https://envio.dev/#hypersync) client integration.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-- `extension-module`: Builds as a Python extension module (used with `python`).
+- `extension-module`: Builds as a Python extension module.
 - `turmoil`: Enables deterministic network simulation testing with [turmoil](https://github.com/tokio-rs/turmoil).
 
 ## Scripts
@@ -93,10 +102,13 @@ cargo nextest run -p nautilus-blockchain --features turmoil
 
 The turmoil tests simulate various network conditions (reconnections, partitions, etc.) in a deterministic way, allowing reliable testing of network failure scenarios without flakiness.
 
+## Documentation
+
+See [the docs](https://docs.rs/nautilus-blockchain) for more detailed usage.
+
 ## License
 
 The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
-Contributions to the project are welcome and require the completion of a standard [Contributor License Agreement (CLA)](https://github.com/nautechsystems/nautilus_trader/blob/develop/CLA.md).
 
 ---
 
@@ -104,6 +116,8 @@ NautilusTrader™ is developed and maintained by Nautech Systems, a technology
 company specializing in the development of high-performance trading systems.
 For more information, visit <https://nautilustrader.io>.
 
-<img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-logo-white.png" alt="logo" width="400" height="auto"/>
+Use of this software is subject to the [Disclaimer](https://nautilustrader.io/legal/disclaimer/).
+
+<img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-logo-white.png" alt="logo" width="300" height="auto"/>
 
 © 2015-2026 Nautech Systems Pty Ltd. All rights reserved.

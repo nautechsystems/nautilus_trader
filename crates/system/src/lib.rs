@@ -42,6 +42,9 @@
 //!
 //! - `streaming`: Enables `persistence` dependency for streaming configuration.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `streaming`).
+//! - `defi`: Enables DeFi (Decentralized Finance) support.
+//! - `live`: Enables live trading mode dependencies.
+//! - `tracing-bridge`: Enables the `tracing` subscriber bridge for log integration.
 //! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]

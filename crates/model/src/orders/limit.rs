@@ -42,7 +42,7 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct LimitOrder {
     core: OrderCore,
@@ -444,14 +444,14 @@ impl Order for LimitOrder {
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
         if let OrderEventAny::Updated(ref event) = event {
             self.update(event);
-        };
+        }
         let is_order_filled = matches!(event, OrderEventAny::Filled(_));
 
         self.core.apply(event)?;
 
         if is_order_filled {
             self.core.set_slippage(self.price);
-        };
+        }
 
         Ok(())
     }

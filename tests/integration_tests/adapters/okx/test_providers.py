@@ -36,7 +36,7 @@ async def test_load_all_async_populates_provider(monkeypatch, instrument):
     # Arrange
     mock_http_client = MagicMock()
     pyo3_instruments = [MagicMock(name="py_inst")]
-    mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
+    mock_http_client.request_instruments = AsyncMock(return_value=(pyo3_instruments, []))
 
     provider = OKXInstrumentProvider(
         client=mock_http_client,
@@ -65,7 +65,7 @@ async def test_load_ids_async_filters_results(monkeypatch, instrument):
     # Arrange
     mock_http_client = MagicMock()
     pyo3_instruments = [MagicMock(name="py_a"), MagicMock(name="py_b")]
-    mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
+    mock_http_client.request_instruments = AsyncMock(return_value=(pyo3_instruments, []))
 
     provider = OKXInstrumentProvider(
         client=mock_http_client,
@@ -128,7 +128,7 @@ async def test_load_ids_async_loads_configured_types_only(monkeypatch, instrumen
     # Arrange
     mock_http_client = MagicMock()
     pyo3_instruments = [MagicMock(name="py_swap")]
-    mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
+    mock_http_client.request_instruments = AsyncMock(return_value=(pyo3_instruments, []))
 
     # Provider configured for SWAP only
     provider = OKXInstrumentProvider(
@@ -176,7 +176,7 @@ async def test_load_ids_async_handles_options_with_families(monkeypatch):
     # Arrange
     mock_http_client = MagicMock()
     pyo3_instruments = [MagicMock(name="py_option")]
-    mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
+    mock_http_client.request_instruments = AsyncMock(return_value=(pyo3_instruments, []))
 
     # OKX OPTIONS require instrument families
     provider = OKXInstrumentProvider(

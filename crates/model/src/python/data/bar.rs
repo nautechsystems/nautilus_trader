@@ -201,7 +201,7 @@ impl Bar {
     pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let bar_type_obj: Bound<'_, PyAny> = obj.getattr("bar_type")?.extract()?;
         let bar_type_str: String = bar_type_obj.call_method0("__str__")?.extract()?;
-        let bar_type = BarType::from(bar_type_str.as_str());
+        let bar_type = BarType::from(bar_type_str);
 
         let open_py: Bound<'_, PyAny> = obj.getattr("open")?;
         let price_prec: u8 = open_py.getattr("precision")?.extract()?;
@@ -417,14 +417,12 @@ impl Bar {
     /// Return JSON encoded bytes representation of the object.
     #[pyo3(name = "to_json_bytes")]
     fn py_to_json_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        // SAFETY: Unwrap safe when serializing a valid object
         self.to_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
     #[pyo3(name = "to_msgpack_bytes")]
     fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        // SAFETY: Unwrap safe when serializing a valid object
         self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
     }
 }
@@ -487,7 +485,7 @@ mod tests {
         Python::initialize();
         Python::attach(|py| {
             let dict_string = bar.py_to_dict(py).unwrap().to_string();
-            let expected_string = r"{'type': 'Bar', 'bar_type': 'AUDUSD.SIM-1-MINUTE-LAST-INTERNAL', 'open': '1.00010', 'high': '1.00020', 'low': '1.00000', 'close': '1.00010', 'volume': '100000', 'ts_event': 0, 'ts_init': 0}";
+            let expected_string = "{'type': 'Bar', 'bar_type': 'AUDUSD.SIM-1-MINUTE-LAST-INTERNAL', 'open': '1.00010', 'high': '1.00020', 'low': '1.00000', 'close': '1.00010', 'volume': '100000', 'ts_event': 0, 'ts_init': 0}";
             assert_eq!(dict_string, expected_string);
         });
     }

@@ -109,13 +109,13 @@ It improves readability, reduces cognitive load, and is more accessible for inte
 
 Use admonition blocks to highlight important information:
 
-| Admonition | Purpose |
-|------------|---------|
-| `:::note` | Supplementary context that clarifies but isn't essential. |
-| `:::info` | Important information the reader should be aware of. |
-| `:::tip` | Helpful suggestions or best practices. |
-| `:::warning` | Potential pitfalls or important caveats. |
-| `:::danger` | Critical issues that could cause data loss or system failure. |
+| Admonition   | Purpose                                                       |
+|--------------|---------------------------------------------------------------|
+| `:::note`    | Supplementary context that clarifies but isn't essential.     |
+| `:::info`    | Important information the reader should be aware of.          |
+| `:::tip`     | Helpful suggestions or best practices.                        |
+| `:::warning` | Potential pitfalls or important caveats.                      |
+| `:::danger`  | Critical issues that could cause data loss or system failure. |
 
 Avoid overusing admonitions; too many diminish their impact.
 

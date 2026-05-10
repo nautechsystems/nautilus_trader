@@ -24,7 +24,7 @@ use crate::defi::tick_map::full_math::{FullMath, Q128};
 /// including the liquidity amount, fee accumulation, and token deposits/withdrawals.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PoolPosition {

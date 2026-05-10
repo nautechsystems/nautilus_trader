@@ -3289,3 +3289,191 @@ def test_reduce_only_opening_order_rejected(
     order = submitted_orders[0]
     assert isinstance(order, MarketOrder)
     assert order.is_reduce_only is True
+
+
+def test_config_new_fields_default_values(instrument_id):
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+    )
+
+    assert config.limit_time_in_force is None
+    assert config.stop_time_in_force is None
+
+
+def test_limit_time_in_force_overrides_default_gtc(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_limit_buys=True,
+        enable_limit_sells=False,
+        limit_time_in_force=TimeInForce.IOC,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    tester.on_quote_tick(quote)
+
+    assert tester.buy_order is not None
+    assert tester.buy_order.time_in_force == TimeInForce.IOC
+    assert tester.buy_order.expire_time is None
+
+
+def test_limit_time_in_force_overrides_expire_delta(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    limit_time_in_force takes priority over order_expire_time_delta_mins.
+    """
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_limit_buys=True,
+        enable_limit_sells=False,
+        limit_time_in_force=TimeInForce.DAY,
+        order_expire_time_delta_mins=30,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    tester.on_quote_tick(quote)
+
+    assert tester.buy_order is not None
+    assert tester.buy_order.time_in_force == TimeInForce.DAY
+    assert tester.buy_order.expire_time is None
+
+
+def test_stop_time_in_force_overrides_default_gtc(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_stop_buys=True,
+        stop_order_type=OrderType.STOP_MARKET,
+        stop_offset_ticks=10,
+        stop_time_in_force=TimeInForce.DAY,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    tester.on_quote_tick(quote)
+
+    assert tester.buy_stop_order is not None
+    assert tester.buy_stop_order.time_in_force == TimeInForce.DAY
+    assert tester.buy_stop_order.expire_time is None
+
+
+def test_stop_time_in_force_overrides_expire_delta(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+):
+    """
+    stop_time_in_force takes priority over order_expire_time_delta_mins.
+    """
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_stop_buys=True,
+        stop_order_type=OrderType.STOP_MARKET,
+        stop_offset_ticks=10,
+        stop_time_in_force=TimeInForce.IOC,
+        order_expire_time_delta_mins=30,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    tester.on_start()
+
+    quote = TestDataStubs.quote_tick(
+        instrument,
+        bid_price=100.0,
+        ask_price=101.0,
+    )
+
+    tester.on_quote_tick(quote)
+
+    assert tester.buy_stop_order is not None
+    assert tester.buy_stop_order.time_in_force == TimeInForce.IOC
+    assert tester.buy_stop_order.expire_time is None

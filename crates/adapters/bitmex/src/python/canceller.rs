@@ -23,7 +23,7 @@ use nautilus_model::{
 };
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyDict};
 
-use crate::execution::canceller::{CancelBroadcaster, CancelBroadcasterConfig};
+use crate::broadcast::canceller::{CancelBroadcaster, CancelBroadcasterConfig};
 
 #[pymethods]
 impl CancelBroadcaster {

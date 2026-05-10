@@ -17,11 +17,11 @@
 
 use std::str::FromStr;
 
-use nautilus_core::{
-    UUID4,
-    datetime::{NANOSECONDS_IN_MILLISECOND, millis_to_nanos_unchecked},
-    nanos::UnixNanos,
+pub use nautilus_core::serialization::{
+    deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
+    deserialize_optional_string_to_u64, deserialize_string_to_u64,
 };
+use nautilus_core::{UUID4, datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
@@ -37,8 +37,8 @@ use nautilus_model::{
         },
     },
     enums::{
-        AccountType, AggregationSource, AggressorSide, LiquiditySide, OptionKind, OrderSide,
-        OrderStatus, OrderType, PositionSide, TimeInForce,
+        AccountType, AggregationSource, AggressorSide, LiquiditySide, MarketStatusAction,
+        OptionKind, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     },
     events::AccountState,
     identifiers::{
@@ -48,7 +48,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use ustr::Ustr;
 
@@ -57,8 +57,8 @@ use crate::{
     common::{
         consts::OKX_VENUE,
         enums::{
-            OKXExecType, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionSide, OKXSide,
-            OKXTargetCurrency, OKXVipLevel,
+            OKXExecType, OKXInstrumentStatus, OKXInstrumentType, OKXOrderStatus, OKXOrderType,
+            OKXPositionSide, OKXSide, OKXTargetCurrency, OKXVipLevel,
         },
         models::OKXInstrument,
     },
@@ -97,38 +97,6 @@ pub fn determine_order_type(okx_ord_type: OKXOrderType, px: &str) -> OrderType {
     }
 }
 
-/// Deserializes an empty string into [`None`].
-///
-/// OKX frequently represents *null* string fields as an empty string (`""`).
-/// When such a payload is mapped onto `Option<String>` the default behaviour
-/// would yield `Some("")`, which is semantically different from the intended
-/// absence of a value. This helper ensures that empty strings are normalised
-/// to `None` during deserialization.
-///
-/// # Errors
-///
-/// Returns an error if the JSON value cannot be deserialised into a string.
-pub fn deserialize_empty_string_as_none<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let opt = Option::<String>::deserialize(deserializer)?;
-    Ok(opt.filter(|s| !s.is_empty()))
-}
-
-/// Deserializes an empty [`Ustr`] into [`None`].
-///
-/// # Errors
-///
-/// Returns an error if the JSON value cannot be deserialised into a string.
-pub fn deserialize_empty_ustr_as_none<'de, D>(deserializer: D) -> Result<Option<Ustr>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let opt = Option::<Ustr>::deserialize(deserializer)?;
-    Ok(opt.filter(|s| !s.is_empty()))
-}
-
 /// Deserializes a string into `Option<OKXTargetCurrency>`, treating empty strings as `None`.
 ///
 /// # Errors
@@ -145,40 +113,6 @@ where
         Ok(None)
     } else {
         s.parse().map(Some).map_err(serde::de::Error::custom)
-    }
-}
-
-/// Deserializes a numeric string into a `u64`.
-///
-/// # Errors
-///
-/// Returns an error if the string cannot be parsed into a `u64`.
-pub fn deserialize_string_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    if s.is_empty() {
-        Ok(0)
-    } else {
-        s.parse::<u64>().map_err(serde::de::Error::custom)
-    }
-}
-
-/// Deserializes an optional numeric string into `Option<u64>`.
-///
-/// # Errors
-///
-/// Returns an error under the same cases as [`deserialize_string_to_u64`].
-pub fn deserialize_optional_string_to_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s: Option<String> = Option::deserialize(deserializer)?;
-    match s {
-        Some(s) if s.is_empty() => Ok(None),
-        Some(s) => s.parse().map(Some).map_err(serde::de::Error::custom),
-        None => Ok(None),
     }
 }
 
@@ -285,6 +219,17 @@ pub fn parse_base_quote_from_symbol(symbol: &str) -> anyhow::Result<(&str, &str)
     Ok((base, quote))
 }
 
+/// Maps an [`OKXInstrumentStatus`] to a Nautilus [`MarketStatusAction`].
+#[must_use]
+pub fn okx_status_to_market_action(status: OKXInstrumentStatus) -> MarketStatusAction {
+    match status {
+        OKXInstrumentStatus::Live => MarketStatusAction::Trading,
+        OKXInstrumentStatus::Suspend => MarketStatusAction::Suspend,
+        OKXInstrumentStatus::Preopen => MarketStatusAction::PreOpen,
+        OKXInstrumentStatus::Test => MarketStatusAction::NotAvailableForTrading,
+    }
+}
+
 /// Parses a Nautilus instrument ID from the given OKX `symbol` value.
 #[must_use]
 pub fn parse_instrument_id(symbol: Ustr) -> InstrumentId {
@@ -354,7 +299,8 @@ pub fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
 /// Returns an error if the fee cannot be parsed into `Decimal` or fails internal
 /// validation in [`Money::from_decimal`].
 pub fn parse_fee(value: Option<&str>, currency: Currency) -> anyhow::Result<Money> {
-    // OKX report positive fees with negative signs (i.e., fee charged)
+    // OKX uses opposite sign convention: negative = cost, positive = rebate.
+    // Negate to match Nautilus convention: positive = cost, negative = rebate.
     let decimal = Decimal::from_str(value.unwrap_or("0"))?;
     Money::from_decimal(-decimal, currency)
 }
@@ -372,7 +318,7 @@ pub fn parse_fee_currency(
     if trimmed.is_empty() {
         if !fee_amount.is_zero() {
             let ctx = context();
-            tracing::warn!(
+            log::warn!(
                 "Empty fee_ccy in {ctx} with non-zero fee={fee_amount}, using USDT as fallback"
             );
         }
@@ -468,8 +414,7 @@ pub fn parse_funding_rate_msg(
         .funding_rate
         .as_str()
         .parse::<Decimal>()
-        .map_err(|e| anyhow::anyhow!("Invalid funding_rate value: {e}"))?
-        .normalize();
+        .map_err(|e| anyhow::anyhow!("Invalid funding_rate value: {e}"))?;
 
     let funding_time = Some(parse_millisecond_timestamp(msg.funding_time));
     let ts_event = parse_millisecond_timestamp(msg.ts);
@@ -596,15 +541,7 @@ pub fn parse_order_status_report(
 
         // Convert quote quantity to base: quantity_base = sz_quote / price
         let quantity_base = if let (Some(sz), Some(price)) = (sz_quote_dec, conversion_price_dec) {
-            if !price.is_zero() {
-                let quantity_dec = sz / price;
-                Quantity::from_decimal_dp(quantity_dec, size_precision).map_err(|e| {
-                    anyhow::anyhow!(
-                        "Failed to convert quote-to-base quantity for ord_id={}, sz={sz}, price={price}, quantity_dec={quantity_dec}: {e}",
-                        order.ord_id.as_str()
-                    )
-                })?
-            } else {
+            if price.is_zero() {
                 log::warn!(
                     "Cannot convert quote quantity with zero price: ord_id={}, sz={}, using sz as-is",
                     order.ord_id.as_str(),
@@ -615,6 +552,14 @@ pub fn parse_order_status_report(
                         "Failed to parse fallback quantity for ord_id={}, sz='{}': {e}",
                         order.ord_id.as_str(),
                         order.sz
+                    )
+                })?
+            } else {
+                let quantity_dec = sz / price;
+                Quantity::from_decimal_dp(quantity_dec, size_precision).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to convert quote-to-base quantity for ord_id={}, sz={sz}, price={price}, quantity_dec={quantity_dec}: {e}",
+                        order.ord_id.as_str()
                     )
                 })?
             }
@@ -753,7 +698,7 @@ pub fn parse_order_status_report(
     if !order.avg_px.is_empty()
         && let Ok(decimal) = Decimal::from_str(&order.avg_px)
     {
-        report = report.with_avg_px(decimal.to_f64().unwrap_or(0.0))?;
+        report.avg_px = Some(decimal);
     }
 
     if order.ord_type == OKXOrderType::PostOnly {
@@ -903,11 +848,11 @@ pub fn parse_position_status_report(
         } else if pos_ccy == quote_ccy {
             // Short position: pos_ccy is quote currency, need to convert to base
             // Use Decimal arithmetic to avoid floating-point precision errors
-            let avg_px_str = if !position.avg_px.is_empty() {
-                &position.avg_px
-            } else {
+            let avg_px_str = if position.avg_px.is_empty() {
                 // If no avg_px, use mark_px as fallback
                 &position.mark_px
+            } else {
+                &position.avg_px
             };
             let avg_px_dec = Decimal::from_str(avg_px_str)?;
 
@@ -1416,17 +1361,35 @@ fn parse_common_instrument_data(
         anyhow::bail!("`lot_sz` is empty for {}", definition.inst_id);
     }
 
-    let size_increment = Quantity::from(&definition.lot_sz);
-    let lot_size = Some(Quantity::from(&definition.lot_sz));
+    let size_increment = Quantity::from_str(&definition.lot_sz).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `lot_sz` '{}' for {}: {e}",
+            definition.lot_sz,
+            definition.inst_id,
+        )
+    })?;
+    let lot_size = Some(size_increment);
     let max_quantity = if definition.max_mkt_sz.is_empty() {
         None
     } else {
-        Some(Quantity::from(&definition.max_mkt_sz))
+        Some(Quantity::from_str(&definition.max_mkt_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `max_mkt_sz` '{}' for {}: {e}",
+                definition.max_mkt_sz,
+                definition.inst_id,
+            )
+        })?)
     };
     let min_quantity = if definition.min_sz.is_empty() {
         None
     } else {
-        Some(Quantity::from(&definition.min_sz))
+        Some(Quantity::from_str(&definition.min_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `min_sz` '{}' for {}: {e}",
+                definition.min_sz,
+                definition.inst_id,
+            )
+        })?)
     };
     let max_notional: Option<Money> = None;
     let min_notional: Option<Money> = None;
@@ -1513,6 +1476,7 @@ impl InstrumentParser for SpotInstrumentParser {
             margin_fees.margin_maint,
             margin_fees.maker_fee,
             margin_fees.taker_fee,
+            None,
             ts_init,
             ts_init,
         );
@@ -1614,11 +1578,41 @@ pub fn parse_swap_instrument(
             definition.inst_id
         )
     })?;
-    let size_increment = Quantity::from(&definition.lot_sz);
+
+    if definition.lot_sz.is_empty() {
+        anyhow::bail!("`lot_sz` is empty for {}", definition.inst_id);
+    }
+    let size_increment = Quantity::from_str(&definition.lot_sz).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `lot_sz` '{}' for {}: {e}",
+            definition.lot_sz,
+            definition.inst_id
+        )
+    })?;
     let multiplier = parse_multiplier_product(definition)?;
-    let lot_size = Some(Quantity::from(&definition.lot_sz));
-    let max_quantity = Some(Quantity::from(&definition.max_mkt_sz));
-    let min_quantity = Some(Quantity::from(&definition.min_sz));
+    let lot_size = Some(size_increment);
+    let max_quantity = if definition.max_mkt_sz.is_empty() {
+        None
+    } else {
+        Some(Quantity::from_str(&definition.max_mkt_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `max_mkt_sz` '{}' for {}: {e}",
+                definition.max_mkt_sz,
+                definition.inst_id
+            )
+        })?)
+    };
+    let min_quantity = if definition.min_sz.is_empty() {
+        None
+    } else {
+        Some(Quantity::from_str(&definition.min_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `min_sz` '{}' for {}: {e}",
+                definition.min_sz,
+                definition.inst_id
+            )
+        })?)
+    };
     let max_notional: Option<Money> = None;
     let min_notional: Option<Money> = None;
     let max_price = None; // TBD
@@ -1647,6 +1641,7 @@ pub fn parse_swap_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
+        None,
         ts_init, // No ts_event for response
         ts_init,
     );
@@ -1702,19 +1697,55 @@ pub fn parse_futures_instrument(
     let expiry_time = definition
         .exp_time
         .ok_or_else(|| anyhow::anyhow!("`exp_time` is required for {}", definition.inst_id))?;
-    let activation_ns = UnixNanos::from(millis_to_nanos_unchecked(listing_time as f64));
-    let expiration_ns = UnixNanos::from(millis_to_nanos_unchecked(expiry_time as f64));
+    let activation_ns = parse_millisecond_timestamp(listing_time);
+    let expiration_ns = parse_millisecond_timestamp(expiry_time);
 
     if definition.tick_sz.is_empty() {
         anyhow::bail!("`tick_sz` is empty for {}", definition.inst_id);
     }
 
-    let price_increment = Price::from(definition.tick_sz.clone());
-    let size_increment = Quantity::from(&definition.lot_sz);
+    let price_increment = Price::from_str(&definition.tick_sz).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `tick_sz` '{}' for {}: {e}",
+            definition.tick_sz,
+            definition.inst_id
+        )
+    })?;
+
+    if definition.lot_sz.is_empty() {
+        anyhow::bail!("`lot_sz` is empty for {}", definition.inst_id);
+    }
+    let size_increment = Quantity::from_str(&definition.lot_sz).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `lot_sz` '{}' for {}: {e}",
+            definition.lot_sz,
+            definition.inst_id
+        )
+    })?;
     let multiplier = parse_multiplier_product(definition)?;
-    let lot_size = Some(Quantity::from(&definition.lot_sz));
-    let max_quantity = Some(Quantity::from(&definition.max_mkt_sz));
-    let min_quantity = Some(Quantity::from(&definition.min_sz));
+    let lot_size = Some(size_increment);
+    let max_quantity = if definition.max_mkt_sz.is_empty() {
+        None
+    } else {
+        Some(Quantity::from_str(&definition.max_mkt_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `max_mkt_sz` '{}' for {}: {e}",
+                definition.max_mkt_sz,
+                definition.inst_id
+            )
+        })?)
+    };
+    let min_quantity = if definition.min_sz.is_empty() {
+        None
+    } else {
+        Some(Quantity::from_str(&definition.min_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `min_sz` '{}' for {}: {e}",
+                definition.min_sz,
+                definition.inst_id
+            )
+        })?)
+    };
     let max_notional: Option<Money> = None;
     let min_notional: Option<Money> = None;
     let max_price = None; // TBD
@@ -1745,6 +1776,7 @@ pub fn parse_futures_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
+        None,
         ts_init, // No ts_event for response
         ts_init,
     );
@@ -1780,7 +1812,13 @@ pub fn parse_option_instrument(
     let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
     let underlying = Currency::get_or_create_crypto_with_context(underlying_str, Some(&context));
     let option_kind: OptionKind = definition.opt_type.into();
-    let strike_price = Price::from(&definition.stk);
+    let strike_price = Price::from_str(&definition.stk).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `stk` '{}' for {}: {e}",
+            definition.stk,
+            definition.inst_id
+        )
+    })?;
     let quote_currency = Currency::get_or_create_crypto_with_context(quote_ccy_str, Some(&context));
     let settlement_currency =
         Currency::get_or_create_crypto_with_context(definition.settle_ccy, Some(&context));
@@ -1797,19 +1835,55 @@ pub fn parse_option_instrument(
     let expiry_time = definition
         .exp_time
         .ok_or_else(|| anyhow::anyhow!("`exp_time` is required for {}", definition.inst_id))?;
-    let activation_ns = UnixNanos::from(millis_to_nanos_unchecked(listing_time as f64));
-    let expiration_ns = UnixNanos::from(millis_to_nanos_unchecked(expiry_time as f64));
+    let activation_ns = parse_millisecond_timestamp(listing_time);
+    let expiration_ns = parse_millisecond_timestamp(expiry_time);
 
     if definition.tick_sz.is_empty() {
         anyhow::bail!("`tick_sz` is empty for {}", definition.inst_id);
     }
 
-    let price_increment = Price::from(definition.tick_sz.clone());
-    let size_increment = Quantity::from(&definition.lot_sz);
+    let price_increment = Price::from_str(&definition.tick_sz).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `tick_sz` '{}' for {}: {e}",
+            definition.tick_sz,
+            definition.inst_id
+        )
+    })?;
+
+    if definition.lot_sz.is_empty() {
+        anyhow::bail!("`lot_sz` is empty for {}", definition.inst_id);
+    }
+    let size_increment = Quantity::from_str(&definition.lot_sz).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse `lot_sz` '{}' for {}: {e}",
+            definition.lot_sz,
+            definition.inst_id
+        )
+    })?;
     let multiplier = parse_multiplier_product(definition)?;
-    let lot_size = Quantity::from(&definition.lot_sz);
-    let max_quantity = Some(Quantity::from(&definition.max_mkt_sz));
-    let min_quantity = Some(Quantity::from(&definition.min_sz));
+    let lot_size = size_increment;
+    let max_quantity = if definition.max_mkt_sz.is_empty() {
+        None
+    } else {
+        Some(Quantity::from_str(&definition.max_mkt_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `max_mkt_sz` '{}' for {}: {e}",
+                definition.max_mkt_sz,
+                definition.inst_id
+            )
+        })?)
+    };
+    let min_quantity = if definition.min_sz.is_empty() {
+        None
+    } else {
+        Some(Quantity::from_str(&definition.min_sz).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse `min_sz` '{}' for {}: {e}",
+                definition.min_sz,
+                definition.inst_id
+            )
+        })?)
+    };
     let max_notional = None;
     let min_notional = None;
     let max_price = None;
@@ -1842,6 +1916,7 @@ pub fn parse_option_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
+        None,
         ts_init,
         ts_init,
     );
@@ -1860,7 +1935,7 @@ fn parse_balance_field(
     match Decimal::from_str(value_str) {
         Ok(decimal) => Money::from_decimal(decimal, currency).ok(),
         Err(e) => {
-            tracing::warn!(
+            log::warn!(
                 "Skipping balance detail for {ccy_str} with invalid {field_name} '{value_str}': {e}"
             );
             None
@@ -1881,10 +1956,7 @@ pub fn parse_account_state(
         // Skip balances with empty or whitespace-only currency codes
         let ccy_str = b.ccy.as_str().trim();
         if ccy_str.is_empty() {
-            tracing::debug!(
-                "Skipping balance detail with empty currency code | raw_data={:?}",
-                b
-            );
+            log::debug!("Skipping balance detail with empty currency code | raw_data={b:?}");
             continue;
         }
 
@@ -1930,12 +2002,12 @@ pub fn parse_account_state(
 
                     let initial_margin = Money::from_decimal(imr_dec, margin_currency)
                         .unwrap_or_else(|e| {
-                            tracing::error!("Failed to create initial margin: {e}");
+                            log::error!("Failed to create initial margin: {e}");
                             Money::zero(margin_currency)
                         });
                     let maintenance_margin = Money::from_decimal(mmr_dec, margin_currency)
                         .unwrap_or_else(|e| {
-                            tracing::error!("Failed to create maintenance margin: {e}");
+                            log::error!("Failed to create maintenance margin: {e}");
                             Money::zero(margin_currency)
                         });
 
@@ -1949,14 +2021,14 @@ pub fn parse_account_state(
                 }
             }
             (Err(e1), _) => {
-                tracing::warn!(
+                log::warn!(
                     "Failed to parse initial margin requirement '{}': {}",
                     okx_account.imr,
                     e1
                 );
             }
             (_, Err(e2)) => {
-                tracing::warn!(
+                log::warn!(
                     "Failed to parse maintenance margin requirement '{}': {}",
                     okx_account.mmr,
                     e2
@@ -1968,7 +2040,7 @@ pub fn parse_account_state(
     let account_type = AccountType::Margin;
     let is_reported = true;
     let event_id = UUID4::new();
-    let ts_event = UnixNanos::from(millis_to_nanos_unchecked(okx_account.u_time as f64));
+    let ts_event = parse_millisecond_timestamp(okx_account.u_time);
 
     Ok(AccountState::new(
         account_id,
@@ -2637,6 +2709,36 @@ mod tests {
         assert_eq!(instrument.lot_size(), Some(Quantity::from("0.01")));
         assert_eq!(instrument.min_quantity(), Some(Quantity::from("0.01")));
         assert_eq!(instrument.max_quantity(), Some(Quantity::from(20000)));
+    }
+
+    #[rstest]
+    fn test_parse_inst_id_code_from_swap_instrument() {
+        let json_data = load_test_json("http_get_instruments_swap.json");
+        let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
+
+        // Verify instIdCode is parsed correctly for BTC-USD-SWAP (inverse)
+        let btc_usd_swap = response
+            .data
+            .iter()
+            .find(|i| i.inst_id == "BTC-USD-SWAP")
+            .expect("BTC-USD-SWAP must be in test data");
+        assert_eq!(btc_usd_swap.inst_id_code, Some(10458));
+
+        // Verify instIdCode is parsed correctly for ETH-USDT-SWAP (linear)
+        let eth_usdt_swap = response
+            .data
+            .iter()
+            .find(|i| i.inst_id == "ETH-USDT-SWAP")
+            .expect("ETH-USDT-SWAP must be in test data");
+        assert_eq!(eth_usdt_swap.inst_id_code, Some(10461));
+
+        // Verify instIdCode is parsed correctly for BTC-USDT-SWAP
+        let btc_usdt_swap = response
+            .data
+            .iter()
+            .find(|i| i.inst_id == "BTC-USDT-SWAP")
+            .expect("BTC-USDT-SWAP must be in test data");
+        assert_eq!(btc_usdt_swap.inst_id_code, Some(10459));
     }
 
     #[rstest]
@@ -3954,6 +4056,7 @@ mod tests {
             max_iceberg_sz: String::new(),
             max_trigger_sz: String::new(),
             max_stop_sz: String::new(),
+            inst_id_code: None,
         };
 
         let result =
@@ -3994,6 +4097,7 @@ mod tests {
             max_iceberg_sz: String::new(),
             max_trigger_sz: String::new(),
             max_stop_sz: String::new(),
+            inst_id_code: None,
         };
 
         let result =
@@ -4034,6 +4138,7 @@ mod tests {
             max_iceberg_sz: String::new(),
             max_trigger_sz: String::new(),
             max_stop_sz: String::new(),
+            inst_id_code: None,
         };
 
         let result =

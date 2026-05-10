@@ -1134,6 +1134,155 @@ async def test_handle_order_status_report_accepted(
 
 
 @pytest.mark.asyncio
+async def test_handle_order_status_report_accepted_skipped_when_already_accepted(
+    exec_client_builder_spot,
+    monkeypatch,
+    instrument,
+    cache,
+    msgbus,
+):
+    """
+    Test that ACCEPTED reports are skipped when order is already ACCEPTED.
+
+    This prevents duplicate OrderAccepted events.
+
+    """
+    # Arrange
+    client, ws_client, http_client, instrument_provider = exec_client_builder_spot(
+        monkeypatch,
+    )
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    # Transition order to ACCEPTED state
+    client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("KRAKEN-789"),
+        ts_event=0,
+    )
+
+    sent_count_before = msgbus.sent_count
+
+    pyo3_report = nautilus_pyo3.OrderStatusReport(
+        account_id=nautilus_pyo3.AccountId("KRAKEN-UNIFIED"),
+        instrument_id=nautilus_pyo3.InstrumentId.from_str(instrument.id.value),
+        venue_order_id=nautilus_pyo3.VenueOrderId("KRAKEN-789"),
+        client_order_id=nautilus_pyo3.ClientOrderId("O-123456"),
+        order_side=nautilus_pyo3.OrderSide.BUY,
+        order_type=nautilus_pyo3.OrderType.LIMIT,
+        time_in_force=nautilus_pyo3.TimeInForce.GTC,
+        order_status=nautilus_pyo3.OrderStatus.ACCEPTED,
+        quantity=nautilus_pyo3.Quantity.from_str("0.100"),
+        filled_qty=nautilus_pyo3.Quantity.from_str("0"),
+        ts_accepted=0,
+        ts_last=0,
+        report_id=nautilus_pyo3.UUID4(),
+        ts_init=0,
+    )
+
+    try:
+        # Act
+        client._handle_order_status_report_pyo3(pyo3_report)
+
+        # Assert
+        assert msgbus.sent_count == sent_count_before
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_handle_order_status_report_accepted_skipped_when_canceled(
+    exec_client_builder_spot,
+    monkeypatch,
+    instrument,
+    cache,
+    msgbus,
+):
+    """
+    Test that ACCEPTED reports are skipped when order is already CANCELED.
+
+    This prevents InvalidStateTrigger: CANCELED -> ACCEPTED errors.
+
+    """
+    # Arrange
+    client, ws_client, http_client, instrument_provider = exec_client_builder_spot(
+        monkeypatch,
+    )
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    # Transition order to CANCELED state
+    client.generate_order_accepted(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("KRAKEN-789"),
+        ts_event=0,
+    )
+    client.generate_order_canceled(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("KRAKEN-789"),
+        ts_event=0,
+    )
+
+    sent_count_before = msgbus.sent_count
+
+    pyo3_report = nautilus_pyo3.OrderStatusReport(
+        account_id=nautilus_pyo3.AccountId("KRAKEN-UNIFIED"),
+        instrument_id=nautilus_pyo3.InstrumentId.from_str(instrument.id.value),
+        venue_order_id=nautilus_pyo3.VenueOrderId("KRAKEN-789"),
+        client_order_id=nautilus_pyo3.ClientOrderId("O-123456"),
+        order_side=nautilus_pyo3.OrderSide.BUY,
+        order_type=nautilus_pyo3.OrderType.LIMIT,
+        time_in_force=nautilus_pyo3.TimeInForce.GTC,
+        order_status=nautilus_pyo3.OrderStatus.ACCEPTED,
+        quantity=nautilus_pyo3.Quantity.from_str("0.100"),
+        filled_qty=nautilus_pyo3.Quantity.from_str("0"),
+        ts_accepted=0,
+        ts_last=0,
+        report_id=nautilus_pyo3.UUID4(),
+        ts_init=0,
+    )
+
+    try:
+        # Act
+        client._handle_order_status_report_pyo3(pyo3_report)
+
+        # Assert
+        assert msgbus.sent_count == sent_count_before
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
 async def test_handle_order_status_report_canceled(
     exec_client_builder_spot,
     monkeypatch,

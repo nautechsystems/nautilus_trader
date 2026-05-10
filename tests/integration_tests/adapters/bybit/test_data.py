@@ -22,7 +22,7 @@ from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.data import BybitDataClient
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -189,22 +189,19 @@ async def test_subscribe_bars(data_client_builder, monkeypatch):
 
     await client._connect()
     try:
-        ws_client.subscribe_klines.reset_mock()
+        ws_client.subscribe_bars.reset_mock()
 
-        # Mock bar type with 1-minute interval
-        bar_type = MagicMock()
-        bar_type.instrument_id = InstrumentId(Symbol("BTCUSDT-SPOT"), BYBIT_VENUE)
-        bar_type.spec.aggregation = BarAggregation.MINUTE
-        bar_type.spec.step = 1
-
+        bar_type = BarType.from_str("BTCUSDT-SPOT.BYBIT-1-MINUTE-LAST-EXTERNAL")
         command = SimpleNamespace(bar_type=bar_type)
 
         # Act
         await client._subscribe_bars(command)
 
         # Assert
-        expected_id = nautilus_pyo3.InstrumentId.from_str("BTCUSDT-SPOT.BYBIT")
-        ws_client.subscribe_klines.assert_awaited_once_with(expected_id, "1")
+        expected_bar_type = nautilus_pyo3.BarType.from_str(
+            "BTCUSDT-SPOT.BYBIT-1-MINUTE-LAST-EXTERNAL",
+        )
+        ws_client.subscribe_bars.assert_awaited_once_with(expected_bar_type)
     finally:
         await client._disconnect()
 

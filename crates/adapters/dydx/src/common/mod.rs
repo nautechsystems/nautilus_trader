@@ -29,6 +29,7 @@
 pub mod consts;
 pub mod credential;
 pub mod enums;
+pub mod instrument_cache;
 pub mod models;
 pub mod parse;
 pub mod urls;

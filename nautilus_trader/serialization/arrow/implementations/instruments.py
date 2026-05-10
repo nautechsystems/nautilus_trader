@@ -16,6 +16,7 @@
 import msgspec
 import pyarrow as pa
 
+from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.instruments import Cfd
@@ -31,6 +32,7 @@ from nautilus_trader.model.instruments import IndexInstrument
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionContract
 from nautilus_trader.model.instruments import OptionSpread
+from nautilus_trader.model.instruments import PerpetualContract
 
 
 SCHEMAS = {
@@ -360,6 +362,37 @@ SCHEMAS = {
             "ts_init": pa.uint64(),
         },
     ),
+    PerpetualContract: pa.schema(
+        {
+            "id": pa.dictionary(pa.int64(), pa.string()),
+            "raw_symbol": pa.string(),
+            "underlying": pa.dictionary(pa.int16(), pa.string()),
+            "asset_class": pa.dictionary(pa.int8(), pa.string()),
+            "base_currency": pa.dictionary(pa.int16(), pa.string()),
+            "quote_currency": pa.dictionary(pa.int16(), pa.string()),
+            "settlement_currency": pa.dictionary(pa.int16(), pa.string()),
+            "is_inverse": pa.bool_(),
+            "price_precision": pa.uint8(),
+            "size_precision": pa.uint8(),
+            "price_increment": pa.dictionary(pa.int16(), pa.string()),
+            "size_increment": pa.dictionary(pa.int16(), pa.string()),
+            "multiplier": pa.dictionary(pa.int16(), pa.string()),
+            "lot_size": pa.dictionary(pa.int16(), pa.string()),
+            "max_quantity": pa.dictionary(pa.int16(), pa.string()),
+            "min_quantity": pa.dictionary(pa.int16(), pa.string()),
+            "max_notional": pa.dictionary(pa.int16(), pa.string()),
+            "min_notional": pa.dictionary(pa.int16(), pa.string()),
+            "max_price": pa.dictionary(pa.int16(), pa.string()),
+            "min_price": pa.dictionary(pa.int16(), pa.string()),
+            "margin_init": pa.string(),
+            "margin_maint": pa.string(),
+            "maker_fee": pa.string(),
+            "taker_fee": pa.string(),
+            "info": pa.binary(),
+            "ts_event": pa.uint64(),
+            "ts_init": pa.uint64(),
+        },
+    ),
     Commodity: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
@@ -406,7 +439,7 @@ SCHEMAS = {
 def serialize(obj: Instrument) -> pa.RecordBatch:
     data = obj.to_dict(obj)
     if "info" in data:
-        data["info"] = msgspec.json.encode(data["info"])
+        data["info"] = msgspec.json.encode(data["info"], enc_hook=msgspec_encoding_hook)
     schema = SCHEMAS[obj.__class__].with_metadata({"class": obj.__class__.__name__})
     return pa.RecordBatch.from_pylist([data], schema)
 
@@ -428,6 +461,7 @@ def deserialize(batch: pa.RecordBatch) -> list[Instrument]:
         b"IndexInstrument": IndexInstrument,
         b"OptionContract": OptionContract,
         b"OptionSpread": OptionSpread,
+        b"PerpetualContract": PerpetualContract,
     }[ins_type]
 
     maps = batch.to_pylist()

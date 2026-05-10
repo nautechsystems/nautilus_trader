@@ -40,9 +40,6 @@ pub mod defi;
 ///
 /// Returns a `PyErr` if registering any module components fails.
 ///
-/// # Panics
-///
-/// Panics if inserting classes or functions into the Python module unexpectedly fails.
 #[pymodule]
 pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Types
@@ -70,13 +67,12 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::data::delta::OrderBookDelta>()?;
     m.add_class::<crate::data::deltas::OrderBookDeltas>()?;
     m.add_class::<crate::data::depth::OrderBookDepth10>()?;
-    m.add_class::<crate::data::greeks::BlackScholesGreeksResult>()?;
-    m.add_class::<crate::data::greeks::ImplyVolAndGreeksResult>()?;
     m.add_class::<crate::data::quote::QuoteTick>()?;
     m.add_class::<crate::data::status::InstrumentStatus>()?;
     m.add_class::<crate::data::trade::TradeTick>()?;
     m.add_class::<crate::data::close::InstrumentClose>()?;
     m.add_class::<crate::data::funding::FundingRateUpdate>()?;
+    m.add_class::<crate::data::greeks::BlackScholesGreeksResult>()?;
     m.add_function(wrap_pyfunction!(
         crate::python::data::greeks::py_black_scholes_greeks,
         m
@@ -87,6 +83,10 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(
         crate::python::data::greeks::py_imply_vol_and_greeks,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::data::greeks::py_refine_vol_and_greeks,
         m
     )?)?;
     // Enums
@@ -107,6 +107,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::MarketStatusAction>()?;
     m.add_class::<crate::enums::OmsType>()?;
     m.add_class::<crate::enums::OptionKind>()?;
+    m.add_class::<crate::enums::OtoTriggerMode>()?;
     m.add_class::<crate::enums::OrderSide>()?;
     m.add_class::<crate::enums::OrderStatus>()?;
     m.add_class::<crate::enums::OrderType>()?;
@@ -152,6 +153,8 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Instruments
     m.add_class::<crate::instruments::BettingInstrument>()?;
     m.add_class::<crate::instruments::BinaryOption>()?;
+    m.add_class::<crate::instruments::Cfd>()?;
+    m.add_class::<crate::instruments::Commodity>()?;
     m.add_class::<crate::instruments::CryptoFuture>()?;
     m.add_class::<crate::instruments::CryptoOption>()?;
     m.add_class::<crate::instruments::CryptoPerpetual>()?;
@@ -159,8 +162,10 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::instruments::Equity>()?;
     m.add_class::<crate::instruments::FuturesContract>()?;
     m.add_class::<crate::instruments::FuturesSpread>()?;
+    m.add_class::<crate::instruments::IndexInstrument>()?;
     m.add_class::<crate::instruments::OptionContract>()?;
     m.add_class::<crate::instruments::OptionSpread>()?;
+    m.add_class::<crate::instruments::PerpetualContract>()?;
     m.add_class::<crate::instruments::SyntheticInstrument>()?;
     // Order book
     m.add_class::<crate::orderbook::book::OrderBook>()?;

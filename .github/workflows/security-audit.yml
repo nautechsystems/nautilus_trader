@@ -1,0 +1,126 @@
+name: security-audit
+
+# Supply chain security checks - runs nightly and on-demand for visibility.
+#
+# Separate from main build to avoid blocking PRs with unactionable advisories.
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  push:
+    branches: [test-security]
+  schedule:
+    - cron: '0 12 * * *' # Daily at 12:00 UTC (2hrs prior to nightly-merge)
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  cargo-audit:
+    name: cargo-audit
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-audit
+        uses: ./.github/actions/cargo-tool-install
+        with:
+          tool-name: cargo-audit
+
+      - name: Run cargo-audit
+        run: cargo audit
+
+  cargo-deny:
+    name: cargo-deny
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-deny
+        uses: ./.github/actions/cargo-tool-install
+        with:
+          tool-name: cargo-deny
+
+      - name: Run cargo-deny (advisories, licenses, sources, bans)
+        run: cargo deny --all-features check advisories licenses sources bans
+
+  cargo-vet:
+    name: cargo-vet
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-vet
+        uses: ./.github/actions/cargo-tool-install
+        with:
+          tool-name: cargo-vet
+
+      - name: Run cargo-vet
+        run: cargo vet --locked
+
+  pip-audit:
+    name: pip-audit
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b # v7.3.0
+
+      - name: Install Python
+        run: uv python install 3.13
+
+      - name: Run pip-audit
+        run: >
+          uv export --no-hashes --frozen |
+          uv run --no-project --with pip-audit --
+          pip-audit --disable-pip --no-deps -r /dev/stdin
+
+  osv-scanner:
+    name: osv-scanner
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Run osv-scanner
+        uses: google/osv-scanner-action/osv-scanner-action@2a387edfbe02a11d856b89172f6e978100177eb4 # v2.3.2
+        with:
+          scan-args: |
+            --config=osv-scanner.toml
+            --lockfile=Cargo.lock
+            --lockfile=uv.lock

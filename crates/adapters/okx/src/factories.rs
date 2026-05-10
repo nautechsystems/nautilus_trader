@@ -17,9 +17,12 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use nautilus_common::{cache::Cache, clock::Clock};
-use nautilus_data::client::DataClient;
-use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
+use nautilus_common::{
+    cache::Cache,
+    clients::{DataClient, ExecutionClient},
+    clock::Clock,
+};
+use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::ClientId,
@@ -46,7 +49,11 @@ impl ClientConfig for OKXExecClientConfig {
 }
 
 /// Factory for creating OKX data clients.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.okx", from_py_object)
+)]
 pub struct OKXDataClientFactory;
 
 impl OKXDataClientFactory {
@@ -96,7 +103,11 @@ impl DataClientFactory for OKXDataClientFactory {
 }
 
 /// Factory for creating OKX execution clients.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.okx", from_py_object)
+)]
 pub struct OKXExecutionClientFactory;
 
 impl OKXExecutionClientFactory {
@@ -119,7 +130,6 @@ impl ExecutionClientFactory for OKXExecutionClientFactory {
         name: &str,
         config: &dyn ClientConfig,
         cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let okx_config = config
             .as_any()
@@ -159,7 +169,6 @@ impl ExecutionClientFactory for OKXExecutionClientFactory {
             okx_config.account_id,
             account_type,
             None, // base_currency
-            clock,
             cache,
         );
 
@@ -181,7 +190,7 @@ impl ExecutionClientFactory for OKXExecutionClientFactory {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{cache::Cache, clock::TestClock};
+    use nautilus_common::cache::Cache;
     use nautilus_model::identifiers::{AccountId, TraderId};
     use nautilus_system::factories::{ClientConfig, ExecutionClientFactory};
     use rstest::rstest;
@@ -231,9 +240,8 @@ mod tests {
         };
 
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
 
-        let result = factory.create("OKX-TEST", &config, cache, clock);
+        let result = factory.create("OKX-TEST", &config, cache);
         assert!(result.is_ok());
 
         let client = result.unwrap();
@@ -254,9 +262,8 @@ mod tests {
         };
 
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
 
-        let result = factory.create("OKX-DERIV", &config, cache, clock);
+        let result = factory.create("OKX-DERIV", &config, cache);
         assert!(result.is_ok());
     }
 
@@ -266,9 +273,8 @@ mod tests {
         let wrong_config = OKXDataClientConfig::default();
 
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
 
-        let result = factory.create("OKX-TEST", &wrong_config, cache, clock);
+        let result = factory.create("OKX-TEST", &wrong_config, cache);
         assert!(result.is_err());
         assert!(
             result

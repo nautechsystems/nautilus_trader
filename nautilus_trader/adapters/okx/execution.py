@@ -54,6 +54,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
@@ -251,9 +252,11 @@ class OKXExecutionClient(LiveExecutionClient):
         self.create_task(self._check_clock_sync())
 
         await self._ws_client.connect(
+            loop_=self._loop,
             instruments=self.okx_instrument_provider.instruments_pyo3(),
             callback=self._handle_msg,
         )
+        self._ws_client.cache_inst_id_codes(self.okx_instrument_provider.inst_id_codes())
 
         # Wait for connection to be established
         await self._ws_client.wait_until_active(timeout_secs=30.0)
@@ -266,6 +269,7 @@ class OKXExecutionClient(LiveExecutionClient):
         self._log.info("OKX API key authenticated", LogColor.GREEN)
 
         await self._ws_business_client.connect(
+            loop_=self._loop,
             instruments=self.okx_instrument_provider.instruments_pyo3(),
             callback=self._handle_msg,
         )
@@ -307,6 +311,7 @@ class OKXExecutionClient(LiveExecutionClient):
             # OKX doesn't support algo orders channel for OPTIONS
             if instrument_type != OKXInstrumentType.OPTION:
                 await self._ws_business_client.subscribe_orders_algo(instrument_type)
+                await self._ws_business_client.subscribe_algo_advance(instrument_type)
 
             # Only subscribe to fills channel if VIP5+ (configurable)
             if self._config.use_fills_channel:
@@ -449,13 +454,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 self._apply_client_order_alias(report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("OrderStatusReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate OrderStatusReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate OrderStatusReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReports")
 
         self._log_report_receipt(
             len(reports),
@@ -518,13 +518,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 ) or (command.venue_order_id and report.venue_order_id == command.venue_order_id):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     return report
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("OrderStatusReport request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate OrderStatusReport", e)
-        except Exception as e:
-            self._log.exception("Failed to generate OrderStatusReport", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "OrderStatusReport")
 
         if canonical_requested_id is not None:
             return await self._resolve_algo_fallback(
@@ -697,13 +692,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 if canonical_id is not None:
                     report.client_order_id = canonical_id
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("FillReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate FillReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate FillReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "FillReports")
 
         self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
@@ -926,13 +916,8 @@ class OKXExecutionClient(LiveExecutionClient):
                 report = PositionStatusReport.from_pyo3(pyo3_report)
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
-        except ValueError as e:
-            if "request canceled" in str(e).lower():
-                self._log.debug("PositionReports request cancelled during shutdown")
-            else:
-                self._log.exception("Failed to generate PositionReports", e)
-        except Exception as e:
-            self._log.exception("Failed to generate PositionReports", e)
+        except (asyncio.CancelledError, Exception) as e:
+            self._log_report_error(e, "PositionReports")
 
         self._log_report_receipt(
             len(reports),
@@ -1032,6 +1017,7 @@ class OKXExecutionClient(LiveExecutionClient):
             OrderType.STOP_LIMIT,
             OrderType.MARKET_IF_TOUCHED,
             OrderType.LIMIT_IF_TOUCHED,
+            OrderType.TRAILING_STOP_MARKET,
         )
 
         if is_conditional:
@@ -1106,7 +1092,12 @@ class OKXExecutionClient(LiveExecutionClient):
         pyo3_order_side = order_side_to_pyo3(order.side)
         pyo3_order_type = order_type_to_pyo3(order.order_type)
         pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(order.quantity))
-        pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
+
+        pyo3_trigger_price = (
+            nautilus_pyo3.Price.from_str(str(order.trigger_price))
+            if order.has_trigger_price
+            else None
+        )
 
         pyo3_limit_price = (
             nautilus_pyo3.Price.from_str(str(order.price)) if order.has_price else None
@@ -1115,6 +1106,36 @@ class OKXExecutionClient(LiveExecutionClient):
         pyo3_trigger_type = (
             trigger_type_to_pyo3(order.trigger_type) if hasattr(order, "trigger_type") else None
         )
+
+        callback_ratio = None
+        callback_spread = None
+        pyo3_activation_price = None
+
+        if order.order_type == OrderType.TRAILING_STOP_MARKET:
+            trailing_offset = order.trailing_offset
+            trailing_offset_type = order.trailing_offset_type
+            if trailing_offset_type == TrailingOffsetType.BASIS_POINTS:
+                # Convert basis points to ratio (e.g., 100 bps = 0.01)
+                callback_ratio = str(trailing_offset / Decimal(10000))
+            elif trailing_offset_type == TrailingOffsetType.PRICE:
+                callback_spread = str(trailing_offset)
+            else:
+                self._log.error(
+                    f"Unsupported trailing_offset_type for OKX: {trailing_offset_type}",
+                )
+                self.generate_order_denied(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=f"unsupported trailing_offset_type: {trailing_offset_type}",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                return
+
+            if order.activation_price is not None:
+                pyo3_activation_price = nautilus_pyo3.Price.from_str(
+                    str(order.activation_price),
+                )
 
         td_mode = self._get_trade_mode_for_order(order.instrument_id, command.params)
 
@@ -1139,7 +1160,10 @@ class OKXExecutionClient(LiveExecutionClient):
                 trigger_price=pyo3_trigger_price,
                 trigger_type=pyo3_trigger_type,
                 limit_price=pyo3_limit_price,
-                reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+                reduce_only=order.is_reduce_only or None,
+                callback_ratio=callback_ratio,
+                callback_spread=callback_spread,
+                activation_price=pyo3_activation_price,
             )
 
             if response.get("s_code") and response["s_code"] != "0":
@@ -1159,9 +1183,22 @@ class OKXExecutionClient(LiveExecutionClient):
             )
 
     async def _batch_cancel_orders(self, command) -> None:
-        orders_to_cancel = []
+        regular_orders, algo_orders = self._categorize_orders_for_batch_cancel(command.cancels)
 
-        for cancel in command.cancels:
+        if regular_orders:
+            await self._batch_cancel_regular_orders(regular_orders)
+
+        if algo_orders:
+            await self._batch_cancel_algo_orders(algo_orders)
+
+        if not regular_orders and not algo_orders:
+            self._log.warning("No valid orders to cancel in batch")
+
+    def _categorize_orders_for_batch_cancel(self, cancels):
+        regular_orders = []
+        algo_orders: list[tuple[ClientOrderId, InstrumentId, str]] = []
+
+        for cancel in cancels:
             order = self._cache.order(cancel.client_order_id)
             if order is None:
                 self._log.warning(f"{cancel.client_order_id!r} not found in cache, skipping")
@@ -1173,38 +1210,96 @@ class OKXExecutionClient(LiveExecutionClient):
                 )
                 continue
 
-            pyo3_inst_id = nautilus_pyo3.InstrumentId.from_str(cancel.instrument_id.value)
+            # Pending conditional orders must use HTTP algo cancel
+            is_pending_algo = self._is_conditional_order(order) and not self._is_order_triggered(
+                order,
+            )
 
+            if is_pending_algo:
+                algo_id = self._resolve_algo_id(order)
+                if algo_id:
+                    algo_orders.append((order.client_order_id, cancel.instrument_id, algo_id))
+                else:
+                    self._log.warning(
+                        f"No algo_id for conditional order {order.client_order_id!r}, skipping",
+                    )
+                continue
+
+            pyo3_inst_id = nautilus_pyo3.InstrumentId.from_str(cancel.instrument_id.value)
             resolved_client_order_id = self._exchange_client_order_id(cancel.client_order_id)
             pyo3_client_order_id = (
                 nautilus_pyo3.ClientOrderId(resolved_client_order_id.value)
                 if resolved_client_order_id is not None
                 else None
             )
-
             pyo3_venue_order_id = (
                 nautilus_pyo3.VenueOrderId(cancel.venue_order_id.value)
                 if cancel.venue_order_id
                 else None
             )
+            regular_orders.append((pyo3_inst_id, pyo3_client_order_id, pyo3_venue_order_id))
 
-            orders_to_cancel.append(
-                (
-                    pyo3_inst_id,
-                    pyo3_client_order_id,
-                    pyo3_venue_order_id,
-                ),
-            )
+        return regular_orders, algo_orders
 
-        if not orders_to_cancel:
-            self._log.warning("No valid orders to cancel in batch")
-            return
-
+    async def _batch_cancel_regular_orders(self, orders_to_cancel) -> None:
         try:
             await self._ws_client.batch_cancel_orders(orders_to_cancel)
-            self._log.info(f"Submitted batch cancel for {len(orders_to_cancel)} orders")
+            self._log.info(f"Submitted batch cancel for {len(orders_to_cancel)} regular orders")
         except Exception as e:
-            self._log.error(f"Failed to batch cancel orders: {e}")
+            self._log.error(f"Failed to batch cancel regular orders: {e}")
+
+    async def _batch_cancel_algo_orders(
+        self,
+        algo_orders: list[tuple[ClientOrderId, InstrumentId, str]],
+    ) -> None:
+        regular_algos = []
+        regular_client_order_ids = []
+        advance_algos = []
+        advance_client_order_ids = []
+
+        for client_order_id, inst_id, algo_id in algo_orders:
+            order = self._cache.order(client_order_id)
+            is_advance = order is not None and order.order_type == OrderType.TRAILING_STOP_MARKET
+            pyo3_pair = (nautilus_pyo3.InstrumentId.from_str(inst_id.value), algo_id)
+            if is_advance:
+                advance_algos.append(pyo3_pair)
+                advance_client_order_ids.append(client_order_id)
+            else:
+                regular_algos.append(pyo3_pair)
+                regular_client_order_ids.append(client_order_id)
+
+        cancelled_client_order_ids = []
+
+        try:
+            if regular_algos:
+                await self._http_client.cancel_algo_orders(regular_algos)
+                self._log.info(f"Submitted batch cancel for {len(regular_algos)} algo orders")
+                cancelled_client_order_ids.extend(regular_client_order_ids)
+        except Exception as e:
+            self._log.error(f"Failed to batch cancel algo orders: {e}")
+
+        # Advance algo orders must be cancelled individually
+        for i, (pyo3_inst_id, algo_id) in enumerate(advance_algos):
+            try:
+                resp = await self._http_client.cancel_advance_algo_order(
+                    instrument_id=pyo3_inst_id,
+                    algo_id=algo_id,
+                )
+                s_code = resp.get("s_code", "0")
+                if s_code != "0":
+                    s_msg = resp.get("s_msg", "unknown")
+                    self._log.warning(
+                        f"OKX rejected cancel for advance algo {algo_id}: "
+                        f"s_code={s_code}, s_msg={s_msg}",
+                    )
+                else:
+                    cancelled_client_order_ids.append(advance_client_order_ids[i])
+            except Exception as e:
+                self._log.warning(f"Failed to cancel advance algo order {algo_id}: {e}")
+
+        for client_order_id in cancelled_client_order_ids:
+            self._algo_order_ids.pop(client_order_id, None)
+            self._algo_order_instruments.pop(client_order_id, None)
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -1219,6 +1314,88 @@ class OKXExecutionClient(LiveExecutionClient):
             )
             return
 
+        # Pending conditional orders use HTTP algo amend,
+        # triggered conditional orders become regular on OKX
+        is_pending_algo = self._is_conditional_order(order) and not self._is_order_triggered(
+            order,
+        )
+
+        if is_pending_algo:
+            await self._modify_algo_order_http(command, order)
+        else:
+            await self._modify_order_websocket(command, order)
+
+    async def _modify_algo_order_http(self, command: ModifyOrder, order: Order) -> None:
+        algo_id = self._resolve_algo_id(order)
+        if not algo_id:
+            self._log.error(
+                f"Cannot amend pending algo order {command.client_order_id!r}: "
+                "no algo_id resolved from mapping or venue_order_id",
+            )
+            self.generate_order_modify_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason="no algo_id available for pending conditional order",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+            command.instrument_id.value,
+        )
+        new_trigger_price = (
+            nautilus_pyo3.Price.from_str(str(command.trigger_price))
+            if command.trigger_price
+            else None
+        )
+        new_limit_price = (
+            nautilus_pyo3.Price.from_str(str(command.price)) if command.price else None
+        )
+        new_quantity = (
+            nautilus_pyo3.Quantity.from_str(str(command.quantity)) if command.quantity else None
+        )
+
+        self._log.debug(
+            f"Amending OKX algo order using algo_id {algo_id} for {command.client_order_id!r}",
+        )
+
+        try:
+            resp = await self._http_client.amend_algo_order(
+                instrument_id=pyo3_instrument_id,
+                algo_id=algo_id,
+                new_trigger_price=new_trigger_price,
+                new_limit_price=new_limit_price,
+                new_quantity=new_quantity,
+            )
+
+            s_code = resp.get("s_code", "0")
+            if s_code != "0":
+                s_msg = resp.get("s_msg", "unknown")
+                reason = f"s_code={s_code}, s_msg={s_msg}"
+                self._log.error(
+                    f"OKX rejected amend for algo order {algo_id}: {reason}",
+                )
+                self.generate_order_modify_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    reason=reason,
+                    ts_event=self._clock.timestamp_ns(),
+                )
+        except Exception as e:
+            self.generate_order_modify_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+    async def _modify_order_websocket(self, command: ModifyOrder, order: Order) -> None:
         pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
         pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -1282,7 +1459,28 @@ class OKXExecutionClient(LiveExecutionClient):
                 command.client_order_id,
             )
             alias_lookup_key = canonical_client_order_id or command.client_order_id
-            algo_id = self._algo_order_ids.get(alias_lookup_key)
+
+            # Pending conditional orders use HTTP algo cancel,
+            # triggered conditional orders become regular on OKX
+            is_pending_algo = self._is_conditional_order(order) and not self._is_order_triggered(
+                order,
+            )
+            algo_id = self._resolve_algo_id(order) if is_pending_algo else None
+
+            if is_pending_algo and not algo_id:
+                self._log.error(
+                    f"Cannot cancel pending algo order {command.client_order_id!r}: "
+                    "no algo_id resolved from mapping or venue_order_id",
+                )
+                self.generate_order_cancel_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    reason="no algo_id available for pending conditional order",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                return
 
             if algo_id:
                 self._log.debug(
@@ -1294,10 +1492,33 @@ class OKXExecutionClient(LiveExecutionClient):
                 )
 
                 try:
-                    await self._http_client.cancel_algo_order(
-                        instrument_id=pyo3_instrument_id,
-                        algo_id=algo_id,
-                    )
+                    if order.order_type == OrderType.TRAILING_STOP_MARKET:
+                        resp = await self._http_client.cancel_advance_algo_order(
+                            instrument_id=pyo3_instrument_id,
+                            algo_id=algo_id,
+                        )
+                    else:
+                        resp = await self._http_client.cancel_algo_order(
+                            instrument_id=pyo3_instrument_id,
+                            algo_id=algo_id,
+                        )
+
+                    s_code = resp.get("s_code", "0")
+                    if s_code != "0":
+                        s_msg = resp.get("s_msg", "unknown")
+                        reason = f"s_code={s_code}, s_msg={s_msg}"
+                        self._log.error(
+                            f"OKX rejected cancel for algo order {algo_id}: {reason}",
+                        )
+                        self.generate_order_cancel_rejected(
+                            strategy_id=order.strategy_id,
+                            instrument_id=order.instrument_id,
+                            client_order_id=order.client_order_id,
+                            venue_order_id=order.venue_order_id,
+                            reason=reason,
+                            ts_event=self._clock.timestamp_ns(),
+                        )
+                        return
                 except ValueError as e:
                     message = str(e)
                     alias_text = str(alias_lookup_key) if alias_lookup_key is not None else ""
@@ -1310,9 +1531,8 @@ class OKXExecutionClient(LiveExecutionClient):
                     ):
                         raise
 
-                if alias_lookup_key is not None:
-                    del self._algo_order_ids[alias_lookup_key]
-                    self._algo_order_instruments.pop(alias_lookup_key, None)
+                self._algo_order_ids.pop(alias_lookup_key, None)
+                self._algo_order_instruments.pop(alias_lookup_key, None)
             else:
                 pyo3_trader_id = nautilus_pyo3.TraderId.from_str(order.trader_id.value)
                 pyo3_strategy_id = nautilus_pyo3.StrategyId.from_str(order.strategy_id.value)
@@ -1380,10 +1600,29 @@ class OKXExecutionClient(LiveExecutionClient):
         )
         try:
             pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
-            await self._http_client.cancel_algo_order(
-                instrument_id=pyo3_instrument_id,
-                algo_id=algo_id,
-            )
+            order = self._cache.order(client_order_id)
+            is_advance = order is not None and order.order_type == OrderType.TRAILING_STOP_MARKET
+
+            if is_advance:
+                resp = await self._http_client.cancel_advance_algo_order(
+                    instrument_id=pyo3_instrument_id,
+                    algo_id=algo_id,
+                )
+            else:
+                resp = await self._http_client.cancel_algo_order(
+                    instrument_id=pyo3_instrument_id,
+                    algo_id=algo_id,
+                )
+
+            s_code = resp.get("s_code", "0")
+            if s_code != "0":
+                s_msg = resp.get("s_msg", "unknown")
+                self._log.warning(
+                    f"OKX rejected fallback cancel for algo {algo_id}: "
+                    f"s_code={s_code}, s_msg={s_msg}",
+                )
+                return
+
             self._log.debug(
                 f"Successfully cancelled OKX algo order {client_order_id!r} via fallback",
             )
@@ -1419,37 +1658,49 @@ class OKXExecutionClient(LiveExecutionClient):
 
     async def _cancel_all_orders_individually(self, command: CancelAllOrders) -> None:
         orders_open: list[Order] = self._cache.orders_open(instrument_id=command.instrument_id)
-        cancels: list[CancelOrder] = []
-        processed: set[ClientOrderId] = set()
+        regular_cancels: list[CancelOrder] = []
+        algo_cancels: list[tuple[ClientOrderId, InstrumentId, str]] = []
 
-        # Build cancel commands for regular orders (skip algo orders)
         for order in orders_open:
             if order.is_closed:
                 continue
 
-            # Skip algo orders - they must use REST API fallback
-            if order.client_order_id in self._algo_order_ids:
-                continue
-
-            cancels.append(
-                CancelOrder(
-                    trader_id=command.trader_id,
-                    strategy_id=command.strategy_id,
-                    instrument_id=order.instrument_id,
-                    client_order_id=order.client_order_id,
-                    venue_order_id=order.venue_order_id,
-                    command_id=command.id,
-                    ts_init=command.ts_init,
-                ),
+            # Pending conditional orders must use HTTP algo cancel
+            is_pending_algo = self._is_conditional_order(order) and not self._is_order_triggered(
+                order,
             )
-            processed.add(order.client_order_id)
 
-        # Process cancels in batches of 20 (OKX API limit)
-        # Reference: https://www.okx.com/docs-v5/en/#order-book-trading-websocket-batch-cancel-orders
+            if is_pending_algo:
+                algo_id = self._resolve_algo_id(order)
+                if algo_id:
+                    algo_cancels.append((order.client_order_id, order.instrument_id, algo_id))
+                else:
+                    self._log.warning(
+                        f"No algo_id for conditional order {order.client_order_id!r}, skipping",
+                    )
+            else:
+                regular_cancels.append(
+                    CancelOrder(
+                        trader_id=command.trader_id,
+                        strategy_id=command.strategy_id,
+                        instrument_id=order.instrument_id,
+                        client_order_id=order.client_order_id,
+                        venue_order_id=order.venue_order_id,
+                        command_id=command.id,
+                        ts_init=command.ts_init,
+                    ),
+                )
+
+        self._log.debug(
+            f"Canceling {len(regular_cancels)} regular orders and "
+            f"{len(algo_cancels)} algo orders for {command.instrument_id}",
+        )
+
+        # Process regular cancels in batches of 20 (OKX API limit)
         batch_size = 20
 
-        for i in range(0, len(cancels), batch_size):
-            batch = cancels[i : i + batch_size]
+        for i in range(0, len(regular_cancels), batch_size):
+            batch = regular_cancels[i : i + batch_size]
             batch_command = BatchCancelOrders(
                 trader_id=command.trader_id,
                 strategy_id=command.strategy_id,
@@ -1460,20 +1711,49 @@ class OKXExecutionClient(LiveExecutionClient):
             )
             await self._batch_cancel_orders(batch_command)
 
-        # Cancel algo orders individually via REST API (cannot be batched)
-        for client_order_id, algo_id in list(self._algo_order_ids.items()):
-            if client_order_id in processed:
-                continue
-
-            instrument_id = self._algo_order_instruments.get(client_order_id)
-            if instrument_id is None or instrument_id != command.instrument_id:
-                continue
-
+        for client_order_id, instrument_id, algo_id in algo_cancels:
             await self._cancel_algo_order_fallback(
                 client_order_id=client_order_id,
                 instrument_id=instrument_id,
                 algo_id=algo_id,
             )
+
+    # -- HELPERS ----------------------------------------------------------------------------------
+
+    _OKX_CONDITIONAL_ORDER_TYPES = frozenset(
+        {
+            OrderType.STOP_MARKET,
+            OrderType.STOP_LIMIT,
+            OrderType.MARKET_IF_TOUCHED,
+            OrderType.LIMIT_IF_TOUCHED,
+            OrderType.TRAILING_STOP_MARKET,
+        },
+    )
+
+    def _is_conditional_order(self, order: Order) -> bool:
+        return order.order_type in self._OKX_CONDITIONAL_ORDER_TYPES
+
+    @staticmethod
+    def _is_order_triggered(order: Order) -> bool:
+        # Prefer the sticky is_triggered flag (StopLimit, LimitIfTouched,
+        # TrailingStopLimit), fall back to filled_qty for market-type stops
+        # that don't expose the attribute
+        if hasattr(order, "is_triggered"):
+            return order.is_triggered
+        return order.filled_qty > 0 or order.status == OrderStatus.TRIGGERED
+
+    def _resolve_algo_id(self, order: Order) -> str | None:
+        """
+        Resolve the OKX algo_id for an order.
+
+        Only uses the `_algo_order_ids` mapping. After a conditional order
+        triggers, its venue_order_id becomes the child ordId (not the
+        algo_id), so venue_order_id must not be used as a fallback.
+
+        """
+        canonical = self._canonical_client_order_id(order.client_order_id)
+        key = canonical or order.client_order_id
+        return self._algo_order_ids.get(key)
 
     # -- WEBSOCKET HANDLERS -----------------------------------------------------------------------
 
@@ -1622,9 +1902,15 @@ class OKXExecutionClient(LiveExecutionClient):
         if order.is_closed:
             return
 
-        # For algo orders (stop orders), store the algo_id mapping
+        # For conditional/algo orders, store the algo_id mapping
         # The venue_order_id is actually the algo_id for algo orders
-        if order.order_type in (OrderType.STOP_MARKET, OrderType.STOP_LIMIT):
+        if order.order_type in (
+            OrderType.STOP_MARKET,
+            OrderType.STOP_LIMIT,
+            OrderType.MARKET_IF_TOUCHED,
+            OrderType.LIMIT_IF_TOUCHED,
+            OrderType.TRAILING_STOP_MARKET,
+        ):
             child = self._client_id_children.get(report.client_order_id)
             venue_changed = (
                 order.venue_order_id is not None

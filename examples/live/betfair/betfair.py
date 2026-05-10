@@ -61,6 +61,13 @@ async def main(
     )
     await provider.load_all_async()
     instruments = provider.list_all()
+    if not instruments:
+        market_ids = instrument_config.market_ids or []
+        print(
+            f"No instruments found for market_ids={market_ids}. "
+            "Check the market ID is valid and the market hasn't closed.",
+        )
+        raise SystemExit(1)
     print(f"Found instruments:\n{[inst.id for inst in instruments]}")
 
     # Determine account currency - used in execution client
@@ -82,7 +89,7 @@ async def main(
             reconciliation=True,
             open_check_interval_secs=5.0,
             open_check_open_only=False,
-            position_check_interval_secs=5.0,
+            position_check_interval_secs=None,  # Not supported by Betfair
             snapshot_orders=True,
             snapshot_positions=True,
             snapshot_positions_interval_secs=5.0,
@@ -95,6 +102,7 @@ async def main(
                 # password=None, # 'BETFAIR_PASSWORD' env var
                 # app_key=None, # 'BETFAIR_APP_KEY' env var
                 # certs_dir=None, # 'BETFAIR_CERTS_DIR' env var
+                # subscribe_race_data=True,  # Requires TPD access enabled on your Betfair app key
                 stream_conflate_ms=0,  # Ensures no stream conflation
             ),
         },
@@ -149,7 +157,7 @@ if __name__ == "__main__":
     # The market ID will appear in the browser query string.
     config = BetfairInstrumentProviderConfig(
         account_currency="AUD",
-        market_ids=["1.250955700"],
+        market_ids=["1.254209667"],
     )
     node = asyncio.run(main(instrument_config=config, log_level="INFO"))
     node.dispose()

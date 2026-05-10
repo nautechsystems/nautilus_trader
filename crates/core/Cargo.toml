@@ -55,6 +55,7 @@ criterion = { workspace = true }
 iai = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
+rust_decimal_macros = { workspace = true }
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
@@ -88,4 +89,9 @@ harness = false
 [[bench]]
 name = "identifier_comparison"
 path = "benches/identifier_comparison.rs"
+harness = false
+
+[[bench]]
+name = "decimal_deserialization"
+path = "benches/decimal_deserialization.rs"
 harness = false

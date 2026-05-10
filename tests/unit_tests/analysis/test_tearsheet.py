@@ -20,6 +20,12 @@ import pytest
 
 from nautilus_trader.analysis.config import GridLayout
 from nautilus_trader.analysis.config import TearsheetConfig
+from nautilus_trader.analysis.config import TearsheetDistributionChart
+from nautilus_trader.analysis.config import TearsheetDrawdownChart
+from nautilus_trader.analysis.config import TearsheetEquityChart
+from nautilus_trader.analysis.config import TearsheetMonthlyReturnsChart
+from nautilus_trader.analysis.config import TearsheetRunInfoChart
+from nautilus_trader.analysis.config import TearsheetStatsTableChart
 from nautilus_trader.analysis.tearsheet import PLOTLY_AVAILABLE
 from nautilus_trader.analysis.tearsheet import _create_stats_table
 from nautilus_trader.analysis.tearsheet import _create_tearsheet_figure
@@ -602,14 +608,14 @@ def test_tearsheet_config_with_custom_values():
     # Arrange
     # Act
     config = TearsheetConfig(
-        charts=["equity", "drawdown"],
+        charts=[TearsheetEquityChart(), TearsheetDrawdownChart()],
         theme="nautilus_dark",
         height=2000,
         title="Custom Title",
     )
 
     # Assert
-    assert config.charts == ["equity", "drawdown"]
+    assert config.chart_names == ["equity", "drawdown"]
     assert config.theme == "nautilus_dark"
     assert config.height == 2000
     assert config.title == "Custom Title"
@@ -640,7 +646,12 @@ def test_tearsheet_config_with_grid_layout():
 
     # Act
     config = TearsheetConfig(
-        charts=["equity", "drawdown", "monthly_returns", "distribution"],
+        charts=[
+            TearsheetEquityChart(),
+            TearsheetDrawdownChart(),
+            TearsheetMonthlyReturnsChart(),
+            TearsheetDistributionChart(),
+        ],
         layout=layout,
     )
 
@@ -697,7 +708,11 @@ def test_multi_currency_pnl_stats(sample_returns):
 def test_run_info_filtered_when_no_metadata(sample_returns):
     # Arrange
     config = TearsheetConfig(
-        charts=["run_info", "stats_table", "equity"],  # Explicitly include run_info
+        charts=[
+            TearsheetRunInfoChart(),
+            TearsheetStatsTableChart(),
+            TearsheetEquityChart(),
+        ],  # Explicitly include run_info
     )
 
     # Act - pass no run_info or account_info
@@ -720,7 +735,11 @@ def test_run_info_filtered_when_no_metadata(sample_returns):
 def test_run_info_kept_when_metadata_provided(sample_returns):
     # Arrange
     config = TearsheetConfig(
-        charts=["run_info", "stats_table", "equity"],
+        charts=[
+            TearsheetRunInfoChart(),
+            TearsheetStatsTableChart(),
+            TearsheetEquityChart(),
+        ],
     )
 
     run_info = {
@@ -748,7 +767,11 @@ def test_run_info_kept_when_metadata_provided(sample_returns):
 def test_run_info_kept_when_account_info_provided(sample_returns):
     # Arrange
     config = TearsheetConfig(
-        charts=["run_info", "stats_table", "equity"],
+        charts=[
+            TearsheetRunInfoChart(),
+            TearsheetStatsTableChart(),
+            TearsheetEquityChart(),
+        ],
     )
 
     account_info = {
@@ -783,7 +806,7 @@ def test_tearsheet_with_benchmark_overlay(sample_returns):
     )
 
     config = TearsheetConfig(
-        charts=["equity"],
+        charts=[TearsheetEquityChart()],
         include_benchmark=True,
         benchmark_name="S&P 500",
     )
@@ -815,7 +838,12 @@ def test_tearsheet_with_custom_grid_layout(sample_returns):
     )
 
     config = TearsheetConfig(
-        charts=["stats_table", "equity", "drawdown", "distribution"],
+        charts=[
+            TearsheetStatsTableChart(),
+            TearsheetEquityChart(),
+            TearsheetDrawdownChart(),
+            TearsheetDistributionChart(),
+        ],
         layout=layout,
     )
 
@@ -868,7 +896,7 @@ def test_tearsheet_with_all_themes(sample_returns):
     # Act & Assert
     for theme in themes:
         config = TearsheetConfig(
-            charts=["equity"],
+            charts=[TearsheetEquityChart()],
             theme=theme,
         )
 

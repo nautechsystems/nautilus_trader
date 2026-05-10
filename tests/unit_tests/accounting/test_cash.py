@@ -1656,3 +1656,291 @@ def test_accounts_manager_with_base_currency_converts_locks():
     # The actual behavior locks 100,000 USD (the quantity converted directly)
     assert account.balance_locked(USD) == Money(100_000.00, USD)
     assert account.balance_locked(AUD) == Money(0.00, AUD)
+
+
+def test_accounts_manager_clears_stale_currency_locks_when_order_sides_change():
+    """
+    Test that stale currency locks are cleared when order compositions change.
+
+    Scenario: BUY orders (lock quote) + SELL orders (lock base), then BUY cancelled.
+    The quote currency lock should be cleared when only SELL orders remain.
+
+    """
+    # Arrange
+    cache = TestComponentStubs.cache()
+    clock = TestClock()
+    logger = Logger("AccountsManager")
+
+    # Create multi-currency account (no base currency)
+    account_event = AccountState(
+        account_id=AccountId("SIM-000"),
+        account_type=AccountType.CASH,
+        base_currency=None,
+        reported=True,
+        balances=[
+            AccountBalance(
+                Money(1_000_000.00, USD),
+                Money(0.00, USD),
+                Money(1_000_000.00, USD),
+            ),
+            AccountBalance(
+                Money(1_000_000.00, AUD),
+                Money(0.00, AUD),
+                Money(1_000_000.00, AUD),
+            ),
+        ],
+        margins=[],
+        info={},
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    account = CashAccount(account_event, calculate_account_state=True)
+    cache.add_account(account)
+
+    accounts_manager = AccountsManager(
+        cache=cache,
+        clock=clock,
+        logger=logger,
+    )
+
+    # Create BUY order (locks USD quote currency)
+    buy_order = TestExecStubs.limit_order(
+        instrument=AUDUSD_SIM,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100_000),
+        price=Price.from_str("0.80000"),
+    )
+    buy_order.apply(TestEventStubs.order_submitted(buy_order))
+    buy_order.apply(TestEventStubs.order_accepted(buy_order))
+
+    # Create SELL order (locks AUD base currency)
+    sell_order = TestExecStubs.limit_order(
+        instrument=AUDUSD_SIM,
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(50_000),
+        price=Price.from_str("0.81000"),
+        client_order_id=ClientOrderId("O-20210410-022422-001-001-2"),
+    )
+    sell_order.apply(TestEventStubs.order_submitted(sell_order))
+    sell_order.apply(TestEventStubs.order_accepted(sell_order))
+
+    cache.add_order(buy_order, PositionId("TEST-001"))
+    cache.add_order(sell_order, PositionId("TEST-002"))
+
+    # Act - First update with both BUY and SELL orders
+    result = accounts_manager.update_orders(
+        account=account,
+        instrument=AUDUSD_SIM,
+        orders_open=[buy_order, sell_order],
+        ts_event=0,
+    )
+
+    # Assert - Both currencies should be locked
+    assert result is True
+    assert account.balance_locked(USD) == Money(80_000.00, USD)  # BUY: 100k * 0.80
+    assert account.balance_locked(AUD) == Money(50_000.00, AUD)  # SELL: 50k AUD
+
+    # Act - Cancel BUY order, only SELL order remains
+    result = accounts_manager.update_orders(
+        account=account,
+        instrument=AUDUSD_SIM,
+        orders_open=[sell_order],  # Only SELL order now
+        ts_event=0,
+    )
+
+    # Assert - USD lock should be cleared (stale), only AUD lock remains
+    assert result is True
+    assert account.balance_locked(USD) == Money(0.00, USD)  # Stale lock cleared
+    assert account.balance_locked(AUD) == Money(50_000.00, AUD)  # Still locked
+
+
+def test_cash_account_per_instrument_currency_locking():
+    """
+    Test that CashAccount correctly tracks locks per (instrument_id, currency).
+    """
+    # Arrange
+    event = AccountState(
+        account_id=AccountId("SIM-000"),
+        account_type=AccountType.CASH,
+        base_currency=None,
+        reported=True,
+        balances=[
+            AccountBalance(
+                Money(100_000.00, USDT),
+                Money(0.00, USDT),
+                Money(100_000.00, USDT),
+            ),
+            AccountBalance(
+                Money(10.00000000, BTC),
+                Money(0.00000000, BTC),
+                Money(10.00000000, BTC),
+            ),
+        ],
+        margins=[],
+        info={},
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    account = CashAccount(event, calculate_account_state=True)
+    btcusdt_id = InstrumentId.from_str("BTCUSDT.BINANCE")
+
+    # Act - Lock both currencies for the same instrument
+    account.update_balance_locked(btcusdt_id, Money(50_000.00, USDT))  # BUY lock
+    account.update_balance_locked(btcusdt_id, Money(1.00000000, BTC))  # SELL lock
+
+    # Assert - Both locks should coexist
+    usdt_balance = account.balance(USDT)
+    btc_balance = account.balance(BTC)
+
+    assert usdt_balance.total == Money(100_000.00, USDT)
+    assert usdt_balance.locked == Money(50_000.00, USDT)
+    assert usdt_balance.free == Money(50_000.00, USDT)
+
+    assert btc_balance.total == Money(10.00000000, BTC)
+    assert btc_balance.locked == Money(1.00000000, BTC)
+    assert btc_balance.free == Money(9.00000000, BTC)
+
+    # Act - Clear all locks for instrument
+    account.clear_balance_locked(btcusdt_id)
+
+    # Assert - Both currency locks should be cleared
+    usdt_balance = account.balance(USDT)
+    btc_balance = account.balance(BTC)
+
+    assert usdt_balance.locked == Money(0.00, USDT)
+    assert usdt_balance.free == Money(100_000.00, USDT)
+
+    assert btc_balance.locked == Money(0.00000000, BTC)
+    assert btc_balance.free == Money(10.00000000, BTC)
+
+
+def test_cash_account_no_clamp_when_total_negative_borrowing():
+    """
+    Test that locked balance is not clamped to negative total when borrowing is enabled.
+
+    When total is negative (borrowed funds), locked should remain as-is and free
+    should be allowed to go more negative (total - locked).
+
+    """
+    # Arrange - Create account with negative balance (borrowing scenario)
+    event = AccountState(
+        account_id=AccountId("SIM-000"),
+        account_type=AccountType.CASH,
+        base_currency=USD,
+        reported=True,
+        balances=[
+            AccountBalance(
+                Money(-1_000.00, USD),  # Negative total (borrowed)
+                Money(0.00, USD),
+                Money(-1_000.00, USD),
+            ),
+        ],
+        margins=[],
+        info={},
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    account = CashAccount(event, calculate_account_state=True, allow_borrowing=True)
+    instrument_id = InstrumentId.from_str("EURUSD.SIM")
+
+    # Act - Set a lock when total is negative
+    account.update_balance_locked(instrument_id, Money(500.00, USD))
+
+    # Assert - Locked should remain 500 (not clamped to -1000)
+    # Free should be -1500 (total - locked = -1000 - 500)
+    balance = account.balance(USD)
+
+    assert balance.total == Money(-1_000.00, USD)
+    assert balance.locked == Money(500.00, USD)  # Not clamped to negative
+    assert balance.free == Money(-1_500.00, USD)  # -1000 - 500
+
+
+def test_cash_account_apply_clears_per_instrument_locks():
+    """
+    Test that apply() clears per-instrument locks since external state is authoritative.
+
+    When an AccountState is applied from the venue, the per-instrument locks should be
+    cleared because the venue state takes precedence over locally calculated locks.
+
+    """
+    # Arrange
+    initial_event = AccountState(
+        account_id=AccountId("SIM-000"),
+        account_type=AccountType.CASH,
+        base_currency=None,
+        reported=True,
+        balances=[
+            AccountBalance(
+                Money(100_000.00, USDT),
+                Money(0.00, USDT),
+                Money(100_000.00, USDT),
+            ),
+            AccountBalance(
+                Money(10.00000000, BTC),
+                Money(0.00000000, BTC),
+                Money(10.00000000, BTC),
+            ),
+        ],
+        margins=[],
+        info={},
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    account = CashAccount(initial_event, calculate_account_state=True)
+    btcusdt_id = InstrumentId.from_str("BTCUSDT.BINANCE")
+
+    # Set per-instrument locks
+    account.update_balance_locked(btcusdt_id, Money(50_000.00, USDT))
+    account.update_balance_locked(btcusdt_id, Money(1.00000000, BTC))
+
+    # Verify locks are set
+    assert account.balance(USDT).locked == Money(50_000.00, USDT)
+    assert account.balance(BTC).locked == Money(1.00000000, BTC)
+
+    # Act - Apply new account state from venue (external state is authoritative)
+    new_event = AccountState(
+        account_id=AccountId("SIM-000"),
+        account_type=AccountType.CASH,
+        base_currency=None,
+        reported=True,
+        balances=[
+            AccountBalance(
+                Money(90_000.00, USDT),
+                Money(10_000.00, USDT),  # Venue reports different locked
+                Money(80_000.00, USDT),
+            ),
+            AccountBalance(
+                Money(9.00000000, BTC),
+                Money(0.50000000, BTC),  # Venue reports different locked
+                Money(8.50000000, BTC),
+            ),
+        ],
+        margins=[],
+        info={},
+        event_id=UUID4(),
+        ts_event=1,
+        ts_init=1,
+    )
+
+    account.apply(new_event)
+
+    # Assert - Per-instrument locks cleared, venue state is authoritative
+    usdt_balance = account.balance(USDT)
+    btc_balance = account.balance(BTC)
+
+    # Balances should reflect the venue state exactly
+    assert usdt_balance.total == Money(90_000.00, USDT)
+    assert usdt_balance.locked == Money(10_000.00, USDT)
+    assert usdt_balance.free == Money(80_000.00, USDT)
+
+    assert btc_balance.total == Money(9.00000000, BTC)
+    assert btc_balance.locked == Money(0.50000000, BTC)
+    assert btc_balance.free == Money(8.50000000, BTC)

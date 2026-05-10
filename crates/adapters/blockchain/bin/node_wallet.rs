@@ -21,11 +21,12 @@ use nautilus_blockchain::{
 };
 use nautilus_common::{
     cache::Cache,
-    live::{clock::LiveClock, runtime::get_runtime},
+    clients::ExecutionClient,
+    live::get_runtime,
     logging::{init_logging, logger::LoggerConfig, writer::FileWriterConfig},
 };
 use nautilus_core::UUID4;
-use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
+use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     defi::chain::chains,
     enums::{AccountType, OmsType},
@@ -80,6 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ethereum_rpc_url,
         None,
     );
+    let cache = Rc::new(RefCell::new(Cache::default()));
     let core_execution_client = ExecutionClientCore::new(
         trader_id,
         ClientId::new("BLOCKCHAIN"),
@@ -88,8 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         account,
         AccountType::Wallet,
         None,
-        Rc::new(RefCell::new(LiveClock::new(None))),
-        Rc::new(RefCell::new(Cache::default())),
+        cache,
     );
 
     let mut ethereum_execution_client =

@@ -16,25 +16,22 @@
 use std::env;
 
 use nautilus_hyperliquid::http::client::HyperliquidHttpClient;
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::INFO)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let args: Vec<String> = env::args().collect();
     let testnet = args.get(1).is_some_and(|s| s == "testnet");
 
-    tracing::info!("Starting Hyperliquid HTTP public example");
-    tracing::info!("Testnet: {testnet}");
+    log::info!("Starting Hyperliquid HTTP public example");
+    log::info!("Testnet: {testnet}");
 
     let client = HyperliquidHttpClient::new(testnet, Some(60), None)?;
 
     // Fetch metadata
     let meta = client.info_meta().await?;
-    tracing::info!("Fetched {} markets", meta.universe.len());
+    log::info!("Fetched {} markets", meta.universe.len());
 
     // Fetch BTC order book
     if let Ok(book) = client.info_l2_book("BTC").await {
@@ -51,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|l| l.px.clone())
             .unwrap_or_default();
 
-        tracing::info!("BTC best bid: {}, best ask: {}", best_bid, best_ask);
+        log::info!("BTC best bid: {best_bid}, best ask: {best_ask}");
     }
 
     Ok(())

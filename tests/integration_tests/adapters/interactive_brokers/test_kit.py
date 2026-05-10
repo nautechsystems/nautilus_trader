@@ -21,7 +21,7 @@ from decimal import Decimal
 import msgspec
 import pandas as pd
 import pytz
-from ibapi.commission_report import CommissionReport
+from ibapi.commission_and_fees_report import CommissionAndFeesReport
 from ibapi.common import UNSET_DECIMAL
 from ibapi.common import BarData
 from ibapi.contract import Contract  # We use this for the expected response from IB
@@ -37,6 +37,7 @@ from nautilus_trader.adapters.interactive_brokers.common import IBContractDetail
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
+from nautilus_trader.model.instruments import IndexInstrument
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionContract
 from tests import TESTS_PACKAGE_ROOT
@@ -501,6 +502,81 @@ class IBTestContractStubs:
         return IBTestContractStubs.create_contract_details(**params)
 
     @staticmethod
+    def spx_index_contract() -> Contract:
+        params = {
+            "secType": "IND",
+            "conId": 416904,
+            "symbol": "SPX",
+            "exchange": "CBOE",
+            "primaryExchange": "CBOE",
+            "currency": "USD",
+            "localSymbol": "SPX",
+            "tradingClass": "",
+        }
+        return IBTestContractStubs.create_contract(**params)
+
+    @staticmethod
+    def spx_index_ib_contract() -> IBContract:
+        contract = IBTestContractStubs.spx_index_contract()
+        return IBTestContractStubs.convert_contract_to_ib_contract(contract)
+
+    @staticmethod
+    def spx_index_contract_details() -> ContractDetails:
+        params = {
+            "contract": IBTestContractStubs.spx_index_contract(),
+            "marketName": "",
+            "minTick": 0.01,
+            "orderTypes": "ACTIVETIM,AD,ADJUST,ALERT,ALLOC,BASKET,BENCHPX,COND,CONDORDER,DAY,DEACT,DEACTDIS,DEACTEOD,GAT,GTC,GTD,GTT,HID,LMT,NONALGO,OCA,SCALE,SCALERST,WHATIF",
+            "validExchanges": "CBOE",
+            "priceMagnifier": 1,
+            "underConId": 0,
+            "longName": "S&P 500 Stock Index",
+            "contractMonth": "",
+            "industry": "Indices",
+            "category": "Broad Range Equity Index",
+            "subcategory": "*",
+            "timeZoneId": "US/Central",
+            "tradingHours": "20260131:CLOSED;20260201:CLOSED;20260202:0830-20260202:1500;20260203:0830-20260203:1500;20260204:0830-20260204:1500;20260205:0830-20260205:1500",
+            "liquidHours": "20260131:CLOSED;20260201:CLOSED;20260202:0830-20260202:1500;20260203:0830-20260203:1500;20260204:0830-20260204:1500;20260205:0830-20260205:1500",
+            "evRule": "",
+            "evMultiplier": 0,
+            "mdSizeMultiplier": None,
+            "aggGroup": 2147483647,
+            "underSymbol": "",
+            "underSecType": "",
+            "marketRuleIds": "25",
+            "secIdList": None,
+            "realExpirationDate": "",
+            "lastTradeTime": "",
+            "stockType": "",
+            "minSize": 1.0,
+            "sizeIncrement": 1.0,
+            "suggestedSizeIncrement": 1.0,
+            "cusip": "",
+            "ratings": "",
+            "descAppend": "",
+            "bondType": "",
+            "couponType": "",
+            "callable": False,
+            "putable": False,
+            "coupon": 0,
+            "convertible": False,
+            "maturity": "",
+            "issueDate": "",
+            "nextOptionDate": "",
+            "nextOptionType": "",
+            "nextOptionPartial": False,
+            "notes": "",
+        }
+        return IBTestContractStubs.create_contract_details(**params)
+
+    @staticmethod
+    def spx_instrument() -> IndexInstrument:
+        contract_details = IBTestContractStubs.spx_index_contract_details()
+        instrument = IBTestContractStubs.create_instrument(contract_details)
+        return instrument
+
+    @staticmethod
     def aapl_instrument() -> Equity:
         contract_details = IBTestContractStubs.aapl_equity_contract_details()
         instrument = IBTestContractStubs.create_instrument(contract_details)
@@ -774,16 +850,16 @@ class IBTestExecStubs:
         return set_attributes(Execution(), params)
 
     @staticmethod
-    def commission() -> CommissionReport:
+    def commission() -> CommissionAndFeesReport:
         params = {
             "execId": "0000e0d5.6596b0d2.01.01",
-            "commission": 1.0,
+            "commissionAndFees": 1.0,
             "currency": "USD",
             "realizedPNL": 0.0,
             "yield_": 0.0,
             "yieldRedemptionDate": 0,
         }
-        return set_attributes(CommissionReport(), params)
+        return set_attributes(CommissionAndFeesReport(), params)
 
 
 def filter_out_options(instrument) -> bool:

@@ -26,6 +26,8 @@ from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.data_topics cimport TopicCache
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport InstrumentClass
+from nautilus_trader.core.rust.model cimport PriceRaw
+from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
@@ -85,6 +87,7 @@ cdef class BarAggregator:
     cpdef void handle_bar(self, Bar bar)
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init)
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init)
+    cdef bint _is_below_min_size(self, double size, int precision)
     cdef void _build_now_and_send(self)
     cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init)
 
@@ -108,15 +111,15 @@ cdef class VolumeBarAggregator(BarAggregator):
 
 
 cdef class VolumeImbalanceBarAggregator(BarAggregator):
-    cdef long long _imbalance_raw
-    cdef long long _raw_step
+    cdef PriceRaw _imbalance_raw
+    cdef PriceRaw _raw_step
 
 
 cdef class VolumeRunsBarAggregator(BarAggregator):
     cdef AggressorSide _current_run_side
     cdef bint _has_run_side
-    cdef long long _run_volume_raw
-    cdef long long _raw_step
+    cdef QuantityRaw _run_volume_raw
+    cdef QuantityRaw _raw_step
 
 
 cdef class ValueBarAggregator(BarAggregator):
@@ -149,6 +152,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef readonly uint64_t interval_ns
     cdef readonly uint64_t next_close_ns
     cdef readonly uint64_t stored_open_ns
+    cdef readonly uint64_t first_close_ns
 
     cdef str _timer_name
     cdef bint _is_left_open
@@ -158,12 +162,14 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef int _bar_build_delay
     cdef object _time_bars_origin_offset
     cdef list _historical_events
+    cdef object _historical_event_at_ts_init
 
     cpdef void set_clock(self, Clock clock)
     cdef uint64_t _get_interval_ns(self)
     cpdef void start_timer(self)
     cpdef void stop_timer(self)
-    cdef void _process_historical_events(self, uint64_t ts_init)
+    cdef void _pre_process_historical_events(self, uint64_t ts_init)
+    cdef void _post_process_historical_events(self)
     cpdef void _build_bar(self, TimeEvent event)
 
 

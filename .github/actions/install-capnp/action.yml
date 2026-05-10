@@ -1,0 +1,54 @@
+name: install-capnp
+description: Install Cap'n Proto compiler
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install capnp and ripgrep (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        brew update || { sleep 5; brew update; }
+        brew install capnp ripgrep || { sleep 5; brew install capnp ripgrep; }
+        brew cleanup
+
+    - name: Set Cap'n Proto install prefix (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        echo "CAPNP_PREFIX=$GITHUB_WORKSPACE/.cache/capnp" >> $GITHUB_ENV
+        echo "$GITHUB_WORKSPACE/.cache/capnp/bin" >> $GITHUB_PATH
+
+    - name: Get Linux version
+      if: runner.os == 'Linux'
+      id: linux-version
+      shell: bash
+      run: echo "release=$(lsb_release -rs)" >> "$GITHUB_OUTPUT"
+
+    - name: Get capnp version from capnp-version
+      shell: bash
+      run: |
+        echo "CAPNP_VERSION=$(cat capnp-version)" >> $GITHUB_ENV
+
+    - name: Cache Cap'n Proto (Linux)
+      if: runner.os == 'Linux'
+      id: cache-capnp
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      with:
+        path: ${{ github.workspace }}/.cache/capnp
+        key: capnp-linux-${{ steps.linux-version.outputs.release }}-${{ env.CAPNP_VERSION }}-${{ runner.arch }}
+
+    - name: Install capnp (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: bash scripts/install-capnp.sh
+
+    - name: Install capnp (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        choco install capnproto ripgrep -y || {
+          echo "capnproto/ripgrep install via choco failed or unavailable"
+          sleep 5
+          choco install capnproto ripgrep -y || true
+        }

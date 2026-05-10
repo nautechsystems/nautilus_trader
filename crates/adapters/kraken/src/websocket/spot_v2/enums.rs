@@ -15,6 +15,7 @@
 
 //! Enumerations for Kraken WebSocket v2 API.
 
+use nautilus_model::enums::{LiquiditySide, OrderStatus};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumString, FromRepr};
 
@@ -34,7 +35,12 @@ use strum::{AsRefStr, Display, EnumString, FromRepr};
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", eq, eq_int)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.kraken",
+        eq,
+        eq_int,
+        from_py_object
+    )
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(ascii_case_insensitive, serialize_all = "lowercase")]
@@ -61,7 +67,12 @@ pub enum KrakenWsMethod {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", eq, eq_int)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.kraken",
+        eq,
+        eq_int,
+        from_py_object
+    )
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(ascii_case_insensitive, serialize_all = "lowercase")]
@@ -104,7 +115,12 @@ pub enum KrakenWsChannel {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", eq, eq_int)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.kraken",
+        eq,
+        eq_int,
+        from_py_object
+    )
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(ascii_case_insensitive, serialize_all = "lowercase")]
@@ -226,4 +242,27 @@ pub enum KrakenLiquidityInd {
     #[serde(rename = "t")]
     #[strum(serialize = "t")]
     Taker,
+}
+
+impl From<KrakenWsOrderStatus> for OrderStatus {
+    fn from(value: KrakenWsOrderStatus) -> Self {
+        match value {
+            KrakenWsOrderStatus::PendingNew => Self::Submitted,
+            KrakenWsOrderStatus::New => Self::Accepted,
+            KrakenWsOrderStatus::PartiallyFilled => Self::PartiallyFilled,
+            KrakenWsOrderStatus::Filled => Self::Filled,
+            KrakenWsOrderStatus::Canceled => Self::Canceled,
+            KrakenWsOrderStatus::Expired => Self::Expired,
+            KrakenWsOrderStatus::Triggered => Self::Triggered,
+        }
+    }
+}
+
+impl From<KrakenLiquidityInd> for LiquiditySide {
+    fn from(value: KrakenLiquidityInd) -> Self {
+        match value {
+            KrakenLiquidityInd::Maker => Self::Maker,
+            KrakenLiquidityInd::Taker => Self::Taker,
+        }
+    }
 }

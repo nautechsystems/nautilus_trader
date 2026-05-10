@@ -15,13 +15,10 @@
 
 from typing import Any
 
-from nautilus_trader.adapters.kraken.constants import KRAKEN_VENUE
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.nautilus_pyo3 import KrakenProductType
-from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
@@ -109,28 +106,3 @@ class KrakenInstrumentProvider(InstrumentProvider):
         instruments = instruments_from_pyo3(all_pyo3_instruments)
         for instrument in instruments:
             self.add(instrument=instrument)
-
-    async def load_ids_async(
-        self,
-        instrument_ids: list[InstrumentId],
-        filters: dict | None = None,
-    ) -> None:
-        if not instrument_ids:
-            self._log.warning("No instrument IDs given for loading")
-            return
-
-        # Check all instrument IDs
-        for instrument_id in instrument_ids:
-            PyCondition.equal(instrument_id.venue, KRAKEN_VENUE, "instrument_id.venue", "KRAKEN")
-
-        # Load all instruments first
-        await self.load_all_async(filters)
-
-        # Filter to only requested IDs
-        for instrument_id in instrument_ids:
-            if instrument_id not in self._instruments and self._log_warnings:
-                self._log.warning(f"No instrument found for {instrument_id}")
-
-    async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
-        PyCondition.not_none(instrument_id, "instrument_id")
-        await self.load_ids_async([instrument_id], filters)

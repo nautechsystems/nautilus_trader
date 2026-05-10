@@ -140,7 +140,7 @@ pub fn extract_address_from_topic(
         .map_err(|_| anyhow::anyhow!("Missing {description} address in topic{index}"))?;
     anyhow::ensure!(
         bytes.len() >= 32,
-        "Topic must be at least 32 bytes, got {}",
+        "Topic must be at least 32 bytes, was {}",
         bytes.len()
     );
     Ok(Address::from_slice(&bytes[12..32]))
@@ -173,7 +173,7 @@ pub fn validate_event_signature(
     let actual_hex = hex::encode(&sig_bytes);
     anyhow::ensure!(
         actual_hex == expected_hash,
-        "Invalid event signature for '{event_name}': expected {expected_hash}, got {actual_hex}",
+        "Invalid event signature for '{event_name}': expected {expected_hash}, was {actual_hex}",
     );
     Ok(())
 }

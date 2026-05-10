@@ -13,7 +13,11 @@ header = '"../includes/backtest.h"'
 
 "cpython.object" = ["PyObject"]
 
-"nautilus_trader.core.rust.common" = ["TestClock_API", "LiveClock_API"]
+"nautilus_trader.core.rust.common" = [
+  "TestClock_API",
+  "LiveClock_API",
+  "TimeEventHandler_t",
+]
 
 "nautilus_trader.core.rust.core" = ["CVec", "UUID4_t"]
 
@@ -25,7 +29,7 @@ rename_variants = "ScreamingSnakeCase"
 "UnixNanos" = "uint64_t"
 "TimedeltaNanos" = "int64_t"
 "TimeEvent" = "TimeEvent_t"
-"TimeEventHandler" = "TimeEventHandler_t"
+"TimeEventHandler_API" = "TimeEventHandler_t"
 "UUID4" = "UUID4_t"
 "Logger" = "Logger_t"
 "TestClock" = "TestClock_t"

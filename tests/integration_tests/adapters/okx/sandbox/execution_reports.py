@@ -28,8 +28,6 @@ from nautilus_trader.core import nautilus_pyo3
 
 
 async def main():
-    # Setup logging (to see Rust logs run `export RUST_LOG=debug,h2=off`)
-    nautilus_pyo3.init_tracing()
     _guard = init_logging(level_stdout=LogLevel.TRACE)
     logger = Logger("okx-sandbox")
 
@@ -39,7 +37,7 @@ async def main():
     # Instrument type must match the symbol for the bar type
     okx_account_id = nautilus_pyo3.AccountId("OKX-master")
     okx_instrument_type = nautilus_pyo3.OKXInstrumentType.SWAP
-    instruments = await http_client.request_instruments(okx_instrument_type)
+    instruments, _inst_id_codes = await http_client.request_instruments(okx_instrument_type, None)
 
     logger.info(f"Received {len(instruments)} instruments")
 

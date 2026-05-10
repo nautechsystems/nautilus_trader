@@ -13,7 +13,49 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Value types for the trading domain model such as `Price`, `Quantity` and `Money`.
+//! Value types for the trading domain model.
+//!
+//! This module provides immutable value types that represent fundamental trading concepts:
+//! [`Price`], [`Quantity`], and [`Money`]. These types use fixed-point arithmetic internally
+//! for deterministic calculations while providing a natural numeric interface.
+//!
+//! # Immutability
+//!
+//! All value types are **immutable** - once constructed, their values cannot change.
+//! Arithmetic operations return new instances rather than modifying existing ones.
+//! This design ensures thread safety and predictable behavior in concurrent trading systems.
+//!
+//! # Arithmetic operations
+//!
+//! Value types implement Rust's standard arithmetic traits (`Add`, `Sub`, `Mul`) for
+//! same-type operations. When operating on two values of the same type, the result
+//! preserves that type.
+//!
+//! | Operation             | Result     | Notes                                     |
+//! |-----------------------|------------|-------------------------------------------|
+//! | `Quantity + Quantity` | `Quantity` | Precision is max of both operands.        |
+//! | `Quantity - Quantity` | `Quantity` | Panics if result would be negative.       |
+//! | `Price + Price`       | `Price`    | Precision is max of both operands.        |
+//! | `Price - Price`       | `Price`    | Precision is max of both operands.        |
+//! | `Money + Money`       | `Money`    | Panics if currencies don't match.         |
+//! | `Money - Money`       | `Money`    | Panics if currencies don't match.         |
+//!
+//! For Python bindings with mixed-type operations (e.g., `Quantity + int`), see the
+//! Python API documentation.
+//!
+//! # Precision
+//!
+//! Each value type stores a precision field indicating the number of decimal places.
+//! The maximum precision is defined by [`fixed::FIXED_PRECISION`]. When performing
+//! arithmetic between values with different precisions, the result uses the maximum
+//! precision of the operands.
+//!
+//! # Constraints
+//!
+//! - [`Quantity`]: Non-negative values only. Subtracting a larger quantity from a smaller
+//!   one raises an error rather than producing a negative result.
+//! - [`Price`]: Signed values allowed (can represent negative prices for spreads, etc.).
+//! - [`Money`]: Signed values allowed. Operations between different currencies raise an error.
 
 pub mod balance;
 pub mod currency;

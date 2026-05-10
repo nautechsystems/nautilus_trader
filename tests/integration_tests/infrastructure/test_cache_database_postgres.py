@@ -298,8 +298,9 @@ class TestCachePostgresAdapter:
 
         # We have to manually sleep and not use eventually
         await eventually(
-            lambda: self.database.load_instrument(_AUDUSD_SIM.id).min_price
-            == Price.from_str("111"),
+            lambda: (
+                self.database.load_instrument(_AUDUSD_SIM.id).min_price == Price.from_str("111")
+            ),
             timeout=_TEST_TIMEOUT,
         )
 

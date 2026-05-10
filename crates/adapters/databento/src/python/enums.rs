@@ -69,83 +69,6 @@ impl DatabentoStatisticType {
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
-    #[classattr]
-    #[pyo3(name = "OPENING_PRICE")]
-    const fn py_opening_price() -> Self {
-        Self::OpeningPrice
-    }
-
-    #[classattr]
-    #[pyo3(name = "INDICATIVE_OPENING_PRICE")]
-    const fn py_indicative_opening_price() -> Self {
-        Self::IndicativeOpeningPrice
-    }
-
-    #[classattr]
-    #[pyo3(name = "SETTLEMENT_PRICE")]
-    const fn py_settlement_price() -> Self {
-        Self::SettlementPrice
-    }
-
-    #[classattr]
-    #[pyo3(name = "TRADING_SESSION_LOW_PRICE")]
-    const fn py_trading_session_low_price() -> Self {
-        Self::TradingSessionLowPrice
-    }
-
-    #[classattr]
-    #[pyo3(name = "TRADING_SESSION_HIGH_PRICE")]
-    const fn py_trading_session_high_price() -> Self {
-        Self::TradingSessionHighPrice
-    }
-
-    #[classattr]
-    #[pyo3(name = "CLEARED_VOLUME")]
-    const fn py_cleared_volume() -> Self {
-        Self::ClearedVolume
-    }
-
-    #[classattr]
-    #[pyo3(name = "LOWEST_OFFER")]
-    const fn py_lowest_offer() -> Self {
-        Self::LowestOffer
-    }
-
-    #[classattr]
-    #[pyo3(name = "HIGHEST_BID")]
-    const fn py_highest_bid() -> Self {
-        Self::HighestBid
-    }
-
-    #[classattr]
-    #[pyo3(name = "OPEN_INTEREST")]
-    const fn py_open_interest() -> Self {
-        Self::OpenInterest
-    }
-
-    #[classattr]
-    #[pyo3(name = "FIXING_PRICE")]
-    const fn py_fixing_price() -> Self {
-        Self::FixingPrice
-    }
-
-    #[classattr]
-    #[pyo3(name = "CLOSE_PRICE")]
-    const fn py_close_price() -> Self {
-        Self::ClosePrice
-    }
-
-    #[classattr]
-    #[pyo3(name = "NET_CHANGE")]
-    const fn py_net_change() -> Self {
-        Self::NetChange
-    }
-
-    #[classattr]
-    #[pyo3(name = "VWAP")]
-    const fn py_vwap() -> Self {
-        Self::Vwap
-    }
 }
 
 #[pymethods]
@@ -196,16 +119,5 @@ impl DatabentoStatisticUpdateAction {
         let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
-    }
-    #[classattr]
-    #[pyo3(name = "ADDED")]
-    const fn py_added() -> Self {
-        Self::Added
-    }
-
-    #[classattr]
-    #[pyo3(name = "DELETED")]
-    const fn py_deleted() -> Self {
-        Self::Deleted
     }
 }

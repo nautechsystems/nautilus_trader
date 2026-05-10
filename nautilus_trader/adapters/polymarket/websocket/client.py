@@ -43,18 +43,27 @@ class PolymarketWebSocketClient:
     """
     Provides a Polymarket streaming WebSocket client.
 
+    Manages a pool of WebSocket connections, each limited to a configurable number
+    of subscriptions (default 200, Polymarket limit is 500).
+
     Parameters
     ----------
     clock : LiveClock
         The clock for the client.
     base_url : str, optional
         The base URL for the WebSocket connection.
+    channel : PolymarketWebSocketChannel
+        The channel type (MARKET or USER).
     handler : Callable[[bytes], None]
         The callback handler for message events.
     handler_reconnect : Callable[..., Awaitable[None]], optional
         The callback handler to be called on reconnect.
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
+    auth : PolymarketWebSocketAuth, optional
+        Authentication credentials for USER channel.
+    max_subscriptions_per_connection : int, default 200
+        The maximum number of subscriptions per WebSocket connection (Polymarket limit is 500).
 
     References
     ----------
@@ -71,10 +80,12 @@ class PolymarketWebSocketClient:
         handler_reconnect: Callable[..., Awaitable[None]] | None,
         loop: asyncio.AbstractEventLoop,
         auth: PolymarketWebSocketAuth | None = None,
+        max_subscriptions_per_connection: int = 200,
     ) -> None:
         self._clock = clock
         self._log: Logger = Logger(type(self).__name__)
 
+        self._max_subscriptions_per_connection = max_subscriptions_per_connection
         self._channel = channel
         self._base_url: str = base_url or "wss://ws-subscriptions-clob.polymarket.com/ws/"
         self._ws_url = self._base_url + channel.value
@@ -84,11 +95,14 @@ class PolymarketWebSocketClient:
         self._loop = loop
         self._tasks: WeakSet[asyncio.Task] = WeakSet()
 
-        self._markets: list[str] = []
-        self._assets: list[str] = []
-        self._client: WebSocketClient | None = None
-        self._is_connecting = False
-        self._msg_id: int = 0
+        # Multi-client tracking
+        self._subscriptions: list[str] = []  # All subscriptions (markets or assets)
+        self._subscription_counts: dict[str, int] = {}  # Reference counts per subscription
+        self._clients: dict[int, WebSocketClient | None] = {}
+        self._client_subscriptions: dict[int, list[str]] = {}
+        self._is_connecting: dict[int, bool] = {}
+        self._next_client_id: int = 0
+        self._lock: asyncio.Lock = asyncio.Lock()
 
     @property
     def url(self) -> str:
@@ -102,20 +116,44 @@ class PolymarketWebSocketClient:
         """
         return self._ws_url
 
-    def is_connected(self) -> bool:
+    @property
+    def subscriptions(self) -> list[str]:
         """
-        Return whether the client is connected.
+        Return the current active subscriptions for the client.
+
+        Returns
+        -------
+        list[str]
+
+        """
+        return self._subscriptions.copy()
+
+    @property
+    def has_subscriptions(self) -> bool:
+        """
+        Return whether the client has any subscriptions.
 
         Returns
         -------
         bool
 
         """
-        return self._client is not None and self._client.is_active()
+        return bool(self._subscriptions)
+
+    def is_connected(self) -> bool:
+        """
+        Return whether any client is connected.
+
+        Returns
+        -------
+        bool
+
+        """
+        return any(client is not None and client.is_active() for client in self._clients.values())
 
     def is_disconnected(self) -> bool:
         """
-        Return whether the client is disconnected.
+        Return whether all clients are disconnected.
 
         Returns
         -------
@@ -124,69 +162,239 @@ class PolymarketWebSocketClient:
         """
         return not self.is_connected()
 
-    def market_subscriptions(self) -> list[str]:
+    def _get_client_for_subscription(self, subscription: str) -> int:
+        for client_id, subscriptions in self._client_subscriptions.items():
+            if subscription in subscriptions:
+                return client_id
+        return -1
+
+    def _get_client_id_for_new_subscription(self) -> int:
+        for client_id, subs in self._client_subscriptions.items():
+            if len(subs) < self._max_subscriptions_per_connection:
+                return client_id
+
+        client_id = self._next_client_id
+        self._next_client_id += 1
+        self._clients[client_id] = None
+        self._client_subscriptions[client_id] = []
+        self._is_connecting[client_id] = False
+
+        return client_id
+
+    def add_subscription(self, subscription: str) -> None:
         """
-        Return the current active market (condition_id) subscriptions for the client.
+        Add a subscription without connecting.
 
-        Returns
-        -------
-        str
+        Use this to queue subscriptions before calling connect().
 
-        """
-        return self._markets.copy()
-
-    def asset_subscriptions(self) -> list[str]:
-        """
-        Return the current active asset (token_id) subscriptions for the client.
-
-        Returns
-        -------
-        str
+        Parameters
+        ----------
+        subscription : str
+            The subscription identifier (condition_id for USER, token_id for MARKET).
 
         """
-        return self._assets.copy()
+        count = self._subscription_counts.get(subscription, 0)
+        self._subscription_counts[subscription] = count + 1
+
+        if count > 0:
+            self._log.debug(f"Already subscribed to {subscription} (count={count + 1})")
+            return
+
+        self._subscriptions.append(subscription)
+
+        client_id = self._get_client_id_for_new_subscription()
+        self._client_subscriptions[client_id].append(subscription)
+
+    async def subscribe(self, subscription: str) -> None:
+        """
+        Subscribe to a market or asset.
+
+        If no clients are connected, queues the subscription.
+        If clients are connected, subscribes dynamically.
+        Uses reference counting - multiple subscribes to the same subscription
+        only result in one WebSocket subscription.
+
+        Parameters
+        ----------
+        subscription : str
+            The subscription identifier (condition_id for USER, token_id for MARKET).
+
+        """
+        retry_client_id: int | None = None
+
+        async with self._lock:
+            count = self._subscription_counts.get(subscription, 0)
+            self._subscription_counts[subscription] = count + 1
+
+            if count > 0:
+                self._log.debug(f"Already subscribed to {subscription} (count={count + 1})")
+
+                # Check if we need to retry a failed connection
+                client_id = self._get_client_for_subscription(subscription)
+                if client_id != -1:
+                    client = self._clients.get(client_id)
+                    is_active = client is not None and client.is_active()
+                    is_connecting = self._is_connecting.get(client_id, False)
+                    if not is_active and not is_connecting:
+                        retry_client_id = client_id
+
+                if retry_client_id is None:
+                    return
+            else:
+                self._subscriptions.append(subscription)
+                client_id = self._get_client_id_for_new_subscription()
+                self._client_subscriptions[client_id].append(subscription)
+
+        # Retry failed connection (outside lock)
+        if retry_client_id is not None:
+            self._log.debug(f"ws-client {retry_client_id}: Retrying connection for {subscription}")
+            await self._connect_client(retry_client_id)
+            return
+
+        # Outside lock to avoid deadlock during connection
+        waited_for_connection = False
+        while self._is_connecting.get(client_id):
+            waited_for_connection = True
+            await asyncio.sleep(0.01)
+
+        if client_id not in self._clients or self._clients[client_id] is None:
+            await self._connect_client(client_id)
+            return
+
+        # Subscription was included in the initial connection message
+        if waited_for_connection:
+            self._log.debug(f"ws-client {client_id}: {subscription} included in initial connection")
+            return
+
+        msg = self._create_dynamic_subscribe_msg(subs=[subscription])
+        await self._send(client_id, msg)
+        self._log.debug(f"ws-client {client_id}: Subscribed to {subscription}")
+
+    async def unsubscribe(self, subscription: str) -> None:
+        """
+        Unsubscribe from a market or asset.
+
+        Uses reference counting - only actually unsubscribes from WebSocket
+        when all subscribers have unsubscribed.
+
+        Parameters
+        ----------
+        subscription : str
+            The subscription identifier (condition_id for USER, token_id for MARKET).
+
+        """
+        async with self._lock:
+            count = self._subscription_counts.get(subscription, 0)
+            if count <= 0:
+                self._log.warning(f"Cannot unsubscribe from {subscription}: not subscribed")
+                return
+
+            if count > 1:
+                self._subscription_counts[subscription] = count - 1
+                self._log.debug(
+                    f"Decremented subscription count for {subscription} (count={count - 1})",
+                )
+                return
+
+            # Count is 1, so this is the last subscriber - actually unsubscribe
+            self._subscription_counts.pop(subscription, None)
+
+            if subscription not in self._subscriptions:
+                self._log.warning(f"Cannot find subscription {subscription} in subscriptions list")
+                return
+
+            client_id = self._get_client_for_subscription(subscription)
+            if client_id == -1:
+                self._log.warning(f"Cannot find client for subscription {subscription}")
+                self._subscriptions.remove(subscription)
+                return
+
+            self._subscriptions.remove(subscription)
+            if (
+                client_id in self._client_subscriptions
+                and subscription in self._client_subscriptions[client_id]
+            ):
+                self._client_subscriptions[client_id].remove(subscription)
+
+            should_disconnect = (
+                client_id in self._client_subscriptions
+                and not self._client_subscriptions[client_id]
+            )
+
+        # Outside lock to avoid deadlock during send
+        msg = self._create_dynamic_unsubscribe_msg(subs=[subscription])
+        await self._send(client_id, msg)
+        self._log.debug(f"ws-client {client_id}: Unsubscribed from {subscription}")
+
+        if should_disconnect:
+            await self._disconnect_client(client_id)
+            self._log.debug(
+                f"ws-client {client_id}: Disconnected due to no remaining subscriptions",
+            )
 
     async def connect(self) -> None:
         """
-        Connect a websocket client to the server.
+        Connect websocket clients to the server based on existing subscriptions.
         """
-        self._log.debug(f"Connecting to {self._ws_url}")
-        self._is_connecting = True
-
-        config = WebSocketConfig(
-            url=self._ws_url,
-            headers=[],
-            heartbeat=10,
-        )
-
-        self._client = await WebSocketClient.connect(
-            loop_=self._loop,
-            config=config,
-            handler=self._handler,
-            post_reconnection=self.reconnect,
-        )
-        self._is_connecting = False
-        self._log.info(f"Connected to {self._ws_url}", LogColor.BLUE)
-
-        await self._subscribe_all()
-
-    # TODO: Temporarily sync
-    def reconnect(self) -> None:
-        """
-        Reconnect the client to the server and resubscribe to all streams.
-        """
-        if self._channel == PolymarketWebSocketChannel.USER and not self._markets:
-            self._log.error("Cannot reconnect: no market streams for USER channel")
+        if not self._subscriptions:
+            self._log.error("Cannot connect: no subscriptions")
             return
 
-        if self._channel == PolymarketWebSocketChannel.MARKET and not self._assets:
-            self._log.error("Cannot reconnect: no asset streams for MARKET channel")
+        for client_id, subs in self._client_subscriptions.items():
+            if subs:
+                await self._connect_client(client_id)
+
+    async def _connect_client(self, client_id: int) -> None:
+        subs = self._client_subscriptions.get(client_id, [])
+        if not subs:
+            self._log.error(f"ws-client {client_id}: Cannot connect: no subscriptions")
             return
 
-        self._log.warning(f"Reconnected to {self._ws_url}")
+        self._log.debug(f"ws-client {client_id}: Connecting to {self._ws_url}...")
+        self._is_connecting[client_id] = True
 
-        # Re-subscribe to all streams
-        task = self._loop.create_task(self._subscribe_all())
+        try:
+            config = WebSocketConfig(
+                url=self._ws_url,
+                headers=[],
+                heartbeat=10,
+            )
+
+            self._clients[client_id] = await WebSocketClient.connect(
+                loop_=self._loop,
+                config=config,
+                handler=self._handler,
+                post_reconnection=lambda cid=client_id: self._handle_reconnect(cid),
+            )
+
+            # Use current tracked subscriptions (may include ones added while connecting)
+            current_subs = self._client_subscriptions.get(client_id, [])
+            self._log.info(
+                f"ws-client {client_id}: Connected to {self._ws_url} with {len(current_subs)} subscriptions",
+                LogColor.BLUE,
+            )
+
+            await self._subscribe_all(client_id)
+        finally:
+            self._is_connecting[client_id] = False
+
+    async def _subscribe_all(self, client_id: int) -> None:
+        subs = self._client_subscriptions.get(client_id, [])
+        if self._channel == PolymarketWebSocketChannel.USER:
+            msg = self._create_subscribe_user_channel_msg(markets=subs)
+        else:  # MARKET
+            msg = self._create_subscribe_market_channel_msg(assets=subs)
+
+        await self._send(client_id, msg)
+
+    def _handle_reconnect(self, client_id: int) -> None:
+        if client_id not in self._client_subscriptions or not self._client_subscriptions[client_id]:
+            self._log.error(f"ws-client {client_id}: Cannot reconnect: no subscriptions")
+            return
+
+        self._log.warning(f"ws-client {client_id}: Reconnected to {self._ws_url}")
+
+        task = self._loop.create_task(self._subscribe_all(client_id))
         self._tasks.add(task)
 
         if self._handler_reconnect:
@@ -195,69 +403,129 @@ class PolymarketWebSocketClient:
 
     async def disconnect(self) -> None:
         """
-        Disconnect the client from the server.
+        Disconnect all clients from the server.
         """
         await cancel_tasks_with_timeout(self._tasks, self._log)
 
-        if self._client is None:
-            self._log.warning("Cannot disconnect: not connected")
+        tasks = []
+        for client_id in list(self._clients.keys()):
+            tasks.append(self._disconnect_client(client_id))
+
+        if tasks:
+            await asyncio.gather(*tasks)
+            self._log.info(f"Disconnected all clients from {self._ws_url}", LogColor.BLUE)
+
+    async def _disconnect_client(self, client_id: int) -> None:
+        client = self._clients.get(client_id)
+        if client is None:
             return
 
-        self._log.debug("Disconnecting...")
-        await self._client.disconnect()
-        self._client = None  # Dispose (will go out of scope)
+        # Check state to make this idempotent
+        if client.is_disconnecting() or client.is_closed():
+            self._log.debug(f"ws-client {client_id}: Already disconnecting/closed, skipping")
+            return
 
-        self._log.info(f"Disconnected from {self._ws_url}", LogColor.BLUE)
+        self._log.debug(f"ws-client {client_id}: Disconnecting...")
+        try:
+            await client.disconnect()
+        except WebSocketClientError as e:
+            self._log.error(f"ws-client {client_id}: {e!s}")
 
-    def subscribe_market(self, condition_id: str) -> None:
-        if condition_id in self._markets:
-            self._log.warning(f"Cannot subscribe to market {condition_id}: already subscribed")
-            return  # Already subscribed
-
-        self._markets.append(condition_id)
-
-    def subscribe_book(self, asset: str) -> None:
-        self._subscribe_asset(asset)
-
-    def _subscribe_asset(self, asset: str) -> None:
-        if asset in self._assets:
-            self._log.warning(f"Cannot subscribe to asset {asset}: already subscribed")
-            return  # Already subscribed
-
-        self._assets.append(asset)
-        self._log.debug(f"Subscribed to asset {asset}")
-
-    async def _subscribe_all(self) -> None:
-        if self._channel == PolymarketWebSocketChannel.USER:
-            msg = self._create_subscribe_user_channel_msg(markets=self._markets)
-        else:  # MARKET
-            msg = self._create_subscribe_market_channel_msg(assets=self._assets)
-
-        await self._send(msg)
+        self._clients[client_id] = None
 
     def _create_subscribe_market_channel_msg(self, assets: list[str]) -> dict[str, Any]:
-        message = {
+        return {
             "type": "market",
             "assets_ids": assets,
         }
-        return message
 
     def _create_subscribe_user_channel_msg(self, markets: list[str]) -> dict[str, Any]:
-        message = {
+        return {
             "auth": self._auth,
             "type": "user",
             "markets": markets,
         }
-        return message
 
-    async def _send(self, msg: dict[str, Any]) -> None:
-        if self._client is None:
-            self._log.error(f"Cannot send message {msg}: not connected")
+    def _create_dynamic_subscribe_msg(self, subs: list[str]) -> dict[str, Any]:
+        if self._channel == PolymarketWebSocketChannel.USER:
+            return {
+                "auth": self._auth,
+                "markets": subs,
+                "operation": "subscribe",
+            }
+        else:  # MARKET
+            return {
+                "assets_ids": subs,
+                "operation": "subscribe",
+            }
+
+    def _create_dynamic_unsubscribe_msg(self, subs: list[str]) -> dict[str, Any]:
+        if self._channel == PolymarketWebSocketChannel.USER:
+            return {
+                "markets": subs,
+                "operation": "unsubscribe",
+            }
+        else:  # MARKET
+            return {
+                "assets_ids": subs,
+                "operation": "unsubscribe",
+            }
+
+    async def _send(self, client_id: int, msg: dict[str, Any]) -> None:
+        client = self._clients.get(client_id)
+        if client is None:
+            self._log.error(f"ws-client {client_id}: Cannot send message {msg}: not connected")
             return
 
-        self._log.debug(f"SENDING: {msg}")
+        self._log.debug(f"ws-client {client_id}: SENDING: {msg}")
 
         try:
-            await self._client.send_text(msgspec.json.encode(msg))
+            await client.send_text(msgspec.json.encode(msg))
         except WebSocketClientError as e:
-            self._log.error(str(e))
+            self._log.error(f"ws-client {client_id}: {e!s}")
+
+    # Legacy compatibility methods (deprecated, for backwards compatibility)
+
+    def subscribe_market(self, condition_id: str) -> None:
+        """
+        Add a market subscription (legacy method).
+
+        .. deprecated::
+            Use `add_subscription()` or `subscribe()` instead.
+
+        """
+        self.add_subscription(condition_id)
+
+    def subscribe_book(self, asset: str) -> None:
+        """
+        Add an asset subscription (legacy method).
+
+        .. deprecated::
+            Use `add_subscription()` or `subscribe()` instead.
+
+        """
+        self.add_subscription(asset)
+
+    def market_subscriptions(self) -> list[str]:
+        """
+        Return market subscriptions (legacy method).
+
+        .. deprecated::
+            Use `subscriptions` property instead.
+
+        """
+        if self._channel == PolymarketWebSocketChannel.USER:
+            return self._subscriptions.copy()
+        return []
+
+    def asset_subscriptions(self) -> list[str]:
+        """
+        Return asset subscriptions (legacy method).
+
+        .. deprecated::
+            Use `subscriptions` property instead.
+
+        """
+        if self._channel == PolymarketWebSocketChannel.MARKET:
+            return self._subscriptions.copy()
+        return []

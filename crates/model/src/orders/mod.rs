@@ -88,7 +88,7 @@ pub const LIMIT_ORDER_TYPES: &[OrderType] = &[
     OrderType::Limit,
     OrderType::StopLimit,
     OrderType::LimitIfTouched,
-    OrderType::MarketIfTouched,
+    OrderType::TrailingStopLimit,
 ];
 
 /// Order statuses for locally active orders (pre-submission to venue).
@@ -208,12 +208,14 @@ impl OrderStatus {
             (Self::Initialized, OrderEventAny::Canceled(_)) => Self::Canceled,  // External orders
             (Self::Initialized, OrderEventAny::Expired(_)) => Self::Expired,  // External orders
             (Self::Initialized, OrderEventAny::Triggered(_)) => Self::Triggered, // External orders
+            (Self::Initialized, OrderEventAny::Updated(_)) => Self::Initialized, // In-place modification
             (Self::Emulated, OrderEventAny::Canceled(_)) => Self::Canceled,  // Emulated orders
             (Self::Emulated, OrderEventAny::Expired(_)) => Self::Expired,  // Emulated orders
             (Self::Emulated, OrderEventAny::Released(_)) => Self::Released,  // Emulated orders
             (Self::Released, OrderEventAny::Submitted(_)) => Self::Submitted,  // Emulated orders
             (Self::Released, OrderEventAny::Denied(_)) => Self::Denied,  // Emulated orders
             (Self::Released, OrderEventAny::Canceled(_)) => Self::Canceled,  // Execution algo
+            (Self::Released, OrderEventAny::Updated(_)) => Self::Released, // In-place modification
             (Self::Submitted, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,
             (Self::Submitted, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
             (Self::Submitted, OrderEventAny::Rejected(_)) => Self::Rejected,
@@ -344,7 +346,6 @@ pub trait Order: 'static + Send {
     fn events(&self) -> Vec<&OrderEventAny>;
 
     fn last_event(&self) -> &OrderEventAny {
-        // SAFETY: Order specification guarantees at least one event (OrderInitialized)
         self.events()
             .last()
             .expect("Order invariant violated: no events")
@@ -665,6 +666,7 @@ impl OrderCore {
                 self.client_order_id
             )));
         }
+
         if self.strategy_id != event.strategy_id() {
             return Err(OrderError::Invariant(anyhow::anyhow!(
                 "Event strategy_id {} does not match order strategy_id {}",
@@ -820,6 +822,7 @@ impl OrderCore {
         self.filled_qty = new_filled_qty;
         self.leaves_qty = self.leaves_qty.saturating_sub(event.last_qty);
         self.ts_last = event.ts_event;
+
         if self.ts_accepted.is_none() {
             // Set ts_accepted to time of first fill if not previously set
             self.ts_accepted = Some(event.ts_event);
@@ -1480,7 +1483,7 @@ mod tests {
             OrderError::DuplicateFill(trade_id) => {
                 assert_eq!(trade_id, TradeId::from("TRADE-001"));
             }
-            e => panic!("Expected DuplicateFill error, got: {e:?}"),
+            e => panic!("Expected DuplicateFill error, was: {e:?}"),
         }
 
         // Order state should be unchanged after rejected duplicate

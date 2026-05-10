@@ -2888,7 +2888,7 @@ class TestPosition:
             last_qty=Quantity.from_str("1.0"),
             last_px=Price.from_int(50000),
             currency=BTC,
-            commission=Money(-0.001, BTC),  # Base currency commission
+            commission=Money(0.001, BTC),  # Base currency commission
             liquidity_side=LiquiditySide.TAKER,
             event_id=UUID4(),
             ts_event=0,
@@ -2915,7 +2915,7 @@ class TestPosition:
             last_qty=Quantity.from_str("0.999"),  # Account for commission
             last_px=Price.from_int(51000),
             currency=USDT,
-            commission=Money(-50.0, USDT),  # Quote currency commission - no adjustment
+            commission=Money(50.0, USDT),  # Quote currency commission - no adjustment
             liquidity_side=LiquiditySide.TAKER,
             event_id=UUID4(),
             ts_event=0,
@@ -2941,7 +2941,7 @@ class TestPosition:
             last_qty=Quantity.from_str("2.0"),
             last_px=Price.from_int(52000),
             currency=BTC,
-            commission=Money(-0.002, BTC),
+            commission=Money(0.002, BTC),
             liquidity_side=LiquiditySide.TAKER,
             event_id=UUID4(),
             ts_event=0,
@@ -2974,7 +2974,7 @@ class TestPosition:
             last_qty=Quantity.from_str("1.0"),
             last_px=Price.from_int(50000),
             currency=BTC,
-            commission=Money(-0.001, BTC),
+            commission=Money(0.001, BTC),
             liquidity_side=LiquiditySide.TAKER,
             event_id=UUID4(),
             ts_event=0,
@@ -2996,7 +2996,7 @@ class TestPosition:
             last_qty=Quantity.from_str("2.0"),
             last_px=Price.from_int(51000),
             currency=BTC,
-            commission=Money(-0.002, BTC),
+            commission=Money(0.002, BTC),
             liquidity_side=LiquiditySide.TAKER,
             event_id=UUID4(),
             ts_event=0,
@@ -3035,7 +3035,7 @@ class TestPosition:
             last_qty=Quantity.from_str("1.0"),
             last_px=Price.from_int(50000),
             currency=BTC,
-            commission=Money(-0.001, BTC),
+            commission=Money(0.001, BTC),
             liquidity_side=LiquiditySide.TAKER,
             event_id=UUID4(),
             ts_event=0,
@@ -3077,7 +3077,7 @@ class TestPosition:
             last_qty=Quantity.from_str("2.0"),
             last_px=Price.from_int(51000),
             currency=BTC,
-            commission=Money(-0.002, BTC),
+            commission=Money(0.002, BTC),
             liquidity_side=LiquiditySide.TAKER,
             event_id=UUID4(),
             ts_event=0,
@@ -3129,7 +3129,7 @@ class TestPosition:
             last_qty=Quantity.from_str("1.0"),
             last_px=Price.from_int(50000),
             currency=BTC,  # Base currency commission
-            commission=Money(-0.001, BTC),  # Negative = cost
+            commission=Money(0.001, BTC),  # Base currency commission
             liquidity_side=LiquiditySide.TAKER,
             event_id=UUID4(),
             ts_event=0,
@@ -3144,7 +3144,6 @@ class TestPosition:
         assert len(position.adjustments) == 1
 
         # The adjustment should be NEGATIVE (-0.001) to increase the short
-        # (commission is already negative, passed through unchanged)
         assert position.adjustments[0].quantity_change == Decimal("-0.001")
 
         # The final position should be -1.001 (sold 1.0 + paid 0.001 commission)
@@ -3176,7 +3175,7 @@ class TestPosition:
             last_qty=Quantity.from_str("1.0"),
             last_px=Price.from_int(50000),
             currency=BTC,
-            commission=Money(-0.001, BTC),  # Base currency commission on open
+            commission=Money(0.001, BTC),  # Base currency commission on open
             liquidity_side=LiquiditySide.TAKER,
             event_id=UUID4(),
             ts_event=0,
@@ -3206,7 +3205,7 @@ class TestPosition:
             last_qty=position.quantity,  # Sell exact quantity (0.999)
             last_px=Price.from_int(50100),
             currency=USDT,  # Quote currency commission - the realistic case
-            commission=Money(-50.0, USDT),  # Commission paid in USDT, not BTC
+            commission=Money(50.0, USDT),  # Commission paid in USDT, not BTC
             liquidity_side=LiquiditySide.TAKER,
             event_id=UUID4(),
             ts_event=0,
@@ -3247,7 +3246,7 @@ class TestPosition:
             last_qty=Quantity.from_str("1.0"),
             last_px=Price.from_int(50000),
             currency=BTC,
-            commission=Money(-0.001, BTC),  # Base currency commission
+            commission=Money(0.001, BTC),  # Base currency commission
             liquidity_side=LiquiditySide.TAKER,
             event_id=UUID4(),
             ts_event=0,
@@ -3277,7 +3276,7 @@ class TestPosition:
             last_qty=position.quantity,  # Sell exact quantity (0.999)
             last_px=Price.from_int(50100),
             currency=BTC,
-            commission=Money(-0.000999, BTC),  # Base currency commission on sell
+            commission=Money(0.000999, BTC),  # Base currency commission on sell
             liquidity_side=LiquiditySide.TAKER,
             event_id=UUID4(),
             ts_event=0,
@@ -3296,3 +3295,286 @@ class TestPosition:
         assert len(position.adjustments) == 2
         assert position.adjustments[0].quantity_change == Decimal("-0.001")
         assert position.adjustments[1].quantity_change == Decimal("-0.000999")
+
+    def test_position_spot_buy_partial_fills_with_base_currency_commission(self) -> None:
+        """
+        Test that partial fills with base currency commission correctly reduce position
+        quantity.
+
+        Reproduces GitHub issue #3546.
+
+        """
+        fill1 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=ETHUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-001"),
+            venue_order_id=VenueOrderId("1"),
+            account_id=AccountId("BINANCE-SPOT-master"),
+            trade_id=TradeId("1"),
+            position_id=PositionId("P-001"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("0.00350"),
+            last_px=Price.from_str("2042.69"),
+            currency=ETH,
+            commission=Money(0.00001, ETH),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        position = Position(instrument=ETHUSDT_BINANCE, fill=fill1)
+
+        assert position.quantity == Quantity.from_str("0.00349")
+        assert abs(position.signed_qty - 0.00349) < 1e-9
+        assert position.side == PositionSide.LONG
+        assert len(position.adjustments) == 1
+        assert position.adjustments[0].quantity_change == Decimal("-0.00001")
+
+        fill2 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=ETHUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-002"),
+            venue_order_id=VenueOrderId("2"),
+            account_id=AccountId("BINANCE-SPOT-master"),
+            trade_id=TradeId("2"),
+            position_id=PositionId("P-001"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("0.00350"),
+            last_px=Price.from_str("2042.69"),
+            currency=ETH,
+            commission=Money(0.00001, ETH),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        position.apply(fill2)
+
+        assert position.quantity == Quantity.from_str("0.00698")
+        assert abs(position.signed_qty - 0.00698) < 1e-9
+        assert len(position.adjustments) == 2
+
+        fill3 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=ETHUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-003"),
+            venue_order_id=VenueOrderId("3"),
+            account_id=AccountId("BINANCE-SPOT-master"),
+            trade_id=TradeId("3"),
+            position_id=PositionId("P-001"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("0.00300"),
+            last_px=Price.from_str("2042.69"),
+            currency=ETH,
+            commission=Money(0.00001, ETH),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        position.apply(fill3)
+
+        # Total filled: 0.01000, total commission: 0.00003
+        # Position should be 0.01000 - 0.00003 = 0.00997
+        assert position.quantity == Quantity.from_str("0.00997")
+        assert abs(position.signed_qty - 0.00997) < 1e-9
+        assert position.side == PositionSide.LONG
+        assert len(position.adjustments) == 3
+
+    def test_position_spot_sell_partial_fills_with_base_currency_commission(self) -> None:
+        """
+        Test that sell partial fills with base currency commission correctly increase
+        short exposure.
+        """
+        fill1 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-001"),
+            venue_order_id=VenueOrderId("1"),
+            account_id=AccountId("BINANCE-SPOT-master"),
+            trade_id=TradeId("1"),
+            position_id=PositionId("P-001"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("0.500000"),
+            last_px=Price.from_str("50000.00"),
+            currency=BTC,
+            commission=Money(0.001, BTC),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        position = Position(instrument=BTCUSDT_BINANCE, fill=fill1)
+
+        # Sold 0.5 + paid 0.001 commission = -0.501 exposure
+        assert abs(position.signed_qty - (-0.501)) < 1e-9
+        assert position.side == PositionSide.SHORT
+        assert len(position.adjustments) == 1
+
+        fill2 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=BTCUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-002"),
+            venue_order_id=VenueOrderId("2"),
+            account_id=AccountId("BINANCE-SPOT-master"),
+            trade_id=TradeId("2"),
+            position_id=PositionId("P-001"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("0.500000"),
+            last_px=Price.from_str("50000.00"),
+            currency=BTC,
+            commission=Money(0.001, BTC),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        position.apply(fill2)
+
+        # Total short: 1.0 sold + 0.002 commission = -1.002
+        assert abs(position.signed_qty - (-1.002)) < 1e-9
+        assert abs(position.quantity.as_decimal() - Decimal("1.002000")) < Decimal("0.000001")
+        assert len(position.adjustments) == 2
+
+    def test_position_spot_round_trip_close_flat_with_quote_commission(self) -> None:
+        """
+        Test buy with base commission then sell to close with quote commission.
+
+        Position should flatten exactly.
+
+        """
+        buy_fill = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=ETHUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-001"),
+            venue_order_id=VenueOrderId("1"),
+            account_id=AccountId("BINANCE-SPOT-master"),
+            trade_id=TradeId("1"),
+            position_id=PositionId("P-001"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("1.00000"),
+            last_px=Price.from_str("2000.00"),
+            currency=ETH,
+            commission=Money(0.001, ETH),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        position = Position(instrument=ETHUSDT_BINANCE, fill=buy_fill)
+
+        assert position.quantity == Quantity.from_str("0.99900")
+        assert position.side == PositionSide.LONG
+
+        sell_fill = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=ETHUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-002"),
+            venue_order_id=VenueOrderId("2"),
+            account_id=AccountId("BINANCE-SPOT-master"),
+            trade_id=TradeId("2"),
+            position_id=PositionId("P-001"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            last_qty=position.quantity,
+            last_px=Price.from_str("2100.00"),
+            currency=USDT,
+            commission=Money(2.0, USDT),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        position.apply(sell_fill)
+
+        assert position.side == PositionSide.FLAT
+        assert position.signed_qty == 0.0
+        assert position.is_closed
+        # Only 1 adjustment from the buy (quote commission doesn't create adjustment)
+        assert len(position.adjustments) == 1
+
+        # PnL: 0.999 ETH * $100 price move = $99.90, minus $2 commission
+        assert abs(position.realized_pnl.as_double() - 97.9) < 0.01
+
+    def test_position_spot_commission_accumulation_partial_fills(self) -> None:
+        """
+        Test that commissions accumulate correctly across multiple partial fills and
+        adjustment events are properly tracked.
+        """
+        fill1 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=ETHUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-001"),
+            venue_order_id=VenueOrderId("1"),
+            account_id=AccountId("BINANCE-SPOT-master"),
+            trade_id=TradeId("1"),
+            position_id=PositionId("P-001"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("0.50000"),
+            last_px=Price.from_str("2000.00"),
+            currency=ETH,
+            commission=Money(0.0005, ETH),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        position = Position(instrument=ETHUSDT_BINANCE, fill=fill1)
+
+        fill2 = OrderFilled(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=ETHUSDT_BINANCE.id,
+            client_order_id=ClientOrderId("O-002"),
+            venue_order_id=VenueOrderId("2"),
+            account_id=AccountId("BINANCE-SPOT-master"),
+            trade_id=TradeId("2"),
+            position_id=PositionId("P-001"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            last_qty=Quantity.from_str("0.50000"),
+            last_px=Price.from_str("2010.00"),
+            currency=ETH,
+            commission=Money(0.0005, ETH),
+            liquidity_side=LiquiditySide.TAKER,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        position.apply(fill2)
+
+        # Total: 1.0 filled, 0.001 total commission
+        assert position.quantity == Quantity.from_str("0.99900")
+        assert len(position.adjustments) == 2
+
+        for adj in position.adjustments:
+            assert adj.adjustment_type == PositionAdjustmentType.COMMISSION
+            assert adj.quantity_change == Decimal("-0.0005")
+
+        commissions = position.commissions()
+        assert len(commissions) == 1
+        assert abs(commissions[0].as_double() - 0.001) < 1e-9

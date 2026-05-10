@@ -20,6 +20,7 @@ import pandas as pd
 import pyarrow as pa
 from pyarrow import RecordBatch
 
+from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Currency
@@ -32,7 +33,7 @@ def serialize(state: AccountState) -> RecordBatch:
 
     # Ensure 'info' is encoded as bytes
     if "info" in base and isinstance(base["info"], dict):
-        base["info"] = msgspec.json.encode(base["info"])
+        base["info"] = msgspec.json.encode(base["info"], enc_hook=msgspec_encoding_hook)
 
     encoded_balances = msgspec.json.encode(base["balances"])
     encoded_margins = msgspec.json.encode(base["margins"])

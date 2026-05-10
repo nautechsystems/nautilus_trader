@@ -136,6 +136,7 @@ impl AverageTrueRange {
 
         if !self.initialized {
             self.has_inputs = true;
+
             if self.count >= self.period {
                 self.initialized = true;
             }

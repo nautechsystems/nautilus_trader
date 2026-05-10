@@ -14,11 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import warnings
 from functools import lru_cache
 
 from nautilus_trader.adapters.binance.common.credentials import get_api_key
 from nautilus_trader.adapters.binance.common.credentials import get_api_secret
+from nautilus_trader.adapters.binance.common.credentials import is_ed25519_private_key
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
 from nautilus_trader.adapters.binance.common.urls import get_http_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
@@ -42,6 +45,27 @@ from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.identifiers import Venue
 
 
+def _resolve_environment(
+    environment: BinanceEnvironment | None,
+    testnet: bool,
+) -> BinanceEnvironment:
+    if environment is not None and testnet:
+        raise ValueError(
+            "Cannot set both `environment` and `testnet`. "
+            "Use `environment` only (`testnet` is deprecated).",
+        )
+
+    if testnet:
+        warnings.warn(
+            "`testnet` is deprecated, use `environment=BinanceEnvironment.TESTNET` instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return BinanceEnvironment.TESTNET
+
+    return environment or BinanceEnvironment.LIVE
+
+
 @lru_cache(1)
 def get_cached_binance_http_client(
     clock: LiveClock,
@@ -50,7 +74,7 @@ def get_cached_binance_http_client(
     api_secret: str | None = None,
     key_type: BinanceKeyType = BinanceKeyType.HMAC,
     base_url: str | None = None,
-    is_testnet: bool = False,
+    environment: BinanceEnvironment = BinanceEnvironment.LIVE,
     is_us: bool = False,
     proxy_url: str | None = None,
 ) -> BinanceHttpClient:
@@ -75,8 +99,8 @@ def get_cached_binance_http_client(
         The private key cryptographic algorithm type.
     base_url : str, optional
         The base URL for the API endpoints.
-    is_testnet : bool, default False
-        If the client is connecting to the testnet API.
+    environment : BinanceEnvironment, default LIVE
+        The Binance environment.
     is_us : bool, default False
         If the client is connecting to Binance US.
     proxy_url : str, optional
@@ -87,21 +111,16 @@ def get_cached_binance_http_client(
     BinanceHttpClient
 
     """
-    default_http_base_url = get_http_base_url(account_type, is_testnet, is_us)
+    default_http_base_url = get_http_base_url(account_type, environment, is_us)
 
-    match key_type:
-        case BinanceKeyType.HMAC:
-            rsa_private_key = None
-            ed25519_private_key = None
-        case BinanceKeyType.RSA:
-            rsa_private_key = api_secret
-            ed25519_private_key = None
-        case BinanceKeyType.ED25519:
-            rsa_private_key = None
-            ed25519_private_key = api_secret
-        case _:
-            # Theoretically unreachable but retained to keep the match exhaustive
-            raise ValueError(f"invalid `key_type`, was {key_type}")
+    # Determine key type: honor explicit RSA/ED25519, otherwise auto-detect
+    rsa_private_key = None
+    ed25519_private_key = None
+
+    if key_type == BinanceKeyType.RSA:
+        rsa_private_key = api_secret
+    elif key_type == BinanceKeyType.ED25519 or (api_secret and is_ed25519_private_key(api_secret)):
+        ed25519_private_key = api_secret
 
     # Set up rate limit quotas
     global_key = "binance:global"
@@ -132,7 +151,6 @@ def get_cached_binance_http_client(
         clock=clock,
         api_key=api_key,
         api_secret=api_secret,
-        key_type=key_type,
         rsa_private_key=rsa_private_key,
         ed25519_private_key=ed25519_private_key,
         base_url=base_url or default_http_base_url,
@@ -147,7 +165,7 @@ def get_cached_binance_spot_instrument_provider(
     client: BinanceHttpClient,
     clock: LiveClock,
     account_type: BinanceAccountType,
-    is_testnet: bool,
+    environment: BinanceEnvironment,
     config: InstrumentProviderConfig,
     venue: Venue,
 ) -> BinanceSpotInstrumentProvider:
@@ -164,8 +182,8 @@ def get_cached_binance_spot_instrument_provider(
         The clock for the instrument provider.
     account_type : BinanceAccountType
         The Binance account type for the instrument provider.
-    is_testnet : bool, default False
-        If the provider is for the Spot testnet.
+    environment : BinanceEnvironment
+        The Binance environment.
     config : InstrumentProviderConfig
         The configuration for the instrument provider.
     venue : Venue
@@ -180,7 +198,7 @@ def get_cached_binance_spot_instrument_provider(
         client=client,
         clock=clock,
         account_type=account_type,
-        is_testnet=is_testnet,
+        environment=environment,
         config=config,
         venue=venue,
     )
@@ -268,6 +286,8 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             If `config.account_type` is not a valid `BinanceAccountType`.
 
         """
+        environment = _resolve_environment(config.environment, config.testnet)
+
         # Get HTTP client singleton
         client: BinanceHttpClient = get_cached_binance_http_client(
             clock=clock,
@@ -276,14 +296,14 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             api_secret=config.api_secret,
             key_type=config.key_type,
             base_url=config.base_url_http,
-            is_testnet=config.testnet,
+            environment=environment,
             is_us=config.us,
             proxy_url=config.proxy_url,
         )
 
         default_base_url_ws: str = get_ws_base_url(
             account_type=config.account_type,
-            is_testnet=config.testnet,
+            environment=environment,
             is_us=config.us,
         )
 
@@ -294,7 +314,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 client=client,
                 clock=clock,
                 account_type=config.account_type,
-                is_testnet=config.testnet,
+                environment=environment,
                 config=config.instrument_provider,
                 venue=config.venue,
             )
@@ -377,9 +397,16 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             If `config.account_type` is not a valid `BinanceAccountType`.
 
         """
-        # Execution client requires authentication
-        api_key = config.api_key or get_api_key(config.account_type, config.testnet)
-        api_secret = config.api_secret or get_api_secret(config.account_type, config.testnet)
+        if config.key_type == BinanceKeyType.RSA:
+            raise ValueError(
+                "RSA keys are not supported for Binance execution clients. "
+                "Use Ed25519 or HMAC keys instead.",
+            )
+
+        environment = _resolve_environment(config.environment, config.testnet)
+
+        api_key = config.api_key or get_api_key(config.account_type, environment)
+        api_secret = config.api_secret or get_api_secret(config.account_type, environment)
 
         # Get HTTP client singleton
         client: BinanceHttpClient = get_cached_binance_http_client(
@@ -389,14 +416,14 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             api_secret=api_secret,
             key_type=config.key_type,
             base_url=config.base_url_http,
-            is_testnet=config.testnet,
+            environment=environment,
             is_us=config.us,
             proxy_url=config.proxy_url,
         )
 
         default_base_url_ws: str = get_ws_base_url(
             account_type=config.account_type,
-            is_testnet=config.testnet,
+            environment=environment,
             is_us=config.us,
         )
 
@@ -407,7 +434,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 client=client,
                 clock=clock,
                 account_type=config.account_type,
-                is_testnet=config.testnet,
+                environment=environment,
                 config=config.instrument_provider,
                 venue=config.venue,
             )
@@ -423,6 +450,9 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 account_type=config.account_type,
                 name=name,
                 config=config,
+                environment=environment,
+                api_key=api_key,
+                api_secret=api_secret,
             )
         else:
             # Get instrument provider singleton
@@ -445,4 +475,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 account_type=config.account_type,
                 name=name,
                 config=config,
+                environment=environment,
+                api_key=api_key,
+                api_secret=api_secret,
             )

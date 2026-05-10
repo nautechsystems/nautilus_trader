@@ -1,0 +1,19 @@
+{
+  "type": "channel_data",
+  "connection_id": "conn-abc123-def456-ghi789",
+  "message_id": 10,
+  "channel": "v4_markets",
+  "version": "1.0.0",
+  "contents": {
+    "trading": {
+      "BTC-USD": {
+        "status": "PAUSED",
+        "nextFundingRate": "0.0001"
+      },
+      "ETH-USD": {
+        "status": "ACTIVE",
+        "nextFundingRate": "0.00008"
+      }
+    }
+  }
+}

@@ -217,7 +217,7 @@ def test_unregistered_strategy_properties():
     strategy = Strategy()
     assert strategy.trader_id is None
     assert strategy.strategy_id is not None
-    assert strategy.state() == ComponentState.PreInitialized
+    assert strategy.state() == ComponentState.PRE_INITIALIZED
     assert not strategy.is_ready()
     assert not strategy.is_running()
     assert not strategy.is_stopped()

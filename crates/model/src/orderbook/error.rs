@@ -50,3 +50,12 @@ pub enum BookIntegrityError {
     #[error("Integrity error: instrument ID mismatch: book={0}, delta={1}")]
     InstrumentMismatch(InstrumentId, InstrumentId),
 }
+
+#[derive(thiserror::Error, Debug, PartialEq)]
+pub enum BookViewError {
+    #[error("Instrument ID mismatch: book={0}, own_book={1}")]
+    InstrumentMismatch(InstrumentId, InstrumentId),
+
+    #[error("Opposite own book must have different instrument ID: book={0}, opposite={1}")]
+    OppositeInstrumentMatch(InstrumentId, InstrumentId),
+}

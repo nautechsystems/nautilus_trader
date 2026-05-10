@@ -1,8 +1,6 @@
 # Tutorials
 
-The tutorials provide a guided learning experience with a series of comprehensive step-by-step walkthroughs.
-Each tutorial targets specific features or workflows, enabling hands-on learning.
-From basic tasks to more advanced operations, these tutorials cater to a wide range of skill levels.
+Step-by-step walkthroughs demonstrating specific features and workflows.
 
 :::info
 Each tutorial is generated from a Jupyter notebook located in the docs [tutorials directory](https://github.com/nautechsystems/nautilus_trader/tree/develop/docs/tutorials). These notebooks serve as valuable learning aids and let you execute the code interactively.
@@ -30,14 +28,7 @@ installation. This is the fastest way to get up and running to try out NautilusT
 - When the container starts, a URL with an access token will be printed in the terminal. Copy that URL and open it in your browser, for example:
   - <http://localhost:8888>
 
-:::info
-NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
-therefore we set `log_level` to `ERROR` in the examples. Lowering this level to see
-more logging will cause the notebook to hang during cell execution. We are currently
-investigating a fix that involves either raising the configured rate limits for
-Jupyter, or throttling the log flushing from Nautilus.
-
-- <https://github.com/jupyterlab/jupyterlab/issues/12845>
-- <https://github.com/deshaw/jupyterlab-limit-output>
-
+:::warning
+Examples use `log_level="ERROR"` because Nautilus logging exceeds Jupyter's stdout rate limit,
+causing notebooks to hang at lower log levels.
 :::

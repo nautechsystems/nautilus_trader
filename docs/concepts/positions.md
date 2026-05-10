@@ -110,9 +110,9 @@ When trading spot currency pairs (e.g., BTC/USDT) or FX spot, commissions paid i
 currency directly affect the net quantity received or delivered:
 
 - **Opening fills**: Commission is deducted from the traded quantity. A buy of 1.0 BTC with
-  -0.001 BTC commission results in a net long position of 0.999 BTC.
+  0.001 BTC commission results in a net long position of 0.999 BTC.
 - **Closing fills**: Commission is applied to `signed_qty` because it affects actual inventory.
-  Selling a 0.999 BTC LONG position with -0.000999 BTC commission leaves you SHORT 0.000999 BTC,
+  Selling a 0.999 BTC LONG position with 0.000999 BTC commission leaves you SHORT 0.000999 BTC,
   not FLAT, because you gave up 0.999999 BTC total.
 - **Flips**: Commission affects the final position size on both sides of the flip.
 
@@ -141,7 +141,7 @@ All adjustments are preserved in the position event history:
 
 NautilusTrader supports two primary OMS types that fundamentally affect how positions are tracked
 and managed. An `OmsType.UNSPECIFIED` option also exists, which defaults to the component's
-context. For comprehensive details, see the [Execution guide](execution.md#order-management-system-oms).
+context. For full details, see the [Execution guide](execution.md#order-management-system-oms).
 
 ### `NETTING`
 
@@ -239,7 +239,7 @@ incorrect reporting and analysis.
 
 ## PnL calculations
 
-NautilusTrader provides comprehensive PnL calculations that account for instrument
+NautilusTrader provides PnL calculations that account for instrument
 specifications and market conventions.
 
 ### Realized PnL
@@ -450,6 +450,12 @@ they operate without position linkage. The engine handles spread instruments sep
 
 Positions are central to tracking trading activity and performance in NautilusTrader. Understanding
 how positions aggregate fills, calculate PnL, and handle different OMS configurations is essential
-for building robust trading strategies. The position snapshotting mechanism ensures accurate
-historical tracking in `NETTING` mode, while the comprehensive event history supports detailed
+for building trading strategies. The position snapshotting mechanism ensures accurate
+historical tracking in `NETTING` mode, while the event history supports detailed
 analysis and reconciliation.
+
+## Related guides
+
+- [Orders](orders.md) - Orders that create and modify positions.
+- [Execution](execution.md) - Fill handling that updates positions.
+- [Portfolio](portfolio.md) - Portfolio-level position aggregation.

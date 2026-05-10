@@ -31,6 +31,7 @@ from nautilus_trader.core.rust.model cimport OptionKind
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport OtoTriggerMode
 from nautilus_trader.core.rust.model cimport PositionAdjustmentType
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceType
@@ -90,6 +91,9 @@ cpdef str oms_type_to_str(OmsType value)
 
 cpdef OptionKind option_kind_from_str(str value)
 cpdef str option_kind_to_str(OptionKind value)
+
+cpdef OtoTriggerMode oto_trigger_mode_from_str(str value)
+cpdef str oto_trigger_mode_to_str(OtoTriggerMode value)
 
 cpdef OrderSide order_side_from_str(str value)
 cpdef str order_side_to_str(OrderSide value)

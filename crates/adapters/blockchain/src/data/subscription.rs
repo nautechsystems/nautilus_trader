@@ -67,15 +67,19 @@ impl DefiDataSubscriptionManager {
         if let Some(addresses) = self.subscribed_pool_swaps.get(dex) {
             unique_addresses.extend(addresses.iter().copied());
         }
+
         if let Some(addresses) = self.subscribed_pool_mints.get(dex) {
             unique_addresses.extend(addresses.iter().copied());
         }
+
         if let Some(addresses) = self.subscribed_pool_burns.get(dex) {
             unique_addresses.extend(addresses.iter().copied());
         }
+
         if let Some(addresses) = self.subscribed_pool_collects.get(dex) {
             unique_addresses.extend(addresses.iter().copied());
         }
+
         if let Some(addresses) = self.subscribed_pool_flashes.get(dex) {
             unique_addresses.extend(addresses.iter().copied());
         }
@@ -91,15 +95,19 @@ impl DefiDataSubscriptionManager {
         if let Some(swap_event_signature) = self.pool_swap_event_encoded.get(dex) {
             result.push(swap_event_signature.clone());
         }
+
         if let Some(mint_event_signature) = self.pool_mint_event_encoded.get(dex) {
             result.push(mint_event_signature.clone());
         }
+
         if let Some(burn_event_signature) = self.pool_burn_event_encoded.get(dex) {
             result.push(burn_event_signature.clone());
         }
+
         if let Some(collect_event_signature) = self.pool_collect_event_encoded.get(dex) {
             result.push(collect_event_signature.clone());
         }
+
         if let Some(flash_event_signature) = self.pool_flash_event_encoded.get(dex) {
             result.push(flash_event_signature.clone());
         }
@@ -193,7 +201,7 @@ impl DefiDataSubscriptionManager {
                 .insert(dex, Self::normalize_topic(flash_event_signature));
         }
 
-        tracing::info!("Registered DEX for subscriptions: {dex:?}");
+        log::info!("Registered DEX for subscriptions: {dex:?}");
     }
 
     /// Subscribes to swap events for a specific pool address on a DEX.
@@ -201,7 +209,7 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_swaps.get_mut(&dex) {
             pool_set.insert(address);
         } else {
-            tracing::error!("DEX not registered for swap subscriptions: {dex:?}");
+            log::error!("DEX not registered for swap subscriptions: {dex:?}");
         }
     }
 
@@ -210,7 +218,7 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_mints.get_mut(&dex) {
             pool_set.insert(address);
         } else {
-            tracing::error!("DEX not registered for mint subscriptions: {dex:?}");
+            log::error!("DEX not registered for mint subscriptions: {dex:?}");
         }
     }
 
@@ -219,7 +227,7 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_burns.get_mut(&dex) {
             pool_set.insert(address);
         } else {
-            tracing::warn!("DEX not registered for burn subscriptions: {dex:?}");
+            log::warn!("DEX not registered for burn subscriptions: {dex:?}");
         }
     }
 
@@ -228,7 +236,7 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_swaps.get_mut(&dex) {
             pool_set.remove(&address);
         } else {
-            tracing::error!("DEX not registered for swap subscriptions: {dex:?}");
+            log::error!("DEX not registered for swap subscriptions: {dex:?}");
         }
     }
 
@@ -237,7 +245,7 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_mints.get_mut(&dex) {
             pool_set.remove(&address);
         } else {
-            tracing::error!("DEX not registered for mint subscriptions: {dex:?}");
+            log::error!("DEX not registered for mint subscriptions: {dex:?}");
         }
     }
 
@@ -246,7 +254,7 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_burns.get_mut(&dex) {
             pool_set.remove(&address);
         } else {
-            tracing::error!("DEX not registered for burn subscriptions: {dex:?}");
+            log::error!("DEX not registered for burn subscriptions: {dex:?}");
         }
     }
 
@@ -255,7 +263,7 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_collects.get_mut(&dex) {
             pool_set.insert(address);
         } else {
-            tracing::error!("DEX not registered for collect subscriptions: {dex:?}");
+            log::error!("DEX not registered for collect subscriptions: {dex:?}");
         }
     }
 
@@ -264,7 +272,7 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_collects.get_mut(&dex) {
             pool_set.remove(&address);
         } else {
-            tracing::error!("DEX not registered for collect subscriptions: {dex:?}");
+            log::error!("DEX not registered for collect subscriptions: {dex:?}");
         }
     }
 
@@ -273,7 +281,7 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_flashes.get_mut(&dex) {
             pool_set.insert(address);
         } else {
-            tracing::error!("DEX not registered for flash subscriptions: {dex:?}");
+            log::error!("DEX not registered for flash subscriptions: {dex:?}");
         }
     }
 
@@ -282,7 +290,7 @@ impl DefiDataSubscriptionManager {
         if let Some(pool_set) = self.subscribed_pool_flashes.get_mut(&dex) {
             pool_set.remove(&address);
         } else {
-            tracing::error!("DEX not registered for flash subscriptions: {dex:?}");
+            log::error!("DEX not registered for flash subscriptions: {dex:?}");
         }
     }
 }

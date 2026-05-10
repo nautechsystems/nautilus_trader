@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
@@ -144,8 +144,8 @@ impl CashAccount {
     }
 
     #[pyo3(name = "apply")]
-    fn py_apply(&mut self, event: AccountState) {
-        self.apply(event);
+    fn py_apply(&mut self, event: AccountState) -> PyResult<()> {
+        self.apply(event).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "calculate_balance_locked")]
@@ -160,7 +160,7 @@ impl CashAccount {
         py: Python,
     ) -> PyResult<Money> {
         let instrument = pyobject_to_instrument_any(py, instrument)?;
-        self.calculate_balance_locked(instrument, side, quantity, price, use_quote_for_inverse)
+        self.calculate_balance_locked(&instrument, side, quantity, price, use_quote_for_inverse)
             .map_err(to_pyvalue_err)
     }
 
@@ -180,7 +180,7 @@ impl CashAccount {
         }
         let instrument = pyobject_to_instrument_any(py, instrument)?;
         self.calculate_commission(
-            instrument,
+            &instrument,
             last_qty,
             last_px,
             liquidity_side,
@@ -199,7 +199,7 @@ impl CashAccount {
         py: Python,
     ) -> PyResult<Vec<Money>> {
         let instrument = pyobject_to_instrument_any(py, instrument)?;
-        self.calculate_pnls(instrument, fill, position)
+        self.calculate_pnls(&instrument, &fill, position)
             .map_err(to_pyvalue_err)
     }
 

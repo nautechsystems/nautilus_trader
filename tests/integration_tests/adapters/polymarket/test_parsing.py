@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pkgutil
+from decimal import Decimal
 
 import msgspec
 import pytest
@@ -27,6 +28,8 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderStatus
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderType
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
+from nautilus_trader.adapters.polymarket.common.parsing import basis_points_as_decimal
+from nautilus_trader.adapters.polymarket.common.parsing import calculate_commission
 from nautilus_trader.adapters.polymarket.common.parsing import determine_order_side
 from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookLevel
@@ -43,6 +46,7 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.model.currencies import USDC
+from nautilus_trader.model.currencies import USDC_POS
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
@@ -552,6 +556,244 @@ def test_parse_user_trade_to_fill_report_ts_event() -> None:
     # match_time "1725958681" is in seconds, should convert to 1725958681000000000 nanoseconds
     assert msg.match_time == "1725958681"
     assert fill_report.ts_event == 1725958681000000000  # September 10, 2024
+
+
+def test_parse_user_trade_taker_commission_with_fees() -> None:
+    """
+    Test that taker commission is correctly calculated from fee_rate_bps.
+
+    This test uses a taker trade with 200 bps (2%) fees, as documented for Polymarket
+    15-minute crypto prediction markets.
+
+    Commission = size * price * (fee_rate_bps / 10000)          = 100 * 0.50 * (200 /
+    10000)          = 50 * 0.02 = 1.0 USDC
+
+    """
+    # Arrange
+    trade_data = {
+        "event_type": "trade",
+        "asset_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        "bucket_index": 0,
+        "fee_rate_bps": "200",  # 2% taker fee (Polymarket 15-min crypto markets)
+        "id": "test-taker-trade-001",
+        "last_update": "1725958681",
+        "maker_address": "0x1234567890123456789012345678901234567890",
+        "maker_orders": [
+            {
+                "asset_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+                "fee_rate_bps": "0",
+                "maker_address": "0x1234567890123456789012345678901234567890",
+                "matched_amount": "100",
+                "order_id": "0xmaker_order_id",
+                "outcome": "Yes",
+                "owner": "maker-owner-id",
+                "price": "0.50",
+            },
+        ],
+        "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+        "match_time": "1725958681",
+        "outcome": "Yes",
+        "owner": "taker-owner-id",
+        "price": "0.50",
+        "side": "BUY",
+        "size": "100",
+        "status": "MINED",
+        "taker_order_id": "0xtaker_order_id",
+        "timestamp": "1725958681000",
+        "trade_owner": "taker-owner-id",
+        "trader_side": "TAKER",
+        "type": "TRADE",
+    }
+
+    decoder = msgspec.json.Decoder(PolymarketUserTrade)
+    msg = decoder.decode(msgspec.json.encode(trade_data))
+    instrument = TestInstrumentProvider.binary_option()
+    account_id = AccountId("POLYMARKET-001")
+
+    # Act
+    fill_report = msg.parse_to_fill_report(
+        account_id=account_id,
+        instrument=instrument,
+        client_order_id=None,
+        ts_init=0,
+        filled_user_order_id=msg.taker_order_id,
+    )
+
+    # Assert
+    # Commission = 100 * 0.50 * (200 / 10000) = 1.0 USDC.e
+    assert fill_report.commission == Money(1.0, USDC_POS)
+
+
+def test_parse_user_trade_maker_commission_with_fees() -> None:
+    """
+    Test that maker commission is correctly calculated from maker order's fee_rate_bps.
+
+    For maker fills, the fee_rate_bps is taken from the individual maker_order, not from
+    the top-level trade message.
+
+    Commission = matched_amount * price * (fee_rate_bps / 10000)          = 50 * 0.60 *
+    (100 / 10000)          = 30 * 0.01 = 0.30 USDC
+
+    """
+    # Arrange
+    maker_owner = "maker-owner-id"
+    maker_order_id = "0xmy_maker_order_id"
+    trade_data = {
+        "event_type": "trade",
+        "asset_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        "bucket_index": 0,
+        "fee_rate_bps": "200",  # Taker's fee (not used for maker calculation)
+        "id": "test-maker-trade-001",
+        "last_update": "1725958681",
+        "maker_address": "0x1234567890123456789012345678901234567890",
+        "maker_orders": [
+            {
+                "asset_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+                "fee_rate_bps": "100",  # 1% maker fee
+                "maker_address": "0x1234567890123456789012345678901234567890",
+                "matched_amount": "50",
+                "order_id": maker_order_id,
+                "outcome": "Yes",
+                "owner": maker_owner,
+                "price": "0.60",
+            },
+        ],
+        "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+        "match_time": "1725958681",
+        "outcome": "Yes",
+        "owner": maker_owner,
+        "price": "0.60",
+        "side": "SELL",
+        "size": "50",
+        "status": "MINED",
+        "taker_order_id": "0xtaker_order_id",
+        "timestamp": "1725958681000",
+        "trade_owner": maker_owner,
+        "trader_side": "MAKER",
+        "type": "TRADE",
+    }
+
+    decoder = msgspec.json.Decoder(PolymarketUserTrade)
+    msg = decoder.decode(msgspec.json.encode(trade_data))
+    instrument = TestInstrumentProvider.binary_option()
+    account_id = AccountId("POLYMARKET-001")
+
+    # Act
+    fill_report = msg.parse_to_fill_report(
+        account_id=account_id,
+        instrument=instrument,
+        client_order_id=None,
+        ts_init=0,
+        filled_user_order_id=maker_order_id,
+    )
+
+    # Assert
+    # Commission = 50 * 0.60 * (100 / 10000) = 0.30 USDC.e
+    assert fill_report.commission == Money(0.30, USDC_POS)
+
+
+def test_parse_user_trade_zero_commission_with_no_fees() -> None:
+    """
+    Test that commission is zero when fee_rate_bps is "0".
+
+    This verifies the baseline case where no fees apply (most Polymarket markets).
+
+    """
+    # Arrange
+    trade_data = {
+        "event_type": "trade",
+        "asset_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        "bucket_index": 0,
+        "fee_rate_bps": "0",
+        "id": "test-no-fee-trade-001",
+        "last_update": "1725958681",
+        "maker_address": "0x1234567890123456789012345678901234567890",
+        "maker_orders": [
+            {
+                "asset_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+                "fee_rate_bps": "0",
+                "maker_address": "0x1234567890123456789012345678901234567890",
+                "matched_amount": "100",
+                "order_id": "0xmaker_order_id",
+                "outcome": "Yes",
+                "owner": "maker-owner-id",
+                "price": "0.50",
+            },
+        ],
+        "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+        "match_time": "1725958681",
+        "outcome": "Yes",
+        "owner": "taker-owner-id",
+        "price": "0.50",
+        "side": "BUY",
+        "size": "100",
+        "status": "MINED",
+        "taker_order_id": "0xtaker_order_id",
+        "timestamp": "1725958681000",
+        "trade_owner": "taker-owner-id",
+        "trader_side": "TAKER",
+        "type": "TRADE",
+    }
+
+    decoder = msgspec.json.Decoder(PolymarketUserTrade)
+    msg = decoder.decode(msgspec.json.encode(trade_data))
+    instrument = TestInstrumentProvider.binary_option()
+    account_id = AccountId("POLYMARKET-001")
+
+    # Act
+    fill_report = msg.parse_to_fill_report(
+        account_id=account_id,
+        instrument=instrument,
+        client_order_id=None,
+        ts_init=0,
+        filled_user_order_id=msg.taker_order_id,
+    )
+
+    # Assert
+    assert fill_report.commission == Money(0.0, USDC_POS)
+
+
+@pytest.mark.parametrize(
+    ("basis_points", "expected"),
+    [
+        (Decimal(0), Decimal(0)),
+        (Decimal(1), Decimal("0.0001")),
+        (Decimal(100), Decimal("0.01")),
+        (Decimal(200), Decimal("0.02")),
+        (Decimal(10000), Decimal(1)),
+    ],
+)
+def test_basis_points_as_decimal(basis_points: Decimal, expected: Decimal) -> None:
+    result = basis_points_as_decimal(basis_points)
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("quantity", "price", "fee_rate_bps", "expected"),
+    [
+        # Zero fee rate
+        (Decimal(100), Decimal("0.50"), Decimal(0), 0.0),
+        # Standard fee calculation: 100 * 0.50 * 0.02 = 1.0
+        (Decimal(100), Decimal("0.50"), Decimal(200), 1.0),
+        # Sub-minimum rounds to zero: 1 * 0.01 * 0.0001 = 0.000001 -> 0.0
+        (Decimal(1), Decimal("0.01"), Decimal(1), 0.0),
+        # Exactly at minimum: 1 * 1.0 * 0.0001 = 0.0001
+        (Decimal(1), Decimal("1.0"), Decimal(1), 0.0001),
+        # Rounding to 4 decimals: 123.45 * 0.6789 * 0.015 = 1.25727... -> 1.2572
+        (Decimal("123.45"), Decimal("0.6789"), Decimal(150), 1.2572),
+    ],
+)
+def test_calculate_commission(
+    quantity: Decimal,
+    price: Decimal,
+    fee_rate_bps: Decimal,
+    expected: float,
+) -> None:
+    """
+    Test commission calculation rounds to 4 decimal places (0.0001 USDC minimum).
+    """
+    result = calculate_commission(quantity, price, fee_rate_bps)
+    assert result == expected
 
 
 def test_parse_empty_book_snapshot_in_backtest_engine():

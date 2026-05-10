@@ -16,8 +16,8 @@
 //! URL helpers for dYdX services.
 
 use super::consts::{
-    DYDX_GRPC_URLS, DYDX_HTTP_URL, DYDX_TESTNET_GRPC_URLS, DYDX_TESTNET_HTTP_URL,
-    DYDX_TESTNET_WS_URL, DYDX_WS_URL,
+    DYDX_GRPC_URLS, DYDX_HTTP_URL, DYDX_REST_URL, DYDX_TESTNET_GRPC_URLS, DYDX_TESTNET_HTTP_URL,
+    DYDX_TESTNET_REST_URL, DYDX_TESTNET_WS_URL, DYDX_WS_URL,
 };
 
 /// Gets the HTTP base URL for the specified network.
@@ -63,4 +63,16 @@ pub const fn grpc_urls(is_testnet: bool) -> &'static [&'static str] {
 #[must_use]
 pub const fn grpc_url(is_testnet: bool) -> &'static str {
     grpc_urls(is_testnet)[0]
+}
+
+/// Gets the REST API URL (Cosmos LCD) for the specified network.
+///
+/// Used for querying on-chain state like authenticators.
+#[must_use]
+pub const fn rest_url(is_testnet: bool) -> &'static str {
+    if is_testnet {
+        DYDX_TESTNET_REST_URL
+    } else {
+        DYDX_REST_URL
+    }
 }

@@ -28,7 +28,7 @@ const EXTERNAL_STRATEGY_ID: &str = "EXTERNAL";
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct StrategyId(Ustr);
 
@@ -99,7 +99,6 @@ impl StrategyId {
 
     #[must_use]
     pub fn external() -> Self {
-        // SAFETY:: Constant value is safe
         Self::new(EXTERNAL_STRATEGY_ID)
     }
 

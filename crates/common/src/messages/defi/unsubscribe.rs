@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     defi::chain::Blockchain,
     identifiers::{ClientId, InstrumentId},
@@ -26,18 +25,18 @@ pub struct UnsubscribeBlocks {
     pub client_id: Option<ClientId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl UnsubscribeBlocks {
     /// Creates a new [`UnsubscribeBlocks`] instance.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         chain: Blockchain,
         client_id: Option<ClientId>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             chain,
@@ -56,18 +55,18 @@ pub struct UnsubscribePool {
     pub client_id: Option<ClientId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl UnsubscribePool {
     /// Creates a new [`UnsubscribePool`] instance.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             instrument_id,
@@ -85,18 +84,18 @@ pub struct UnsubscribePoolSwaps {
     pub client_id: Option<ClientId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl UnsubscribePoolSwaps {
     /// Creates a new [`UnsubscribePoolSwaps`] instance.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             instrument_id,
@@ -115,18 +114,18 @@ pub struct UnsubscribePoolLiquidityUpdates {
     pub client_id: Option<ClientId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl UnsubscribePoolLiquidityUpdates {
     /// Creates a new [`UnsubscribePoolLiquidityUpdates`] instance.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             instrument_id,
@@ -145,18 +144,18 @@ pub struct UnsubscribePoolFeeCollects {
     pub client_id: Option<ClientId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl UnsubscribePoolFeeCollects {
     /// Creates a new [`UnsubscribePoolFeeCollects`] instance.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             instrument_id,
@@ -175,18 +174,18 @@ pub struct UnsubscribePoolFlashEvents {
     pub client_id: Option<ClientId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<IndexMap<String, String>>,
+    pub params: Option<Params>,
 }
 
 impl UnsubscribePoolFlashEvents {
     /// Creates a new [`UnsubscribePoolFlashEvents`] instance.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<IndexMap<String, String>>,
+        params: Option<Params>,
     ) -> Self {
         Self {
             instrument_id,

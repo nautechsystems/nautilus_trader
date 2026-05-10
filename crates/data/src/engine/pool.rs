@@ -21,9 +21,9 @@
 //! cache and applies the change in-place (for now we only update the `ts_init`
 //! timestamp so that consumers can tell the pool has been touched).
 
-use std::{any::Any, cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
-use nautilus_common::{cache::Cache, msgbus::handler::MessageHandler};
+use nautilus_common::{cache::Cache, msgbus::Handler};
 use nautilus_model::{
     defi::{PoolFeeCollect, PoolFlash, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap},
     identifiers::InstrumentId,
@@ -49,7 +49,14 @@ impl PoolUpdater {
         }
     }
 
-    fn handle_pool_swap(&self, swap: &PoolSwap) {
+    /// Returns the handler ID.
+    #[must_use]
+    pub fn id(&self) -> Ustr {
+        self.id
+    }
+
+    /// Handles a pool swap event.
+    pub fn handle_pool_swap(&self, swap: &PoolSwap) {
         if let Some(pool_profiler) = self
             .cache
             .borrow_mut()
@@ -60,7 +67,12 @@ impl PoolUpdater {
         }
     }
 
-    fn handle_pool_liquidity_update(&self, update: &PoolLiquidityUpdate) {
+    /// Handles a pool liquidity update event.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `update.kind` is not `Mint` or `Burn`.
+    pub fn handle_pool_liquidity_update(&self, update: &PoolLiquidityUpdate) {
         if let Some(pool_profiler) = self
             .cache
             .borrow_mut()
@@ -75,7 +87,8 @@ impl PoolUpdater {
         }
     }
 
-    fn handle_pool_fee_collect(&self, event: &PoolFeeCollect) {
+    /// Handles a pool fee collect event.
+    pub fn handle_pool_fee_collect(&self, event: &PoolFeeCollect) {
         if let Some(pool_profiler) = self
             .cache
             .borrow_mut()
@@ -86,7 +99,8 @@ impl PoolUpdater {
         }
     }
 
-    fn handle_pool_flash(&self, event: &PoolFlash) {
+    /// Handles a pool flash event.
+    pub fn handle_pool_flash(&self, event: &PoolFlash) {
         if let Some(pool_profiler) = self
             .cache
             .borrow_mut()
@@ -98,33 +112,116 @@ impl PoolUpdater {
     }
 }
 
-impl MessageHandler for PoolUpdater {
+// -- Typed handler wrappers -----------------------------------------------------
+
+/// Handler for pool swap events that delegates to a [`PoolUpdater`].
+#[derive(Debug)]
+pub struct PoolSwapHandler {
+    id: Ustr,
+    updater: Rc<PoolUpdater>,
+}
+
+impl PoolSwapHandler {
+    /// Creates a new swap handler delegating to the given updater.
+    #[must_use]
+    pub fn new(updater: Rc<PoolUpdater>) -> Self {
+        Self {
+            id: Ustr::from(&format!("PoolSwapHandler-{}", updater.id())),
+            updater,
+        }
+    }
+}
+
+impl Handler<PoolSwap> for PoolSwapHandler {
     fn id(&self) -> Ustr {
         self.id
     }
 
-    fn handle(&self, message: &dyn Any) {
-        if let Some(swap) = message.downcast_ref::<PoolSwap>() {
-            self.handle_pool_swap(swap);
-            return;
-        }
+    fn handle(&self, msg: &PoolSwap) {
+        self.updater.handle_pool_swap(msg);
+    }
+}
 
-        if let Some(update) = message.downcast_ref::<PoolLiquidityUpdate>() {
-            self.handle_pool_liquidity_update(update);
-            return;
-        }
+/// Handler for pool liquidity update events that delegates to a [`PoolUpdater`].
+#[derive(Debug)]
+pub struct PoolLiquidityHandler {
+    id: Ustr,
+    updater: Rc<PoolUpdater>,
+}
 
-        if let Some(update) = message.downcast_ref::<PoolFeeCollect>() {
-            self.handle_pool_fee_collect(update);
-            return;
-        }
-
-        if let Some(flash) = message.downcast_ref::<PoolFlash>() {
-            self.handle_pool_flash(flash);
+impl PoolLiquidityHandler {
+    /// Creates a new liquidity handler delegating to the given updater.
+    #[must_use]
+    pub fn new(updater: Rc<PoolUpdater>) -> Self {
+        Self {
+            id: Ustr::from(&format!("PoolLiquidityHandler-{}", updater.id())),
+            updater,
         }
     }
+}
 
-    fn as_any(&self) -> &dyn Any {
-        self
+impl Handler<PoolLiquidityUpdate> for PoolLiquidityHandler {
+    fn id(&self) -> Ustr {
+        self.id
+    }
+
+    fn handle(&self, msg: &PoolLiquidityUpdate) {
+        self.updater.handle_pool_liquidity_update(msg);
+    }
+}
+
+/// Handler for pool fee collect events that delegates to a [`PoolUpdater`].
+#[derive(Debug)]
+pub struct PoolCollectHandler {
+    id: Ustr,
+    updater: Rc<PoolUpdater>,
+}
+
+impl PoolCollectHandler {
+    /// Creates a new collect handler delegating to the given updater.
+    #[must_use]
+    pub fn new(updater: Rc<PoolUpdater>) -> Self {
+        Self {
+            id: Ustr::from(&format!("PoolCollectHandler-{}", updater.id())),
+            updater,
+        }
+    }
+}
+
+impl Handler<PoolFeeCollect> for PoolCollectHandler {
+    fn id(&self) -> Ustr {
+        self.id
+    }
+
+    fn handle(&self, msg: &PoolFeeCollect) {
+        self.updater.handle_pool_fee_collect(msg);
+    }
+}
+
+/// Handler for pool flash events that delegates to a [`PoolUpdater`].
+#[derive(Debug)]
+pub struct PoolFlashHandler {
+    id: Ustr,
+    updater: Rc<PoolUpdater>,
+}
+
+impl PoolFlashHandler {
+    /// Creates a new flash handler delegating to the given updater.
+    #[must_use]
+    pub fn new(updater: Rc<PoolUpdater>) -> Self {
+        Self {
+            id: Ustr::from(&format!("PoolFlashHandler-{}", updater.id())),
+            updater,
+        }
+    }
+}
+
+impl Handler<PoolFlash> for PoolFlashHandler {
+    fn id(&self) -> Ustr {
+        self.id
+    }
+
+    fn handle(&self, msg: &PoolFlash) {
+        self.updater.handle_pool_flash(msg);
     }
 }

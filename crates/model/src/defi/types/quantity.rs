@@ -50,12 +50,11 @@ impl Quantity {
     /// Panics if the quantity has precision other than 18.
     #[must_use]
     pub fn as_wei(&self) -> U256 {
-        if self.precision != 18 {
-            panic!(
-                "Failed to convert quantity with precision {} to wei (requires precision 18)",
-                self.precision
-            );
-        }
+        assert!(
+            self.precision == 18,
+            "Failed to convert quantity with precision {} to wei (requires precision 18)",
+            self.precision
+        );
 
         U256::from(self.raw)
     }

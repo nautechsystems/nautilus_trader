@@ -59,6 +59,7 @@ class OKXInstrumentProvider(InstrumentProvider):
         self._log_warnings = config.log_warnings if config else True
 
         self._instruments_pyo3: list[nautilus_pyo3.Instrument] = []
+        self._inst_id_codes: list[tuple[str, int]] = []
 
     @property
     def instrument_types(self) -> tuple[OKXInstrumentType, ...]:
@@ -107,43 +108,66 @@ class OKXInstrumentProvider(InstrumentProvider):
         """
         return self._instruments_pyo3
 
+    def inst_id_codes(self) -> list[tuple[str, int]]:
+        """
+        Return the inst_id to inst_id_code mappings for WebSocket order operations.
+
+        Returns
+        -------
+        list[tuple[str, int]]
+
+        """
+        return self._inst_id_codes
+
     async def load_all_async(self, filters: dict | None = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
         all_pyo3_instruments = []
+        all_inst_id_codes = []
         for instrument_type in self._instrument_types:
             # For OPTIONS, instrument families are required
             if instrument_type == OKXInstrumentType.OPTION:
                 if self._instrument_families:
                     for family in self._instrument_families:
-                        pyo3_instruments = await self._client.request_instruments(
+                        pyo3_instruments, inst_id_codes = await self._client.request_instruments(
                             instrument_type,
                             family,
                         )
                         all_pyo3_instruments.extend(pyo3_instruments)
+                        all_inst_id_codes.extend(inst_id_codes)
                 else:
                     self._log.error(
                         f"Instrument families required for {instrument_type}, but none configured",
                     )
             # SPOT and MARGIN don't support instFamily parameter
             elif instrument_type in (OKXInstrumentType.SPOT, OKXInstrumentType.MARGIN):
-                pyo3_instruments = await self._client.request_instruments(instrument_type, None)
+                pyo3_instruments, inst_id_codes = await self._client.request_instruments(
+                    instrument_type,
+                    None,
+                )
                 all_pyo3_instruments.extend(pyo3_instruments)
+                all_inst_id_codes.extend(inst_id_codes)
             else:
                 # SWAP and FUTURES support optional instrument families
                 if self._instrument_families:
                     for family in self._instrument_families:
-                        pyo3_instruments = await self._client.request_instruments(
+                        pyo3_instruments, inst_id_codes = await self._client.request_instruments(
                             instrument_type,
                             family,
                         )
                         all_pyo3_instruments.extend(pyo3_instruments)
+                        all_inst_id_codes.extend(inst_id_codes)
                 else:
-                    pyo3_instruments = await self._client.request_instruments(instrument_type, None)
+                    pyo3_instruments, inst_id_codes = await self._client.request_instruments(
+                        instrument_type,
+                        None,
+                    )
                     all_pyo3_instruments.extend(pyo3_instruments)
+                    all_inst_id_codes.extend(inst_id_codes)
 
         self._instruments_pyo3 = all_pyo3_instruments
+        self._inst_id_codes = all_inst_id_codes
         instruments = instruments_from_pyo3(all_pyo3_instruments)
         for instrument in instruments:
             self.add(instrument=instrument)
@@ -169,38 +193,50 @@ class OKXInstrumentProvider(InstrumentProvider):
             PyCondition.equal(instrument_id.venue, OKX_VENUE, "instrument_id.venue", "OKX")
 
         all_pyo3_instruments = []
+        all_inst_id_codes = []
         for instrument_type in self._instrument_types:
             # For OPTIONS, instrument families are required
             if instrument_type == OKXInstrumentType.OPTION:
                 if self._instrument_families:
                     for family in self._instrument_families:
-                        pyo3_instruments = await self._client.request_instruments(
+                        pyo3_instruments, inst_id_codes = await self._client.request_instruments(
                             instrument_type,
                             family,
                         )
                         all_pyo3_instruments.extend(pyo3_instruments)
+                        all_inst_id_codes.extend(inst_id_codes)
                 else:
                     self._log.error(
                         f"Instrument families required for {instrument_type}, but none configured",
                     )
             # SPOT and MARGIN don't support instFamily parameter
             elif instrument_type in (OKXInstrumentType.SPOT, OKXInstrumentType.MARGIN):
-                pyo3_instruments = await self._client.request_instruments(instrument_type, None)
+                pyo3_instruments, inst_id_codes = await self._client.request_instruments(
+                    instrument_type,
+                    None,
+                )
                 all_pyo3_instruments.extend(pyo3_instruments)
+                all_inst_id_codes.extend(inst_id_codes)
             else:
                 # SWAP and FUTURES support optional instrument families
                 if self._instrument_families:
                     for family in self._instrument_families:
-                        pyo3_instruments = await self._client.request_instruments(
+                        pyo3_instruments, inst_id_codes = await self._client.request_instruments(
                             instrument_type,
                             family,
                         )
                         all_pyo3_instruments.extend(pyo3_instruments)
+                        all_inst_id_codes.extend(inst_id_codes)
                 else:
-                    pyo3_instruments = await self._client.request_instruments(instrument_type, None)
+                    pyo3_instruments, inst_id_codes = await self._client.request_instruments(
+                        instrument_type,
+                        None,
+                    )
                     all_pyo3_instruments.extend(pyo3_instruments)
+                    all_inst_id_codes.extend(inst_id_codes)
 
         self._instruments_pyo3 = all_pyo3_instruments
+        self._inst_id_codes = all_inst_id_codes
         instruments = instruments_from_pyo3(all_pyo3_instruments)
 
         for instrument in instruments:

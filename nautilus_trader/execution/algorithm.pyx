@@ -42,6 +42,7 @@ from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelOrder
+from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
@@ -124,6 +125,7 @@ cdef class ExecAlgorithm(Actor):
 
         self._exec_spawn_ids: dict[ClientOrderId, int] = {}
         self._subscribed_strategies: set[StrategyId] = set()
+        self._pending_spawn_reductions: dict[ClientOrderId, Quantity] = {}
 
         # Public components
         self.portfolio = None  # Initialized when registered
@@ -195,6 +197,7 @@ cdef class ExecAlgorithm(Actor):
     cpdef void _reset(self):
         self._exec_spawn_ids.clear()
         self._subscribed_strategies.clear()
+        self._pending_spawn_reductions.clear()
 
         self.on_reset()
 
@@ -208,14 +211,17 @@ cdef class ExecAlgorithm(Actor):
         return ClientOrderId(f"{primary.client_order_id.to_str()}-E{spawn_sequence}")
 
     cdef void _reduce_primary_order(self, Order primary, Quantity spawn_qty):
-        Condition.is_true(primary.quantity >= spawn_qty, "Spawn order quantity was greater than or equal to primary order")
+        # Guard against reducing below filled quantity
+        Condition.is_true(
+            primary.leaves_qty >= spawn_qty,
+            f"spawn_qty {spawn_qty} exceeds primary leaves_qty {primary.leaves_qty}",
+        )
 
         cdef Quantity new_qty = Quantity.from_raw_c(
             primary.quantity._mem.raw - spawn_qty._mem.raw,
             primary.quantity._mem.precision,
         )
 
-        # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
 
         cdef OrderUpdated updated = OrderUpdated(
@@ -235,6 +241,57 @@ cdef class ExecAlgorithm(Actor):
 
         primary.apply(updated)
         self.cache.update_order(primary)
+
+    cdef void _restore_primary_order_quantity(self, Order order):
+        if not order.is_spawned_c():
+            return
+
+        cdef Quantity reduction_qty = self._pending_spawn_reductions.pop(order.client_order_id, None)
+        if reduction_qty is None:
+            return  # No reduction was tracked (reduce_primary=False was used)
+
+        cdef Order primary = self.cache.order(order.exec_spawn_id)
+        if primary is None:
+            self._log.warning(
+                f"Cannot restore primary order quantity: "
+                f"primary order {order.exec_spawn_id!r} not found",
+            )
+            return
+
+        # Use leaves_qty (unfilled) to handle partial fills, capped by original reduction
+        cdef uint64_t restore_raw = min(reduction_qty._mem.raw, order.leaves_qty._mem.raw)
+        if restore_raw == 0:
+            return  # Nothing to restore (fully filled before rejection)
+
+        cdef Quantity restored_qty = Quantity.from_raw_c(
+            primary.quantity._mem.raw + restore_raw,
+            primary.quantity._mem.precision,
+        )
+
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
+
+        cdef OrderUpdated updated = OrderUpdated(
+            trader_id=primary.trader_id,
+            strategy_id=primary.strategy_id,
+            instrument_id=primary.instrument_id,
+            client_order_id=primary.client_order_id,
+            venue_order_id=primary.venue_order_id,
+            account_id=primary.account_id,
+            quantity=restored_qty,
+            price=None,
+            trigger_price=None,
+            event_id=UUID4(),
+            ts_event=ts_now,
+            ts_init=ts_now,
+        )
+
+        primary.apply(updated)
+        self.cache.update_order(primary)
+
+        self._log.info(
+            f"Restored primary order {primary.client_order_id} quantity to {restored_qty} "
+            f"after spawned order {order.client_order_id} was denied/rejected",
+        )
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
@@ -351,6 +408,9 @@ cdef class ExecAlgorithm(Actor):
                 self.on_order_initialized(event)
                 self.on_order_event(event)
             elif isinstance(event, OrderDenied):
+                order = self.cache.order(event.client_order_id)
+                if order is not None:
+                    self._restore_primary_order_quantity(order)
                 self.on_order_denied(event)
                 self.on_order_event(event)
             elif isinstance(event, OrderEmulated):
@@ -363,15 +423,21 @@ cdef class ExecAlgorithm(Actor):
                 self.on_order_submitted(event)
                 self.on_order_event(event)
             elif isinstance(event, OrderRejected):
+                order = self.cache.order(event.client_order_id)
+                if order is not None:
+                    self._restore_primary_order_quantity(order)
                 self.on_order_rejected(event)
                 self.on_order_event(event)
             elif isinstance(event, OrderAccepted):
+                self._pending_spawn_reductions.pop(event.client_order_id, None)
                 self.on_order_accepted(event)
                 self.on_order_event(event)
             elif isinstance(event, OrderCanceled):
+                self._pending_spawn_reductions.pop(event.client_order_id, None)
                 self.on_order_canceled(event)
                 self.on_order_event(event)
             elif isinstance(event, OrderExpired):
+                self._pending_spawn_reductions.pop(event.client_order_id, None)
                 self.on_order_expired(event)
                 self.on_order_event(event)
             elif isinstance(event, OrderTriggered):
@@ -799,7 +865,7 @@ cdef class ExecAlgorithm(Actor):
         primary : Order
             The primary order from which this order will spawn.
         quantity : Quantity
-            The spawned orders quantity (> 0).
+            The spawned orders quantity (> 0). Must not exceed `primary.leaves_qty`.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
             The spawned orders time in force. Often not applicable for market orders.
         reduce_only : bool, default False
@@ -820,21 +886,32 @@ cdef class ExecAlgorithm(Actor):
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
+            If `quantity` exceeds `primary.leaves_qty` (when `reduce_primary` is True).
+        ValueError
             If `time_in_force` is ``GTD``.
+
+        Notes
+        -----
+        If `reduce_primary` is True and the spawned order is subsequently denied or
+        rejected (before acceptance), the deducted quantity is automatically restored
+        to the primary order. Once accepted, the reduction is considered committed.
 
         """
         Condition.not_none(primary, "primary")
         Condition.not_none(quantity, "quantity")
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
 
+        cdef ClientOrderId spawn_id = self._spawn_client_order_id(primary)
+
         if reduce_primary:
             self._reduce_primary_order(primary, spawn_qty=quantity)
+            self._pending_spawn_reductions[spawn_id] = quantity
 
         return MarketOrder(
             trader_id=primary.trader_id,
             strategy_id=primary.strategy_id,
             instrument_id=primary.instrument_id,
-            client_order_id=self._spawn_client_order_id(primary),
+            client_order_id=spawn_id,
             order_side=primary.side,
             quantity=quantity,
             time_in_force=time_in_force,
@@ -872,7 +949,7 @@ cdef class ExecAlgorithm(Actor):
         primary : Order
             The primary order from which this order will spawn.
         quantity : Quantity
-            The spawned orders quantity (> 0). Must be less than `primary.quantity`.
+            The spawned orders quantity (> 0). Must not exceed `primary.leaves_qty`.
         price : Price
             The spawned orders price.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
@@ -906,23 +983,34 @@ cdef class ExecAlgorithm(Actor):
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
+            If `quantity` exceeds `primary.leaves_qty` (when `reduce_primary` is True).
+        ValueError
             If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
         ValueError
             If `display_qty` is negative (< 0) or greater than `quantity`.
+
+        Notes
+        -----
+        If `reduce_primary` is True and the spawned order is subsequently denied or
+        rejected (before acceptance), the deducted quantity is automatically restored
+        to the primary order. Once accepted, the reduction is considered committed.
 
         """
         Condition.not_none(primary, "primary")
         Condition.not_none(quantity, "quantity")
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
 
+        cdef ClientOrderId spawn_id = self._spawn_client_order_id(primary)
+
         if reduce_primary:
             self._reduce_primary_order(primary, spawn_qty=quantity)
+            self._pending_spawn_reductions[spawn_id] = quantity
 
         return LimitOrder(
             trader_id=primary.trader_id,
             strategy_id=primary.strategy_id,
             instrument_id=primary.instrument_id,
-            client_order_id=self._spawn_client_order_id(primary),
+            client_order_id=spawn_id,
             order_side=primary.side,
             quantity=quantity,
             price=price,
@@ -963,7 +1051,7 @@ cdef class ExecAlgorithm(Actor):
         primary : Order
             The primary order from which this order will spawn.
         quantity : Quantity
-            The spawned orders quantity (> 0). Must be less than `primary.quantity`.
+            The spawned orders quantity (> 0). Must not exceed `primary.leaves_qty`.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
             The spawned orders time in force.
         expire_time : datetime, optional
@@ -993,23 +1081,34 @@ cdef class ExecAlgorithm(Actor):
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
+            If `quantity` exceeds `primary.leaves_qty` (when `reduce_primary` is True).
+        ValueError
             If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
         ValueError
             If `display_qty` is negative (< 0) or greater than `quantity`.
+
+        Notes
+        -----
+        If `reduce_primary` is True and the spawned order is subsequently denied or
+        rejected (before acceptance), the deducted quantity is automatically restored
+        to the primary order. Once accepted, the reduction is considered committed.
 
         """
         Condition.not_none(primary, "primary")
         Condition.not_none(quantity, "quantity")
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
 
+        cdef ClientOrderId spawn_id = self._spawn_client_order_id(primary)
+
         if reduce_primary:
             self._reduce_primary_order(primary, spawn_qty=quantity)
+            self._pending_spawn_reductions[spawn_id] = quantity
 
         return MarketToLimitOrder(
             trader_id=primary.trader_id,
             strategy_id=primary.strategy_id,
             instrument_id=primary.instrument_id,
-            client_order_id=self._spawn_client_order_id(primary),
+            client_order_id=spawn_id,
             order_side=primary.side,
             quantity=quantity,
             reduce_only=reduce_only,
@@ -1076,12 +1175,13 @@ cdef class ExecAlgorithm(Actor):
         if order.is_spawned_c():
             # Handle new spawned order
             primary = self.cache.order(order.exec_spawn_id)
-            Condition.equal(order.strategy_id, primary.strategy_id, "order.strategy_id", "primary.strategy_id")
             if primary is None:
                 self._log.error(
                     f"Cannot submit order: cannot find primary order for {order.exec_spawn_id!r}"
                 )
                 return
+
+            Condition.equal(order.strategy_id, primary.strategy_id, "order.strategy_id", "primary.strategy_id")
 
             position_id = self.cache.position_id(primary.client_order_id)
             client_id = self.cache.client_id(primary.client_order_id)
@@ -1092,13 +1192,14 @@ cdef class ExecAlgorithm(Actor):
                 )
                 return
 
+            # Add to cache before publishing to ensure order is available for event handlers
+            self.cache.add_order(order, position_id, client_id)
+
             # Publish initialized event
             self._msgbus.publish_c(
                 topic=f"events.order.{order.strategy_id.to_str()}",
                 msg=order.init_event_c(),
             )
-
-            self.cache.add_order(order, position_id, client_id)
 
             command = SubmitOrder(
                 trader_id=self.trader_id,
@@ -1117,7 +1218,7 @@ cdef class ExecAlgorithm(Actor):
         position_id = self.cache.position_id(order.client_order_id)
         client_id = self.cache.client_id(order.client_order_id)
         cdef Order cached_order = self.cache.order(order.client_order_id)
-        if cached_order.order_type != order.order_type:
+        if cached_order is None or cached_order.order_type != order.order_type:
             self.cache.add_order(order, position_id, client_id, overwrite=True)
 
         command = SubmitOrder(

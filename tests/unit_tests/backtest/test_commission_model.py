@@ -13,15 +13,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import pytest
 
 from nautilus_trader.backtest.models import FixedFeeModel
 from nautilus_trader.backtest.models import MakerTakerFeeModel
+from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import CryptoOption
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
@@ -143,3 +152,79 @@ def test_instrument_percent_commission_taker(instrument):
     # Assert
     assert isinstance(commission, Money)
     assert commission.as_decimal() == expected
+
+
+def test_maker_taker_fee_model_inverse_perpetual():
+    # Arrange
+    instrument = TestInstrumentProvider.xbtusd_bitmex()
+    assert instrument.is_inverse
+
+    fee_model = MakerTakerFeeModel()
+    order = TestExecStubs.make_filled_order(
+        instrument=instrument,
+        order_side=OrderSide.SELL,
+    )
+
+    # Act
+    commission = fee_model.get_commission(
+        order,
+        order.quantity,
+        order.price,
+        instrument,
+    )
+
+    # Assert
+    assert isinstance(commission, Money)
+    assert commission.currency == instrument.get_base_currency()
+
+
+def test_maker_taker_fee_model_inverse_crypto_option():
+    # Arrange
+    instrument = CryptoOption(
+        instrument_id=InstrumentId(
+            symbol=Symbol("BTC-20FEB26-78000-P"),
+            venue=Venue("DERIBIT"),
+        ),
+        raw_symbol=Symbol("BTC-20FEB26-78000-P"),
+        underlying=BTC,
+        quote_currency=USD,
+        settlement_currency=BTC,
+        is_inverse=True,
+        option_kind=OptionKind.PUT,
+        strike_price=Price.from_str("78000.00"),
+        activation_ns=1671696002000000000,
+        expiration_ns=1673596800000000000,
+        price_precision=4,
+        size_precision=1,
+        price_increment=Price.from_str("0.0001"),
+        size_increment=Quantity.from_str("0.1"),
+        maker_fee=Decimal("0.0003"),
+        taker_fee=Decimal("0.0003"),
+        margin_init=Decimal(0),
+        margin_maint=Decimal(0),
+        max_quantity=Quantity.from_str("9000"),
+        min_quantity=Quantity.from_str("0.1"),
+        min_notional=None,
+        ts_event=0,
+        ts_init=0,
+    )
+    assert instrument.is_inverse
+
+    fee_model = MakerTakerFeeModel()
+    order = TestExecStubs.make_filled_order(
+        instrument=instrument,
+        order_side=OrderSide.SELL,
+    )
+
+    # Act
+    commission = fee_model.get_commission(
+        order,
+        order.quantity,
+        order.price,
+        instrument,
+    )
+
+    # Assert
+    assert isinstance(commission, Money)
+    assert commission.currency == instrument.get_base_currency()
+    assert commission.currency == BTC

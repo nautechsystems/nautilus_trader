@@ -1,8 +1,61 @@
-# Release Notes
+# Releases
 
-This guide documents the standards for writing release notes in `RELEASES.md`.
+This guide covers the release process and the standards for writing release notes.
 
-## Sections
+## Overview
+
+NautilusTrader uses a three-branch model:
+
+- **`develop`**: active development; publishes dev wheels to Cloudflare R2 on every push.
+- **`nightly`**: pre-release testing; publishes alpha wheels and CLI binaries.
+- **`master`**: stable releases; triggers the full release pipeline.
+
+Pushing to `master` automatically tags the version from `pyproject.toml`, creates a GitHub
+release, publishes wheels and sdist to PyPI, builds Docker images, and triggers a docs rebuild.
+
+## Versioning
+
+The project maintains two version numbers:
+
+| File                     | Scope          | Example   |
+|--------------------------|----------------|-----------|
+| `pyproject.toml`         | Python package | `1.223.0` |
+| `Cargo.toml` (workspace) | Rust crates    | `0.53.0`  |
+
+These are bumped independently. The Python version drives the release tag (`v1.223.0`).
+
+## Release checklist
+
+### Pre-release (on `develop`)
+
+- [ ] Finalize `RELEASES.md`: review all items, remove empty sections
+- [ ] Ensure versions are set in `pyproject.toml` and `Cargo.toml` workspace
+- [ ] Ensure all CI checks pass on `develop`
+
+### Release
+
+- [ ] Merge `develop` into `nightly`, verify nightly CI passes
+- [ ] Merge `nightly` into `master`
+- [ ] Verify the `build` workflow completes:
+  - Wheels built for Linux x86/ARM, macOS, Windows
+  - `cargo-deny` and `cargo-vet` pass
+  - Tag created and GitHub release published
+  - Wheels and sdist published to PyPI
+- [ ] Verify the `docker` workflow completes (images built and pushed)
+- [ ] Verify the `build-docs` workflow completes (docs rebuild triggered)
+
+### Post-release (on `develop`)
+
+- [ ] Update the release date in `RELEASES.md` for the published version
+- [ ] Add horizontal separator `---` below the completed release
+- [ ] Add the next version template at the top of `RELEASES.md` (see below)
+- [ ] Bump `pyproject.toml` version to the next release number
+
+## Release notes
+
+This section documents the standards for writing release notes in `RELEASES.md`.
+
+### Sections
 
 Use the following sections in this order:
 
@@ -192,16 +245,6 @@ Note: Plain logic panics belong in Fixes unless they threaten system stability o
 ```markdown
 - Implemented BitMEX ping/pong handling
 ```
-
-## Release workflow
-
-After publishing a release:
-
-1. Update the published release section in `RELEASES.md` with the actual release date.
-2. Add the horizontal separator `---` below the completed release.
-3. Copy the template below and paste it at the top of `RELEASES.md` for the next version.
-4. Update `<VERSION>` to the next version number.
-5. Add items to sections as development progresses.
 
 ## Release notes template
 

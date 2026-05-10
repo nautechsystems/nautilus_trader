@@ -32,8 +32,6 @@
 //! - `crate::account_capnp` - Account events
 //! - `crate::market_capnp` - Market data types
 
-#![cfg(feature = "capnp")]
-
 pub mod conversions;
 
 // Re-export generated modules for convenience.
@@ -67,15 +65,4 @@ pub trait FromCapnp<'a> {
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn std::error::Error>>
     where
         Self: Sized;
-}
-
-#[cfg(test)]
-mod tests {
-    use rstest::rstest;
-
-    #[rstest]
-    fn test_capnp_feature_enabled() {
-        // This test ensures the capnp feature is properly configured
-        assert!(cfg!(feature = "capnp"));
-    }
 }

@@ -69,7 +69,7 @@ pub struct ActorRef<T: Actor> {
 
 impl<T: Actor> Debug for ActorRef<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ActorRef")
+        f.debug_struct(stringify!(ActorRef))
             .field("actor_id", &self.deref().id())
             .finish()
     }
@@ -87,7 +87,7 @@ impl<T: Actor> Deref for ActorRef<T> {
 impl<T: Actor> DerefMut for ActorRef<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: Type was verified at construction time
-        unsafe { &mut *(self.actor_rc.get() as *mut T) }
+        unsafe { &mut *self.actor_rc.get().cast::<T>() }
     }
 }
 
@@ -195,9 +195,7 @@ pub fn get_actor(id: &Ustr) -> Option<Rc<UnsafeCell<dyn Actor>>> {
 /// - Panics if no actor with the specified `id` is found in the registry.
 /// - Panics if the stored actor is not of type `T`.
 ///
-/// # Safety
-///
-/// While this function is not marked `unsafe`, aliasing constraints apply:
+/// Aliasing constraints apply:
 ///
 /// - **Aliasing**: The caller should ensure no other mutable references to the same
 ///   actor exist simultaneously. The callback-based message handling pattern in this
@@ -216,9 +214,10 @@ pub fn get_actor_unchecked<T: Actor>(id: &Ustr) -> ActorRef<T> {
     let actual_type = actor_ref.as_any().type_id();
     let expected_type = TypeId::of::<T>();
 
-    if actual_type != expected_type {
-        panic!("Actor type mismatch for '{id}': expected {expected_type:?}, found {actual_type:?}");
-    }
+    assert!(
+        actual_type == expected_type,
+        "Actor type mismatch for '{id}': expected {expected_type:?}, found {actual_type:?}"
+    );
 
     ActorRef {
         actor_rc,
@@ -230,10 +229,7 @@ pub fn get_actor_unchecked<T: Actor>(id: &Ustr) -> ActorRef<T> {
 ///
 /// Returns `None` if the actor is not found or the type doesn't match.
 ///
-/// # Safety
-///
-/// See [`get_actor_unchecked`] for safety requirements. The same aliasing
-/// and thread-safety constraints apply.
+/// See [`get_actor_unchecked`] for aliasing and thread-safety constraints.
 #[must_use]
 pub fn try_get_actor_unchecked<T: Actor>(id: &Ustr) -> Option<ActorRef<T>> {
     let registry = get_actor_registry();
@@ -333,8 +329,6 @@ mod tests {
 
     #[rstest]
     fn test_try_get_returns_none_for_wrong_type() {
-        clear_actor_registry();
-
         #[derive(Debug)]
         struct OtherActor {
             id: Ustr,
@@ -349,6 +343,8 @@ mod tests {
                 self
             }
         }
+
+        clear_actor_registry();
 
         let id = Ustr::from("other-actor");
         let actor = OtherActor { id };

@@ -1,0 +1,84 @@
+[package]
+name = "nautilus-sandbox"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Sandbox execution adapter for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_sandbox"
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = ["high-precision"]
+extension-module = [
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-execution/extension-module",
+  "nautilus-model/extension-module",
+  "python",
+  "pyo3/extension-module",
+]
+python = [
+  "nautilus-common/python",
+  "nautilus-core/python",
+  "nautilus-execution/python",
+  "nautilus-model/python",
+  "pyo3",
+]
+high-precision = ["nautilus-model/high-precision"]
+example-databento = [
+  "dep:nautilus-databento",
+  "dep:nautilus-live",
+  "dep:dotenvy",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-common = { workspace = true, features = ["live"] }
+nautilus-core = { workspace = true }
+nautilus-execution = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-system = { workspace = true }
+
+ahash = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+derive_builder = { workspace = true }
+log = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+ustr = { workspace = true }
+
+nautilus-databento = { workspace = true, features = ["live"], optional = true }
+nautilus-live = { workspace = true, optional = true }
+
+dotenvy = { workspace = true, optional = true }
+pyo3 = { workspace = true, optional = true }
+
+[dev-dependencies]
+nautilus-testkit = { workspace = true }
+
+rstest = { workspace = true }
+tokio = { workspace = true }
+
+[[example]]
+name = "databento-cme-sandbox"
+path = "examples/databento_cme.rs"
+required-features = ["example-databento"]
+doc = false

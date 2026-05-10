@@ -45,7 +45,7 @@ use std::str::FromStr;
 
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::python::{call_python_threadsafe, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
     enums::{OrderSide, OrderType, PositionSide, TimeInForce},
@@ -56,7 +56,8 @@ use nautilus_model::{
     },
     types::{Price, Quantity},
 };
-use pyo3::{IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
+use pyo3::{IntoPyObjectExt, prelude::*};
+use ustr::Ustr;
 
 use crate::{
     common::enums::{OKXInstrumentType, OKXTradeMode, OKXVipLevel},
@@ -218,9 +219,12 @@ impl OKXWebSocketClient {
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
+        loop_: Py<PyAny>,
         instruments: Vec<Py<PyAny>>,
         callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let call_soon: Py<PyAny> = loop_.getattr(py, "call_soon_threadsafe")?;
+
         let mut instruments_any = Vec::new();
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
@@ -243,80 +247,85 @@ impl OKXWebSocketClient {
 
                 while let Some(msg) = stream.next().await {
                     match msg {
-                        NautilusWsMessage::Instrument(msg) => {
-                            call_python_with_data(&callback, |py| {
+                        NautilusWsMessage::Instrument(msg, _status) => {
+                            call_python_with_data(&call_soon, &callback, |py| {
                                 instrument_any_to_pyobject(py, *msg)
                             });
                         }
                         NautilusWsMessage::Data(msg) => Python::attach(|py| {
                             for data in msg {
                                 let py_obj = data_to_pycapsule(py, data);
-                                call_python(py, &callback, py_obj);
+                                call_python_threadsafe(py, &call_soon, &callback, py_obj);
                             }
                         }),
                         NautilusWsMessage::FundingRates(msg) => {
                             for data in msg {
-                                call_python_with_data(&callback, |py| data.into_py_any(py));
+                                call_python_with_data(&call_soon, &callback, |py| {
+                                    data.into_py_any(py)
+                                });
                             }
                         }
                         NautilusWsMessage::OrderAccepted(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderCanceled(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderExpired(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderRejected(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderCancelRejected(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderModifyRejected(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderTriggered(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderUpdated(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::ExecutionReports(msg) => {
                             for report in msg {
                                 match report {
                                     ExecutionReport::Order(report) => {
-                                        call_python_with_data(&callback, |py| {
+                                        call_python_with_data(&call_soon, &callback, |py| {
                                             report.into_py_any(py)
                                         });
                                     }
                                     ExecutionReport::Fill(report) => {
-                                        call_python_with_data(&callback, |py| {
+                                        call_python_with_data(&call_soon, &callback, |py| {
                                             report.into_py_any(py)
                                         });
                                     }
-                                };
+                                }
                             }
                         }
                         NautilusWsMessage::Deltas(msg) => Python::attach(|py| {
                             let py_obj =
                                 data_to_pycapsule(py, Data::Deltas(OrderBookDeltas_API::new(msg)));
-                            call_python(py, &callback, py_obj);
+                            call_python_threadsafe(py, &call_soon, &callback, py_obj);
                         }),
                         NautilusWsMessage::AccountUpdate(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::PositionUpdate(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
+                        }
+                        NautilusWsMessage::InstrumentStatus(msg) => {
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::Reconnected => {} // Nothing to handle
                         NautilusWsMessage::Authenticated => {} // Nothing to handle
                         NautilusWsMessage::Error(msg) => {
-                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::Raw(msg) => {
-                            tracing::debug!("Received raw message, skipping: {msg}");
+                            log::debug!("Received raw message, skipping: {msg}");
                         }
                     }
                 }
@@ -338,7 +347,7 @@ impl OKXWebSocketClient {
             client
                 .wait_until_active(timeout_secs)
                 .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+                .map_err(to_pyruntime_err)?;
             Ok(())
         })
     }
@@ -822,6 +831,38 @@ impl OKXWebSocketClient {
         })
     }
 
+    #[pyo3(name = "subscribe_algo_advance")]
+    fn py_subscribe_algo_advance<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_type: OKXInstrumentType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_algo_advance(instrument_type).await {
+                log::error!("Failed to subscribe to algo-advance '{instrument_type}': {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_algo_advance")]
+    fn py_unsubscribe_algo_advance<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_type: OKXInstrumentType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_algo_advance(instrument_type).await {
+                log::error!("Failed to unsubscribe from algo-advance '{instrument_type}': {e}");
+            }
+            Ok(())
+        })
+    }
+
     #[pyo3(name = "subscribe_fills")]
     fn py_subscribe_fills<'py>(
         &self,
@@ -1051,9 +1092,7 @@ impl OKXWebSocketClient {
                 Option<Price>,
                 Option<bool>,
                 Option<bool>,
-            ) = obj
-                .extract(py)
-                .map_err(|e: PyErr| PyRuntimeError::new_err(e.to_string()))?;
+            ) = obj.extract(py).map_err(to_pyruntime_err)?;
 
             domain_orders.push((
                 instrument_type,
@@ -1095,9 +1134,7 @@ impl OKXWebSocketClient {
                 InstrumentId,
                 Option<ClientOrderId>,
                 Option<VenueOrderId>,
-            ) = obj
-                .extract(py)
-                .map_err(|e: PyErr| PyRuntimeError::new_err(e.to_string()))?;
+            ) = obj.extract(py).map_err(to_pyruntime_err)?;
             batched_cancels.push((instrument_id, client_order_id, order_id));
         }
 
@@ -1134,9 +1171,7 @@ impl OKXWebSocketClient {
                 ClientOrderId,
                 Option<Price>,
                 Option<Quantity>,
-            ) = obj
-                .extract(py)
-                .map_err(|e: PyErr| PyRuntimeError::new_err(e.to_string()))?;
+            ) = obj.extract(py).map_err(to_pyruntime_err)?;
             let inst_type =
                 OKXInstrumentType::from_str(&instrument_type).map_err(to_pyvalue_err)?;
             domain_orders.push((
@@ -1190,20 +1225,22 @@ impl OKXWebSocketClient {
         self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
         Ok(())
     }
-}
 
-pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
-    if let Err(e) = callback.call1(py, (py_obj,)) {
-        tracing::error!("Error calling Python: {e}");
+    #[pyo3(name = "cache_inst_id_codes")]
+    fn py_cache_inst_id_codes(&self, mappings: Vec<(String, u64)>) {
+        let ustr_mappings = mappings
+            .into_iter()
+            .map(|(inst_id, code)| (Ustr::from(&inst_id), code));
+        self.cache_inst_id_codes(ustr_mappings);
     }
 }
 
-fn call_python_with_data<F>(callback: &Py<PyAny>, data_converter: F)
+fn call_python_with_data<F>(call_soon: &Py<PyAny>, callback: &Py<PyAny>, data_converter: F)
 where
     F: FnOnce(Python) -> PyResult<Py<PyAny>>,
 {
     Python::attach(|py| match data_converter(py) {
-        Ok(py_obj) => call_python(py, callback, py_obj),
-        Err(e) => tracing::error!("Failed to convert data to Python object: {e}"),
+        Ok(py_obj) => call_python_threadsafe(py, call_soon, callback, py_obj),
+        Err(e) => log::error!("Failed to convert data to Python object: {e}"),
     });
 }

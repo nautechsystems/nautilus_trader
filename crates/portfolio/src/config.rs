@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::serialization::default_true;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for `Portfolio` instances.
@@ -44,10 +45,6 @@ pub struct PortfolioConfig {
     /// If debug mode is active (will provide extra debug logging).
     #[serde(default)]
     pub debug: bool,
-}
-
-const fn default_true() -> bool {
-    true
 }
 
 impl Default for PortfolioConfig {

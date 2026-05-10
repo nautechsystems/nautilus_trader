@@ -27,21 +27,19 @@ use nautilus_okx::{
     websocket::client::OKXWebSocketClient,
 };
 use tokio::{pin, signal};
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::TRACE)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let rest_client = OKXHttpClient::from_env().unwrap();
 
     let inst_type = OKXInstrumentType::Swap;
-    let instruments = rest_client.request_instruments(inst_type, None).await?;
+    let (instruments, inst_id_codes) = rest_client.request_instruments(inst_type, None).await?;
 
     let mut ws_client = OKXWebSocketClient::from_env().unwrap();
     ws_client.cache_instruments(instruments.clone());
+    ws_client.cache_inst_id_codes(inst_id_codes);
     ws_client.connect().await?;
 
     // Subscribe to execution channels: orders and account updates
@@ -80,8 +78,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await;
 
     match resp {
-        Ok(resp) => tracing::debug!("{resp:?}"),
-        Err(e) => tracing::error!("{e:?}"),
+        Ok(resp) => log::debug!("{resp:?}"),
+        Err(e) => log::error!("{e:?}"),
     }
 
     // Create a future that completes on CTRL+C
@@ -94,10 +92,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         tokio::select! {
             Some(data) = stream.next() => {
-                tracing::debug!("{data:?}");
+                log::debug!("{data:?}");
             }
             _ = &mut sigint => {
-                tracing::info!("Received SIGINT, closing connection...");
+                log::info!("Received SIGINT, closing connection...");
                 ws_client.close().await?;
                 break;
             }

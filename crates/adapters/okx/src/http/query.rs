@@ -38,17 +38,6 @@ use crate::{
     http::error::BuildError,
 };
 
-#[allow(dead_code)]
-fn serialize_string_vec<S>(values: &Option<Vec<String>>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    match values {
-        Some(vec) => serializer.serialize_str(&vec.join(",")),
-        None => serializer.serialize_none(),
-    }
-}
-
 /// Parameters for the POST /api/v5/account/set-position-mode endpoint.
 #[derive(Clone, Debug, Deserialize, Serialize, Builder)]
 #[builder(setter(into, strip_option))]
@@ -294,6 +283,38 @@ pub struct GetIndexTickerParams {
     /// Quote currency.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quote_ccy: Option<String>,
+}
+
+/// Parameters for the GET /api/v5/market/books endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct GetOrderBookParams {
+    /// Instrument ID, e.g. "BTC-USDT-SWAP".
+    pub inst_id: String,
+    /// Order book depth per side. Maximum 400, default 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sz: Option<u32>,
+}
+
+/// Parameters for the GET /api/v5/public/funding-rate-history endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct GetFundingRateHistoryParams {
+    /// Instrument ID, e.g. "BTC-USDT-SWAP".
+    pub inst_id: String,
+    /// Pagination: records newer than this timestamp (ms).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+    /// Pagination: records older than this timestamp (ms).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
+    /// Number of results per request (default 100, max 100).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
 }
 
 /// Parameters for the GET /api/v5/trade/order-history endpoint.

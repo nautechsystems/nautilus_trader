@@ -162,14 +162,14 @@ mod tests {
     fn ensure_python_initialized() {
         static INIT: Once = Once::new();
         INIT.call_once(|| {
-            pyo3::prepare_freethreaded_python();
+            Python::initialize();
         });
     }
 
     #[rstest]
     fn test_setstate_rejects_invalid_uuid_bytes() {
         ensure_python_initialized();
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let mut uuid = UUID4::new();
             let mut invalid = [b'a'; UUID4_LEN];
             invalid[UUID4_LEN - 1] = 0;
@@ -184,7 +184,7 @@ mod tests {
     #[rstest]
     fn test_setstate_rejects_missing_null_terminator() {
         ensure_python_initialized();
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let mut uuid = UUID4::new();
             let mut bytes = uuid.value;
             bytes[UUID4_LEN - 1] = b'0';
@@ -202,7 +202,7 @@ mod tests {
     #[rstest]
     fn test_setstate_accepts_valid_state() {
         ensure_python_initialized();
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let source = UUID4::new();
             let mut target = UUID4::new();
             let py_bytes = PyBytes::new(py, &source.value);

@@ -49,13 +49,19 @@ fn parse_scientific_exponent(exponent_str: &str, strict: bool) -> Option<u8> {
             !(exponent_str.is_empty() && strict),
             "Invalid scientific notation format: missing exponent after 'e-'"
         );
+
+        // Empty string is invalid (not a large number that overflowed)
+        if exponent_str.is_empty() {
+            return None;
+        }
+
         // If it's all digits but overflows u64, clamp to u8::MAX
         if exponent_str.chars().all(|c| c.is_ascii_digit()) {
             Some(u8::MAX)
         } else if strict {
             panic!("Invalid scientific notation exponent '{exponent_str}': must be a valid number")
         } else {
-            None // Return None for lenient parsing
+            None
         }
     }
 }
@@ -313,5 +319,12 @@ mod tests {
         let min_precision = min_increment_precision_from_str(input);
         assert_eq!(precision, min_precision);
         assert_eq!(precision, 255);
+    }
+
+    #[rstest]
+    fn test_min_increment_precision_from_str_empty_exponent() {
+        // Empty exponent should return 0, not u8::MAX
+        let result = min_increment_precision_from_str("1e-");
+        assert_eq!(result, 0);
     }
 }

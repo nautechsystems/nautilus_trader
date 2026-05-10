@@ -27,7 +27,7 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct PositionSnapshot {
     /// The trader ID associated with the snapshot.
@@ -119,7 +119,7 @@ impl PositionSnapshot {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UUID4, UnixNanos};
     use rstest::*;
 
     use super::*;
@@ -181,7 +181,7 @@ mod tests {
             Price::from("0.8000"),
             Currency::USD(),
             LiquiditySide::Taker,
-            Default::default(),
+            UUID4::default(),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
             false,

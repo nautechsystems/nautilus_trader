@@ -50,6 +50,28 @@ class BinanceKeyType(Enum):
 
 
 @unique
+class BinanceEnvironment(Enum):
+    """
+    Represents a Binance trading environment.
+    """
+
+    LIVE = "LIVE"
+    TESTNET = "TESTNET"
+    DEMO = "DEMO"
+
+    @property
+    def is_live(self) -> bool:
+        return self == BinanceEnvironment.LIVE
+
+    @property
+    def is_sandbox(self) -> bool:
+        """
+        True for any non-production environment (testnet or demo).
+        """
+        return self != BinanceEnvironment.LIVE
+
+
+@unique
 class BinanceFuturesPositionSide(Enum):
     """
     Represents a Binance Futures position side.
@@ -257,6 +279,8 @@ class BinanceOrderType(Enum):
     STOP_MARKET = "STOP_MARKET"  # FUTURES only
     TAKE_PROFIT_MARKET = "TAKE_PROFIT_MARKET"  # FUTURES only
     TRAILING_STOP_MARKET = "TRAILING_STOP_MARKET"  # FUTURES only
+    LIQUIDATION = "LIQUIDATION"  # FUTURES only
+    ADL = "ADL"  # FUTURES only
     INSURANCE_FUND = "INSURANCE_FUND"
 
 

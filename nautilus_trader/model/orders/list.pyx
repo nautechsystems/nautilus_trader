@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.orders.base cimport Order
 
@@ -21,8 +22,6 @@ from nautilus_trader.model.orders.base cimport Order
 cdef class OrderList:
     """
     Represents a list of bulk or related contingent orders.
-
-    All orders must be for the same instrument ID.
 
     Parameters
     ----------
@@ -37,8 +36,12 @@ cdef class OrderList:
         If `orders` is empty.
     ValueError
         If `orders` contains a type other than `Order`.
-    ValueError
-        If orders contain different instrument IDs (must all be the same instrument).
+
+    Notes
+    -----
+    If all orders share the same instrument_id, that ID is set as the list's instrument_id.
+    If orders have different instrument IDs, the list's instrument_id will be set to the
+    first order's instrument_id for backward compatibility.
 
     """
 
@@ -50,18 +53,9 @@ cdef class OrderList:
         Condition.not_empty(orders, "orders")
         Condition.list_type(orders, Order, "orders")
         cdef Order first = orders[0]
-        cdef Order order
-        for order in orders:
-            # First condition check avoids creating an f-string for performance reasons
-            if order.instrument_id != first.instrument_id:
-                Condition.is_true(
-                    order.instrument_id == first.instrument_id,
-                    f"order.instrument_id {order.instrument_id} != instrument_id {first.instrument_id}; "
-                    "all orders in the list must be for the same instrument ID",
-                )
 
         self.id = order_list_id
-        self.instrument_id = first.instrument_id
+        self.instrument_id = first.instrument_id  # Always set to first order's instrument
         self.strategy_id = first.strategy_id
         self.orders = orders
         self.first = first
@@ -86,3 +80,36 @@ cdef class OrderList:
             f"strategy_id={self.strategy_id}, "
             f"orders={self.orders})"
         )
+
+    cpdef bint is_bracket(self):
+        """
+        Return whether this order list represents a bracket order.
+
+        A bracket order has exactly 3 orders: an entry order (OTO contingency)
+        with exactly 2 child orders (OUO contingency, not OCO) that are
+        reduce-only TP/SL orders.
+
+        Returns
+        -------
+        bool
+
+        """
+        if len(self.orders) != 3:
+            return False
+
+        cdef Order entry = self.first
+        if entry.contingency_type != ContingencyType.OTO:
+            return False
+
+        cdef Order child
+        cdef int ouo_child_count = 0
+        for child in self.orders[1:]:
+            if child.parent_order_id != entry.client_order_id:
+                return False
+            if child.contingency_type != ContingencyType.OUO:
+                return False
+            if not child.is_reduce_only:
+                return False
+            ouo_child_count += 1
+
+        return ouo_child_count == 2

@@ -1,0 +1,15 @@
+{
+  "salt": 123456789,
+  "maker": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+  "signer": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+  "taker": "0x0000000000000000000000000000000000000000",
+  "tokenId": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+  "makerAmount": "100000000",
+  "takerAmount": "50000000",
+  "expiration": "0",
+  "nonce": "0",
+  "feeRateBps": "0",
+  "side": "BUY",
+  "signatureType": 0,
+  "signature": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab1b"
+}

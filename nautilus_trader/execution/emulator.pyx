@@ -212,7 +212,7 @@ cdef class OrderEmulator(Actor):
             if order.parent_order_id is not None:
                 parent_order = self.cache.order(order.parent_order_id)
                 if parent_order is None:
-                    self._log.error("Cannot handle order: parent {order.parent_order_id!r} not found")
+                    self._log.error(f"Cannot handle order: parent {order.parent_order_id!r} not found")
                     continue
                 position_id = parent_order.position_id
                 if parent_order.is_closed_c() and (position_id is None or self.cache.is_position_closed(position_id)):
@@ -465,7 +465,7 @@ cdef class OrderEmulator(Actor):
         cdef Order order = self.cache.order(command.client_order_id)
         if order is None:
             self._log.error(
-                f"Cannot modify order: {repr(order.client_order_id)} not found",
+                f"Cannot modify order: {command.client_order_id!r} not found",
             )
             return
 
@@ -567,7 +567,7 @@ cdef class OrderEmulator(Actor):
     cpdef void _cancel_order(self, Order order):
         if order is None:
             self._log.error(
-                f"Cannot cancel order: order for {repr(order.client_order_id)} not found",
+                "Cannot cancel order: order was None",
             )
             return
 
@@ -602,7 +602,7 @@ cdef class OrderEmulator(Actor):
     cpdef void _update_order(self, Order order, Quantity new_quantity):
         if order is None:
             self._log.error(
-                f"Cannot update order: order for {repr(order.client_order_id)} not found",
+                "Cannot update order: order was None",
             )
             return
 
@@ -927,13 +927,18 @@ cdef class OrderEmulator(Actor):
                 # NOTE
                 # The activation price should have been set in OrderMatchingEngine._process_trailing_stop_order()
                 # However, the implementation of the emulator bypass this step, and directly call this method through match_order().
-                market_price = ask if order.side == OrderSide.BUY else bid
+                if order.trigger_type == TriggerType.LAST_PRICE:
+                    market_price = last
+                else:
+                    market_price = ask if order.side == OrderSide.BUY else bid
                 if market_price is None:
                     # If there is no market price, we cannot process the order
+                    if order.trigger_type == TriggerType.LAST_PRICE:
+                        msg = f"no LAST price for {order.instrument_id} (add trades or use LAST bars)"
+                    else:
+                        msg = f"no BID or ASK price for {order.instrument_id} (add quotes or use BID|ASK bars)"
                     raise RuntimeError(  # pragma: no cover (design-time error)
-                        f"cannot process trailing stop, "
-                        f"no BID or ASK price for {order.instrument_id} "
-                        f"(add quotes or use bars)",
+                        f"cannot process trailing stop, {msg}",
                     )
                 order.set_activated_c(market_price)
             elif matching_core.is_touch_triggered(order.side, order.activation_price):

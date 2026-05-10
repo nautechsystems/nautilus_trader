@@ -235,6 +235,8 @@ cdef class CryptoPerpetual(Instrument):
         Quantity quantity,
         Price price,
         bint use_quote_for_inverse=False,
+        Currency target_currency=None,
+        Price conversion_price=None,
     ):
         """
         Calculate the notional value.
@@ -254,6 +256,10 @@ cdef class CryptoPerpetual(Instrument):
             notional value in quote currency and returns it directly without calculation.
             This is useful when quantity already represents a USD value that doesn't need
             conversion (e.g., for display purposes). Has no effect on linear or quanto instruments.
+        target_currency : Currency, optional
+            The target currency for conversion.
+        conversion_price : Price, optional
+            The conversion price to the target currency.
 
         Returns
         -------
@@ -263,25 +269,31 @@ cdef class CryptoPerpetual(Instrument):
         Condition.not_none(quantity, "quantity")
         Condition.not_none(price, "price")
 
+        cdef Money notional
         if self.is_inverse:
             if use_quote_for_inverse:
                 # Quantity is notional in quote currency
-                return Money(quantity, self.quote_currency)
-
-            return Money(
-                quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()),
-                self.base_currency,
-            )
+                notional = Money(quantity, self.quote_currency)
+            else:
+                notional = Money(
+                    quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()),
+                    self.base_currency,
+                )
         elif self.is_quanto:
-            return Money(
+            notional = Money(
                 quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(),
                 self.settlement_currency,
             )
         else:
-            return Money(
+            notional = Money(
                 quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(),
                 self.quote_currency,
             )
+
+        if target_currency is not None and conversion_price is not None:
+            return Money(notional.as_f64_c() * conversion_price.as_f64_c(), target_currency)
+
+        return notional
 
     @staticmethod
     cdef CryptoPerpetual from_dict_c(dict values):

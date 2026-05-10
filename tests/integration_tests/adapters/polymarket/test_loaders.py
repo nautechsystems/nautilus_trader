@@ -24,7 +24,6 @@ import pytest
 from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.loaders import PolymarketDataLoader
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 
@@ -60,20 +59,10 @@ def market_details_data():
 
 
 @pytest.fixture
-def orderbook_history_data():
+def trades_data():
     data = pkgutil.get_data(
         "tests.integration_tests.adapters.polymarket.resources.http_responses",
-        "orderbook_history.json",
-    )
-    assert data
-    return msgspec.json.decode(data)
-
-
-@pytest.fixture
-def price_history_data():
-    data = pkgutil.get_data(
-        "tests.integration_tests.adapters.polymarket.resources.http_responses",
-        "price_history.json",
+        "trades.json",
     )
     assert data
     return msgspec.json.decode(data)
@@ -91,12 +80,16 @@ def test_instrument(market_details_data):
 
 
 @pytest.fixture
-def loader(test_instrument):
-    return PolymarketDataLoader(test_instrument)
+def loader(test_instrument, market_details_data):
+    return PolymarketDataLoader(
+        test_instrument,
+        token_id=market_details_data["tokens"][0]["token_id"],
+        condition_id=market_details_data["condition_id"],
+    )
 
 
 @pytest.mark.asyncio
-async def test_fetch_markets(markets_list_data):
+async def test_fetch_markets(test_instrument, markets_list_data):
     # Arrange
     mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
     mock_response = Mock()
@@ -104,11 +97,10 @@ async def test_fetch_markets(markets_list_data):
     mock_response.body = msgspec.json.encode(markets_list_data)
     mock_http_client.get = AsyncMock(return_value=mock_response)
 
+    loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
+
     # Act
-    markets = await PolymarketDataLoader.fetch_markets(
-        limit=10,
-        http_client=mock_http_client,
-    )
+    markets = await loader.fetch_markets(limit=10)
 
     # Assert
     mock_http_client.get.assert_called_once()
@@ -121,7 +113,7 @@ async def test_fetch_markets(markets_list_data):
 
 
 @pytest.mark.asyncio
-async def test_find_market_by_slug(market_slug_data):
+async def test_find_market_by_slug(test_instrument, market_slug_data):
     # Arrange
     mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
     mock_response = Mock()
@@ -129,11 +121,10 @@ async def test_find_market_by_slug(market_slug_data):
     mock_response.body = msgspec.json.encode(market_slug_data)
     mock_http_client.get = AsyncMock(return_value=mock_response)
 
+    loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
+
     # Act
-    market = await PolymarketDataLoader.find_market_by_slug(
-        "kamala-harris-divorce-in-2025",
-        http_client=mock_http_client,
-    )
+    market = await loader.find_market_by_slug("kamala-harris-divorce-in-2025")
 
     # Assert
     mock_http_client.get.assert_called_once_with(
@@ -148,7 +139,7 @@ async def test_find_market_by_slug(market_slug_data):
 
 
 @pytest.mark.asyncio
-async def test_find_market_by_slug_not_found():
+async def test_find_market_by_slug_not_found(test_instrument):
     # Arrange
     mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
     mock_response = Mock()
@@ -156,12 +147,11 @@ async def test_find_market_by_slug_not_found():
     mock_response.body = b""
     mock_http_client.get = AsyncMock(return_value=mock_response)
 
+    loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
+
     # Act & Assert
     with pytest.raises(ValueError, match="Market with slug 'nonexistent-market' not found"):
-        await PolymarketDataLoader.find_market_by_slug(
-            "nonexistent-market",
-            http_client=mock_http_client,
-        )
+        await loader.find_market_by_slug("nonexistent-market")
 
 
 @pytest.mark.asyncio
@@ -190,6 +180,7 @@ async def test_from_market_slug_uses_slug_endpoint(
 
     # Assert
     assert loader.token_id == market_details_data["tokens"][0]["token_id"]
+    assert loader.condition_id == market_slug_data["conditionId"]
     assert mock_http_client.get.call_args_list[0].kwargs["url"] == (
         "https://gamma-api.polymarket.com/markets/slug/kamala-harris-divorce-in-2025"
     )
@@ -200,7 +191,32 @@ async def test_from_market_slug_uses_slug_endpoint(
 
 
 @pytest.mark.asyncio
-async def test_fetch_market_details(market_details_data):
+async def test_query_market_by_slug(market_slug_data):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+    mock_response = Mock()
+    mock_response.status = 200
+    mock_response.body = msgspec.json.encode(market_slug_data)
+    mock_http_client.get = AsyncMock(return_value=mock_response)
+
+    # Act - no loader instance needed
+    market = await PolymarketDataLoader.query_market_by_slug(
+        "kamala-harris-divorce-in-2025",
+        http_client=mock_http_client,
+    )
+
+    # Assert
+    mock_http_client.get.assert_called_once_with(
+        url="https://gamma-api.polymarket.com/markets/slug/kamala-harris-divorce-in-2025",
+    )
+    assert market["slug"] == "kamala-harris-divorce-in-2025"
+    assert market["conditionId"] == (
+        "0x270d5aa3b23be0d4e713361d603b187dd1919c71c74226ad867699f33972c5f2"
+    )
+
+
+@pytest.mark.asyncio
+async def test_query_market_details(market_details_data):
     # Arrange
     mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
     mock_response = Mock()
@@ -209,11 +225,56 @@ async def test_fetch_market_details(market_details_data):
     mock_http_client.get = AsyncMock(return_value=mock_response)
     condition_id = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
 
-    # Act
-    details = await PolymarketDataLoader.fetch_market_details(
+    # Act - no loader instance needed
+    details = await PolymarketDataLoader.query_market_details(
         condition_id,
         http_client=mock_http_client,
     )
+
+    # Assert
+    mock_http_client.get.assert_called_once()
+    assert details["condition_id"] == condition_id
+    assert details["question"] == "Will Donald Trump win the 2024 US Presidential Election?"
+
+
+@pytest.mark.asyncio
+async def test_query_event_by_slug(event_data):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+    mock_response = Mock()
+    mock_response.status = 200
+    mock_response.body = msgspec.json.encode([event_data])
+    mock_http_client.get = AsyncMock(return_value=mock_response)
+
+    # Act - no loader instance needed
+    event = await PolymarketDataLoader.query_event_by_slug(
+        "highest-temperature-in-nyc-on-january-26",
+        http_client=mock_http_client,
+    )
+
+    # Assert
+    mock_http_client.get.assert_called_once_with(
+        url="https://gamma-api.polymarket.com/events",
+        params={"slug": "highest-temperature-in-nyc-on-january-26"},
+    )
+    assert event["slug"] == "highest-temperature-in-nyc-on-january-26"
+    assert len(event["markets"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_fetch_market_details(test_instrument, market_details_data):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+    mock_response = Mock()
+    mock_response.status = 200
+    mock_response.body = msgspec.json.encode(market_details_data)
+    mock_http_client.get = AsyncMock(return_value=mock_response)
+    condition_id = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
+
+    loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
+
+    # Act
+    details = await loader.fetch_market_details(condition_id)
 
     # Assert
     mock_http_client.get.assert_called_once()
@@ -223,45 +284,60 @@ async def test_fetch_market_details(market_details_data):
 
 
 @pytest.mark.asyncio
-async def test_fetch_orderbook_history(test_instrument, orderbook_history_data):
+async def test_fetch_trades(test_instrument, trades_data):
     # Arrange
     mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
     mock_response = Mock()
     mock_response.status = 200
-    mock_response.body = msgspec.json.encode(orderbook_history_data)
+    mock_response.body = msgspec.json.encode(trades_data)
     mock_http_client.get = AsyncMock(return_value=mock_response)
 
-    token_id = "60487116984468020978247225474488676749601001829886755968952521846780452448915"
-    start_ms = 1729000000000
-    end_ms = 1729000180000
-
+    condition_id = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
     loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
 
     # Act
-    snapshots = await loader.fetch_orderbook_history(token_id, start_ms, end_ms)
+    trades = await loader.fetch_trades(condition_id)
 
     # Assert
     mock_http_client.get.assert_called_once()
-    assert len(snapshots) == 3
-    assert snapshots[0]["timestamp"] == "1729000000000"
-    assert len(snapshots[0]["bids"]) == 3
-    assert len(snapshots[0]["asks"]) == 3
+    assert len(trades) == 4
+    assert trades[0]["side"] == "SELL"
+    assert trades[0]["price"] == 0.998
+    assert trades[0]["size"] == 5.4
+    assert trades[0]["timestamp"] == 1729000180
 
 
 @pytest.mark.asyncio
-async def test_fetch_orderbook_history_with_pagination(test_instrument):
+async def test_fetch_trades_with_pagination(test_instrument):
     # Arrange
     mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
 
-    # Simulate pagination: total count is 2, each page returns 1 item with limit=1
-    page1_data = {
-        "count": 2,
-        "data": [{"timestamp": "1729000000000", "bids": [], "asks": []}],
-    }
-    page2_data = {
-        "count": 2,
-        "data": [{"timestamp": "1729000060000", "bids": [], "asks": []}],
-    }
+    page1_data = [
+        {
+            "side": "BUY",
+            "asset": "token123",
+            "conditionId": "0xcond",
+            "size": 10.0,
+            "price": 0.5,
+            "timestamp": 1729000060,
+            "transactionHash": "0xhash1",
+            "outcome": "Yes",
+            "outcomeIndex": 0,
+        },
+    ]
+    page2_data = [
+        {
+            "side": "SELL",
+            "asset": "token123",
+            "conditionId": "0xcond",
+            "size": 20.0,
+            "price": 0.6,
+            "timestamp": 1729000000,
+            "transactionHash": "0xhash2",
+            "outcome": "Yes",
+            "outcomeIndex": 0,
+        },
+    ]
 
     mock_response1 = Mock()
     mock_response1.status = 200
@@ -271,126 +347,263 @@ async def test_fetch_orderbook_history_with_pagination(test_instrument):
     mock_response2.status = 200
     mock_response2.body = msgspec.json.encode(page2_data)
 
-    mock_http_client.get = AsyncMock(side_effect=[mock_response1, mock_response2])
+    # Third response is empty to stop pagination
+    mock_response3 = Mock()
+    mock_response3.status = 200
+    mock_response3.body = msgspec.json.encode([])
+
+    mock_http_client.get = AsyncMock(
+        side_effect=[mock_response1, mock_response2, mock_response3],
+    )
 
     loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
 
     # Act - use limit=1 to force pagination
-    snapshots = await loader.fetch_orderbook_history(
-        "token123",
-        1729000000000,
-        1729000120000,
-        limit=1,
-    )
+    trades = await loader.fetch_trades("0xcond", limit=1)
 
     # Assert
-    assert mock_http_client.get.call_count == 2
-    assert len(snapshots) == 2
+    assert mock_http_client.get.call_count == 3
+    assert len(trades) == 2
 
 
-@pytest.mark.asyncio
-async def test_fetch_price_history(test_instrument, price_history_data):
-    # Arrange
-    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
-    mock_response = Mock()
-    mock_response.status = 200
-    mock_response.body = msgspec.json.encode(price_history_data)
-    mock_http_client.get = AsyncMock(return_value=mock_response)
+def test_parse_trades(loader, trades_data):
+    # Act - pass unfiltered data (includes both Yes and No token trades)
+    trades = loader.parse_trades(trades_data)
 
-    token_id = "60487116984468020978247225474488676749601001829886755968952521846780452448915"
-    start_time_ms = 1729000000000
-    end_time_ms = 1729000600000
-
-    loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
-
-    # Act
-    history = await loader.fetch_price_history(token_id, start_time_ms, end_time_ms)
-
-    # Assert
-    mock_http_client.get.assert_called_once()
-    assert len(history) == 10
-    assert history[0]["t"] == 1729000000
-    assert history[0]["p"] == 0.51
-
-
-def test_parse_orderbook_snapshots(loader, orderbook_history_data):
-    # Arrange
-    snapshots = orderbook_history_data["data"]
-
-    # Act
-    deltas_list = loader.parse_orderbook_snapshots(snapshots)
-
-    # Assert
-    assert len(deltas_list) == 3
-    for deltas in deltas_list:
-        assert isinstance(deltas, OrderBookDeltas)
-        assert deltas.instrument_id == loader.instrument.id
-        # Each snapshot should have: 1 CLEAR + 3 bids + 3 asks = 7 deltas
-        assert len(deltas.deltas) == 7
-
-
-def test_parse_orderbook_snapshots_uses_instrument_precision(
-    loader,
-    orderbook_history_data,
-):
-    # Arrange
-    snapshots = orderbook_history_data["data"]
-
-    # Act
-    deltas_list = loader.parse_orderbook_snapshots(snapshots)
-
-    # Assert
-    first_deltas = deltas_list[0]
-    # Skip CLEAR delta, check first ADD delta
-    first_order_delta = first_deltas.deltas[1]
-
-    assert first_order_delta.order.price.precision == loader.instrument.price_precision
-    assert first_order_delta.order.size.precision == loader.instrument.size_precision
-
-
-def test_parse_price_history(loader, price_history_data):
-    # Arrange
-    history = price_history_data["history"]
-
-    # Act
-    trades = loader.parse_price_history(history)
-
-    # Assert
-    assert len(trades) == 10
+    # Assert - only Yes token trades parsed (No token filtered out)
+    assert len(trades) == 3
     for trade in trades:
         assert isinstance(trade, TradeTick)
         assert trade.instrument_id == loader.instrument.id
 
 
-def test_parse_price_history_aggressor_side_logic(loader, price_history_data):
-    # Arrange
-    history = price_history_data["history"]
-
+def test_parse_trades_aggressor_side(loader, trades_data):
     # Act
-    trades = loader.parse_price_history(history)
+    trades = loader.parse_trades(trades_data)
 
     # Assert
-    # First trade should have NO_AGGRESSOR (no previous price)
-    assert trades[0].aggressor_side == AggressorSide.NO_AGGRESSOR
-
-    # Second trade: price went from 0.51 to 0.52 (up) -> BUYER
+    assert trades[0].aggressor_side == AggressorSide.SELLER
     assert trades[1].aggressor_side == AggressorSide.BUYER
-
-    # Fourth trade: price went from 0.53 to 0.52 (down) -> SELLER
-    assert trades[3].aggressor_side == AggressorSide.SELLER
+    assert trades[2].aggressor_side == AggressorSide.BUYER
 
 
-def test_parse_price_history_uses_instrument_precision(
-    loader,
-    price_history_data,
-):
-    # Arrange
-    history = price_history_data["history"]
-
+def test_parse_trades_uses_instrument_precision(loader, trades_data):
     # Act
-    trades = loader.parse_price_history(history)
+    trades = loader.parse_trades(trades_data)
 
     # Assert
     first_trade = trades[0]
     assert first_trade.price.precision == loader.instrument.price_precision
     assert first_trade.size.precision == loader.instrument.size_precision
+
+
+def test_parse_trades_uses_transaction_hash_as_trade_id(loader, trades_data):
+    # Act
+    trades = loader.parse_trades(trades_data)
+
+    # Assert - last 36 chars of tx hash used (TradeId max length)
+    assert str(trades[0].trade_id) == trades_data[0]["transactionHash"][-36:]
+
+
+@pytest.fixture
+def event_data():
+    data = pkgutil.get_data(
+        "tests.integration_tests.adapters.polymarket.resources.http_responses",
+        "event.json",
+    )
+    assert data
+    return msgspec.json.decode(data)
+
+
+@pytest.fixture
+def events_list_data():
+    data = pkgutil.get_data(
+        "tests.integration_tests.adapters.polymarket.resources.http_responses",
+        "events_list.json",
+    )
+    assert data
+    return msgspec.json.decode(data)
+
+
+@pytest.mark.asyncio
+async def test_fetch_event_by_slug(test_instrument, event_data):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+    mock_response = Mock()
+    mock_response.status = 200
+    mock_response.body = msgspec.json.encode([event_data])  # API returns array
+    mock_http_client.get = AsyncMock(return_value=mock_response)
+
+    loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
+
+    # Act
+    event = await loader.fetch_event_by_slug("highest-temperature-in-nyc-on-january-26")
+
+    # Assert
+    mock_http_client.get.assert_called_once_with(
+        url="https://gamma-api.polymarket.com/events",
+        params={"slug": "highest-temperature-in-nyc-on-january-26"},
+    )
+    assert event["slug"] == "highest-temperature-in-nyc-on-january-26"
+    assert event["title"] == "Highest temperature in NYC on January 26?"
+    assert len(event["markets"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_fetch_event_by_slug_not_found(test_instrument):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+    mock_response = Mock()
+    mock_response.status = 200
+    mock_response.body = msgspec.json.encode([])  # Empty array
+    mock_http_client.get = AsyncMock(return_value=mock_response)
+
+    loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
+
+    # Act & Assert
+    with pytest.raises(ValueError, match="Event with slug 'nonexistent-event' not found"):
+        await loader.fetch_event_by_slug("nonexistent-event")
+
+
+@pytest.mark.asyncio
+async def test_fetch_events(test_instrument, events_list_data):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+    mock_response = Mock()
+    mock_response.status = 200
+    mock_response.body = msgspec.json.encode(events_list_data)
+    mock_http_client.get = AsyncMock(return_value=mock_response)
+
+    loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
+
+    # Act
+    events = await loader.fetch_events(active=True, closed=False, limit=10)
+
+    # Assert
+    mock_http_client.get.assert_called_once()
+    assert len(events) == 3
+    assert events[0]["slug"] == "nba-mavericks-vs-grizzlies"
+    assert events[1]["slug"] == "nfl-falcons-vs-panthers"
+
+
+@pytest.mark.asyncio
+async def test_get_event_markets(test_instrument, event_data):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+    mock_response = Mock()
+    mock_response.status = 200
+    mock_response.body = msgspec.json.encode([event_data])
+    mock_http_client.get = AsyncMock(return_value=mock_response)
+
+    loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
+
+    # Act
+    markets = await loader.get_event_markets("highest-temperature-in-nyc-on-january-26")
+
+    # Assert
+    assert len(markets) == 3
+    assert (
+        markets[0]["conditionId"]
+        == "0xed7d522e06d2f1f9015a468884cfdb2be7e737a33f130c1237a40f18bc739267"
+    )
+    assert "25F or below" in markets[0]["question"]
+
+
+@pytest.mark.asyncio
+async def test_from_event_slug(event_data, market_details_data):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+
+    event_response = Mock()
+    event_response.status = 200
+    event_response.body = msgspec.json.encode([event_data])  # API returns array
+
+    details_response = Mock()
+    details_response.status = 200
+    details_response.body = msgspec.json.encode(market_details_data)
+
+    # Event fetch + 3 market detail fetches (one per market in event)
+    mock_http_client.get = AsyncMock(
+        side_effect=[event_response, details_response, details_response, details_response],
+    )
+
+    # Act
+    loaders = await PolymarketDataLoader.from_event_slug(
+        "highest-temperature-in-nyc-on-january-26",
+        http_client=mock_http_client,
+    )
+
+    # Assert
+    assert len(loaders) == 3
+    for loader in loaders:
+        assert loader.token_id == market_details_data["tokens"][0]["token_id"]
+        assert loader.condition_id is not None
+        assert loader.instrument is not None
+
+    # Verify API calls
+    assert mock_http_client.get.call_count == 4  # 1 event + 3 market details
+    # First call should be to events API
+    assert mock_http_client.get.call_args_list[0].kwargs["url"] == (
+        "https://gamma-api.polymarket.com/events"
+    )
+    # Subsequent calls should be to CLOB market details API
+    for i in range(1, 4):
+        assert (
+            "https://clob.polymarket.com/markets/"
+            in (mock_http_client.get.call_args_list[i].kwargs["url"])
+        )
+
+
+@pytest.mark.asyncio
+async def test_from_event_slug_with_token_index(event_data, market_details_data):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+
+    event_response = Mock()
+    event_response.status = 200
+    event_response.body = msgspec.json.encode([event_data])
+
+    details_response = Mock()
+    details_response.status = 200
+    details_response.body = msgspec.json.encode(market_details_data)
+
+    mock_http_client.get = AsyncMock(
+        side_effect=[event_response, details_response, details_response, details_response],
+    )
+
+    # Act - request second token (No outcome)
+    loaders = await PolymarketDataLoader.from_event_slug(
+        "highest-temperature-in-nyc-on-january-26",
+        token_index=1,
+        http_client=mock_http_client,
+    )
+
+    # Assert
+    assert len(loaders) == 3
+    for loader in loaders:
+        # Should use second token (No outcome)
+        assert loader.token_id == market_details_data["tokens"][1]["token_id"]
+
+
+@pytest.mark.asyncio
+async def test_from_event_slug_token_index_out_of_range(event_data, market_details_data):
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+
+    event_response = Mock()
+    event_response.status = 200
+    event_response.body = msgspec.json.encode([event_data])
+
+    details_response = Mock()
+    details_response.status = 200
+    details_response.body = msgspec.json.encode(market_details_data)
+
+    mock_http_client.get = AsyncMock(side_effect=[event_response, details_response])
+
+    # Act & Assert
+    with pytest.raises(ValueError, match="Token index 5 out of range"):
+        await PolymarketDataLoader.from_event_slug(
+            "highest-temperature-in-nyc-on-january-26",
+            token_index=5,
+            http_client=mock_http_client,
+        )

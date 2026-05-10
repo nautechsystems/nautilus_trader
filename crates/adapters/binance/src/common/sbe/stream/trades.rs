@@ -94,9 +94,17 @@ impl TradesStreamEvent {
     pub fn decode(buf: &[u8]) -> Result<Self, StreamDecodeError> {
         let header = MessageHeader::decode(buf)?;
         header.validate_schema()?;
+        Self::decode_validated(buf)
+    }
 
+    /// Decode from an SBE buffer whose header has already been validated.
+    pub(crate) fn decode_validated(buf: &[u8]) -> Result<Self, StreamDecodeError> {
         let mut cursor = SbeCursor::new_at(buf, MessageHeader::ENCODED_LENGTH);
+        Self::decode_body(&mut cursor)
+    }
 
+    #[inline]
+    fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, StreamDecodeError> {
         let event_time_us = cursor.read_i64_le()?;
         let transact_time_us = cursor.read_i64_le()?;
         let price_exponent = cursor.read_i8()?;
@@ -105,7 +113,7 @@ impl TradesStreamEvent {
         let (block_length, num_in_group) = cursor.read_group_header()?;
         let trades = cursor.read_group(block_length, num_in_group, Trade::decode)?;
 
-        let symbol_str = cursor.read_var_string8()?;
+        let symbol = Ustr::from(cursor.read_var_string8_ref()?);
 
         Ok(Self {
             event_time_us,
@@ -113,7 +121,7 @@ impl TradesStreamEvent {
             price_exponent,
             qty_exponent,
             trades,
-            symbol: Ustr::from(&symbol_str),
+            symbol,
         })
     }
 
@@ -216,5 +224,23 @@ mod tests {
         buf[4..6].copy_from_slice(&99u16.to_le_bytes());
         let err = TradesStreamEvent::decode(&buf).unwrap_err();
         assert!(matches!(err, StreamDecodeError::SchemaMismatch { .. }));
+    }
+
+    #[rstest]
+    fn test_decode_validated_matches_decode() {
+        let buf = make_valid_buffer(3);
+
+        let decode_event = TradesStreamEvent::decode(&buf).unwrap();
+        let validated_event = TradesStreamEvent::decode_validated(&buf).unwrap();
+
+        assert_eq!(validated_event.event_time_us, decode_event.event_time_us);
+        assert_eq!(
+            validated_event.transact_time_us,
+            decode_event.transact_time_us
+        );
+        assert_eq!(validated_event.price_exponent, decode_event.price_exponent);
+        assert_eq!(validated_event.qty_exponent, decode_event.qty_exponent);
+        assert_eq!(validated_event.trades.len(), decode_event.trades.len());
+        assert_eq!(validated_event.symbol, decode_event.symbol);
     }
 }

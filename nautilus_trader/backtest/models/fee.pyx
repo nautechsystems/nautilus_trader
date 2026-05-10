@@ -103,8 +103,8 @@ cdef class MakerTakerFeeModel(FeeModel):
             )
 
         cdef Money commission
-        if instrument.is_inverse:  # Not using quote for inverse (see above):
-            commission = Money(commission_value, instrument.base_currency)
+        if instrument.is_inverse:  # Not using quote for inverse (see above)
+            commission = Money(commission_value, instrument.get_base_currency())
         else:
             commission = Money(commission_value, instrument.quote_currency)
 

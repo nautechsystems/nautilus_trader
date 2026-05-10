@@ -25,7 +25,7 @@ use ustr::Ustr;
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct TraderId(Ustr);
 
@@ -104,14 +104,12 @@ impl TraderId {
     /// Panics if the internal ID string does not contain a '-' separator.
     #[must_use]
     pub fn get_tag(&self) -> &str {
-        // SAFETY: Unwrap safe as value previously validated
         self.0.split('-').next_back().unwrap()
     }
 
     /// Creates an external trader ID used for orders from external sources.
     #[must_use]
     pub fn external() -> Self {
-        // SAFETY: Constant value is safe
         Self::new("EXTERNAL-0")
     }
 

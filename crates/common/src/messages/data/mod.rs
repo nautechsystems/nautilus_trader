@@ -30,12 +30,12 @@ pub mod unsubscribe;
 
 // Re-exports
 pub use request::{
-    RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestInstrument,
-    RequestInstruments, RequestQuotes, RequestTrades,
+    RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
+    RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
 };
 pub use response::{
-    BarsResponse, BookResponse, CustomDataResponse, InstrumentResponse, InstrumentsResponse,
-    QuotesResponse, TradesResponse,
+    BarsResponse, BookResponse, CustomDataResponse, FundingRatesResponse, InstrumentResponse,
+    InstrumentsResponse, QuotesResponse, TradesResponse,
 };
 pub use subscribe::{
     SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
@@ -179,6 +179,25 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.ts_init,
         }
     }
+
+    pub fn correlation_id(&self) -> Option<UUID4> {
+        match self {
+            Self::Data(cmd) => cmd.correlation_id,
+            Self::Instrument(cmd) => cmd.correlation_id,
+            Self::Instruments(cmd) => cmd.correlation_id,
+            Self::BookDeltas(cmd) => cmd.correlation_id,
+            Self::BookDepth10(cmd) => cmd.correlation_id,
+            Self::BookSnapshots(cmd) => cmd.correlation_id,
+            Self::Quotes(cmd) => cmd.correlation_id,
+            Self::Trades(cmd) => cmd.correlation_id,
+            Self::MarkPrices(cmd) => cmd.correlation_id,
+            Self::IndexPrices(cmd) => cmd.correlation_id,
+            Self::FundingRates(cmd) => cmd.correlation_id,
+            Self::Bars(cmd) => cmd.correlation_id,
+            Self::InstrumentStatus(cmd) => cmd.correlation_id,
+            Self::InstrumentClose(cmd) => cmd.correlation_id,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -286,6 +305,25 @@ impl UnsubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.ts_init,
         }
     }
+
+    pub fn correlation_id(&self) -> Option<UUID4> {
+        match self {
+            Self::Data(cmd) => cmd.correlation_id,
+            Self::Instrument(cmd) => cmd.correlation_id,
+            Self::Instruments(cmd) => cmd.correlation_id,
+            Self::BookDeltas(cmd) => cmd.correlation_id,
+            Self::BookDepth10(cmd) => cmd.correlation_id,
+            Self::BookSnapshots(cmd) => cmd.correlation_id,
+            Self::Quotes(cmd) => cmd.correlation_id,
+            Self::Trades(cmd) => cmd.correlation_id,
+            Self::MarkPrices(cmd) => cmd.correlation_id,
+            Self::IndexPrices(cmd) => cmd.correlation_id,
+            Self::FundingRates(cmd) => cmd.correlation_id,
+            Self::Bars(cmd) => cmd.correlation_id,
+            Self::InstrumentStatus(cmd) => cmd.correlation_id,
+            Self::InstrumentClose(cmd) => cmd.correlation_id,
+        }
+    }
 }
 
 fn check_client_id_or_venue(client_id: &Option<ClientId>, venue: &Option<Venue>) {
@@ -304,6 +342,7 @@ pub enum RequestCommand {
     BookDepth(RequestBookDepth),
     Quotes(RequestQuotes),
     Trades(RequestTrades),
+    FundingRates(RequestFundingRates),
     Bars(RequestBars),
 }
 
@@ -328,6 +367,7 @@ impl RequestCommand {
             Self::BookDepth(cmd) => &cmd.request_id,
             Self::Quotes(cmd) => &cmd.request_id,
             Self::Trades(cmd) => &cmd.request_id,
+            Self::FundingRates(cmd) => &cmd.request_id,
             Self::Bars(cmd) => &cmd.request_id,
         }
     }
@@ -341,6 +381,7 @@ impl RequestCommand {
             Self::BookDepth(cmd) => cmd.client_id.as_ref(),
             Self::Quotes(cmd) => cmd.client_id.as_ref(),
             Self::Trades(cmd) => cmd.client_id.as_ref(),
+            Self::FundingRates(cmd) => cmd.client_id.as_ref(),
             Self::Bars(cmd) => cmd.client_id.as_ref(),
         }
     }
@@ -354,6 +395,7 @@ impl RequestCommand {
             Self::BookDepth(cmd) => Some(&cmd.instrument_id.venue),
             Self::Quotes(cmd) => Some(&cmd.instrument_id.venue),
             Self::Trades(cmd) => Some(&cmd.instrument_id.venue),
+            Self::FundingRates(cmd) => Some(&cmd.instrument_id.venue),
             // TODO: Extract the below somewhere
             Self::Bars(cmd) => match &cmd.bar_type {
                 BarType::Standard { instrument_id, .. } => Some(&instrument_id.venue),
@@ -371,6 +413,7 @@ impl RequestCommand {
             Self::BookDepth(cmd) => cmd.ts_init,
             Self::Quotes(cmd) => cmd.ts_init,
             Self::Trades(cmd) => cmd.ts_init,
+            Self::FundingRates(cmd) => cmd.ts_init,
             Self::Bars(cmd) => cmd.ts_init,
         }
     }
@@ -384,6 +427,7 @@ pub enum DataResponse {
     Book(BookResponse),
     Quotes(QuotesResponse),
     Trades(TradesResponse),
+    FundingRates(FundingRatesResponse),
     Bars(BarsResponse),
 }
 
@@ -401,6 +445,7 @@ impl DataResponse {
             Self::Book(resp) => &resp.correlation_id,
             Self::Quotes(resp) => &resp.correlation_id,
             Self::Trades(resp) => &resp.correlation_id,
+            Self::FundingRates(resp) => &resp.correlation_id,
             Self::Bars(resp) => &resp.correlation_id,
         }
     }

@@ -15,13 +15,67 @@
 
 //! Python bindings from `pyo3`.
 
+pub mod config;
 pub mod enums;
+pub mod factories;
 pub mod http;
 pub mod models;
 pub mod urls;
 pub mod websocket;
 
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_system::{
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+    get_global_pyo3_registry,
+};
 use pyo3::prelude::*;
+
+use crate::{
+    config::{OKXDataClientConfig, OKXExecClientConfig},
+    factories::{OKXDataClientFactory, OKXExecutionClientFactory},
+};
+
+fn extract_okx_data_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn DataClientFactory>> {
+    match factory.extract::<OKXDataClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract OKXDataClientFactory: {e}"
+        ))),
+    }
+}
+
+fn extract_okx_exec_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn ExecutionClientFactory>> {
+    match factory.extract::<OKXExecutionClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract OKXExecutionClientFactory: {e}"
+        ))),
+    }
+}
+
+fn extract_okx_data_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<OKXDataClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract OKXDataClientConfig: {e}"
+        ))),
+    }
+}
+
+fn extract_okx_exec_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<OKXExecClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract OKXExecClientConfig: {e}"
+        ))),
+    }
+}
 
 /// Loaded as `nautilus_pyo3.okx`.
 ///
@@ -42,10 +96,48 @@ pub fn okx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::OKXPositionMode>()?;
     m.add_class::<crate::common::enums::OKXVipLevel>()?;
     m.add_class::<crate::common::urls::OKXEndpointType>()?;
+    m.add_class::<OKXDataClientConfig>()?;
+    m.add_class::<OKXExecClientConfig>()?;
+    m.add_class::<OKXDataClientFactory>()?;
+    m.add_class::<OKXExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(urls::get_okx_http_base_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::get_okx_ws_url_public, m)?)?;
     m.add_function(wrap_pyfunction!(urls::get_okx_ws_url_private, m)?)?;
     m.add_function(wrap_pyfunction!(urls::get_okx_ws_url_business, m)?)?;
     m.add_function(wrap_pyfunction!(urls::okx_requires_authentication, m)?)?;
+
+    let registry = get_global_pyo3_registry();
+
+    if let Err(e) = registry.register_factory_extractor("OKX".to_string(), extract_okx_data_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register OKX data factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) =
+        registry.register_exec_factory_extractor("OKX".to_string(), extract_okx_exec_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register OKX exec factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry
+        .register_config_extractor("OKXDataClientConfig".to_string(), extract_okx_data_config)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register OKX data config extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry
+        .register_config_extractor("OKXExecClientConfig".to_string(), extract_okx_exec_config)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register OKX exec config extractor: {e}"
+        )));
+    }
+
     Ok(())
 }

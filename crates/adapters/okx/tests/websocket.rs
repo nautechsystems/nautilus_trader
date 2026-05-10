@@ -255,6 +255,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                             "msg": "",
                             "connId": "test-conn",
                         });
+
                         if socket
                             .send(Message::Text(response.to_string().into()))
                             .await
@@ -278,6 +279,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                 .unwrap_or_default();
 
                             let mut success = true;
+
                             if is_private_channel(channel)
                                 && !state.authenticated.load(Ordering::Relaxed)
                             {
@@ -353,32 +355,32 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                         continue;
                     }
 
-                    if payload.get("op") == Some(&json!("unsubscribe")) {
-                        if let Some(args) = payload.get("args").and_then(|value| value.as_array())
-                            && let Some(first) = args.first()
+                    if payload.get("op") == Some(&json!("unsubscribe"))
+                        && let Some(args) = payload.get("args").and_then(|value| value.as_array())
+                        && let Some(first) = args.first()
+                    {
                         {
-                            {
-                                let mut unsubscriptions = state.unsubscriptions.lock().await;
-                                unsubscriptions.push(first.clone());
-                            }
-                            let ack = json!({
-                                "event": "unsubscribe",
-                                "arg": first,
-                                "connId": "test-conn",
-                            });
-                            if socket
-                                .send(Message::Text(ack.to_string().into()))
-                                .await
-                                .is_err()
-                            {
-                                break;
-                            }
-                            if state.drop_next_connection.swap(false, Ordering::Relaxed) {
-                                let _ = socket.send(Message::Close(None)).await;
-                                break;
-                            }
+                            let mut unsubscriptions = state.unsubscriptions.lock().await;
+                            unsubscriptions.push(first.clone());
                         }
-                        continue;
+                        let ack = json!({
+                            "event": "unsubscribe",
+                            "arg": first,
+                            "connId": "test-conn",
+                        });
+
+                        if socket
+                            .send(Message::Text(ack.to_string().into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+
+                        if state.drop_next_connection.swap(false, Ordering::Relaxed) {
+                            let _ = socket.send(Message::Close(None)).await;
+                            break;
+                        }
                     }
                 }
             }
@@ -737,10 +739,12 @@ async fn test_reconnection_retries_failed_subscriptions() {
                 .filter(|(key, _, _)| key.starts_with("trades"))
             {
                 trade_count += 1;
+
                 if *ok {
                     has_success = true;
                 }
             }
+
             if trade_count >= 2 && has_success {
                 break;
             }
@@ -1000,6 +1004,7 @@ async fn test_subscription_restoration_tracking() {
                     restored.insert(key.clone());
                 }
             }
+
             if restored.contains("trades:BTC-USD")
                 && restored.contains("trades:ETH-USD")
                 && restored.contains("orders:SPOT")

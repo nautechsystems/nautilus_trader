@@ -15,6 +15,7 @@
 
 import pytest
 
+from nautilus_trader.adapters.betfair.data_types import BetfairOrderVoided
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
@@ -109,3 +110,104 @@ class TestBetfairPersistence:
 
         # Assert
         assert len(data) == 210
+
+    def test_betfair_order_voided_to_from_dict(self):
+        # Arrange
+        voided = BetfairOrderVoided.from_dict(
+            {
+                "type": "BetfairOrderVoided",
+                "instrument_id": self.instrument.id.value,
+                "client_order_id": "test-order-123",
+                "venue_order_id": "248485109136",
+                "size_voided": 50.0,
+                "price": 1.50,
+                "size": 100.0,
+                "side": "B",
+                "avg_price_matched": 1.50,
+                "size_matched": 50.0,
+                "reason": None,
+                "ts_event": 1635313844283000000,
+                "ts_init": 1635313844283000000,
+            },
+        )
+
+        # Act
+        values = voided.to_dict(voided)
+        result = BetfairOrderVoided.from_dict(values)
+
+        # Assert
+        assert values["type"] == "BetfairOrderVoided"
+        assert result.instrument_id == voided.instrument_id
+        assert result.client_order_id == voided.client_order_id
+        assert result.venue_order_id == voided.venue_order_id
+        assert result.size_voided == voided.size_voided
+
+    def test_betfair_order_voided_serialization(self):
+        # Arrange
+        voided = BetfairOrderVoided.from_dict(
+            {
+                "type": "BetfairOrderVoided",
+                "instrument_id": self.instrument.id.value,
+                "client_order_id": "test-order-123",
+                "venue_order_id": "248485109136",
+                "size_voided": 50.0,
+                "price": 2.0,
+                "size": 100.0,
+                "side": "L",
+                "reason": "VAR_DECISION",
+                "ts_event": 1635313844283000000,
+                "ts_init": 1635313844283000000,
+            },
+        )
+
+        # Act
+        serialized = ArrowSerializer.serialize(voided)
+        [result] = ArrowSerializer.deserialize(BetfairOrderVoided, serialized)
+
+        # Assert
+        assert result.instrument_id == voided.instrument_id
+        assert result.client_order_id == voided.client_order_id
+        assert result.venue_order_id == voided.venue_order_id
+        assert result.size_voided == voided.size_voided
+        assert result.reason == voided.reason
+
+    def test_betfair_order_voided_catalog_write_read(self):
+        # Arrange
+        voided1 = BetfairOrderVoided(
+            instrument_id=self.instrument.id,
+            client_order_id="test-order-1",
+            venue_order_id="248485109136",
+            size_voided=50.0,
+            price=1.50,
+            size=100.0,
+            side="B",
+            avg_price_matched=1.50,
+            size_matched=50.0,
+            reason=None,
+            ts_event=1635313844283000000,
+            ts_init=1635313844283000001,
+        )
+        voided2 = BetfairOrderVoided(
+            instrument_id=self.instrument.id,
+            client_order_id="test-order-2",
+            venue_order_id="248485109137",
+            size_voided=25.0,
+            price=2.0,
+            size=100.0,
+            side="L",
+            reason="VAR",
+            ts_event=1635313844284000000,
+            ts_init=1635313844284000001,
+        )
+
+        # Act
+        self.catalog.write_data([voided1, voided2])
+        values = self.catalog.custom_data(BetfairOrderVoided)
+
+        # Assert
+        assert len(values) == 2
+        assert values[0].data.client_order_id == "test-order-1"
+        assert values[0].data.size_voided == 50.0
+        assert values[1].data.client_order_id == "test-order-2"
+        assert values[1].data.size_voided == 25.0
+        assert values[1].data.reason == "VAR"

@@ -747,5 +747,12 @@
     "value": "0.00",
     "currency": "BASE",
     "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "TotalCashValue",
+    "value": "51463.78",
+    "currency": "AUD",
+    "modelCode": ""
   }
 ]

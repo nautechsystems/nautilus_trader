@@ -18,7 +18,7 @@ use serde::Serialize;
 use crate::{
     common::enums::{HyperliquidBarInterval, HyperliquidInfoRequestType},
     http::models::{
-        HyperliquidExecCancelByCloidRequest, HyperliquidExecGrouping,
+        HyperliquidExecBuilderFee, HyperliquidExecCancelByCloidRequest, HyperliquidExecGrouping,
         HyperliquidExecModifyOrderRequest, HyperliquidExecPlaceOrderRequest,
     },
 };
@@ -59,6 +59,8 @@ impl AsRef<str> for ExchangeActionType {
 pub struct OrderParams {
     pub orders: Vec<HyperliquidExecPlaceOrderRequest>,
     pub grouping: HyperliquidExecGrouping,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub builder: Option<HyperliquidExecBuilderFee>,
 }
 
 /// Parameters for canceling orders.
@@ -70,8 +72,8 @@ pub struct CancelParams {
 /// Parameters for modifying an order.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModifyParams {
-    pub oid: u64,
-    pub order: HyperliquidExecModifyOrderRequest,
+    #[serde(flatten)]
+    pub request: HyperliquidExecModifyOrderRequest,
 }
 
 /// Parameters for updating leverage.
@@ -255,6 +257,16 @@ impl InfoRequest {
         }
     }
 
+    /// Creates a request to get user fee schedule and effective rates.
+    pub fn user_fees(user: &str) -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::UserFees,
+            params: InfoRequestParams::OpenOrders(OpenOrdersParams {
+                user: user.to_string(),
+            }),
+        }
+    }
+
     /// Creates a request to get candle/bar data.
     pub fn candle_snapshot(
         coin: &str,
@@ -307,13 +319,17 @@ where
 }
 
 impl ExchangeAction {
-    /// Creates an action to place orders.
-    pub fn order(orders: Vec<HyperliquidExecPlaceOrderRequest>) -> Self {
+    /// Creates an action to place orders with builder attribution.
+    pub fn order(
+        orders: Vec<HyperliquidExecPlaceOrderRequest>,
+        builder: Option<HyperliquidExecBuilderFee>,
+    ) -> Self {
         Self {
             action_type: ExchangeActionType::Order,
             params: ExchangeActionParams::Order(OrderParams {
                 orders,
                 grouping: HyperliquidExecGrouping::Na,
+                builder,
             }),
         }
     }
@@ -335,10 +351,10 @@ impl ExchangeAction {
     }
 
     /// Creates an action to modify an order.
-    pub fn modify(oid: u64, order: HyperliquidExecModifyOrderRequest) -> Self {
+    pub fn modify(request: HyperliquidExecModifyOrderRequest) -> Self {
         Self {
             action_type: ExchangeActionType::Modify,
-            params: ExchangeActionParams::Modify(ModifyParams { oid, order }),
+            params: ExchangeActionParams::Modify(ModifyParams { request }),
         }
     }
 
@@ -370,8 +386,14 @@ impl ExchangeAction {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use super::*;
+    use crate::http::models::{
+        Cloid, HyperliquidExecCancelByCloidRequest, HyperliquidExecLimitParams,
+        HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind,
+        HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
+    };
 
     #[rstest]
     fn test_info_request_meta() {
@@ -392,13 +414,6 @@ mod tests {
 
     #[rstest]
     fn test_exchange_action_order() {
-        use rust_decimal::Decimal;
-
-        use crate::http::models::{
-            HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest,
-            HyperliquidExecTif,
-        };
-
         let order = HyperliquidExecPlaceOrderRequest {
             asset: 0,
             is_buy: true,
@@ -413,7 +428,7 @@ mod tests {
             cloid: None,
         };
 
-        let action = ExchangeAction::order(vec![order]);
+        let action = ExchangeAction::order(vec![order], None);
 
         assert_eq!(action.action_type, ExchangeActionType::Order);
         let json = serde_json::to_string(&action).unwrap();
@@ -422,8 +437,6 @@ mod tests {
 
     #[rstest]
     fn test_exchange_action_cancel() {
-        use crate::http::models::{Cloid, HyperliquidExecCancelByCloidRequest};
-
         let cancel = HyperliquidExecCancelByCloidRequest {
             asset: 0,
             cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
@@ -436,13 +449,6 @@ mod tests {
 
     #[rstest]
     fn test_exchange_action_serialization() {
-        use rust_decimal::Decimal;
-
-        use crate::http::models::{
-            HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest,
-            HyperliquidExecTif,
-        };
-
         let order = HyperliquidExecPlaceOrderRequest {
             asset: 0,
             is_buy: true,
@@ -457,7 +463,7 @@ mod tests {
             cloid: None,
         };
 
-        let action = ExchangeAction::order(vec![order]);
+        let action = ExchangeAction::order(vec![order], None);
 
         let json = serde_json::to_string(&action).unwrap();
         // Verify that action_type is serialized as "type" with the correct string value
@@ -506,8 +512,6 @@ mod tests {
 
     #[rstest]
     fn test_cancel_by_cloid_serialization() {
-        use crate::http::models::{Cloid, HyperliquidExecCancelByCloidRequest};
-
         let cancel_request = HyperliquidExecCancelByCloidRequest {
             asset: 0,
             cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
@@ -521,22 +525,27 @@ mod tests {
 
     #[rstest]
     fn test_modify_serialization() {
-        use rust_decimal::Decimal;
-
-        use crate::http::models::HyperliquidExecModifyOrderRequest;
-
         let modify_request = HyperliquidExecModifyOrderRequest {
-            asset: 0,
             oid: 12345,
-            price: Some(Decimal::new(51000, 0)),
-            size: Some(Decimal::new(2, 0)),
-            reduce_only: None,
-            kind: None,
+            order: HyperliquidExecPlaceOrderRequest {
+                asset: 0,
+                is_buy: true,
+                price: Decimal::new(51000, 0),
+                size: Decimal::new(2, 0),
+                reduce_only: false,
+                kind: HyperliquidExecOrderKind::Limit {
+                    limit: HyperliquidExecLimitParams {
+                        tif: HyperliquidExecTif::Gtc,
+                    },
+                },
+                cloid: None,
+            },
         };
-        let action = ExchangeAction::modify(12345, modify_request);
+        let action = ExchangeAction::modify(modify_request);
         let json = serde_json::to_string(&action).unwrap();
 
         assert!(json.contains(r#""type":"modify""#));
         assert!(json.contains(r#""oid":12345"#));
+        assert!(json.contains(r#""order""#));
     }
 }

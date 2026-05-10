@@ -59,7 +59,6 @@ strum = { workspace = true }
 tabled = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
-tracing = { workspace = true }
 
 alloy-primitives = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
@@ -88,4 +87,34 @@ harness = false
 [[bench]]
 name = "fixed_precision_iai"
 path = "benches/fixed_precision_iai.rs"
+harness = false
+
+[[bench]]
+name = "greeks_criterion"
+path = "benches/greeks_criterion.rs"
+harness = false
+
+[[bench]]
+name = "black_scholes_simd_criterion"
+path = "benches/black_scholes_simd_criterion.rs"
+harness = false
+
+[[bench]]
+name = "f64_vs_decimal_to_price_quantity"
+path = "benches/f64_vs_decimal_to_price_quantity.rs"
+harness = false
+
+[[bench]]
+name = "money_criterion"
+path = "benches/money_criterion.rs"
+harness = false
+
+[[bench]]
+name = "price_criterion"
+path = "benches/price_criterion.rs"
+harness = false
+
+[[bench]]
+name = "quantity_criterion"
+path = "benches/quantity_criterion.rs"
 harness = false

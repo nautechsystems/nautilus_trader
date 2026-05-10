@@ -85,7 +85,7 @@ impl Price {
             let other_float: f64 = other.extract()?;
             (self.as_f64() + other_float).into_py_any(py)
         } else if let Ok(other_price) = other.extract::<Self>() {
-            (self.as_decimal() + other_price.as_decimal()).into_py_any(py)
+            (*self + other_price).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             (self.as_decimal() + other_dec).into_py_any(py)
         } else {
@@ -101,7 +101,7 @@ impl Price {
             let other_float: f64 = other.extract()?;
             (other_float + self.as_f64()).into_py_any(py)
         } else if let Ok(other_price) = other.extract::<Self>() {
-            (other_price.as_decimal() + self.as_decimal()).into_py_any(py)
+            (other_price + *self).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             (other_dec + self.as_decimal()).into_py_any(py)
         } else {
@@ -117,7 +117,7 @@ impl Price {
             let other_float: f64 = other.extract()?;
             (self.as_f64() - other_float).into_py_any(py)
         } else if let Ok(other_price) = other.extract::<Self>() {
-            (self.as_decimal() - other_price.as_decimal()).into_py_any(py)
+            (*self - other_price).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             (self.as_decimal() - other_dec).into_py_any(py)
         } else {
@@ -133,7 +133,7 @@ impl Price {
             let other_float: f64 = other.extract()?;
             (other_float - self.as_f64()).into_py_any(py)
         } else if let Ok(other_price) = other.extract::<Self>() {
-            (other_price.as_decimal() - self.as_decimal()).into_py_any(py)
+            (other_price - *self).into_py_any(py)
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             (other_dec - self.as_decimal()).into_py_any(py)
         } else {
@@ -357,6 +357,12 @@ impl Price {
     #[pyo3(name = "from_decimal_dp")]
     fn py_from_decimal_dp(decimal: Decimal, precision: u8) -> PyResult<Self> {
         Self::from_decimal_dp(decimal, precision).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_mantissa_exponent")]
+    fn py_from_mantissa_exponent(mantissa: i64, exponent: i8, precision: u8) -> Self {
+        Self::from_mantissa_exponent(mantissa, exponent, precision)
     }
 
     #[pyo3(name = "is_zero")]

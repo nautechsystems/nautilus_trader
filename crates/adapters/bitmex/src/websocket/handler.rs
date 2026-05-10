@@ -15,18 +15,21 @@
 
 //! WebSocket message handler for BitMEX.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    collections::VecDeque,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use ahash::AHashMap;
 use dashmap::DashMap;
 use nautilus_common::cache::quote::QuoteCache;
-use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{AtomicTime, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    data::Data,
-    enums::{OrderStatus, OrderType},
+    data::{Data, InstrumentStatus},
+    enums::{MarketStatusAction, OrderStatus, OrderType},
     identifiers::{AccountId, ClientOrderId},
     instruments::{Instrument, InstrumentAny},
     types::Price,
@@ -55,7 +58,12 @@ use super::{
     },
 };
 use crate::{
-    common::{enums::BitmexExecType, parse::parse_contracts_quantity},
+    common::{
+        enums::{BitmexExecType, BitmexInstrumentState, BitmexOrderType, BitmexPegPriceType},
+        parse::{
+            parse_contracts_quantity, parse_instrument_id, parse_optional_datetime_to_unix_nanos,
+        },
+    },
     http::parse::{InstrumentParseResult, parse_instrument_any},
 };
 
@@ -83,6 +91,7 @@ pub enum HandlerCommand {
 }
 
 pub(super) struct FeedHandler {
+    clock: &'static AtomicTime,
     account_id: AccountId,
     signal: Arc<AtomicBool>,
     client: Option<WebSocketClient>,
@@ -96,6 +105,7 @@ pub(super) struct FeedHandler {
     order_type_cache: Arc<DashMap<ClientOrderId, OrderType>>,
     order_symbol_cache: Arc<DashMap<ClientOrderId, Ustr>>,
     quote_cache: QuoteCache,
+    pending_msgs: VecDeque<NautilusWsMessage>,
 }
 
 impl FeedHandler {
@@ -113,6 +123,7 @@ impl FeedHandler {
         order_symbol_cache: Arc<DashMap<ClientOrderId, Ustr>>,
     ) -> Self {
         Self {
+            clock: get_atomic_clock_realtime(),
             account_id,
             signal,
             client: None,
@@ -126,6 +137,7 @@ impl FeedHandler {
             order_type_cache,
             order_symbol_cache,
             quote_cache: QuoteCache::new(),
+            pending_msgs: VecDeque::new(),
         }
     }
 
@@ -170,41 +182,47 @@ impl FeedHandler {
     }
 
     pub(super) async fn next(&mut self) -> Option<NautilusWsMessage> {
-        let clock = get_atomic_clock_realtime();
+        if let Some(msg) = self.pending_msgs.pop_front() {
+            return Some(msg);
+        }
+
+        let clock = self.clock;
 
         loop {
             tokio::select! {
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
                         HandlerCommand::SetClient(client) => {
-                            tracing::debug!("WebSocketClient received by handler");
+                            log::debug!("WebSocketClient received by handler");
                             self.client = Some(client);
                         }
                         HandlerCommand::Disconnect => {
-                            tracing::debug!("Disconnect command received");
+                            log::debug!("Disconnect command received");
+
                             if let Some(client) = self.client.take() {
                                 client.disconnect().await;
                             }
                         }
                         HandlerCommand::Authenticate { payload } => {
-                            tracing::debug!("Authenticate command received");
+                            log::debug!("Authenticate command received");
+
                             if let Err(e) = self.send_with_retry(payload).await {
-                                tracing::error!(error = %e, "Failed to send authentication after retries");
+                                log::error!("Failed to send authentication after retries: {e}");
                             }
                         }
                         HandlerCommand::Subscribe { topics } => {
                             for topic in topics {
-                                tracing::debug!(topic = %topic, "Subscribing to topic");
+                                log::debug!("Subscribing to topic: {topic}");
                                 if let Err(e) = self.send_with_retry(topic.clone()).await {
-                                    tracing::error!(topic = %topic, error = %e, "Failed to send subscription after retries");
+                                    log::error!("Failed to send subscription after retries: topic={topic}, error={e}");
                                 }
                             }
                         }
                         HandlerCommand::Unsubscribe { topics } => {
                             for topic in topics {
-                                tracing::debug!(topic = %topic, "Unsubscribing from topic");
+                                log::debug!("Unsubscribing from topic: {topic}");
                                 if let Err(e) = self.send_with_retry(topic.clone()).await {
-                                    tracing::error!(topic = %topic, error = %e, "Failed to send unsubscription after retries");
+                                    log::error!("Failed to send unsubscription after retries: topic={topic}, error={e}");
                                 }
                             }
                         }
@@ -217,34 +235,32 @@ impl FeedHandler {
                             self.instruments_cache.insert(inst.symbol().inner(), inst);
                         }
                     }
-                    // Continue processing following command
-                    continue;
                 }
 
-                _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
                     if self.signal.load(std::sync::atomic::Ordering::Relaxed) {
-                        tracing::debug!("Stop signal received during idle period");
+                        log::debug!("Stop signal received during idle period");
                         return None;
                     }
-                    continue;
                 }
 
                 msg = self.raw_rx.recv() => {
                     let msg = match msg {
                         Some(msg) => msg,
                         None => {
-                            tracing::debug!("WebSocket stream closed");
+                            log::debug!("WebSocket stream closed");
                             return None;
                         }
                     };
 
                     // Handle ping frames directly for minimal latency
                     if let Message::Ping(data) = &msg {
-                        tracing::trace!("Received ping frame with {} bytes", data.len());
+                        log::trace!("Received ping frame with {} bytes", data.len());
+
                         if let Some(client) = &self.client
                             && let Err(e) = client.send_pong(data.to_vec()).await
                         {
-                            tracing::warn!(error = %e, "Failed to send pong frame");
+                            log::warn!("Failed to send pong frame: {e}");
                         }
                         continue;
                     }
@@ -255,13 +271,15 @@ impl FeedHandler {
                     };
 
                     if self.signal.load(std::sync::atomic::Ordering::Relaxed) {
-                        tracing::debug!("Stop signal received");
+                        log::debug!("Stop signal received");
                         return None;
                     }
 
             match event {
                 BitmexWsMessage::Reconnected => {
                     self.quote_cache.clear();
+                    self.order_type_cache.clear();
+                    self.order_symbol_cache.clear();
                     return Some(NautilusWsMessage::Reconnected);
                 }
                 BitmexWsMessage::Subscription {
@@ -278,7 +296,6 @@ impl FeedHandler {
                     ) {
                         return Some(msg);
                     }
-                    continue;
                 }
                 BitmexWsMessage::Table(table_msg) => {
                     let ts_init = clock.get_time_ns();
@@ -315,13 +332,21 @@ impl FeedHandler {
                         // Note: BitMEX may send duplicate order status updates for the same order
                         // (e.g., immediate response + stream update). This is expected behavior.
                         BitmexTableMessage::Order { data, .. } => {
-                            self.handle_order(data)
+                            let mut msgs = self.handle_order(data, ts_init);
+                            if msgs.is_empty() {
+                                None
+                            } else {
+                                // Buffer overflow messages for subsequent next() calls
+                                let first = msgs.remove(0);
+                                self.pending_msgs.extend(msgs);
+                                Some(first)
+                            }
                         }
                         BitmexTableMessage::Execution { data, .. } => {
-                            self.handle_execution(data)
+                            self.handle_execution(data, ts_init)
                         }
                         BitmexTableMessage::Position { data, .. } => {
-                            self.handle_position(data)
+                            self.handle_position(data, ts_init)
                         }
                         BitmexTableMessage::Wallet { data, .. } => {
                             self.handle_wallet(data, ts_init)
@@ -339,7 +364,7 @@ impl FeedHandler {
                         }
                         _ => {
                             // Other message types not yet implemented
-                            tracing::warn!("Unhandled table message type: {table_msg:?}");
+                            log::warn!("Unhandled table message type: {table_msg:?}");
                             None
                         }
                     };
@@ -347,15 +372,14 @@ impl FeedHandler {
                     if let Some(msg) = msg {
                         return Some(msg);
                     }
-                    continue;
                 }
-                BitmexWsMessage::Welcome { .. } | BitmexWsMessage::Error { .. } => continue,
+                BitmexWsMessage::Welcome { .. } | BitmexWsMessage::Error { .. } => {}
             }
                 }
 
                 // Handle shutdown - either channel closed or stream ended
                 else => {
-                    tracing::debug!("Handler shutting down: stream ended or command channel closed");
+                    log::debug!("Handler shutting down: stream ended or command channel closed");
                     return None;
                 }
             }
@@ -366,14 +390,14 @@ impl FeedHandler {
         match msg {
             Message::Text(text) => {
                 if text == RECONNECTED {
-                    tracing::info!("Received WebSocket reconnected signal");
+                    log::info!("Received WebSocket reconnected signal");
                     return Some(BitmexWsMessage::Reconnected);
                 }
 
-                tracing::trace!("Raw websocket message: {text}");
+                log::trace!("Raw websocket message: {text}");
 
                 if Self::is_heartbeat_message(&text) {
-                    tracing::trace!("Ignoring heartbeat control message: {text}");
+                    log::trace!("Ignoring heartbeat control message: {text}");
                     return None;
                 }
 
@@ -385,43 +409,41 @@ impl FeedHandler {
                             limit,
                             ..
                         } => {
-                            tracing::info!(
-                                version = version,
-                                heartbeat = heartbeat_enabled,
-                                rate_limit = ?limit.remaining,
-                                "Welcome to the BitMEX Realtime API:",
+                            log::info!(
+                                "Welcome to the BitMEX Realtime API: version={}, heartbeat={}, rate_limit={:?}",
+                                version,
+                                heartbeat_enabled,
+                                limit.remaining,
                             );
                         }
                         BitmexWsMessage::Subscription { .. } => return Some(msg),
                         BitmexWsMessage::Error { status, error, .. } => {
-                            tracing::error!(
-                                status = status,
-                                error = error,
-                                "Received error from BitMEX"
+                            log::error!(
+                                "Received error from BitMEX: status={status}, error={error}",
                             );
                         }
                         _ => return Some(msg),
                     },
                     Err(e) => {
-                        tracing::error!("Failed to parse WebSocket message: {e}: {text}");
+                        log::error!("Failed to parse WebSocket message: {e}: {text}");
                     }
                 }
             }
             Message::Binary(msg) => {
-                tracing::debug!("Raw binary: {msg:?}");
+                log::debug!("Raw binary: {msg:?}");
             }
             Message::Close(_) => {
-                tracing::debug!("Received close message, waiting for reconnection");
+                log::debug!("Received close message, waiting for reconnection");
             }
             Message::Ping(data) => {
                 // Handled in select! loop before parse_raw_message
-                tracing::trace!("Ping frame with {} bytes (already handled)", data.len());
+                log::trace!("Ping frame with {} bytes (already handled)", data.len());
             }
             Message::Pong(data) => {
-                tracing::trace!("Received pong frame with {} bytes", data.len());
+                log::trace!("Received pong frame with {} bytes", data.len());
             }
             Message::Frame(frame) => {
-                tracing::debug!("Received raw frame: {frame:?}");
+                log::debug!("Received raw frame: {frame:?}");
             }
         }
 
@@ -448,18 +470,18 @@ impl FeedHandler {
         let topics = Self::topics_from_request(request, subscribe);
 
         if topics.is_empty() {
-            tracing::debug!("Subscription acknowledgement without topics");
+            log::debug!("Subscription acknowledgement without topics");
             return;
         }
 
         for topic in topics {
             if success {
                 self.subscriptions.confirm_subscribe(topic);
-                tracing::debug!(topic = topic, "Subscription confirmed");
+                log::debug!("Subscription confirmed: topic={topic}");
             } else {
                 self.subscriptions.mark_failure(topic);
                 let reason = error.unwrap_or("Subscription rejected");
-                tracing::error!(topic = topic, error = reason, "Subscription failed");
+                log::error!("Subscription failed: topic={topic}, error={reason}");
             }
         }
     }
@@ -474,20 +496,18 @@ impl FeedHandler {
         let topics = Self::topics_from_request(request, subscribe);
 
         if topics.is_empty() {
-            tracing::debug!("Unsubscription acknowledgement without topics");
+            log::debug!("Unsubscription acknowledgement without topics");
             return;
         }
 
         for topic in topics {
             if success {
-                tracing::debug!(topic = topic, "Unsubscription confirmed");
+                log::debug!("Unsubscription confirmed: topic={topic}");
                 self.subscriptions.confirm_unsubscribe(topic);
             } else {
                 let reason = error.unwrap_or("Unsubscription rejected");
-                tracing::error!(
-                    topic = topic,
-                    error = reason,
-                    "Unsubscription failed - restoring subscription"
+                log::error!(
+                    "Unsubscription failed - restoring subscription: topic={topic}, error={reason}",
                 );
                 // Venue rejected unsubscribe, so we're still subscribed. Restore state:
                 self.subscriptions.confirm_unsubscribe(topic); // Clear pending_unsubscribe
@@ -537,7 +557,7 @@ impl FeedHandler {
 
     fn handle_quote(
         &mut self,
-        mut data: Vec<BitmexQuoteMsg>,
+        data: Vec<BitmexQuoteMsg>,
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
         // Index symbols may return empty quote data
@@ -545,43 +565,52 @@ impl FeedHandler {
             return None;
         }
 
-        let msg = data.remove(0);
-        let Some(instrument) = Self::get_instrument(&self.instruments_cache, &msg.symbol) else {
-            tracing::error!(
-                "Instrument cache miss: quote message dropped for symbol={}",
-                msg.symbol
-            );
-            return None;
-        };
+        let mut quotes = Vec::with_capacity(data.len());
 
-        let instrument_id = instrument.id();
-        let price_precision = instrument.price_precision();
+        for msg in data {
+            let Some(instrument) = Self::get_instrument(&self.instruments_cache, &msg.symbol)
+            else {
+                log::error!(
+                    "Instrument cache miss: quote message dropped for symbol={}",
+                    msg.symbol
+                );
+                continue;
+            };
 
-        let bid_price = msg.bid_price.map(|p| Price::new(p, price_precision));
-        let ask_price = msg.ask_price.map(|p| Price::new(p, price_precision));
-        let bid_size = msg
-            .bid_size
-            .map(|s| parse_contracts_quantity(s, &instrument));
-        let ask_size = msg
-            .ask_size
-            .map(|s| parse_contracts_quantity(s, &instrument));
-        let ts_event = UnixNanos::from(msg.timestamp);
+            let instrument_id = instrument.id();
+            let price_precision = instrument.price_precision();
 
-        match self.quote_cache.process(
-            instrument_id,
-            bid_price,
-            ask_price,
-            bid_size,
-            ask_size,
-            ts_event,
-            ts_init,
-        ) {
-            Ok(quote) => Some(NautilusWsMessage::Data(vec![Data::Quote(quote)])),
-            Err(e) => {
-                tracing::warn!(error = %e, "Failed to process quote");
-                None
+            let bid_price = msg.bid_price.map(|p| Price::new(p, price_precision));
+            let ask_price = msg.ask_price.map(|p| Price::new(p, price_precision));
+            let bid_size = msg
+                .bid_size
+                .map(|s| parse_contracts_quantity(s, &instrument));
+            let ask_size = msg
+                .ask_size
+                .map(|s| parse_contracts_quantity(s, &instrument));
+            let ts_event = UnixNanos::from(msg.timestamp);
+
+            match self.quote_cache.process(
+                instrument_id,
+                bid_price,
+                ask_price,
+                bid_size,
+                ask_size,
+                ts_event,
+                ts_init,
+            ) {
+                Ok(quote) => quotes.push(Data::Quote(quote)),
+                Err(e) => {
+                    log::warn!("Failed to process quote for {}: {e}", msg.symbol);
+                }
             }
         }
+
+        if quotes.is_empty() {
+            return None;
+        }
+
+        Some(NautilusWsMessage::Data(quotes))
     }
 
     fn handle_trade(
@@ -610,9 +639,9 @@ impl FeedHandler {
         Some(NautilusWsMessage::Data(data))
     }
 
-    fn handle_order(&mut self, data: Vec<OrderData>) -> Option<NautilusWsMessage> {
-        // Process all orders in the message
+    fn handle_order(&mut self, data: Vec<OrderData>, ts_init: UnixNanos) -> Vec<NautilusWsMessage> {
         let mut reports = Vec::with_capacity(data.len());
+        let mut updates = Vec::new();
 
         for order_data in data {
             match order_data {
@@ -620,7 +649,7 @@ impl FeedHandler {
                     let Some(instrument) =
                         Self::get_instrument(&self.instruments_cache, &order_msg.symbol)
                     else {
-                        tracing::error!(
+                        log::error!(
                             "Instrument cache miss: order message dropped for symbol={}, order_id={}",
                             order_msg.symbol,
                             order_msg.order_id
@@ -628,14 +657,28 @@ impl FeedHandler {
                         continue;
                     };
 
-                    match parse_order_msg(&order_msg, &instrument, &self.order_type_cache) {
+                    match parse_order_msg(&order_msg, &instrument, &self.order_type_cache, ts_init)
+                    {
                         Ok(report) => {
                             // Cache the order type and symbol AFTER successful parse
                             if let Some(client_order_id) = &order_msg.cl_ord_id {
                                 let client_order_id = ClientOrderId::new(client_order_id);
 
                                 if let Some(ord_type) = &order_msg.ord_type {
-                                    let order_type: OrderType = (*ord_type).into();
+                                    // Pegged orders with TrailingStopPeg are trailing stop orders
+                                    let order_type: OrderType = if *ord_type
+                                        == BitmexOrderType::Pegged
+                                        && order_msg.peg_price_type
+                                            == Some(BitmexPegPriceType::TrailingStopPeg)
+                                    {
+                                        if order_msg.price.is_some() {
+                                            OrderType::TrailingStopLimit
+                                        } else {
+                                            OrderType::TrailingStopMarket
+                                        }
+                                    } else {
+                                        (*ord_type).into()
+                                    };
                                     self.order_type_cache.insert(client_order_id, order_type);
                                 }
 
@@ -654,15 +697,14 @@ impl FeedHandler {
                             reports.push(report);
                         }
                         Err(e) => {
-                            tracing::error!(
-                                error = %e,
-                                symbol = %order_msg.symbol,
-                                order_id = %order_msg.order_id,
-                                time_in_force = ?order_msg.time_in_force,
-                                "Failed to parse full order message - potential data loss"
+                            log::error!(
+                                "Failed to parse full order message - potential data loss: \
+                                error={e}, symbol={}, order_id={}, time_in_force={:?}",
+                                order_msg.symbol,
+                                order_msg.order_id,
+                                order_msg.time_in_force,
                             );
                             // TODO: Add metric counter for parse failures
-                            continue;
                         }
                     }
                 }
@@ -670,7 +712,7 @@ impl FeedHandler {
                     let Some(instrument) =
                         Self::get_instrument(&self.instruments_cache, &msg.symbol)
                     else {
-                        tracing::error!(
+                        log::error!(
                             "Instrument cache miss: order update dropped for symbol={}, order_id={}",
                             msg.symbol,
                             msg.order_id
@@ -678,34 +720,46 @@ impl FeedHandler {
                         continue;
                     };
 
-                    // Populate cache for execution message routing (handles edge case where update arrives before full snapshot)
+                    // Populate cache for execution message routing
                     if let Some(cl_ord_id) = &msg.cl_ord_id {
                         let client_order_id = ClientOrderId::new(cl_ord_id);
                         self.order_symbol_cache.insert(client_order_id, msg.symbol);
                     }
 
-                    if let Some(event) = parse_order_update_msg(&msg, &instrument, self.account_id)
+                    if let Some(event) =
+                        parse_order_update_msg(&msg, &instrument, self.account_id, ts_init)
                     {
-                        return Some(NautilusWsMessage::OrderUpdated(event));
+                        updates.push(event);
                     } else {
-                        tracing::warn!(
-                            order_id = %msg.order_id,
-                            price = ?msg.price,
-                            "Skipped order update message (insufficient data)"
+                        log::warn!(
+                            "Skipped order update message (insufficient data): \
+                            order_id={}, price={:?}",
+                            msg.order_id,
+                            msg.price,
                         );
                     }
                 }
             }
         }
 
-        if reports.is_empty() {
-            return None;
+        let mut msgs = Vec::new();
+
+        if !reports.is_empty() {
+            msgs.push(NautilusWsMessage::OrderStatusReports(reports));
         }
 
-        Some(NautilusWsMessage::OrderStatusReports(reports))
+        if !updates.is_empty() {
+            msgs.push(NautilusWsMessage::OrderUpdates(updates));
+        }
+
+        msgs
     }
 
-    fn handle_execution(&mut self, data: Vec<BitmexExecutionMsg>) -> Option<NautilusWsMessage> {
+    fn handle_execution(
+        &mut self,
+        data: Vec<BitmexExecutionMsg>,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
         let mut fills = Vec::with_capacity(data.len());
 
         for exec_msg in data {
@@ -726,21 +780,22 @@ impl FeedHandler {
                 // Symbol missing - log appropriately based on exec type and whether we had clOrdID
                 if let Some(cl_ord_id) = &exec_msg.cl_ord_id {
                     if exec_msg.exec_type == Some(BitmexExecType::Trade) {
-                        tracing::warn!(
-                            cl_ord_id = %cl_ord_id,
-                            exec_id = ?exec_msg.exec_id,
-                            ord_rej_reason = ?exec_msg.ord_rej_reason,
-                            text = ?exec_msg.text,
-                            "Execution message missing symbol and not found in cache"
+                        log::warn!(
+                            "Execution message missing symbol and not found in cache: \
+                            cl_ord_id={cl_ord_id}, exec_id={:?}, ord_rej_reason={:?}, text={:?}",
+                            exec_msg.exec_id,
+                            exec_msg.ord_rej_reason,
+                            exec_msg.text,
                         );
                     } else {
-                        tracing::debug!(
-                            cl_ord_id = %cl_ord_id,
-                            exec_id = ?exec_msg.exec_id,
-                            exec_type = ?exec_msg.exec_type,
-                            ord_rej_reason = ?exec_msg.ord_rej_reason,
-                            text = ?exec_msg.text,
-                            "Execution message missing symbol and not found in cache"
+                        log::debug!(
+                            "Execution message missing symbol and not found in cache: \
+                            cl_ord_id={cl_ord_id}, exec_id={:?}, exec_type={:?}, \
+                            ord_rej_reason={:?}, text={:?}",
+                            exec_msg.exec_id,
+                            exec_msg.exec_type,
+                            exec_msg.ord_rej_reason,
+                            exec_msg.text,
                         );
                     }
                 } else {
@@ -748,19 +803,22 @@ impl FeedHandler {
                     // redundant cancel broadcasting - one cancel succeeds, others arrive late
                     // and BitMEX responds with CancelReject but doesn't populate the fields
                     if exec_msg.exec_type == Some(BitmexExecType::CancelReject) {
-                        tracing::debug!(
-                            exec_id = ?exec_msg.exec_id,
-                            order_id = ?exec_msg.order_id,
-                            "CancelReject message missing symbol/clOrdID (expected with redundant cancels)"
+                        log::debug!(
+                            "CancelReject message missing symbol/clOrdID (expected with redundant cancels): \
+                            exec_id={:?}, order_id={:?}",
+                            exec_msg.exec_id,
+                            exec_msg.order_id,
                         );
                     } else {
-                        tracing::warn!(
-                            exec_id = ?exec_msg.exec_id,
-                            order_id = ?exec_msg.order_id,
-                            exec_type = ?exec_msg.exec_type,
-                            ord_rej_reason = ?exec_msg.ord_rej_reason,
-                            text = ?exec_msg.text,
-                            "Execution message missing both symbol and clOrdID, cannot process"
+                        log::warn!(
+                            "Execution message missing both symbol and clOrdID, cannot process: \
+                            exec_id={:?}, order_id={:?}, exec_type={:?}, \
+                            ord_rej_reason={:?}, text={:?}",
+                            exec_msg.exec_id,
+                            exec_msg.order_id,
+                            exec_msg.exec_type,
+                            exec_msg.ord_rej_reason,
+                            exec_msg.text,
                         );
                     }
                 }
@@ -768,7 +826,7 @@ impl FeedHandler {
             };
 
             let Some(instrument) = Self::get_instrument(&self.instruments_cache, &symbol) else {
-                tracing::error!(
+                log::error!(
                     "Instrument cache miss: execution message dropped for symbol={}, exec_id={:?}, exec_type={:?}, Liquidation/ADL fills may be lost",
                     symbol,
                     exec_msg.exec_id,
@@ -777,7 +835,7 @@ impl FeedHandler {
                 continue;
             };
 
-            if let Some(fill) = parse_execution_msg(exec_msg, &instrument) {
+            if let Some(fill) = parse_execution_msg(exec_msg, &instrument, ts_init) {
                 fills.push(fill);
             }
         }
@@ -788,22 +846,35 @@ impl FeedHandler {
         Some(NautilusWsMessage::FillReports(fills))
     }
 
-    fn handle_position(&self, data: Vec<BitmexPositionMsg>) -> Option<NautilusWsMessage> {
-        if let Some(pos_msg) = data.into_iter().next() {
+    fn handle_position(
+        &self,
+        data: Vec<BitmexPositionMsg>,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        if data.is_empty() {
+            return None;
+        }
+
+        let mut reports = Vec::with_capacity(data.len());
+
+        for pos_msg in data {
             let Some(instrument) = Self::get_instrument(&self.instruments_cache, &pos_msg.symbol)
             else {
-                tracing::error!(
+                log::error!(
                     "Instrument cache miss: position message dropped for symbol={}, account={}",
                     pos_msg.symbol,
                     pos_msg.account
                 );
-                return None;
+                continue;
             };
-            let report = parse_position_msg(pos_msg, &instrument);
-            Some(NautilusWsMessage::PositionStatusReport(report))
-        } else {
-            None
+            reports.push(parse_position_msg(pos_msg, &instrument, ts_init));
         }
+
+        if reports.is_empty() {
+            return None;
+        }
+
+        Some(NautilusWsMessage::PositionStatusReports(reports))
     }
 
     fn handle_wallet(
@@ -811,12 +882,16 @@ impl FeedHandler {
         data: Vec<BitmexWalletMsg>,
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
-        if let Some(wallet_msg) = data.into_iter().next() {
-            let account_state = parse_wallet_msg(wallet_msg, ts_init);
-            Some(NautilusWsMessage::AccountState(account_state))
-        } else {
-            None
+        if data.is_empty() {
+            return None;
         }
+
+        let states: Vec<_> = data
+            .into_iter()
+            .map(|wallet_msg| parse_wallet_msg(wallet_msg, ts_init))
+            .collect();
+
+        Some(NautilusWsMessage::AccountStates(states))
     }
 
     fn handle_instrument(
@@ -873,7 +948,7 @@ impl FeedHandler {
                         .out_tx
                         .send(NautilusWsMessage::Instruments(instruments))
                 {
-                    tracing::error!("Error sending instruments: {e}");
+                    log::error!("Error sending instruments: {e}");
                 }
 
                 let mut data_msgs = Vec::with_capacity(data_for_prices.len());
@@ -890,6 +965,40 @@ impl FeedHandler {
             }
             BitmexAction::Update => {
                 let mut data_msgs = Vec::with_capacity(data.len());
+
+                for msg in &data {
+                    if let Some(state_str) = &msg.state
+                        && let Ok(state) = serde_json::from_str::<BitmexInstrumentState>(&format!(
+                            "\"{state_str}\""
+                        ))
+                    {
+                        let instrument_id = parse_instrument_id(msg.symbol);
+                        let action = MarketStatusAction::from(&state);
+                        let is_trading = Some(state == BitmexInstrumentState::Open);
+                        let ts_event = parse_optional_datetime_to_unix_nanos(
+                            &Some(msg.timestamp),
+                            "timestamp",
+                        );
+                        let status = InstrumentStatus::new(
+                            instrument_id,
+                            action,
+                            ts_event,
+                            ts_init,
+                            None,
+                            None,
+                            is_trading,
+                            None,
+                            None,
+                        );
+
+                        if let Err(e) = self
+                            .out_tx
+                            .send(NautilusWsMessage::InstrumentStatus(status))
+                        {
+                            log::error!("Error sending instrument status: {e}");
+                        }
+                    }
+                }
 
                 for msg in data {
                     let parsed = parse_instrument_msg(msg, &self.instruments_cache, ts_init);
@@ -916,19 +1025,16 @@ impl FeedHandler {
         data: Vec<BitmexFundingMsg>,
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
-        let mut funding_updates = Vec::with_capacity(data.len());
-
-        for msg in data {
-            if let Some(parsed) = parse_funding_msg(msg, ts_init) {
-                funding_updates.push(parsed);
-            }
+        if data.is_empty() {
+            return None;
         }
 
-        if !funding_updates.is_empty() {
-            Some(NautilusWsMessage::FundingRateUpdates(funding_updates))
-        } else {
-            None
-        }
+        let funding_updates: Vec<_> = data
+            .into_iter()
+            .map(|msg| parse_funding_msg(msg, ts_init))
+            .collect();
+
+        Some(NautilusWsMessage::FundingRateUpdates(funding_updates))
     }
 
     fn handle_subscription_message(
@@ -944,12 +1050,12 @@ impl FeedHandler {
                 .eq_ignore_ascii_case(BitmexWsAuthAction::AuthKeyExpires.as_ref())
             {
                 if success {
-                    tracing::info!("WebSocket authenticated");
+                    log::info!("WebSocket authenticated");
                     self.auth_tracker.succeed();
                     return Some(NautilusWsMessage::Authenticated);
                 } else {
                     let reason = error.unwrap_or("Authentication rejected").to_string();
-                    tracing::error!(error = %reason, "WebSocket authentication failed");
+                    log::error!("WebSocket authentication failed: {reason}");
                     self.auth_tracker.fail(reason);
                 }
                 return None;
@@ -978,11 +1084,7 @@ impl FeedHandler {
         }
 
         if let Some(error) = error {
-            tracing::warn!(
-                success = success,
-                error = error,
-                "Unhandled subscription control message"
-            );
+            log::warn!("Unhandled subscription control message: success={success}, error={error}");
         }
 
         None

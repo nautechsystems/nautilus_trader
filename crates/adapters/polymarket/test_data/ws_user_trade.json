@@ -1,0 +1,33 @@
+{
+  "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+  "bucket_index": 1,
+  "fee_rate_bps": "0",
+  "id": "trade-0xabcdef1234",
+  "last_update": "2024-01-01T00:01:00Z",
+  "maker_address": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+  "maker_orders": [
+    {
+      "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+      "fee_rate_bps": "0",
+      "maker_address": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      "matched_amount": "25.0000",
+      "order_id": "0xmaker01maker01maker01maker01maker01maker01maker01maker01maker01maker01",
+      "outcome": "Yes",
+      "owner": "00000000-0000-0000-0000-000000000002",
+      "price": "0.5000"
+    }
+  ],
+  "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+  "match_time": "2024-01-01T00:00:00Z",
+  "outcome": "Yes",
+  "owner": "00000000-0000-0000-0000-000000000001",
+  "price": "0.5",
+  "side": "BUY",
+  "size": "25.0",
+  "status": "CONFIRMED",
+  "taker_order_id": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
+  "timestamp": "1703875200000",
+  "trade_owner": "00000000-0000-0000-0000-000000000001",
+  "trader_side": "TAKER",
+  "type": "TRADE"
+}

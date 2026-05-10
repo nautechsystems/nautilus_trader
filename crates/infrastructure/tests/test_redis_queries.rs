@@ -393,6 +393,51 @@ mod serial_tests {
     }
 
     #[tokio::test]
+    async fn test_read_bulk_batched() {
+        let mut con = get_redis_connection().await;
+
+        // Clean state
+        let _: () = redis::cmd("FLUSHDB").query_async(&mut con).await.unwrap();
+
+        // Set up test data - more keys than batch size
+        let num_keys = 25;
+        let batch_size = 10;
+        let keys: Vec<String> = (0..num_keys).map(|i| format!("test:batched:{i}")).collect();
+        let values: Vec<Vec<u8>> = (0..num_keys)
+            .map(|i| format!("value_{i}").into_bytes())
+            .collect();
+
+        for (key, value) in keys.iter().zip(values.iter()) {
+            let _: () = con.set(key, value).await.unwrap();
+        }
+
+        let result = DatabaseQueries::read_bulk_batched(&con, &keys, batch_size)
+            .await
+            .unwrap();
+
+        assert_eq!(result.len(), num_keys);
+        for (i, bytes_opt) in result.iter().enumerate() {
+            assert_eq!(*bytes_opt, Some(Bytes::from(values[i].clone())));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_bulk_batched_zero_batch_size_error() {
+        let con = get_redis_connection().await;
+        let keys: Vec<String> = vec!["key1".to_string(), "key2".to_string()];
+
+        let result = DatabaseQueries::read_bulk_batched(&con, &keys, 0).await;
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("must be greater than zero")
+        );
+    }
+
+    #[tokio::test]
     async fn test_scan_keys_with_special_characters() {
         let mut con = get_redis_connection().await;
 

@@ -36,6 +36,8 @@ pub struct CacheIndex {
     pub(crate) instrument_positions: AHashMap<InstrumentId, AHashSet<PositionId>>,
     pub(crate) strategy_orders: AHashMap<StrategyId, AHashSet<ClientOrderId>>,
     pub(crate) strategy_positions: AHashMap<StrategyId, AHashSet<PositionId>>,
+    pub(crate) account_orders: AHashMap<AccountId, AHashSet<ClientOrderId>>,
+    pub(crate) account_positions: AHashMap<AccountId, AHashSet<PositionId>>,
     pub(crate) exec_algorithm_orders: AHashMap<ExecAlgorithmId, AHashSet<ClientOrderId>>,
     pub(crate) exec_spawn_orders: AHashMap<ClientOrderId, AHashSet<ClientOrderId>>,
     pub(crate) orders: AHashSet<ClientOrderId>,
@@ -70,6 +72,8 @@ impl Default for CacheIndex {
             instrument_positions: AHashMap::new(),
             strategy_orders: AHashMap::new(),
             strategy_positions: AHashMap::new(),
+            account_orders: AHashMap::new(),
+            account_positions: AHashMap::new(),
             exec_algorithm_orders: AHashMap::new(),
             exec_spawn_orders: AHashMap::new(),
             orders: AHashSet::new(),
@@ -105,6 +109,8 @@ impl CacheIndex {
         self.instrument_positions.clear();
         self.strategy_orders.clear();
         self.strategy_positions.clear();
+        self.account_orders.clear();
+        self.account_positions.clear();
         self.exec_algorithm_orders.clear();
         self.exec_spawn_orders.clear();
         self.orders.clear();

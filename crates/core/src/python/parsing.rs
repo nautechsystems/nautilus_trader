@@ -16,10 +16,11 @@
 //! JSON / string parsing helpers for Python inputs.
 
 use pyo3::{
-    exceptions::{PyKeyError, PyValueError},
     prelude::*,
     types::{PyDict, PyList},
 };
+
+use super::{to_pykey_err, to_pyvalue_err};
 
 /// Helper function to get a required string value from a Python dictionary.
 ///
@@ -32,7 +33,7 @@ use pyo3::{
 /// Returns `PyErr` if the key is missing or value extraction fails.
 pub fn get_required_string(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<String> {
     dict.get_item(key)?
-        .ok_or_else(|| PyKeyError::new_err(format!("Missing required key: {key}")))?
+        .ok_or_else(|| to_pykey_err(format!("Missing required key: {key}")))?
         .extract()
 }
 
@@ -51,7 +52,7 @@ where
     for<'a, 'py> PyErr: From<<T as FromPyObject<'a, 'py>>::Error>,
 {
     dict.get_item(key)?
-        .ok_or_else(|| PyKeyError::new_err(format!("Missing required key: {key}")))?
+        .ok_or_else(|| to_pykey_err(format!("Missing required key: {key}")))?
         .extract()
         .map_err(PyErr::from)
 }
@@ -97,7 +98,7 @@ where
     F: FnOnce(String) -> Result<T, String>,
 {
     let value_str = get_required_string(dict, key)?;
-    parser(value_str).map_err(|e| PyValueError::new_err(format!("Failed to parse '{key}': {e}")))
+    parser(value_str).map_err(|e| to_pyvalue_err(format!("Failed to parse '{key}': {e}")))
 }
 
 /// Helper function to get an optional value, parse it with a closure, and handle parse errors.
@@ -126,7 +127,7 @@ where
                 let value_str: String = value.extract()?;
                 parser(value_str)
                     .map(Some)
-                    .map_err(|e| PyValueError::new_err(format!("Failed to parse '{key}': {e}")))
+                    .map_err(|e| to_pyvalue_err(format!("Failed to parse '{key}': {e}")))
             }
         }
         None => Ok(None),
@@ -147,7 +148,7 @@ pub fn get_required_list<'py>(
     key: &str,
 ) -> PyResult<Bound<'py, PyList>> {
     dict.get_item(key)?
-        .ok_or_else(|| PyKeyError::new_err(format!("Missing required key: {key}")))?
+        .ok_or_else(|| to_pykey_err(format!("Missing required key: {key}")))?
         .downcast_into()
         .map_err(Into::into)
 }

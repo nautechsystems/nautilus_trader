@@ -21,8 +21,14 @@ use std::fmt::Debug;
 
 use aws_lc_rs::hmac;
 use base64::prelude::*;
-use ustr::Ustr;
+use nautilus_core::{env::get_or_env_var_opt, string::REDACTED};
 use zeroize::ZeroizeOnDrop;
+
+/// Returns the environment variable names for API credentials.
+#[must_use]
+pub fn credential_env_vars() -> (&'static str, &'static str, &'static str) {
+    ("OKX_API_KEY", "OKX_API_SECRET", "OKX_API_PASSPHRASE")
+}
 
 /// OKX API credentials for signing requests.
 ///
@@ -30,9 +36,8 @@ use zeroize::ZeroizeOnDrop;
 /// Secrets are automatically zeroized on drop for security.
 #[derive(Clone, ZeroizeOnDrop)]
 pub struct Credential {
-    #[zeroize(skip)]
-    pub api_key: Ustr,
-    pub api_passphrase: String,
+    api_key: Box<str>,
+    api_passphrase: Box<str>,
     api_secret: Box<[u8]>,
 }
 
@@ -40,8 +45,8 @@ impl Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Credential))
             .field("api_key", &self.api_key)
-            .field("api_passphrase", &self.api_passphrase)
-            .field("api_secret", &"<redacted>")
+            .field("api_passphrase", &REDACTED)
+            .field("api_secret", &REDACTED)
             .finish()
     }
 }
@@ -51,10 +56,40 @@ impl Credential {
     #[must_use]
     pub fn new(api_key: String, api_secret: String, api_passphrase: String) -> Self {
         Self {
-            api_key: api_key.into(),
-            api_passphrase,
+            api_key: api_key.into_boxed_str(),
+            api_passphrase: api_passphrase.into_boxed_str(),
             api_secret: api_secret.into_bytes().into_boxed_slice(),
         }
+    }
+
+    /// Resolves credentials from provided values or environment variables.
+    #[must_use]
+    pub fn resolve(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        api_passphrase: Option<String>,
+    ) -> Option<Self> {
+        let (key_var, secret_var, passphrase_var) = credential_env_vars();
+        let key = get_or_env_var_opt(api_key, key_var);
+        let secret = get_or_env_var_opt(api_secret, secret_var);
+        let passphrase = get_or_env_var_opt(api_passphrase, passphrase_var);
+
+        match (key, secret, passphrase) {
+            (Some(k), Some(s), Some(p)) => Some(Self::new(k, s, p)),
+            _ => None,
+        }
+    }
+
+    /// Returns the API key.
+    #[must_use]
+    pub fn api_key(&self) -> &str {
+        &self.api_key
+    }
+
+    /// Returns the API passphrase.
+    #[must_use]
+    pub fn api_passphrase(&self) -> &str {
+        &self.api_passphrase
     }
 
     /// Signs a request message according to the OKX authentication scheme.
@@ -81,6 +116,7 @@ impl Credential {
         message.extend_from_slice(timestamp.as_bytes());
         message.extend_from_slice(method.as_bytes());
         message.extend_from_slice(endpoint.as_bytes());
+
         if let Some(b) = body {
             message.extend_from_slice(b);
         }
@@ -96,7 +132,7 @@ impl Credential {
     /// For keys shorter than 8 characters, shows asterisks only.
     #[must_use]
     pub fn api_key_masked(&self) -> String {
-        nautilus_core::string::mask_api_key(self.api_key.as_str())
+        nautilus_core::string::mask_api_key(&self.api_key)
     }
 }
 
@@ -209,7 +245,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_debug_redacts_secret() {
+    fn test_debug_redacts_secrets() {
         let credential = Credential::new(
             API_KEY.to_string(),
             API_SECRET.to_string(),
@@ -217,11 +253,11 @@ mod tests {
         );
         let dbg_out = format!("{credential:?}");
         assert!(dbg_out.contains("api_secret: \"<redacted>\""));
+        assert!(dbg_out.contains("api_passphrase: \"<redacted>\""));
         assert!(!dbg_out.contains("chNOO"));
-        let secret_bytes_dbg = format!("{:?}", API_SECRET.as_bytes());
         assert!(
-            !dbg_out.contains(&secret_bytes_dbg),
-            "Debug output must not contain raw secret bytes"
+            !dbg_out.contains(API_PASSPHRASE),
+            "Debug output must not contain passphrase"
         );
     }
 
@@ -243,5 +279,49 @@ mod tests {
             API_PASSPHRASE.to_string(),
         );
         assert_eq!(credential.api_key_masked(), "985d...7083");
+    }
+
+    #[rstest]
+    fn test_resolve_with_all_args() {
+        let result = Credential::resolve(
+            Some("my_key".to_string()),
+            Some("my_secret".to_string()),
+            Some("my_pass".to_string()),
+        );
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().api_key(), "my_key");
+    }
+
+    #[rstest]
+    fn test_resolve_with_no_args_no_env() {
+        let (key_var, secret_var, passphrase_var) = credential_env_vars();
+        if std::env::var(key_var).is_ok()
+            || std::env::var(secret_var).is_ok()
+            || std::env::var(passphrase_var).is_ok()
+        {
+            return;
+        }
+
+        let result = Credential::resolve(None, None, None);
+
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_resolve_with_partial_args_returns_none() {
+        let (_, _, passphrase_var) = credential_env_vars();
+        if std::env::var(passphrase_var).is_ok() {
+            return;
+        }
+
+        // Key and secret provided but passphrase missing (env var not set)
+        let result = Credential::resolve(
+            Some("my_key".to_string()),
+            Some("my_secret".to_string()),
+            None,
+        );
+
+        assert!(result.is_none());
     }
 }

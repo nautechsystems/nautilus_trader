@@ -26,7 +26,9 @@ use nautilus_model::{
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{OmsType, OrderSide, PositionSide},
-    identifiers::{ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Venue},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Venue,
+    },
     instruments::SyntheticInstrument,
     orderbook::OrderBook,
     position::Position,
@@ -48,7 +50,12 @@ use crate::{
 /// This wrapper holds an `Rc<RefCell<Cache>>` allowing actors to share
 /// the same cache instance. All methods delegate to the underlying cache.
 #[allow(non_camel_case_types)]
-#[pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", unsendable)]
+#[pyo3::pyclass(
+    module = "nautilus_trader.core.nautilus_pyo3.common",
+    name = "Cache",
+    unsendable,
+    from_py_object
+)]
 #[derive(Debug, Clone)]
 pub struct PyCache(Rc<RefCell<Cache>>);
 
@@ -62,6 +69,12 @@ impl PyCache {
 
 #[pymethods]
 impl PyCache {
+    #[new]
+    #[pyo3(signature = (config=None))]
+    fn py_new(config: Option<CacheConfig>) -> Self {
+        Self(Rc::new(RefCell::new(Cache::new(config, None))))
+    }
+
     #[pyo3(name = "instrument")]
     fn py_instrument(
         &self,
@@ -122,6 +135,7 @@ impl CacheConfig {
         encoding: Option<SerializationEncoding>,
         timestamps_as_iso8601: Option<bool>,
         buffer_interval_ms: Option<usize>,
+        bulk_read_batch_size: Option<usize>,
         use_trader_prefix: Option<bool>,
         use_instance_id: Option<bool>,
         flush_on_start: Option<bool>,
@@ -135,6 +149,7 @@ impl CacheConfig {
             encoding.unwrap_or(SerializationEncoding::MsgPack),
             timestamps_as_iso8601.unwrap_or(false),
             buffer_interval_ms,
+            bulk_read_batch_size,
             use_trader_prefix.unwrap_or(true),
             use_instance_id.unwrap_or(false),
             flush_on_start.unwrap_or(false),
@@ -166,6 +181,11 @@ impl CacheConfig {
     #[getter]
     fn buffer_interval_ms(&self) -> Option<usize> {
         self.buffer_interval_ms
+    }
+
+    #[getter]
+    fn bulk_read_batch_size(&self) -> Option<usize> {
+        self.bulk_read_batch_size
     }
 
     #[getter]
@@ -329,12 +349,14 @@ impl Cache {
         venue: Option<Venue>,
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
+        account_id: Option<AccountId>,
         side: Option<OrderSide>,
     ) -> usize {
         self.orders_open_count(
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
+            account_id.as_ref(),
             side,
         )
     }
@@ -345,12 +367,14 @@ impl Cache {
         venue: Option<Venue>,
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
+        account_id: Option<AccountId>,
         side: Option<OrderSide>,
     ) -> usize {
         self.orders_closed_count(
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
+            account_id.as_ref(),
             side,
         )
     }
@@ -361,12 +385,14 @@ impl Cache {
         venue: Option<Venue>,
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
+        account_id: Option<AccountId>,
         side: Option<OrderSide>,
     ) -> usize {
         self.orders_total_count(
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
+            account_id.as_ref(),
             side,
         )
     }
@@ -412,12 +438,14 @@ impl Cache {
         venue: Option<Venue>,
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
+        account_id: Option<AccountId>,
         side: Option<PositionSide>,
     ) -> usize {
         self.positions_open_count(
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
+            account_id.as_ref(),
             side,
         )
     }
@@ -428,12 +456,14 @@ impl Cache {
         venue: Option<Venue>,
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
+        account_id: Option<AccountId>,
         side: Option<PositionSide>,
     ) -> usize {
         self.positions_closed_count(
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
+            account_id.as_ref(),
             side,
         )
     }
@@ -444,12 +474,14 @@ impl Cache {
         venue: Option<Venue>,
         instrument_id: Option<InstrumentId>,
         strategy_id: Option<StrategyId>,
+        account_id: Option<AccountId>,
         side: Option<PositionSide>,
     ) -> usize {
         self.positions_total_count(
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
+            account_id.as_ref(),
             side,
         )
     }

@@ -120,6 +120,7 @@ impl KeltnerChannel {
         // Initialization Logic
         if !self.initialized {
             self.has_inputs = true;
+
             if self.ma.initialized() {
                 self.initialized = true;
             }

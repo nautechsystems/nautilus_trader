@@ -1,0 +1,26 @@
+{
+  "id": "185377",
+  "slug": "highest-temperature-in-nyc-on-january-26",
+  "title": "Highest temperature in NYC on January 26?",
+  "description": "This market will resolve to the temperature range.",
+  "active": true,
+  "closed": false,
+  "archived": false,
+  "markets": [
+    {
+      "conditionId": "0xed7d522e06d2f1f9015a468884cfdb2be7e737a33f130c1237a40f18bc739267",
+      "question": "Will the highest temperature in New York City be 25F or below on January 26?",
+      "slug": "highest-temperature-in-nyc-on-january-26-25forbelow"
+    },
+    {
+      "conditionId": "0x35c268a9ba1b27115c9b42415a667177d9959310d2c9b3131bca9e7942a13f3a",
+      "question": "Will the highest temperature in New York City be between 26-27F on January 26?",
+      "slug": "highest-temperature-in-nyc-on-january-26-26-27f"
+    },
+    {
+      "conditionId": "0x86603a152e53352e41f1d15a989e856d6c372ac0540d5360fdeae19089df29f2",
+      "question": "Will the highest temperature in New York City be between 28-29F on January 26?",
+      "slug": "highest-temperature-in-nyc-on-january-26-28-29f"
+    }
+  ]
+}

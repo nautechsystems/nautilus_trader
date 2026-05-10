@@ -103,6 +103,7 @@ impl ChandeMomentumOscillator {
 
     pub fn update_raw(&mut self, close: f64) {
         self.count += 1;
+
         if !self.has_inputs {
             self.previous_close = close;
             self.has_inputs = true;
@@ -123,6 +124,7 @@ impl ChandeMomentumOscillator {
         if !self.initialized && self.average_gain.initialized() && self.average_loss.initialized() {
             self.initialized = true;
         }
+
         if self.initialized {
             let divisor = self.average_gain.value() + self.average_loss.value();
             if divisor == 0.0 {

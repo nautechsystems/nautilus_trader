@@ -197,6 +197,7 @@ config_tester = ExecTesterConfig(
     # close_positions_on_stop=False,
     # use_batch_cancel_on_stop=True,
     # use_individual_cancels_on_stop=True,
+    manage_stop=True,  # Cancel all orders and close all positions on stop
     log_data=False,
     log_rejected_due_post_only_as_warning=False,
 )

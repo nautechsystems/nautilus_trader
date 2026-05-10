@@ -45,9 +45,10 @@ pub fn get_data_event_sender() -> tokio::sync::mpsc::UnboundedSender<DataEvent> 
 /// Panics if a sender has already been set.
 pub fn set_data_event_sender(sender: tokio::sync::mpsc::UnboundedSender<DataEvent>) {
     DATA_EVENT_SENDER.with(|s| {
-        if s.set(sender).is_err() {
-            panic!("Data event sender can only be set once");
-        }
+        assert!(
+            s.set(sender).is_ok(),
+            "Data event sender can only be set once"
+        );
     });
 }
 
@@ -75,9 +76,10 @@ pub fn get_exec_event_sender() -> tokio::sync::mpsc::UnboundedSender<ExecutionEv
 /// Panics if a sender has already been set.
 pub fn set_exec_event_sender(sender: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>) {
     EXEC_EVENT_SENDER.with(|s| {
-        if s.set(sender).is_err() {
-            panic!("Execution event sender can only be set once");
-        }
+        assert!(
+            s.set(sender).is_ok(),
+            "Execution event sender can only be set once"
+        );
     });
 }
 

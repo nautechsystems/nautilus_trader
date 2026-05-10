@@ -61,7 +61,8 @@ const MAX_PERIOD: usize = 1_024;
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.indicators"
+        module = "nautilus_trader.core.nautilus_pyo3.indicators",
+        from_py_object,
     )
 )]
 pub enum StochasticsDMethod {
@@ -109,7 +110,7 @@ pub struct Stochastics {
 
 impl Debug for Stochastics {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Stochastics")
+        f.debug_struct(stringify!(Stochastics))
             .field("period_k", &self.period_k)
             .field("period_d", &self.period_d)
             .field("slowing", &self.slowing)

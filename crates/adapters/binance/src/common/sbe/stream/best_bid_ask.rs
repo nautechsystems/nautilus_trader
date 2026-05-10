@@ -69,9 +69,17 @@ impl BestBidAskStreamEvent {
     pub fn decode(buf: &[u8]) -> Result<Self, StreamDecodeError> {
         let header = MessageHeader::decode(buf)?;
         header.validate_schema()?;
+        Self::decode_validated(buf)
+    }
 
+    /// Decode from an SBE buffer whose header has already been validated.
+    pub(crate) fn decode_validated(buf: &[u8]) -> Result<Self, StreamDecodeError> {
         let mut cursor = SbeCursor::new_at(buf, MessageHeader::ENCODED_LENGTH);
+        Self::decode_body(&mut cursor)
+    }
 
+    #[inline]
+    fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, StreamDecodeError> {
         let event_time_us = cursor.read_i64_le()?;
         let book_update_id = cursor.read_i64_le()?;
         let price_exponent = cursor.read_i8()?;
@@ -81,7 +89,7 @@ impl BestBidAskStreamEvent {
         let ask_price_mantissa = cursor.read_i64_le()?;
         let ask_qty_mantissa = cursor.read_i64_le()?;
 
-        let symbol_str = cursor.read_var_string8()?;
+        let symbol = Ustr::from(cursor.read_var_string8_ref()?);
 
         Ok(Self {
             event_time_us,
@@ -92,7 +100,7 @@ impl BestBidAskStreamEvent {
             bid_qty_mantissa,
             ask_price_mantissa,
             ask_qty_mantissa,
-            symbol: Ustr::from(&symbol_str),
+            symbol,
         })
     }
 
@@ -193,5 +201,23 @@ mod tests {
         buf[4..6].copy_from_slice(&99u16.to_le_bytes()); // Wrong schema
         let err = BestBidAskStreamEvent::decode(&buf).unwrap_err();
         assert!(matches!(err, StreamDecodeError::SchemaMismatch { .. }));
+    }
+
+    #[rstest]
+    fn test_decode_validated_matches_decode() {
+        let buf = make_valid_buffer();
+
+        let decode_event = BestBidAskStreamEvent::decode(&buf).unwrap();
+        let validated_event = BestBidAskStreamEvent::decode_validated(&buf).unwrap();
+
+        assert_eq!(validated_event.event_time_us, decode_event.event_time_us);
+        assert_eq!(validated_event.book_update_id, decode_event.book_update_id);
+        assert_eq!(validated_event.price_exponent, decode_event.price_exponent);
+        assert_eq!(validated_event.qty_exponent, decode_event.qty_exponent);
+        assert_eq!(
+            validated_event.bid_price_mantissa,
+            decode_event.bid_price_mantissa
+        );
+        assert_eq!(validated_event.symbol, decode_event.symbol);
     }
 }

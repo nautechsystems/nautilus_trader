@@ -27,7 +27,7 @@ fn cache_order_querying_venue_instrument(
     venue: &Venue,
     instrument: Option<&InstrumentId>,
 ) {
-    let _ = cache.orders(Some(venue), instrument, None, None);
+    let _ = cache.orders(Some(venue), instrument, None, None, None);
 }
 
 fn cache_orders_processing(orders: &[OrderAny]) {

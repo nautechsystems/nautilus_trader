@@ -36,9 +36,10 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 instrument_ids = [
-    InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID"),
     InstrumentId.from_str("ETH-USD-PERP.HYPERLIQUID"),
+    InstrumentId.from_str("HYPE-USD-PERP.HYPERLIQUID"),
     InstrumentId.from_str("HYPE-USDC-SPOT.HYPERLIQUID"),
+    # InstrumentId.from_str("ETH-USD-PERP.HYPERLIQUID"),
 ]
 
 bar_types = [
@@ -58,6 +59,12 @@ if __name__ == "__main__":
         exec_engine=LiveExecEngineConfig(
             reconciliation=False,  # Not required for data testing
         ),
+        # cache=CacheConfig(
+        #     database=DatabaseConfig(),
+        #     timestamps_as_iso8601=True,
+        #     persist_account_events=False,  # Useful for HFT ops where this can quickly accumulate
+        #     buffer_interval_ms=100,
+        # ),
         data_clients={
             HYPERLIQUID: HyperliquidDataClientConfig(
                 instrument_provider=InstrumentProviderConfig(load_all=True),
@@ -80,12 +87,12 @@ if __name__ == "__main__":
         bar_types=bar_types,
         # subscribe_book_at_interval=True,
         # book_interval_ms=10,
-        # subscribe_quotes=True,
+        subscribe_quotes=True,
         subscribe_trades=True,
         subscribe_mark_prices=True,
         subscribe_index_prices=True,
         subscribe_funding_rates=True,
-        # subscribe_bars=True,
+        subscribe_bars=True,
         # request_bars=True,
     )
     # Instantiate your strategy

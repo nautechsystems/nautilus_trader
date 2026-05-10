@@ -3,7 +3,7 @@
 Tardis provides granular data for cryptocurrency markets including tick-by-tick order book snapshots & updates,
 trades, open interest, funding rates, options chains and liquidations data for leading crypto exchanges.
 
-NautilusTrader provides an integration with the Tardis API and data formats, enabling seamless access.
+NautilusTrader provides an integration with the Tardis API and data formats, enabling access.
 The capabilities of this adapter include:
 
 - `TardisCSVDataLoader`: Reads Tardis-format CSV files and converts them into Nautilus data, with support for both bulk loading and memory-efficient streaming.
@@ -11,7 +11,7 @@ The capabilities of this adapter include:
 - `TardisHttpClient`: Requests instrument definition metadata from the Tardis HTTP API, parsing it into Nautilus instrument definitions.
 - `TardisDataClient`: Provides a live data client for subscribing to data streams from a Tardis Machine WebSocket server.
 - `TardisInstrumentProvider`: Provides instrument definitions from Tardis through the HTTP instrument metadata API.
-- **Data pipeline functions**: Enables replay of historical data from Tardis Machine and writes it to the Nautilus Parquet format, including direct catalog integration for streamlined data management (see below).
+- **Data pipeline functions**: Enables replay of historical data from Tardis Machine and writes it to the Nautilus Parquet format, including direct catalog integration for data management (see below).
 
 :::info
 A Tardis API key is required for the adapter to operate correctly. See also [environment variables](#environment-variables).
@@ -34,7 +34,7 @@ We recommend also referring to the Tardis documentation in conjunction with this
 
 ## Supported formats
 
-Tardis provides *normalized* market data—a unified format consistent across all supported exchanges.
+Tardis provides *normalized* market data, a unified format consistent across all supported exchanges.
 This normalization is highly valuable because it allows a single parser to handle data from any [Tardis-supported exchange](#venues), reducing development time and complexity.
 As a result, NautilusTrader will not support exchange-native market data formats, as it would be inefficient to implement separate parsers for each exchange at this stage.
 
@@ -49,7 +49,7 @@ The following normalized Tardis formats are supported by NautilusTrader:
 | [trade](https://docs.tardis.dev/api/tardis-machine#trade)                                                                   | `Trade`                                                              |
 | [trade_bar_*](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix)                            | `Bar`                                                                |
 | [instrument](https://docs.tardis.dev/api/instruments-metadata-api)                                                          | `CurrencyPair`, `CryptoFuture`, `CryptoPerpetual`, `OptionContract` |
-| [derivative_ticker](https://docs.tardis.dev/api/tardis-machine#derivative_ticker)                                           | *Not yet supported*                                                  |
+| [derivative_ticker](https://docs.tardis.dev/api/tardis-machine#derivative_ticker)                                           | `FundingRateUpdate`                                                  |
 | [disconnect](https://docs.tardis.dev/api/tardis-machine#disconnect)                                                         | *Not applicable*                                                     |
 
 **Notes:**
@@ -77,7 +77,7 @@ This includes the following:
 
 ## Symbology and normalization
 
-The Tardis integration ensures seamless compatibility with NautilusTrader’s crypto exchange adapters
+The Tardis integration ensures compatibility with NautilusTrader’s crypto exchange adapters
 by consistently normalizing symbols. Typically, NautilusTrader uses the native exchange naming conventions
 provided by Tardis. However, for certain exchanges, raw symbols are adjusted to adhere to the Nautilus symbology normalization, as outlined below:
 
@@ -166,7 +166,7 @@ You can perform complete Tardis Machine WebSocket replays of historical data and
 in Nautilus Parquet format, using either Python or Rust. Since the function is implemented in Rust,
 performance is consistent whether run from Python or Rust, letting you choose based on your preferred workflow.
 
-The end-to-end `run_tardis_machine_replay` data pipeline function utilizes a specified [configuration](#configuration) to execute the following steps:
+The end-to-end `run_tardis_machine_replay` data pipeline function uses a specified [configuration](#configuration) to execute the following steps:
 
 - Connect to the Tardis Machine server.
 - Request and parse all necessary instrument definitions from the [Tardis instruments metadata](https://docs.tardis.dev/api/instruments-metadata-api) HTTP API.
@@ -182,7 +182,7 @@ Files are written one per day, per instrument, using ISO 8601 timestamp ranges t
 - **Example**: `2023-10-01T00-00-00-000000000Z_2023-10-01T23-59-59-999999999Z.parquet`
 - **Structure**: `data/{data_type}/{instrument_id}/{filename}`
 
-This format is fully compatible with the Nautilus data catalog, enabling seamless querying, consolidation, and data management operations.
+This format is fully compatible with the Nautilus data catalog, enabling querying, consolidation, and data management operations.
 
 :::note
 You can request data for the first day of each month without an API key. For all other dates, a Tardis Machine API key is required.
@@ -303,25 +303,23 @@ if __name__ == "__main__":
 To run a replay in Rust, create a binary similar to the following:
 
 ```rust
-use std::{env, path::PathBuf};
+use std::path::PathBuf;
 
 use nautilus_adapters::tardis::replay::run_tardis_machine_replay_from_config;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let config_filepath = PathBuf::from("YOUR_CONFIG_FILEPATH");
     run_tardis_machine_replay_from_config(&config_filepath).await;
 }
 ```
 
-Make sure to enable Rust logging by exporting the following environment variable:
+Logging defaults to INFO level. To enable debug logging, export the following environment variable:
 
 ```bash
-export RUST_LOG=debug
+export NAUTILUS_LOG=debug
 ```
 
 A working example binary can be found [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_replay.rs).
@@ -573,21 +571,27 @@ To request instrument definitions in Rust, use code similar to the following.
 For a complete example, see the [example binary here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_http.rs).
 
 ```rust
-use nautilus_adapters::tardis::{enums::Exchange, http::client::TardisHttpClient};
+use nautilus_tardis::{
+    enums::TardisExchange,
+    http::client::TardisHttpClient,
+};
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
-    let client = TardisHttpClient::new(None, None, None).unwrap();
+    let client = TardisHttpClient::new(None, None, None, true).unwrap();
 
-    // Nautilus instrument definitions
-    let resp = client.instruments(Exchange::Bitmex).await;
+    // Tardis instrument definitions
+    let resp = client
+        .instruments_info(TardisExchange::Bitmex, Some("XBTUSD"), None)
+        .await;
     println!("Received: {resp:?}");
 
-    let resp = client.instrument(Exchange::Bitmex, "ETHUSDT").await;
+    // Nautilus instrument definitions
+    let resp = client
+        .instruments(TardisExchange::Bitmex, Some("XBTUSD"), None, None, None, None, None, None)
+        .await;
     println!("Received: {resp:?}");
 }
 ```
@@ -653,6 +657,7 @@ It supports subscriptions to the following data types:
 - `QuoteTick`
 - `TradeTick`
 - `Bar` (trade bars with [Tardis-supported bar aggregations](#bars))
+- `FundingRateUpdate` (from derivative_ticker messages)
 
 ### Data WebSockets
 
@@ -681,6 +686,8 @@ allowing them to be later closed individually upon unsubscription.
 The following limitations and considerations are currently known:
 
 - Historical data requests are not supported, as each would require a minimum one-day replay from the Tardis Machine, potentially with a filter. This approach is neither practical nor efficient.
+
+## Contributing
 
 :::info
 For additional features or to contribute to the Tardis adapter, please see our

@@ -16,24 +16,35 @@
 #![allow(unused_assignments)] // Fields are accessed via methods, false positive from nightly
 
 use std::{
-    env,
     fmt::{Debug, Display},
     fs,
     path::Path,
 };
 
+use nautilus_core::env::{get_or_env_var, get_or_env_var_opt};
 use serde::Deserialize;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::http::error::{Error, Result};
 
+/// Returns the environment variable names for credentials,
+/// based on network.
+///
+/// Returns `(private_key_var, vault_address_var)`.
+#[must_use]
+pub fn credential_env_vars(is_testnet: bool) -> (&'static str, &'static str) {
+    if is_testnet {
+        ("HYPERLIQUID_TESTNET_PK", "HYPERLIQUID_TESTNET_VAULT")
+    } else {
+        ("HYPERLIQUID_PK", "HYPERLIQUID_VAULT")
+    }
+}
+
 /// Represents a secure wrapper for EVM private key with zeroization on drop.
-#[derive(Clone, ZeroizeOnDrop)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct EvmPrivateKey {
-    #[zeroize(skip)]
-    formatted_key: String, // Keep the formatted version for display
-    #[zeroize(skip)] // Skip zeroization to allow safe cloning
-    raw_bytes: Vec<u8>, // The actual key bytes
+    formatted_key: String,
+    raw_bytes: Vec<u8>,
 }
 
 impl EvmPrivateKey {
@@ -170,33 +181,43 @@ impl Debug for Secrets {
 }
 
 impl Secrets {
-    /// Load secrets from environment variables
-    ///
-    /// Expected environment variables:
-    /// - `HYPERLIQUID_PK`: EVM private key for mainnet (required for mainnet)
-    /// - `HYPERLIQUID_TESTNET_PK`: EVM private key for testnet (required for testnet)
-    /// - `HYPERLIQUID_VAULT`: Vault address for mainnet (optional)
-    /// - `HYPERLIQUID_TESTNET_VAULT`: Vault address for testnet (optional)
-    ///
-    /// The method will first try to load testnet credentials. If not found, it will fall back to mainnet.
-    pub fn from_env() -> Result<Self> {
-        // Try testnet credentials first
-        let (private_key_str, vault_env_var, is_testnet) =
-            if let Ok(testnet_pk) = env::var("HYPERLIQUID_TESTNET_PK") {
-                (testnet_pk, "HYPERLIQUID_TESTNET_VAULT", true)
-            } else if let Ok(mainnet_pk) = env::var("HYPERLIQUID_PK") {
-                (mainnet_pk, "HYPERLIQUID_VAULT", false)
-            } else {
-                return Err(Error::bad_request(
-                    "Neither HYPERLIQUID_PK nor HYPERLIQUID_TESTNET_PK environment variable is set",
-                ));
-            };
+    /// Returns the environment variable names for the specified network.
+    #[must_use]
+    pub fn env_vars(is_testnet: bool) -> (&'static str, &'static str) {
+        credential_env_vars(is_testnet)
+    }
 
-        let private_key = EvmPrivateKey::new(private_key_str)?;
+    /// Resolves secrets from provided values or environment variables.
+    ///
+    /// If `private_key` is provided, uses it directly. Otherwise falls back
+    /// to environment variables based on the network.
+    pub fn resolve(
+        private_key: Option<&str>,
+        vault_address: Option<&str>,
+        is_testnet: bool,
+    ) -> Result<Self> {
+        let (pk_env_var, vault_env_var) = credential_env_vars(is_testnet);
 
-        let vault_address = match env::var(vault_env_var) {
-            Ok(addr_str) if !addr_str.trim().is_empty() => Some(VaultAddress::parse(&addr_str)?),
-            _ => None,
+        let pk_str = get_or_env_var(
+            private_key
+                .filter(|s| !s.trim().is_empty())
+                .map(String::from),
+            pk_env_var,
+        )
+        .map_err(|_| Error::bad_request(format!("{pk_env_var} environment variable is not set")))?;
+
+        let vault_str = get_or_env_var_opt(
+            vault_address
+                .filter(|s| !s.trim().is_empty())
+                .map(String::from),
+            vault_env_var,
+        )
+        .filter(|s| !s.trim().is_empty());
+
+        let private_key = EvmPrivateKey::new(pk_str)?;
+        let vault_address = match vault_str {
+            Some(addr) => Some(VaultAddress::parse(&addr)?),
+            None => None,
         };
 
         Ok(Self {
@@ -204,6 +225,17 @@ impl Secrets {
             vault_address,
             is_testnet,
         })
+    }
+
+    /// Load secrets from environment variables for the specified network.
+    ///
+    /// Expected environment variables:
+    /// - `HYPERLIQUID_PK`: EVM private key for mainnet (required when `is_testnet=false`)
+    /// - `HYPERLIQUID_TESTNET_PK`: EVM private key for testnet (required when `is_testnet=true`)
+    /// - `HYPERLIQUID_VAULT`: Vault address for mainnet (optional)
+    /// - `HYPERLIQUID_TESTNET_VAULT`: Vault address for testnet (optional)
+    pub fn from_env(is_testnet: bool) -> Result<Self> {
+        Self::resolve(None, None, is_testnet)
     }
 
     /// Create secrets from explicit private key and vault address.

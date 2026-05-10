@@ -189,9 +189,6 @@ def bypass_logging():
     to debug specific tests, simply comment this out.
 
     """
-    # Uncomment below for tracing logs from Rust
-    # from nautilus_trader.core import nautilus_pyo3
-    # nautilus_pyo3.init_tracing()
     guard = init_logging(
         level_stdout=LogLevel.DEBUG,
         bypass=True,  # Set this to False to see logging in tests

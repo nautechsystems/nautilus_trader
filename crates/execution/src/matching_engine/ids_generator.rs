@@ -108,6 +108,7 @@ impl IdsGenerator {
         generate: Option<bool>,
     ) -> Option<PositionId> {
         let generate = generate.unwrap_or(true);
+
         if self.oms_type == OmsType::Hedging {
             {
                 let cache = self.cache.as_ref().borrow();
@@ -116,6 +117,7 @@ impl IdsGenerator {
                     return Some(position_id.to_owned());
                 }
             }
+
             if generate {
                 self.generate_venue_position_id()
             } else {
@@ -127,7 +129,7 @@ impl IdsGenerator {
             // Netting OMS (position id will be derived from instrument and strategy)
             let cache = self.cache.as_ref().borrow();
             let positions_open =
-                cache.positions_open(None, Some(&order.instrument_id()), None, None);
+                cache.positions_open(None, Some(&order.instrument_id()), None, None, None);
             if positions_open.is_empty() {
                 None
             } else {
@@ -152,6 +154,7 @@ impl IdsGenerator {
         }
 
         self.position_count += 1;
+
         if self.use_random_ids {
             Some(PositionId::new(Uuid::new_v4().to_string()))
         } else {
@@ -163,6 +166,7 @@ impl IdsGenerator {
 
     pub fn generate_venue_order_id(&mut self) -> VenueOrderId {
         self.order_count += 1;
+
         if self.use_random_ids {
             VenueOrderId::new(Uuid::new_v4().to_string())
         } else {
@@ -178,20 +182,79 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::cache::Cache;
+    use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
-        enums::OmsType,
+        enums::{LiquiditySide, OmsType, OrderSide, OrderType},
         events::OrderFilled,
-        identifiers::{PositionId, Venue, VenueOrderId},
-        instruments::InstrumentAny,
-        orders::OrderAny,
+        identifiers::{
+            AccountId, ClientOrderId, PositionId, TradeId, Venue, VenueOrderId, stubs::account_id,
+        },
+        instruments::{
+            CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
+        },
+        orders::{Order, OrderAny, OrderTestBuilder},
         position::Position,
+        types::{Price, Quantity},
     };
-    use rstest::rstest;
+    use rstest::{fixture, rstest};
 
-    use crate::matching_engine::{
-        ids_generator::IdsGenerator,
-        tests::{instrument_eth_usdt, market_order_buy, market_order_fill, market_order_sell},
-    };
+    use crate::matching_engine::ids_generator::IdsGenerator;
+
+    #[fixture]
+    fn instrument_eth_usdt(crypto_perpetual_ethusdt: CryptoPerpetual) -> InstrumentAny {
+        InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt)
+    }
+
+    #[fixture]
+    fn market_order_buy(instrument_eth_usdt: InstrumentAny) -> OrderAny {
+        OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+            .submit(true)
+            .build()
+    }
+
+    #[fixture]
+    fn market_order_sell(instrument_eth_usdt: InstrumentAny) -> OrderAny {
+        OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.000"))
+            .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
+            .submit(true)
+            .build()
+    }
+
+    #[fixture]
+    fn market_order_fill(
+        instrument_eth_usdt: InstrumentAny,
+        account_id: AccountId,
+        market_order_buy: OrderAny,
+    ) -> OrderFilled {
+        OrderFilled::new(
+            market_order_buy.trader_id(),
+            market_order_buy.strategy_id(),
+            market_order_buy.instrument_id(),
+            market_order_buy.client_order_id(),
+            VenueOrderId::new("BINANCE-1"),
+            account_id,
+            TradeId::new("1"),
+            market_order_buy.order_side(),
+            market_order_buy.order_type(),
+            Quantity::from("1"),
+            Price::from("1000.000"),
+            instrument_eth_usdt.quote_currency(),
+            LiquiditySide::Taker,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(PositionId::new("P-1")),
+            None,
+        )
+    }
 
     fn get_ids_generator(
         cache: Rc<RefCell<Cache>>,

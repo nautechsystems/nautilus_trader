@@ -28,7 +28,7 @@ use crate::defi::tick_map::tick::PoolTick;
 /// - Subtracting causes underflow.
 pub fn liquidity_math_add(x: u128, y: i128) -> u128 {
     if y < 0 {
-        let delta = (-y) as u128;
+        let delta = y.unsigned_abs();
         let z = x.wrapping_sub(delta);
         assert!(
             z < x,
@@ -46,8 +46,14 @@ pub fn liquidity_math_add(x: u128, y: i128) -> u128 {
     }
 }
 
-/// Derives max liquidity per tick from a given tick spacing
+/// Derives max liquidity per tick from a given tick spacing.
+///
+/// # Panics
+///
+/// Panics if `tick_spacing` is zero.
 pub fn tick_spacing_to_max_liquidity_per_tick(tick_spacing: i32) -> u128 {
+    assert!(tick_spacing != 0, "Tick spacing must be non-zero");
+
     // Calculate min and max tick aligned to tick spacing
     let min_tick = (PoolTick::MIN_TICK / tick_spacing) * tick_spacing;
     let max_tick = (PoolTick::MAX_TICK / tick_spacing) * tick_spacing;

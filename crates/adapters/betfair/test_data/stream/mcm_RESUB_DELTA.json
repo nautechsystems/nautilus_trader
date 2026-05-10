@@ -1,0 +1,222 @@
+{
+  "op": "mcm",
+  "id": 12345,
+  "initialClk": "yhfXkdfHDMoXgtDFvwzKF9+D78QM",
+  "clk": "AAAAAAAA",
+  "conflateMs": 0,
+  "heartbeatMs": 5000,
+  "pt": 1478348005395,
+  "ct": "RESUB_DELTA",
+  "mc": [
+    {
+      "id": "1.176621195",
+      "rc": [
+        {
+          "atb": [
+            [
+              0,
+              2.7,
+              179.35
+            ]
+          ],
+          "atl": [
+            [
+              0,
+              2.74,
+              151.65
+            ]
+          ],
+          "id": "42153"
+        },
+        {
+          "atb": [
+            [
+              0,
+              9.8,
+              5.71
+            ]
+          ],
+          "atl": [
+            [
+              0,
+              10.5,
+              7.01
+            ]
+          ],
+          "id": "39978"
+        },
+        {
+          "atb": [
+            [
+              0,
+              10.5,
+              15.18
+            ]
+          ],
+          "id": "39991"
+        }
+      ],
+      "con": true
+    },
+    {
+      "id": "1.167249195",
+      "rc": [
+        {
+          "atb": [
+            [
+              0,
+              320,
+              4.54
+            ]
+          ],
+          "id": "1076592"
+        },
+        {
+          "atb": [
+            [
+              0,
+              3.6,
+              55.98
+            ]
+          ],
+          "atl": [
+            [
+              0,
+              3.7,
+              15.34
+            ]
+          ],
+          "id": "1405188"
+        },
+        {
+          "atb": [
+            [
+              0,
+              3.45,
+              32.91
+            ]
+          ],
+          "atl": [
+            [
+              0,
+              3.5,
+              38.01
+            ]
+          ],
+          "id": "1405187"
+        }
+      ],
+      "con": true
+    },
+    {
+      "id": "1.175776462",
+      "marketDefinition": {
+        "bspMarket": true,
+        "turnInPlayEnabled": true,
+        "persistenceEnabled": true,
+        "marketBaseRate": 5,
+        "eventId": "28984188",
+        "eventTypeId": "1",
+        "numberOfWinners": 1,
+        "bettingType": "ODDS",
+        "marketType": "WINNER",
+        "marketTime": "2020-12-28T08:00:00+00:00",
+        "suspendTime": "2020-12-28T08:00:00+00:00",
+        "bspReconciled": true,
+        "complete": true,
+        "inPlay": true,
+        "crossMatching": true,
+        "runnersVoidable": false,
+        "numberOfActiveRunners": 12,
+        "betDelay": 1,
+        "status": "SUSPENDED",
+        "runners": [
+          {
+            "adjustmentFactor": 20.408,
+            "status": "ACTIVE",
+            "sortPriority": 1,
+            "bsp": 3.9161586776799058,
+            "id": "8586946"
+          },
+          {
+            "adjustmentFactor": 15.252,
+            "status": "ACTIVE",
+            "sortPriority": 2,
+            "bsp": 6,
+            "id": "1205121"
+          },
+          {
+            "adjustmentFactor": 14.116,
+            "status": "ACTIVE",
+            "sortPriority": 3,
+            "bsp": 7.788580259833943,
+            "id": "1205126"
+          }
+        ],
+        "regulators": [
+          "MR_INT"
+        ],
+        "venue": "Doncaster",
+        "countryCode": "GB",
+        "discountAllowed": true,
+        "timezone": "Europe/London",
+        "openDate": "2020-12-27T08:30:00+00:00",
+        "version": 1484342502
+      },
+      "rc": [
+        {
+          "atb": [
+            [
+              0,
+              21,
+              2
+            ]
+          ],
+          "atl": [
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "id": "8586946"
+        },
+        {
+          "atb": [
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "atl": [
+            [
+              0,
+              1.01,
+              71.19
+            ]
+          ],
+          "id": "1205121"
+        },
+        {
+          "atb": [
+            [
+              0,
+              34,
+              8.61
+            ]
+          ],
+          "atl": [
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "id": "1205126"
+        }
+      ],
+      "con": true
+    }
+  ]
+}

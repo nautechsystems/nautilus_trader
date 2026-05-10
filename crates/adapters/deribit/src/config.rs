@@ -18,19 +18,26 @@
 use nautilus_model::identifiers::{AccountId, TraderId};
 
 use crate::{
-    common::urls::{get_http_base_url, get_ws_url},
-    http::models::DeribitInstrumentKind,
+    common::{
+        credential::credential_env_vars,
+        urls::{get_http_base_url, get_ws_url},
+    },
+    http::models::DeribitProductType,
 };
 
 /// Configuration for the Deribit data client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
+)]
 pub struct DeribitDataClientConfig {
     /// Optional API key for authenticated endpoints.
     pub api_key: Option<String>,
     /// Optional API secret for authenticated endpoints.
     pub api_secret: Option<String>,
-    /// Instrument kinds to load (e.g., Future, Option, Spot).
-    pub instrument_kinds: Vec<DeribitInstrumentKind>,
+    /// Product types to load (e.g., Future, Option, Spot).
+    pub product_types: Vec<DeribitProductType>,
     /// Optional override for the HTTP base URL.
     pub base_url_http: Option<String>,
     /// Optional override for the WebSocket URL.
@@ -56,7 +63,7 @@ impl Default for DeribitDataClientConfig {
         Self {
             api_key: None,
             api_secret: None,
-            instrument_kinds: vec![DeribitInstrumentKind::Future],
+            product_types: vec![DeribitProductType::Future],
             base_url_http: None,
             base_url_ws: None,
             use_testnet: false,
@@ -80,12 +87,7 @@ impl DeribitDataClientConfig {
     /// Returns `true` when API credentials are available (in config or env vars).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        let (key_env, secret_env) = if self.use_testnet {
-            ("DERIBIT_TESTNET_API_KEY", "DERIBIT_TESTNET_API_SECRET")
-        } else {
-            ("DERIBIT_API_KEY", "DERIBIT_API_SECRET")
-        };
-
+        let (key_env, secret_env) = credential_env_vars(self.use_testnet);
         let has_key = self.api_key.is_some() || std::env::var(key_env).is_ok();
         let has_secret = self.api_secret.is_some() || std::env::var(secret_env).is_ok();
         has_key && has_secret
@@ -108,10 +110,12 @@ impl DeribitDataClientConfig {
     }
 }
 
-// ------------------------------------------------------------------------------------------------
-
 /// Configuration for the Deribit execution client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
+)]
 pub struct DeribitExecClientConfig {
     /// The trader ID for this client.
     pub trader_id: TraderId,
@@ -121,8 +125,8 @@ pub struct DeribitExecClientConfig {
     pub api_key: Option<String>,
     /// Optional API secret for authenticated endpoints.
     pub api_secret: Option<String>,
-    /// Instrument kinds to load (e.g., Future, Option, Spot).
-    pub instrument_kinds: Vec<DeribitInstrumentKind>,
+    /// Product types to load (e.g., Future, Option, Spot).
+    pub product_types: Vec<DeribitProductType>,
     /// Optional override for the HTTP base URL.
     pub base_url_http: Option<String>,
     /// Optional override for the WebSocket URL.
@@ -146,7 +150,7 @@ impl Default for DeribitExecClientConfig {
             account_id: AccountId::from("DERIBIT-001"),
             api_key: None,
             api_secret: None,
-            instrument_kinds: vec![DeribitInstrumentKind::Future],
+            product_types: vec![DeribitProductType::Future],
             base_url_http: None,
             base_url_ws: None,
             use_testnet: false,
@@ -172,12 +176,7 @@ impl DeribitExecClientConfig {
     /// Returns `true` when API credentials are available (in config or env vars).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        let (key_env, secret_env) = if self.use_testnet {
-            ("DERIBIT_TESTNET_API_KEY", "DERIBIT_TESTNET_API_SECRET")
-        } else {
-            ("DERIBIT_API_KEY", "DERIBIT_API_SECRET")
-        };
-
+        let (key_env, secret_env) = credential_env_vars(self.use_testnet);
         let has_key = self.api_key.is_some() || std::env::var(key_env).is_ok();
         let has_secret = self.api_secret.is_some() || std::env::var(secret_env).is_ok();
         has_key && has_secret
@@ -210,7 +209,7 @@ mod tests {
     fn test_default_config() {
         let config = DeribitDataClientConfig::default();
         assert!(!config.use_testnet);
-        assert_eq!(config.instrument_kinds.len(), 1);
+        assert_eq!(config.product_types.len(), 1);
         assert_eq!(config.http_timeout_secs, Some(60));
     }
 
@@ -242,13 +241,6 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(config.ws_url(), "wss://test.deribit.com/ws/api/v2");
-    }
-
-    #[rstest]
-    fn test_has_api_credentials_none() {
-        let config = DeribitDataClientConfig::default();
-        // Without env vars set, should return false
-        assert!(!config.has_api_credentials());
     }
 
     #[rstest]

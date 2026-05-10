@@ -60,6 +60,7 @@ cdef class CacheFacade:
     cpdef list trade_ticks(self, InstrumentId instrument_id)
     cpdef list mark_prices(self, InstrumentId instrument_id)
     cpdef list index_prices(self, InstrumentId instrument_id)
+    cpdef list funding_rates(self, InstrumentId instrument_id)
     cpdef list bars(self, BarType bar_type)
     cpdef Price price(self, InstrumentId instrument_id, PriceType price_type)
     cpdef dict[InstrumentId, Price] prices(self, PriceType price_type)
@@ -71,19 +72,21 @@ cdef class CacheFacade:
     cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=*)
     cpdef MarkPriceUpdate mark_price(self, InstrumentId instrument_id, int index=*)
     cpdef IndexPriceUpdate index_price(self, InstrumentId instrument_id, int index=*)
-    cpdef FundingRateUpdate funding_rate(self, InstrumentId instrument_id)
+    cpdef FundingRateUpdate funding_rate(self, InstrumentId instrument_id, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)
     cpdef int book_update_count(self, InstrumentId instrument_id)
     cpdef int quote_tick_count(self, InstrumentId instrument_id)
     cpdef int trade_tick_count(self, InstrumentId instrument_id)
     cpdef int mark_price_count(self, InstrumentId instrument_id)
     cpdef int index_price_count(self, InstrumentId instrument_id)
+    cpdef int funding_rate_count(self, InstrumentId instrument_id)
     cpdef int bar_count(self, BarType bar_type)
     cpdef bint has_order_book(self, InstrumentId instrument_id)
     cpdef bint has_quote_ticks(self, InstrumentId instrument_id)
     cpdef bint has_trade_ticks(self, InstrumentId instrument_id)
     cpdef bint has_mark_prices(self, InstrumentId instrument_id)
     cpdef bint has_index_prices(self, InstrumentId instrument_id)
+    cpdef bint has_funding_rates(self, InstrumentId instrument_id)
     cpdef bint has_bars(self, BarType bar_type)
 
     cpdef get_xrate(
@@ -93,7 +96,7 @@ cdef class CacheFacade:
         Currency to_currency,
         PriceType price_type=*,
     )
-    cpdef get_mark_xrate(
+    cpdef object get_mark_xrate(
         self,
         Currency from_currency,
         Currency to_currency,
@@ -125,23 +128,24 @@ cdef class CacheFacade:
 
 # -- ACCOUNT QUERIES ------------------------------------------------------------------------------
 
-    cpdef Account account(self, AccountId account_id)
     cpdef void set_specific_venue(self, Venue venue)
-    cpdef Account account_for_venue(self, Venue venue)
+    cpdef Account account(self, AccountId account_id)
+    cpdef Account account_for_venue(self, Venue venue=*, AccountId account_id=*)
     cpdef AccountId account_id(self, Venue venue)
+    cpdef void set_account_id_for_venue(self, Venue venue, AccountId account_id)
     cpdef list accounts(self)
 
 # -- IDENTIFIER QUERIES ---------------------------------------------------------------------------
 
-    cpdef set client_order_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
-    cpdef set client_order_ids_open(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
-    cpdef set client_order_ids_closed(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
-    cpdef set client_order_ids_emulated(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
-    cpdef set client_order_ids_inflight(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
-    cpdef set order_list_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
-    cpdef set position_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
-    cpdef set position_open_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
-    cpdef set position_closed_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef set client_order_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, AccountId account_id=*)
+    cpdef set client_order_ids_open(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, AccountId account_id=*)
+    cpdef set client_order_ids_closed(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, AccountId account_id=*)
+    cpdef set client_order_ids_emulated(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, AccountId account_id=*)
+    cpdef set client_order_ids_inflight(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, AccountId account_id=*)
+    cpdef set order_list_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, AccountId account_id=*)
+    cpdef set position_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, AccountId account_id=*)
+    cpdef set position_open_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, AccountId account_id=*)
+    cpdef set position_closed_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, AccountId account_id=*)
     cpdef set actor_ids(self)
     cpdef set strategy_ids(self)
     cpdef set exec_algorithm_ids(self)
@@ -152,11 +156,11 @@ cdef class CacheFacade:
     cpdef ClientOrderId client_order_id(self, VenueOrderId venue_order_id)
     cpdef VenueOrderId venue_order_id(self, ClientOrderId client_order_id)
     cpdef ClientId client_id(self, ClientOrderId client_order_id)
-    cpdef list orders(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
-    cpdef list orders_open(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
-    cpdef list orders_closed(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
-    cpdef list orders_emulated(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
-    cpdef list orders_inflight(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
+    cpdef list orders(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*, AccountId account_id=*)
+    cpdef list orders_open(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*, AccountId account_id=*)
+    cpdef list orders_closed(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*, AccountId account_id=*)
+    cpdef list orders_emulated(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*, AccountId account_id=*)
+    cpdef list orders_inflight(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*, AccountId account_id=*)
     cpdef list orders_for_position(self, PositionId position_id)
     cpdef bint order_exists(self, ClientOrderId client_order_id)
     cpdef bint is_order_open(self, ClientOrderId client_order_id)
@@ -164,21 +168,21 @@ cdef class CacheFacade:
     cpdef bint is_order_emulated(self, ClientOrderId client_order_id)
     cpdef bint is_order_inflight(self, ClientOrderId client_order_id)
     cpdef bint is_order_pending_cancel_local(self, ClientOrderId client_order_id)
-    cpdef int orders_open_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
-    cpdef int orders_closed_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
-    cpdef int orders_emulated_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
-    cpdef int orders_inflight_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
-    cpdef int orders_total_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
+    cpdef int orders_open_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*, AccountId account_id=*)
+    cpdef int orders_closed_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*, AccountId account_id=*)
+    cpdef int orders_emulated_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*, AccountId account_id=*)
+    cpdef int orders_inflight_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*, AccountId account_id=*)
+    cpdef int orders_total_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*, AccountId account_id=*)
 
 # -- ORDER LIST QUERIES ---------------------------------------------------------------------------
 
     cpdef OrderList order_list(self, OrderListId order_list_id)
-    cpdef list order_lists(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef list order_lists(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, AccountId account_id=*)
     cpdef bint order_list_exists(self, OrderListId order_list_id)
 
 # -- EXEC ALGORITHM QUERIES -----------------------------------------------------------------------
 
-    cpdef list orders_for_exec_algorithm(self, ExecAlgorithmId exec_algorithm_id, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
+    cpdef list orders_for_exec_algorithm(self, ExecAlgorithmId exec_algorithm_id, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*, AccountId account_id=*)
     cpdef list orders_for_exec_spawn(self, ClientOrderId exec_spawn_id)
     cpdef Quantity exec_spawn_total_quantity(self, ClientOrderId exec_spawn_id, bint active_only=*)
     cpdef Quantity exec_spawn_total_filled_qty(self, ClientOrderId exec_spawn_id, bint active_only=*)
@@ -189,18 +193,18 @@ cdef class CacheFacade:
     cpdef Position position(self, PositionId position_id)
     cpdef Position position_for_order(self, ClientOrderId client_order_id)
     cpdef PositionId position_id(self, ClientOrderId client_order_id)
-    cpdef set[PositionId] position_snapshot_ids(self, InstrumentId instrument_id=*)
-    cpdef list position_snapshots(self, PositionId position_id=*)
+    cpdef set[PositionId] position_snapshot_ids(self, InstrumentId instrument_id=*, AccountId account_id=*)
+    cpdef list position_snapshots(self, PositionId position_id=*, AccountId account_id=*)
     cpdef list position_snapshot_bytes(self, PositionId position_id)
-    cpdef list positions(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, PositionSide side=*)
-    cpdef list positions_open(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, PositionSide side=*)
-    cpdef list positions_closed(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef list positions(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, PositionSide side=*, AccountId account_id=*)
+    cpdef list positions_open(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, PositionSide side=*, AccountId account_id=*)
+    cpdef list positions_closed(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, AccountId account_id=*)
     cpdef bint position_exists(self, PositionId position_id)
     cpdef bint is_position_open(self, PositionId position_id)
     cpdef bint is_position_closed(self, PositionId position_id)
-    cpdef int positions_open_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, PositionSide side=*)
-    cpdef int positions_closed_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
-    cpdef int positions_total_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, PositionSide side=*)
+    cpdef int positions_open_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, PositionSide side=*, AccountId account_id=*)
+    cpdef int positions_closed_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, AccountId account_id=*)
+    cpdef int positions_total_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, PositionSide side=*, AccountId account_id=*)
 
 # -- STRATEGY QUERIES -----------------------------------------------------------------------------
 

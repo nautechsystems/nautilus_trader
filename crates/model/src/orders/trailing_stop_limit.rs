@@ -42,7 +42,7 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct TrailingStopLimitOrder {
     core: OrderCore,
@@ -510,6 +510,7 @@ impl Order for TrailingStopLimitOrder {
         if let Some(price) = event.price {
             self.price = price;
         }
+
         if let Some(trigger_price) = event.trigger_price {
             self.trigger_price = trigger_price;
         }

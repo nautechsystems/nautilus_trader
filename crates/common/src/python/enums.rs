@@ -19,7 +19,10 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::python::common::EnumIterator;
 use pyo3::{PyTypeInfo, prelude::*, types::PyType};
 
-use crate::enums::{Environment, LogColor, LogLevel};
+use crate::enums::{
+    ComponentState, ComponentTrigger, Environment, LogColor, LogFormat, LogLevel,
+    SerializationEncoding,
+};
 
 #[pymethods]
 impl Environment {
@@ -31,15 +34,6 @@ impl Environment {
 
     const fn __hash__(&self) -> isize {
         *self as isize
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(Environment),
-            self.name(),
-            self.value(),
-        )
     }
 
     fn __str__(&self) -> String {
@@ -69,24 +63,6 @@ impl Environment {
         let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
-    }
-
-    #[classattr]
-    #[pyo3(name = "BACKTEST")]
-    const fn py_backtest() -> Self {
-        Self::Backtest
-    }
-
-    #[classattr]
-    #[pyo3(name = "SANDBOX")]
-    const fn py_sandbox() -> Self {
-        Self::Sandbox
-    }
-
-    #[classattr]
-    #[pyo3(name = "LIVE")]
-    const fn py_live() -> Self {
-        Self::Live
     }
 }
 
@@ -102,15 +78,6 @@ impl LogLevel {
         *self as isize
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(LogLevel),
-            self.name(),
-            self.value(),
-        )
-    }
-
     fn __str__(&self) -> String {
         self.to_string()
     }
@@ -138,36 +105,6 @@ impl LogLevel {
         let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
-    }
-
-    #[classattr]
-    #[pyo3(name = "OFF")]
-    const fn py_off() -> Self {
-        Self::Off
-    }
-
-    #[classattr]
-    #[pyo3(name = "DEBUG")]
-    const fn py_debug() -> Self {
-        Self::Debug
-    }
-
-    #[classattr]
-    #[pyo3(name = "INFO")]
-    const fn py_info() -> Self {
-        Self::Info
-    }
-
-    #[classattr]
-    #[pyo3(name = "WARNING")]
-    const fn py_warning() -> Self {
-        Self::Warning
-    }
-
-    #[classattr]
-    #[pyo3(name = "ERROR")]
-    const fn py_error() -> Self {
-        Self::Error
     }
 }
 
@@ -183,15 +120,6 @@ impl LogColor {
         *self as isize
     }
 
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(LogColor),
-            self.name(),
-            self.value(),
-        )
-    }
-
     fn __str__(&self) -> String {
         self.to_string()
     }
@@ -220,46 +148,32 @@ impl LogColor {
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
+}
 
-    #[classattr]
-    #[pyo3(name = "NORMAL")]
-    const fn py_normal() -> Self {
-        Self::Normal
+#[pymethods]
+impl ComponentState {
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
+}
 
-    #[classattr]
-    #[pyo3(name = "GREEN")]
-    const fn py_green() -> Self {
-        Self::Green
+#[pymethods]
+impl ComponentTrigger {
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
+}
 
-    #[classattr]
-    #[pyo3(name = "BLUE")]
-    const fn py_blue() -> Self {
-        Self::Blue
+#[pymethods]
+impl LogFormat {
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
+}
 
-    #[classattr]
-    #[pyo3(name = "MAGENTA")]
-    const fn py_magenta() -> Self {
-        Self::Magenta
-    }
-
-    #[classattr]
-    #[pyo3(name = "CYAN")]
-    const fn py_cyan() -> Self {
-        Self::Cyan
-    }
-
-    #[classattr]
-    #[pyo3(name = "YELLOW")]
-    const fn py_error() -> Self {
-        Self::Yellow
-    }
-
-    #[classattr]
-    #[pyo3(name = "RED")]
-    const fn py_red() -> Self {
-        Self::Red
+#[pymethods]
+impl SerializationEncoding {
+    const fn __hash__(&self) -> isize {
+        *self as isize
     }
 }

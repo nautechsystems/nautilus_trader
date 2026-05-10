@@ -50,6 +50,7 @@
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![cfg_attr(test, allow(clippy::large_stack_arrays))]
 
 pub mod accounts;
 pub mod currencies;

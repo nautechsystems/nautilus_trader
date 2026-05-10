@@ -41,6 +41,32 @@ use super::{
 };
 use crate::{decode::decode_instrument_def_msg, symbology::MetadataCache};
 
+/// Applies default venue-to-dataset mappings for consolidated Databento feeds.
+/// GLBX.MDP3 covers CME Globex exchange MICs; OPRA.PILLAR covers OPRA option venues.
+fn apply_default_venue_dataset_mappings(venue_dataset_map: &mut IndexMap<Venue, Dataset>) {
+    let glbx = Dataset::from("GLBX.MDP3");
+    for venue in [
+        Venue::CBCM(),
+        Venue::GLBX(),
+        Venue::NYUM(),
+        Venue::XCBT(),
+        Venue::XCEC(),
+        Venue::XCME(),
+        Venue::XFXS(),
+        Venue::XNYM(),
+    ] {
+        _ = venue_dataset_map.insert(venue, glbx);
+    }
+
+    let opra = Dataset::from("OPRA.PILLAR");
+    for venue_code in [
+        "AMXO", "XBOX", "XCBO", "EMLD", "EDGO", "GMNI", "XISX", "MCRY", "XMIO", "ARCO", "OPRA",
+        "MPRL", "XNDQ", "XBXO", "C2OX", "XPHL", "BATO", "MXOP", "SPHR",
+    ] {
+        _ = venue_dataset_map.insert(Venue::from(venue_code), opra);
+    }
+}
+
 /// A Nautilus data loader for Databento Binary Encoding (DBN) format data.
 ///
 /// # Supported Schemas
@@ -137,17 +163,7 @@ impl DatabentoDataLoader {
         }
 
         self.venue_dataset_map = venue_dataset_map;
-
-        // Insert CME Globex exchanges
-        let glbx = Dataset::from("GLBX.MDP3");
-        self.venue_dataset_map.insert(Venue::CBCM(), glbx);
-        self.venue_dataset_map.insert(Venue::GLBX(), glbx);
-        self.venue_dataset_map.insert(Venue::NYUM(), glbx);
-        self.venue_dataset_map.insert(Venue::XCBT(), glbx);
-        self.venue_dataset_map.insert(Venue::XCEC(), glbx);
-        self.venue_dataset_map.insert(Venue::XCME(), glbx);
-        self.venue_dataset_map.insert(Venue::XFXS(), glbx);
-        self.venue_dataset_map.insert(Venue::XNYM(), glbx);
+        apply_default_venue_dataset_mappings(&mut self.venue_dataset_map);
 
         self.publisher_venue_map = publishers
             .into_iter()
@@ -294,6 +310,7 @@ impl DatabentoDataLoader {
                 dbn_stream
                     .advance()
                     .map_err(|e| anyhow::anyhow!("Stream advance error: {e}"))?;
+
                 if let Some(rec) = dbn_stream.get() {
                     let record = dbn::RecordRef::from(rec);
                     let instrument_id = if let Some(id) = &instrument_id {
@@ -330,6 +347,9 @@ impl DatabentoDataLoader {
 
     /// Loads all instrument definitions from a DBN file.
     ///
+    /// When `skip_on_error` is true, instruments that fail to decode are logged
+    /// as warnings and skipped. When false (default), any decode error is propagated.
+    ///
     /// # Errors
     ///
     /// Returns an error if loading instruments fails.
@@ -337,9 +357,21 @@ impl DatabentoDataLoader {
         &mut self,
         filepath: &Path,
         use_exchange_as_venue: bool,
+        skip_on_error: bool,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
-        self.read_definition_records(filepath, use_exchange_as_venue)?
-            .collect::<Result<Vec<_>, _>>()
+        if skip_on_error {
+            let mut instruments = Vec::new();
+            for result in self.read_definition_records(filepath, use_exchange_as_venue)? {
+                match result {
+                    Ok(instrument) => instruments.push(instrument),
+                    Err(e) => log::warn!("Skipping instrument: {e}"),
+                }
+            }
+            Ok(instruments)
+        } else {
+            self.read_definition_records(filepath, use_exchange_as_venue)?
+                .collect::<Result<Vec<_>, _>>()
+        }
     }
 
     /// Loads order book delta messages from a DBN MBO schema file.
@@ -811,9 +843,20 @@ mod tests {
     }
 
     #[rstest]
+    fn test_default_venue_dataset_mappings(loader: DatabentoDataLoader) {
+        let xcme = Venue::XCME();
+        let result = loader.get_dataset_for_venue(&xcme).unwrap();
+        assert_eq!(*result, Ustr::from("GLBX.MDP3"));
+
+        let xcbo = Venue::from("XCBO");
+        let result = loader.get_dataset_for_venue(&xcbo).unwrap();
+        assert_eq!(*result, Ustr::from("OPRA.PILLAR"));
+    }
+
+    #[rstest]
     #[case(test_data_path().join("test_data.definition.dbn.zst"))]
     fn test_load_instruments(mut loader: DatabentoDataLoader, #[case] path: PathBuf) {
-        let instruments = loader.load_instruments(&path, false).unwrap();
+        let instruments = loader.load_instruments(&path, false, false).unwrap();
 
         assert_eq!(instruments.len(), 2);
     }
@@ -1013,6 +1056,8 @@ mod tests {
         #[case] path: PathBuf,
         #[case] bar_index: usize,
     ) {
+        const ONE_SECOND_NS: u64 = 1_000_000_000;
+
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
         let bars_close = loader
@@ -1044,7 +1089,6 @@ mod tests {
         );
 
         // The difference should be exactly 1 second (1_000_000_000 nanoseconds) for 1s bars
-        const ONE_SECOND_NS: u64 = 1_000_000_000;
         assert_eq!(
             bar_close.ts_event.as_u64() - bar_open.ts_event.as_u64(),
             ONE_SECOND_NS,

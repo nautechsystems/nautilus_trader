@@ -278,6 +278,8 @@ cdef class CryptoOption(Instrument):
         Quantity quantity,
         Price price,
         bint use_quote_for_inverse=False,
+        Currency target_currency=None,
+        Price conversion_price=None,
     ):
         """
         Calculate the notional value.
@@ -296,6 +298,10 @@ cdef class CryptoOption(Instrument):
             notional value in quote currency and returns it directly without calculation.
             This is useful when quantity already represents a USD value that doesn't need
             conversion (e.g., for display purposes). Has no effect on linear instruments.
+        target_currency : Currency, optional
+            The target currency for conversion.
+        conversion_price : Price, optional
+            The conversion price to the target currency.
 
         Returns
         -------
@@ -305,14 +311,20 @@ cdef class CryptoOption(Instrument):
         Condition.not_none(quantity, "quantity")
         Condition.not_none(price, "price")
 
+        cdef Money notional
         if self.is_inverse:
             if use_quote_for_inverse:
                 # Quantity is notional in quote currency
-                return Money(quantity, self.quote_currency)
-
-            return Money(quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()), self.underlying)
+                notional = Money(quantity, self.quote_currency)
+            else:
+                notional = Money(quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()), self.underlying)
         else:
-            return Money(quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(), self.quote_currency)
+            notional = Money(quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(), self.quote_currency)
+
+        if target_currency is not None and conversion_price is not None:
+            return Money(notional.as_f64_c() * conversion_price.as_f64_c(), target_currency)
+
+        return notional
 
     @property
     def activation_utc(self) -> pd.Timestamp:

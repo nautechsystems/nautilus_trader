@@ -32,21 +32,21 @@ use nautilus_common::messages::defi::{
 };
 use nautilus_common::{
     cache::Cache,
+    clients::DataClient,
     clock::Clock,
     messages::data::{
         DataCommand, RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCommand,
-        RequestCustomData, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
-        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
+        RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
+        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
         SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
         SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
         SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
-        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCommand,
+        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
         UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
         UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
     },
 };
-use nautilus_data::client::DataClient;
 use nautilus_model::identifiers::{ClientId, Venue};
 
 /// A mock implementation of [`DataClient`] for testing, with optional generic recorder.
@@ -181,16 +181,6 @@ impl DataClient for MockDataClient {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Subscribe(SubscribeCommand::BookDepth10(
-                    cmd.clone(),
-                )));
-        }
-        Ok(())
-    }
-
-    fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
-        if let Some(rec) = &self.recorder {
-            rec.borrow_mut()
-                .push(DataCommand::Subscribe(SubscribeCommand::BookSnapshots(
                     cmd.clone(),
                 )));
         }
@@ -400,16 +390,6 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) -> anyhow::Result<()> {
-        if let Some(rec) = &self.recorder {
-            rec.borrow_mut()
-                .push(DataCommand::Unsubscribe(UnsubscribeCommand::BookSnapshots(
-                    cmd.clone(),
-                )));
-        }
-        Ok(())
-    }
-
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
@@ -566,88 +546,84 @@ impl DataClient for MockDataClient {
 
     // -- REQUEST HANDLERS ------------------------------------------------------------------------
 
-    fn request_data(&self, request: &RequestCustomData) -> anyhow::Result<()> {
+    fn request_data(&self, request: RequestCustomData) -> anyhow::Result<()> {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
-                .push(DataCommand::Request(RequestCommand::Data(request.clone())));
+                .push(DataCommand::Request(RequestCommand::Data(request)));
         }
         Ok(())
     }
 
-    fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
+    fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
-                .push(DataCommand::Request(RequestCommand::Instruments(
-                    request.clone(),
-                )));
+                .push(DataCommand::Request(RequestCommand::Instruments(request)));
         }
         Ok(())
     }
 
-    fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
+    fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
-                .push(DataCommand::Request(RequestCommand::Instrument(
-                    request.clone(),
-                )));
+                .push(DataCommand::Request(RequestCommand::Instrument(request)));
         }
         Ok(())
     }
 
-    fn request_book_snapshot(&self, request: &RequestBookSnapshot) -> anyhow::Result<()> {
+    fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
-                .push(DataCommand::Request(RequestCommand::BookSnapshot(
-                    request.clone(),
-                )));
+                .push(DataCommand::Request(RequestCommand::BookSnapshot(request)));
         }
         Ok(())
     }
 
-    fn request_quotes(&self, request: &RequestQuotes) -> anyhow::Result<()> {
+    fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
-                .push(DataCommand::Request(RequestCommand::Quotes(
-                    request.clone(),
-                )));
+                .push(DataCommand::Request(RequestCommand::Quotes(request)));
         }
         Ok(())
     }
 
-    fn request_trades(&self, request: &RequestTrades) -> anyhow::Result<()> {
+    fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
-                .push(DataCommand::Request(RequestCommand::Trades(
-                    request.clone(),
-                )));
+                .push(DataCommand::Request(RequestCommand::Trades(request)));
         }
         Ok(())
     }
 
-    fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
+    fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
-                .push(DataCommand::Request(RequestCommand::Bars(request.clone())));
+                .push(DataCommand::Request(RequestCommand::FundingRates(request)));
         }
         Ok(())
     }
 
-    fn request_book_depth(&self, request: &RequestBookDepth) -> anyhow::Result<()> {
+    fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
-                .push(DataCommand::Request(RequestCommand::BookDepth(
-                    request.clone(),
-                )));
+                .push(DataCommand::Request(RequestCommand::Bars(request)));
+        }
+        Ok(())
+    }
+
+    fn request_book_depth(&self, request: RequestBookDepth) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Request(RequestCommand::BookDepth(request)));
         }
         Ok(())
     }
 
     #[cfg(feature = "defi")]
-    fn request_pool_snapshot(&self, request: &RequestPoolSnapshot) -> anyhow::Result<()> {
+    fn request_pool_snapshot(&self, request: RequestPoolSnapshot) -> anyhow::Result<()> {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::DefiRequest(DefiRequestCommand::PoolSnapshot(
-                    request.clone(),
+                    request,
                 )));
         }
         Ok(())

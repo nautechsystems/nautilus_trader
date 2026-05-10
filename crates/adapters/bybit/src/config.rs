@@ -26,6 +26,10 @@ use crate::common::{
 
 /// Configuration for the Bybit live data client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+)]
 pub struct BybitDataClientConfig {
     /// Optional API key for authenticated REST/WebSocket requests.
     pub api_key: Option<String>,
@@ -148,6 +152,10 @@ impl BybitDataClientConfig {
 
 /// Configuration for the Bybit live execution client.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+)]
 pub struct BybitExecClientConfig {
     /// API key for authenticated requests.
     pub api_key: Option<String>,
@@ -258,7 +266,6 @@ impl BybitExecClientConfig {
             .unwrap_or_else(|| bybit_ws_trade_url(self.environment).to_string())
     }
 }
-
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

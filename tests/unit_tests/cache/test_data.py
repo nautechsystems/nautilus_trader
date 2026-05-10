@@ -20,10 +20,13 @@ import pytest
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.rust.model import AggregationSource
 from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import FundingRateUpdate
@@ -411,6 +414,55 @@ class TestCache:
 
         # Assert
         assert result == [instrument1]
+
+    def test_add_instrument_registers_currencies_for_currency_pair(self):
+        # Arrange
+        instrument = TestInstrumentProvider.ethusdt_binance()
+
+        # Act
+        self.cache.add_instrument(instrument)
+
+        # Assert (instrument has expected currencies)
+        assert instrument.get_base_currency() == ETH
+        assert instrument.quote_currency == USDT
+        assert instrument.get_settlement_currency() == USDT
+
+    def test_add_instrument_registers_currencies_for_linear_perpetual(self):
+        # Arrange
+        instrument = TestInstrumentProvider.btcusdt_perp_binance()
+
+        # Act
+        self.cache.add_instrument(instrument)
+
+        # Assert (instrument has expected currencies)
+        assert instrument.get_base_currency() == BTC
+        assert instrument.quote_currency == USDT
+        assert instrument.get_settlement_currency() == USDT
+
+    def test_add_instrument_registers_currencies_for_inverse_perpetual(self):
+        # Arrange (inverse perpetual: base=BTC, quote=USD, settlement=BTC)
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+
+        # Act
+        self.cache.add_instrument(instrument)
+
+        # Assert (instrument has expected currencies)
+        assert instrument.get_base_currency() == BTC
+        assert instrument.quote_currency == USD
+        assert instrument.get_settlement_currency() == BTC
+
+    def test_add_instrument_registers_non_standard_currency(self):
+        # Arrange (uses 1000RATS which is a non-standard currency)
+        from nautilus_trader.model.objects import Currency
+
+        instrument = TestInstrumentProvider.onethousandrats_perp_binance()
+
+        # Act
+        self.cache.add_instrument(instrument)
+
+        # Assert (non-standard currency is registered and accessible)
+        assert instrument.get_base_currency().code == "1000RATS"
+        assert Currency.from_str("1000RATS") is not None
 
     def test_synthetic_ids_when_one_synthetic_instrument_returns_expected_list(self):
         # Arrange

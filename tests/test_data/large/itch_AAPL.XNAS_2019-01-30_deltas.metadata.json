@@ -1,0 +1,18 @@
+{
+  "file": "itch_AAPL.XNAS_2019-01-30_deltas.parquet",
+  "sha256": "a31aa366ab939e36c9fd484c5d2d5d0760fa84d47bd66e89c135655e9d2a360c",
+  "size_bytes": 23699344,
+  "original_url": "https://emi.nasdaq.com/ITCH/Nasdaq%20ITCH/01302019.NASDAQ_ITCH50.gz",
+  "licence": "Public market data from NASDAQ exchange, transformed to NautilusTrader Parquet format",
+  "added_at": "2026-02-12T00:00:00Z",
+  "instrument": "AAPL.XNAS",
+  "date": "2019-01-30",
+  "format": "NautilusTrader OrderBookDelta Parquet",
+  "original_file": "01302019.NASDAQ_ITCH50.gz",
+  "parser": "itchy 0.3.4 via ItchParser",
+  "records": 1779561,
+  "price_precision": 4,
+  "size_precision": 0,
+  "compression": "ZSTD(3)",
+  "row_group_size": 1000000
+}

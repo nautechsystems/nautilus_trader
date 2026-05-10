@@ -202,7 +202,7 @@ pub fn parse_timestamp(value_us: u64) -> UnixNanos {
     value_us
         .checked_mul(NANOSECONDS_IN_MICROSECOND)
         .map_or_else(|| {
-            tracing::error!("Timestamp overflow: {value_us} microseconds exceeds maximum representable value");
+            log::error!("Timestamp overflow: {value_us} microseconds exceeds maximum representable value");
             UnixNanos::max()
         }, UnixNanos::from)
 }

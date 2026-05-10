@@ -43,7 +43,7 @@
 
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::to_pyruntime_err;
+use nautilus_core::python::{call_python_threadsafe, to_pyruntime_err};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
@@ -78,8 +78,7 @@ impl KrakenSpotWebSocketClient {
         let (resolved_api_key, resolved_api_secret) =
             crate::common::credential::KrakenCredential::resolve_spot(api_key, api_secret)
                 .map(|c| c.into_parts())
-                .map(|(k, s)| (Some(k), Some(s)))
-                .unwrap_or((None, None));
+                .map_or((None, None), |(k, s)| (Some(k), Some(s)));
 
         let (ws_public_url, ws_private_url) = if private {
             // Use provided URL or default to the private endpoint
@@ -103,7 +102,7 @@ impl KrakenSpotWebSocketClient {
 
         let token = CancellationToken::new();
 
-        Ok(KrakenSpotWebSocketClient::new(config, token))
+        Ok(Self::new(config, token))
     }
 
     #[getter]
@@ -166,9 +165,12 @@ impl KrakenSpotWebSocketClient {
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
+        loop_: Py<PyAny>,
         instruments: Vec<Py<PyAny>>,
         callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let call_soon: Py<PyAny> = loop_.getattr(py, "call_soon_threadsafe")?;
+
         let mut instruments_any = Vec::new();
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
@@ -183,7 +185,7 @@ impl KrakenSpotWebSocketClient {
             // Cache instruments after connection is established
             client.cache_instruments(instruments_any);
 
-            let stream = client.stream();
+            let stream = client.stream().map_err(to_pyruntime_err)?;
 
             get_runtime().spawn(async move {
                 tokio::pin!(stream);
@@ -194,7 +196,7 @@ impl KrakenSpotWebSocketClient {
                             Python::attach(|py| {
                                 for data in data_vec {
                                     let py_obj = data_to_pycapsule(py, data);
-                                    call_python(py, &callback, py_obj);
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                 }
                             });
                         }
@@ -204,64 +206,66 @@ impl KrakenSpotWebSocketClient {
                                     py,
                                     Data::Deltas(OrderBookDeltas_API::new(deltas)),
                                 );
-                                call_python(py, &callback, py_obj);
+                                call_python_threadsafe(py, &call_soon, &callback, py_obj);
                             });
                         }
                         NautilusWsMessage::OrderRejected(event) => {
                             Python::attach(|py| match event.into_py_any(py) {
-                                Ok(py_obj) => call_python(py, &callback, py_obj),
+                                Ok(py_obj) => {
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                }
                                 Err(e) => {
-                                    tracing::error!(
-                                        "Failed to convert OrderRejected to Python: {e}"
-                                    );
+                                    log::error!("Failed to convert OrderRejected to Python: {e}");
                                 }
                             });
                         }
                         NautilusWsMessage::OrderAccepted(event) => {
                             Python::attach(|py| match event.into_py_any(py) {
-                                Ok(py_obj) => call_python(py, &callback, py_obj),
+                                Ok(py_obj) => {
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                }
                                 Err(e) => {
-                                    tracing::error!(
-                                        "Failed to convert OrderAccepted to Python: {e}"
-                                    );
+                                    log::error!("Failed to convert OrderAccepted to Python: {e}");
                                 }
                             });
                         }
                         NautilusWsMessage::OrderCanceled(event) => {
                             Python::attach(|py| match event.into_py_any(py) {
-                                Ok(py_obj) => call_python(py, &callback, py_obj),
+                                Ok(py_obj) => {
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                }
                                 Err(e) => {
-                                    tracing::error!(
-                                        "Failed to convert OrderCanceled to Python: {e}"
-                                    );
+                                    log::error!("Failed to convert OrderCanceled to Python: {e}");
                                 }
                             });
                         }
                         NautilusWsMessage::OrderExpired(event) => {
                             Python::attach(|py| match event.into_py_any(py) {
-                                Ok(py_obj) => call_python(py, &callback, py_obj),
+                                Ok(py_obj) => {
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                }
                                 Err(e) => {
-                                    tracing::error!(
-                                        "Failed to convert OrderExpired to Python: {e}"
-                                    );
+                                    log::error!("Failed to convert OrderExpired to Python: {e}");
                                 }
                             });
                         }
                         NautilusWsMessage::OrderUpdated(event) => {
                             Python::attach(|py| match event.into_py_any(py) {
-                                Ok(py_obj) => call_python(py, &callback, py_obj),
+                                Ok(py_obj) => {
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                }
                                 Err(e) => {
-                                    tracing::error!(
-                                        "Failed to convert OrderUpdated to Python: {e}"
-                                    );
+                                    log::error!("Failed to convert OrderUpdated to Python: {e}");
                                 }
                             });
                         }
                         NautilusWsMessage::OrderStatusReport(report) => {
                             Python::attach(|py| match (*report).into_py_any(py) {
-                                Ok(py_obj) => call_python(py, &callback, py_obj),
+                                Ok(py_obj) => {
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                }
                                 Err(e) => {
-                                    tracing::error!(
+                                    log::error!(
                                         "Failed to convert OrderStatusReport to Python: {e}"
                                     );
                                 }
@@ -269,14 +273,16 @@ impl KrakenSpotWebSocketClient {
                         }
                         NautilusWsMessage::FillReport(report) => {
                             Python::attach(|py| match (*report).into_py_any(py) {
-                                Ok(py_obj) => call_python(py, &callback, py_obj),
+                                Ok(py_obj) => {
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                }
                                 Err(e) => {
-                                    tracing::error!("Failed to convert FillReport to Python: {e}");
+                                    log::error!("Failed to convert FillReport to Python: {e}");
                                 }
                             });
                         }
                         NautilusWsMessage::Reconnected => {
-                            tracing::info!("WebSocket reconnected");
+                            log::info!("WebSocket reconnected");
                         }
                     }
                 }
@@ -497,11 +503,5 @@ impl KrakenSpotWebSocketClient {
                 .map_err(to_pyruntime_err)?;
             Ok(())
         })
-    }
-}
-
-pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
-    if let Err(e) = callback.call1(py, (py_obj,)) {
-        tracing::error!("Error calling Python: {e}");
     }
 }

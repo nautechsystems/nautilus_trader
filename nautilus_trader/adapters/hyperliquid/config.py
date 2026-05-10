@@ -26,8 +26,6 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
 
     Parameters
     ----------
-    base_url_http : str, optional
-        The HTTP client custom endpoint override.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
     http_proxy_url : str, optional
@@ -43,7 +41,6 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
 
     """
 
-    base_url_http: str | None = None
     base_url_ws: str | None = None
     http_proxy_url: str | None = None
     ws_proxy_url: str | None = None
@@ -65,8 +62,6 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
         The vault address for vault trading.
         If ``None`` then will source the `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT`
         environment variable (depending on the `testnet` setting).
-    base_url_http : str, optional
-        The HTTP client custom endpoint override.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
     http_proxy_url : str, optional
@@ -85,6 +80,12 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
         The maximum delay (milliseconds) between retries.
     http_timeout_secs : PositiveInt, default 10
         The timeout (seconds) for HTTP requests.
+    normalize_prices : bool, default True
+        If order prices should be normalized to 5 significant figures before submission.
+        Hyperliquid enforces a maximum of 5 significant figures on all prices, which is a
+        dynamic constraint that depends on the price magnitude and cannot be fully encoded
+        in the static instrument tick size. When enabled, prices are automatically rounded
+        to comply with this rule. Disable if you want full control over price formatting.
 
     Warnings
     --------
@@ -94,7 +95,6 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
 
     private_key: str | None = None
     vault_address: str | None = None
-    base_url_http: str | None = None
     base_url_ws: str | None = None
     http_proxy_url: str | None = None
     ws_proxy_url: str | None = None
@@ -103,3 +103,4 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None
     http_timeout_secs: PositiveInt = 10
+    normalize_prices: bool = True

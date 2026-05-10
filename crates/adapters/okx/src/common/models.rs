@@ -32,6 +32,10 @@ pub struct OKXInstrument {
     pub inst_type: OKXInstrumentType,
     /// Instrument ID, e.g. "BTC-USD-SWAP".
     pub inst_id: Ustr,
+    /// Instrument ID code (numeric). Required for WebSocket order operations.
+    /// E.g., 10458 for BTC-USD-SWAP. May not be present for SPOT instruments.
+    #[serde(default)]
+    pub inst_id_code: Option<u64>,
     /// Underlying of the instrument, e.g. "BTC-USD". Only applicable to FUTURES/SWAP/OPTION.
     pub uly: Ustr,
     /// Instrument family, e.g. "BTC-USD". Only applicable to FUTURES/SWAP/OPTION.
@@ -73,19 +77,27 @@ pub struct OKXInstrument {
     /// Rule type, e.g. "DynamicPL", "CT", etc.
     pub rule_type: String,
     /// Maximum limit order size.
+    #[serde(default)]
     pub max_lmt_sz: String,
     /// Maximum market order size.
+    #[serde(default)]
     pub max_mkt_sz: String,
     /// Maximum limit order amount.
+    #[serde(default)]
     pub max_lmt_amt: String,
     /// Maximum market order amount.
+    #[serde(default)]
     pub max_mkt_amt: String,
     /// Maximum TWAP order size.
+    #[serde(default)]
     pub max_twap_sz: String,
     /// Maximum iceberg order size.
+    #[serde(default)]
     pub max_iceberg_sz: String,
     /// Maximum trigger order size.
+    #[serde(default)]
     pub max_trigger_sz: String,
     /// Maximum stop order size.
+    #[serde(default)]
     pub max_stop_sz: String,
 }

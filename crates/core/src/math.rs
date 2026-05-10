@@ -67,12 +67,13 @@ macro_rules! approx_eq {
 #[inline]
 #[must_use]
 pub fn linear_weight(x1: f64, x2: f64, x: f64) -> f64 {
+    const EPSILON: f64 = f64::EPSILON * 2.0; // ~4.44e-16
+
     assert!(
         x1.is_finite() && x2.is_finite() && x.is_finite(),
         "All inputs must be finite: x1={x1}, x2={x2}, x={x}"
     );
 
-    const EPSILON: f64 = f64::EPSILON * 2.0; // ~4.44e-16
     let diff = (x2 - x1).abs();
     assert!(
         diff >= EPSILON,
@@ -128,6 +129,8 @@ pub fn pos_search(x: f64, xs: &[f64]) -> usize {
 #[inline]
 #[must_use]
 pub fn quad_polynomial(x: f64, x0: f64, x1: f64, x2: f64, y0: f64, y1: f64, y2: f64) -> f64 {
+    const EPSILON: f64 = f64::EPSILON * 2.0; // ~4.44e-16
+
     assert!(
         x.is_finite()
             && x0.is_finite()
@@ -138,8 +141,6 @@ pub fn quad_polynomial(x: f64, x0: f64, x1: f64, x2: f64, y0: f64, y1: f64, y2: 
             && y2.is_finite(),
         "All inputs must be finite: x={x}, x0={x0}, x1={x1}, x2={x2}, y0={y0}, y1={y1}, y2={y2}"
     );
-
-    const EPSILON: f64 = f64::EPSILON * 2.0; // ~4.44e-16
 
     // Protect against coincident x values that would lead to division by zero
     let diff_01 = (x0 - x1).abs();

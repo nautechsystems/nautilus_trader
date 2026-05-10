@@ -30,6 +30,8 @@ logs/
 *.zip
 
 # Data
+*.dbn
+*.dbn.zst
 *.parquet
 
 # IntelliJ and VSCode project
@@ -118,6 +120,7 @@ tests/test_data/**/backtest/**
 
 # Exceptions
 !tests/test_data/large/checksums.json
+!tests/test_data/large/*.metadata.json
 !tests/test_data/nautilus/*/**.parquet
 !tests/integration_tests/adapters/betfair/responses/*.log
 !/nautilus_core/adapters/src/databento/test_data/*

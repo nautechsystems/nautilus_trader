@@ -136,7 +136,7 @@ mod tests {
 
     #[rstest]
     #[case(
-        r"-----BEGIN TEST KEY-----
+        "-----BEGIN TEST KEY-----
 MIIBVwIBADANBgkqhkiG9w0BAQEFAASCATswggE3AgEAAkEAu/...
 -----END PRIVATE KEY-----",
         ""
@@ -151,7 +151,7 @@ MIIBVwIBADANBgkqhkiG9w0BAQEFAASCATswggE3AgEAAkEAu/...
 
     #[rstest]
     #[case(
-        r"-----BEGIN INVALID KEY-----
+        "-----BEGIN INVALID KEY-----
 INVALID_KEY_DATA
 -----END INVALID KEY-----",
         "This is a test query"

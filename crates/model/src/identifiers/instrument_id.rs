@@ -21,7 +21,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{check_valid_string_ascii, check_valid_string_utf8};
+use nautilus_core::correctness::{FAILED, check_valid_string_ascii, check_valid_string_utf8};
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[cfg(feature = "defi")]
@@ -35,7 +35,7 @@ use crate::identifiers::{Symbol, Venue};
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct InstrumentId {
     /// The instruments ticker symbol.
@@ -113,25 +113,9 @@ impl FromStr for InstrumentId {
     }
 }
 
-impl From<&str> for InstrumentId {
-    /// Creates a [`InstrumentId`] from a string slice.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the `value` string is not valid.
-    fn from(value: &str) -> Self {
-        Self::from_str(value).expect("Invalid InstrumentId string")
-    }
-}
-
-impl From<String> for InstrumentId {
-    /// Creates a [`InstrumentId`] from a string.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the `value` string is not valid.
-    fn from(value: String) -> Self {
-        Self::from(value.as_str())
+impl<T: AsRef<str>> From<T> for InstrumentId {
+    fn from(value: T) -> Self {
+        Self::from_str(value.as_ref()).expect(FAILED)
     }
 }
 

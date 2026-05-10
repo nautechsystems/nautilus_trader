@@ -17,7 +17,8 @@
 
 use chrono::{Duration, Utc};
 use nautilus_dydx::grpc::{
-    ChainId, OrderBuilder, OrderGoodUntil, OrderMarketParams, SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
+    ChainId, DEFAULT_RUST_CLIENT_METADATA, OrderBuilder, OrderGoodUntil, OrderMarketParams,
+    SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
 };
 use rstest::rstest;
 use rust_decimal_macros::dec;
@@ -171,7 +172,13 @@ fn test_order_builder_market_order() {
     use nautilus_dydx::proto::dydxprotocol::clob::order::Side;
 
     let market = sample_btc_market_params();
-    let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 12345);
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1test".to_string(),
+        0,
+        12345,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
 
     let order = builder
         .market(Side::Buy, dec!(0.05))
@@ -188,7 +195,13 @@ fn test_order_builder_limit_order() {
     use nautilus_dydx::proto::dydxprotocol::clob::order::Side;
 
     let market = sample_btc_market_params();
-    let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 12346);
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1test".to_string(),
+        0,
+        12346,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
 
     let order = builder
         .limit(Side::Sell, dec!(52000), dec!(0.1))
@@ -206,7 +219,13 @@ fn test_order_builder_short_term_flags() {
     use nautilus_dydx::proto::dydxprotocol::clob::order::Side;
 
     let market = sample_btc_market_params();
-    let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 12347);
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1test".to_string(),
+        0,
+        12347,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
 
     let order = builder
         .short_term()
@@ -224,7 +243,13 @@ fn test_order_builder_long_term_flags() {
     use nautilus_dydx::proto::dydxprotocol::clob::order::Side;
 
     let market = sample_btc_market_params();
-    let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 12348);
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1test".to_string(),
+        0,
+        12348,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
 
     let until_time = Utc::now() + Duration::hours(1);
     let order = builder
@@ -243,7 +268,13 @@ fn test_order_builder_conditional_flags() {
     use nautilus_dydx::proto::dydxprotocol::clob::order::Side;
 
     let market = sample_btc_market_params();
-    let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 12349);
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1test".to_string(),
+        0,
+        12349,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
 
     let order = builder
         .stop_limit(Side::Sell, dec!(48000), dec!(49000), dec!(0.01))
@@ -261,7 +292,13 @@ fn test_order_builder_reduce_only() {
     use nautilus_dydx::proto::dydxprotocol::clob::order::Side;
 
     let market = sample_btc_market_params();
-    let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 12350);
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1test".to_string(),
+        0,
+        12350,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
 
     let order = builder
         .limit(Side::Sell, dec!(50000), dec!(0.01))
@@ -278,7 +315,13 @@ fn test_order_builder_time_in_force() {
     use nautilus_dydx::proto::dydxprotocol::clob::order::{Side, TimeInForce};
 
     let market = sample_btc_market_params();
-    let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 12351);
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1test".to_string(),
+        0,
+        12351,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
 
     let order = builder
         .limit(Side::Buy, dec!(50000), dec!(0.01))
@@ -297,7 +340,13 @@ fn test_order_builder_clob_pair_id() {
     let mut market = sample_btc_market_params();
     market.clob_pair_id = 5; // Different market
 
-    let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 12352);
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1test".to_string(),
+        0,
+        12352,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
 
     let order = builder
         .market(Side::Buy, dec!(0.01))
@@ -313,7 +362,13 @@ fn test_order_builder_subaccount() {
     use nautilus_dydx::proto::dydxprotocol::clob::order::Side;
 
     let market = sample_btc_market_params();
-    let builder = OrderBuilder::new(market, "dydx1abc123".to_string(), 3, 12353);
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1abc123".to_string(),
+        3,
+        12353,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
 
     let order = builder
         .market(Side::Buy, dec!(0.01))
@@ -333,7 +388,13 @@ fn test_order_builder_client_id() {
 
     let market = sample_btc_market_params();
     let client_id = 999_888_777;
-    let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, client_id);
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1test".to_string(),
+        0,
+        client_id,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
 
     let order = builder
         .market(Side::Buy, dec!(0.01))
@@ -347,7 +408,13 @@ fn test_order_builder_client_id() {
 #[rstest]
 fn test_order_builder_missing_size_error() {
     let market = sample_btc_market_params();
-    let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 12354);
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1test".to_string(),
+        0,
+        12354,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
 
     let result = builder.until(OrderGoodUntil::Block(100)).build();
 
@@ -361,7 +428,13 @@ fn test_order_builder_missing_until_error() {
     use nautilus_dydx::proto::dydxprotocol::clob::order::Side;
 
     let market = sample_btc_market_params();
-    let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 12355);
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1test".to_string(),
+        0,
+        12355,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
 
     let result = builder.market(Side::Buy, dec!(0.01)).build();
 

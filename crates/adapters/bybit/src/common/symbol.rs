@@ -67,19 +67,14 @@ impl BybitSymbol {
     }
 
     /// Returns the product type identified by the suffix.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the symbol has no valid suffix (unreachable after construction).
     #[must_use]
     pub fn product_type(&self) -> BybitProductType {
-        if self.value.ends_with("-SPOT") {
-            BybitProductType::Spot
-        } else if self.value.ends_with("-LINEAR") {
-            BybitProductType::Linear
-        } else if self.value.ends_with("-INVERSE") {
-            BybitProductType::Inverse
-        } else if self.value.ends_with("-OPTION") {
-            BybitProductType::Option
-        } else {
-            unreachable!("symbol checked for suffix during construction")
-        }
+        BybitProductType::from_suffix(self.value.as_str())
+            .expect("symbol checked for suffix during construction")
     }
 
     /// Returns the instrument identifier corresponding to this symbol.

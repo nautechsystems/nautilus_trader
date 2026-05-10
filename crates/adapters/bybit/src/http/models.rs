@@ -41,7 +41,7 @@ use crate::common::{
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
 pub struct BybitOrderCursorList {
     /// Collection of orders returned by the endpoint.
@@ -92,7 +92,7 @@ impl BybitOrderCursorList {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
 #[serde(rename_all = "camelCase")]
 pub struct BybitServerTime {
@@ -238,7 +238,7 @@ pub type BybitTickersOptionResponse = BybitListResponse<BybitTickerOption>;
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
 pub struct BybitTickerData {
     pub symbol: Ustr,
@@ -519,6 +519,62 @@ pub struct BybitTradeResult {
 /// - <https://bybit-exchange.github.io/docs/v5/market/recent-trade>
 pub type BybitTradesResponse = BybitResponse<BybitTradeResult>;
 
+/// Funding entry returned by `GET /v5/market/funding/history`.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/history-fund-rate>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitFunding {
+    pub symbol: Ustr,
+    pub funding_rate: String,
+    pub funding_rate_timestamp: String,
+}
+
+/// Funding list result returned by Bybit.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/history-fund-rate>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitFundingResult {
+    pub category: BybitProductType,
+    pub list: Vec<BybitFunding>,
+}
+
+/// Response alias for historical funding requests.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/history-fund-rate>
+pub type BybitFundingResponse = BybitResponse<BybitFundingResult>;
+
+/// Orderbook result returned by Bybit.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/orderbook>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitOrderbookResult {
+    /// Symbol.
+    pub s: Ustr,
+    /// Bid levels represented as `[price, size]` string pairs.
+    pub b: Vec<[String; 2]>,
+    /// Ask levels represented as `[price, size]` string pairs.
+    pub a: Vec<[String; 2]>,
+    pub ts: i64,
+    /// Update identifier.
+    pub u: i64,
+    /// Cross sequence number.
+    pub seq: i64,
+    pub cts: i64,
+}
+
+/// Response alias for orderbook requests.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/market/orderbook>
+pub type BybitOrderbookResponse = BybitResponse<BybitOrderbookResult>;
+
 /// Instrument definition for spot symbols.
 ///
 /// # References
@@ -633,7 +689,7 @@ pub type BybitInstrumentOptionResponse = BybitCursorListResponse<BybitInstrument
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
 pub struct BybitFeeRate {
     pub symbol: Ustr,
@@ -750,7 +806,7 @@ pub type BybitWalletBalanceResponse = BybitListResponse<BybitWalletBalance>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
 #[serde(rename_all = "camelCase")]
 pub struct BybitOrder {
@@ -1275,7 +1331,7 @@ pub type BybitNoConvertRepayResponse = BybitResponse<BybitNoConvertRepayResult>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
 #[serde(rename_all = "PascalCase")]
 pub struct BybitApiKeyPermissions {
@@ -1305,7 +1361,7 @@ pub struct BybitApiKeyPermissions {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
 #[serde(rename_all = "camelCase")]
 pub struct BybitAccountDetails {

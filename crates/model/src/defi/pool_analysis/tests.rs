@@ -286,7 +286,7 @@ fn test_process_mint_with_fail_if_pool_not_initialized() {
 fn test_if_pool_process_fails_if_tick_lower_is_greater_than_tick_upper(mut profiler: PoolProfiler) {
     let mint_event = create_mint_event(lp_address(), 2, 1, 1);
     let result = profiler.process(&DexPoolData::LiquidityUpdate(mint_event));
-    assert!(result.is_err_and(|error| error.to_string() == "Invalid tick range: 2 >= 1"));
+    assert!(result.is_err_and(|e| e.to_string() == "Invalid tick range: 2 >= 1"));
 }
 
 #[rstest]
@@ -421,8 +421,8 @@ fn test_execute_mint_equivalence() {
     // Verify tick states
     let mut tick_values1 = profiler1.get_active_tick_values();
     let mut tick_values2 = profiler2.get_active_tick_values();
-    tick_values1.sort();
-    tick_values2.sort();
+    tick_values1.sort_unstable();
+    tick_values2.sort_unstable();
     assert_eq!(tick_values1, tick_values2);
 
     // Verify individual tick states
@@ -536,8 +536,8 @@ fn test_execute_burn_equivalence() {
     // Verify tick states
     let mut tick_values1 = profiler1.get_active_tick_values();
     let mut tick_values2 = profiler2.get_active_tick_values();
-    tick_values1.sort();
-    tick_values2.sort();
+    tick_values1.sort_unstable();
+    tick_values2.sort_unstable();
     assert_eq!(tick_values1, tick_values2);
 
     // Verify individual tick states
@@ -613,8 +613,8 @@ fn test_execute_swap_equivalence() {
     // Verify tick states match
     let mut tick_values1 = profiler1.get_active_tick_values();
     let mut tick_values2 = profiler2.get_active_tick_values();
-    tick_values1.sort();
-    tick_values2.sort();
+    tick_values1.sort_unstable();
+    tick_values2.sort_unstable();
     assert_eq!(tick_values1, tick_values2);
 
     // Verify individual tick states
@@ -650,12 +650,13 @@ fn uni_pool_profiler() -> PoolProfiler {
 // Matches: https://github.com/Uniswap/v3-core/blob/main/test/UniswapV3Pool.spec.ts#L531
 #[fixture]
 fn low_fee_pool_profiler() -> PoolProfiler {
+    const LOW_FEE_TICK_SPACING: i32 = 10;
+
     let pool_definition = pool_definition(Some(500), Some(10), Some(encode_sqrt_ratio_x96(1, 1)));
     let mut profiler = PoolProfiler::new(Arc::new(pool_definition));
     profiler.initialize(encode_sqrt_ratio_x96(1, 1)); // Initialize at 1:1 price (tick 0)
 
     // Mint initial liquidity to match Solidity test setup (initializeLiquidityAmount = 2e18)
-    const LOW_FEE_TICK_SPACING: i32 = 10;
     let min_tick = PoolTick::get_min_tick(LOW_FEE_TICK_SPACING);
     let max_tick = PoolTick::get_max_tick(LOW_FEE_TICK_SPACING);
     let initial_liquidity = expand_to_18_decimals(2);
@@ -677,12 +678,13 @@ fn low_fee_pool_profiler() -> PoolProfiler {
 // Matches: https://github.com/Uniswap/v3-core/blob/main/test/UniswapV3Pool.spec.ts#L564
 #[fixture]
 fn medium_fee_pool_profiler() -> PoolProfiler {
+    const MEDIUM_FEE_TICK_SPACING: i32 = 60;
+
     let pool_definition = pool_definition(Some(3000), Some(60), Some(encode_sqrt_ratio_x96(1, 1)));
     let mut profiler = PoolProfiler::new(Arc::new(pool_definition));
     profiler.initialize(encode_sqrt_ratio_x96(1, 1)); // Initialize at 1:1 price (tick 0)
 
     // Mint initial liquidity to match Solidity test setup (initializeLiquidityAmount = 2e18)
-    const MEDIUM_FEE_TICK_SPACING: i32 = 60;
     let min_tick = PoolTick::get_min_tick(MEDIUM_FEE_TICK_SPACING);
     let max_tick = PoolTick::get_max_tick(MEDIUM_FEE_TICK_SPACING);
     let initial_liquidity = expand_to_18_decimals(2);
@@ -763,7 +765,7 @@ fn test_mint_above_current_price(mut uni_pool_profiler: PoolProfiler) {
     // We have 4 active ticks (min and max from initial setup and new -22980 and 0)
     assert_eq!(uni_pool_profiler.get_active_tick_count(), 4);
     let mut active_tick_values = uni_pool_profiler.get_active_tick_values();
-    active_tick_values.sort();
+    active_tick_values.sort_unstable();
     assert_eq!(
         active_tick_values,
         vec![-887220, lower_tick, upper_tick, 887220]
@@ -809,7 +811,7 @@ fn test_max_tick_with_high_leverage(mut uni_pool_profiler: PoolProfiler) {
             .is_some_and(|tick| tick.updates_count == 2)
     );
     let mut active_tick_values = uni_pool_profiler.get_active_tick_values();
-    active_tick_values.sort();
+    active_tick_values.sort_unstable();
     assert_eq!(active_tick_values, vec![-887220, lower_tick, max_tick]);
 }
 
@@ -847,7 +849,7 @@ fn test_minting_works_for_max_tick(mut uni_pool_profiler: PoolProfiler) {
             .is_some_and(|tick| tick.updates_count == 2)
     );
     let mut active_tick_values = uni_pool_profiler.get_active_tick_values();
-    active_tick_values.sort();
+    active_tick_values.sort_unstable();
     assert_eq!(active_tick_values, vec![-887220, lower_tick, max_tick]);
 }
 

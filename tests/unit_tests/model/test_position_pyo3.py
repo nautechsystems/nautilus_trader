@@ -1356,7 +1356,7 @@ def test_position_close_and_reopen_clears_adjustments() -> None:
         last_qty=Quantity.from_str("1.0"),
         last_px=Price.from_int(50000),
         currency=BTC,  # Base currency commission creates adjustment
-        commission=Money(-0.001, BTC),
+        commission=Money(0.001, BTC),
         liquidity_side=LiquiditySide.TAKER,
         reconciliation=False,
         event_id=TestIdProviderPyo3.uuid(),
@@ -1389,7 +1389,7 @@ def test_position_close_and_reopen_clears_adjustments() -> None:
         last_qty=Quantity.from_str("0.999"),
         last_px=Price.from_int(51000),
         currency=USDT,  # Quote currency commission - no adjustment
-        commission=Money(-50.0, USDT),
+        commission=Money(50.0, USDT),
         liquidity_side=LiquiditySide.TAKER,
         reconciliation=False,
         event_id=TestIdProviderPyo3.uuid(),
@@ -1421,7 +1421,7 @@ def test_position_close_and_reopen_clears_adjustments() -> None:
         last_qty=Quantity.from_str("2.0"),
         last_px=Price.from_int(52000),
         currency=BTC,
-        commission=Money(-0.002, BTC),
+        commission=Money(0.002, BTC),
         liquidity_side=LiquiditySide.TAKER,
         reconciliation=False,
         event_id=TestIdProviderPyo3.uuid(),
@@ -1464,7 +1464,7 @@ def test_position_purge_events_clears_adjustments() -> None:
         last_qty=Quantity.from_str("1.0"),
         last_px=Price.from_int(50000),
         currency=BTC,
-        commission=Money(-0.001, BTC),
+        commission=Money(0.001, BTC),
         liquidity_side=LiquiditySide.TAKER,
         reconciliation=False,
         event_id=TestIdProviderPyo3.uuid(),
@@ -1493,7 +1493,7 @@ def test_position_purge_events_clears_adjustments() -> None:
         last_qty=Quantity.from_str("2.0"),
         last_px=Price.from_int(51000),
         currency=BTC,
-        commission=Money(-0.002, BTC),
+        commission=Money(0.002, BTC),
         liquidity_side=LiquiditySide.TAKER,
         reconciliation=False,
         event_id=TestIdProviderPyo3.uuid(),
@@ -1540,7 +1540,7 @@ def test_position_sell_base_currency_commission_reduces_short() -> None:
         last_qty=Quantity.from_str("1.0"),
         last_px=Price.from_int(50000),
         currency=BTC,  # Base currency commission
-        commission=Money(-0.001, BTC),  # Negative = cost
+        commission=Money(0.001, BTC),
         liquidity_side=LiquiditySide.TAKER,
         reconciliation=False,
         event_id=TestIdProviderPyo3.uuid(),
@@ -1555,8 +1555,7 @@ def test_position_sell_base_currency_commission_reduces_short() -> None:
     # Should have created one adjustment event for base currency commission
     assert len(position.adjustments) == 1
 
-    # The adjustment should be NEGATIVE (-0.001) to increase the short
-    # (commission is already negative, passed through unchanged)
+    # The adjustment is -0.001 (commission negated), increasing the short
     assert position.adjustments[0].quantity_change == Decimal("-0.001")
 
     # The final position should be -1.001 (sold 1.0 + paid 0.001 commission)
@@ -1591,7 +1590,7 @@ def test_position_flattens_with_quote_currency_commission_on_close() -> None:
         last_qty=Quantity.from_str("1.0"),
         last_px=Price.from_int(50000),
         currency=BTC,
-        commission=Money(-0.001, BTC),  # Base currency commission on open
+        commission=Money(0.001, BTC),
         liquidity_side=LiquiditySide.TAKER,
         reconciliation=False,
         event_id=TestIdProviderPyo3.uuid(),
@@ -1622,7 +1621,7 @@ def test_position_flattens_with_quote_currency_commission_on_close() -> None:
         last_qty=position.quantity,  # Sell exact quantity (0.999)
         last_px=Price.from_int(50100),
         currency=USDT,  # Quote currency commission - the realistic case
-        commission=Money(-50.0, USDT),  # Commission paid in USDT, not BTC
+        commission=Money(50.0, USDT),
         liquidity_side=LiquiditySide.TAKER,
         reconciliation=False,
         event_id=TestIdProviderPyo3.uuid(),
@@ -1668,7 +1667,7 @@ def test_position_flattens_with_base_currency_commission_on_close() -> None:
         last_qty=Quantity.from_str("1.0"),
         last_px=Price.from_int(50000),
         currency=BTC,
-        commission=Money(-0.001, BTC),  # Base currency commission
+        commission=Money(0.001, BTC),
         liquidity_side=LiquiditySide.TAKER,
         reconciliation=False,
         event_id=TestIdProviderPyo3.uuid(),
@@ -1699,7 +1698,7 @@ def test_position_flattens_with_base_currency_commission_on_close() -> None:
         last_qty=position.quantity,  # Sell exact quantity (0.999)
         last_px=Price.from_int(50100),
         currency=BTC,
-        commission=Money(-0.000999, BTC),  # Base currency commission on sell
+        commission=Money(0.000999, BTC),
         liquidity_side=LiquiditySide.TAKER,
         reconciliation=False,
         event_id=TestIdProviderPyo3.uuid(),
@@ -1772,7 +1771,7 @@ def test_position_flip_short_to_long_applies_full_commission() -> None:
         last_qty=Quantity.from_str("1.5"),
         last_px=Price.from_int(50_000),
         currency=BTC,
-        commission=Money(-0.001, BTC),  # Base currency commission
+        commission=Money(0.001, BTC),
         liquidity_side=LiquiditySide.TAKER,
         reconciliation=False,
         event_id=TestIdProviderPyo3.uuid(),
@@ -1846,7 +1845,7 @@ def test_position_flip_long_to_short_applies_full_commission() -> None:
         last_qty=Quantity.from_str("1.5"),
         last_px=Price.from_int(3000),
         currency=ETH,
-        commission=Money(-0.001, ETH),  # Base currency commission
+        commission=Money(0.001, ETH),
         liquidity_side=LiquiditySide.TAKER,
         reconciliation=False,
         event_id=TestIdProviderPyo3.uuid(),

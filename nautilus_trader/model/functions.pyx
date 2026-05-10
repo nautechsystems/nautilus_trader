@@ -55,6 +55,8 @@ from nautilus_trader.core.rust.model cimport order_status_from_cstr
 from nautilus_trader.core.rust.model cimport order_status_to_cstr
 from nautilus_trader.core.rust.model cimport order_type_from_cstr
 from nautilus_trader.core.rust.model cimport order_type_to_cstr
+from nautilus_trader.core.rust.model cimport oto_trigger_mode_from_cstr
+from nautilus_trader.core.rust.model cimport oto_trigger_mode_to_cstr
 from nautilus_trader.core.rust.model cimport position_adjustment_type_from_cstr
 from nautilus_trader.core.rust.model cimport position_adjustment_type_to_cstr
 from nautilus_trader.core.rust.model cimport position_side_from_cstr
@@ -201,6 +203,14 @@ cpdef OptionKind option_kind_from_str(str value):
 
 cpdef str option_kind_to_str(OptionKind value):
     return cstr_to_pystr(option_kind_to_cstr(value))
+
+
+cpdef OtoTriggerMode oto_trigger_mode_from_str(str value):
+    return oto_trigger_mode_from_cstr(pystr_to_cstr(value))
+
+
+cpdef str oto_trigger_mode_to_str(OtoTriggerMode value):
+    return cstr_to_pystr(oto_trigger_mode_to_cstr(value))
 
 
 cpdef OrderSide order_side_from_str(str value):

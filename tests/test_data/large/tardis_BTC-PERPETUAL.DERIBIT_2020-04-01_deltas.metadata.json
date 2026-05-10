@@ -1,0 +1,18 @@
+{
+  "file": "tardis_BTC-PERPETUAL.DERIBIT_2020-04-01_deltas.parquet",
+  "sha256": "ba4024e394f6425049827607bc479afe93c4015f8331b9c2942929abce43a9f1",
+  "size_bytes": 193727532,
+  "original_url": "https://tardis.dev/",
+  "licence": "Public market data from Deribit exchange, transformed to NautilusTrader Parquet format",
+  "added_at": "2026-02-11T00:00:00Z",
+  "instrument": "BTC-PERPETUAL.DERIBIT",
+  "date": "2020-04-01",
+  "format": "NautilusTrader OrderBookDelta Parquet",
+  "original_file": "tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz",
+  "parser": "nautilus-tardis load_deltas()",
+  "records": 19239597,
+  "price_precision": 1,
+  "size_precision": 0,
+  "compression": "ZSTD(3)",
+  "row_group_size": 1000000
+}

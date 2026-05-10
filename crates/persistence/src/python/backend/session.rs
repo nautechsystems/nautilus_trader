@@ -27,8 +27,8 @@ use pyo3::{prelude::*, types::PyCapsule};
 use crate::backend::session::{DataBackendSession, DataQueryResult};
 
 #[repr(C)]
-#[pyclass(eq, eq_int)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[pyclass(frozen, eq, eq_int, from_py_object)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum NautilusDataType {
     // Custom = 0,  # First slot reserved for custom data
     OrderBookDelta = 1,
@@ -37,6 +37,13 @@ pub enum NautilusDataType {
     TradeTick = 4,
     Bar = 5,
     MarkPriceUpdate = 6,
+}
+
+#[pymethods]
+impl NautilusDataType {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
 }
 
 #[pymethods]

@@ -31,14 +31,26 @@ use crate::{
     Debug,
     Clone,
     Copy,
+    Hash,
     PartialEq,
+    Eq,
     Serialize,
     Deserialize,
     strum::EnumString,
     strum::Display,
     strum::EnumIter,
 )]
-#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.model"))]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.model",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
 #[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[non_exhaustive]
 pub enum AmmType {
@@ -72,7 +84,17 @@ pub enum AmmType {
     Serialize,
     Deserialize,
 )]
-#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.model"))]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.model",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
 #[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 pub enum DexType {
     AerodromeSlipstream,
@@ -103,7 +125,10 @@ impl DexType {
 
 /// Represents a decentralized exchange (DEX) in a blockchain ecosystem.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.model"))]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
+)]
 #[cfg_attr(feature = "python", pyo3_stub_gen::derive::gen_stub_pyclass)]
 pub struct Dex {
     /// The blockchain network where this DEX operates.
@@ -258,6 +283,7 @@ impl From<Pool> for CurrencyPair {
             size_precision,
             price_increment,
             size_increment,
+            None,
             None,
             None,
             None,

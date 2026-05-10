@@ -22,15 +22,24 @@ pub const HYPERLIQUID: &str = "HYPERLIQUID";
 pub static HYPERLIQUID_VENUE: LazyLock<Venue> =
     LazyLock::new(|| Venue::new(Ustr::from(HYPERLIQUID)));
 
-// Mainnet URLs
 pub const HYPERLIQUID_WS_URL: &str = "wss://api.hyperliquid.xyz/ws";
 pub const HYPERLIQUID_INFO_URL: &str = "https://api.hyperliquid.xyz/info";
 pub const HYPERLIQUID_EXCHANGE_URL: &str = "https://api.hyperliquid.xyz/exchange";
 
-// Testnet URLs
 pub const HYPERLIQUID_TESTNET_WS_URL: &str = "wss://api.hyperliquid-testnet.xyz/ws";
 pub const HYPERLIQUID_TESTNET_INFO_URL: &str = "https://api.hyperliquid-testnet.xyz/info";
 pub const HYPERLIQUID_TESTNET_EXCHANGE_URL: &str = "https://api.hyperliquid-testnet.xyz/exchange";
+
+// Builder code address for order attribution (zero-fee)
+// Address MUST be lowercase for msgpack serialization
+pub const NAUTILUS_BUILDER_ADDRESS: &str = "0x0c8d970c462726e014ad36f6c5a63e99db48a8e7";
+
+/// Hyperliquid signing chain ID (0x66eee = 421614 decimal).
+pub const HYPERLIQUID_CHAIN_ID: u64 = 421614;
+
+// Error message substrings for detecting specific rejection reasons
+pub const HYPERLIQUID_POST_ONLY_WOULD_MATCH: &str =
+    "Post only order would have immediately matched";
 
 /// Hyperliquid supported order types.
 ///
@@ -41,11 +50,6 @@ pub const HYPERLIQUID_TESTNET_EXCHANGE_URL: &str = "https://api.hyperliquid-test
 /// - Stop orders (StopMarket/StopLimit) are protective stops (sl).
 /// - If Touched orders (MarketIfTouched/LimitIfTouched) are profit-taking or entry orders (tp).
 /// - Post-only orders are implemented via ALO (Add Liquidity Only) time-in-force.
-///
-/// # Trigger Semantics
-///
-/// Hyperliquid uses last traded price for trigger evaluation.
-/// Future enhancement: Add support for mark/index price triggers if API supports it.
 pub const HYPERLIQUID_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
     OrderType::Market,          // IOC limit order
     OrderType::Limit,           // Standard limit with GTC/IOC/ALO

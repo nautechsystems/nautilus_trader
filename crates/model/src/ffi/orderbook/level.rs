@@ -21,7 +21,7 @@ use crate::{
     data::order::BookOrder,
     enums::OrderSide,
     orderbook::{BookLevel, BookPrice},
-    types::Price,
+    types::{Price, quantity::QuantityRaw},
 };
 
 /// C compatible Foreign Function Interface (FFI) for an underlying order book[`BookLevel`].
@@ -78,7 +78,7 @@ pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -
         side: order_side.as_specified(),
     };
     let mut level = BookLevel::new(price);
-    level.add_bulk(orders);
+    level.add_bulk(&orders);
     BookLevel_API::new(level)
 }
 
@@ -112,6 +112,11 @@ pub extern "C" fn level_orders(level: &BookLevel_API) -> CVec {
 #[unsafe(no_mangle)]
 pub extern "C" fn level_size(level: &BookLevel_API) -> f64 {
     level.size()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn level_size_raw(level: &BookLevel_API) -> QuantityRaw {
+    level.size_raw()
 }
 
 #[unsafe(no_mangle)]

@@ -31,11 +31,11 @@ use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, nanos::UnixNanos,
+    AtomicTime, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, nanos::UnixNanos,
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{Bar, BarType, TradeTick},
+    data::{Bar, BarType, FundingRateUpdate, OrderBookDeltas, TradeTick},
     enums::{OrderSide, OrderType, PositionSideSpecified, TimeInForce},
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
@@ -57,12 +57,14 @@ use super::{
     error::BybitHttpError,
     models::{
         BybitAccountDetailsResponse, BybitBorrowResponse, BybitFeeRate, BybitFeeRateResponse,
-        BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
-        BybitInstrumentOptionResponse, BybitInstrumentSpotResponse, BybitKlinesResponse,
-        BybitNoConvertRepayResponse, BybitOpenOrdersResponse, BybitOrderHistoryResponse,
-        BybitPlaceOrderResponse, BybitPositionListResponse, BybitServerTimeResponse,
-        BybitSetLeverageResponse, BybitSetMarginModeResponse, BybitSetTradingStopResponse,
-        BybitSwitchModeResponse, BybitTickerData, BybitTradeHistoryResponse, BybitTradesResponse,
+        BybitFundingResponse, BybitInstrumentInverse, BybitInstrumentInverseResponse,
+        BybitInstrumentLinear, BybitInstrumentLinearResponse, BybitInstrumentOption,
+        BybitInstrumentOptionResponse, BybitInstrumentSpot, BybitInstrumentSpotResponse,
+        BybitKlinesResponse, BybitNoConvertRepayResponse, BybitOpenOrdersResponse,
+        BybitOrderHistoryResponse, BybitOrderbookResponse, BybitPlaceOrderResponse,
+        BybitPositionListResponse, BybitServerTimeResponse, BybitSetLeverageResponse,
+        BybitSetMarginModeResponse, BybitSetTradingStopResponse, BybitSwitchModeResponse,
+        BybitTickerData, BybitTradeHistoryResponse, BybitTradesResponse,
         BybitWalletBalanceResponse,
     },
     query::{
@@ -70,33 +72,33 @@ use super::{
         BybitBatchCancelOrderEntryBuilder, BybitBatchCancelOrderParamsBuilder,
         BybitBatchPlaceOrderEntryBuilder, BybitBorrowParamsBuilder,
         BybitCancelAllOrdersParamsBuilder, BybitCancelOrderParamsBuilder, BybitFeeRateParams,
+        BybitFeeRateParamsBuilder, BybitFundingParams, BybitFundingParamsBuilder,
         BybitInstrumentsInfoParams, BybitKlinesParams, BybitKlinesParamsBuilder,
         BybitNoConvertRepayParamsBuilder, BybitOpenOrdersParamsBuilder,
-        BybitOrderHistoryParamsBuilder, BybitPlaceOrderParamsBuilder, BybitPositionListParams,
-        BybitSetLeverageParamsBuilder, BybitSetMarginModeParamsBuilder, BybitSetTradingStopParams,
-        BybitSwitchModeParamsBuilder, BybitTickersParams, BybitTradeHistoryParams,
-        BybitTradesParams, BybitTradesParamsBuilder, BybitWalletBalanceParams,
+        BybitOrderHistoryParamsBuilder, BybitOrderbookParams, BybitOrderbookParamsBuilder,
+        BybitPlaceOrderParamsBuilder, BybitPositionListParams, BybitSetLeverageParamsBuilder,
+        BybitSetMarginModeParamsBuilder, BybitSetTradingStopParams, BybitSwitchModeParamsBuilder,
+        BybitTickersParams, BybitTradeHistoryParams, BybitTradesParams, BybitTradesParamsBuilder,
+        BybitWalletBalanceParams,
     },
 };
-use crate::{
-    common::{
-        consts::BYBIT_NAUTILUS_BROKER_ID,
-        credential::Credential,
-        enums::{
-            BybitAccountType, BybitEnvironment, BybitMarginMode, BybitOpenOnly, BybitOrderFilter,
-            BybitOrderSide, BybitOrderType, BybitPositionMode, BybitProductType, BybitTimeInForce,
-        },
-        models::{BybitErrorCheck, BybitResponseCheck},
-        parse::{
-            bar_spec_to_bybit_interval, make_bybit_symbol, parse_account_state, parse_fill_report,
-            parse_inverse_instrument, parse_kline_bar, parse_linear_instrument,
-            parse_option_instrument, parse_order_status_report, parse_position_status_report,
-            parse_spot_instrument, parse_trade_tick,
-        },
-        symbol::BybitSymbol,
-        urls::bybit_http_base_url,
+use crate::common::{
+    consts::BYBIT_NAUTILUS_BROKER_ID,
+    credential::{Credential, credential_env_vars},
+    enums::{
+        BybitAccountType, BybitEnvironment, BybitMarginMode, BybitOpenOnly, BybitOrderFilter,
+        BybitOrderSide, BybitOrderType, BybitPositionMode, BybitProductType,
     },
-    http::query::BybitFeeRateParamsBuilder,
+    models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
+    parse::{
+        bar_spec_to_bybit_interval, make_bybit_symbol, map_time_in_force, parse_account_state,
+        parse_fill_report, parse_funding_rate, parse_inverse_instrument, parse_kline_bar,
+        parse_linear_instrument, parse_option_instrument, parse_order_status_report,
+        parse_orderbook, parse_position_status_report, parse_spot_instrument, parse_trade_tick,
+        spot_leverage, spot_market_unit, trigger_direction,
+    },
+    symbol::BybitSymbol,
+    urls::bybit_http_base_url,
 };
 
 const DEFAULT_RECV_WINDOW_MS: u64 = 5_000;
@@ -106,14 +108,14 @@ const DEFAULT_RECV_WINDOW_MS: u64 = 5_000;
 /// Bybit implements rate limiting per endpoint with varying limits.
 /// We use a conservative 10 requests per second as a general default.
 pub static BYBIT_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_second(NonZeroU32::new(10).expect("Should be a valid non-zero u32"))
+    Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant")
 });
 
 /// Bybit repay endpoint rate limit.
 ///
 /// Conservative limit to avoid hitting API restrictions when repaying small borrows.
 pub static BYBIT_REPAY_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_second(NonZeroU32::new(1).expect("Should be a valid non-zero u32"))
+    Quota::per_second(NonZeroU32::new(1).expect("non-zero")).expect("valid constant")
 });
 
 const BYBIT_GLOBAL_RATE_KEY: &str = "bybit:global";
@@ -125,7 +127,7 @@ const BYBIT_REPAY_ROUTE_KEY: &str = "bybit:/v5/account/no-convert-repay";
 /// returning venue-specific response types. It does not parse to Nautilus domain types.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
 #[derive(Clone)]
 pub struct BybitRawHttpClient {
@@ -146,7 +148,7 @@ impl Default for BybitRawHttpClient {
 
 impl Debug for BybitRawHttpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BybitRawHttpClient")
+        f.debug_struct(stringify!(BybitRawHttpClient))
             .field("base_url", &self.base_url)
             .field("has_credentials", &self.credential.is_some())
             .field("recv_window_ms", &self.recv_window_ms)
@@ -290,16 +292,16 @@ impl BybitRawHttpClient {
         recv_window_ms: Option<u64>,
         proxy_url: Option<String>,
     ) -> Result<Self, BybitHttpError> {
-        let (api_key_env, api_secret_env) = if demo {
-            ("BYBIT_DEMO_API_KEY", "BYBIT_DEMO_API_SECRET")
+        let environment = if demo {
+            BybitEnvironment::Demo
         } else if testnet {
-            ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET")
+            BybitEnvironment::Testnet
         } else {
-            ("BYBIT_API_KEY", "BYBIT_API_SECRET")
+            BybitEnvironment::Mainnet
         };
-
-        let key = get_or_env_var_opt(api_key, api_key_env);
-        let secret = get_or_env_var_opt(api_secret, api_secret_env);
+        let (key_var, secret_var) = credential_env_vars(environment);
+        let key = get_or_env_var_opt(api_key, key_var);
+        let secret = get_or_env_var_opt(api_secret, secret_var);
 
         if let (Some(k), Some(s)) = (key, secret) {
             Self::with_credentials(
@@ -329,7 +331,10 @@ impl BybitRawHttpClient {
     fn default_headers() -> HashMap<String, String> {
         HashMap::from([
             (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
-            ("Referer".to_string(), BYBIT_NAUTILUS_BROKER_ID.to_string()),
+            (
+                "X-Referer".to_string(),
+                BYBIT_NAUTILUS_BROKER_ID.to_string(),
+            ),
         ])
     }
 
@@ -521,6 +526,7 @@ impl BybitRawHttpClient {
     fn build_path<S: Serialize>(base: &str, params: &S) -> Result<String, BybitHttpError> {
         let query = serde_urlencoded::to_string(params)
             .map_err(|e| BybitHttpError::JsonError(e.to_string()))?;
+
         if query.is_empty() {
             Ok(base.to_owned())
         } else {
@@ -669,6 +675,52 @@ impl BybitRawHttpClient {
         .await
     }
 
+    /// Fetches funding data from Bybit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/market/history-fund-rate>
+    pub async fn get_funding_history(
+        &self,
+        params: &BybitFundingParams,
+    ) -> Result<BybitFundingResponse, BybitHttpError> {
+        self.send_request(
+            Method::GET,
+            "/v5/market/funding/history",
+            Some(params),
+            None,
+            false,
+        )
+        .await
+    }
+
+    /// Fetches orderbook from Bybit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/market/orderbook>
+    pub async fn get_orderbook(
+        &self,
+        params: &BybitOrderbookParams,
+    ) -> Result<BybitOrderbookResponse, BybitHttpError> {
+        self.send_request(
+            Method::GET,
+            "/v5/market/orderbook",
+            Some(params),
+            None,
+            false,
+        )
+        .await
+    }
+
     /// Fetches open orders (requires authentication).
     ///
     /// # Errors
@@ -702,27 +754,35 @@ impl BybitRawHttpClient {
         if let Some(s) = symbol {
             builder.symbol(s);
         }
+
         if let Some(bc) = base_coin {
             builder.base_coin(bc);
         }
+
         if let Some(sc) = settle_coin {
             builder.settle_coin(sc);
         }
+
         if let Some(oi) = order_id {
             builder.order_id(oi);
         }
+
         if let Some(ol) = order_link_id {
             builder.order_link_id(ol);
         }
+
         if let Some(oo) = open_only {
             builder.open_only(oo);
         }
+
         if let Some(of) = order_filter {
             builder.order_filter(of);
         }
+
         if let Some(l) = limit {
             builder.limit(l);
         }
+
         if let Some(c) = cursor {
             builder.cursor(c);
         }
@@ -921,6 +981,7 @@ impl BybitRawHttpClient {
         if let Some(s) = symbol {
             builder.symbol(s);
         }
+
         if let Some(c) = coin {
             builder.coin(c);
         }
@@ -1034,7 +1095,7 @@ impl BybitRawHttpClient {
 
         // TODO: Logging for visibility during development
         if let Ok(params_json) = serde_json::to_string(&params) {
-            tracing::debug!("Repay request params: {params_json}");
+            log::debug!("Repay request params: {params_json}");
         }
 
         let body = serde_json::to_vec(&params)?;
@@ -1052,7 +1113,7 @@ impl BybitRawHttpClient {
         if let Err(ref e) = result
             && let Ok(params_json) = serde_json::to_string(&params)
         {
-            tracing::error!("Repay request failed with params {params_json}: {e}");
+            log::error!("Repay request failed with params {params_json}: {e}");
         }
 
         result
@@ -1134,7 +1195,7 @@ impl BybitRawHttpClient {
 /// Provides a HTTP client for connecting to the [Bybit](https://bybit.com) REST API.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
 /// High-level HTTP client that wraps the raw client and provides Nautilus domain types.
 ///
@@ -1143,6 +1204,7 @@ impl BybitRawHttpClient {
 pub struct BybitHttpClient {
     pub(crate) inner: Arc<BybitRawHttpClient>,
     pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    clock: &'static AtomicTime,
     cache_initialized: Arc<AtomicBool>,
     use_spot_position_reports: Arc<AtomicBool>,
 }
@@ -1154,6 +1216,7 @@ impl Clone for BybitHttpClient {
             instruments_cache: self.instruments_cache.clone(),
             cache_initialized: self.cache_initialized.clone(),
             use_spot_position_reports: self.use_spot_position_reports.clone(),
+            clock: self.clock,
         }
     }
 }
@@ -1167,7 +1230,7 @@ impl Default for BybitHttpClient {
 
 impl Debug for BybitHttpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BybitHttpClient")
+        f.debug_struct(stringify!(BybitHttpClient))
             .field("inner", &self.inner)
             .finish()
     }
@@ -1202,6 +1265,7 @@ impl BybitHttpClient {
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             use_spot_position_reports: Arc::new(AtomicBool::new(false)),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -1237,6 +1301,7 @@ impl BybitHttpClient {
             instruments_cache: Arc::new(DashMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             use_spot_position_reports: Arc::new(AtomicBool::new(false)),
+            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -1266,16 +1331,16 @@ impl BybitHttpClient {
         recv_window_ms: Option<u64>,
         proxy_url: Option<String>,
     ) -> Result<Self, BybitHttpError> {
-        let (api_key_env, api_secret_env) = if demo {
-            ("BYBIT_DEMO_API_KEY", "BYBIT_DEMO_API_SECRET")
+        let environment = if demo {
+            BybitEnvironment::Demo
         } else if testnet {
-            ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET")
+            BybitEnvironment::Testnet
         } else {
-            ("BYBIT_API_KEY", "BYBIT_API_SECRET")
+            BybitEnvironment::Mainnet
         };
-
-        let key = get_or_env_var_opt(api_key, api_key_env);
-        let secret = get_or_env_var_opt(api_secret, api_secret_env);
+        let (key_var, secret_var) = credential_env_vars(environment);
+        let key = get_or_env_var_opt(api_key, key_var);
+        let secret = get_or_env_var_opt(api_secret, secret_var);
 
         match (key, secret) {
             (Some(k), Some(s)) => Self::with_credentials(
@@ -1361,7 +1426,7 @@ impl BybitHttpClient {
 
     #[must_use]
     fn generate_ts_init(&self) -> UnixNanos {
-        get_atomic_clock_realtime().get_time_ns()
+        self.clock.get_time_ns()
     }
 
     /// Fetches the current server time from Bybit.
@@ -1950,9 +2015,12 @@ impl BybitHttpClient {
         order_side: OrderSide,
         order_type: OrderType,
         quantity: Quantity,
-        time_in_force: TimeInForce,
+        time_in_force: Option<TimeInForce>,
         price: Option<Price>,
+        trigger_price: Option<Price>,
+        post_only: Option<bool>,
         reduce_only: bool,
+        is_quote_quantity: bool,
         is_leverage: bool,
     ) -> anyhow::Result<OrderStatusReport> {
         let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
@@ -1964,42 +2032,43 @@ impl BybitHttpClient {
             _ => anyhow::bail!("Invalid order side: {order_side:?}"),
         };
 
-        let bybit_order_type = match order_type {
-            OrderType::Market => BybitOrderType::Market,
-            OrderType::Limit => BybitOrderType::Limit,
+        // For stop/conditional orders, Bybit uses Market/Limit with trigger parameters
+        let (bybit_order_type, is_stop_order) = match order_type {
+            OrderType::Market => (BybitOrderType::Market, false),
+            OrderType::Limit => (BybitOrderType::Limit, false),
+            OrderType::StopMarket | OrderType::MarketIfTouched => (BybitOrderType::Market, true),
+            OrderType::StopLimit | OrderType::LimitIfTouched => (BybitOrderType::Limit, true),
             _ => anyhow::bail!("Unsupported order type: {order_type:?}"),
         };
 
-        let bybit_tif = match time_in_force {
-            TimeInForce::Gtc => BybitTimeInForce::Gtc,
-            TimeInForce::Ioc => BybitTimeInForce::Ioc,
-            TimeInForce::Fok => BybitTimeInForce::Fok,
-            _ => anyhow::bail!("Unsupported time in force: {time_in_force:?}"),
-        };
+        let bybit_tif = map_time_in_force(bybit_order_type, time_in_force, post_only)
+            .map_err(|tif| anyhow::anyhow!("Unsupported time in force: {tif:?}"))?;
+        let market_unit = spot_market_unit(product_type, bybit_order_type, is_quote_quantity);
+        let trigger_dir = trigger_direction(order_type, order_side, is_stop_order);
 
         let mut order_entry = BybitBatchPlaceOrderEntryBuilder::default();
         order_entry.symbol(bybit_symbol.raw_symbol().to_string());
         order_entry.side(bybit_side);
         order_entry.order_type(bybit_order_type);
         order_entry.qty(quantity.to_string());
-        order_entry.time_in_force(Some(bybit_tif));
+        order_entry.time_in_force(bybit_tif);
         order_entry.order_link_id(client_order_id.to_string());
+        order_entry.market_unit(market_unit);
+        order_entry.trigger_direction(trigger_dir);
 
         if let Some(price) = price {
             order_entry.price(Some(price.to_string()));
+        }
+
+        if let Some(trigger_price) = trigger_price {
+            order_entry.trigger_price(Some(trigger_price.to_string()));
         }
 
         if reduce_only {
             order_entry.reduce_only(Some(true));
         }
 
-        // Only SPOT products support is_leverage parameter
-        let is_leverage_value = if product_type == BybitProductType::Spot {
-            Some(i32::from(is_leverage))
-        } else {
-            None
-        };
-        order_entry.is_leverage(is_leverage_value);
+        order_entry.is_leverage(spot_leverage(product_type, is_leverage));
 
         let order_entry = order_entry.build().map_err(|e| anyhow::anyhow!(e))?;
 
@@ -2215,9 +2284,9 @@ impl BybitHttpClient {
             .zip(client_order_ids.iter().zip(venue_order_ids.iter()))
         {
             let Ok(instrument) = self.instrument_from_cache(&instrument_id.symbol) else {
-                tracing::debug!(
-                    symbol = %instrument_id.symbol,
-                    "Skipping cancelled order report for instrument not in cache"
+                log::debug!(
+                    "Skipping cancelled order report for instrument not in cache: symbol={}",
+                    instrument_id.symbol
                 );
                 continue;
             };
@@ -2423,7 +2492,7 @@ impl BybitHttpClient {
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        tracing::debug!(
+        log::debug!(
             "query_order: instrument_id={instrument_id}, client_order_id={client_order_id:?}, venue_order_id={venue_order_id:?}"
         );
 
@@ -2449,7 +2518,7 @@ impl BybitHttpClient {
             .await?;
 
         if response.result.list.is_empty() {
-            tracing::debug!("Order not found in open orders, trying with StopOrder filter");
+            log::debug!("Order not found in open orders, trying with StopOrder filter");
 
             let mut stop_params = BybitOpenOrdersParamsBuilder::default();
             stop_params.category(product_type);
@@ -2477,7 +2546,7 @@ impl BybitHttpClient {
 
         // If not found in open orders, check order history
         if response.result.list.is_empty() {
-            tracing::debug!("Order not found in open orders, checking order history");
+            log::debug!("Order not found in open orders, checking order history");
 
             let mut history_params = BybitOrderHistoryParamsBuilder::default();
             history_params.category(product_type);
@@ -2503,7 +2572,7 @@ impl BybitHttpClient {
                 .await?;
 
             if history_response.result.list.is_empty() {
-                tracing::debug!("Order not found in order history, trying with StopOrder filter");
+                log::debug!("Order not found in order history, trying with StopOrder filter");
 
                 let mut stop_history_params = BybitOrderHistoryParamsBuilder::default();
                 stop_history_params.category(product_type);
@@ -2532,9 +2601,7 @@ impl BybitHttpClient {
                     .await?;
 
                 if history_response.result.list.is_empty() {
-                    tracing::debug!(
-                        "Order not found in order history with StopOrder filter either"
-                    );
+                    log::debug!("Order not found in order history with StopOrder filter either");
                     return Ok(None);
                 }
             }
@@ -2546,7 +2613,7 @@ impl BybitHttpClient {
         let order = &response.result.list[0];
         let ts_init = self.generate_ts_init();
 
-        tracing::debug!(
+        log::debug!(
             "Query order response: symbol={}, order_id={}, order_link_id={}",
             order.symbol.as_str(),
             order.order_id.as_str(),
@@ -2556,7 +2623,7 @@ impl BybitHttpClient {
         let instrument = self
             .instrument_from_cache(&instrument_id.symbol)
             .map_err(|e| {
-                tracing::error!(
+                log::error!(
                     "Instrument cache miss for symbol '{}': {}",
                     instrument_id.symbol.as_str(),
                     e
@@ -2572,11 +2639,11 @@ impl BybitHttpClient {
                 )
             })?;
 
-        tracing::debug!("Retrieved instrument from cache: id={}", instrument.id());
+        log::debug!("Retrieved instrument from cache: id={}", instrument.id());
 
         let report =
             parse_order_status_report(order, &instrument, account_id, ts_init).map_err(|e| {
-                tracing::error!(
+                log::error!(
                     "Failed to parse order status report for {}: {}",
                     order.order_link_id.as_str(),
                     e
@@ -2584,12 +2651,77 @@ impl BybitHttpClient {
                 e
             })?;
 
-        tracing::debug!(
+        log::debug!(
             "Successfully created OrderStatusReport for {}",
             order.order_link_id.as_str()
         );
 
         Ok(Some(report))
+    }
+
+    async fn fetch_fee_map(
+        &self,
+        product_type: BybitProductType,
+    ) -> anyhow::Result<AHashMap<Ustr, BybitFeeRate>> {
+        let mut fee_params = BybitFeeRateParamsBuilder::default();
+        fee_params.category(product_type);
+        let Ok(params) = fee_params.build() else {
+            return Ok(AHashMap::new());
+        };
+        match self.inner.get_fee_rate(&params).await {
+            Ok(response) => Ok(response
+                .result
+                .list
+                .into_iter()
+                .map(|f| (f.symbol, f))
+                .collect()),
+            Err(BybitHttpError::MissingCredentials) => {
+                log::warn!("Missing credentials for fee rates, using defaults");
+                Ok(AHashMap::new())
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    async fn paginate_instruments<D, F>(
+        &self,
+        product_type: BybitProductType,
+        symbol: &Option<String>,
+        mut parse: F,
+    ) -> anyhow::Result<Vec<InstrumentAny>>
+    where
+        D: DeserializeOwned,
+        BybitCursorListResponse<D>: BybitResponseCheck,
+        F: FnMut(&D) -> Option<InstrumentAny>,
+    {
+        let mut instruments = Vec::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let params = BybitInstrumentsInfoParams {
+                category: product_type,
+                symbol: symbol.clone(),
+                status: None,
+                base_coin: None,
+                limit: Some(1000),
+                cursor: cursor.clone(),
+            };
+
+            let response: BybitCursorListResponse<D> = self.inner.get_instruments(&params).await?;
+
+            for definition in &response.result.list {
+                if let Some(instrument) = parse(definition) {
+                    instruments.push(instrument);
+                }
+            }
+
+            cursor = response.result.next_page_cursor;
+            if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                break;
+            }
+        }
+
+        Ok(instruments)
     }
 
     /// Request instruments for a given product type.
@@ -2604,218 +2736,64 @@ impl BybitHttpClient {
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         let ts_init = self.generate_ts_init();
 
-        let mut instruments = Vec::new();
-
-        let default_fee_rate = |symbol: ustr::Ustr| BybitFeeRate {
+        let default_fee_rate = |symbol: Ustr| BybitFeeRate {
             symbol,
             taker_fee_rate: "0.001".to_string(),
             maker_fee_rate: "0.001".to_string(),
             base_coin: None,
         };
 
-        match product_type {
+        let instruments = match product_type {
             BybitProductType::Spot => {
-                // Try to get fee rates, use defaults if credentials are missing
-                let fee_map: AHashMap<_, _> = {
-                    let mut fee_params = BybitFeeRateParamsBuilder::default();
-                    fee_params.category(product_type);
-                    if let Ok(params) = fee_params.build() {
-                        match self.inner.get_fee_rate(&params).await {
-                            Ok(fee_response) => fee_response
-                                .result
-                                .list
-                                .into_iter()
-                                .map(|f| (f.symbol, f))
-                                .collect(),
-                            Err(BybitHttpError::MissingCredentials) => {
-                                tracing::warn!("Missing credentials for fee rates, using defaults");
-                                AHashMap::new()
-                            }
-                            Err(e) => return Err(e.into()),
-                        }
-                    } else {
-                        AHashMap::new()
-                    }
-                };
-
-                let mut cursor: Option<String> = None;
-
-                loop {
-                    let params = BybitInstrumentsInfoParams {
-                        category: product_type,
-                        symbol: symbol.clone(),
-                        status: None,
-                        base_coin: None,
-                        limit: Some(1000),
-                        cursor: cursor.clone(),
-                    };
-
-                    let response: BybitInstrumentSpotResponse =
-                        self.inner.get_instruments(&params).await?;
-
-                    for definition in response.result.list {
-                        let fee_rate = fee_map
-                            .get(&definition.symbol)
-                            .cloned()
-                            .unwrap_or_else(|| default_fee_rate(definition.symbol));
-                        if let Ok(instrument) =
-                            parse_spot_instrument(&definition, &fee_rate, ts_init, ts_init)
-                        {
-                            instruments.push(instrument);
-                        }
-                    }
-
-                    cursor = response.result.next_page_cursor;
-                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
-                        break;
-                    }
-                }
+                let fee_map = self.fetch_fee_map(product_type).await?;
+                self.paginate_instruments::<BybitInstrumentSpot, _>(product_type, &symbol, |def| {
+                    let fee = fee_map
+                        .get(&def.symbol)
+                        .cloned()
+                        .unwrap_or_else(|| default_fee_rate(def.symbol));
+                    parse_spot_instrument(def, &fee, ts_init, ts_init).ok()
+                })
+                .await?
             }
             BybitProductType::Linear => {
-                // Try to get fee rates, use defaults if credentials are missing
-                let fee_map: AHashMap<_, _> = {
-                    let mut fee_params = BybitFeeRateParamsBuilder::default();
-                    fee_params.category(product_type);
-                    if let Ok(params) = fee_params.build() {
-                        match self.inner.get_fee_rate(&params).await {
-                            Ok(fee_response) => fee_response
-                                .result
-                                .list
-                                .into_iter()
-                                .map(|f| (f.symbol, f))
-                                .collect(),
-                            Err(BybitHttpError::MissingCredentials) => {
-                                tracing::warn!("Missing credentials for fee rates, using defaults");
-                                AHashMap::new()
-                            }
-                            Err(e) => return Err(e.into()),
-                        }
-                    } else {
-                        AHashMap::new()
-                    }
-                };
-
-                let mut cursor: Option<String> = None;
-
-                loop {
-                    let params = BybitInstrumentsInfoParams {
-                        category: product_type,
-                        symbol: symbol.clone(),
-                        status: None,
-                        base_coin: None,
-                        limit: Some(1000),
-                        cursor: cursor.clone(),
-                    };
-
-                    let response: BybitInstrumentLinearResponse =
-                        self.inner.get_instruments(&params).await?;
-
-                    for definition in response.result.list {
-                        let fee_rate = fee_map
-                            .get(&definition.symbol)
+                let fee_map = self.fetch_fee_map(product_type).await?;
+                self.paginate_instruments::<BybitInstrumentLinear, _>(
+                    product_type,
+                    &symbol,
+                    |def| {
+                        let fee = fee_map
+                            .get(&def.symbol)
                             .cloned()
-                            .unwrap_or_else(|| default_fee_rate(definition.symbol));
-                        if let Ok(instrument) =
-                            parse_linear_instrument(&definition, &fee_rate, ts_init, ts_init)
-                        {
-                            instruments.push(instrument);
-                        }
-                    }
-
-                    cursor = response.result.next_page_cursor;
-                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
-                        break;
-                    }
-                }
+                            .unwrap_or_else(|| default_fee_rate(def.symbol));
+                        parse_linear_instrument(def, &fee, ts_init, ts_init).ok()
+                    },
+                )
+                .await?
             }
             BybitProductType::Inverse => {
-                // Try to get fee rates, use defaults if credentials are missing
-                let fee_map: AHashMap<_, _> = {
-                    let mut fee_params = BybitFeeRateParamsBuilder::default();
-                    fee_params.category(product_type);
-                    if let Ok(params) = fee_params.build() {
-                        match self.inner.get_fee_rate(&params).await {
-                            Ok(fee_response) => fee_response
-                                .result
-                                .list
-                                .into_iter()
-                                .map(|f| (f.symbol, f))
-                                .collect(),
-                            Err(BybitHttpError::MissingCredentials) => {
-                                tracing::warn!("Missing credentials for fee rates, using defaults");
-                                AHashMap::new()
-                            }
-                            Err(e) => return Err(e.into()),
-                        }
-                    } else {
-                        AHashMap::new()
-                    }
-                };
-
-                let mut cursor: Option<String> = None;
-
-                loop {
-                    let params = BybitInstrumentsInfoParams {
-                        category: product_type,
-                        symbol: symbol.clone(),
-                        status: None,
-                        base_coin: None,
-                        limit: Some(1000),
-                        cursor: cursor.clone(),
-                    };
-
-                    let response: BybitInstrumentInverseResponse =
-                        self.inner.get_instruments(&params).await?;
-
-                    for definition in response.result.list {
-                        let fee_rate = fee_map
-                            .get(&definition.symbol)
+                let fee_map = self.fetch_fee_map(product_type).await?;
+                self.paginate_instruments::<BybitInstrumentInverse, _>(
+                    product_type,
+                    &symbol,
+                    |def| {
+                        let fee = fee_map
+                            .get(&def.symbol)
                             .cloned()
-                            .unwrap_or_else(|| default_fee_rate(definition.symbol));
-                        if let Ok(instrument) =
-                            parse_inverse_instrument(&definition, &fee_rate, ts_init, ts_init)
-                        {
-                            instruments.push(instrument);
-                        }
-                    }
-
-                    cursor = response.result.next_page_cursor;
-                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
-                        break;
-                    }
-                }
+                            .unwrap_or_else(|| default_fee_rate(def.symbol));
+                        parse_inverse_instrument(def, &fee, ts_init, ts_init).ok()
+                    },
+                )
+                .await?
             }
             BybitProductType::Option => {
-                let mut cursor: Option<String> = None;
-
-                loop {
-                    let params = BybitInstrumentsInfoParams {
-                        category: product_type,
-                        symbol: symbol.clone(),
-                        status: None,
-                        base_coin: None,
-                        limit: Some(1000),
-                        cursor: cursor.clone(),
-                    };
-
-                    let response: BybitInstrumentOptionResponse =
-                        self.inner.get_instruments(&params).await?;
-
-                    for definition in response.result.list {
-                        if let Ok(instrument) =
-                            parse_option_instrument(&definition, ts_init, ts_init)
-                        {
-                            instruments.push(instrument);
-                        }
-                    }
-
-                    cursor = response.result.next_page_cursor;
-                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
-                        break;
-                    }
-                }
+                self.paginate_instruments::<BybitInstrumentOption, _>(
+                    product_type,
+                    &symbol,
+                    |def| parse_option_instrument(def, ts_init, ts_init).ok(),
+                )
+                .await?
             }
-        }
+        };
 
         for instrument in &instruments {
             self.cache_instrument(instrument.clone());
@@ -2891,6 +2869,7 @@ impl BybitHttpClient {
         let mut params_builder = BybitTradesParamsBuilder::default();
         params_builder.category(product_type);
         params_builder.symbol(bybit_symbol.raw_symbol().to_string());
+
         if let Some(limit_val) = limit {
             params_builder.limit(limit_val);
         }
@@ -2898,16 +2877,206 @@ impl BybitHttpClient {
         let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
         let response = self.inner.get_recent_trades(&params).await?;
 
-        let ts_init = self.generate_ts_init();
         let mut trades = Vec::new();
 
         for trade in response.result.list {
-            if let Ok(trade_tick) = parse_trade_tick(&trade, &instrument, ts_init) {
+            if let Ok(trade_tick) = parse_trade_tick(&trade, &instrument, None) {
                 trades.push(trade_tick);
             }
         }
 
         Ok(trades)
+    }
+
+    /// Request funding rate history for a given symbol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/market/history-fund-rate>
+    pub async fn request_funding_rates(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<FundingRateUpdate>> {
+        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
+
+        let start_ms = start.map(|dt| dt.timestamp_millis());
+        let mut seen_timestamps: AHashSet<i64> = AHashSet::new();
+
+        let mut pages: Vec<Vec<FundingRateUpdate>> = Vec::new();
+        let mut total_funding_rates = 0usize;
+
+        // Bybit requires endTime when startTime is provided
+        let mut current_end = match (start, end) {
+            (Some(_), None) => Some(Utc::now().timestamp_millis()),
+            _ => end.map(|dt| dt.timestamp_millis()),
+        };
+
+        loop {
+            let mut params_builder = BybitFundingParamsBuilder::default();
+            params_builder.category(product_type);
+            params_builder.symbol(bybit_symbol.raw_symbol().to_string());
+            params_builder.limit(200u32); // Limit for data size per page (maximum for the Bybit API)
+
+            if let Some(start_val) = start_ms {
+                params_builder.start_time(start_val);
+            }
+
+            if let Some(end_val) = current_end {
+                params_builder.end_time(end_val);
+            }
+
+            let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
+            let response = self.inner.get_funding_history(&params).await?;
+
+            let funding_rates = response.result.list;
+            if funding_rates.is_empty() {
+                break;
+            }
+
+            let mut funding_rates_with_ts: Vec<(i64, _)> = funding_rates
+                .into_iter()
+                .filter_map(|f| {
+                    f.funding_rate_timestamp
+                        .parse::<i64>()
+                        .ok()
+                        .map(|ts| (ts, f))
+                })
+                .collect();
+
+            funding_rates_with_ts.sort_by_key(|(ts, _)| *ts);
+
+            let has_new = funding_rates_with_ts
+                .iter()
+                .any(|(ts, _)| !seen_timestamps.contains(ts));
+
+            if !has_new {
+                break;
+            }
+
+            let mut page_funding_rates = Vec::with_capacity(funding_rates_with_ts.len());
+
+            let mut earliest_ts: Option<i64> = None;
+
+            for (time, funding) in &funding_rates_with_ts {
+                // Track earliest timestamp for pagination
+                if earliest_ts.is_none_or(|ts| *time < ts) {
+                    earliest_ts = Some(*time);
+                }
+
+                if !seen_timestamps.contains(time)
+                    && let Ok(funding_rate) = parse_funding_rate(funding, &instrument)
+                {
+                    page_funding_rates.push(funding_rate);
+                    seen_timestamps.insert(*time);
+                }
+            }
+
+            total_funding_rates += page_funding_rates.len();
+            pages.push(page_funding_rates);
+
+            // Check if we've reached the requested limit
+            if let Some(limit_val) = limit
+                && total_funding_rates >= limit_val as usize
+            {
+                break;
+            }
+
+            // Move end time backwards to get earlier data
+            // Set new end to be 1ms before the first bar of this page
+            let Some(earliest_funding_time) = earliest_ts else {
+                break;
+            };
+
+            if let Some(start_val) = start_ms
+                && earliest_funding_time <= start_val
+            {
+                break;
+            }
+
+            current_end = Some(earliest_funding_time - 1);
+        }
+
+        // Reverse pages and flatten to get chronological order (oldest to newest)
+        let mut all_funding_rates: Vec<FundingRateUpdate> = Vec::with_capacity(total_funding_rates);
+        for page in pages.into_iter().rev() {
+            all_funding_rates.extend(page);
+        }
+
+        // If limit is specified and we have more funding rates, return the last N rates (most recent)
+        if let Some(limit_val) = limit {
+            let limit_usize = limit_val as usize;
+            if all_funding_rates.len() > limit_usize {
+                let start_idx = all_funding_rates.len() - limit_usize;
+                return Ok(all_funding_rates[start_idx..].to_vec());
+            }
+        }
+
+        Ok(all_funding_rates)
+    }
+
+    /// Request an orderbook snapshot for a given symbol.
+    ///
+    /// Bybit limits the amount of levels (depth) for each product type to:
+    /// - Spot: `1..=200` (default: `1`)
+    /// - Linear & Inverse: `1..=500` (default: `25`)
+    /// - Options: `1..=25` (default: `1`)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/market/orderbook>
+    pub async fn request_orderbook_snapshot(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        limit: Option<u32>,
+    ) -> anyhow::Result<OrderBookDeltas> {
+        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
+
+        let mut params_builder = BybitOrderbookParamsBuilder::default();
+        params_builder.category(product_type);
+        params_builder.symbol(bybit_symbol.raw_symbol().to_string());
+
+        if let Some(limit) = limit {
+            let max_limit = match product_type {
+                BybitProductType::Spot => 200,
+                BybitProductType::Option => 25,
+                BybitProductType::Linear | BybitProductType::Inverse => 500,
+            };
+            let clamped_limit = limit.min(max_limit);
+            if limit > max_limit {
+                log::warn!(
+                    "Bybit orderbook snapshot request depth limit exceeds venue maximum; clamping: limit={limit}, clamped_limit={clamped_limit}",
+                );
+            }
+            params_builder.limit(clamped_limit);
+        }
+
+        let params = params_builder.build().map_err(|e| anyhow::anyhow!(e))?;
+        let response = self.inner.get_orderbook(&params).await?;
+
+        let deltas = parse_orderbook(&response.result, &instrument, None)?;
+
+        Ok(deltas)
     }
 
     /// Request bar/kline history for a given symbol.
@@ -2970,6 +3139,7 @@ impl BybitHttpClient {
             if let Some(start_val) = start_ms {
                 params_builder.start(start_val);
             }
+
             if let Some(end_val) = current_end {
                 params_builder.end(end_val);
             }
@@ -2994,11 +3164,11 @@ impl BybitHttpClient {
             let has_new = klines_with_ts
                 .iter()
                 .any(|(ts, _)| !seen_timestamps.contains(ts));
+
             if !has_new {
                 break;
             }
 
-            let ts_init = self.generate_ts_init();
             let mut page_bars = Vec::with_capacity(klines_with_ts.len());
 
             let mut earliest_ts: Option<i64> = None;
@@ -3016,7 +3186,7 @@ impl BybitHttpClient {
 
                 if !seen_timestamps.contains(start_time)
                     && let Ok(bar) =
-                        parse_kline_bar(kline, &instrument, bar_type, timestamp_on_close, ts_init)
+                        parse_kline_bar(kline, &instrument, bar_type, timestamp_on_close, None)
                 {
                     page_bars.push(bar);
                     seen_timestamps.insert(*start_time);
@@ -3040,6 +3210,7 @@ impl BybitHttpClient {
             let Some(earliest_bar_time) = earliest_ts else {
                 break;
             };
+
             if let Some(start_val) = start_ms
                 && earliest_bar_time <= start_val
             {
@@ -3213,13 +3384,16 @@ impl BybitHttpClient {
 
                     let mut p = BybitOpenOrdersParamsBuilder::default();
                     p.category(product_type);
+
                     if let Some(symbol) = symbol_param.clone() {
                         p.symbol(symbol);
                     }
+
                     if let Some(coin) = settle_coin.clone() {
                         p.settle_coin(coin);
                     }
                     p.limit(page_limit as u32);
+
                     if let Some(c) = cursor {
                         p.cursor(c);
                     }
@@ -3263,13 +3437,16 @@ impl BybitHttpClient {
 
                     let mut open_params = BybitOpenOrdersParamsBuilder::default();
                     open_params.category(product_type);
+
                     if let Some(symbol) = symbol_param.clone() {
                         open_params.symbol(symbol);
                     }
+
                     if let Some(coin) = settle_coin.clone() {
                         open_params.settle_coin(coin);
                     }
                     open_params.limit(page_limit as u32);
+
                     if let Some(c) = cursor {
                         open_params.cursor(c);
                     }
@@ -3319,19 +3496,24 @@ impl BybitHttpClient {
 
                     let mut history_params = BybitOrderHistoryParamsBuilder::default();
                     history_params.category(product_type);
+
                     if let Some(symbol) = symbol_param.clone() {
                         history_params.symbol(symbol);
                     }
+
                     if let Some(coin) = settle_coin.clone() {
                         history_params.settle_coin(coin);
                     }
+
                     if let Some(start) = start {
                         history_params.start_time(start.timestamp_millis());
                     }
+
                     if let Some(end) = end {
                         history_params.end_time(end.timestamp_millis());
                     }
                     history_params.limit(page_limit as u32);
+
                     if let Some(c) = cursor {
                         history_params.cursor(c);
                     }
@@ -3374,6 +3556,7 @@ impl BybitHttpClient {
         for order in all_collected_orders {
             if let Some(ref instrument_id) = instrument_id {
                 let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+
                 if let Ok(report) =
                     parse_order_status_report(&order, &instrument, account_id, ts_init)
                 {
@@ -3387,10 +3570,10 @@ impl BybitHttpClient {
                         Symbol::from_ustr_unchecked(make_bybit_symbol(order.symbol, product_type));
 
                     let Ok(instrument) = self.instrument_from_cache(&symbol_with_product) else {
-                        tracing::debug!(
-                            symbol = %order.symbol,
-                            full_symbol = %symbol_with_product,
-                            "Skipping order report for instrument not in cache"
+                        log::debug!(
+                            "Skipping order report for instrument not in cache: symbol={}, full_symbol={}",
+                            order.symbol,
+                            symbol_with_product
                         );
                         continue;
                     };
@@ -3398,7 +3581,7 @@ impl BybitHttpClient {
                     match parse_order_status_report(&order, &instrument, account_id, ts_init) {
                         Ok(report) => reports.push(report),
                         Err(e) => {
-                            tracing::error!("Failed to parse order status report: {e}");
+                            log::error!("Failed to parse order status report: {e}");
                         }
                     }
                 }
@@ -3491,10 +3674,10 @@ impl BybitHttpClient {
                 Symbol::from_ustr_unchecked(make_bybit_symbol(execution.symbol, product_type));
 
             let Ok(instrument) = self.instrument_from_cache(&symbol_with_product) else {
-                tracing::debug!(
-                    symbol = %execution.symbol,
-                    full_symbol = %symbol_with_product,
-                    "Skipping fill report for instrument not in cache"
+                log::debug!(
+                    "Skipping fill report for instrument not in cache: symbol={}, full_symbol={}",
+                    execution.symbol,
+                    symbol_with_product
                 );
                 continue;
             };
@@ -3502,7 +3685,7 @@ impl BybitHttpClient {
             match parse_fill_report(&execution, account_id, &instrument, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => {
-                    tracing::error!("Failed to parse fill report: {e}");
+                    log::error!("Failed to parse fill report: {e}");
                 }
             }
         }
@@ -3586,10 +3769,10 @@ impl BybitHttpClient {
 
                         let Ok(instrument) = self.instrument_from_cache(&symbol_with_product)
                         else {
-                            tracing::debug!(
-                                symbol = %position.symbol,
-                                full_symbol = %symbol_with_product,
-                                "Skipping position report for instrument not in cache"
+                            log::debug!(
+                                "Skipping position report for instrument not in cache: symbol={}, full_symbol={}",
+                                position.symbol,
+                                symbol_with_product
                             );
                             continue;
                         };
@@ -3602,7 +3785,7 @@ impl BybitHttpClient {
                         ) {
                             Ok(report) => reports.push(report),
                             Err(e) => {
-                                tracing::error!("Failed to parse position status report: {e}");
+                                log::error!("Failed to parse position status report: {e}");
                             }
                         }
                     }
@@ -3641,10 +3824,10 @@ impl BybitHttpClient {
                     ));
 
                     let Ok(instrument) = self.instrument_from_cache(&symbol_with_product) else {
-                        tracing::debug!(
-                            symbol = %position.symbol,
-                            full_symbol = %symbol_with_product,
-                            "Skipping position report for instrument not in cache"
+                        log::debug!(
+                            "Skipping position report for instrument not in cache: symbol={}, full_symbol={}",
+                            position.symbol,
+                            symbol_with_product
                         );
                         continue;
                     };
@@ -3653,7 +3836,7 @@ impl BybitHttpClient {
                     {
                         Ok(report) => reports.push(report),
                         Err(e) => {
-                            tracing::error!("Failed to parse position status report: {e}");
+                            log::error!("Failed to parse position status report: {e}");
                         }
                     }
                 }

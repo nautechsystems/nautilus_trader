@@ -27,6 +27,11 @@ from betfair_parser.spec.streaming import Status
 from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.data_types import BetfairSequenceCompleted
+from nautilus_trader.adapters.betfair.parsing.rcm import RCM
+from nautilus_trader.adapters.betfair.parsing.rcm import RCM_PARSE_TYPES
+from nautilus_trader.adapters.betfair.parsing.rcm import BetfairRCMParser
+from nautilus_trader.adapters.betfair.parsing.rcm import is_rcm_message
+from nautilus_trader.adapters.betfair.parsing.rcm import rcm_decode
 from nautilus_trader.adapters.betfair.parsing.streaming import BETFAIR_SEQUENCE_COMPLETED_DATA_TYPE
 from nautilus_trader.adapters.betfair.parsing.streaming import PARSE_TYPES
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
@@ -88,8 +93,14 @@ def create_sequence_completed(ts_event: int, ts_init: int) -> CustomData:
 
 
 def iter_stream(file_like: BinaryIO):
+    """
+    Iterate over stream messages, handling both MCM and RCM.
+    """
     for line in file_like:
-        yield stream_decode(line)
+        if is_rcm_message(line):
+            yield rcm_decode(line)
+        else:
+            yield stream_decode(line)
 
 
 def parse_betfair_file(
@@ -98,7 +109,7 @@ def parse_betfair_file(
     min_notional: Money | None = None,
 ) -> Generator[list[PARSE_TYPES], None, None]:
     """
-    Parse a file of streaming data.
+    Parse a file of streaming data (MCM only, skips RCM).
 
     Parameters
     ----------
@@ -112,8 +123,10 @@ def parse_betfair_file(
     """
     parser = BetfairParser(currency=currency)
     with fsspec.open(uri, compression="infer") as f:
-        for mcm in iter_stream(f):
-            yield from parser.parse(mcm, min_notional=min_notional)
+        for msg in iter_stream(f):
+            if isinstance(msg, RCM):
+                continue
+            yield from parser.parse(msg, min_notional=min_notional)
 
 
 def betting_instruments_from_file(
@@ -129,6 +142,8 @@ def betting_instruments_from_file(
 
     with fsspec.open(uri, compression="infer") as f:
         for mcm in iter_stream(f):
+            if isinstance(mcm, RCM):
+                continue
             for mc in mcm.mc:
                 if mc.market_definition:
                     market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
@@ -143,3 +158,28 @@ def betting_instruments_from_file(
                     instruments.extend(new_instruments)
 
     return list(set(instruments))
+
+
+def parse_betfair_rcm_file(
+    uri: PathLike[str] | str,
+) -> Generator[RCM_PARSE_TYPES, None, None]:
+    """
+    Parse a file of RCM streaming data (TPD race data).
+
+    Parameters
+    ----------
+    uri : PathLike[str] | str
+        The fsspec-compatible URI.
+
+    Yields
+    ------
+    RCM_PARSE_TYPES
+        Parsed race data objects (BetfairRaceRunnerData, BetfairRaceProgress).
+
+    """
+    parser = BetfairRCMParser()
+    with fsspec.open(uri, compression="infer") as f:
+        for msg in iter_stream(f):
+            if isinstance(msg, RCM):
+                for update in parser.parse(msg):
+                    yield update.data

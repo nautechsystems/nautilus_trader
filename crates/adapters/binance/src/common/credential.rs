@@ -17,35 +17,140 @@
 //!
 //! This module provides two types of credentials:
 //! - [`Credential`]: HMAC SHA256 signing for REST API and standard WebSocket
-//! - [`Ed25519Credential`]: Ed25519 signing for SBE market data streams
+//! - [`Ed25519Credential`]: Ed25519 signing for WebSocket API and SBE streams
+//!
+//! Credentials are resolved from standard environment variables
+//! (`BINANCE_API_KEY`/`BINANCE_API_SECRET`). The deprecated `*_ED25519_*`
+//! variables are no longer supported and will produce a clear error.
 
 #![allow(unused_assignments)] // Fields are used in methods; false positive on some toolchains
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 use aws_lc_rs::hmac;
 use ed25519_dalek::{Signature, Signer, SigningKey};
-use ustr::Ustr;
+use nautilus_core::string::REDACTED;
 use zeroize::ZeroizeOnDrop;
+
+use super::enums::{BinanceEnvironment, BinanceProductType};
+
+/// Resolves API credentials from config or environment variables.
+///
+/// Checks standard environment variables:
+/// - Live: `BINANCE_API_KEY` / `BINANCE_API_SECRET`
+/// - Testnet (Spot): `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`
+/// - Testnet (Futures): `BINANCE_FUTURES_TESTNET_API_KEY` / `BINANCE_FUTURES_TESTNET_API_SECRET`
+/// - Demo: `BINANCE_DEMO_API_KEY` / `BINANCE_DEMO_API_SECRET`
+///
+/// The deprecated `*_ED25519_*` environment variables are no longer supported.
+/// If detected, a clear error is returned with migration instructions.
+///
+/// # Errors
+///
+/// Returns an error if credentials cannot be resolved from config or environment.
+pub fn resolve_credentials(
+    config_api_key: Option<String>,
+    config_api_secret: Option<String>,
+    environment: BinanceEnvironment,
+    product_type: BinanceProductType,
+) -> anyhow::Result<(String, String)> {
+    if let (Some(key), Some(secret)) = (config_api_key.clone(), config_api_secret.clone()) {
+        return Ok((key, secret));
+    }
+
+    let (deprecated_key_var, deprecated_secret_var, standard_key_var, standard_secret_var) =
+        match environment {
+            BinanceEnvironment::Testnet => match product_type {
+                BinanceProductType::Spot
+                | BinanceProductType::Margin
+                | BinanceProductType::Options => (
+                    "BINANCE_TESTNET_ED25519_API_KEY",
+                    "BINANCE_TESTNET_ED25519_API_SECRET",
+                    "BINANCE_TESTNET_API_KEY",
+                    "BINANCE_TESTNET_API_SECRET",
+                ),
+                BinanceProductType::UsdM | BinanceProductType::CoinM => (
+                    "BINANCE_FUTURES_TESTNET_ED25519_API_KEY",
+                    "BINANCE_FUTURES_TESTNET_ED25519_API_SECRET",
+                    "BINANCE_FUTURES_TESTNET_API_KEY",
+                    "BINANCE_FUTURES_TESTNET_API_SECRET",
+                ),
+            },
+
+            // Demo shares API keys across all product types
+            BinanceEnvironment::Demo => ("", "", "BINANCE_DEMO_API_KEY", "BINANCE_DEMO_API_SECRET"),
+            BinanceEnvironment::Mainnet => (
+                "BINANCE_ED25519_API_KEY",
+                "BINANCE_ED25519_API_SECRET",
+                "BINANCE_API_KEY",
+                "BINANCE_API_SECRET",
+            ),
+        };
+
+    // Futures: soft deprecation (warn + fallback),
+    // Spot/Margin: hard error on removed env vars.
+    let is_futures = matches!(
+        product_type,
+        BinanceProductType::UsdM | BinanceProductType::CoinM
+    );
+
+    let api_key = config_api_key
+        .or_else(|| std::env::var(standard_key_var).ok())
+        .or_else(|| resolve_deprecated_var(deprecated_key_var, standard_key_var, is_futures))
+        .ok_or_else(|| anyhow::anyhow!("{standard_key_var} not found in config or environment"))?;
+
+    let api_secret = config_api_secret
+        .or_else(|| std::env::var(standard_secret_var).ok())
+        .or_else(|| resolve_deprecated_var(deprecated_secret_var, standard_secret_var, is_futures))
+        .ok_or_else(|| {
+            anyhow::anyhow!("{standard_secret_var} not found in config or environment")
+        })?;
+
+    Ok((api_key, api_secret))
+}
+
+fn resolve_deprecated_var(
+    deprecated_var: &str,
+    standard_var: &str,
+    allow_fallback: bool,
+) -> Option<String> {
+    if deprecated_var.is_empty() {
+        return None;
+    }
+
+    let value = std::env::var(deprecated_var).ok()?;
+
+    if allow_fallback {
+        log::warn!(
+            "'{deprecated_var}' is deprecated and will be removed in a future version. \
+             Rename it to '{standard_var}' (Ed25519 keys are now auto-detected)"
+        );
+        Some(value)
+    } else {
+        log::error!(
+            "'{deprecated_var}' has been removed. \
+             Rename it to '{standard_var}' (Ed25519 keys are now auto-detected)"
+        );
+        None
+    }
+}
 
 /// Binance API credentials for signing requests (HMAC SHA256).
 ///
 /// Uses HMAC SHA256 with hexadecimal encoding, as required by Binance REST API signing.
 #[derive(Clone, ZeroizeOnDrop)]
 pub struct Credential {
-    #[zeroize(skip)]
-    pub api_key: Ustr,
+    api_key: Box<str>,
     api_secret: Box<[u8]>,
 }
 
-/// Binance Ed25519 credentials for SBE market data streams.
+/// Binance Ed25519 credentials for WebSocket API authentication.
 ///
-/// SBE market data streams at `stream-sbe.binance.com` require Ed25519 API key
-/// authentication via the `X-MBX-APIKEY` header.
+/// Ed25519 is required for WebSocket API authentication (`session.logon`).
+/// This is the only key type supported for execution clients.
 #[derive(ZeroizeOnDrop)]
 pub struct Ed25519Credential {
-    #[zeroize(skip)]
-    pub api_key: Ustr,
+    api_key: Box<str>,
     signing_key: SigningKey,
 }
 
@@ -53,7 +158,7 @@ impl Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Credential))
             .field("api_key", &self.api_key)
-            .field("api_secret", &"<redacted>")
+            .field("api_secret", &REDACTED)
             .finish()
     }
 }
@@ -63,7 +168,7 @@ impl Credential {
     #[must_use]
     pub fn new(api_key: String, api_secret: String) -> Self {
         Self {
-            api_key: api_key.into(),
+            api_key: api_key.into_boxed_str(),
             api_secret: api_secret.into_bytes().into_boxed_slice(),
         }
     }
@@ -71,7 +176,7 @@ impl Credential {
     /// Returns the API key.
     #[must_use]
     pub fn api_key(&self) -> &str {
-        self.api_key.as_str()
+        &self.api_key
     }
 
     /// Signs a message with HMAC SHA256 and returns a lowercase hex digest.
@@ -87,7 +192,7 @@ impl Debug for Ed25519Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Ed25519Credential))
             .field("api_key", &self.api_key)
-            .field("signing_key", &"<redacted>")
+            .field("signing_key", &REDACTED)
             .finish()
     }
 }
@@ -129,7 +234,7 @@ impl Ed25519Credential {
         let signing_key = SigningKey::from_bytes(&key_bytes);
 
         Ok(Self {
-            api_key: api_key.into(),
+            api_key: api_key.into_boxed_str(),
             signing_key,
         })
     }
@@ -137,7 +242,7 @@ impl Ed25519Credential {
     /// Returns the API key.
     #[must_use]
     pub fn api_key(&self) -> &str {
-        self.api_key.as_str()
+        &self.api_key
     }
 
     /// Signs a message with Ed25519 and returns a base64-encoded signature.
@@ -160,7 +265,7 @@ pub enum Ed25519CredentialError {
     InvalidKeyLength,
 }
 
-impl std::fmt::Display for Ed25519CredentialError {
+impl Display for Ed25519CredentialError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidBase64(e) => write!(f, "Invalid base64 encoding: {e}"),
@@ -198,5 +303,25 @@ mod tests {
         let expected = "c8db56825ae71d6d79447849e617115f4a920fa2acdcab2b053c4b2838bd6b71";
 
         assert_eq!(cred.sign(message), expected);
+    }
+
+    #[rstest]
+    fn test_debug_redacts_secret() {
+        let cred = Credential::new("test_key".to_string(), BINANCE_TEST_SECRET.to_string());
+        let dbg_out = format!("{cred:?}");
+
+        assert!(dbg_out.contains(REDACTED));
+        assert!(!dbg_out.contains("NhqPtmdSJYdKjVHjA7PZj4"));
+    }
+
+    #[rstest]
+    fn test_ed25519_debug_redacts_secret() {
+        // 32-byte seed encoded as base64
+        let seed = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [0xABu8; 32]);
+        let cred = Ed25519Credential::new("test_key".to_string(), &seed).unwrap();
+        let dbg_out = format!("{cred:?}");
+
+        assert!(dbg_out.contains(REDACTED));
+        assert!(!dbg_out.contains(&seed));
     }
 }

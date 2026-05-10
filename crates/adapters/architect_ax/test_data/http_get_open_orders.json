@@ -1,0 +1,36 @@
+{
+  "orders": [
+    {
+      "tn": 1704067200,
+      "ts": 1704067200,
+      "d": "B",
+      "o": "ACCEPTED",
+      "oid": "O-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "p": "1.08400",
+      "q": 1000,
+      "rq": 1000,
+      "s": "EURUSD-PERP",
+      "tif": "GTC",
+      "u": "test_user@example.com",
+      "xq": 0,
+      "cid": 12345,
+      "tag": "strategy-1"
+    },
+    {
+      "tn": 1704067201,
+      "ts": 1704067201,
+      "d": "S",
+      "o": "PARTIALLY_FILLED",
+      "oid": "O-01ARZ3NDEKTSV4RRFFQ69G5FBW",
+      "p": "1.27200",
+      "q": 500,
+      "rq": 200,
+      "s": "GBPUSD-PERP",
+      "tif": "IOC",
+      "u": "test_user@example.com",
+      "xq": 300,
+      "cid": null,
+      "tag": null
+    }
+  ]
+}

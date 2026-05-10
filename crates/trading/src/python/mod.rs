@@ -35,5 +35,6 @@ pub fn trading(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sessions::py_fx_prev_end, m)?)?;
     m.add_class::<strategy::PyStrategy>()?;
     m.add_class::<crate::strategy::StrategyConfig>()?;
+    m.add_class::<crate::strategy::ImportableStrategyConfig>()?;
     Ok(())
 }

@@ -19,16 +19,13 @@ use nautilus_okx::{
     common::enums::OKXInstrumentType, http::client::OKXHttpClient, websocket::OKXWebSocketClient,
 };
 use tokio::{pin, signal};
-use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::TRACE)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     let http_client = OKXHttpClient::from_env().unwrap();
-    let instruments = http_client
+    let (instruments, _inst_id_codes) = http_client
         .request_instruments(OKXInstrumentType::Swap, None)
         .await?;
 
@@ -80,10 +77,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         tokio::select! {
             Some(data) = stream.next() => {
-                tracing::debug!("{data:?}");
+                log::debug!("{data:?}");
             }
             _ = &mut sigint => {
-                tracing::info!("Received SIGINT, closing connection...");
+                log::info!("Received SIGINT, closing connection...");
                 ws_client.close().await?;
                 break;
             }

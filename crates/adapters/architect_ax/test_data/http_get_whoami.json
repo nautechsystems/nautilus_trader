@@ -1,0 +1,12 @@
+{
+  "id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
+  "username": "test_user",
+  "created_at": "2023-11-07T05:31:56Z",
+  "enabled_2fa": true,
+  "is_onboarded": true,
+  "is_frozen": false,
+  "is_admin": false,
+  "is_close_only": false,
+  "maker_fee": "0.0002",
+  "taker_fee": "0.0005"
+}

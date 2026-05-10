@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "method": "subscription",
+  "params": {
+    "channel": "chart.trades.BTC-PERPETUAL.1",
+    "data": {
+      "tick": 1767200040000,
+      "open": 87490.0,
+      "high": 87500.0,
+      "low": 87465.0,
+      "close": 87474.0,
+      "volume": 0.95978896,
+      "cost": 83970.0
+    }
+  }
+}

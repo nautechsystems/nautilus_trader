@@ -52,7 +52,7 @@ use std::fmt::Debug;
 /// - On disconnect, client transitions to CLOSED state and caller must manually reconnect.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
 )]
 #[derive(Clone, Debug)]
 pub struct WebSocketConfig {
@@ -84,4 +84,10 @@ pub struct WebSocketConfig {
     /// - `None`: Unlimited reconnection attempts (default, recommended for production).
     /// - `Some(n)`: After n failed attempts, transition to CLOSED state.
     pub reconnect_max_attempts: Option<u32>,
+    /// The idle timeout (milliseconds) for the read task.
+    /// When set, the read task will break and trigger reconnection if no data
+    /// is received within this duration. Useful for detecting silently dead
+    /// connections where the server stops sending without closing.
+    /// **Note**: Only applies to handler mode. Ignored in stream mode.
+    pub idle_timeout_ms: Option<u64>,
 }

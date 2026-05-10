@@ -1,0 +1,22 @@
+{
+  "transactions": [
+    {
+      "amount": "10000.00",
+      "event_id": "evt-01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "symbol": "USD",
+      "timestamp": "2024-01-15T09:00:00Z",
+      "transaction_type": "deposit",
+      "user_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
+      "reference_id": "ref-deposit-001"
+    },
+    {
+      "amount": "-0.54225",
+      "event_id": "evt-01ARZ3NDEKTSV4RRFFQ69G5FBW",
+      "symbol": "USD",
+      "timestamp": "2024-01-15T10:30:45Z",
+      "transaction_type": "fee",
+      "user_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
+      "reference_id": null
+    }
+  ]
+}

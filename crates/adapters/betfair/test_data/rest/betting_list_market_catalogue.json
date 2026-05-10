@@ -1,0 +1,278 @@
+[
+  {
+    "marketId": "1.180294978",
+    "marketName": "Most Disposals - Group A",
+    "marketStartTime": "2021-03-19T08:50:00.000Z",
+    "description": {
+      "persistenceEnabled": false,
+      "bspMarket": false,
+      "marketTime": "2021-03-19T08:50:00.000Z",
+      "suspendTime": "2021-03-19T08:50:00.000Z",
+      "bettingType": "ODDS",
+      "turnInPlayEnabled": false,
+      "marketType": "UNUSED",
+      "regulator": "MALTA LOTTERIES AND GAMBLING AUTHORITY",
+      "marketBaseRate": 2.5,
+      "discountAllowed": true,
+      "wallet": "UK wallet",
+      "rules": "<br><br><b>MARKET INFORMATION</b><br><br>For further information please see <a href=http://content.betfair.com/aboutus/content.asp?sWhichKey=Rules%20and%20Regulations#undefined.do style=color:0163ad; text-decoration: underline; target=_blank>Rules & Regs</a>.<br><br>Which one of the selected players will have the most disposals in this match? For the avoidance of doubt, the winner will be the player with the most disposals in this group only. If any of these players are not in the starting 22 then the market shall be void. The market will be suspended at the start of the match. Dead heat rules apply.<br><br>This is a <a href=\"http://cross-matching.betfair.com.au/\" target=\"_blank\">cross-matching</a> market.<br>",
+      "rulesHasDate": true,
+      "priceLadderDescription": {
+        "type": "CLASSIC"
+      }
+    },
+    "totalMatched": 0.0,
+    "runners": [
+      {
+        "selectionId": 6146434,
+        "runnerName": "Adam Treloar",
+        "handicap": 0.0,
+        "sortPriority": 1,
+        "metadata": {
+          "runnerId": "6146434"
+        }
+      },
+      {
+        "selectionId": 7229736,
+        "runnerName": "Jack Macrae",
+        "handicap": 0.0,
+        "sortPriority": 2,
+        "metadata": {
+          "runnerId": "7229736"
+        }
+      },
+      {
+        "selectionId": 10979106,
+        "runnerName": "Josh Dunkley",
+        "handicap": 0.0,
+        "sortPriority": 3,
+        "metadata": {
+          "runnerId": "10979106"
+        }
+      },
+      {
+        "selectionId": 7547817,
+        "runnerName": "Lachie Hunter",
+        "handicap": 0.0,
+        "sortPriority": 4,
+        "metadata": {
+          "runnerId": "7547817"
+        }
+      },
+      {
+        "selectionId": 6354135,
+        "runnerName": "Taylor Adams",
+        "handicap": 0.0,
+        "sortPriority": 5,
+        "metadata": {
+          "runnerId": "6354135"
+        }
+      },
+      {
+        "selectionId": 2364717,
+        "runnerName": "Scott Pendlebury",
+        "handicap": 0.0,
+        "sortPriority": 6,
+        "metadata": {
+          "runnerId": "2364717"
+        }
+      },
+      {
+        "selectionId": 6507428,
+        "runnerName": "Jack Crisp",
+        "handicap": 0.0,
+        "sortPriority": 7,
+        "metadata": {
+          "runnerId": "6507428"
+        }
+      },
+      {
+        "selectionId": 12683537,
+        "runnerName": "Josh Daicos",
+        "handicap": 0.0,
+        "sortPriority": 8,
+        "metadata": {
+          "runnerId": "12683537"
+        }
+      }
+    ],
+    "eventType": {
+      "id": "61420",
+      "name": "Australian Rules"
+    },
+    "competition": {
+      "id": "11897406",
+      "name": "AFL"
+    },
+    "event": {
+      "id": "30196014",
+      "name": "Collingwood v Western Bulldogs",
+      "countryCode": "AU",
+      "timezone": "GMT",
+      "openDate": "2021-03-19T08:50:00.000Z"
+    }
+  },
+  {
+    "marketId": "1.177127114",
+    "marketName": "Time Of First Goal",
+    "marketStartTime": "2021-03-19T08:50:00.000Z",
+    "description": {
+      "persistenceEnabled": false,
+      "bspMarket": false,
+      "marketTime": "2021-03-19T08:50:00.000Z",
+      "suspendTime": "2021-03-19T08:50:00.000Z",
+      "bettingType": "ODDS",
+      "turnInPlayEnabled": false,
+      "marketType": "UNDIFFERENTIATED",
+      "regulator": "MALTA LOTTERIES AND GAMBLING AUTHORITY",
+      "marketBaseRate": 2.5,
+      "discountAllowed": true,
+      "wallet": "UK wallet",
+      "rules": "<br><br><b>MARKET INFORMATION</b><br><br>For further information please see <a href=http://content.betfair.com/aboutus/content.asp?sWhichKey=Rules%20and%20Regulations#undefined.do style=color:0163ad; text-decoration: underline; target=_blank>Rules & Regs</a>.<br><br>What time will the first goal be scored in this match? This market will be suspended at the start of the game. In any dispute over the time of the first goal Betfair will settle the market in accordance with the ruling body's verdict.<br><br>This market will be settled based on the amount of actual time elapsed since the start of the match, irrespective of any stoppages in play or pauses in the game clock. If no goal is scored, this market will be made void.<br><br>This is a <a href=\"http://cross-matching.betfair.com.au/\" target=\"_blank\">cross-matching</a> market.<br><br>",
+      "rulesHasDate": true,
+      "priceLadderDescription": {
+        "type": "CLASSIC"
+      }
+    },
+    "totalMatched": 0.0,
+    "runners": [
+      {
+        "selectionId": 28700091,
+        "runnerName": "01:00 mins or earlier",
+        "handicap": 0.0,
+        "sortPriority": 1,
+        "metadata": {
+          "runnerId": "28700091"
+        }
+      },
+      {
+        "selectionId": 28700092,
+        "runnerName": "01:01 - 02:00 mins",
+        "handicap": 0.0,
+        "sortPriority": 2,
+        "metadata": {
+          "runnerId": "28700092"
+        }
+      },
+      {
+        "selectionId": 28700093,
+        "runnerName": "02:01 - 03:00 mins",
+        "handicap": 0.0,
+        "sortPriority": 3,
+        "metadata": {
+          "runnerId": "28700093"
+        }
+      },
+      {
+        "selectionId": 28700094,
+        "runnerName": "03:01 - 04:00 mins",
+        "handicap": 0.0,
+        "sortPriority": 4,
+        "metadata": {
+          "runnerId": "28700094"
+        }
+      },
+      {
+        "selectionId": 28700095,
+        "runnerName": "04:01 - 05:00 mins",
+        "handicap": 0.0,
+        "sortPriority": 5,
+        "metadata": {
+          "runnerId": "28700095"
+        }
+      },
+      {
+        "selectionId": 28700096,
+        "runnerName": "05:01 mins or later",
+        "handicap": 0.0,
+        "sortPriority": 6,
+        "metadata": {
+          "runnerId": "28700096"
+        }
+      }
+    ],
+    "eventType": {
+      "id": "61420",
+      "name": "Australian Rules"
+    },
+    "competition": {
+      "id": "11897406",
+      "name": "AFL"
+    },
+    "event": {
+      "id": "30196014",
+      "name": "Collingwood v Western Bulldogs",
+      "countryCode": "AU",
+      "timezone": "GMT",
+      "openDate": "2021-03-19T08:50:00.000Z"
+    }
+  },
+  {
+    "marketId": "1.177126658",
+    "marketName": "Tri Bet",
+    "marketStartTime": "2021-03-19T08:50:00.000Z",
+    "description": {
+      "persistenceEnabled": true,
+      "bspMarket": false,
+      "marketTime": "2021-03-19T08:50:00.000Z",
+      "suspendTime": "2021-03-19T08:50:00.000Z",
+      "bettingType": "ODDS",
+      "turnInPlayEnabled": true,
+      "marketType": "WINNING_MARGIN",
+      "regulator": "MALTA LOTTERIES AND GAMBLING AUTHORITY",
+      "marketBaseRate": 2.5,
+      "discountAllowed": true,
+      "wallet": "UK wallet",
+      "rules": "<br><b>MARKET INFORMATION</b><br><br>For further information please see <a href=http://content.betfair.com/aboutus/content.asp?sWhichKey=Rules%20and%20Regulations#undefined.do style=color:0163ad; text-decoration: underline; target=_blank>Rules & Regs</a>.<br><br>What will be the margin result of this match? At the start of the match all unmatched bets will be cancelled and the market will be turned <b>IN PLAY</b>. For the avoidance of doubt, if the result of this match is a draw then Either Team under 15.5pts will be settled as the winner. This market will not be actively managed therefore it is the responsibility of all users to manage their own positions.<br><br>This is a <a href=\"http://cross-matching.betfair.com.au/\" target=\"_blank\">cross-matching</a> market. <br><br>Customers should be aware that:<b><br><br><li>Transmissions described as \u201clive\u201d by some broadcasters may actually be delayed and that all in-play matches are not necessarily televised.</li><br><li>The extent of any such delay may vary between customers, depending on the set-up through which they are receiving pictures or data.</li></b><br><br><b>BET IN-PLAY</b><br><br>Australian customers call Telbet to bet in-play on this market \u2013 call <b>132BET (132238)</b><br><br>",
+      "rulesHasDate": true,
+      "priceLadderDescription": {
+        "type": "CLASSIC"
+      }
+    },
+    "totalMatched": 39.816588,
+    "runners": [
+      {
+        "selectionId": 3929258,
+        "runnerName": "Collingwood over 15.5pts",
+        "handicap": 0.0,
+        "sortPriority": 1,
+        "metadata": {
+          "runnerId": "3929258"
+        }
+      },
+      {
+        "selectionId": 3924097,
+        "runnerName": "Either Team under 15.5pts",
+        "handicap": 0.0,
+        "sortPriority": 2,
+        "metadata": {
+          "runnerId": "3924097"
+        }
+      },
+      {
+        "selectionId": 3929109,
+        "runnerName": "Western Bulldogs over 15.5pts",
+        "handicap": 0.0,
+        "sortPriority": 3,
+        "metadata": {
+          "runnerId": "3929109"
+        }
+      }
+    ],
+    "eventType": {
+      "id": "61420",
+      "name": "Australian Rules"
+    },
+    "competition": {
+      "id": "11897406",
+      "name": "AFL"
+    },
+    "event": {
+      "id": "30196014",
+      "name": "Collingwood v Western Bulldogs",
+      "countryCode": "AU",
+      "timezone": "GMT",
+      "openDate": "2021-03-19T08:50:00.000Z"
+    }
+  }
+]

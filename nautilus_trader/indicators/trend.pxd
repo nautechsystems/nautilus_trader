@@ -80,6 +80,30 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
     cpdef void update_raw(self, double value)
 
 
+cdef class IchimokuCloud(Indicator):
+    cdef object _highs_tenkan
+    cdef object _lows_tenkan
+    cdef object _highs_kijun
+    cdef object _lows_kijun
+    cdef object _highs_senkou
+    cdef object _lows_senkou
+    cdef object _senkou_a
+    cdef object _senkou_b
+    cdef object _chikou
+
+    cdef readonly int tenkan_period
+    cdef readonly int kijun_period
+    cdef readonly int senkou_period
+    cdef readonly int displacement
+    cdef readonly double tenkan_sen
+    cdef readonly double kijun_sen
+    cdef readonly double senkou_span_a
+    cdef readonly double senkou_span_b
+    cdef readonly double chikou_span
+
+    cpdef void update_raw(self, double high, double low, double close)
+
+
 cdef class LinearRegression(Indicator):
     cdef object _inputs
 

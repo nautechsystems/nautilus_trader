@@ -164,6 +164,7 @@ impl FullMath {
         if x.is_zero() {
             return U256::ZERO;
         }
+
         if x == U256::from(1u128) {
             return U256::from(1u128);
         }

@@ -38,7 +38,13 @@ use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", frozen, eq, hash)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.model",
+        frozen,
+        eq,
+        hash,
+        from_py_object
+    )
 )]
 pub struct Currency {
     /// The currency code as an alpha-3 string (e.g., "USD", "EUR").
@@ -185,7 +191,7 @@ impl Currency {
             let currency = Self::new(code_str, 8, 0, code_str, CurrencyType::Crypto);
 
             if let Err(e) = Self::register(currency, false) {
-                tracing::error!("Failed to register currency '{code_str}': {e}");
+                log::error!("Failed to register currency '{code_str}': {e}");
             }
 
             currency
@@ -214,7 +220,7 @@ impl Currency {
         let ctx = context.unwrap_or("unknown");
 
         if trimmed.is_empty() {
-            tracing::warn!(
+            log::warn!(
                 "get_or_create_crypto_with_context called with empty code (context: {ctx}), using USDT as fallback"
             );
             return Self::USDT();

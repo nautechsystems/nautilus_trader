@@ -53,6 +53,7 @@ pub mod contracts;
 pub mod decode;
 pub mod events;
 pub mod math;
+pub mod reporting;
 pub mod rpc;
 
 #[cfg(feature = "hypersync")]

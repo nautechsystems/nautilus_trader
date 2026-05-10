@@ -40,6 +40,7 @@ cdef class MatchingCore:
     cdef object _trigger_stop_order
     cdef object _fill_market_order
     cdef object _fill_limit_order
+    cdef bint _fill_limit_inside_spread
 
     cdef dict _orders
     cdef list _orders_bid
@@ -77,7 +78,9 @@ cdef class MatchingCore:
     cpdef void match_limit_if_touched_order(self, Order order, bint initial)
     cpdef void match_trailing_stop_market_order(self, Order order)
     cpdef void match_trailing_stop_limit_order(self, Order order, bint initial)
-    cpdef bint is_limit_matched(self, OrderSide side, Price price)
+    cpdef bint is_limit_marketable(self, OrderSide side, Price price)
+    cpdef void set_fill_limit_inside_spread(self, bint value)
+    cpdef bint is_limit_fillable(self, OrderSide side, Price price)
     cpdef bint is_stop_triggered(self, OrderSide side, Price trigger_price)
     cpdef bint is_touch_triggered(self, OrderSide side, Price trigger_price)
     cdef LiquiditySide _determine_order_liquidity(self, bint initial, OrderSide side, Price price, Price trigger_price)

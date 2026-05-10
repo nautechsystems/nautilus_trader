@@ -77,30 +77,22 @@ class GreeksData(Data):
             quantity=1.0,
         )
 
-    def __rmul__(self, quantity):  # quantity * greeks
-        return GreeksData(
-            self.ts_init,
+    def to_portfolio_greeks(self):
+        # Scale by multiplier so portfolio greeks are in dollar/notional terms per contract.
+        # Caller then applies quantity: position_greeks = quantity * to_portfolio_greeks().
+        return PortfolioGreeks(
             self.ts_event,
-            self.instrument_id,
-            self.is_call,
-            self.strike,
-            self.expiry,
-            self.expiry_in_days,
-            self.expiry_in_years,
-            self.multiplier,
-            self.quantity,
-            self.underlying_price,
-            self.interest_rate,
-            self.cost_of_carry,
-            self.vol,
-            quantity * self.pnl,
-            quantity * self.price,
-            quantity * self.delta,
-            quantity * self.gamma,
-            quantity * self.vega,
-            quantity * self.theta,
-            self.itm_prob,
+            self.ts_init,
+            self.multiplier * self.pnl,
+            self.multiplier * self.price,
+            self.multiplier * self.delta,
+            self.multiplier * self.gamma,
+            self.multiplier * self.vega,
+            self.multiplier * self.theta,
         )
+
+    def __rmul__(self, quantity):
+        return quantity * self.to_portfolio_greeks()
 
 
 @customdataclass
@@ -117,6 +109,18 @@ class PortfolioGreeks(Data):
             f"PortfolioGreeks(pnl={self.pnl:,.2f}, price={self.price:,.2f}, delta={self.delta:,.2f}, gamma={self.gamma:,.2f}, "
             f"vega={self.vega:,.2f}, theta={self.theta:,.2f}, "
             f"ts_event={unix_nanos_to_iso8601(self.ts_event)}, ts_init={unix_nanos_to_iso8601(self.ts_init)})"
+        )
+
+    def __rmul__(self, quantity):
+        return PortfolioGreeks(
+            self.ts_event,
+            self.ts_init,
+            quantity * self.pnl,
+            quantity * self.price,
+            quantity * self.delta,
+            quantity * self.gamma,
+            quantity * self.vega,
+            quantity * self.theta,
         )
 
     def __add__(self, other):

@@ -185,6 +185,24 @@ class TestSimulatedExchange:
         with pytest.raises(RuntimeError):
             self.exchange.process(0)
 
+    def test_trailing_stop_market_order_default_when_no_quote_ticks_raises_runtime_error(
+        self,
+    ) -> None:
+        # Arrange: Prepare market
+        trailing_stop = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(200_000),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            trailing_offset=Decimal("1.0"),
+            trigger_type=TriggerType.DEFAULT,
+        )
+        self.strategy.submit_order(trailing_stop)
+
+        # Assert
+        with pytest.raises(RuntimeError):
+            self.exchange.process(0)
+
     def test_trailing_stop_market_order_last_when_no_quote_ticks_raises_runtime_error(self) -> None:
         # Arrange: Prepare market
         trailing_stop = self.strategy.order_factory.trailing_stop_market(
@@ -242,6 +260,22 @@ class TestSimulatedExchange:
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
                 TriggerType.BID_ASK,
+                Price.from_str("13.000"),
+                Price.from_str("12.000"),
+            ],
+            [
+                OrderSide.BUY,
+                TrailingOffsetType.PRICE,
+                Decimal("1.0"),
+                TriggerType.DEFAULT,  # DEFAULT should behave like BID_ASK (quote-based)
+                Price.from_str("14.000"),
+                Price.from_str("15.000"),
+            ],
+            [
+                OrderSide.SELL,
+                TrailingOffsetType.PRICE,
+                Decimal("1.0"),
+                TriggerType.DEFAULT,  # DEFAULT should behave like BID_ASK (quote-based)
                 Price.from_str("13.000"),
                 Price.from_str("12.000"),
             ],

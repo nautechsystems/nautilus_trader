@@ -32,6 +32,7 @@ from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderUpdated
@@ -1555,3 +1556,219 @@ async def test_child_id_reuse_after_cleanup_routes_correctly(exec_client_builder
     resolved = client._canonical_client_order_id(child)
     assert resolved == new_canonical
     assert resolved != old_canonical
+
+
+@pytest.mark.asyncio
+async def test_batch_cancel_orders_separates_algo_orders(exec_client_builder, monkeypatch):
+    """
+    Test that batch cancel correctly separates algo orders from regular orders.
+
+    Algo orders should be sent to HTTP cancel_algo_orders, regular to WebSocket.
+
+    """
+    # Arrange
+    client, private_ws, _, http_client, _ = exec_client_builder(monkeypatch)
+
+    instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+    client._cache.add_instrument(instrument)
+
+    # Create a regular limit order
+    regular_order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-regular-001"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100),
+        price=Price.from_str("1.0000"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    submitted = TestEventStubs.order_submitted(order=regular_order)
+    regular_order.apply(submitted)
+    accepted = TestEventStubs.order_accepted(
+        order=regular_order,
+        venue_order_id=VenueOrderId("venue-regular-1"),
+    )
+    regular_order.apply(accepted)
+    client._cache.add_order(regular_order, None, None)
+
+    # Create a stop market order (algo order)
+    algo_order = StopMarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-algo-001"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(100),
+        trigger_price=Price.from_str("0.9900"),
+        trigger_type=TriggerType.DEFAULT,
+        time_in_force=TimeInForce.GTC,
+        expire_time_ns=0,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    submitted_algo = TestEventStubs.order_submitted(order=algo_order)
+    algo_order.apply(submitted_algo)
+    accepted_algo = TestEventStubs.order_accepted(
+        order=algo_order,
+        venue_order_id=VenueOrderId("algo-id-123"),
+    )
+    algo_order.apply(accepted_algo)
+    client._cache.add_order(algo_order, None, None)
+
+    # Register the algo order in _algo_order_ids (simulating what happens on order accept)
+    client._algo_order_ids[algo_order.client_order_id] = "algo-id-123"
+    client._algo_order_instruments[algo_order.client_order_id] = instrument.id
+
+    # Mock the HTTP cancel_algo_orders method
+    http_client.cancel_algo_orders = AsyncMock(return_value=[])
+
+    # Create batch cancel command with both orders
+    command = BatchCancelOrders(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        cancels=[
+            CancelOrder(
+                trader_id=TestIdStubs.trader_id(),
+                strategy_id=TestIdStubs.strategy_id(),
+                instrument_id=instrument.id,
+                client_order_id=regular_order.client_order_id,
+                venue_order_id=regular_order.venue_order_id,
+                command_id=TestIdStubs.uuid(),
+                ts_init=0,
+            ),
+            CancelOrder(
+                trader_id=TestIdStubs.trader_id(),
+                strategy_id=TestIdStubs.strategy_id(),
+                instrument_id=instrument.id,
+                client_order_id=algo_order.client_order_id,
+                venue_order_id=algo_order.venue_order_id,
+                command_id=TestIdStubs.uuid(),
+                ts_init=0,
+            ),
+        ],
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    await client._batch_cancel_orders(command)
+
+    # Assert - regular order sent to WebSocket, algo order sent to HTTP
+    private_ws.batch_cancel_orders.assert_awaited_once()
+    ws_call_args = private_ws.batch_cancel_orders.call_args[0][0]
+    assert len(ws_call_args) == 1  # Only regular order
+
+    http_client.cancel_algo_orders.assert_awaited_once()
+    http_call_args = http_client.cancel_algo_orders.call_args[0][0]
+    assert len(http_call_args) == 1  # Only algo order
+    assert http_call_args[0][1] == "algo-id-123"  # algo_id
+
+    # Verify algo order tracking was cleaned up
+    assert algo_order.client_order_id not in client._algo_order_ids
+    assert algo_order.client_order_id not in client._algo_order_instruments
+
+
+@pytest.mark.asyncio
+async def test_batch_cancel_orders_only_algo_orders(exec_client_builder, monkeypatch):
+    """
+    Test that batch cancel with only algo orders doesn't call WebSocket batch cancel.
+    """
+    # Arrange
+    client, private_ws, _, http_client, _ = exec_client_builder(monkeypatch)
+
+    instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+    client._cache.add_instrument(instrument)
+
+    # Create two stop market orders (algo orders)
+    algo_order1 = StopMarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-algo-001"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(100),
+        trigger_price=Price.from_str("0.9900"),
+        trigger_type=TriggerType.DEFAULT,
+        time_in_force=TimeInForce.GTC,
+        expire_time_ns=0,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    submitted1 = TestEventStubs.order_submitted(order=algo_order1)
+    algo_order1.apply(submitted1)
+    accepted1 = TestEventStubs.order_accepted(
+        order=algo_order1,
+        venue_order_id=VenueOrderId("algo-id-1"),
+    )
+    algo_order1.apply(accepted1)
+    client._cache.add_order(algo_order1, None, None)
+    client._algo_order_ids[algo_order1.client_order_id] = "algo-id-1"
+    client._algo_order_instruments[algo_order1.client_order_id] = instrument.id
+
+    algo_order2 = StopMarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-algo-002"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(200),
+        trigger_price=Price.from_str("1.0100"),
+        trigger_type=TriggerType.DEFAULT,
+        time_in_force=TimeInForce.GTC,
+        expire_time_ns=0,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    submitted2 = TestEventStubs.order_submitted(order=algo_order2)
+    algo_order2.apply(submitted2)
+    accepted2 = TestEventStubs.order_accepted(
+        order=algo_order2,
+        venue_order_id=VenueOrderId("algo-id-2"),
+    )
+    algo_order2.apply(accepted2)
+    client._cache.add_order(algo_order2, None, None)
+    client._algo_order_ids[algo_order2.client_order_id] = "algo-id-2"
+    client._algo_order_instruments[algo_order2.client_order_id] = instrument.id
+
+    http_client.cancel_algo_orders = AsyncMock(return_value=[])
+
+    command = BatchCancelOrders(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        cancels=[
+            CancelOrder(
+                trader_id=TestIdStubs.trader_id(),
+                strategy_id=TestIdStubs.strategy_id(),
+                instrument_id=instrument.id,
+                client_order_id=algo_order1.client_order_id,
+                venue_order_id=algo_order1.venue_order_id,
+                command_id=TestIdStubs.uuid(),
+                ts_init=0,
+            ),
+            CancelOrder(
+                trader_id=TestIdStubs.trader_id(),
+                strategy_id=TestIdStubs.strategy_id(),
+                instrument_id=instrument.id,
+                client_order_id=algo_order2.client_order_id,
+                venue_order_id=algo_order2.venue_order_id,
+                command_id=TestIdStubs.uuid(),
+                ts_init=0,
+            ),
+        ],
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    # Act
+    await client._batch_cancel_orders(command)
+
+    # Assert - WebSocket batch cancel NOT called, HTTP batch cancel called once
+    private_ws.batch_cancel_orders.assert_not_awaited()
+
+    http_client.cancel_algo_orders.assert_awaited_once()
+    http_call_args = http_client.cancel_algo_orders.call_args[0][0]
+    assert len(http_call_args) == 2  # Both algo orders

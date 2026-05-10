@@ -32,7 +32,8 @@ pub mod trade;
 use indexmap::IndexMap;
 #[cfg(feature = "ffi")]
 use nautilus_core::ffi::cvec::CVec;
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyCapsule};
+use nautilus_core::python::to_pyvalue_err;
+use pyo3::{prelude::*, types::PyCapsule};
 
 use crate::data::{
     Bar, Data, DataType, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta,
@@ -79,14 +80,6 @@ impl DataType {
 /// This function panics if the `PyCapsule` creation fails, which may occur if
 /// there are issues with memory allocation or if the `Data` instance cannot be
 /// properly encapsulated.
-///
-/// # Safety
-///
-/// This function is safe as long as the `Data` instance does not violate Rust's
-/// safety guarantees (e.g., no invalid memory access). Users of the
-/// `PyCapsule` in Python must ensure they understand how to extract and use the
-/// encapsulated `Data` safely, especially when converting the capsule back to a
-/// Rust data structure.
 #[must_use]
 pub fn data_to_pycapsule(py: Python, data: Data) -> Py<PyAny> {
     // Register a destructor which simply drops the `Data` value once the
@@ -107,11 +100,8 @@ pub fn data_to_pycapsule(py: Python, data: Data) -> Py<PyAny> {
 /// Panics if the capsule cannot be downcast to a `PyCapsule`, indicating a type
 /// mismatch or improper capsule handling.
 ///
-/// # Safety
-///
-/// This function is unsafe as it involves raw pointer dereferencing and manual memory
+/// This function involves raw pointer dereferencing and manual memory
 /// management. The caller must ensure the `PyCapsule` contains a valid `CVec` pointer.
-/// Incorrect usage can lead to memory corruption or undefined behavior.
 #[cfg(feature = "ffi")]
 #[pyfunction]
 #[allow(unsafe_code)]
@@ -150,7 +140,7 @@ pub fn pyobjects_to_book_deltas(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<Ord
 
     // Validate monotonically increasing
     if !is_monotonically_increasing_by_init(&deltas) {
-        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        return Err(to_pyvalue_err(ERROR_MONOTONICITY));
     }
 
     Ok(deltas)
@@ -169,7 +159,7 @@ pub fn pyobjects_to_quotes(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<QuoteTic
 
     // Validate monotonically increasing
     if !is_monotonically_increasing_by_init(&quotes) {
-        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        return Err(to_pyvalue_err(ERROR_MONOTONICITY));
     }
 
     Ok(quotes)
@@ -188,7 +178,7 @@ pub fn pyobjects_to_trades(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<TradeTic
 
     // Validate monotonically increasing
     if !is_monotonically_increasing_by_init(&trades) {
-        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        return Err(to_pyvalue_err(ERROR_MONOTONICITY));
     }
 
     Ok(trades)
@@ -207,7 +197,7 @@ pub fn pyobjects_to_bars(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<Bar>> {
 
     // Validate monotonically increasing
     if !is_monotonically_increasing_by_init(&bars) {
-        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        return Err(to_pyvalue_err(ERROR_MONOTONICITY));
     }
 
     Ok(bars)
@@ -226,7 +216,7 @@ pub fn pyobjects_to_mark_prices(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<Mar
 
     // Validate monotonically increasing
     if !is_monotonically_increasing_by_init(&mark_prices) {
-        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        return Err(to_pyvalue_err(ERROR_MONOTONICITY));
     }
 
     Ok(mark_prices)
@@ -245,7 +235,7 @@ pub fn pyobjects_to_index_prices(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<In
 
     // Validate monotonically increasing
     if !is_monotonically_increasing_by_init(&index_prices) {
-        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        return Err(to_pyvalue_err(ERROR_MONOTONICITY));
     }
 
     Ok(index_prices)
@@ -266,7 +256,7 @@ pub fn pyobjects_to_instrument_closes(
 
     // Validate monotonically increasing
     if !is_monotonically_increasing_by_init(&closes) {
-        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        return Err(to_pyvalue_err(ERROR_MONOTONICITY));
     }
 
     Ok(closes)
@@ -285,7 +275,7 @@ pub fn pyobjects_to_funding_rates(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<F
 
     // Validate monotonically increasing
     if !is_monotonically_increasing_by_init(&funding_rates) {
-        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        return Err(to_pyvalue_err(ERROR_MONOTONICITY));
     }
 
     Ok(funding_rates)

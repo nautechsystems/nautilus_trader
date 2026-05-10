@@ -243,7 +243,6 @@ async def pagination_demo(http_client, bar_type: nautilus_pyo3.BarType, logger: 
 # Main entry
 # ----------------------------------------------------------------------
 async def main(args: argparse.Namespace) -> None:
-    nautilus_pyo3.init_tracing()
     _guard = init_logging(level_stdout=LogLevel.TRACE)
     logger = Logger("okx-sandbox")
 
@@ -251,7 +250,7 @@ async def main(args: argparse.Namespace) -> None:
 
     # Cache instruments
     inst_type = nautilus_pyo3.OKXInstrumentType.SWAP
-    instruments = await http_client.request_instruments(inst_type, None)
+    instruments, _inst_id_codes = await http_client.request_instruments(inst_type, None)
     for inst in instruments:
         http_client.cache_instrument(inst)
     logger.info(f"Cached {len(instruments)} {inst_type} instruments")

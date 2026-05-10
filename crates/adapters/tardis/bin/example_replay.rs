@@ -22,9 +22,7 @@ use nautilus_tardis::replay::run_tardis_machine_replay_from_config;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
+    nautilus_common::logging::ensure_logging_initialized();
 
     // Retrieve the config path from first argument, or use a default example config
     let config_filepath = env::args().nth(1).map_or_else(

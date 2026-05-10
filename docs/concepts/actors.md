@@ -139,33 +139,35 @@ The system distinguishes between two types of data flow:
 
 Here's how different data operations map to their handlers:
 
-| Operation                       | Category         | Handler                  | Purpose |
-|:--------------------------------|:-----------------|:-------------------------|:--------|
-| `subscribe_data()`              | Real‑time        | `on_data()`              | Live data updates. |
-| `subscribe_instrument()`        | Real‑time        | `on_instrument()`        | Live instrument definition updates. |
-| `subscribe_instruments()`       | Real‑time        | `on_instrument()`        | Live instrument definition updates (for venue). |
-| `subscribe_order_book_deltas()` | Real‑time        | `on_order_book_deltas()` | Live order book deltas. |
-| `subscribe_order_book_depth()`  | Real‑time        | `on_order_book_depth()`  | Live order book depth snapshots. |
-| `subscribe_order_book_at_interval()` | Real‑time   | `on_order_book()`        | Live order book snapshots at intervals. |
-| `subscribe_quote_ticks()`       | Real‑time        | `on_quote_tick()`        | Live quote updates. |
-| `subscribe_trade_ticks()`       | Real‑time        | `on_trade_tick()`        | Live trade updates. |
-| `subscribe_mark_prices()`       | Real‑time        | `on_mark_price()`        | Live mark price updates. |
-| `subscribe_index_prices()`      | Real‑time        | `on_index_price()`       | Live index price updates. |
-| `subscribe_funding_rates()`     | Real‑time        | `on_funding_rate()`      | Live funding rate updates. |
-| `subscribe_bars()`              | Real‑time        | `on_bar()`               | Live bar updates. |
-| `subscribe_instrument_status()` | Real‑time        | `on_instrument_status()` | Live instrument status updates. |
-| `subscribe_instrument_close()`  | Real‑time        | `on_instrument_close()`  | Live instrument close updates. |
-| `subscribe_order_fills()`       | Real‑time        | `on_order_filled()`      | Live order fill events for an instrument. |
-| `subscribe_order_cancels()`     | Real‑time        | `on_order_canceled()`    | Live order cancel events for an instrument. |
-| `request_data()`                | Historical       | `on_historical_data()`   | Historical data processing. |
-| `request_order_book_snapshot()` | Historical       | `on_historical_data()`   | Historical order book snapshot. |
-| `request_order_book_depth()`    | Historical       | `on_historical_data()`   | Historical order book depth. |
-| `request_instrument()`          | Historical       | `on_instrument()`        | Instrument definition. |
-| `request_instruments()`         | Historical       | `on_instrument()`        | Instrument definitions. |
-| `request_quote_ticks()`         | Historical       | `on_historical_data()`   | Historical quotes processing. |
-| `request_trade_ticks()`         | Historical       | `on_historical_data()`   | Historical trades processing. |
-| `request_bars()`                | Historical       | `on_historical_data()`   | Historical bars processing. |
-| `request_aggregated_bars()`     | Historical       | `on_historical_data()`   | Historical aggregated bars (on-the-fly). |
+| Operation                            | Category   | Handler                  | Purpose                                           |
+|--------------------------------------|------------|--------------------------|---------------------------------------------------|
+| `subscribe_data()`                   | Real-time  | `on_data()`              | Live data updates.                                |
+| `subscribe_instrument()`             | Real-time  | `on_instrument()`        | Live instrument definition updates.               |
+| `subscribe_instruments()`            | Real-time  | `on_instrument()`        | Live instrument definition updates (for venue).   |
+| `subscribe_order_book_deltas()`      | Real-time  | `on_order_book_deltas()` | Live order book deltas.                           |
+| `subscribe_order_book_depth()`       | Real-time  | `on_order_book_depth()`  | Live order book depth snapshots.                  |
+| `subscribe_order_book_at_interval()` | Real-time  | `on_order_book()`        | Live order book snapshots at intervals.           |
+| `subscribe_quote_ticks()`            | Real-time  | `on_quote_tick()`        | Live quote updates.                               |
+| `subscribe_trade_ticks()`            | Real-time  | `on_trade_tick()`        | Live trade updates.                               |
+| `subscribe_mark_prices()`            | Real-time  | `on_mark_price()`        | Live mark price updates.                          |
+| `subscribe_index_prices()`           | Real-time  | `on_index_price()`       | Live index price updates.                         |
+| `subscribe_bars()`                   | Real-time  | `on_bar()`               | Live bar updates.                                 |
+| `subscribe_funding_rates()`          | Real-time  | `on_funding_rate()`      | Live funding rate updates.                        |
+| `subscribe_instrument_status()`      | Real-time  | `on_instrument_status()` | Live instrument status updates.                   |
+| `subscribe_instrument_close()`       | Real-time  | `on_instrument_close()`  | Live instrument close updates.                    |
+| `subscribe_order_fills()`            | Real-time  | `on_order_filled()`      | Live order fill events for an instrument.         |
+| `subscribe_order_cancels()`          | Real-time  | `on_order_canceled()`    | Live order cancel events for an instrument.       |
+| `request_data()`                     | Historical | `on_historical_data()`   | Historical data processing.                       |
+| `request_order_book_deltas()`        | Historical | `on_historical_data()`   | Historical order book deltas.                     |
+| `request_order_book_depth()`         | Historical | `on_historical_data()`   | Historical order book depth.                      |
+| `request_order_book_snapshot()`      | Historical | `on_historical_data()`   | Historical order book snapshot.                   |
+| `request_instrument()`               | Historical | `on_instrument()`        | Instrument definition.                            |
+| `request_instruments()`              | Historical | `on_instrument()`        | Instrument definitions.                           |
+| `request_quote_ticks()`              | Historical | `on_historical_data()`   | Historical quotes processing.                     |
+| `request_trade_ticks()`              | Historical | `on_historical_data()`   | Historical trades processing.                     |
+| `request_bars()`                     | Historical | `on_historical_data()`   | Historical bars processing.                       |
+| `request_aggregated_bars()`          | Historical | `on_historical_data()`   | Historical aggregated bars (on-the-fly).          |
+| `request_funding_rates()`            | Historical | `on_historical_data()`   | Historical funding rates processing.              |
 
 ### Example
 
@@ -331,3 +333,9 @@ class CancelMonitorActor(Actor):
 Order cancel subscriptions are message bus-only subscriptions and do not involve the data engine.
 The `on_order_canceled()` handler will only receive events while the actor is in a running state.
 :::
+
+## Related guides
+
+- [Strategies](strategies.md) - Strategies extend actors with order management capabilities.
+- [Data](data.md) - Data types and subscriptions available to actors.
+- [Message Bus](message_bus.md) - The messaging system actors use for communication.

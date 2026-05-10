@@ -96,7 +96,7 @@ def get_theme(name: str) -> dict[str, Any]:
     Parameters
     ----------
     name : str
-        The theme name. Built-in themes: "plotly_white", "plotly_dark", "nautilus".
+        The theme name. Built-in themes: "plotly_white", "plotly_dark", "nautilus", "nautilus_dark".
 
     Returns
     -------

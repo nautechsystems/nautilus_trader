@@ -61,6 +61,11 @@ impl TradeTick {
     ///
     /// Returns a `PyErr` if attribute extraction or type conversion fails.
     pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        // Fast path: avoid property getters that trigger enum type deadlocks
+        if let Ok(tick) = obj.cast::<Self>() {
+            return Ok(*tick.borrow());
+        }
+
         let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;
         let instrument_id =
@@ -332,14 +337,12 @@ impl TradeTick {
     /// Return JSON encoded bytes representation of the object.
     #[pyo3(name = "to_json_bytes")]
     fn py_to_json_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        // SAFETY: Unwrap safe when serializing a valid object
         self.to_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
     #[pyo3(name = "to_msgpack_bytes")]
     fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        // SAFETY: Unwrap safe when serializing a valid object
         self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
     }
 }
@@ -387,7 +390,7 @@ mod tests {
         Python::initialize();
         Python::attach(|py| {
             let dict_string = trade.py_to_dict(py).unwrap().to_string();
-            let expected_string = r"{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUYER', 'trade_id': '123456789', 'ts_event': 0, 'ts_init': 1}";
+            let expected_string = "{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUYER', 'trade_id': '123456789', 'ts_event': 0, 'ts_init': 1}";
             assert_eq!(dict_string, expected_string);
         });
     }

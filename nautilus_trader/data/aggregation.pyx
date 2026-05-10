@@ -42,6 +42,7 @@ from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport InstrumentClass
+from nautilus_trader.core.rust.model cimport PriceRaw
 from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
@@ -189,6 +190,7 @@ cdef class BarBuilder:
         self._open = None
         self._high = None
         self._low = None
+        self._close = None
 
         self.volume = Quantity.zero_c(precision=self.size_precision)
         self.count = 0
@@ -382,6 +384,9 @@ cdef class BarAggregator:
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
         raise NotImplementedError("method `_apply_update` must be implemented in the subclass") # pragma: no cover
+
+    cdef bint _is_below_min_size(self, double size, int precision):
+        return Quantity(size, precision=precision)._mem.raw == 0
 
     cdef void _build_now_and_send(self):
         cdef Bar bar = self._builder.build_now()
@@ -698,9 +703,9 @@ cdef class VolumeImbalanceBarAggregator(BarAggregator):
             bar_type=bar_type,
             handler=handler,
         )
-        cdef long long step_value = self.bar_type.spec.step
+        cdef int step_value = self.bar_type.spec.step
         self._imbalance_raw = 0
-        self._raw_step = <long long>(step_value * FIXED_SCALAR)
+        self._raw_step = <PriceRaw>(step_value * FIXED_SCALAR)
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
         self._builder.update(price, size, ts_init)
@@ -716,30 +721,31 @@ cdef class VolumeImbalanceBarAggregator(BarAggregator):
             self._apply_update(tick.price, tick.size, tick.ts_init)
             return
 
-        cdef long long side_sign = 1 if side == AggressorSide.BUYER else -1
+        cdef int side_sign = 1 if side == AggressorSide.BUYER else -1
         cdef double size_remaining = float(tick.size)
         cdef double size_chunk
         cdef double needed_qty
-        cdef long long imbalance_abs
-        cdef long long needed
+        cdef PriceRaw imbalance_abs
+        cdef PriceRaw needed
 
         while size_remaining > 0.0:
-            imbalance_abs = abs(self._imbalance_raw)
+            imbalance_abs = -self._imbalance_raw if self._imbalance_raw < 0 else self._imbalance_raw
             needed = self._raw_step - imbalance_abs
             if needed <= 0:
                 needed = 1
 
-            # Convert needed from raw (10^9 scale) to quantity
+            # Convert needed from raw to quantity
             needed_qty = <double>needed / <double>FIXED_SCALAR
             if size_remaining <= needed_qty:
-                self._imbalance_raw += side_sign * <long long>(size_remaining * FIXED_SCALAR)
+                self._imbalance_raw += side_sign * <PriceRaw>(size_remaining * FIXED_SCALAR)
                 self._apply_update(
                     tick.price,
                     Quantity(size_remaining, precision=tick.size.precision),
                     tick.ts_init,
                 )
 
-                if abs(self._imbalance_raw) >= self._raw_step:
+                imbalance_abs = -self._imbalance_raw if self._imbalance_raw < 0 else self._imbalance_raw
+                if imbalance_abs >= self._raw_step:
                     self._build_now_and_send()
                     self._imbalance_raw = 0
                 break
@@ -753,7 +759,8 @@ cdef class VolumeImbalanceBarAggregator(BarAggregator):
             self._imbalance_raw += side_sign * needed
             size_remaining -= size_chunk
 
-            if abs(self._imbalance_raw) >= self._raw_step:
+            imbalance_abs = -self._imbalance_raw if self._imbalance_raw < 0 else self._imbalance_raw
+            if imbalance_abs >= self._raw_step:
                 self._build_now_and_send()
                 self._imbalance_raw = 0
 
@@ -792,11 +799,11 @@ cdef class VolumeRunsBarAggregator(BarAggregator):
             bar_type=bar_type,
             handler=handler,
         )
-        cdef long long step_value = self.bar_type.spec.step
+        cdef int step_value = self.bar_type.spec.step
         self._current_run_side = AggressorSide.NO_AGGRESSOR
         self._has_run_side = False
         self._run_volume_raw = 0
-        self._raw_step = <long long>(step_value * FIXED_SCALAR)
+        self._raw_step = <QuantityRaw>(step_value * FIXED_SCALAR)
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
         self._builder.update(price, size, ts_init)
@@ -821,17 +828,17 @@ cdef class VolumeRunsBarAggregator(BarAggregator):
         cdef double size_remaining = float(tick.size)
         cdef double size_chunk
         cdef double needed_qty
-        cdef long long needed
+        cdef QuantityRaw needed
 
         while size_remaining > 0.0:
             needed = self._raw_step - self._run_volume_raw
             if needed <= 0:
                 needed = 1
 
-            # Convert needed from raw (10^9 scale) to quantity
+            # Convert needed from raw to quantity
             needed_qty = <double>needed / <double>FIXED_SCALAR
             if size_remaining <= needed_qty:
-                self._run_volume_raw += <long long>(size_remaining * FIXED_SCALAR)
+                self._run_volume_raw += <QuantityRaw>(size_remaining * FIXED_SCALAR)
                 self._apply_update(
                     tick.price,
                     Quantity(size_remaining, precision=tick.size.precision),
@@ -923,6 +930,13 @@ cdef class ValueBarAggregator(BarAggregator):
 
             value_diff: Decimal = self.bar_type.spec.step - self._cum_value
             size_diff: Decimal = size_update * (value_diff / value_update)
+
+            # Clamp to minimum representable size to avoid zero-volume bars
+            if self._is_below_min_size(size_diff, size._mem.precision):
+                if self._is_below_min_size(size_update, size._mem.precision):
+                    break
+                size_diff = Decimal(10) ** -size._mem.precision
+
             # Update builder to the step threshold
             self._builder.update(
                 price=price,
@@ -957,6 +971,13 @@ cdef class ValueBarAggregator(BarAggregator):
 
             value_diff: Decimal = self.bar_type.spec.step - self._cum_value
             volume_diff: Decimal = volume_update * (value_diff / value_update)
+
+            # Clamp to minimum representable size to avoid zero-volume bars
+            if self._is_below_min_size(volume_diff, volume._mem.precision):
+                if self._is_below_min_size(volume_update, volume._mem.precision):
+                    break
+                volume_diff = Decimal(10) ** -volume._mem.precision
+
             # Update builder to the step threshold
             self._builder.update_bar(
                 bar=bar,
@@ -1064,6 +1085,14 @@ cdef class ValueImbalanceBarAggregator(BarAggregator):
 
                 value_chunk = needed
                 size_chunk = value_chunk / price_f64
+
+                # Clamp to minimum representable size to avoid zero-volume bars
+                if self._is_below_min_size(size_chunk, tick.size.precision):
+                    if self._is_below_min_size(size_remaining, tick.size.precision):
+                        break
+                    size_chunk = 10.0 ** -tick.size.precision
+                    value_chunk = price_f64 * size_chunk
+
                 self._apply_update(
                     tick.price,
                     Quantity(size_chunk, precision=tick.size.precision),
@@ -1079,12 +1108,25 @@ cdef class ValueImbalanceBarAggregator(BarAggregator):
                 imbalance_abs = abs(self._imbalance_value)
                 value_to_flatten = value_remaining if value_remaining < imbalance_abs else imbalance_abs
                 size_chunk = value_to_flatten / price_f64
+
+                # Clamp to minimum representable size to avoid zero-volume bars
+                if self._is_below_min_size(size_chunk, tick.size.precision):
+                    if self._is_below_min_size(size_remaining, tick.size.precision):
+                        break
+                    size_chunk = 10.0 ** -tick.size.precision
+                    value_to_flatten = price_f64 * size_chunk
+
                 self._apply_update(
                     tick.price,
                     Quantity(size_chunk, precision=tick.size.precision),
                     tick.ts_init,
                 )
                 self._imbalance_value += side_sign * value_to_flatten
+
+                # Min-size clamp can overshoot past threshold
+                if abs(self._imbalance_value) >= self._step_value:
+                    self._build_now_and_send()
+                    self._imbalance_value = 0.0
                 size_remaining -= size_chunk
 
 
@@ -1175,6 +1217,13 @@ cdef class ValueRunsBarAggregator(BarAggregator):
 
             value_needed = self._step_value - self._run_value
             size_chunk = value_needed / price_f64
+
+            # Clamp to minimum representable size to avoid zero-volume bars
+            if self._is_below_min_size(size_chunk, tick.size.precision):
+                if self._is_below_min_size(size_remaining, tick.size.precision):
+                    break
+                size_chunk = 10.0 ** -tick.size.precision
+
             self._apply_update(
                 tick.price,
                 Quantity(size_chunk, precision=tick.size.precision),
@@ -1406,8 +1455,10 @@ cdef class TimeBarAggregator(BarAggregator):
         self.interval_ns = self._get_interval_ns()
         self.stored_open_ns = 0
         self.next_close_ns = 0
+        self.first_close_ns = 0
         self.historical_mode = False
         self._historical_events = []
+        self._historical_event_at_ts_init = None
 
         if interval_type == "left-open":
             self._is_left_open = True
@@ -1436,9 +1487,40 @@ cdef class TimeBarAggregator(BarAggregator):
         # Closing a partial bar at the transition from historical to backtest data
         cdef bint fire_immediately = (start_time == now)
 
-        self._skip_first_non_full_bar = self._skip_first_non_full_bar and now > start_time
+        # Calculate the next close time based on aggregation type
+        cdef datetime close_time
+        if fire_immediately:
+            close_time = start_time
+        elif self.bar_type.spec.aggregation == BarAggregation.MONTH:
+            close_time = start_time + pd.DateOffset(months=self.bar_type.spec.step)
+        elif self.bar_type.spec.aggregation == BarAggregation.YEAR:
+            close_time = start_time + pd.DateOffset(years=self.bar_type.spec.step)
+        else:
+            close_time = start_time + self.interval
 
-        if self.bar_type.spec.aggregation not in (BarAggregation.MONTH, BarAggregation.YEAR):
+        self.next_close_ns = dt_to_unix_nanos(close_time)
+
+        # The stored open time needs to be defined as a subtraction with respect to the first closing time
+        if self.bar_type.spec.aggregation == BarAggregation.MONTH:
+            self.stored_open_ns = dt_to_unix_nanos(close_time - pd.DateOffset(months=self.bar_type.spec.step))
+        elif self.bar_type.spec.aggregation == BarAggregation.YEAR:
+            self.stored_open_ns = dt_to_unix_nanos(close_time - pd.DateOffset(years=self.bar_type.spec.step))
+        else:
+            self.stored_open_ns = self.next_close_ns - self.interval_ns
+
+        if self._skip_first_non_full_bar:
+            self.first_close_ns = self.next_close_ns
+
+        if self.bar_type.spec.aggregation in (BarAggregation.MONTH, BarAggregation.YEAR):
+            # The monthly/yearly alert time is defined iteratively at each alert time as there is no regular interval
+            self._clock.set_time_alert(
+                name=self._timer_name,
+                alert_time=close_time,
+                callback=self._build_bar,
+                override=True,
+                allow_past=True,
+            )
+        else:
             self._clock.set_timer(
                 name=self._timer_name,
                 interval=self.interval,
@@ -1449,33 +1531,11 @@ cdef class TimeBarAggregator(BarAggregator):
                 fire_immediately=fire_immediately,
             )
 
-            if fire_immediately:
-                self.next_close_ns = dt_to_unix_nanos(start_time)
-            else:
-                self.next_close_ns = dt_to_unix_nanos(start_time + self.interval)
-
-            self.stored_open_ns = self.next_close_ns - self.interval_ns
-        else:
-            # The monthly/yearly alert time is defined iteratively at each alert time as there is no regular interval
-            if self.bar_type.spec.aggregation == BarAggregation.MONTH:
-                alert_time = start_time + (pd.DateOffset(months=self.bar_type.spec.step) if not fire_immediately else pd.Timedelta(0))
-            elif self.bar_type.spec.aggregation == BarAggregation.YEAR:
-                alert_time = start_time + (pd.DateOffset(years=self.bar_type.spec.step) if not fire_immediately else pd.Timedelta(0))
-            else:
-                alert_time = start_time
-
-            self._clock.set_time_alert(
-                name=self._timer_name,
-                alert_time=alert_time,
-                callback=self._build_bar,
-                override=True,
-                allow_past=True,
-            )
-            self.next_close_ns = alert_time.value
-            self.stored_open_ns = start_time.value
-
-        self._log.debug(f"Started timer {self._timer_name}, {start_time=}, {self.historical_mode=}, "
-                        f"{fire_immediately=}, {start_time=}, {now=}, {self._bar_build_delay=}")
+        self._log.debug(f"[start_timer] fire_immediately={fire_immediately}, "
+                        f"_skip_first_non_full_bar={self._skip_first_non_full_bar}, "
+                        f"now={now}, start_time={start_time}, "
+                        f"first_close_ns={unix_nanos_to_dt(self.first_close_ns)}, "
+                        f"next_close_ns={unix_nanos_to_dt(self.next_close_ns)}")
 
     cpdef void stop_timer(self):
         cdef str timer_name = str(self.bar_type)
@@ -1509,7 +1569,6 @@ cdef class TimeBarAggregator(BarAggregator):
                 start_time -= pd.Timedelta(weeks=step)
         elif aggregation == BarAggregation.MONTH:
             start_time = (now - pd.DateOffset(months=now.month - 1, days=now.day - 1)).floor(freq="d")
-
             if self._time_bars_origin_offset is not None:
                 start_time += self._time_bars_origin_offset
 
@@ -1565,18 +1624,24 @@ cdef class TimeBarAggregator(BarAggregator):
             )
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        if self.historical_mode:
+            self._pre_process_historical_events(ts_init)
+
         self._builder.update(price, size, ts_init)
 
         if self.historical_mode:
-            self._process_historical_events(ts_init)
+            self._post_process_historical_events()
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        if self.historical_mode:
+            self._pre_process_historical_events(ts_init)
+
         self._builder.update_bar(bar, volume, ts_init)
 
         if self.historical_mode:
-            self._process_historical_events(ts_init)
+            self._post_process_historical_events()
 
-    cdef void _process_historical_events(self, uint64_t ts_init):
+    cdef void _pre_process_historical_events(self, uint64_t ts_init):
         if self._clock.timestamp_ns() == 0:
             self._clock.set_time(ts_init)
             self.start_timer()
@@ -1584,9 +1649,19 @@ cdef class TimeBarAggregator(BarAggregator):
         # Advance this aggregator's independent clock and collect timer events
         event_handlers = self._clock.advance_time(ts_init, set_time=True)
 
-        # Process timer events after data processing
+        # Process timer events
         for event_handler in event_handlers:
+            if event_handler.event.ts_event == ts_init:
+                self._historical_event_at_ts_init = event_handler
+                continue
+
             self._build_bar(event_handler.event)
+
+    cdef void _post_process_historical_events(self):
+        # Process timer events
+        if self._historical_event_at_ts_init:
+            self._build_bar(self._historical_event_at_ts_init.event)
+            self._historical_event_at_ts_init = None
 
     cpdef void _build_bar(self, TimeEvent event):
         if not self._builder.initialized:
@@ -1631,10 +1706,11 @@ cdef class TimeBarAggregator(BarAggregator):
             self.next_close_ns = self._clock.next_time_ns(self._timer_name)
 
     cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init):
-        if self._skip_first_non_full_bar:
+        if self._skip_first_non_full_bar and ts_init <= self.first_close_ns:
             self._builder.reset()
-            self._skip_first_non_full_bar = False
         else:
+            # Set _skip_first_non_full_bar to False for transition from historical to live data
+            self._skip_first_non_full_bar = False
             BarAggregator._build_and_send(self, ts_event, ts_init)
 
 
@@ -1818,7 +1894,6 @@ cdef class SpreadQuoteAggregator:
             self.start_timer()
 
         self._historical_events.extend(self._clock.advance_time(ts_init, set_time=True))
-
         if not self._historical_events:
             return
 

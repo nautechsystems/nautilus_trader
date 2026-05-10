@@ -24,7 +24,7 @@ use nautilus_model::types::{
 };
 
 /// Precomputed powers of 10 for efficient scaling (covers 0..=18).
-const POWERS_OF_10: [i64; 19] = [
+const POWERS_OF_10: [i128; 19] = [
     1,
     10,
     100,
@@ -48,36 +48,34 @@ const POWERS_OF_10: [i64; 19] = [
 
 /// Returns 10^exp using precomputed table.
 #[inline]
-fn pow10(exp: u8) -> i64 {
+fn pow10(exp: u8) -> i128 {
     POWERS_OF_10[exp as usize]
 }
 
 /// Scales a mantissa by 10^(FIXED_PRECISION + exponent) to produce a Nautilus raw value.
+///
+/// Uses i128 arithmetic internally to handle high-precision mode (FIXED_PRECISION=16).
 #[inline]
-fn scale_mantissa(mantissa: i64, exponent: i8) -> i64 {
+fn scale_mantissa(mantissa: i64, exponent: i8) -> PriceRaw {
     let scale_exp = FIXED_PRECISION as i8 + exponent;
+    let mantissa_wide = mantissa as i128;
 
-    if scale_exp >= 0 {
-        mantissa
-            .checked_mul(pow10(scale_exp as u8))
-            .expect("Overflow scaling mantissa")
+    let scaled = if scale_exp >= 0 {
+        mantissa_wide * pow10(scale_exp as u8)
     } else {
-        // Scale down (divide) - may lose precision if scale_exp is very negative
-        mantissa / pow10((-scale_exp) as u8)
-    }
+        mantissa_wide / pow10((-scale_exp) as u8)
+    };
+
+    scaled as PriceRaw
 }
 
 /// Converts a mantissa/exponent pair to a Nautilus [`Price`].
 ///
 /// Uses pure integer arithmetic: `raw = mantissa * 10^(FIXED_PRECISION + exponent)`.
-///
-/// # Panics
-///
-/// Panics if the scaled value overflows i64.
 #[must_use]
 pub fn mantissa_to_price(mantissa: i64, exponent: i8, precision: u8) -> Price {
     let raw = scale_mantissa(mantissa, exponent);
-    Price::from_raw(raw as PriceRaw, precision)
+    Price::from_raw(raw, precision)
 }
 
 /// Converts a mantissa/exponent pair to a Nautilus [`Quantity`].
@@ -86,12 +84,11 @@ pub fn mantissa_to_price(mantissa: i64, exponent: i8, precision: u8) -> Price {
 ///
 /// # Panics
 ///
-/// - Panics if the scaled value overflows i64.
-/// - Panics if `mantissa` is negative.
+/// Panics if `mantissa` is negative.
 #[must_use]
 pub fn mantissa_to_quantity(mantissa: i64, exponent: i8, precision: u8) -> Quantity {
+    assert!(mantissa >= 0, "Quantity cannot be negative: {mantissa}");
     let raw = scale_mantissa(mantissa, exponent);
-    assert!(raw >= 0, "Quantity cannot be negative: {raw}");
     Quantity::from_raw(raw as QuantityRaw, precision)
 }
 
@@ -127,7 +124,7 @@ mod tests {
         let price = mantissa_to_price(mantissa, exponent, precision);
         assert!(
             approx_eq!(f64, price.as_f64(), expected, epsilon = 1e-10),
-            "Expected {expected}, got {}",
+            "Expected {expected}, was {}",
             price.as_f64()
         );
         assert_eq!(price.precision, precision);
@@ -146,7 +143,7 @@ mod tests {
         let qty = mantissa_to_quantity(mantissa, exponent, precision);
         assert!(
             approx_eq!(f64, qty.as_f64(), expected, epsilon = 1e-10),
-            "Expected {expected}, got {}",
+            "Expected {expected}, was {}",
             qty.as_f64()
         );
         assert_eq!(qty.precision, precision);

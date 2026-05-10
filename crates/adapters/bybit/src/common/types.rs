@@ -21,7 +21,7 @@
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
 pub struct BybitMarginBorrowResult {
     /// The coin that was borrowed.
@@ -42,7 +42,7 @@ pub struct BybitMarginBorrowResult {
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
 pub struct BybitMarginRepayResult {
     /// The coin that was repaid.
@@ -65,7 +65,7 @@ pub struct BybitMarginRepayResult {
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
 )]
 pub struct BybitMarginStatusResult {
     /// The coin being queried.

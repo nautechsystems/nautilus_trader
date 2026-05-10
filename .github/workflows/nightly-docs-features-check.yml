@@ -1,0 +1,89 @@
+name: nightly-docs-features-check
+
+# Documentation and feature compatibility checks - runs nightly and on-demand.
+#
+# Verifies docs.rs documentation builds and crate feature combinations compile correctly.
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  push:
+    branches: [test-docs-features]
+  schedule:
+    - cron: '0 12 * * *' # Daily at 12:00 UTC (same as security-audit)
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  docsrs-check:
+    name: docsrs-check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Get Rust toolchain version
+        shell: bash
+        run: echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_ENV"
+
+      # https://github.com/actions-rust-lang/setup-rust-toolchain
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1.15.2
+        with:
+          toolchain: ${{ env.TOOLCHAIN }}
+          override: true
+
+      - name: Install Rust nightly
+        run: rustup toolchain install nightly
+
+      # https://github.com/taiki-e/install-action
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@f176c07a0a40cbfdd08ee9aa8bf1655701d11e69 # v2.67.25
+        with:
+          tool: cargo-hack
+
+      - name: Run docsrs-check
+        run: make docsrs-check
+
+  check-features:
+    name: check-features
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Get Rust toolchain version
+        shell: bash
+        run: echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_ENV"
+
+      # https://github.com/actions-rust-lang/setup-rust-toolchain
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1.15.2
+        with:
+          toolchain: ${{ env.TOOLCHAIN }}
+          override: true
+
+      - name: Install Cap'n Proto
+        uses: ./.github/actions/install-capnp
+
+      # https://github.com/taiki-e/install-action
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@f176c07a0a40cbfdd08ee9aa8bf1655701d11e69 # v2.67.25
+        with:
+          tool: cargo-hack
+
+      - name: Run check-features
+        run: make check-features

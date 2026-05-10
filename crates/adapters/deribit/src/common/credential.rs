@@ -21,11 +21,35 @@ use std::{collections::HashMap, fmt::Debug};
 
 use aws_lc_rs::hmac;
 use hex;
-use nautilus_core::{UUID4, time::get_atomic_clock_realtime};
-use ustr::Ustr;
+use nautilus_core::{
+    UUID4, env::resolve_env_var_pair, string::REDACTED, time::get_atomic_clock_realtime,
+};
+use thiserror::Error;
 use zeroize::ZeroizeOnDrop;
 
 use crate::http::error::DeribitHttpError;
+
+/// Errors that can occur when resolving credentials.
+#[derive(Debug, Error)]
+pub enum CredentialError {
+    /// API key was provided but secret is missing.
+    #[error("API key provided but secret is missing")]
+    MissingSecret,
+    /// API secret was provided but key is missing.
+    #[error("API secret provided but key is missing")]
+    MissingKey,
+}
+
+/// Returns the environment variable names for API credentials,
+/// based on the network.
+#[must_use]
+pub fn credential_env_vars(is_testnet: bool) -> (&'static str, &'static str) {
+    if is_testnet {
+        ("DERIBIT_TESTNET_API_KEY", "DERIBIT_TESTNET_API_SECRET")
+    } else {
+        ("DERIBIT_API_KEY", "DERIBIT_API_SECRET")
+    }
+}
 
 /// Deribit API credentials for signing requests.
 ///
@@ -33,8 +57,7 @@ use crate::http::error::DeribitHttpError;
 /// Secrets are automatically zeroized on drop for security.
 #[derive(Clone, ZeroizeOnDrop)]
 pub struct Credential {
-    #[zeroize(skip)]
-    pub api_key: Ustr,
+    api_key: Box<str>,
     api_secret: Box<[u8]>,
 }
 
@@ -42,7 +65,7 @@ impl Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Credential))
             .field("api_key", &self.api_key)
-            .field("api_secret", &"<redacted>")
+            .field("api_secret", &REDACTED)
             .finish()
     }
 }
@@ -52,14 +75,68 @@ impl Credential {
     #[must_use]
     pub fn new(api_key: String, api_secret: String) -> Self {
         Self {
-            api_key: api_key.into(),
+            api_key: api_key.into_boxed_str(),
             api_secret: api_secret.into_bytes().into_boxed_slice(),
+        }
+    }
+
+    /// Load credentials from environment variables.
+    ///
+    /// For mainnet: Looks for `DERIBIT_API_KEY` and `DERIBIT_API_SECRET`.
+    /// For testnet: Looks for `DERIBIT_TESTNET_API_KEY` and `DERIBIT_TESTNET_API_SECRET`.
+    ///
+    /// Returns `None` if either key or secret is not set.
+    #[must_use]
+    pub fn from_env(is_testnet: bool) -> Option<Self> {
+        let (key_var, secret_var) = credential_env_vars(is_testnet);
+        let (k, s) = resolve_env_var_pair(None, None, key_var, secret_var)?;
+        Some(Self::new(k, s))
+    }
+
+    /// Resolves credentials from provided values or environment.
+    ///
+    /// If both `api_key` and `api_secret` are provided, uses those.
+    /// Otherwise falls back to loading from environment variables.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if only one of `api_key` or `api_secret` is provided.
+    pub fn resolve(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        is_testnet: bool,
+    ) -> Result<Option<Self>, CredentialError> {
+        Self::resolve_with_env_fallback(api_key, api_secret, is_testnet, true)
+    }
+
+    /// Resolves credentials with optional environment fallback.
+    ///
+    /// If both `api_key` and `api_secret` are provided, uses those.
+    /// If `env_fallback` is true and neither credential is provided, loads from environment.
+    /// If `env_fallback` is false and neither credential is provided, returns `Ok(None)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if only one of `api_key` or `api_secret` is provided (partial credentials).
+    /// This prevents silent fallback to environment variables when user intent is unclear.
+    pub fn resolve_with_env_fallback(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        is_testnet: bool,
+        env_fallback: bool,
+    ) -> Result<Option<Self>, CredentialError> {
+        match (api_key, api_secret) {
+            (Some(k), Some(s)) => Ok(Some(Self::new(k, s))),
+            (None, None) if env_fallback => Ok(Self::from_env(is_testnet)),
+            (None, None) => Ok(None),
+            (Some(_), None) => Err(CredentialError::MissingSecret),
+            (None, Some(_)) => Err(CredentialError::MissingKey),
         }
     }
 
     /// Returns the API key associated with this credential.
     #[must_use]
-    pub fn api_key(&self) -> &Ustr {
+    pub fn api_key(&self) -> &str {
         &self.api_key
     }
 
@@ -69,7 +146,7 @@ impl Credential {
     /// For keys shorter than 8 characters, shows asterisks only.
     #[must_use]
     pub fn api_key_masked(&self) -> String {
-        nautilus_core::string::mask_api_key(self.api_key.as_str())
+        nautilus_core::string::mask_api_key(&self.api_key)
     }
 
     /// Signs a WebSocket authentication request according to Deribit specification.
@@ -185,6 +262,8 @@ impl Credential {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use rstest::rstest;
 
     use super::*;
@@ -195,7 +274,7 @@ mod tests {
     fn test_credential_creation(#[case] api_key: &str, #[case] api_secret: &str) {
         let credential = Credential::new(api_key.to_string(), api_secret.to_string());
 
-        assert_eq!(credential.api_key().as_str(), api_key);
+        assert_eq!(credential.api_key(), api_key);
     }
 
     #[rstest]
@@ -278,7 +357,7 @@ mod tests {
         let debug_output = format!("{credential:?}");
 
         assert!(
-            debug_output.contains("<redacted>"),
+            debug_output.contains(REDACTED),
             "Debug output should redact secret"
         );
         assert!(
@@ -387,7 +466,7 @@ mod tests {
 
         let headers1 = credential.sign_auth_headers(method, uri, body).unwrap();
         // Sleep briefly to ensure different timestamp
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(10));
         let headers2 = credential.sign_auth_headers(method, uri, body).unwrap();
 
         let auth1 = headers1.get("Authorization").unwrap();
@@ -471,5 +550,49 @@ mod tests {
         let sig2 = credential.sign_ws_auth(timestamp, nonce2, data);
 
         assert_ne!(sig1, sig2, "Signature should change with nonce");
+    }
+
+    #[rstest]
+    fn test_resolve_with_both_credentials() {
+        let result = Credential::resolve_with_env_fallback(
+            Some("key".to_string()),
+            Some("secret".to_string()),
+            false,
+            false,
+        );
+
+        assert!(result.is_ok());
+        let credential = result.unwrap();
+        assert!(credential.is_some());
+        assert_eq!(credential.unwrap().api_key(), "key");
+    }
+
+    #[rstest]
+    fn test_resolve_with_no_credentials_no_fallback() {
+        let result = Credential::resolve_with_env_fallback(None, None, false, false);
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[rstest]
+    fn test_resolve_partial_key_only_returns_error() {
+        let result =
+            Credential::resolve_with_env_fallback(Some("key".to_string()), None, false, false);
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            CredentialError::MissingSecret
+        ));
+    }
+
+    #[rstest]
+    fn test_resolve_partial_secret_only_returns_error() {
+        let result =
+            Credential::resolve_with_env_fallback(None, Some("secret".to_string()), false, false);
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), CredentialError::MissingKey));
     }
 }

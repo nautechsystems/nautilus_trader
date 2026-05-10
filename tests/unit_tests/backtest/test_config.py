@@ -46,6 +46,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OtoTriggerMode
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -98,7 +99,25 @@ class TestBacktestConfig:
             "start": 1580398089820000000,
             "end": 1580504394501000000,
             "metadata": None,
+            "optimize_file_loading": False,
         }
+
+    def test_backtest_data_config_query_includes_optimize_file_loading_true(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
+            data_cls=QuoteTick,
+            instrument_id=instrument.id,
+            optimize_file_loading=True,
+        )
+
+        # Act
+        result = config.query
+
+        # Assert
+        assert result["optimize_file_loading"] is True
 
     def test_backtest_data_config_query_bar_with_bar_types(self):
         # Arrange
@@ -869,3 +888,27 @@ class TestParseFiltersExpr:
 
         # Assert
         assert config.allow_cash_borrowing is True
+
+    def test_backtest_venue_config_oto_trigger_mode_serialization(self):
+        """
+        Test that oto_trigger_mode enum serializes and deserializes correctly.
+        """
+        # Arrange
+        config = BacktestVenueConfig(
+            name="SIM",
+            oms_type="NETTING",
+            account_type="MARGIN",
+            starting_balances=["1_000_000 USD"],
+            oto_trigger_mode=OtoTriggerMode.FULL,
+        )
+
+        # Act
+        json_bytes = msgspec.json.encode(config, enc_hook=msgspec_encoding_hook)
+        decoded = msgspec.json.decode(
+            json_bytes,
+            type=BacktestVenueConfig,
+            dec_hook=msgspec_decoding_hook,
+        )
+
+        # Assert
+        assert decoded.oto_trigger_mode == OtoTriggerMode.FULL

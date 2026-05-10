@@ -16,6 +16,7 @@
 //! Data structures representing BitMEX REST API payloads.
 
 use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 use uuid::Uuid;
@@ -90,6 +91,7 @@ pub struct BitmexInstrument {
     pub publish_time: Option<DateTime<Utc>>,
     pub max_order_qty: Option<f64>,
     pub max_price: Option<f64>,
+    pub min_price: Option<f64>,
     pub lot_size: Option<f64>,
     pub tick_size: f64,
     pub multiplier: f64,
@@ -114,8 +116,10 @@ pub struct BitmexInstrument {
     pub funding_premium_symbol: Option<Ustr>,
     pub funding_timestamp: Option<DateTime<Utc>>,
     pub funding_interval: Option<DateTime<Utc>>,
-    pub funding_rate: Option<f64>,
-    pub indicative_funding_rate: Option<f64>,
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub funding_rate: Option<Decimal>,
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub indicative_funding_rate: Option<Decimal>,
     pub rebalance_timestamp: Option<DateTime<Utc>>,
     pub rebalance_interval: Option<DateTime<Utc>>,
     pub prev_close_price: Option<f64>,
@@ -234,8 +238,10 @@ pub struct BitmexFunding {
     pub timestamp: DateTime<Utc>,
     pub symbol: Ustr,
     pub funding_interval: Option<DateTime<Utc>>,
-    pub funding_rate: Option<f64>,
-    pub funding_rate_daily: Option<f64>,
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub funding_rate: Option<Decimal>,
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub funding_rate_daily: Option<Decimal>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]

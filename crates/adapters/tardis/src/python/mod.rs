@@ -18,15 +18,22 @@
 pub mod config;
 pub mod csv;
 pub mod enums;
+pub mod factories;
 pub mod http;
 pub mod machine;
 
-use nautilus_core::python::enums::parse_enum;
+use nautilus_core::python::{enums::parse_enum, to_pyruntime_err, to_pyvalue_err};
+use nautilus_system::{
+    factories::{ClientConfig, DataClientFactory},
+    get_global_pyo3_registry,
+};
 use pyo3::prelude::*;
 use ustr::Ustr;
 
 use super::enums::{TardisExchange, TardisInstrumentType};
-use crate::parse::normalize_symbol_str;
+use crate::{
+    config::TardisDataClientConfig, factories::TardisDataClientFactory, parse::normalize_symbol_str,
+};
 
 /// Normalize a symbol string for Tardis, returning a suffix-modified symbol.
 ///
@@ -49,6 +56,30 @@ pub fn py_tardis_normalize_symbol_str(
     Ok(normalize_symbol_str(symbol, &exchange, &instrument_type, is_inverse).to_string())
 }
 
+fn extract_tardis_data_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn DataClientFactory>> {
+    match factory.extract::<TardisDataClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract TardisDataClientFactory: {e}"
+        ))),
+    }
+}
+
+fn extract_tardis_data_config(
+    py: Python<'_>,
+    config: Py<PyAny>,
+) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<TardisDataClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract TardisDataClientConfig: {e}"
+        ))),
+    }
+}
+
 /// Loaded as `nautilus_pyo3.tardis`.
 ///
 /// # Errors
@@ -61,6 +92,8 @@ pub fn tardis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<super::machine::types::StreamNormalizedRequestOptions>()?;
     m.add_class::<super::machine::TardisMachineClient>()?;
     m.add_class::<super::http::client::TardisHttpClient>()?;
+    m.add_class::<TardisDataClientConfig>()?;
+    m.add_class::<TardisDataClientFactory>()?;
     m.add_function(wrap_pyfunction!(py_tardis_normalize_symbol_str, m)?)?;
     m.add_function(wrap_pyfunction!(
         enums::py_tardis_exchange_from_venue_str,
@@ -102,6 +135,25 @@ pub fn tardis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(csv::py_load_tardis_funding_rates, m)?)?;
     m.add_function(wrap_pyfunction!(csv::py_stream_tardis_funding_rates, m)?)?;
+
+    let registry = get_global_pyo3_registry();
+
+    if let Err(e) =
+        registry.register_factory_extractor("TARDIS".to_string(), extract_tardis_data_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Tardis data factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry.register_config_extractor(
+        "TardisDataClientConfig".to_string(),
+        extract_tardis_data_config,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Tardis data config extractor: {e}"
+        )));
+    }
 
     Ok(())
 }

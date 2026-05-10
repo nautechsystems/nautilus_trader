@@ -42,7 +42,7 @@ use crate::{
 #[cfg_attr(any(test, feature = "stubs"), builder(default))]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct OrderSubmitted {
     /// The trader ID associated with the event.
@@ -310,7 +310,7 @@ mod tests {
             InstrumentId::from("EURUSD.SIM"),
             ClientOrderId::from("O-19700101-000000-001-001-1"),
             AccountId::from("SIM-001"),
-            Default::default(),
+            UUID4::default(),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
         )

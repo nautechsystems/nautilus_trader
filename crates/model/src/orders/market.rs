@@ -45,7 +45,7 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
 pub struct MarketOrder {
     core: OrderCore,
@@ -406,7 +406,7 @@ impl Order for MarketOrder {
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
         if let OrderEventAny::Updated(ref event) = event {
             self.update(event);
-        };
+        }
 
         self.core.apply(event)?;
 

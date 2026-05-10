@@ -26,29 +26,39 @@ VIOLATIONS=0
 # - Err(err) => ...
 # - Err(error) => ...
 # - if let Err(err) = ...
+# - |err| or |error| in closures
 # But NOT:
 # - Err(e) => ...
 # - Err(e @ ...) => ...
+# - |e| in closures
 
 echo "Checking Rust error variable naming..."
 
-# Search directly for the lazy patterns Err(err) and Err(error)
-while IFS=: read -r file line_num line_content; do
-  [[ -z "$file" ]] && continue
+# Search for Err(err), Err(error), |err|, |error| patterns
+rust_err_output=$(rg -n 'Err\((err|error)\)|\|(err|error)\|' crates --type rust 2> /dev/null || true)
 
-  # Extract which lazy pattern was found
-  if [[ "$line_content" =~ Err\((err|error)\) ]]; then
-    var_name="${BASH_REMATCH[1]}"
+if [[ -n "$rust_err_output" ]]; then
+  while IFS=: read -r file line_num line_content; do
+    [[ -z "$file" ]] && continue
     trimmed_line="${line_content#"${line_content%%[![:space:]]*}"}"
 
-    echo -e "${RED}Error:${NC} Invalid Rust error variable name in $file:$line_num"
-    echo "  Found: Err($var_name)"
-    echo "  Expected: Err(e) or a descriptive name"
-    echo "  Line: $trimmed_line"
-    echo
-    VIOLATIONS=$((VIOLATIONS + 1))
-  fi
-done < <(rg -n 'Err\((err|error)\)' crates --type rust 2> /dev/null || true)
+    if [[ "$line_content" =~ Err\((err|error)\) ]]; then
+      var_name="${BASH_REMATCH[1]}"
+      echo -e "${RED}Error:${NC} Invalid Rust error variable name in $file:$line_num"
+      echo "  Found: Err($var_name) - use Err(e)"
+      echo "  Line: $trimmed_line"
+      echo
+      VIOLATIONS=$((VIOLATIONS + 1))
+    elif [[ "$line_content" =~ \|(err|error)\| ]]; then
+      var_name="${BASH_REMATCH[1]}"
+      echo -e "${RED}Error:${NC} Invalid Rust closure error variable in $file:$line_num"
+      echo "  Found: |$var_name| - use |e|"
+      echo "  Line: $trimmed_line"
+      echo
+      VIOLATIONS=$((VIOLATIONS + 1))
+    fi
+  done <<< "$rust_err_output"
+fi
 
 ################################################################################
 # Check Python files for 'except ... as variable:' patterns (all exception types)

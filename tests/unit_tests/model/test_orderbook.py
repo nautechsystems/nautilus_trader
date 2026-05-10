@@ -198,6 +198,26 @@ class TestOrderBook:
         assert book.get_avg_px_for_quantity(quantity, order_side) == 0.0
 
     @pytest.mark.parametrize(
+        "order_side",
+        [
+            OrderSide.BUY,
+            OrderSide.SELL,
+        ],
+    )
+    def test_get_worst_px_for_quantity_when_no_market(self, order_side: OrderSide) -> None:
+        # Arrange
+        book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=BookType.L2_MBP,
+        )
+
+        quantity = Quantity.from_str("1.0")
+
+        # Act, Assert
+        result = book.get_worst_px_for_quantity(quantity, order_side)
+        assert result is None
+
+    @pytest.mark.parametrize(
         ("order_side", "expected"),
         [
             [OrderSide.BUY, 11.0],
@@ -239,6 +259,65 @@ class TestOrderBook:
 
         # Assert
         assert result == expected
+
+    def test_get_worst_px_for_quantity(self) -> None:
+        # Arrange
+        book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=BookType.L2_MBP,
+        )
+
+        book.add(
+            BookOrder(
+                price=Price(10.0, 1),
+                size=Quantity(100.0, 0),
+                side=OrderSide.BUY,
+                order_id=0,
+            ),
+            0,
+            0,
+        )
+        book.add(
+            BookOrder(
+                price=Price(9.0, 1),
+                size=Quantity(200.0, 0),
+                side=OrderSide.BUY,
+                order_id=1,
+            ),
+            0,
+            0,
+        )
+        book.add(
+            BookOrder(
+                price=Price(11.0, 1),
+                size=Quantity(100.0, 0),
+                side=OrderSide.SELL,
+                order_id=2,
+            ),
+            0,
+            0,
+        )
+        book.add(
+            BookOrder(
+                price=Price(12.0, 1),
+                size=Quantity(200.0, 0),
+                side=OrderSide.SELL,
+                order_id=3,
+            ),
+            0,
+            0,
+        )
+
+        quantity = Quantity.from_str("150")
+
+        # Act, Assert
+        buy_result = book.get_worst_px_for_quantity(quantity, OrderSide.BUY)
+        sell_result = book.get_worst_px_for_quantity(quantity, OrderSide.SELL)
+
+        assert isinstance(buy_result, Price)
+        assert isinstance(sell_result, Price)
+        assert buy_result == Price(12.0, 1)
+        assert sell_result == Price(9.0, 1)
 
     def test_add_orders_to_book(self):
         # Arrange

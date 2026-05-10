@@ -254,7 +254,7 @@ cpdef bint is_tz_aware(time_object):
     if isinstance(time_object, datetime):
         return datetime_tzinfo(time_object) is not None
     elif isinstance(time_object, pd.DataFrame):
-        return hasattr(time_object.index, "tz") or time_object.index.tz is not None
+        return hasattr(time_object.index, "tz") and time_object.index.tz is not None
     else:
         raise ValueError(f"Cannot check timezone awareness of a {type(time_object)} object")
 

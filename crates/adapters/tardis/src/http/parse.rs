@@ -56,7 +56,7 @@ pub fn parse_instrument_any(
             match parse_option_instrument(info, effective, ts_init, normalize_symbols) {
                 Ok(instruments) => instruments,
                 Err(e) => {
-                    tracing::error!("Failed to parse option instrument: {e}");
+                    log::error!("Failed to parse option instrument: {e}");
                     vec![]
                 }
             }
@@ -110,7 +110,7 @@ fn parse_spot_instrument(
     if let Some(changes) = &info.changes {
         // Sort changes newest to oldest
         let mut sorted_changes = changes.clone();
-        sorted_changes.sort_by(|a, b| b.until.cmp(&a.until));
+        sorted_changes.sort_by_key(|b| std::cmp::Reverse(b.until));
 
         if let Some(effective_time) = effective {
             // Apply changes where change.until >= effective_time
@@ -258,7 +258,7 @@ fn parse_perp_instrument(
     if let Some(changes) = &info.changes {
         // Sort changes newest to oldest
         let mut sorted_changes = changes.clone();
-        sorted_changes.sort_by(|a, b| b.until.cmp(&a.until));
+        sorted_changes.sort_by_key(|b| std::cmp::Reverse(b.until));
 
         if let Some(effective_time) = effective {
             // Apply changes where change.until >= effective_time
@@ -410,7 +410,7 @@ fn parse_future_instrument(
     if let Some(changes) = &info.changes {
         // Sort changes newest to oldest
         let mut sorted_changes = changes.clone();
-        sorted_changes.sort_by(|a, b| b.until.cmp(&a.until));
+        sorted_changes.sort_by_key(|b| std::cmp::Reverse(b.until));
 
         if let Some(effective_time) = effective {
             // Apply changes where change.until >= effective_time
@@ -566,7 +566,7 @@ fn parse_option_instrument(
     if let Some(changes) = &info.changes {
         // Sort changes newest to oldest
         let mut sorted_changes = changes.clone();
-        sorted_changes.sort_by(|a, b| b.until.cmp(&a.until));
+        sorted_changes.sort_by_key(|b| std::cmp::Reverse(b.until));
 
         if let Some(effective_time) = effective {
             // Apply changes where change.until >= effective_time
@@ -702,7 +702,7 @@ fn parse_multiplier(value: Option<f64>) -> Option<Quantity> {
 /// Returns zero for invalid f64 values (NaN, infinity).
 fn parse_fee_rate(value: f64) -> Decimal {
     Decimal::try_from(value).unwrap_or_else(|e| {
-        tracing::warn!("Invalid fee rate value {value}: {e}, defaulting to zero");
+        log::warn!("Invalid fee rate value {value}: {e}, defaulting to zero");
         Decimal::ZERO
     })
 }
@@ -715,7 +715,7 @@ fn parse_datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> UnixNanos {
         .map(|dt| {
             let nanos = dt.timestamp_nanos_opt().unwrap_or(0);
             if nanos < 0 {
-                tracing::warn!("Timestamp {dt} is before UNIX epoch, defaulting to 0");
+                log::warn!("Timestamp {dt} is before UNIX epoch, defaulting to 0");
                 UnixNanos::default()
             } else {
                 UnixNanos::from(nanos as u64)
@@ -744,7 +744,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::tests::load_test_json;
+    use crate::common::testing::load_test_json;
 
     #[rstest]
     fn test_parse_instrument_spot() {

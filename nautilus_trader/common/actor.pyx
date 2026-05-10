@@ -61,9 +61,11 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestFundingRates
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
 from nautilus_trader.data.messages cimport RequestJoin
+from nautilus_trader.data.messages cimport RequestOrderBookDeltas
 from nautilus_trader.data.messages cimport RequestOrderBookDepth
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
 from nautilus_trader.data.messages cimport RequestQuoteTicks
@@ -724,7 +726,7 @@ cdef class Actor(Component):
         self.clock = self._clock
         self.log = self._log
 
-        self.greeks = GreeksCalculator(msgbus, cache, self.clock)
+        self.greeks = GreeksCalculator(cache, self.clock)
 
     cpdef void register_executor(
         self,
@@ -3095,20 +3097,23 @@ cdef class Actor(Component):
 
         return used_request_id
 
-    cpdef UUID4 request_order_book_snapshot(
+    cpdef UUID4 request_order_book_deltas(
         self,
         InstrumentId instrument_id,
+        datetime start,
+        datetime end = None,
         int limit = 0,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
+        bint update_catalog = False,
         bint join_request = False,
         UUID4 request_id = None,
         dict[str, object] params = None,
     ):
         """
-        Request an order book snapshot.
+        Request historical `OrderBookDeltas` data.
 
-        Once the response is received, the order book data is forwarded from the message bus
+        Once the response is received, the order book deltas data is forwarded from the message bus
         to the `on_historical_data` handler.
 
         If the request fails, then an error is logged.
@@ -3116,14 +3121,21 @@ cdef class Actor(Component):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument ID for the order book snapshot request.
+            The instrument ID for the order book deltas request.
+        start : datetime
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
         limit : int, optional
-            The limit on the depth of the order book snapshot.
+            The limit on the amount of deltas received.
         client_id : ClientId, optional
             The specific client ID for the command.
             If None, it will be inferred from the venue in the instrument ID.
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has completed processing.
+        update_catalog : bool, default False
+            If the data catalog should be updated with the received data.
         join_request: bool, optional, default to False
             If a request should be joined and sorted with another one by using request_join.
         request_id : UUID4, optional
@@ -3148,18 +3160,23 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.callable_or_none(callback, "callback")
 
+        start, end = self._validate_datetime_range(start, end)
+
         used_params = {}
+        used_params["update_catalog"] = update_catalog
         used_params["join_request"] = join_request
         if params:
             used_params.update(params)
 
         cdef UUID4 used_request_id = request_id if request_id else UUID4()
-        cdef RequestOrderBookSnapshot request = RequestOrderBookSnapshot(
+        cdef RequestOrderBookDeltas request = RequestOrderBookDeltas(
             instrument_id=instrument_id,
+            start=start,
+            end=end,
             limit=limit,
             client_id=client_id,
             venue=instrument_id.venue,
-            callback=self._handle_order_book_snapshot_response,
+            callback=self._handle_order_book_deltas_response,
             request_id=used_request_id,
             ts_init=self._clock.timestamp_ns(),
             params=used_params,
@@ -3169,7 +3186,7 @@ cdef class Actor(Component):
 
         self._msgbus.subscribe(
             topic=self._topic_cache.get_deltas_topic(instrument_id, historical=True),
-            handler=self.handle_historical_data,
+            handler=self.handle_historical_order_book_deltas,
         )
 
         self._send_data_req(request)
@@ -3270,6 +3287,87 @@ cdef class Actor(Component):
         self._msgbus.subscribe(
             topic=self._topic_cache.get_depth_topic(instrument_id, historical=True),
             handler=self.handle_historical_order_book_depth,
+        )
+
+        self._send_data_req(request)
+
+        return used_request_id
+
+    cpdef UUID4 request_order_book_snapshot(
+        self,
+        InstrumentId instrument_id,
+        int limit = 0,
+        ClientId client_id = None,
+        callback: Callable[[UUID4], None] | None = None,
+        bint join_request = False,
+        UUID4 request_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Request an order book snapshot.
+
+        Once the response is received, the order book data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the order book snapshot request.
+        limit : int, optional
+            The limit on the depth of the order book snapshot.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If None, it will be inferred from the venue in the instrument ID.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called with the request ID when the response has completed processing.
+        join_request: bool, optional, default to False
+            If a request should be joined and sorted with another one by using request_join.
+        request_id : UUID4, optional
+            The UUID to use for the request ID. If `None`, a new UUID will be generated.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        Returns
+        -------
+        UUID4
+            The `request_id` for the request.
+
+        Raises
+        ------
+        ValueError
+            If the instrument_id is None.
+        TypeError
+            If callback is not None and not of type Callable.
+
+        """
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.callable_or_none(callback, "callback")
+
+        used_params = {}
+        used_params["join_request"] = join_request
+        if params:
+            used_params.update(params)
+
+        cdef UUID4 used_request_id = request_id if request_id else UUID4()
+        cdef RequestOrderBookSnapshot request = RequestOrderBookSnapshot(
+            instrument_id=instrument_id,
+            limit=limit,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            callback=self._handle_order_book_snapshot_response,
+            request_id=used_request_id,
+            ts_init=self._clock.timestamp_ns(),
+            params=used_params,
+        )
+        self._requests[used_request_id] = request
+        self._pending_requests[used_request_id] = callback
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_deltas_topic(instrument_id, historical=True),
+            handler=self.handle_historical_data,
         )
 
         self._send_data_req(request)
@@ -3489,6 +3587,113 @@ cdef class Actor(Component):
         self._msgbus.subscribe(
             topic=self._topic_cache.get_trades_topic(instrument_id, historical=True),
             handler=self.handle_historical_trade_tick,
+        )
+
+        self._send_data_req(request)
+
+        return used_request_id
+
+    cpdef UUID4 request_funding_rates(
+        self,
+        InstrumentId instrument_id,
+        datetime start,
+        datetime end = None,
+        int limit = 0,
+        ClientId client_id = None,
+        callback: Callable[[UUID4], None] | None = None,
+        bint update_catalog = False,
+        bint join_request = False,
+        UUID4 request_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Request historical `FundingRateUpdate` data.
+
+        If `end` is ``None`` then will request up to the most recent data.
+
+        Once the response is received, the funding rate data is forwarded from the message bus
+        to the `on_historical_data` handler.
+
+        If the request fails, then an error is logged.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the request.
+        start : datetime
+            The start datetime (UTC) of request time range.
+            Should be left-inclusive (start <= value), but inclusiveness is not currently guaranteed.
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+            If `None` then will be replaced with the current UTC time.
+            Should be right-inclusive (value <= end), but inclusiveness is not currently guaranteed.
+        limit : int, optional
+            The limit on the amount of funding rates received.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called with the request ID when the response has
+            completed processing.
+        update_catalog : bool, default False
+            Whether to update a catalog with the received data.
+        join_request: bool, optional, default to False
+            If a request should be joined and sorted with another one by using request_join.
+        request_id : UUID4, optional
+            The UUID to use for the request ID. If `None`, a new UUID will be generated.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        Returns
+        -------
+        UUID4
+            The `request_id` for the request.
+
+        Raises
+        ------
+        TypeError
+            If `start` is `None`.
+        ValueError
+            If `start` is > current timestamp (now).
+        ValueError
+            If `end` is > current timestamp (now).
+        ValueError
+            If `start` is > `end`.
+        TypeError
+            If `callback` is not `None` and not of type `Callable`.
+
+        """
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.callable_or_none(callback, "callback")
+
+        start, end = self._validate_datetime_range(start, end)
+
+        used_params = {}
+        used_params["update_catalog"] = update_catalog
+        used_params["join_request"] = join_request
+        if params:
+            used_params.update(params)
+
+        cdef UUID4 used_request_id = request_id if request_id else UUID4()
+        cdef RequestFundingRates request = RequestFundingRates(
+            instrument_id=instrument_id,
+            start=start,
+            end=end,
+            limit=limit,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            callback=self._handle_funding_rates_response,
+            request_id=used_request_id,
+            ts_init=self._clock.timestamp_ns(),
+            params=used_params,
+        )
+        self._requests[used_request_id] = request
+        self._pending_requests[used_request_id] = callback
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_funding_rates_topic(instrument_id, historical=True),
+            handler=self.handle_historical_funding_rate,
         )
 
         self._send_data_req(request)
@@ -3979,7 +4184,10 @@ cdef class Actor(Component):
             except Exception as e:
                 self._log.exception(f"Error on handling {repr(instrument)}", e)
 
-    cpdef void handle_order_book_deltas(self, deltas):
+    cpdef void handle_historical_order_book_deltas(self, OrderBookDeltas deltas):
+        self.handle_order_book_deltas(deltas, True)
+
+    cpdef void handle_order_book_deltas(self, deltas, bint historical=False):
         """
         Handle the given order book deltas.
 
@@ -3991,6 +4199,8 @@ cdef class Actor(Component):
         ----------
         deltas : OrderBookDeltas or nautilus_pyo3.OrderBookDeltas
             The order book deltas received.
+        historical : bool, default False
+            If True, treats the data as historical.
 
         Warnings
         --------
@@ -4002,7 +4212,9 @@ cdef class Actor(Component):
         if OrderBookDeltas in self._pyo3_conversion_types:
             deltas = deltas.to_pyo3()
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if historical:
+            self.handle_historical_data(deltas)
+        elif self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_order_book_deltas(deltas)
             except Exception as e:
@@ -4194,7 +4406,10 @@ cdef class Actor(Component):
                 self.log.exception(f"Error on handling {repr(index_price)}", e)
                 raise
 
-    cpdef void handle_funding_rate(self, FundingRateUpdate funding_rate):
+    cpdef void handle_historical_funding_rate(self, FundingRateUpdate funding_rate):
+        self.handle_funding_rate(funding_rate, True)
+
+    cpdef void handle_funding_rate(self, FundingRateUpdate funding_rate, bint historical=False):
         """
         Handle the given funding rate update.
 
@@ -4212,7 +4427,9 @@ cdef class Actor(Component):
         """
         Condition.not_none(funding_rate, "funding_rate")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if historical:
+            self.handle_historical_data(funding_rate)
+        elif self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_funding_rate(funding_rate)
             except Exception as e:
@@ -4498,6 +4715,24 @@ cdef class Actor(Component):
 
         self._finish_response(response.correlation_id)
 
+    cpdef void _handle_funding_rates_response(self, DataResponse response):
+        cdef RequestFundingRates request = self._requests.pop(response.correlation_id, None)
+        if request is not None:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_funding_rates_topic(request.instrument_id, historical=True),
+                handler=self.handle_historical_funding_rate,
+            )
+
+        cdef int length = response.params.get("data_count", 0)
+        cdef InstrumentId instrument_id = request.instrument_id
+
+        if length > 0:
+            self._log.info(f"Received <FundingRateUpdate[{length}]> data for {instrument_id}")
+        else:
+            self._log.warning(f"Received <FundingRateUpdate[]> data with no ticks for {instrument_id}")
+
+        self._finish_response(response.correlation_id)
+
     cpdef void _handle_order_book_depth_response(self, DataResponse response):
         cdef RequestOrderBookDepth request = self._requests.pop(response.correlation_id, None)
         if request is not None:
@@ -4513,6 +4748,30 @@ cdef class Actor(Component):
             self._log.info(f"Received <OrderBookDepth10[{length}]> data for {instrument_id}")
         else:
             self._log.warning(f"Received <OrderBookDepth10[]> data with no ticks for {instrument_id}")
+
+        self._finish_response(response.correlation_id)
+
+    cpdef void _handle_order_book_deltas_response(self, DataResponse response):
+        cdef RequestOrderBookDeltas request = self._requests.pop(response.correlation_id, None)
+        if request is not None:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_deltas_topic(request.instrument_id, historical=True),
+                handler=self.handle_historical_order_book_deltas,
+            )
+
+        cdef int length = response.params.get("data_count", 0) if response.params else 0
+        cdef InstrumentId instrument_id = request.instrument_id if request is not None else None
+
+        if length > 0:
+            if instrument_id is not None:
+                self._log.info(f"Received <OrderBookDeltas[{length}]> data for {instrument_id}")
+            else:
+                self._log.info(f"Received <OrderBookDeltas[{length}]> data")
+        else:
+            if instrument_id is not None:
+                self._log.warning(f"Received <OrderBookDeltas[]> data with no deltas for {instrument_id}")
+            else:
+                self._log.warning(f"Received <OrderBookDeltas[]> data with no deltas")
 
         self._finish_response(response.correlation_id)
 

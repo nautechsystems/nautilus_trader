@@ -21,7 +21,7 @@ use nautilus_model::{
     position::Position,
     types::{Currency, Money},
 };
-use pyo3::{exceptions::PyValueError, prelude::*};
+use pyo3::prelude::*;
 
 use crate::{
     analyzer::PortfolioAnalyzer,
@@ -160,7 +160,7 @@ impl PortfolioAnalyzer {
                 self.register_statistic(Arc::new(stat));
             }
             _ => {
-                return Err(PyValueError::new_err(format!(
+                return Err(to_pyvalue_err(format!(
                     "Unknown statistic type: {type_name}"
                 )));
             }
@@ -246,7 +246,7 @@ impl PortfolioAnalyzer {
                 self.deregister_statistic(Arc::new(stat));
             }
             _ => {
-                return Err(PyValueError::new_err(format!(
+                return Err(to_pyvalue_err(format!(
                     "Unknown statistic type: {type_name}"
                 )));
             }
@@ -343,7 +343,7 @@ impl PortfolioAnalyzer {
         unrealized_pnl: Option<&Money>,
     ) -> PyResult<Vec<String>> {
         self.get_stats_pnls_formatted(currency, unrealized_pnl)
-            .map_err(PyValueError::new_err)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "get_stats_returns_formatted")]

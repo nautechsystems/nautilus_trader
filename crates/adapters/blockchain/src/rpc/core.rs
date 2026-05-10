@@ -62,7 +62,7 @@ pub struct CoreBlockchainRpcClient {
 
 impl Debug for CoreBlockchainRpcClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CoreBlockchainRpcClient")
+        f.debug_struct(stringify!(CoreBlockchainRpcClient))
             .field("chain", &self.chain)
             .field("wss_rpc_url", &self.wss_rpc_url)
             .field("request_id", &self.request_id)
@@ -125,6 +125,7 @@ impl CoreBlockchainRpcClient {
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(1_000),
             reconnect_max_attempts: None,
+            idle_timeout_ms: None,
         };
 
         let client =
@@ -157,6 +158,7 @@ impl CoreBlockchainRpcClient {
             self.pending_subscription_request
                 .insert(self.request_id, event_type.clone());
             self.request_id += 1;
+
             if let Err(e) = client.send_text(msg.to_string(), None).await {
                 log::error!("Error sending subscribe message: {e:?}");
             }
@@ -239,6 +241,7 @@ impl CoreBlockchainRpcClient {
                 "jsonrpc": "2.0",
                 "params": [subscription_id]
             });
+
             if let Err(e) = client.send_text(msg.to_string(), None).await {
                 log::error!("Error sending unsubscribe message: {e:?}");
             }
@@ -277,6 +280,7 @@ impl CoreBlockchainRpcClient {
                 Message::Text(text) => {
                     if text == RECONNECTED {
                         log::info!("Detected reconnection for chain '{}'", self.chain.name);
+
                         if let Err(e) = self.resubscribe_all().await {
                             log::error!("Failed to re-establish subscriptions: {e:?}");
                         }
@@ -308,6 +312,7 @@ impl CoreBlockchainRpcClient {
                                     ));
                                     }
                                 };
+
                                 if let Some(event_type) =
                                     self.subscription_event_types.get(subscription_id)
                                 {
@@ -350,9 +355,7 @@ impl CoreBlockchainRpcClient {
                         }
                     }
                 }
-                Message::Pong(_) => {
-                    continue;
-                }
+                Message::Pong(_) => {}
                 _ => {
                     return Err(BlockchainRpcClientError::UnsupportedRpcResponseType(
                         msg.to_string(),

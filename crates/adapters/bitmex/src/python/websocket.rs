@@ -43,7 +43,7 @@
 
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::python::{call_python_threadsafe, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::bar::BarType,
     identifiers::{AccountId, InstrumentId},
@@ -52,7 +52,7 @@ use nautilus_model::{
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     },
 };
-use pyo3::{conversion::IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
+use pyo3::{conversion::IntoPyObjectExt, prelude::*};
 
 use crate::websocket::{BitmexWebSocketClient, messages::NautilusWsMessage};
 
@@ -130,9 +130,12 @@ impl BitmexWebSocketClient {
     fn py_connect<'py>(
         &mut self,
         py: Python<'py>,
+        loop_: Py<PyAny>,
         instruments: Vec<Py<PyAny>>,
         callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let call_soon: Py<PyAny> = loop_.getattr(py, "call_soon_threadsafe")?;
+
         let mut instruments_any = Vec::new();
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
@@ -159,50 +162,66 @@ impl BitmexWebSocketClient {
                         NautilusWsMessage::Data(data_vec) => {
                             for data in data_vec {
                                 let py_obj = data_to_pycapsule(py, data);
-                                call_python(py, &callback, py_obj);
+                                call_python_threadsafe(py, &call_soon, &callback, py_obj);
                             }
                         }
                         NautilusWsMessage::Instruments(instruments) => {
                             for instrument in instruments {
                                 if let Ok(py_obj) = instrument_any_to_pyobject(py, instrument) {
-                                    call_python(py, &callback, py_obj);
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                 }
                             }
                         }
                         NautilusWsMessage::OrderStatusReports(reports) => {
                             for report in reports {
                                 if let Ok(py_obj) = report.into_py_any(py) {
-                                    call_python(py, &callback, py_obj);
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                 }
                             }
                         }
                         NautilusWsMessage::FillReports(reports) => {
                             for report in reports {
                                 if let Ok(py_obj) = report.into_py_any(py) {
-                                    call_python(py, &callback, py_obj);
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                 }
                             }
                         }
-                        NautilusWsMessage::PositionStatusReport(report) => {
-                            if let Ok(py_obj) = report.into_py_any(py) {
-                                call_python(py, &callback, py_obj);
+                        NautilusWsMessage::PositionStatusReports(reports) => {
+                            for report in reports {
+                                if let Ok(py_obj) = report.into_py_any(py) {
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                }
                             }
                         }
                         NautilusWsMessage::FundingRateUpdates(updates) => {
                             for update in updates {
                                 if let Ok(py_obj) = update.into_py_any(py) {
-                                    call_python(py, &callback, py_obj);
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                 }
                             }
                         }
-                        NautilusWsMessage::AccountState(account_state) => {
-                            if let Ok(py_obj) = account_state.into_py_any(py) {
-                                call_python(py, &callback, py_obj);
+                        NautilusWsMessage::AccountStates(states) => {
+                            for state in states {
+                                if let Ok(py_obj) = state.into_py_any(py) {
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                }
                             }
                         }
                         NautilusWsMessage::OrderUpdated(event) => {
-                            if let Ok(py_obj) = event.into_py_any(py) {
-                                call_python(py, &callback, py_obj);
+                            if let Ok(py_obj) = (*event).into_py_any(py) {
+                                call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                            }
+                        }
+                        NautilusWsMessage::OrderUpdates(events) => {
+                            for event in events {
+                                if let Ok(py_obj) = event.into_py_any(py) {
+                                    call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                }
+                            }
+                        }
+                        NautilusWsMessage::InstrumentStatus(status) => {
+                            if let Ok(py_obj) = status.into_py_any(py) {
+                                call_python_threadsafe(py, &call_soon, &callback, py_obj);
                             }
                         }
                         NautilusWsMessage::Reconnected => {}
@@ -227,7 +246,7 @@ impl BitmexWebSocketClient {
             client
                 .wait_until_active(timeout_secs)
                 .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+                .map_err(to_pyruntime_err)?;
             Ok(())
         })
     }
@@ -705,11 +724,5 @@ impl BitmexWebSocketClient {
             }
             Ok(())
         })
-    }
-}
-
-pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
-    if let Err(e) = callback.call1(py, (py_obj,)) {
-        tracing::error!("Error calling Python: {e}");
     }
 }

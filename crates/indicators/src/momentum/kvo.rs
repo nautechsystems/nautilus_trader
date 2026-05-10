@@ -147,6 +147,7 @@ impl KlingerVolumeOscillator {
         // initialization logic
         if !self.initialized {
             self.has_inputs = true;
+
             if self.signal_ma.initialized() {
                 self.initialized = true;
             }
@@ -158,6 +159,7 @@ impl KlingerVolumeOscillator {
     pub fn _check_initialized(&mut self) {
         if !self.initialized {
             self.has_inputs = true;
+
             if self.signal_ma.initialized() {
                 self.initialized = true;
             }

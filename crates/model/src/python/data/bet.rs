@@ -18,7 +18,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::python::IntoPyObjectNautilusExt;
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use pyo3::{basic::CompareOp, prelude::*};
 use rust_decimal::Decimal;
 
@@ -250,7 +250,7 @@ pub fn py_probability_to_bet(
     volume: Decimal,
     side: OrderSide,
 ) -> PyResult<Bet> {
-    Ok(probability_to_bet(probability, volume, side.as_specified()))
+    probability_to_bet(probability, volume, side.as_specified()).map_err(to_pyvalue_err)
 }
 
 /// Creates an inverse `Bet` from a probability, volume, and side.
@@ -265,9 +265,5 @@ pub fn py_inverse_probability_to_bet(
     volume: Decimal,
     side: OrderSide,
 ) -> PyResult<Bet> {
-    Ok(inverse_probability_to_bet(
-        probability,
-        volume,
-        side.as_specified(),
-    ))
+    inverse_probability_to_bet(probability, volume, side.as_specified()).map_err(to_pyvalue_err)
 }

@@ -146,7 +146,7 @@ pub fn trailing_stop_calculate(
     };
 
     match trigger_type {
-        TriggerType::Default | TriggerType::LastPrice | TriggerType::MarkPrice => {
+        TriggerType::LastPrice | TriggerType::MarkPrice => {
             let last = last.ok_or(OrderError::InvalidStateTransition)?;
             let cand_trigger = compute(trailing_offset, last.as_f64());
             new_trigger_price = maybe_move(&mut trigger_price, cand_trigger, better_trigger);
@@ -156,7 +156,7 @@ pub fn trailing_stop_calculate(
                 new_limit_price = maybe_move(&mut limit_price, cand_limit, better_limit);
             }
         }
-        TriggerType::BidAsk | TriggerType::LastOrBidAsk => {
+        TriggerType::Default | TriggerType::BidAsk | TriggerType::LastOrBidAsk => {
             let (bid, ask) = (
                 bid.ok_or_else(|| anyhow::anyhow!("Bid required"))?,
                 ask.ok_or_else(|| anyhow::anyhow!("Ask required"))?,
@@ -400,6 +400,49 @@ mod tests {
             (Some(actual), Some(expected)) => assert_eq!(actual.as_f64(), expected),
             (None, None) => (),
             _ => panic!("Expected trigger {expected_trigger:?} but got {actual_trigger:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, 1505.0, 1.0, 1480.0, 1479.0, Some(1481.0))] // BUY uses ask as basis
+    #[case(OrderSide::Sell, 1495.0, 1.0, 1521.0, 1520.0, Some(1519.0))] // SELL uses bid as basis
+    fn test_trailing_stop_market_default_uses_bid_ask(
+        #[case] side: OrderSide,
+        #[case] initial_trigger: f64,
+        #[case] offset: f64,
+        #[case] ask: f64,
+        #[case] bid: f64,
+        #[case] expected_trigger: Option<f64>,
+    ) {
+        // NOTE: TriggerType::Default is documented to behave like BID_ASK (quote-based), so it
+        // should not require a last-trade price and should trail using bid/ask.
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id("BTCUSDT-PERP.BINANCE".into())
+            .side(side)
+            .trigger_price(Price::new(initial_trigger, 2))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .trailing_offset(Decimal::from_f64(offset).unwrap())
+            .trigger_type(TriggerType::Default)
+            .quantity(Quantity::from(1))
+            .build();
+
+        let result = trailing_stop_calculate(
+            Price::new(0.01, 2),
+            None,
+            None,
+            &order,
+            Some(Price::new(bid, 2)),
+            Some(Price::new(ask, 2)),
+            None, // no last-trade price available
+        );
+
+        let actual_trigger = result.unwrap().0;
+        match (actual_trigger, expected_trigger) {
+            (Some(actual), Some(expected)) => assert_eq!(actual, Price::new(expected, 2)),
+            (None, None) => {}
+            (actual, expected) => {
+                panic!("Unexpected trigger: actual={actual:?} expected={expected:?}")
+            }
         }
     }
 

@@ -54,6 +54,7 @@ pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, com
     header_sepr(c, "=================================================================");
     header_sepr(c, " SYSTEM SPECIFICATION");
     header_sepr(c, "=================================================================");
+
     if let Some(cpu) = sys.cpus().first() {
         header_line(c, &format!("CPU architecture: {}", cpu.brand()));
         header_line(c, &format!("CPU(s): {} @ {} MHz", sys.cpus().len(), cpu.frequency()));

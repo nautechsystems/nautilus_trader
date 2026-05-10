@@ -36,6 +36,7 @@ from betfair_parser.spec.betting.orders import ListClearedOrders
 from betfair_parser.spec.betting.orders import ListCurrentOrders
 from betfair_parser.spec.betting.orders import PlaceOrders
 from betfair_parser.spec.betting.orders import ReplaceOrders
+from betfair_parser.spec.betting.orders import UpdateOrders
 from betfair_parser.spec.betting.type_definitions import CancelExecutionReport
 from betfair_parser.spec.betting.type_definitions import ClearedOrderSummary
 from betfair_parser.spec.betting.type_definitions import ClearedOrderSummaryReport
@@ -67,7 +68,14 @@ from nautilus_trader.common.secure import SecureString
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
+from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.core.rust.common import LogColor
+
+
+BETFAIR_RATE_LIMIT_KEY_ORDERS = "orders"
+BETFAIR_RATE_LIMIT_KEY_DEFAULT = "default"
+
+_ORDER_REQUEST_TYPES = (PlaceOrders, ReplaceOrders, CancelOrders, UpdateOrders)
 
 
 class BetfairHttpClient:
@@ -84,6 +92,10 @@ class BetfairHttpClient:
         The Betfair application key.
     proxy_url : str, optional
         The proxy URL for HTTP requests.
+    ratelimiter_default_quota : Quota, optional
+        The default rate limiter quota for requests.
+    ratelimiter_keyed_quotas : list[tuple[str, Quota]], optional
+        Per-key rate limiter quotas (e.g. separate quota for order endpoints).
 
     """
 
@@ -93,6 +105,8 @@ class BetfairHttpClient:
         password: str,
         app_key: str,
         proxy_url: str | None = None,
+        ratelimiter_default_quota: Quota | None = None,
+        ratelimiter_keyed_quotas: list[tuple[str, Quota]] | None = None,
     ) -> None:
         # Config
         self.username = username
@@ -100,7 +114,11 @@ class BetfairHttpClient:
         self.app_key = app_key
 
         # Client
-        self._client = HttpClient(proxy_url=proxy_url)
+        self._client = HttpClient(
+            proxy_url=proxy_url,
+            default_quota=ratelimiter_default_quota,
+            keyed_quotas=ratelimiter_keyed_quotas or [],
+        )
         self._headers: dict[str, str] = {}
         self._log = Logger(name=type(self).__name__)
         self._connect_lock: asyncio.Lock | None = None
@@ -113,17 +131,36 @@ class BetfairHttpClient:
         if isinstance(body, str):
             body = body.encode()
         self._log.debug(f"[REQ] {method} {url} {body.decode()}")
+
+        keys = self._rate_limit_keys(request)
         response: HttpResponse = await self._client.request(
             method,
             url,
             headers=headers,
             body=body,
+            keys=keys,
         )
         if url not in SKIP_LOG_URLS:
             self._log.debug(f"[RESP] {response.body.decode()}")
         return response
 
+    @staticmethod
+    def _rate_limit_keys(request: Request) -> list[str]:
+        if isinstance(request, _ORDER_REQUEST_TYPES):
+            return [BETFAIR_RATE_LIMIT_KEY_ORDERS]
+        return [BETFAIR_RATE_LIMIT_KEY_DEFAULT]
+
     def _parse_response(self, request: Request, response: HttpResponse) -> Request.return_type:
+        if not response.body:
+            self._log.warning("Betfair returned empty response body")
+            raise BetfairError("JSON_PARSE_ERROR: Empty response body")
+
+        if response.body[0] == 0:
+            # Null byte at start indicates corrupted/truncated response
+            preview = response.body[:100].hex()
+            self._log.warning(f"Betfair response starts with null byte: {preview}")
+            raise BetfairError("JSON_PARSE_ERROR: Response starts with null byte (corrupted)")
+
         try:
             return request.parse_response(response.body, raise_errors=True)
         except ValueError as e:
@@ -133,8 +170,8 @@ class BetfairHttpClient:
                 raise BetfairError(f"INVALID_SESSION_INFORMATION: {e}") from e
             raise
         except JSONError as e:
-            # Handle betfair-parser msgspec parsing errors
-            self._log.warning(f"Betfair JSON parsing error: {e}")
+            preview = response.body[:200].decode(errors="replace")
+            self._log.warning(f"Betfair JSON parsing error: {e}, response preview: {preview}")
             raise BetfairError(f"JSON_PARSE_ERROR: {e}") from e
 
     async def _post(self, request: Request) -> Request.return_type:

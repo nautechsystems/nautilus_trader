@@ -132,11 +132,7 @@ where
             if let Some(token) = cancel
                 && token.is_cancelled()
             {
-                tracing::debug!(
-                    operation = %operation_name,
-                    attempts = attempt,
-                    "Operation canceled"
-                );
+                log::debug!("Operation '{operation_name}' canceled after {attempt} attempts");
                 return Err(create_error("canceled".to_string()));
             }
 
@@ -152,10 +148,7 @@ where
                     tokio::select! {
                         result = tokio::time::timeout(Duration::from_millis(timeout_ms), operation()) => result,
                         () = token.cancelled() => {
-                            tracing::debug!(
-                                operation = %operation_name,
-                                "Operation canceled during execution"
-                            );
+                            log::debug!("Operation '{operation_name}' canceled during execution");
                             return Err(create_error("canceled".to_string()));
                         }
                     }
@@ -167,10 +160,7 @@ where
                     tokio::select! {
                         result = operation() => Ok(result),
                         () = token.cancelled() => {
-                            tracing::debug!(
-                                operation = %operation_name,
-                                "Operation canceled during execution"
-                            );
+                            log::debug!("Operation '{operation_name}' canceled during execution");
                             return Err(create_error("canceled".to_string()));
                         }
                     }
@@ -181,30 +171,23 @@ where
             match result {
                 Ok(Ok(success)) => {
                     if attempt > 0 {
-                        tracing::trace!(
-                            operation = %operation_name,
-                            attempts = attempt + 1,
-                            "Retry succeeded"
+                        log::trace!(
+                            "Operation '{operation_name}' succeeded after {} attempts",
+                            attempt + 1
                         );
                     }
                     return Ok(success);
                 }
                 Ok(Err(e)) => {
                     if !should_retry(&e) {
-                        tracing::trace!(
-                            operation = %operation_name,
-                            error = %e,
-                            "Non-retryable error"
-                        );
+                        log::trace!("Operation '{operation_name}' non-retryable error: {e}");
                         return Err(e);
                     }
 
                     if attempt >= self.config.max_retries {
-                        tracing::trace!(
-                            operation = %operation_name,
-                            attempts = attempt + 1,
-                            error = %e,
-                            "Retries exhausted"
+                        log::trace!(
+                            "Operation '{operation_name}' retries exhausted after {} attempts: {e}",
+                            attempt + 1
                         );
                         return Err(e);
                     }
@@ -223,12 +206,10 @@ where
                         delay = delay.min(remaining);
                     }
 
-                    tracing::trace!(
-                        operation = %operation_name,
-                        attempt = attempt + 1,
-                        delay_ms = delay.as_millis() as u64,
-                        error = %e,
-                        "Retrying after failure"
+                    log::trace!(
+                        "Operation '{operation_name}' attempt {} failed, retrying in {}ms: {e}",
+                        attempt + 1,
+                        delay.as_millis()
                     );
 
                     // Yield even on zero-delay to avoid busy-wait loop
@@ -242,11 +223,7 @@ where
                         tokio::select! {
                             () = tokio::time::sleep(delay) => {},
                             () = token.cancelled() => {
-                                tracing::debug!(
-                                    operation = %operation_name,
-                                    attempt = attempt + 1,
-                                    "Operation canceled during retry delay"
-                                );
+                                log::debug!("Operation '{operation_name}' canceled during retry delay (attempt {})", attempt + 1);
                                 return Err(create_error("canceled".to_string()));
                             }
                         }
@@ -262,20 +239,14 @@ where
                     ));
 
                     if !should_retry(&e) {
-                        tracing::trace!(
-                            operation = %operation_name,
-                            error = %e,
-                            "Non-retryable timeout"
-                        );
+                        log::trace!("Operation '{operation_name}' non-retryable timeout: {e}");
                         return Err(e);
                     }
 
                     if attempt >= self.config.max_retries {
-                        tracing::trace!(
-                            operation = %operation_name,
-                            attempts = attempt + 1,
-                            error = %e,
-                            "Retries exhausted after timeout"
+                        log::trace!(
+                            "Operation '{operation_name}' retries exhausted after timeout ({} attempts): {e}",
+                            attempt + 1
                         );
                         return Err(e);
                     }
@@ -294,12 +265,10 @@ where
                         delay = delay.min(remaining);
                     }
 
-                    tracing::trace!(
-                        operation = %operation_name,
-                        attempt = attempt + 1,
-                        delay_ms = delay.as_millis() as u64,
-                        error = %e,
-                        "Retrying after timeout"
+                    log::trace!(
+                        "Operation '{operation_name}' attempt {} timed out, retrying in {}ms: {e}",
+                        attempt + 1,
+                        delay.as_millis()
                     );
 
                     // Yield even on zero-delay to avoid busy-wait loop
@@ -313,11 +282,7 @@ where
                         tokio::select! {
                             () = tokio::time::sleep(delay) => {},
                             () = token.cancelled() => {
-                                tracing::debug!(
-                                    operation = %operation_name,
-                                    attempt = attempt + 1,
-                                    "Operation canceled during retry delay"
-                                );
+                                log::debug!("Operation '{operation_name}' canceled during retry delay (attempt {})", attempt + 1);
                                 return Err(create_error("canceled".to_string()));
                             }
                         }

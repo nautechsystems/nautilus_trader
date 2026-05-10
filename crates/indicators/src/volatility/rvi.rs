@@ -163,6 +163,7 @@ impl RelativeVolatilityIndex {
 
         if !self.initialized {
             self.has_inputs = true;
+
             if self.pos_ma.initialized() {
                 self.initialized = true;
             }

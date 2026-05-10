@@ -21,6 +21,7 @@ from nautilus_trader.common.messages import ShutdownSystem
 from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import IndexPriceUpdate
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
@@ -92,6 +93,14 @@ NAUTILUS_ARROW_SCHEMA = {
         [
             pa.field(k, infer_dtype(v), False)
             for k, v in nautilus_pyo3.IndexPriceUpdate.get_fields().items()
+        ],
+    ),
+    FundingRateUpdate: pa.schema(
+        [
+            pa.field("rate", pa.binary(), False),
+            pa.field("next_funding_ns", pa.uint64(), True),
+            pa.field("ts_event", pa.uint64(), False),
+            pa.field("ts_init", pa.uint64(), False),
         ],
     ),
     InstrumentClose: pa.schema(
