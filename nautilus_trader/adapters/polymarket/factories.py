@@ -15,6 +15,7 @@
 
 import asyncio
 from functools import lru_cache
+from typing import Any
 
 from py_clob_client_v2.client import ApiCreds
 from py_clob_client_v2.client import ClobClient
@@ -94,6 +95,50 @@ def get_polymarket_http_client(
         creds=creds,
         key=key,
         funder=funder,
+    )
+
+
+@lru_cache(1)
+def get_polymarket_rust_client(
+    api_key: str | None = None,
+    api_secret: str | None = None,
+    passphrase: str | None = None,
+    base_url: str | None = None,
+    chain_id: int = POLYGON,
+    signature_type: int = 0,
+    private_key: str | None = None,
+    funder: str | None = None,
+) -> Any:
+    """
+    Cache and return a Polymarket Rust CLOB client used for order signing.
+
+    Posting still goes through the Python ``ClobClient``; this client exposes a
+    ``create_order`` method that produces an EIP-712 signed order JSON payload.
+
+    Returns
+    -------
+    PyClobClient
+
+    Raises
+    ------
+    ImportError
+        If ``py_clob_rust_adaptor`` is not installed.
+
+    """
+    from py_clob_rust_adaptor import PyClobClient
+
+    key = private_key or get_polymarket_private_key()
+    funder_addr = funder or get_polymarket_funder()
+
+    return PyClobClient.new(
+        host=base_url or "https://clob.polymarket.com",
+        private_key=key,
+        chain_id=chain_id,
+        api_key=api_key or get_polymarket_api_key(),
+        secret=api_secret or get_polymarket_api_secret(),
+        passphrase=passphrase or get_polymarket_passphrase(),
+        signature_type=signature_type,
+        funder=funder_addr,
     )
 
 
@@ -238,6 +283,17 @@ class PolymarketLiveExecClientFactory(LiveExecClientFactory):
             passphrase=config.passphrase,
             base_url=config.base_url_http,
         )
+        rust_client = None
+        if config.use_rust:
+            rust_client = get_polymarket_rust_client(
+                private_key=config.private_key,
+                signature_type=config.signature_type,
+                funder=config.funder,
+                api_key=config.api_key,
+                api_secret=config.api_secret,
+                passphrase=config.passphrase,
+                base_url=config.base_url_http,
+            )
         ws_auth = PolymarketWebSocketAuth(
             apiKey=config.api_key or get_polymarket_api_key(),
             secret=config.api_secret or get_polymarket_api_secret(),
@@ -258,4 +314,5 @@ class PolymarketLiveExecClientFactory(LiveExecClientFactory):
             config=config,
             ws_auth=ws_auth,
             name=name,
+            rust_client=rust_client,
         )

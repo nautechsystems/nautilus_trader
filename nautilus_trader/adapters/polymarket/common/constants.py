@@ -30,6 +30,18 @@ POLYMARKET_MIN_PRICE: Final[float] = 0.001
 POLYMARKET_MAX_PRECISION_TAKER: Final[int] = 2
 POLYMARKET_MAX_PRECISION_MAKER: Final[int] = 5
 
+# Per tick-size (min, max) marketable limit prices, used when signing a market
+# order as an aggressive limit (e.g. via the Rust adapter which has no native
+# market-order signing path). The default key (None) is used when an instrument
+# has no recognised tick size.
+POLYMARKET_MIN_MAX_PRICES: Final[dict[str | None, tuple[float, float]]] = {
+    None: (0.001, 0.999),
+    "0.1": (0.1, 0.9),
+    "0.01": (0.01, 0.99),
+    "0.001": (0.001, 0.999),
+    "0.0001": (0.0001, 0.9999),
+}
+
 VALID_POLYMARKET_TIME_IN_FORCE: Final[set[TimeInForce]] = {
     TimeInForce.GTC,
     TimeInForce.GTD,
