@@ -107,6 +107,141 @@ impl RedbBackend {
         Ok(self.state()?.file_path.as_path())
     }
 
+    /// Opens the sealed run file at `<base>/<instance_id>/<run_id>.redb` for read-only
+    /// forensics replay.
+    ///
+    /// # Design
+    ///
+    /// The standard [`EventStore::open_run`] path rejects sealed files: that is the
+    /// crash-recovery guard, a successor must not silently reopen a predecessor's log
+    /// without going through seal. Forensics replay is the legitimate case for touching
+    /// a sealed file, so the reader uses this constructor instead.
+    ///
+    /// The shared [`EventStore`] trait is held intentionally narrow and is locked by
+    /// design; adding a sealed-open method to it would force the in-memory backend
+    /// (whose sealed runs stay readable in place without a reopen step) to carry a
+    /// useless second entry point, and would conflate the writer's open-or-recover
+    /// lifecycle with the reader's pure read-only path. The sealed-open path therefore
+    /// lives as a backend-specific constructor: each backend adds the entry points it
+    /// actually needs. The resulting [`RedbBackend`] still implements [`EventStore`],
+    /// so the reader composes over the locked trait without pulling in writer-only
+    /// methods. [`crate::backend::MemoryBackend`] has no equivalent constructor: a
+    /// sealed in-memory run keeps its state accessible to any reader holding the
+    /// backend instance, and the reader receives that instance directly.
+    ///
+    /// The returned backend rejects [`EventStore::append_batch`] with
+    /// [`EventStoreError::Closed`] (the manifest is already sealed) and exposes every
+    /// read path: [`EventStore::scan_range`], [`EventStore::scan_seq`],
+    /// [`EventStore::lookup`], and [`EventStore::manifest`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EventStoreError::Backend`] when the run file does not exist or its
+    /// status is not a sealed terminal state (use [`EventStore::open_run`] for that
+    /// path); [`EventStoreError::Corrupted`] when the run file lacks a manifest or
+    /// fails to decode; [`EventStoreError::Disk`] when disk pressure surfaces during
+    /// open.
+    pub fn open_sealed(
+        base_dir: impl Into<PathBuf>,
+        instance_id: &str,
+        run_id: &str,
+    ) -> Result<Self, EventStoreError> {
+        let base = base_dir.into();
+        let path = base.join(instance_id).join(format!("{run_id}.redb"));
+
+        if !path.exists() {
+            return Err(EventStoreError::Backend(format!(
+                "no run file at {}",
+                path.display()
+            )));
+        }
+
+        let db = Database::create(&path).map_err(map_database_err)?;
+        let manifest = Self::read_manifest(&db)?.ok_or_else(|| {
+            EventStoreError::Corrupted(format!(
+                "missing manifest in run file at {}",
+                path.display()
+            ))
+        })?;
+
+        if !manifest.is_sealed() {
+            return Err(EventStoreError::Backend(format!(
+                "run file at {} is not sealed, status was {:?}",
+                path.display(),
+                manifest.status,
+            )));
+        }
+        let (high_watermark, max_ts_init) = Self::compute_progress(&db)?;
+
+        Ok(Self {
+            base_dir: base,
+            state: Some(RunState {
+                db,
+                manifest,
+                high_watermark,
+                max_ts_init,
+                file_path: path,
+            }),
+        })
+    }
+
+    /// Lists the manifests of every run file under `<base_dir>/<instance_id>/*.redb`.
+    ///
+    /// Used by the reader for forensics navigation across runs without requiring an
+    /// active backend instance per run. The result is sorted by `start_ts_init` so
+    /// chronologically-newer runs appear last.
+    ///
+    /// Opens each run file with [`Database::create`], so callers must not invoke this
+    /// against a directory that contains a currently-open run (the active writer holds
+    /// the file lock); the verifier process and other off-trader consumers are the
+    /// intended callers.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EventStoreError::Backend`] when the directory iterator fails;
+    /// [`EventStoreError::Corrupted`] when a discovered run file is missing its
+    /// manifest or fails to decode; [`EventStoreError::Disk`] when disk pressure
+    /// surfaces during open.
+    pub fn list_runs(
+        base_dir: &Path,
+        instance_id: &str,
+    ) -> Result<Vec<RunManifest>, EventStoreError> {
+        let dir = base_dir.join(instance_id);
+        let entries = match fs::read_dir(&dir) {
+            Ok(it) => it,
+            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => {
+                return Err(EventStoreError::Backend(format!(
+                    "read_dir {}: {e}",
+                    dir.display()
+                )));
+            }
+        };
+
+        let mut manifests = Vec::new();
+
+        for entry in entries {
+            let entry = entry.map_err(|e| {
+                EventStoreError::Backend(format!("read_dir entry in {}: {e}", dir.display()))
+            })?;
+            let path = entry.path();
+
+            if path.extension().and_then(|s| s.to_str()) != Some("redb") {
+                continue;
+            }
+            let db = Database::create(&path).map_err(map_database_err)?;
+            let manifest = Self::read_manifest(&db)?.ok_or_else(|| {
+                EventStoreError::Corrupted(format!(
+                    "missing manifest in run file at {}",
+                    path.display()
+                ))
+            })?;
+            manifests.push(manifest);
+        }
+        manifests.sort_by_key(|m| m.start_ts_init);
+        Ok(manifests)
+    }
+
     fn state(&self) -> Result<&RunState, EventStoreError> {
         self.state
             .as_ref()
