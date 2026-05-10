@@ -87,6 +87,13 @@ fn quote_matches_instrument_precision(quote: &QuoteTick, instrument: &Instrument
         && quote.ask_size.precision == size_precision
 }
 
+fn trade_matches_instrument_precision(trade: &TradeTick, instrument: &InstrumentAny) -> bool {
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+
+    trade.price.precision == price_precision && trade.size.precision == size_precision
+}
+
 fn bar_matches_instrument_precision(bar: &Bar, instrument: &InstrumentAny) -> bool {
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
@@ -171,6 +178,19 @@ impl SandboxInner {
 
         let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
         if let Some(instrument) = instrument {
+            if !trade_matches_instrument_precision(trade, &instrument) {
+                log::warn!(
+                    "Dropping trade tick for {} due to precision mismatch \
+                     (px={}, sz={}, expected_price={}, expected_size={})",
+                    instrument_id,
+                    trade.price.precision,
+                    trade.size.precision,
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                );
+                return;
+            }
+
             self.ensure_matching_engine(&instrument);
 
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
@@ -514,6 +534,19 @@ impl SandboxExecutionClient {
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
 
+        if !trade_matches_instrument_precision(trade, &instrument) {
+            log::warn!(
+                "Dropping trade tick for {} due to precision mismatch \
+                 (px={}, sz={}, expected_price={}, expected_size={})",
+                instrument_id,
+                trade.price.precision,
+                trade.size.precision,
+                instrument.price_precision(),
+                instrument.size_precision(),
+            );
+            return Ok(());
+        }
+
         let mut inner = self.inner.borrow_mut();
         inner.ensure_matching_engine(&instrument);
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
@@ -786,13 +819,39 @@ impl ExecutionClient for SandboxExecutionClient {
 
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
             if let Some(quote) = cache.quote(&instrument_id) {
-                engine.get_engine_mut().process_quote_tick(quote);
+                if quote_matches_instrument_precision(quote, &instrument) {
+                    engine.get_engine_mut().process_quote_tick(quote);
+                } else {
+                    log::warn!(
+                        "Dropping cached quote tick for {} due to precision mismatch \
+                         (bid_px={}, ask_px={}, bid_sz={}, ask_sz={}, expected_price={}, expected_size={})",
+                        instrument_id,
+                        quote.bid_price.precision,
+                        quote.ask_price.precision,
+                        quote.bid_size.precision,
+                        quote.ask_size.precision,
+                        instrument.price_precision(),
+                        instrument.size_precision(),
+                    );
+                }
             }
 
             if self.config.trade_execution
                 && let Some(trade) = cache.trade(&instrument_id)
             {
-                engine.get_engine_mut().process_trade_tick(trade);
+                if trade_matches_instrument_precision(trade, &instrument) {
+                    engine.get_engine_mut().process_trade_tick(trade);
+                } else {
+                    log::warn!(
+                        "Dropping cached trade tick for {} due to precision mismatch \
+                         (px={}, sz={}, expected_price={}, expected_size={})",
+                        instrument_id,
+                        trade.price.precision,
+                        trade.size.precision,
+                        instrument.price_precision(),
+                        instrument.size_precision(),
+                    );
+                }
             }
         }
         drop(cache);
@@ -845,13 +904,39 @@ impl ExecutionClient for SandboxExecutionClient {
 
                 if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
                     if let Some(quote) = cache.quote(&instrument_id) {
-                        engine.get_engine_mut().process_quote_tick(quote);
+                        if quote_matches_instrument_precision(quote, &instrument) {
+                            engine.get_engine_mut().process_quote_tick(quote);
+                        } else {
+                            log::warn!(
+                                "Dropping cached quote tick for {} due to precision mismatch \
+                                 (bid_px={}, ask_px={}, bid_sz={}, ask_sz={}, expected_price={}, expected_size={})",
+                                instrument_id,
+                                quote.bid_price.precision,
+                                quote.ask_price.precision,
+                                quote.bid_size.precision,
+                                quote.ask_size.precision,
+                                instrument.price_precision(),
+                                instrument.size_precision(),
+                            );
+                        }
                     }
 
                     if self.config.trade_execution
                         && let Some(trade) = cache.trade(&instrument_id)
                     {
-                        engine.get_engine_mut().process_trade_tick(trade);
+                        if trade_matches_instrument_precision(trade, &instrument) {
+                            engine.get_engine_mut().process_trade_tick(trade);
+                        } else {
+                            log::warn!(
+                                "Dropping cached trade tick for {} due to precision mismatch \
+                                 (px={}, sz={}, expected_price={}, expected_size={})",
+                                instrument_id,
+                                trade.price.precision,
+                                trade.size.precision,
+                                instrument.price_precision(),
+                                instrument.size_precision(),
+                            );
+                        }
                     }
                 }
                 drop(cache);
