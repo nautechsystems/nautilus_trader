@@ -31,12 +31,14 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
+nautilus-model = { workspace = true }
 
 bincode = { workspace = true }
 blake3 = { workspace = true }
 bytes = { workspace = true }
 indexmap = { workspace = true }
 redb = { workspace = true }
+rmp-serde = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }

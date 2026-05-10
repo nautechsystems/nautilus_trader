@@ -41,6 +41,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod backend;
+pub mod capture;
 pub mod entry;
 pub mod error;
 pub mod hash;
@@ -52,6 +53,12 @@ pub mod writer;
 
 pub use backend::{
     AppendEntry, EventStore, IndexKey, IndexKind, MemoryBackend, RedbBackend, ScanDirection,
+};
+pub use capture::{
+    BusCaptureAdapter, CaptureError, Encode, EncodeError, EncodedPayload, EncoderRegistry,
+    PAYLOAD_TYPE_ORDER_FILLED, PAYLOAD_TYPE_ORDER_STATUS_REPORT, PAYLOAD_TYPE_SUBMIT_ORDER,
+    TypedEncoder, default_registry, encode_order_filled, encode_order_status_report,
+    encode_submit_order, register_default,
 };
 pub use entry::{EventStoreEntry, PayloadType, Topic};
 pub use error::EventStoreError;
