@@ -855,6 +855,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             )
 
         except Exception as e:
+            if isinstance(e, (TimeoutError, OSError)):
+                self._log.warning(
+                    f"Modify request timed out for {command.client_order_id} "
+                    f"— cancel-replace may have landed, awaiting WS reconciliation",
+                )
+                return
             self._pending_modify_keys.pop(command.client_order_id.value, None)
             self._pending_modify_target_qty.pop(command.client_order_id.value, None)
             self.generate_order_modify_rejected(
