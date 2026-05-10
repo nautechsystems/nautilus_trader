@@ -1,0 +1,140 @@
+[package]
+name = "nautilus-bullet"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Bullet.xyz integration adapter for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_bullet"
+crate-type = ["rlib"]
+
+[features]
+default = ["high-precision"]
+examples = ["nautilus-live/node", "nautilus-network/transport-sockudo"]
+extension-module = [
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-live/extension-module",
+  "nautilus-model/extension-module",
+  "nautilus-network/extension-module",
+  "pyo3/extension-module",
+  "python",
+]
+python = [
+  "dep:nautilus-system",
+  "nautilus-common/python",
+  "nautilus-core/python",
+  "nautilus-live/python",
+  "nautilus-model/python",
+  "nautilus-network/python",
+  "nautilus-system/python",
+  "pyo3",
+  "pyo3-async-runtimes",
+  "pyo3-stub-gen",
+]
+high-precision = ["nautilus-model/high-precision"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-common = { workspace = true, features = ["live"] }
+nautilus-core = { workspace = true }
+nautilus-live = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-network = { workspace = true }
+nautilus-system = { workspace = true, optional = true }
+
+# Bullet schema types (borsh-serializable on-chain types, PositiveDecimal, transaction types)
+bullet-exchange-interface = { version = "0.2", default-features = false }
+
+# Signing
+ed25519-dalek = { workspace = true }
+borsh = "1"
+base64 = { workspace = true }
+hex = "0.4"
+bs58 = "0.5"
+zeroize = { workspace = true }
+
+# Common deps
+ahash = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+futures-util = { workspace = true }
+bon = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+rustls = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+ustr = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
+
+[dev-dependencies]
+nautilus-testkit = { workspace = true }
+nautilus-trading = { workspace = true }
+
+axum = { workspace = true }
+criterion = { workspace = true }
+dotenvy = { workspace = true }
+rstest = { workspace = true }
+rust_decimal_macros = { workspace = true }
+
+[[bin]]
+name = "bullet-http-public"
+path = "bin/http_public.rs"
+doc = false
+test = false
+
+[[bin]]
+name = "bullet-http-private"
+path = "bin/http_private.rs"
+doc = false
+test = false
+
+[[bin]]
+name = "bullet-ws-data"
+path = "bin/ws_data.rs"
+doc = false
+test = false
+
+[[bin]]
+name = "bullet-ws-exec"
+path = "bin/ws_exec.rs"
+doc = false
+test = false
+
+# Run with `cargo run --example bullet-data-tester --package nautilus-bullet --features examples`.
+[[example]]
+name = "bullet-data-tester"
+path = "examples/node_data_tester.rs"
+required-features = ["examples"]
+doc = false
+
+# Run with `cargo run --example bullet-exec-tester --package nautilus-bullet --features examples`.
+[[example]]
+name = "bullet-exec-tester"
+path = "examples/node_exec_tester.rs"
+required-features = ["examples"]
+doc = false

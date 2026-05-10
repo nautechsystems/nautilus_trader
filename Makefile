@@ -106,7 +106,7 @@ CORE_CRATES := nautilus-analysis nautilus-backtest nautilus-common nautilus-core
 
 # Adapter crates (crates/adapters/*)
 ADAPTER_CRATES := nautilus-architect-ax nautilus-betfair nautilus-binance \
-    nautilus-bitmex nautilus-blockchain nautilus-bybit nautilus-databento \
+    nautilus-bitmex nautilus-blockchain nautilus-bullet nautilus-bybit nautilus-databento \
     nautilus-deribit nautilus-dydx nautilus-hyperliquid nautilus-kraken \
     nautilus-okx nautilus-polymarket nautilus-sandbox nautilus-tardis
 
