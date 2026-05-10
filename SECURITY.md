@@ -89,3 +89,73 @@ chain attacks and vulnerabilities:
 For our full supply chain security policy, see <https://nautilustrader.io/security/supply-chain/>.
 
 For detailed CI/CD security practices, see [.github/OVERVIEW.md](.github/OVERVIEW.md#security).
+
+## Verifying releases
+
+Every release is signed and attested via Sigstore. You can independently
+verify artifacts before installing them.
+
+### Python wheels and sdist
+
+After downloading from PyPI or the GitHub release, verify each artifact with
+the GitHub CLI. The `--cert-identity-regex` and `--cert-oidc-issuer` flags
+bind verification to the `build.yml` release workflow, not just the repository:
+
+```sh
+ISSUER=https://token.actions.githubusercontent.com
+IDENTITY='^https://github\.com/nautechsystems/nautilus_trader/\.github/workflows/build\.yml@refs/heads/(master|nightly)$'
+
+# `gh attestation verify` takes one subject per call, so loop over wheels
+for whl in nautilus_trader-*.whl; do
+  gh attestation verify "$whl" \
+    --repo nautechsystems/nautilus_trader \
+    --cert-identity-regex "$IDENTITY" \
+    --cert-oidc-issuer "$ISSUER"
+done
+
+gh attestation verify nautilus_trader-*.tar.gz \
+  --repo nautechsystems/nautilus_trader \
+  --cert-identity-regex "$IDENTITY" \
+  --cert-oidc-issuer "$ISSUER"
+```
+
+### Docker images
+
+Resolve the mutable tag to an immutable digest first so every check, the
+subsequent `docker pull`, and the `docker run` operate on the same image:
+
+```sh
+# Use crane (or `docker buildx imagetools inspect <ref> --format '{{.Manifest.Digest}}'`)
+DIGEST=$(crane digest ghcr.io/nautechsystems/nautilus_trader:latest)
+IMAGE=ghcr.io/nautechsystems/nautilus_trader@${DIGEST}
+ISSUER=https://token.actions.githubusercontent.com
+IDENTITY='^https://github\.com/nautechsystems/nautilus_trader/\.github/workflows/docker\.yml@refs/heads/(master|nightly)$'
+```
+
+Verify the cosign signature, which proves the image was produced by the
+NautilusTrader CI workflow:
+
+```sh
+cosign verify "$IMAGE" \
+  --certificate-identity-regexp "$IDENTITY" \
+  --certificate-oidc-issuer "$ISSUER"
+```
+
+Verify the SPDX SBOM attestation is bound to the same image digest:
+
+```sh
+cosign verify-attestation --type https://spdx.dev/Document/v2.3 "$IMAGE" \
+  --certificate-identity-regexp "$IDENTITY" \
+  --certificate-oidc-issuer "$ISSUER"
+```
+
+The GitHub CLI can also verify the SBOM attestation, but does not check the
+cosign image signature, so use it in addition to `cosign verify` above:
+
+```sh
+gh attestation verify "oci://${IMAGE}" \
+  --repo nautechsystems/nautilus_trader \
+  --predicate-type https://spdx.dev/Document/v2.3 \
+  --cert-identity-regex "$IDENTITY" \
+  --cert-oidc-issuer "$ISSUER"
+```

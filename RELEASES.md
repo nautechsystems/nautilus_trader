@@ -63,8 +63,14 @@ Released on TBD (UTC).
 - Changed message bus subscription `priority` from `u8` to `u32` to match Cython `int priority` parity (Rust)
 
 ### Security
-- Fixed `DatabaseConfig` repr to fully redact passwords (#4028), thanks @faysou
+- Added Sigstore SBOM attestation for Docker container images at the published digest
+- Added CI smoke tests verifying wheel, sdist, and Docker image signatures after publish
+- Documented Sigstore signature and SBOM verification commands in `SECURITY.md`
+- Hardened CI release signing chain: pinned cosign tooling, `harden-runner` on merge jobs
+- Hardened nightly-merge auth by storing token in git extraheader rather than remote URL
 - Hardened PyPI publishing with OIDC trusted publishing, eliminating long-lived API tokens
+- Fixed `DatabaseConfig` repr to fully redact passwords (#4028), thanks @faysou
+- Removed long-lived `PACKAGES_TOKEN` PAT in favor of per-job GHCR `GITHUB_TOKEN`
 
 ### Fixes
 - Fixed `RefCell` reentrancy panic in `ExecutionEngine::handle_order_fill` for OTO parent fills (#3981), thanks for reporting @GreatLandmark
