@@ -23,11 +23,16 @@ from nautilus_trader.model.identifiers import Venue
 
 
 BINANCE: Final[str] = "BINANCE"
+
 BINANCE_VENUE: Final[Venue] = Venue(BINANCE)
 BINANCE_CLIENT_ID: Final[ClientId] = ClientId(BINANCE)
 
 BINANCE_MIN_CALLBACK_RATE: Final[Decimal] = Decimal("0.1")
 BINANCE_MAX_CALLBACK_RATE: Final[Decimal] = Decimal("10.0")
+
+# Binance Spot LIMIT_MAKER rejection message (error code -2010).
+# This message is specific to post-only (LIMIT_MAKER) orders that would match immediately.
+BINANCE_SPOT_POST_ONLY_REJECT_MSG: Final[str] = "Order would immediately match and take."
 
 # Set of Binance error codes for which Nautilus will attempt retries,
 # potentially temporary conditions where a retry might make sense.

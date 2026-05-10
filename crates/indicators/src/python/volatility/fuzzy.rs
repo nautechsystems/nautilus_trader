@@ -24,6 +24,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl FuzzyCandle {
     #[new]
     #[must_use]
@@ -76,7 +77,9 @@ impl FuzzyCandle {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl FuzzyCandlesticks {
+    /// Creates a new `FuzzyCandle` instance.
     #[new]
     #[must_use]
     pub fn py_new(
@@ -146,8 +149,8 @@ impl FuzzyCandlesticks {
 
     #[getter]
     #[pyo3(name = "vector")]
-    fn py_vector(&self) -> PyResult<Vec<i32>> {
-        Result::<_, PyErr>::Ok(self.vector.clone())
+    fn py_vector(&self) -> Vec<i32> {
+        self.vector.clone()
     }
 
     #[getter]

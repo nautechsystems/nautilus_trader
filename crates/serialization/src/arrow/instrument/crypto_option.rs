@@ -31,7 +31,7 @@ use nautilus_model::{
     enums::OptionKind,
     identifiers::{InstrumentId, Symbol},
     instruments::crypto_option::CryptoOption,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{money::Money, price::Price, quantity::Quantity},
 };
 #[allow(unused)]
 use rust_decimal::Decimal;
@@ -280,7 +280,7 @@ impl EncodeToRecordBatch for CryptoOption {
 /// Returns an `EncodingError` if the RecordBatch cannot be decoded.
 pub fn decode_crypto_option_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
-    record_batch: RecordBatch,
+    record_batch: &RecordBatch,
 ) -> Result<Vec<CryptoOption>, EncodingError> {
     let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();
@@ -346,14 +346,24 @@ pub fn decode_crypto_option_batch(
         let id = InstrumentId::from_str(id_values.value(i))
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
-        let underlying = Currency::from_str(underlying_values.value(i))
-            .map_err(|e| EncodingError::ParseError("underlying", format!("row {i}: {e}")))?;
-        let quote_currency = Currency::from_str(quote_currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("quote_currency", format!("row {i}: {e}")))?;
-        let settlement_currency =
-            Currency::from_str(settlement_currency_values.value(i)).map_err(|e| {
-                EncodingError::ParseError("settlement_currency", format!("row {i}: {e}"))
-            })?;
+        let underlying = super::decode_currency(
+            underlying_values.value(i),
+            "underlying",
+            "crypto_option.underlying",
+            i,
+        )?;
+        let quote_currency = super::decode_currency(
+            quote_currency_values.value(i),
+            "quote_currency",
+            "crypto_option.quote_currency",
+            i,
+        )?;
+        let settlement_currency = super::decode_currency(
+            settlement_currency_values.value(i),
+            "settlement_currency",
+            "crypto_option.settlement_currency",
+            i,
+        )?;
         let is_inverse = is_inverse_values.value(i);
         let option_kind = option_kind_from_str(option_kind_values.value(i))?;
         let strike_price = Price::from_str(strike_price_values.value(i))
@@ -484,6 +494,7 @@ pub fn decode_crypto_option_batch(
                 .downcast_ref::<BinaryArray>()
                 .ok_or_else(|| EncodingError::ParseError("info", format!("row {i}: invalid type")))?
                 .value(i);
+
             match serde_json::from_slice::<Params>(info_bytes) {
                 Ok(info_dict) => Some(info_dict),
                 Err(e) => {

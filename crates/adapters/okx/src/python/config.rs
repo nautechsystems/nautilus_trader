@@ -19,23 +19,25 @@ use nautilus_model::identifiers::{AccountId, TraderId};
 use pyo3::prelude::*;
 
 use crate::{
-    common::enums::{OKXInstrumentType, OKXMarginMode, OKXVipLevel},
+    common::enums::{OKXEnvironment, OKXInstrumentType, OKXMarginMode, OKXVipLevel},
     config::{OKXDataClientConfig, OKXExecClientConfig},
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXDataClientConfig {
+    /// Configuration for the OKX data client.
     #[new]
     #[pyo3(signature = (
         instrument_types = None,
-        is_demo = None,
+        environment = None,
         api_key = None,
         api_secret = None,
         api_passphrase = None,
         base_url_http = None,
         base_url_ws_public = None,
         base_url_ws_business = None,
-        http_proxy_url = None,
+        proxy_url = None,
         http_timeout_secs = None,
         max_retries = None,
         retry_delay_initial_ms = None,
@@ -43,17 +45,17 @@ impl OKXDataClientConfig {
         update_instruments_interval_mins = None,
         vip_level = None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         instrument_types: Option<Vec<OKXInstrumentType>>,
-        is_demo: Option<bool>,
+        environment: Option<OKXEnvironment>,
         api_key: Option<String>,
         api_secret: Option<String>,
         api_passphrase: Option<String>,
         base_url_http: Option<String>,
         base_url_ws_public: Option<String>,
         base_url_ws_business: Option<String>,
-        http_proxy_url: Option<String>,
+        proxy_url: Option<String>,
         http_timeout_secs: Option<u64>,
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
@@ -72,16 +74,17 @@ impl OKXDataClientConfig {
             base_url_http,
             base_url_ws_public,
             base_url_ws_business,
-            http_proxy_url,
-            ws_proxy_url: None,
-            is_demo: is_demo.unwrap_or(defaults.is_demo),
-            http_timeout_secs: http_timeout_secs.or(defaults.http_timeout_secs),
-            max_retries: max_retries.or(defaults.max_retries),
-            retry_delay_initial_ms: retry_delay_initial_ms.or(defaults.retry_delay_initial_ms),
-            retry_delay_max_ms: retry_delay_max_ms.or(defaults.retry_delay_max_ms),
+            proxy_url,
+            environment: environment.unwrap_or(defaults.environment),
+            http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
+            max_retries: max_retries.unwrap_or(defaults.max_retries),
+            retry_delay_initial_ms: retry_delay_initial_ms
+                .unwrap_or(defaults.retry_delay_initial_ms),
+            retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
             update_instruments_interval_mins: update_instruments_interval_mins
-                .or(defaults.update_instruments_interval_mins),
+                .unwrap_or(defaults.update_instruments_interval_mins),
             vip_level,
+            transport_backend: defaults.transport_backend,
         }
     }
 
@@ -91,39 +94,41 @@ impl OKXDataClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OKXExecClientConfig {
+    /// Configuration for the OKX execution client.
     #[new]
     #[pyo3(signature = (
         trader_id,
         account_id,
         instrument_types = None,
-        is_demo = None,
+        environment = None,
         api_key = None,
         api_secret = None,
         api_passphrase = None,
         base_url_http = None,
         base_url_ws_private = None,
         base_url_ws_business = None,
-        http_proxy_url = None,
+        proxy_url = None,
         http_timeout_secs = None,
         max_retries = None,
         retry_delay_initial_ms = None,
         retry_delay_max_ms = None,
         margin_mode = None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         trader_id: TraderId,
         account_id: AccountId,
         instrument_types: Option<Vec<OKXInstrumentType>>,
-        is_demo: Option<bool>,
+        environment: Option<OKXEnvironment>,
         api_key: Option<String>,
         api_secret: Option<String>,
         api_passphrase: Option<String>,
         base_url_http: Option<String>,
         base_url_ws_private: Option<String>,
         base_url_ws_business: Option<String>,
-        http_proxy_url: Option<String>,
+        proxy_url: Option<String>,
         http_timeout_secs: Option<u64>,
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
@@ -143,17 +148,18 @@ impl OKXExecClientConfig {
             base_url_http,
             base_url_ws_private,
             base_url_ws_business,
-            http_proxy_url,
-            ws_proxy_url: None,
-            is_demo: is_demo.unwrap_or(defaults.is_demo),
-            http_timeout_secs: http_timeout_secs.or(defaults.http_timeout_secs),
+            proxy_url,
+            environment: environment.unwrap_or(defaults.environment),
+            http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             use_fills_channel: defaults.use_fills_channel,
             use_mm_mass_cancel: defaults.use_mm_mass_cancel,
-            max_retries: max_retries.or(defaults.max_retries),
-            retry_delay_initial_ms: retry_delay_initial_ms.or(defaults.retry_delay_initial_ms),
-            retry_delay_max_ms: retry_delay_max_ms.or(defaults.retry_delay_max_ms),
+            max_retries: max_retries.unwrap_or(defaults.max_retries),
+            retry_delay_initial_ms: retry_delay_initial_ms
+                .unwrap_or(defaults.retry_delay_initial_ms),
+            retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
             margin_mode,
             use_spot_margin: defaults.use_spot_margin,
+            transport_backend: defaults.transport_backend,
         }
     }
 

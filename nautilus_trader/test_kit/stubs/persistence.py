@@ -81,6 +81,7 @@ class TestPersistenceStubs:
         # This reduces test time from ~40s to ~2-3s while maintaining test validity
         df = df.head(5000)
         events = []
+
         for _, row in df.iterrows():
             data = NewsEventData(
                 name=str(row["Name"]),

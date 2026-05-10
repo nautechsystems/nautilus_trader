@@ -209,6 +209,7 @@ pub fn parse_component_levels(
     match original_map {
         Some(map) => {
             let mut new_map = AHashMap::new();
+
             for (key, value) in map {
                 let ustr_key = Ustr::from(&key);
                 let s = value.as_str().ok_or_else(|| {

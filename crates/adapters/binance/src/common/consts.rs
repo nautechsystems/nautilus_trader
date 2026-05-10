@@ -29,6 +29,16 @@ pub const BINANCE: &str = "BINANCE";
 /// Static venue instance for Binance.
 pub static BINANCE_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(BINANCE));
 
+/// Binance Link and Trade broker ID for Spot.
+///
+/// <https://developers.binance.com/docs/binance_link/link-and-trade>
+pub const BINANCE_NAUTILUS_SPOT_BROKER_ID: &str = "TD67BGP9";
+
+/// Binance Link and Trade broker ID for Futures.
+///
+/// <https://developers.binance.com/docs/binance_link/link-and-trade>
+pub const BINANCE_NAUTILUS_FUTURES_BROKER_ID: &str = "aHRE4BCj";
+
 /// Binance Spot API base URL (mainnet).
 pub const BINANCE_SPOT_HTTP_URL: &str = "https://api.binance.com";
 
@@ -45,7 +55,7 @@ pub const BINANCE_OPTIONS_HTTP_URL: &str = "https://eapi.binance.com";
 pub const BINANCE_SPOT_TESTNET_HTTP_URL: &str = "https://testnet.binance.vision";
 
 /// Binance USD-M Futures API base URL (testnet).
-pub const BINANCE_FUTURES_USD_TESTNET_HTTP_URL: &str = "https://testnet.binancefuture.com";
+pub const BINANCE_FUTURES_USD_TESTNET_HTTP_URL: &str = "https://demo-fapi.binance.com";
 
 /// Binance COIN-M Futures API base URL (testnet).
 pub const BINANCE_FUTURES_COIN_TESTNET_HTTP_URL: &str = "https://testnet.binancefuture.com";
@@ -53,14 +63,23 @@ pub const BINANCE_FUTURES_COIN_TESTNET_HTTP_URL: &str = "https://testnet.binance
 /// Binance Spot API base URL (demo).
 pub const BINANCE_SPOT_DEMO_HTTP_URL: &str = "https://demo-api.binance.com";
 
-/// Binance Futures API base URL (demo, same as futures testnet).
-pub const BINANCE_FUTURES_DEMO_HTTP_URL: &str = "https://testnet.binancefuture.com";
+/// Binance USD-M Futures API base URL (demo).
+pub const BINANCE_FUTURES_USD_DEMO_HTTP_URL: &str = "https://demo-fapi.binance.com";
+
+/// Binance COIN-M Futures API base URL (demo, same as COIN-M testnet).
+pub const BINANCE_FUTURES_COIN_DEMO_HTTP_URL: &str = "https://testnet.binancefuture.com";
 
 /// Binance Spot WebSocket base URL (mainnet).
 pub const BINANCE_SPOT_WS_URL: &str = "wss://stream.binance.com:9443/ws";
 
 /// Binance USD-M Futures WebSocket base URL (mainnet).
-pub const BINANCE_FUTURES_USD_WS_URL: &str = "wss://fstream.binance.com/ws";
+pub const BINANCE_FUTURES_USD_WS_URL: &str = "wss://fstream.binance.com/market/ws";
+
+/// Binance USD-M Futures WebSocket public stream URL (mainnet, high-frequency book data).
+pub const BINANCE_FUTURES_USD_WS_PUBLIC_URL: &str = "wss://fstream.binance.com/public/ws";
+
+/// Binance USD-M Futures WebSocket private stream URL (mainnet).
+pub const BINANCE_FUTURES_USD_WS_PRIVATE_URL: &str = "wss://fstream.binance.com/private/ws";
 
 /// Binance COIN-M Futures WebSocket base URL (mainnet).
 pub const BINANCE_FUTURES_COIN_WS_URL: &str = "wss://dstream.binance.com/ws";
@@ -73,14 +92,21 @@ pub const BINANCE_SPOT_SBE_WS_URL: &str = "wss://stream-sbe.binance.com/ws";
 
 /// Binance Spot SBE WebSocket API URL (mainnet).
 pub const BINANCE_SPOT_SBE_WS_API_URL: &str =
-    "wss://ws-api.binance.com:443/ws-api/v3?responseFormat=sbe&sbeSchemaId=3&sbeSchemaVersion=2";
+    "wss://ws-api.binance.com:443/ws-api/v3?responseFormat=sbe&sbeSchemaId=3&sbeSchemaVersion=3";
+
+/// Binance USD-M Futures WebSocket Trading API URL (mainnet).
+pub const BINANCE_FUTURES_USD_WS_API_URL: &str = "wss://ws-fapi.binance.com/ws-fapi/v1";
+
+/// Binance USD-M Futures WebSocket Trading API URL (testnet).
+pub const BINANCE_FUTURES_USD_WS_API_TESTNET_URL: &str =
+    "wss://testnet.binancefuture.com/ws-fapi/v1";
 
 /// Binance Spot SBE WebSocket API URL (testnet).
-pub const BINANCE_SPOT_SBE_WS_API_TESTNET_URL: &str = "wss://ws-api.testnet.binance.vision/ws-api/v3?responseFormat=sbe&sbeSchemaId=3&sbeSchemaVersion=2";
+pub const BINANCE_SPOT_SBE_WS_API_TESTNET_URL: &str = "wss://ws-api.testnet.binance.vision/ws-api/v3?responseFormat=sbe&sbeSchemaId=3&sbeSchemaVersion=3";
 
 /// Binance Spot SBE WebSocket API URL (demo).
 pub const BINANCE_SPOT_SBE_WS_API_DEMO_URL: &str =
-    "wss://demo-ws-api.binance.com/ws-api/v3?responseFormat=sbe&sbeSchemaId=3&sbeSchemaVersion=2";
+    "wss://demo-ws-api.binance.com/ws-api/v3?responseFormat=sbe&sbeSchemaId=3&sbeSchemaVersion=3";
 
 /// Binance Spot WebSocket base URL (testnet).
 pub const BINANCE_SPOT_TESTNET_WS_URL: &str = "wss://stream.testnet.binance.vision/ws";
@@ -89,10 +115,13 @@ pub const BINANCE_SPOT_TESTNET_WS_URL: &str = "wss://stream.testnet.binance.visi
 pub const BINANCE_SPOT_DEMO_WS_URL: &str = "wss://demo-stream.binance.com/ws";
 
 /// Binance USD-M Futures WebSocket base URL (testnet).
-pub const BINANCE_FUTURES_USD_TESTNET_WS_URL: &str = "wss://stream.binancefuture.com/ws";
+pub const BINANCE_FUTURES_USD_TESTNET_WS_URL: &str = "wss://fstream.binancefuture.com/ws";
 
 /// Binance COIN-M Futures WebSocket base URL (testnet).
 pub const BINANCE_FUTURES_COIN_TESTNET_WS_URL: &str = "wss://dstream.binancefuture.com/ws";
+
+/// HTTP header name for the Binance API key.
+pub const BINANCE_API_KEY_HEADER: &str = "X-MBX-APIKEY";
 
 /// Binance Spot API version path.
 pub const BINANCE_SPOT_API_PATH: &str = "/api/v3";
@@ -237,6 +266,22 @@ pub static BINANCE_WS_CONNECTION_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
 /// Pre-interned rate limit key for WebSocket subscription operations.
 pub static BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION: LazyLock<[Ustr; 1]> =
     LazyLock::new(|| [Ustr::from("subscription")]);
+
+/// Binance error code for GTX (post-only) order rejection.
+///
+/// Returned when a GTX order would immediately match as taker.
+pub const BINANCE_GTX_ORDER_REJECT_CODE: i64 = -5022;
+
+/// Binance error code for new order rejected.
+///
+/// For spot LIMIT_MAKER orders, this code is returned with the message
+/// "Order would immediately match and take." to indicate a post-only rejection.
+pub const BINANCE_NEW_ORDER_REJECTED_CODE: i64 = -2010;
+
+/// Binance Spot LIMIT_MAKER rejection message.
+///
+/// This message is specific to post-only (LIMIT_MAKER) orders that would match immediately.
+pub const BINANCE_SPOT_POST_ONLY_REJECT_MSG: &str = "Order would immediately match and take.";
 
 /// Valid order book depth levels for Binance.
 pub const BINANCE_BOOK_DEPTHS: [u32; 7] = [5, 10, 20, 50, 100, 500, 1000];

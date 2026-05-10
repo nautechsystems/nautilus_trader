@@ -35,7 +35,7 @@ pub struct OrderEngineAdapter {
 }
 
 impl OrderEngineAdapter {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         instrument: InstrumentAny,
         raw_id: u32,

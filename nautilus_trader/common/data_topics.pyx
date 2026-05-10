@@ -54,6 +54,8 @@ cdef class TopicCache:
         self._topic_cache_custom_simple = {}
         self._topic_cache_bars = {}
         self._topic_cache_signal = {}
+        self._topic_cache_option_greeks = {}
+        self._topic_cache_option_chain = {}
 
     cpdef str get_instrument_topic(self, InstrumentId instrument_id, bint historical = False):
         cdef tuple key = (instrument_id, historical)
@@ -239,6 +241,23 @@ cdef class TopicCache:
 
         return topic
 
+    cpdef str get_option_greeks_topic(self, InstrumentId instrument_id, bint historical = False):
+        cdef tuple key = (instrument_id, historical)
+        cdef str topic = self._topic_cache_option_greeks.get(key)
+        if topic is None:
+            topic = f"{'historical.' if historical else ''}data.option_greeks.{instrument_id.venue}.{instrument_id.symbol}"
+            self._topic_cache_option_greeks[key] = topic
+
+        return topic
+
+    cpdef str get_option_chain_topic(self, str series_id_str):
+        cdef str topic = self._topic_cache_option_chain.get(series_id_str)
+        if topic is None:
+            topic = f"data.option_chain.{series_id_str}"
+            self._topic_cache_option_chain[series_id_str] = topic
+
+        return topic
+
     cpdef void clear_cache(self):
         self._topic_cache_instruments.clear()
         self._topic_cache_instruments_pattern.clear()
@@ -256,3 +275,5 @@ cdef class TopicCache:
         self._topic_cache_custom_simple.clear()
         self._topic_cache_bars.clear()
         self._topic_cache_signal.clear()
+        self._topic_cache_option_greeks.clear()
+        self._topic_cache_option_chain.clear()

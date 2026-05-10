@@ -40,7 +40,7 @@ use std::collections::BTreeMap;
 
 use nautilus_core::UnixNanos;
 
-fn transform_returns(raw_returns: BTreeMap<u64, f64>) -> BTreeMap<UnixNanos, f64> {
+fn transform_returns(raw_returns: &BTreeMap<u64, f64>) -> BTreeMap<UnixNanos, f64> {
     raw_returns
         .keys()
         .map(|&k| (UnixNanos::from(k), raw_returns[&k]))

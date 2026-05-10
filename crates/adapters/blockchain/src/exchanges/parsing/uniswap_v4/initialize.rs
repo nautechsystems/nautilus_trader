@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::{dyn_abi::SolType, primitives::Address, sol};
+use nautilus_core::hex;
 use nautilus_model::defi::{PoolIdentifier, rpc::RpcLog};
 use ustr::Ustr;
 
@@ -99,7 +100,7 @@ pub fn parse_initialize_event_hypersync(log: HypersyncLog) -> anyhow::Result<Poo
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Missing poolId topic"))?
         .as_ref();
-    let pool_identifier = Ustr::from(format!("0x{}", hex::encode(pool_id_bytes)).as_str());
+    let pool_identifier = Ustr::from(&hex::encode_prefixed(pool_id_bytes));
 
     let currency0 = Address::from_slice(
         topics[2]
@@ -180,7 +181,7 @@ pub fn parse_initialize_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedEve
 
     // Extract Pool ID from topics[1] - this is the unique identifier for V4 pools
     let pool_id_bytes = rpc_helpers::decode_hex(&log.topics[1])?;
-    let pool_identifier = Ustr::from(format!("0x{}", hex::encode(pool_id_bytes)).as_str());
+    let pool_identifier = Ustr::from(&hex::encode_prefixed(pool_id_bytes));
 
     let currency0_bytes = rpc_helpers::decode_hex(&log.topics[2])?;
     let currency0 = Address::from_slice(&currency0_bytes[12..32]);

@@ -1,0 +1,34 @@
+{
+  "channel": "user",
+  "client_id": "",
+  "timestamp": "2026-04-07T14:30:06.000000Z",
+  "sequence_num": 1,
+  "events": [
+    {
+      "type": "snapshot",
+      "orders": [
+        {
+          "order_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+          "client_order_id": "11111-000000-000001",
+          "cumulative_quantity": "0",
+          "leaves_quantity": "0.001",
+          "avg_price": "0",
+          "total_fees": "0",
+          "status": "OPEN",
+          "product_id": "BTC-USD",
+          "creation_time": "2026-04-07T14:29:55.123456Z",
+          "order_side": "BUY",
+          "order_type": "Limit",
+          "cancel_reason": "",
+          "reject_reason": "",
+          "total_value_after_fees": "68.90050000",
+          "contract_expiry_type": "UNKNOWN_CONTRACT_EXPIRY_TYPE",
+          "product_type": "SPOT",
+          "risk_managed_by": "UNKNOWN_RISK_MANAGEMENT_TYPE",
+          "time_in_force": "GOOD_UNTIL_CANCELLED",
+          "trigger_status": "INVALID_ORDER_TYPE"
+        }
+      ]
+    }
+  ]
+}

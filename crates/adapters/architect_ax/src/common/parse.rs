@@ -47,6 +47,22 @@ pub fn ax_timestamp_s_to_unix_nanos(seconds: i64) -> anyhow::Result<UnixNanos> {
     Ok(UnixNanos::from(seconds as u64 * NANOSECONDS_IN_SECOND))
 }
 
+/// Converts AX `ts` (seconds) + `tn` (nanoseconds) fields to [`UnixNanos`].
+///
+/// # Errors
+///
+/// Returns an error if `seconds` is negative (malformed data from AX).
+pub fn ax_timestamp_stn_to_unix_nanos(seconds: i64, nanos: i64) -> anyhow::Result<UnixNanos> {
+    anyhow::ensure!(
+        seconds >= 0,
+        "AX timestamp must be non-negative, was {seconds}"
+    );
+    let nanos_part = nanos.max(0) as u64;
+    Ok(UnixNanos::from(
+        seconds as u64 * NANOSECONDS_IN_SECOND + nanos_part,
+    ))
+}
+
 /// Converts an AX nanosecond timestamp to [`UnixNanos`].
 ///
 /// # Errors
@@ -101,6 +117,8 @@ pub fn quantity_to_contracts(quantity: Quantity) -> anyhow::Result<u64> {
         );
     }
 
+    // QuantityRaw is u128 under the `high-precision` feature and u64 otherwise,
+    // so the narrowing cast is conditional on the active feature set.
     #[allow(clippy::unnecessary_cast)]
     let contracts = (raw / scale) as u64;
     if contracts == 0 {
@@ -160,6 +178,58 @@ mod tests {
         let cid2 = client_order_id_to_cid(&coid2);
 
         assert_ne!(cid1, cid2);
+    }
+
+    #[rstest]
+    #[case("O-1")]
+    #[case("O-SHORT")]
+    #[case("O-20240101-000001")]
+    #[case("Order-with-dashes-and-digits-12345")]
+    #[case("SINGLE")]
+    #[case("a")]
+    #[case("X")]
+    #[case("LONG-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789")]
+    fn test_client_order_id_to_cid_stable_across_varied_inputs(#[case] value: &str) {
+        // The hash must be deterministic for any valid ClientOrderId, and the
+        // recovered ClientOrderId via cid_to_client_order_id must match the
+        // "CID-{cid}" format so reconciliation can resolve lost mappings.
+        let coid = ClientOrderId::new(value);
+        let cid_a = client_order_id_to_cid(&coid);
+        let cid_b = client_order_id_to_cid(&coid);
+        assert_eq!(cid_a, cid_b, "hash must be deterministic");
+
+        let recovered = cid_to_client_order_id(cid_a);
+        assert!(
+            recovered.inner().as_str().starts_with("CID-"),
+            "recovered id should have CID prefix: {recovered}",
+        );
+        assert!(
+            !recovered.inner().as_str().is_empty(),
+            "recovered id should not be empty",
+        );
+    }
+
+    #[rstest]
+    fn test_client_order_id_to_cid_collision_resistance_small_corpus() {
+        // Collision-free over a handful of distinct client order IDs.
+        let values = [
+            "O-1",
+            "O-2",
+            "O-10",
+            "O-11",
+            "O-20240101-000001",
+            "O-20240101-000002",
+            "strategy-a/1",
+            "strategy-a/2",
+            "strategy-b/1",
+        ];
+
+        let mut seen = std::collections::HashSet::new();
+        for v in values {
+            let coid = ClientOrderId::new(v);
+            let cid = client_order_id_to_cid(&coid);
+            assert!(seen.insert(cid), "cid collision for {v}");
+        }
     }
 
     #[rstest]
@@ -289,5 +359,28 @@ mod tests {
     #[rstest]
     fn test_ax_timestamp_ns_to_unix_nanos_negative_errors() {
         assert!(ax_timestamp_ns_to_unix_nanos(-1).is_err());
+    }
+
+    #[rstest]
+    fn test_ax_timestamp_stn_to_unix_nanos_combines_seconds_and_nanos() {
+        let result = ax_timestamp_stn_to_unix_nanos(1_000, 500).unwrap();
+        assert_eq!(result, UnixNanos::from(1_000_000_000_500u64));
+    }
+
+    #[rstest]
+    fn test_ax_timestamp_stn_to_unix_nanos_zero_nanos() {
+        let result = ax_timestamp_stn_to_unix_nanos(1_000, 0).unwrap();
+        assert_eq!(result, UnixNanos::from(1_000_000_000_000u64));
+    }
+
+    #[rstest]
+    fn test_ax_timestamp_stn_to_unix_nanos_negative_seconds_errors() {
+        assert!(ax_timestamp_stn_to_unix_nanos(-1, 0).is_err());
+    }
+
+    #[rstest]
+    fn test_ax_timestamp_stn_to_unix_nanos_negative_nanos_clamps_to_zero() {
+        let result = ax_timestamp_stn_to_unix_nanos(1_000, -1).unwrap();
+        assert_eq!(result, UnixNanos::from(1_000_000_000_000u64));
     }
 }

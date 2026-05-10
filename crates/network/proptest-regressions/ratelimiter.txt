@@ -8,3 +8,5 @@ cc 76c9c7134e630747adca8cfd6beaedd47c5ec7ff06a41b2fde4db4b65c6daf73 # shrinks to
 cc c9eabc2237b03b6a82cb512812aa621f982ad6650d34135b013c33f2b8614824 # shrinks to keys = ["aaa", "aaa"], rate = 1
 cc 077a4713cf652f55e1cccb3d046b1b9df3250a0f383ccd12ab861391babb9c45 # shrinks to keys = ["aaa", "aab"], rate = 1
 cc 0187b9b807f4202f1a487451cf9d8f89e75fb211ab62dfb01b15a8bba1231766 # shrinks to t = 1, tau = 5659307513767088459, time_of_measurement = 12787436559942463156, tat = 0
+cc 5390513a62b91b95eaf6017d27ef106a31c6dd52515e657859e6934d1de9b63a # shrinks to rate = 18
+cc 6175b507f058e98c75454cc5232d47279fa121767ed2601d3cb2d63b5b40182c # shrinks to rate = 17

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from py_clob_client.clob_types import OrderType
+from py_clob_client_v2.clob_types import OrderType
 
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import time_in_force_to_str

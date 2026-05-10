@@ -103,6 +103,7 @@ class ReportProvider:
         fills = [
             OrderFilled.to_dict(e) for o in orders for e in o.events if isinstance(e, OrderFilled)
         ]
+
         if not fills:
             return pd.DataFrame()
 
@@ -194,7 +195,7 @@ class ReportProvider:
             for balance in state.pop("balances", [])
         ]
 
-        if not account_states:
+        if not balances:
             return pd.DataFrame()
 
         report = pd.DataFrame(data=balances).set_index("ts_event").sort_index()

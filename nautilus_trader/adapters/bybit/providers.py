@@ -118,10 +118,16 @@ class BybitInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
+        base_coin = filters.get("base_coin") if filters else None
+
         all_pyo3_instruments = []
 
         for product_type in self._product_types:
-            pyo3_instruments = await self._client.request_instruments(product_type, None)
+            pyo3_instruments = await self._client.request_instruments(
+                product_type,
+                None,
+                base_coin,
+            )
             all_pyo3_instruments.extend(pyo3_instruments)
 
         self._instruments_pyo3 = all_pyo3_instruments
@@ -173,6 +179,7 @@ class BybitInstrumentProvider(InstrumentProvider):
             pyo3_instruments = await self._client.request_instruments(
                 product_type,
                 raw_symbol,
+                None,
             )
             all_pyo3_instruments.extend(pyo3_instruments)
 

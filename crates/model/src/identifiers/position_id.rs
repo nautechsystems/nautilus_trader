@@ -20,7 +20,9 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{FAILED, check_valid_string_utf8};
+use nautilus_core::correctness::{
+    CorrectnessResult, CorrectnessResultExt, FAILED, check_valid_string_utf8,
+};
 use ustr::Ustr;
 
 /// Represents a valid position ID.
@@ -29,6 +31,10 @@ use ustr::Ustr;
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct PositionId(Ustr);
 
@@ -42,7 +48,7 @@ impl PositionId {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+    pub fn new_checked<T: AsRef<str>>(value: T) -> CorrectnessResult<Self> {
         let value = value.as_ref();
         check_valid_string_utf8(value, stringify!(value))?;
         Ok(Self(Ustr::from(value)))
@@ -54,7 +60,7 @@ impl PositionId {
     ///
     /// Panics if `value` is not a valid string.
     pub fn new<T: AsRef<str>>(value: T) -> Self {
-        Self::new_checked(value).expect(FAILED)
+        Self::new_checked(value).expect_display(FAILED)
     }
 
     /// Sets the inner identifier value.
@@ -106,5 +112,33 @@ mod tests {
     fn test_string_reprs(position_id_test: PositionId) {
         assert_eq!(position_id_test.as_str(), "P-123456789");
         assert_eq!(format!("{position_id_test}"), "P-123456789");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Condition failed: invalid string for 'value', was empty")]
+    fn test_new_with_empty_string_panics_with_display_format() {
+        let _ = PositionId::new("");
+    }
+
+    #[rstest]
+    fn test_deserialize_json_with_unicode_escapes() {
+        let id: PositionId = serde_json::from_str(r#""P-\u9f99\u867e-1""#).unwrap();
+        assert_eq!(id.as_str(), "P-\u{9f99}\u{867e}-1");
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip_non_ascii() {
+        let id = PositionId::new("P-\u{9f99}\u{867e}-1");
+        let json = serde_json::to_string(&id).unwrap();
+        assert_eq!(json, "\"P-\u{9f99}\u{867e}-1\"");
+
+        let deserialized: PositionId = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, id);
+    }
+
+    #[rstest]
+    fn test_deserialize_rejects_empty_string() {
+        let result: Result<PositionId, _> = serde_json::from_str(r#""""#);
+        assert!(result.is_err());
     }
 }

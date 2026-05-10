@@ -125,6 +125,7 @@ class OKXInstrumentProvider(InstrumentProvider):
 
         all_pyo3_instruments = []
         all_inst_id_codes = []
+
         for instrument_type in self._instrument_types:
             # For OPTIONS, instrument families are required
             if instrument_type == OKXInstrumentType.OPTION:
@@ -194,6 +195,7 @@ class OKXInstrumentProvider(InstrumentProvider):
 
         all_pyo3_instruments = []
         all_inst_id_codes = []
+
         for instrument_type in self._instrument_types:
             # For OPTIONS, instrument families are required
             if instrument_type == OKXInstrumentType.OPTION:

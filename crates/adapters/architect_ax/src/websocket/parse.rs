@@ -23,7 +23,7 @@ use serde::de::Error;
 
 use super::{
     error::AxWsErrorResponse,
-    messages::{AxMdErrorResponse, AxMdMessage, AxWsOrderResponse, AxWsRawMessage},
+    messages::{AxMdErrorResponse, AxMdMessage, AxOrdersWsFrame, AxWsOrderResponse},
 };
 
 #[inline]
@@ -111,44 +111,44 @@ pub fn parse_md_message(raw: &str) -> Result<AxMdMessage, serde_json::Error> {
     }
 }
 
-/// Parses a raw JSON string into an [`AxWsRawMessage`].
+/// Parses a raw JSON string into an [`AxOrdersWsFrame`].
 ///
 /// Events (most frequent) get a fast byte-scan to detect the `"t"` field
 /// and dispatch directly to `AxWsOrderEvent` (internally tagged).
 /// Responses and errors (infrequent) use a single `Value` parse with
 /// field inspection, avoiding the sequential-try overhead of `untagged`.
-pub(crate) fn parse_order_message(raw: &str) -> Result<AxWsRawMessage, serde_json::Error> {
+pub(crate) fn parse_order_message(raw: &str) -> Result<AxOrdersWsFrame, serde_json::Error> {
     // Fast path: event messages start with {"t":"
     if has_type_tag_prefix(raw.as_bytes()) {
-        return serde_json::from_str(raw).map(|e| AxWsRawMessage::Event(Box::new(e)));
+        return serde_json::from_str(raw).map(|e| AxOrdersWsFrame::Event(Box::new(e)));
     }
 
     // Slow path: responses and errors (infrequent, use Value dispatch)
     let value: serde_json::Value = serde_json::from_str(raw)?;
 
     if value.get("err").is_some() {
-        return serde_json::from_value(value).map(AxWsRawMessage::Error);
+        return serde_json::from_value(value).map(AxOrdersWsFrame::Error);
     }
 
     if let Some(res) = value.get("res") {
         if res.is_array() {
             return serde_json::from_value(value)
-                .map(|r| AxWsRawMessage::Response(AxWsOrderResponse::OpenOrders(r)));
+                .map(|r| AxOrdersWsFrame::Response(AxWsOrderResponse::OpenOrders(r)));
         }
 
         if res.get("oid").is_some() {
             return serde_json::from_value(value)
-                .map(|r| AxWsRawMessage::Response(AxWsOrderResponse::PlaceOrder(r)));
+                .map(|r| AxOrdersWsFrame::Response(AxWsOrderResponse::PlaceOrder(r)));
         }
 
         if res.get("cxl_rx").is_some() {
             return serde_json::from_value(value)
-                .map(|r| AxWsRawMessage::Response(AxWsOrderResponse::CancelOrder(r)));
+                .map(|r| AxOrdersWsFrame::Response(AxWsOrderResponse::CancelOrder(r)));
         }
 
         if res.get("li").is_some() {
             return serde_json::from_value(value)
-                .map(|r| AxWsRawMessage::Response(AxWsOrderResponse::List(r)));
+                .map(|r| AxOrdersWsFrame::Response(AxWsOrderResponse::List(r)));
         }
 
         return Err(serde_json::Error::custom(
@@ -158,10 +158,94 @@ pub(crate) fn parse_order_message(raw: &str) -> Result<AxWsRawMessage, serde_jso
 
     // Fallback: may be an event with "t" not at position 0
     if value.get("t").is_some() {
-        return serde_json::from_value(value).map(|e| AxWsRawMessage::Event(Box::new(e)));
+        return serde_json::from_value(value).map(|e| AxOrdersWsFrame::Event(Box::new(e)));
     }
 
     Err(serde_json::Error::custom(
         "order WS message has no 't', 'err', or 'res' field",
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::websocket::messages::{AxMdMessage, AxOrdersWsFrame, AxWsOrderResponse};
+
+    #[rstest]
+    fn test_parse_md_message_unknown_tag_errors() {
+        let raw = r#"{"t":"X","s":"EURUSD-PERP"}"#;
+        let err = parse_md_message(raw).expect_err("unknown tag should error");
+        assert!(err.to_string().contains("unknown MD message type tag"));
+    }
+
+    #[rstest]
+    fn test_parse_md_message_slow_path_subscription_response() {
+        let raw = r#"{"rid":1,"result":{"subscribed":"EURUSD-PERP"}}"#;
+        let msg = parse_md_message(raw).expect("should parse subscription response");
+        assert!(matches!(msg, AxMdMessage::SubscriptionResponse(_)));
+    }
+
+    #[rstest]
+    fn test_parse_md_message_slow_path_error_response() {
+        let raw = r#"{"rid":2,"error":{"code":400,"message":"bad"}}"#;
+        let msg = parse_md_message(raw).expect("should parse error response");
+        match msg {
+            AxMdMessage::Error(err) => {
+                assert_eq!(err.message, "bad");
+                assert_eq!(err.request_id, Some(2));
+            }
+            other => panic!("expected Error variant, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_md_message_no_recognized_fields_errors() {
+        let raw = r#"{"foo":"bar"}"#;
+        let err = parse_md_message(raw).expect_err("should reject unknown shape");
+        assert!(
+            err.to_string()
+                .contains("no 't', 'result', or 'error' field")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_md_message_malformed_json_errors() {
+        let raw = "not json";
+        assert!(parse_md_message(raw).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_order_message_unrecognized_res_errors() {
+        let raw = r#"{"rid":1,"res":{"foo":"bar"}}"#;
+        let err = parse_order_message(raw).expect_err("unrecognized res shape should error");
+        assert!(
+            err.to_string()
+                .contains("unrecognized order response shape")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_order_message_no_recognized_fields_errors() {
+        let raw = r#"{"foo":"bar"}"#;
+        let err = parse_order_message(raw).expect_err("unknown shape should error");
+        assert!(err.to_string().contains("no 't', 'err', or 'res' field"));
+    }
+
+    #[rstest]
+    fn test_parse_order_message_malformed_json_errors() {
+        let raw = "not json";
+        assert!(parse_order_message(raw).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_order_message_list_response_with_orders() {
+        let raw = r#"{"rid":0,"res":{"li":"01KCQM-4WP1-0000","o":[]}}"#;
+        let msg = parse_order_message(raw).expect("should parse list response");
+        assert!(matches!(
+            msg,
+            AxOrdersWsFrame::Response(AxWsOrderResponse::List(_))
+        ));
+    }
 }

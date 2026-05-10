@@ -152,7 +152,7 @@ mod tests {
         assert_eq!(from_str_hex_to_u64("0XfF").unwrap(), 255);
         assert_eq!(from_str_hex_to_u64("0xff").unwrap(), 255);
         assert_eq!(from_str_hex_to_u64("0xffffffffffffffff").unwrap(), u64::MAX);
-        assert_eq!(from_str_hex_to_u64("1234abcd").unwrap(), 0x1234abcd);
+        assert_eq!(from_str_hex_to_u64("1234abcd").unwrap(), 0x1234_abcd);
     }
 
     #[rstest]
@@ -176,7 +176,7 @@ mod tests {
     fn test_deserialize_hex_timestamp() {
         // Test that hex timestamp conversion works
         let timestamp_hex = "0x64b5f3bb"; // Some timestamp
-        let expected_nanos = 0x64b5f3bb * NANOSECONDS_IN_SECOND;
+        let expected_nanos = 0x64b5_f3bb * NANOSECONDS_IN_SECOND;
 
         // This tests the conversion logic, though we can't easily test the deserializer directly
         assert_eq!(

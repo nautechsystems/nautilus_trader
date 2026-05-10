@@ -24,6 +24,7 @@ import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_HTTP_RATE_LIMIT
+from nautilus_trader.adapters.polymarket.common.gamma_markets import fetch_fee_schedules
 from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
@@ -192,6 +193,10 @@ class PolymarketDataLoader:
         market = await cls._fetch_market_by_slug(slug, client)
         condition_id = market["conditionId"]
         market_details = await cls._fetch_market_details(condition_id, client)
+        # Populate an effective feeSchedule on the CLOB payload so
+        # `parse_polymarket_instrument` can derive an accurate taker fee rate.
+        # Reference: https://docs.polymarket.com/trading/fees
+        await _populate_fee_schedule(market_details, market, client)
         tokens = market_details.get("tokens", [])
 
         if not tokens:
@@ -267,6 +272,7 @@ class PolymarketDataLoader:
                 continue
 
             market_details = await cls._fetch_market_details(condition_id, client)
+            await _populate_fee_schedule(market_details, market, client)
 
             tokens = market_details.get("tokens", [])
             if not tokens:
@@ -806,3 +812,37 @@ class PolymarketDataLoader:
             trades.append(trade)
 
         return trades
+
+
+async def _populate_fee_schedule(
+    market_details: dict[str, Any],
+    gamma_market: dict[str, Any],
+    http_client: nautilus_pyo3.HttpClient,
+) -> None:
+    """
+    Populate the CLOB market payload with an effective `feeSchedule` in place.
+
+    Callers first attempt to reuse a `feeSchedule` already present on the Gamma
+    market they fetched. Some Gamma responses (e.g. `/markets/slug/{slug}` and
+    `/events?slug=...`) omit the schedule, so the helper falls back to a
+    `fetch_fee_schedules` lookup by condition ID. If neither source yields a
+    schedule, the CLOB payload is left unchanged and the instrument taker fee
+    defaults to zero.
+
+    References
+    ----------
+    https://docs.polymarket.com/trading/fees
+
+    """
+    fee_schedule = gamma_market.get("feeSchedule")
+    if fee_schedule is None:
+        condition_id = gamma_market.get("conditionId") or market_details.get("condition_id")
+        if condition_id:
+            fee_schedules = await fetch_fee_schedules(
+                http_client=http_client,
+                condition_ids=[condition_id],
+            )
+            fee_schedule = fee_schedules.get(condition_id)
+
+    if fee_schedule is not None:
+        market_details["feeSchedule"] = fee_schedule

@@ -182,7 +182,6 @@ logging = LoggingConfig(
 
 data_clients: dict[str, LiveDataClientConfig] = {
     DATABENTO: DatabentoDataClientConfig(
-        api_key=None,  # 'DATABENTO_API_KEY' env var
         http_gateway=None,
         instrument_provider=InstrumentProviderConfig(load_all=True),
         instrument_ids=instrument_ids,

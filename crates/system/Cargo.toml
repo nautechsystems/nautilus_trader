@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_system"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = []
@@ -26,7 +26,12 @@ defi = ["nautilus-common/defi", "nautilus-data/defi", "nautilus-model/defi"]
 streaming = ["nautilus-persistence"]
 extension-module = ["python", "pyo3/extension-module", "streaming"]
 live = ["nautilus-common/live"]
-python = ["nautilus-core/python", "pyo3", "streaming"]
+python = [
+  "nautilus-core/python",
+  "nautilus-persistence/python",
+  "pyo3",
+  "streaming",
+]
 tracing-bridge = ["nautilus-common/tracing-bridge"]
 
 [package.metadata.docs.rs]
@@ -46,6 +51,7 @@ nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+bon = { workspace = true }
 log = { workspace = true }
 sysinfo = { workspace = true }
 ustr = { workspace = true }

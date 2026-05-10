@@ -43,6 +43,7 @@ pub struct BlockPosition {
 
 impl BlockPosition {
     /// Creates a new [`BlockPosition`] with the specified positioning data.
+    #[must_use]
     pub fn new(number: u64, transaction_hash: String, index: u32, log_index: u32) -> Self {
         Self {
             number,
@@ -59,6 +60,10 @@ impl BlockPosition {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct Block {
     /// The blockchain network this block is part of.
@@ -104,7 +109,8 @@ pub struct Block {
 
 impl Block {
     /// Creates a new [`Block`] instance with the specified properties.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         hash: String,
         parent_hash: String,
@@ -138,6 +144,7 @@ impl Block {
     /// # Panics
     ///
     /// Panics if the `chain` has not been set.
+    #[must_use]
     pub fn chain(&self) -> Blockchain {
         if let Some(chain) = self.chain {
             chain
@@ -378,19 +385,19 @@ mod tests {
             block.parent_hash,
             "0x2abcce1ac985ebea2a2d6878a78387158f46de8d6db2cefca00ea36df4030a40"
         );
-        assert_eq!(block.number, 22294175);
+        assert_eq!(block.number, 22_294_175);
         assert_eq!(block.miner, "0x4838b106fce9647bdf1e7877bf73ce8b0bad5f97");
         // Timestamp of block is on Apr-18-2025 06:44:11 AM +UTC
         assert_eq!(
             block.timestamp,
             UnixNanos::from(Utc.with_ymd_and_hms(2025, 4, 18, 6, 44, 11).unwrap())
         );
-        assert_eq!(block.gas_used, 14563593);
-        assert_eq!(block.gas_limit, 35894433);
+        assert_eq!(block.gas_used, 14_563_593);
+        assert_eq!(block.gas_limit, 35_894_433);
 
-        assert_eq!(block.base_fee_per_gas, Some(U256::from(0x1862a795u64)));
+        assert_eq!(block.base_fee_per_gas, Some(U256::from(0x1862_a795_u64)));
         assert_eq!(block.blob_gas_used, Some(U256::from(0xc0000u64)));
-        assert_eq!(block.excess_blob_gas, Some(U256::from(0x4840000u64)));
+        assert_eq!(block.excess_blob_gas, Some(U256::from(0x0484_0000_u64)));
     }
 
     #[rstest]
@@ -414,15 +421,15 @@ mod tests {
             block.parent_hash,
             "0xf25e108267e3d6e1e4aaf4e329872273f2b1ad6186a4a22e370623aa8d021c50"
         );
-        assert_eq!(block.number, 70453741);
+        assert_eq!(block.number, 70_453_741);
         assert_eq!(block.miner, "0x0000000000000000000000000000000000000000");
         // Timestamp of block is on Apr-18-2025 01:17:09 PM +UTC
         assert_eq!(
             block.timestamp,
             UnixNanos::from(Utc.with_ymd_and_hms(2025, 4, 18, 13, 17, 9).unwrap())
         );
-        assert_eq!(block.gas_used, 19336980);
-        assert_eq!(block.gas_limit, 30000000);
+        assert_eq!(block.gas_used, 19_336_980);
+        assert_eq!(block.gas_limit, 30_000_000);
         assert_eq!(block.base_fee_per_gas, Some(U256::from(0x19eu64)));
         assert!(block.blob_gas_used.is_none()); // Not applicable on Polygon
         assert!(block.excess_blob_gas.is_none()); // Not applicable on Polygon
@@ -449,15 +456,15 @@ mod tests {
             block.parent_hash,
             "0x9a6ad4ffb258faa47ecd5eea9e7a9d8fa1772aa6232bc7cb4bbad5bc30786258"
         );
-        assert_eq!(block.number, 29139628);
+        assert_eq!(block.number, 29_139_628);
         assert_eq!(block.miner, "0x4200000000000000000000000000000000000011");
         // Timestamp of block is on Apr 19 2025 13:16:43 PM +UTC
         assert_eq!(
             block.timestamp,
             UnixNanos::from(Utc.with_ymd_and_hms(2025, 4, 19, 13, 16, 43).unwrap())
         );
-        assert_eq!(block.gas_used, 91213350);
-        assert_eq!(block.gas_limit, 120000000);
+        assert_eq!(block.gas_used, 91_213_350);
+        assert_eq!(block.gas_limit, 120_000_000);
 
         assert_eq!(block.base_fee_per_gas, Some(U256::from(0xaae54u64)));
         assert_eq!(block.blob_gas_used, Some(U256::ZERO));
@@ -485,7 +492,7 @@ mod tests {
             block.parent_hash,
             "0xe7176e201c2db109be479770074ad11b979de90ac850432ed38ed335803861b6"
         );
-        assert_eq!(block.number, 328014516);
+        assert_eq!(block.number, 328_014_516);
         assert_eq!(block.miner, "0xa4b000000000000000000073657175656e636572");
         // Timestamp of block is on Apr-19-2025 13:32:54 PM +UTC
         assert_eq!(
@@ -493,9 +500,9 @@ mod tests {
             UnixNanos::from(Utc.with_ymd_and_hms(2025, 4, 19, 13, 32, 54).unwrap())
         );
         assert_eq!(block.gas_used, 97012);
-        assert_eq!(block.gas_limit, 1125899906842624);
+        assert_eq!(block.gas_limit, 1_125_899_906_842_624);
 
-        assert_eq!(block.base_fee_per_gas, Some(U256::from(0x989680u64)));
+        assert_eq!(block.base_fee_per_gas, Some(U256::from(0x0098_9680_u64)));
         assert!(block.blob_gas_used.is_none());
         assert!(block.excess_blob_gas.is_none());
     }

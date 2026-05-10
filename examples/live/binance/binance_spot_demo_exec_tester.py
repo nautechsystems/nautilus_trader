@@ -53,8 +53,6 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         BINANCE: BinanceDataClientConfig(
-            api_key=None,  # 'BINANCE_DEMO_API_KEY' env var
-            api_secret=None,  # 'BINANCE_DEMO_API_SECRET' env var
             account_type=BinanceAccountType.SPOT,
             environment=BinanceEnvironment.DEMO,
             instrument_provider=InstrumentProviderConfig(load_all=True),
@@ -62,8 +60,6 @@ config_node = TradingNodeConfig(
     },
     exec_clients={
         BINANCE: BinanceExecClientConfig(
-            api_key=None,  # 'BINANCE_DEMO_API_KEY' env var
-            api_secret=None,  # 'BINANCE_DEMO_API_SECRET' env var
             account_type=BinanceAccountType.SPOT,
             environment=BinanceEnvironment.DEMO,
             instrument_provider=InstrumentProviderConfig(load_all=True),

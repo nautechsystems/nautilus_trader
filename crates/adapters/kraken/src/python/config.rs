@@ -24,7 +24,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl KrakenDataClientConfig {
+    /// Configuration for the Kraken data client.
     #[new]
     #[pyo3(signature = (
         product_type = None,
@@ -34,12 +36,12 @@ impl KrakenDataClientConfig {
         base_url = None,
         ws_public_url = None,
         ws_private_url = None,
-        http_proxy = None,
+        proxy_url = None,
         timeout_secs = None,
         heartbeat_interval_secs = None,
         max_requests_per_second = None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         product_type: Option<KrakenProductType>,
         environment: Option<KrakenEnvironment>,
@@ -48,7 +50,7 @@ impl KrakenDataClientConfig {
         base_url: Option<String>,
         ws_public_url: Option<String>,
         ws_private_url: Option<String>,
-        http_proxy: Option<String>,
+        proxy_url: Option<String>,
         timeout_secs: Option<u64>,
         heartbeat_interval_secs: Option<u64>,
         max_requests_per_second: Option<u32>,
@@ -62,11 +64,12 @@ impl KrakenDataClientConfig {
             base_url,
             ws_public_url,
             ws_private_url,
-            http_proxy,
-            ws_proxy: None,
-            timeout_secs: timeout_secs.or(defaults.timeout_secs),
-            heartbeat_interval_secs: heartbeat_interval_secs.or(defaults.heartbeat_interval_secs),
+            proxy_url,
+            timeout_secs: timeout_secs.unwrap_or(defaults.timeout_secs),
+            heartbeat_interval_secs: heartbeat_interval_secs
+                .unwrap_or(defaults.heartbeat_interval_secs),
             max_requests_per_second,
+            transport_backend: defaults.transport_backend,
         }
     }
 
@@ -76,7 +79,9 @@ impl KrakenDataClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl KrakenExecClientConfig {
+    /// Configuration for the Kraken execution client.
     #[new]
     #[pyo3(signature = (
         trader_id,
@@ -87,12 +92,12 @@ impl KrakenExecClientConfig {
         environment = None,
         base_url = None,
         ws_url = None,
-        http_proxy = None,
+        proxy_url = None,
         timeout_secs = None,
         heartbeat_interval_secs = None,
         max_requests_per_second = None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         trader_id: TraderId,
         account_id: AccountId,
@@ -102,7 +107,7 @@ impl KrakenExecClientConfig {
         environment: Option<KrakenEnvironment>,
         base_url: Option<String>,
         ws_url: Option<String>,
-        http_proxy: Option<String>,
+        proxy_url: Option<String>,
         timeout_secs: Option<u64>,
         heartbeat_interval_secs: Option<u64>,
         max_requests_per_second: Option<u32>,
@@ -117,11 +122,12 @@ impl KrakenExecClientConfig {
             environment: environment.unwrap_or(defaults.environment),
             base_url,
             ws_url,
-            http_proxy,
-            ws_proxy: None,
-            timeout_secs: timeout_secs.or(defaults.timeout_secs),
-            heartbeat_interval_secs: heartbeat_interval_secs.or(defaults.heartbeat_interval_secs),
+            proxy_url,
+            timeout_secs: timeout_secs.unwrap_or(defaults.timeout_secs),
+            heartbeat_interval_secs: heartbeat_interval_secs
+                .unwrap_or(defaults.heartbeat_interval_secs),
             max_requests_per_second,
+            transport_backend: defaults.transport_backend,
         }
     }
 

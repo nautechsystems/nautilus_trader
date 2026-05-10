@@ -16,6 +16,7 @@
 use std::fmt::Display;
 
 use nautilus_core::{UUID4, UnixNanos};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -30,6 +31,10 @@ use crate::{
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct FillReport {
     /// The account ID associated with the position.
@@ -50,6 +55,8 @@ pub struct FillReport {
     pub commission: Money,
     /// The liquidity side of the execution.
     pub liquidity_side: LiquiditySide,
+    /// The cumulative or chunk average execution price when provided by the venue.
+    pub avg_px: Option<Decimal>,
     /// The unique identifier for the event.
     pub report_id: UUID4,
     /// UNIX timestamp (nanoseconds) when the event occurred.
@@ -64,7 +71,7 @@ pub struct FillReport {
 
 impl FillReport {
     /// Creates a new [`FillReport`] instance with required fields.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         account_id: AccountId,
@@ -92,6 +99,7 @@ impl FillReport {
             last_px,
             commission,
             liquidity_side,
+            avg_px: None,
             report_id: report_id.unwrap_or_default(),
             ts_event,
             ts_init,

@@ -25,7 +25,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ExponentialMovingAverage {
+    /// Creates a new `ExponentialMovingAverage` instance.
     #[new]
     #[pyo3(signature = (period, price_type=None))]
     fn py_new(period: usize, price_type: Option<PriceType>) -> Self {

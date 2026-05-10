@@ -21,36 +21,41 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketSignature
 
 class PolymarketOrder(msgspec.Struct, frozen=True):
     """
-    Represents a Polymarket limit order.
+    Represents a Polymarket CLOB V2 limit order wire body.
 
     References
     ----------
-    https://docs.polymarket.com/#create-and-place-an-order
+    https://docs.polymarket.com/api-reference/trade/post-a-new-order
 
     """
 
-    salt: int  # random salt used to create unique order
+    salt: int  # random salt used to create a unique order
     maker: str  # maker address (funder)
     signer: str  # signed address
-    taker: str  # taker address (operator)
-    tokenId: str  # ERC1155 token ID of conditional token being traded
+    tokenId: str  # ERC1155 token ID of the conditional token being traded
     makerAmount: str  # maximum amount maker is willing to spend
     takerAmount: str  # maximum amount taker is willing to spend
-    expiration: str  # UNIX expiration timestamp (seconds?)  # TBD
-    nonce: str  # makers Exchange nonce the order is associated with
-    feeRateBps: str  # fee rate in basis points as required by the operator
+    expiration: str  # UNIX expiration timestamp (seconds); "0" for non-GTD orders
     side: PolymarketOrderSide
-    signatureType: PolymarketSignatureType  # signature
+    signatureType: PolymarketSignatureType
+    timestamp: str  # order creation time in milliseconds (replaces v1 nonce)
+    metadata: str  # bytes32 metadata
+    builder: str  # bytes32 builder code
     signature: str  # hex encoded string
 
 
-class PolymarketMakerOrder(msgspec.Struct, frozen=True):
+class PolymarketMakerOrder(msgspec.Struct, frozen=True, omit_defaults=True):
     """
     Represents a Polymarket maker order (included for trades).
 
+    `side` is included on CLOB V2 REST trade responses; legacy or
+    user-channel WS payloads may omit it, hence the optional default.
+    `omit_defaults=True` ensures the absent-side case round-trips through
+    `to_dict()` without injecting `"side": null` into fill metadata.
+
     References
     ----------
-    https://docs.polymarket.com/#user-channel
+    https://docs.polymarket.com/api-reference/trade/get-trades
 
     """
 
@@ -62,3 +67,4 @@ class PolymarketMakerOrder(msgspec.Struct, frozen=True):
     outcome: str
     owner: str
     price: str
+    side: PolymarketOrderSide | None = None

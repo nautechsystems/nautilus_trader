@@ -35,6 +35,10 @@ const ROUND_DP: f64 = 1_000_000_000_000.0;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
+)]
 pub struct AroonOscillator {
     pub period: usize,
     pub aroon_up: f64,
@@ -269,6 +273,7 @@ mod tests {
             (110.04, 109.96),
             (110.02, 109.90),
         ];
+
         for &(h, l) in &inputs {
             aroon.update_raw(h, l);
         }
@@ -341,6 +346,7 @@ mod tests {
             (14.0, 9.3),
             (15.0, 9.4),
         ];
+
         for &(h, l) in &inputs {
             aroon.update_raw(h, l);
         }

@@ -19,7 +19,12 @@ use pyo3::prelude::*;
 use crate::{indicator::Indicator, ratio::spread_analyzer::SpreadAnalyzer};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl SpreadAnalyzer {
+    /// An indicator which calculates the efficiency ratio across a rolling window.
+    ///
+    /// The Kaufman Efficiency measures the ratio of the relative market speed in
+    /// relation to the volatility, this could be thought of as a proxy for noise.
     #[new]
     fn py_new(instrument_id: InstrumentId, capacity: usize) -> Self {
         Self::new(capacity, instrument_id)
@@ -59,6 +64,7 @@ impl SpreadAnalyzer {
         self.initialized
     }
 
+    #[getter]
     #[pyo3(name = "has_inputs")]
     fn py_has_inputs(&self) -> bool {
         self.has_inputs()

@@ -1,11 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-# Extract a cargo tool version from Cargo.toml [workspace.metadata.tools]
+# Extract a tool version from Cargo.toml [workspace.metadata.tools]
 #
 # Usage: cargo-tool-version.sh <tool-name>
 # Example: cargo-tool-version.sh cargo-vet
-#          cargo-tool-version.sh cargo-deny
+#          cargo-tool-version.sh lychee
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CARGO_TOML="${SCRIPT_DIR}/../Cargo.toml"

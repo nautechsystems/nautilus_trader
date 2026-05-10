@@ -15,13 +15,14 @@
 
 //! Factory functions for creating dYdX clients and components.
 
-use std::{any::Any, cell::RefCell, rc::Rc};
+use std::{any::Any, cell::RefCell, rc::Rc, sync::Arc};
 
 use log;
 use nautilus_common::{
     cache::Cache,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
@@ -29,12 +30,12 @@ use nautilus_model::{
     identifiers::ClientId,
 };
 use nautilus_network::retry::RetryConfig;
-use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
 use crate::{
     common::{
         consts::DYDX_VENUE,
         credential::{DydxCredential, resolve_wallet_address},
+        instrument_cache::InstrumentCache,
         urls,
     },
     config::{DydxAdapterConfig, DydxDataClientConfig, DydxExecClientConfig},
@@ -61,6 +62,10 @@ impl ClientConfig for DydxExecClientConfig {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.dydx")
 )]
 pub struct DydxDataClientFactory;
 
@@ -101,35 +106,34 @@ impl DataClientFactory for DydxDataClientFactory {
         let http_url = dydx_config
             .base_url_http
             .clone()
-            .unwrap_or_else(|| urls::http_base_url(dydx_config.is_testnet).to_string());
+            .unwrap_or_else(|| urls::http_base_url(dydx_config.network).to_string());
         let ws_url = dydx_config
             .base_url_ws
             .clone()
-            .unwrap_or_else(|| urls::ws_url(dydx_config.is_testnet).to_string());
+            .unwrap_or_else(|| urls::ws_url(dydx_config.network).to_string());
 
-        let retry_config = if dydx_config.max_retries.is_some()
-            || dydx_config.retry_delay_initial_ms.is_some()
-            || dydx_config.retry_delay_max_ms.is_some()
-        {
-            Some(RetryConfig {
-                max_retries: dydx_config.max_retries.unwrap_or(3) as u32,
-                initial_delay_ms: dydx_config.retry_delay_initial_ms.unwrap_or(1000),
-                max_delay_ms: dydx_config.retry_delay_max_ms.unwrap_or(10000),
-                ..Default::default()
-            })
-        } else {
-            None
-        };
+        let retry_config = Some(RetryConfig {
+            max_retries: dydx_config.max_retries as u32,
+            initial_delay_ms: dydx_config.retry_delay_initial_ms,
+            max_delay_ms: dydx_config.retry_delay_max_ms,
+            ..Default::default()
+        });
 
         let http_client = DydxHttpClient::new(
             Some(http_url),
             dydx_config.http_timeout_secs,
-            dydx_config.http_proxy_url.clone(),
-            dydx_config.is_testnet,
+            dydx_config.proxy_url.clone(),
+            dydx_config.network,
             retry_config,
         )?;
 
-        let ws_client = DydxWebSocketClient::new_public(ws_url, Some(20));
+        let ws_client = DydxWebSocketClient::new_public_with_cache(
+            ws_url,
+            Arc::new(InstrumentCache::new()),
+            Some(20),
+            dydx_config.transport_backend,
+            dydx_config.proxy_url.clone(),
+        );
 
         let client = DydxDataClient::new(client_id, dydx_config, http_client, ws_client)?;
         Ok(Box::new(client))
@@ -149,6 +153,10 @@ impl DataClientFactory for DydxDataClientFactory {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.dydx")
 )]
 pub struct DydxExecutionClientFactory;
 
@@ -214,19 +222,20 @@ impl ExecutionClientFactory for DydxExecutionClientFactory {
             timeout_secs: dydx_config.http_timeout_secs.unwrap_or(30),
             wallet_address: dydx_config.wallet_address.clone(),
             subaccount: dydx_config.subaccount_number,
-            is_testnet: dydx_config.is_testnet(),
             private_key: dydx_config.private_key.clone(),
             authenticator_ids: dydx_config.authenticator_ids.clone(),
             max_retries: dydx_config.max_retries.unwrap_or(3),
             retry_delay_initial_ms: dydx_config.retry_delay_initial_ms.unwrap_or(1000),
             retry_delay_max_ms: dydx_config.retry_delay_max_ms.unwrap_or(10000),
             grpc_rate_limit_per_second: dydx_config.grpc_rate_limit_per_second,
+            proxy_url: dydx_config.proxy_url.clone(),
+            transport_backend: dydx_config.transport_backend,
         };
 
         log::info!(
-            "Resolving wallet address: config={:?}, is_testnet={}, env_var={}",
+            "Resolving wallet address: config={:?}, network={}, env_var={}",
             dydx_config.wallet_address,
-            dydx_config.is_testnet(),
+            dydx_config.network,
             if dydx_config.is_testnet() {
                 "DYDX_TESTNET_WALLET_ADDRESS"
             } else {
@@ -234,13 +243,13 @@ impl ExecutionClientFactory for DydxExecutionClientFactory {
             }
         );
         let wallet_address = if let Some(addr) =
-            resolve_wallet_address(dydx_config.wallet_address.clone(), dydx_config.is_testnet())
+            resolve_wallet_address(dydx_config.wallet_address.clone(), dydx_config.network)
         {
             log::info!("Using wallet address from config/env: {addr}");
             addr
         } else if let Some(credential) = DydxCredential::resolve(
-            dydx_config.private_key.clone(),
-            dydx_config.is_testnet(),
+            dydx_config.private_key.as_deref(),
+            dydx_config.network,
             dydx_config.authenticator_ids.clone(),
         )? {
             log::info!(
@@ -277,9 +286,12 @@ impl ExecutionClientFactory for DydxExecutionClientFactory {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{cache::Cache, clock::TestClock};
+    use nautilus_common::{
+        cache::Cache,
+        clock::TestClock,
+        factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+    };
     use nautilus_model::identifiers::{AccountId, TraderId};
-    use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
     use rstest::rstest;
 
     use super::*;
@@ -342,6 +354,8 @@ mod tests {
             retry_delay_initial_ms: None,
             retry_delay_max_ms: None,
             grpc_rate_limit_per_second: Some(4),
+            proxy_url: None,
+            transport_backend: Default::default(),
         };
 
         let boxed_config: Box<dyn ClientConfig> = Box::new(config);
@@ -370,6 +384,8 @@ mod tests {
             retry_delay_initial_ms: None,
             retry_delay_max_ms: None,
             grpc_rate_limit_per_second: Some(4),
+            proxy_url: None,
+            transport_backend: Default::default(),
         };
 
         let cache = Rc::new(RefCell::new(Cache::default()));

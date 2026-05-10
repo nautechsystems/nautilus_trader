@@ -15,6 +15,11 @@
 
 //! Python bindings from `pyo3`.
 
+#![expect(
+    clippy::missing_errors_doc,
+    reason = "errors documented on underlying Rust methods"
+)]
+
 pub mod config;
 pub mod enums;
 pub mod factories;
@@ -22,11 +27,9 @@ pub mod http;
 pub mod urls;
 pub mod websocket;
 
+use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use nautilus_system::{
-    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
-    get_global_pyo3_registry,
-};
+use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
@@ -34,6 +37,7 @@ use crate::{
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
 };
 
+#[expect(clippy::needless_pass_by_value)]
 fn extract_deribit_data_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -46,6 +50,7 @@ fn extract_deribit_data_factory(
     }
 }
 
+#[expect(clippy::needless_pass_by_value)]
 fn extract_deribit_exec_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -58,6 +63,7 @@ fn extract_deribit_exec_factory(
     }
 }
 
+#[expect(clippy::needless_pass_by_value)]
 fn extract_deribit_data_config(
     py: Python<'_>,
     config: Py<PyAny>,
@@ -70,6 +76,7 @@ fn extract_deribit_data_config(
     }
 }
 
+#[expect(clippy::needless_pass_by_value)]
 fn extract_deribit_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
@@ -93,6 +100,7 @@ pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<super::websocket::client::DeribitWebSocketClient>()?;
     m.add_class::<crate::common::enums::DeribitCurrency>()?;
     m.add_class::<crate::common::enums::DeribitProductType>()?;
+    m.add_class::<crate::common::enums::DeribitEnvironment>()?;
     m.add_class::<crate::websocket::enums::DeribitUpdateInterval>()?;
     m.add_class::<DeribitDataClientConfig>()?;
     m.add_class::<DeribitExecClientConfig>()?;

@@ -28,6 +28,10 @@ const MAX_PERIOD: usize = 16_384;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
+)]
 pub struct LinearRegression {
     pub period: usize,
     pub slope: f64,
@@ -146,6 +150,7 @@ impl LinearRegression {
         let divisor = self.divisor;
 
         let (mut y_sum, mut xy_sum) = (0.0, 0.0);
+
         for (i, &y) in self.inputs.iter().enumerate() {
             let x = (i + 1) as f64;
             y_sum += y;
@@ -156,6 +161,7 @@ impl LinearRegression {
         self.intercept = y_sum.mul_add(x_mul_sum, -(x_sum * xy_sum)) / divisor;
 
         let (mut sse, mut y_last, mut e_last) = (0.0, 0.0, 0.0);
+
         for (i, &y) in self.inputs.iter().enumerate() {
             let x = (i + 1) as f64;
             let y_hat = self.slope.mul_add(x, self.intercept);

@@ -21,6 +21,7 @@
 //! utilities for handling RPC requests and responses.
 
 use enum_dispatch::enum_dispatch;
+use nautilus_network::websocket::TransportBackend;
 
 use crate::rpc::{
     chains::{
@@ -62,4 +63,5 @@ pub trait BlockchainRpcClient {
         todo!("Not implemented")
     }
     async fn next_rpc_message(&mut self) -> Result<BlockchainMessage, BlockchainRpcClientError>;
+    fn set_transport_backend(&mut self, backend: TransportBackend);
 }

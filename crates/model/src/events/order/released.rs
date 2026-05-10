@@ -15,7 +15,6 @@
 
 use std::fmt::{Debug, Display};
 
-use derive_builder::Builder;
 use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -36,12 +35,15 @@ use crate::{
 
 /// Represents an event where an order was released from the `OrderEmulated` by the Nautilus system.
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[cfg_attr(any(test, feature = "stubs"), builder(default))]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct OrderReleased {
     /// The trader ID associated with the event.
@@ -63,7 +65,8 @@ pub struct OrderReleased {
 
 impl OrderReleased {
     /// Creates a new [`OrderReleased`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -122,7 +125,7 @@ impl OrderEvent for OrderReleased {
         self.event_id
     }
 
-    fn kind(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(OrderReleased)
     }
 
@@ -299,5 +302,13 @@ mod tests {
             display,
             "OrderReleased(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, released_price=22_000)"
         );
+    }
+
+    #[rstest]
+    fn test_order_released_serialization() {
+        let original = OrderReleased::default();
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderReleased = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
     }
 }

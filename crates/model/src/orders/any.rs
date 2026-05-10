@@ -50,7 +50,7 @@ impl OrderAny {
     /// - The first event is not `OrderInitialized`.
     /// - Any event has an invalid state transition when applied to the order.
     ///
-    #[allow(clippy::missing_panics_doc)] // Guarded by empty check above
+    #[expect(clippy::missing_panics_doc)] // Guarded by empty check above
     pub fn from_events(events: Vec<OrderEventAny>) -> anyhow::Result<Self> {
         if events.is_empty() {
             anyhow::bail!("No order events provided to create OrderAny");
@@ -271,7 +271,7 @@ impl LimitOrderAny {
     ///
     /// # Panics
     ///
-    /// Panics if the MarketToLimit order price is not set.
+    /// Panics if the `MarketToLimit` order price is not set.
     #[must_use]
     pub fn limit_px(&self) -> Price {
         match self {
@@ -348,7 +348,7 @@ mod tests {
     use super::*;
     use crate::{
         enums::{OrderType, TrailingOffsetType},
-        events::{OrderEventAny, OrderUpdated, order::initialized::OrderInitializedBuilder},
+        events::{OrderEventAny, OrderUpdated, order::spec::OrderInitializedSpec},
         identifiers::{ClientOrderId, InstrumentId, StrategyId},
         orders::builder::OrderTestBuilder,
         types::{Price, Quantity},
@@ -379,12 +379,11 @@ mod tests {
     #[rstest]
     fn test_order_any_conversion_from_events() {
         // Create an OrderInitialized event
-        let init_event = OrderInitializedBuilder::default()
+        let init_event = OrderInitializedSpec::builder()
             .order_type(OrderType::Market)
             .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
             .quantity(Quantity::from(10))
-            .build()
-            .unwrap();
+            .build();
 
         // Create a vector of events
         let events = vec![OrderEventAny::Initialized(init_event.clone())];

@@ -145,6 +145,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         base_url_ws: str,
         name: str | None,
         config: BinanceDataClientConfig,
+        base_url_ws_public: str | None = None,
     ) -> None:
         super().__init__(
             loop=loop,
@@ -180,13 +181,24 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # Enum parser
         self._enum_parser = enum_parser
 
-        # WebSocket API
+        # WebSocket API (market streams)
         self._ws_client = BinanceWebSocketClient(
             clock=clock,
             handler=self._handle_ws_message,
             handler_reconnect=self._reconnect,
             base_url=base_url_ws,
             loop=self._loop,
+            proxy_url=config.proxy_url,
+        )
+
+        # WebSocket API (public/book streams)
+        self._ws_public_client = BinanceWebSocketClient(
+            clock=clock,
+            handler=self._handle_ws_message,
+            handler_reconnect=self._reconnect,
+            base_url=base_url_ws_public or base_url_ws,
+            loop=self._loop,
+            proxy_url=config.proxy_url,
         )
 
         # Hot caches
@@ -244,6 +256,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     async def _update_instruments(self, interval_mins: int) -> None:
         while True:
             retries = 0
+
             while True:
                 try:
                     self._log.debug(
@@ -285,6 +298,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._update_instruments_task = None
 
         await self._ws_client.disconnect()
+        await self._ws_public_client.disconnect()
 
     def _should_retry(self, error_code: BinanceErrorCode, retries: int) -> bool:
         return not (
@@ -297,6 +311,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _subscribe(self, command: SubscribeData) -> None:
         instrument_id: InstrumentId | None = command.data_type.metadata.get("instrument_id")
+
         if (
             instrument_id is None
             and command.data_type.type not in self._subscribe_allow_no_instrument_id
@@ -324,6 +339,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _unsubscribe(self, command: UnsubscribeData) -> None:
         instrument_id: InstrumentId | None = command.data_type.metadata.get("instrument_id")
+
         if (
             instrument_id is None
             and command.data_type.type not in self._subscribe_allow_no_instrument_id
@@ -368,6 +384,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             return
 
         valid_speeds = [100, 1000]
+
         if self._binance_account_type.is_futures:
             if update_speed is None:
                 update_speed = 0  # Default 0 ms for futures
@@ -396,13 +413,13 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                     "Valid depths are 5, 10, or 20",
                 )
                 return
-            await self._ws_client.subscribe_partial_book_depth(
+            await self._ws_public_client.subscribe_partial_book_depth(
                 symbol=command.instrument_id.symbol.value,
                 depth=depth,
                 speed=update_speed,
             )
         else:
-            await self._ws_client.subscribe_diff_book_depth(
+            await self._ws_public_client.subscribe_diff_book_depth(
                 symbol=command.instrument_id.symbol.value,
                 speed=update_speed,
             )
@@ -444,10 +461,12 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         await self._ws_client.subscribe_mark_price(command.instrument_id.symbol.value, speed=1000)
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
-        await self._ws_client.subscribe_book_ticker(command.instrument_id.symbol.value)
+        await self._ws_public_client.subscribe_book_ticker(command.instrument_id.symbol.value)
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
-        if self._use_agg_trade_ticks:
+        # Binance Futures only publishes @aggTrade on the WebSocket; the legacy
+        # undocumented @trade stream was silenced around the 2026 URL migration.
+        if self._use_agg_trade_ticks or self._binance_account_type.is_futures:
             await self._ws_client.subscribe_agg_trades(command.instrument_id.symbol.value)
         else:
             await self._ws_client.subscribe_trades(command.instrument_id.symbol.value)
@@ -467,6 +486,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         resolution = self._enum_parser.parse_nautilus_bar_aggregation(
             command.bar_type.spec.aggregation,
         )
+
         if self._binance_account_type.is_futures and resolution == "s":
             self._log.error(
                 f"Cannot subscribe to {command.bar_type}. "
@@ -495,10 +515,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
-        await self._ws_client.unsubscribe_book_ticker(command.instrument_id.symbol.value)
+        await self._ws_public_client.unsubscribe_book_ticker(command.instrument_id.symbol.value)
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
-        if self._use_agg_trade_ticks:
+        if self._use_agg_trade_ticks or self._binance_account_type.is_futures:
             await self._ws_client.unsubscribe_agg_trades(command.instrument_id.symbol.value)
         else:
             await self._ws_client.unsubscribe_trades(command.instrument_id.symbol.value)
@@ -513,6 +533,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         resolution = self._enum_parser.parse_nautilus_bar_aggregation(
             command.bar_type.spec.aggregation,
         )
+
         if self._binance_account_type.is_futures and resolution == "s":
             self._log.error(
                 f"Cannot unsubscribe from {command.bar_type}. "
@@ -572,9 +593,13 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 limit=limit,
             )
         else:
-            # Convert from timestamps to milliseconds
-            start_time_ms = secs_to_millis(request.start.timestamp())
-            end_time_ms = secs_to_millis(request.end.timestamp())
+            # Convert from timestamps to milliseconds (start/end may be None)
+            start_time_ms = (
+                secs_to_millis(request.start.timestamp()) if request.start is not None else None
+            )
+            end_time_ms = (
+                secs_to_millis(request.end.timestamp()) if request.end is not None else None
+            )
             ticks = await self._http_market.request_agg_trade_ticks(
                 instrument_id=request.instrument_id,
                 limit=limit,
@@ -615,6 +640,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             resolution = self._enum_parser.parse_nautilus_bar_aggregation(
                 request.bar_type.spec.aggregation,
             )
+
             if not self._binance_account_type.is_spot_or_margin and resolution == "s":
                 self._log.error(
                     f"Cannot request {request.bar_type} bars: "
@@ -743,6 +769,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         quantize_value = Decimal(f"1e-{instrument.size_precision}")
 
         bars: list[Bar] = []
+
         if bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
                 instrument=instrument,
@@ -832,6 +859,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
 
             close_size = size
+
             if i == binance_bar.count - 1:
                 close_size = Quantity(size_part + remainder, instrument.size_precision)
 
@@ -874,6 +902,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         )
 
         bars: list[Bar] = []
+
         if bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
                 instrument=instrument,
@@ -938,6 +967,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 return  # Control message response
 
             handled = False
+
             for handler in self._ws_handlers:
                 if handler in wrapper.stream:
                     self._ws_handlers[handler](raw)
@@ -959,6 +989,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         book_buffer: list[OrderBookDelta | OrderBookDeltas] | None = self._book_buffer.get(
             instrument_id,
         )
+
         if book_buffer is not None:
             book_buffer.append(book_deltas)
             return

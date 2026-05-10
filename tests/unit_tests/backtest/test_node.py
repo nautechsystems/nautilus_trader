@@ -24,6 +24,7 @@ import nautilus_trader.backtest.node as node
 from nautilus_trader.adapters.tardis.loaders import TardisCSVDataLoader
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -114,6 +115,7 @@ def load_catalog_with_quote_ticks(
     wrangler = QuoteTickDataWrangler(_AUDUSD_SIM)
     ticks = wrangler.process(TestDataProvider().read_csv_ticks("truefx/audusd-ticks.csv"))
     ticks.sort(key=lambda x: x.ts_init)
+
     if count is not None:
         ticks = ticks[:count]
 
@@ -137,6 +139,7 @@ def load_catalog_with_large_tardis_quotes(
 
     """
     filepath = get_test_data_large_path() / "tardis_huobi-dm-swap_quotes_2020-05-01_BTC-USD.csv.gz"
+
     if not filepath.exists():
         pytest.skip(f"Large test data not found: {filepath}")
 
@@ -298,7 +301,23 @@ class TestBacktestNode:
             {
                 "engine": {
                     "trader_id": "Test-111",
-                    "log_level": "INFO",
+                    "logging": {
+                        "log_level": "INFO",
+                    },
+                    "strategies": [
+                        {
+                            "strategy_path": "nautilus_trader.examples.strategies.ema_cross:EMACross",
+                            "config_path": "nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
+                            "config": {
+                                "instrument_id": "AUD/USD.SIM",
+                                "bar_type": "AUD/USD.SIM-100-TICK-MID-INTERNAL",
+                                "fast_ema_period": 10,
+                                "slow_ema_period": 20,
+                                "trade_size": 1_000_000,
+                                "order_id_tag": "001",
+                            },
+                        },
+                    ],
                 },
                 "venues": [
                     {
@@ -316,20 +335,6 @@ class TestBacktestNode:
                         "instrument_id": "AUD/USD.SIM",
                         "start_time": 1580398089820000000,
                         "end_time": 1580504394501000000,
-                    },
-                ],
-                "strategies": [
-                    {
-                        "strategy_path": "nautilus_trader.examples.strategies.ema_cross:EMACross",
-                        "config_path": "nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
-                        "config": {
-                            "instrument_id": "AUD/USD.SIM",
-                            "bar_type": "AUD/USD.SIM-100-TICK-MID-INTERNAL",
-                            "fast_ema_period": 10,
-                            "slow_ema_period": 20,
-                            "trade_size": 1_000_000,
-                            "order_id_tag": "001",
-                        },
                     },
                 ],
             },
@@ -538,6 +543,20 @@ class TestBacktestNodeStreaming:
         base_config = {
             "engine": {
                 "logging": {"bypass_logging": True},
+                "strategies": [
+                    {
+                        "strategy_path": "nautilus_trader.examples.strategies.ema_cross:EMACross",
+                        "config_path": "nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
+                        "config": {
+                            "instrument_id": str(_BTCUSDT_HUOBI.id),
+                            "bar_type": f"{_BTCUSDT_HUOBI.id}-1000-TICK-MID-INTERNAL",
+                            "fast_ema_period": 10,
+                            "slow_ema_period": 20,
+                            "trade_size": "0.01",
+                            "order_id_tag": "001",
+                        },
+                    },
+                ],
             },
             "venues": [
                 {
@@ -556,20 +575,6 @@ class TestBacktestNodeStreaming:
                     "instrument_id": str(_BTCUSDT_HUOBI.id),
                     "start_time": start_ns,
                     "end_time": end_ns,
-                },
-            ],
-            "strategies": [
-                {
-                    "strategy_path": "nautilus_trader.examples.strategies.ema_cross:EMACross",
-                    "config_path": "nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
-                    "config": {
-                        "instrument_id": str(_BTCUSDT_HUOBI.id),
-                        "bar_type": f"{_BTCUSDT_HUOBI.id}-1000-TICK-MID-INTERNAL",
-                        "fast_ema_period": 10,
-                        "slow_ema_period": 20,
-                        "trade_size": "0.01",
-                        "order_id_tag": "001",
-                    },
                 },
             ],
         }
@@ -732,3 +737,325 @@ class TestBacktestNodeStreaming:
         assert len(catalog_instances) == 2
         assert catalog_instances[data_config_a.catalog_path].calls == 1
         assert catalog_instances[data_config_b.catalog_path].calls == 1
+
+    def test_streaming_mixed_builtin_and_custom_data_types(self, tmp_path):
+        """
+        Streaming a session containing both built-in Rust types and custom Python types
+        must not raise ValueError on PyCapsule.
+
+        Regression test for
+        https://github.com/nautechsystems/nautilus_trader/issues/3853
+
+        """
+        from nautilus_trader.core.data import Data
+        from nautilus_trader.core.nautilus_pyo3.model import register_custom_data_class
+        from nautilus_trader.model.custom import customdataclass_pyo3
+        from nautilus_trader.model.data import QuoteTick
+
+        @customdataclass_pyo3()
+        class NodeTestSignal(Data):
+            value: float = 0.0
+
+        register_custom_data_class(NodeTestSignal)
+
+        catalog = setup_catalog(protocol="file", path=tmp_path / "mixed_catalog")
+        start_ns, end_ns = load_catalog_with_quote_ticks(catalog, count=100)
+
+        # Write custom data interleaved with the quote tick timestamps
+        signals = [
+            NodeTestSignal(
+                ts_event=start_ns + i * 100_000_000,
+                ts_init=start_ns + i * 100_000_000,
+                value=float(i),
+            )
+            for i in range(1, 20)
+        ]
+        catalog.write_data(signals)
+
+        instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+
+        quote_config = BacktestDataConfig(
+            catalog_path=catalog.path,
+            catalog_fs_protocol=catalog.fs_protocol,
+            data_cls=QuoteTick,
+            instrument_id=instrument_id,
+            start_time=start_ns,
+            end_time=end_ns,
+        )
+        signal_config = BacktestDataConfig(
+            catalog_path=catalog.path,
+            catalog_fs_protocol=catalog.fs_protocol,
+            data_cls=NodeTestSignal,
+            start_time=start_ns,
+            end_time=end_ns,
+        )
+
+        config = BacktestRunConfig(
+            engine=BacktestEngineConfig(
+                strategies=self.strategies,
+                logging=LoggingConfig(bypass_logging=True),
+            ),
+            venues=[self.venue_config],
+            data=[quote_config, signal_config],
+            chunk_size=500,
+            raise_exception=True,
+        )
+
+        node = BacktestNode(configs=[config])
+        results = node.run()
+
+        assert len(results) == 1
+
+    def test_streaming_drops_capsule_chunks(self):
+        """
+        Each PyCapsule chunk yielded during streaming must be passed to
+        drop_cvec_pycapsule, otherwise the underlying Vec<DataFFI> leaks.
+
+        Regression guard for
+        https://github.com/nautechsystems/nautilus_trader/issues/3889
+
+        """
+        from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
+
+        # Arrange - 10K ticks with chunk_size=1000 produces multiple capsule chunks
+        start_ns, end_ns = load_catalog_with_quote_ticks(self.catalog, count=10_000)
+
+        data_config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=self.catalog.fs_protocol,
+            data_cls=QuoteTick,
+            instrument_id=InstrumentId.from_str("AUD/USD.SIM"),
+            start_time=start_ns,
+            end_time=end_ns,
+        )
+        config = BacktestRunConfig(
+            engine=BacktestEngineConfig(
+                strategies=self.strategies,
+                logging=LoggingConfig(bypass_logging=True),
+            ),
+            venues=[self.venue_config],
+            data=[data_config],
+            chunk_size=1_000,
+        )
+
+        capsule_chunk_count = 0
+        list_chunk_count = 0
+        drop_call_count = 0
+
+        original_drop = node.drop_cvec_pycapsule
+        original_to_query_result = DataBackendSession.to_query_result
+
+        def counting_drop(capsule):
+            nonlocal drop_call_count
+            drop_call_count += 1
+            return original_drop(capsule)
+
+        def counting_to_query_result(self_session):
+            nonlocal capsule_chunk_count, list_chunk_count
+
+            for chunk in original_to_query_result(self_session):
+                if isinstance(chunk, list):
+                    list_chunk_count += 1
+                else:
+                    capsule_chunk_count += 1
+                yield chunk
+
+        # Act
+        with patch.object(node, "drop_cvec_pycapsule", counting_drop):
+            DataBackendSession.to_query_result = counting_to_query_result
+            try:
+                BacktestNode(configs=[config]).run()
+            finally:
+                DataBackendSession.to_query_result = original_to_query_result
+
+        # Assert - every capsule chunk was dropped exactly once
+        assert capsule_chunk_count > 1, (
+            f"Expected multiple capsule chunks, was {capsule_chunk_count}"
+        )
+        assert list_chunk_count == 0, (
+            f"Built-in only stream should not yield list chunks, was {list_chunk_count}"
+        )
+        assert drop_call_count == capsule_chunk_count, (
+            f"Expected {capsule_chunk_count} drops, was {drop_call_count}"
+        )
+
+    def test_streaming_does_not_drop_list_chunks(self, tmp_path):
+        """
+        Mixed streams yield list chunks for any chunk containing custom data; those must
+        not be passed to drop_cvec_pycapsule (which would error or double-free).
+
+        Regression guard for
+        https://github.com/nautechsystems/nautilus_trader/issues/3889
+
+        """
+        from nautilus_trader.core.data import Data
+        from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
+        from nautilus_trader.core.nautilus_pyo3.model import register_custom_data_class
+        from nautilus_trader.model.custom import customdataclass_pyo3
+
+        @customdataclass_pyo3()
+        class DropTestSignal(Data):
+            value: float = 0.0
+
+        register_custom_data_class(DropTestSignal)
+
+        catalog = setup_catalog(protocol="file", path=tmp_path / "drop_catalog")
+        start_ns, end_ns = load_catalog_with_quote_ticks(catalog, count=200)
+
+        signals = [
+            DropTestSignal(
+                ts_event=start_ns + i * 100_000_000,
+                ts_init=start_ns + i * 100_000_000,
+                value=float(i),
+            )
+            for i in range(1, 30)
+        ]
+        catalog.write_data(signals)
+
+        instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+        quote_config = BacktestDataConfig(
+            catalog_path=catalog.path,
+            catalog_fs_protocol=catalog.fs_protocol,
+            data_cls=QuoteTick,
+            instrument_id=instrument_id,
+            start_time=start_ns,
+            end_time=end_ns,
+        )
+        signal_config = BacktestDataConfig(
+            catalog_path=catalog.path,
+            catalog_fs_protocol=catalog.fs_protocol,
+            data_cls=DropTestSignal,
+            start_time=start_ns,
+            end_time=end_ns,
+        )
+        config = BacktestRunConfig(
+            engine=BacktestEngineConfig(
+                strategies=self.strategies,
+                logging=LoggingConfig(bypass_logging=True),
+            ),
+            venues=[self.venue_config],
+            data=[quote_config, signal_config],
+            chunk_size=50,
+            raise_exception=True,
+        )
+
+        capsule_chunk_count = 0
+        list_chunk_count = 0
+        drop_call_count = 0
+
+        original_drop = node.drop_cvec_pycapsule
+        original_to_query_result = DataBackendSession.to_query_result
+
+        def counting_drop(capsule):
+            nonlocal drop_call_count
+            drop_call_count += 1
+            return original_drop(capsule)
+
+        def counting_to_query_result(self_session):
+            nonlocal capsule_chunk_count, list_chunk_count
+
+            for chunk in original_to_query_result(self_session):
+                if isinstance(chunk, list):
+                    list_chunk_count += 1
+                else:
+                    capsule_chunk_count += 1
+                yield chunk
+
+        # Act
+        with patch.object(node, "drop_cvec_pycapsule", counting_drop):
+            DataBackendSession.to_query_result = counting_to_query_result
+            try:
+                BacktestNode(configs=[config]).run()
+            finally:
+                DataBackendSession.to_query_result = original_to_query_result
+
+        # Assert - the mixed stream produced both kinds; drops match capsule chunks only
+        assert list_chunk_count > 0, (
+            "Mixed stream should yield at least one list chunk for custom data"
+        )
+        assert drop_call_count == capsule_chunk_count, (
+            f"drop_cvec_pycapsule called {drop_call_count} times for "
+            f"{capsule_chunk_count} capsule chunks (and {list_chunk_count} list chunks); "
+            "list chunks must not be dropped"
+        )
+
+
+class ShutdownAfterQuotesActor(Actor):
+    """
+    Actor that calls `shutdown_system` after receiving `shutdown_after` quotes.
+    """
+
+    def __init__(self, instrument_id: InstrumentId, shutdown_after: int) -> None:
+        super().__init__()
+        self._instrument_id = instrument_id
+        self._shutdown_after = shutdown_after
+        self._tick_count = 0
+        self._shutdown_triggered = False
+
+    def on_start(self) -> None:
+        self.subscribe_quote_ticks(self._instrument_id)
+
+    def on_quote_tick(self, tick) -> None:
+        self._tick_count += 1
+        if self._tick_count >= self._shutdown_after and not self._shutdown_triggered:
+            self._shutdown_triggered = True
+            self.shutdown_system("test shutdown")
+
+
+def test_streaming_shutdown_stops_between_chunks(tmp_path):
+    # Regression for #3920: shutdown_system() during a streaming BacktestNode
+    # run must prevent later chunks from being loaded and processed.
+    catalog = setup_catalog(protocol="file", path=tmp_path / "catalog")
+    total_quotes = 2_000
+    start_ns, end_ns = load_catalog_with_quote_ticks(catalog, count=total_quotes)
+
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+    shutdown_after = 10
+
+    actor = ShutdownAfterQuotesActor(instrument_id, shutdown_after)
+
+    venue_config = BacktestVenueConfig(
+        name="SIM",
+        oms_type="HEDGING",
+        account_type="MARGIN",
+        base_currency="USD",
+        starting_balances=["1000000 USD"],
+    )
+    data_config = BacktestDataConfig(
+        catalog_path=catalog.path,
+        catalog_fs_protocol=catalog.fs_protocol,
+        data_cls=QuoteTick,
+        instrument_id=instrument_id,
+        start_time=start_ns,
+        end_time=end_ns,
+    )
+    run_config = BacktestRunConfig(
+        engine=BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)),
+        venues=[venue_config],
+        data=[data_config],
+        chunk_size=200,
+    )
+
+    bt_node = BacktestNode(configs=[run_config])
+    bt_node.build()
+    engine = bt_node.get_engine(run_config.id)
+    engine.add_actor(actor)
+
+    results = bt_node.run()
+
+    assert len(results) == 1
+    assert results[0].iterations < total_quotes, (
+        f"Shutdown must stop streaming before all {total_quotes} quotes "
+        f"are processed, was {results[0].iterations}"
+    )
+    # Actor should have triggered shutdown in the first chunk and received no
+    # further ticks once the streaming loop bailed out
+    assert actor._tick_count == shutdown_after, (
+        f"Actor received more ticks after shutdown: expected {shutdown_after}, "
+        f"was {actor._tick_count}"
+    )
+    # engine.end() must run on the streaming+shutdown path so the result is
+    # finalized and the trader stops
+    assert engine.run_finished is not None, "engine.end() must run on shutdown"
+    assert engine.backtest_end is not None
+    assert not engine.trader.is_running, "trader must stop after shutdown"

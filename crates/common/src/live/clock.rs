@@ -32,7 +32,10 @@ use ustr::Ustr;
 
 use super::timer::LiveTimer;
 use crate::{
-    clock::{CallbackRegistry, Clock, validate_and_prepare_time_alert, validate_and_prepare_timer},
+    clock::{
+        CallbackRegistry, Clock, replace_existing_timer, validate_and_prepare_time_alert,
+        validate_and_prepare_timer,
+    },
     runner::{TimeEventSender, try_get_time_event_sender},
     timer::{
         ScheduledTimeEvent, TimeEvent, TimeEventCallback, TimeEventHandler, create_valid_interval,
@@ -76,10 +79,7 @@ impl LiveClock {
     }
 
     fn replace_existing_timer_if_needed(&mut self, name: &Ustr) {
-        if self.timer_exists(name) {
-            self.cancel_timer(name.as_str());
-            log::warn!("Timer '{name}' replaced");
-        }
+        replace_existing_timer(&mut self.timers, name);
     }
 }
 
@@ -394,8 +394,8 @@ mod tests {
 
         let snapshot = events.lock().expect(MUTEX_POISONED).clone();
         let diffs: Vec<u64> = snapshot
-            .windows(2)
-            .map(|pair| pair[1].0.ts_event.as_u64() - pair[0].0.ts_event.as_u64())
+            .array_windows()
+            .map(|[a, b]| b.0.ts_event.as_u64() - a.0.ts_event.as_u64())
             .collect();
 
         assert!(!diffs.is_empty());

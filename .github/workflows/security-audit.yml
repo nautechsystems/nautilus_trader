@@ -19,10 +19,21 @@ jobs:
   cargo-audit:
     name: cargo-audit
     runs-on: ubuntu-22.04
+    environment:
+      name: >-
+        ${{
+          (github.ref_name == github.event.repository.default_branch ||
+          github.ref_name == 'master') &&
+          'security-audit' ||
+          'security-audit-test'
+        }}
     steps:
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -40,10 +51,21 @@ jobs:
   cargo-deny:
     name: cargo-deny
     runs-on: ubuntu-22.04
+    environment:
+      name: >-
+        ${{
+          (github.ref_name == github.event.repository.default_branch ||
+          github.ref_name == 'master') &&
+          'security-audit' ||
+          'security-audit-test'
+        }}
     steps:
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -61,10 +83,21 @@ jobs:
   cargo-vet:
     name: cargo-vet
     runs-on: ubuntu-22.04
+    environment:
+      name: >-
+        ${{
+          (github.ref_name == github.event.repository.default_branch ||
+          github.ref_name == 'master') &&
+          'security-audit' ||
+          'security-audit-test'
+        }}
     steps:
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -82,18 +115,36 @@ jobs:
   pip-audit:
     name: pip-audit
     runs-on: ubuntu-22.04
+    environment:
+      name: >-
+        ${{
+          (github.ref_name == github.event.repository.default_branch ||
+          github.ref_name == 'master') &&
+          'security-audit' ||
+          'security-audit-test'
+        }}
     steps:
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
+      - name: Get uv version from pyproject.toml
+        shell: bash
+        run: |
+          echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> "$GITHUB_ENV"
+
       - name: Install uv
-        uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b # v7.3.0
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: ${{ env.UV_VERSION }}
 
       - name: Install Python
         run: uv python install 3.13
@@ -107,10 +158,21 @@ jobs:
   osv-scanner:
     name: osv-scanner
     runs-on: ubuntu-22.04
+    environment:
+      name: >-
+        ${{
+          (github.ref_name == github.event.repository.default_branch ||
+          github.ref_name == 'master') &&
+          'security-audit' ||
+          'security-audit-test'
+        }}
     steps:
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -118,9 +180,10 @@ jobs:
           persist-credentials: false
 
       - name: Run osv-scanner
-        uses: google/osv-scanner-action/osv-scanner-action@2a387edfbe02a11d856b89172f6e978100177eb4 # v2.3.2
+        uses: google/osv-scanner-action/osv-scanner-action@c51854704019a247608d928f370c98740469d4b5 # v2.3.5
         with:
           scan-args: |
             --config=osv-scanner.toml
             --lockfile=Cargo.lock
             --lockfile=uv.lock
+            --lockfile=python/uv.lock

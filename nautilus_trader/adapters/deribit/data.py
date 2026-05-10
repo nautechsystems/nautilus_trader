@@ -30,8 +30,10 @@ from nautilus_trader.common.secure import mask_api_key
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.nautilus_pyo3 import DeribitCurrency
+from nautilus_trader.core.nautilus_pyo3 import DeribitEnvironment
 from nautilus_trader.core.nautilus_pyo3 import DeribitUpdateInterval
 from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestForwardPrices
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
@@ -43,6 +45,7 @@ from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstruments
 from nautilus_trader.data.messages import SubscribeInstrumentStatus
 from nautilus_trader.data.messages import SubscribeMarkPrices
+from nautilus_trader.data.messages import SubscribeOptionGreeks
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
@@ -53,6 +56,7 @@ from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstruments
 from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
 from nautilus_trader.data.messages import UnsubscribeMarkPrices
+from nautilus_trader.data.messages import UnsubscribeOptionGreeks
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
@@ -64,6 +68,7 @@ from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import OptionGreeks
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
@@ -127,11 +132,16 @@ class DeribitDataClient(LiveMarketDataClient):
         self._instrument_provider: DeribitInstrumentProvider = instrument_provider
 
         product_types = [k.name for k in config.product_types] if config.product_types else None
+        environment = (
+            config.environment
+            if config.environment is not None
+            else (DeribitEnvironment.TESTNET if config.is_testnet else DeribitEnvironment.MAINNET)
+        )
 
         # Configuration
         self._config = config
         self._log.info(f"config.product_types={product_types}", LogColor.BLUE)
-        self._log.info(f"{config.is_testnet=}", LogColor.BLUE)
+        self._log.info(f"config.environment={environment}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
@@ -140,18 +150,20 @@ class DeribitDataClient(LiveMarketDataClient):
 
         # HTTP API
         self._http_client = client
+
         if config.api_key:
             masked_key = mask_api_key(config.api_key)
             self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
         # WebSocket API
-        ws_url = config.base_url_ws or nautilus_pyo3.get_deribit_ws_url(config.is_testnet)
+        ws_url = config.base_url_ws or nautilus_pyo3.get_deribit_ws_url(environment)
         self._ws_client = nautilus_pyo3.DeribitWebSocketClient(
             url=ws_url,
             api_key=config.api_key,
             api_secret=config.api_secret,
             heartbeat_interval=DERIBIT_WS_HEARTBEAT_SECS,
-            is_testnet=config.is_testnet,
+            environment=environment,
+            proxy_url=config.proxy_url,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
 
@@ -305,22 +317,12 @@ class DeribitDataClient(LiveMarketDataClient):
     async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         interval = self._get_interval(command.params)
-        interval_display = interval.name if interval else "100ms (default)"
-        self._log.info(
-            f"Subscribing to mark prices for {command.instrument_id} "
-            f"(via ticker channel, interval: {interval_display})",
-        )
-        await self._ws_client.subscribe_ticker(pyo3_instrument_id, interval)
+        await self._ws_client.subscribe_mark_prices(pyo3_instrument_id, interval)
 
     async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         interval = self._get_interval(command.params)
-        interval_display = interval.name if interval else "100ms (default)"
-        self._log.info(
-            f"Subscribing to index prices for {command.instrument_id} "
-            f"(via ticker channel, interval: {interval_display})",
-        )
-        await self._ws_client.subscribe_ticker(pyo3_instrument_id, interval)
+        await self._ws_client.subscribe_index_prices(pyo3_instrument_id, interval)
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
@@ -338,16 +340,21 @@ class DeribitDataClient(LiveMarketDataClient):
 
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         interval = self._get_interval(command.params)
-        interval_display = interval.name if interval else "100ms (default)"
-        self._log.info(
-            f"Subscribing to funding rates for {command.instrument_id} "
-            f"(via perpetual channel, interval: {interval_display})",
-        )
         await self._ws_client.subscribe_perpetual_interest_rates(pyo3_instrument_id, interval)
 
     async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_instrument_status(pyo3_instrument_id)
+
+    async def _subscribe_option_greeks(self, command: SubscribeOptionGreeks) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        interval = self._get_interval(command.params)
+        await self._ws_client.subscribe_option_greeks(pyo3_instrument_id, interval)
+
+    async def _unsubscribe_option_greeks(self, command: UnsubscribeOptionGreeks) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        interval = self._get_interval(command.params)
+        await self._ws_client.unsubscribe_option_greeks(pyo3_instrument_id, interval)
 
     async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
         kind = "any"
@@ -402,7 +409,7 @@ class DeribitDataClient(LiveMarketDataClient):
             f"Unsubscribing from mark prices for {command.instrument_id} "
             f"(via ticker channel, interval: {interval_display})",
         )
-        await self._ws_client.unsubscribe_ticker(pyo3_instrument_id, interval)
+        await self._ws_client.unsubscribe_mark_prices(pyo3_instrument_id, interval)
 
     async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -412,7 +419,7 @@ class DeribitDataClient(LiveMarketDataClient):
             f"Unsubscribing from index prices for {command.instrument_id} "
             f"(via ticker channel, interval: {interval_display})",
         )
-        await self._ws_client.unsubscribe_ticker(pyo3_instrument_id, interval)
+        await self._ws_client.unsubscribe_index_prices(pyo3_instrument_id, interval)
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
@@ -477,6 +484,7 @@ class DeribitDataClient(LiveMarketDataClient):
         try:
             pyo3_instruments = await self._http_client.request_instruments(currency, product_type)
             instruments = []
+
             for pyo3_instrument in pyo3_instruments:
                 self._cache_instrument(pyo3_instrument)
                 instrument = transform_instrument_from_pyo3(pyo3_instrument)
@@ -674,6 +682,28 @@ class DeribitDataClient(LiveMarketDataClient):
             params=request.params,
         )
 
+    async def _request_forward_prices(self, request: RequestForwardPrices) -> None:
+        sample_id = request.sample_instrument_id
+        pyo3_inst_id = None
+
+        if sample_id is not None:
+            pyo3_inst_id = nautilus_pyo3.InstrumentId.from_str(str(sample_id))
+
+        try:
+            forward_prices = await self._http_client.request_forward_prices(  # type: ignore[attr-defined]
+                currency=request.underlying,
+                instrument_id=pyo3_inst_id,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to request forward prices for {request.underlying}: {e}")
+            self._handle_forward_prices([], request.id, request.params or {})
+            return
+
+        self._log.info(
+            f"Received {len(forward_prices)} forward prices for {request.underlying}",
+        )
+        self._handle_forward_prices(forward_prices, request.id, request.params or {})
+
     def _handle_msg(self, msg: Any) -> None:
         try:
             if nautilus_pyo3.is_pycapsule(msg):
@@ -688,6 +718,9 @@ class DeribitDataClient(LiveMarketDataClient):
                 self._handle_instrument_update(msg)
             elif hasattr(msg, "__class__") and "FundingRateUpdate" in msg.__class__.__name__:
                 self._handle_funding_rate_update(msg)
+            elif isinstance(msg, nautilus_pyo3.OptionGreeks):
+                data = OptionGreeks.from_pyo3(msg)
+                self._handle_data(data)
             else:
                 self._log.error(f"Cannot handle message {msg}, not implemented")
         except Exception as e:

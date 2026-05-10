@@ -30,6 +30,6 @@ pub mod trade;
 // FFI wrapper for cloning Data instances
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn data_clone(data: &crate::data::Data) -> crate::data::Data {
+pub extern "C" fn data_clone(data: &crate::data::DataFFI) -> crate::data::DataFFI {
     data.clone()
 }

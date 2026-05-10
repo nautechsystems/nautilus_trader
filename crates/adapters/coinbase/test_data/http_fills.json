@@ -1,0 +1,39 @@
+{
+  "fills": [
+    {
+      "entry_id": "22222-2222222-22222222",
+      "trade_id": "1111-11111-111111",
+      "order_id": "0000-000000-000000",
+      "trade_time": "2024-01-15T10:30:00Z",
+      "trade_type": "FILL",
+      "price": "45123.45",
+      "size": "0.005",
+      "commission": "1.14",
+      "product_id": "BTC-USD",
+      "sequence_timestamp": "2024-01-15T10:30:00.123456Z",
+      "liquidity_indicator": "MAKER",
+      "size_in_quote": false,
+      "user_id": "3333-333333-3333333",
+      "side": "BUY",
+      "retail_portfolio_id": ""
+    },
+    {
+      "entry_id": "22222-2222222-22222223",
+      "trade_id": "1111-11111-111112",
+      "order_id": "0000-000000-000002",
+      "trade_time": "2024-01-15T10:05:00Z",
+      "trade_type": "FILL",
+      "price": "3076.92",
+      "size": "0.0325",
+      "commission": "0.50",
+      "product_id": "ETH-USD",
+      "sequence_timestamp": "2024-01-15T10:05:00.987654Z",
+      "liquidity_indicator": "TAKER",
+      "size_in_quote": false,
+      "user_id": "3333-333333-3333333",
+      "side": "SELL",
+      "retail_portfolio_id": ""
+    }
+  ],
+  "cursor": ""
+}

@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     let mut ws_client = OKXWebSocketClient::from_env().unwrap();
-    ws_client.cache_instruments(instruments.clone());
+    ws_client.cache_instruments(&instruments);
     ws_client.connect().await?;
 
     let instrument_id = InstrumentId::from("BTC-USD-SWAP.OKX");

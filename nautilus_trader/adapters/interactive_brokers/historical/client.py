@@ -85,6 +85,7 @@ class HistoricInteractiveBrokersClient:
             self._clock,
         )
         self.market_data_type = market_data_type
+
         if not cache_config or not cache_config.database:
             cache_db = None
         elif cache_config.database.type == "redis":

@@ -15,11 +15,11 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, python::to_pytype_err};
 use nautilus_model::{
     data::{
-        Bar, Data, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick,
-        TradeTick,
+        Bar, Data, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDelta,
+        OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose,
     },
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
 };
@@ -27,17 +27,36 @@ use pyo3::{exceptions::PyIOError, prelude::*, types::PyList};
 
 use crate::backend::catalog::ParquetDataCatalog;
 
+/// Converts a single `Data` variant into a Python object for returning from catalog methods.
+fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
+    match item {
+        Data::Quote(quote) => Py::new(py, quote).map(|x| x.into_any()),
+        Data::Trade(trade) => Py::new(py, trade).map(|x| x.into_any()),
+        Data::Bar(bar) => Py::new(py, bar).map(|x| x.into_any()),
+        Data::Delta(delta) => Py::new(py, delta).map(|x| x.into_any()),
+        Data::Deltas(deltas) => Py::new(py, (*deltas).clone()).map(|x| x.into_any()),
+        Data::Depth10(depth) => Py::new(py, *depth).map(|x| x.into_any()),
+        Data::IndexPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
+        Data::MarkPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
+        Data::InstrumentStatus(status) => Py::new(py, status).map(|x| x.into_any()),
+        Data::InstrumentClose(close) => Py::new(py, close).map(|x| x.into_any()),
+        Data::Custom(custom) => Py::new(py, custom).map(|x| x.into_any()),
+    }
+}
+
 /// A catalog for writing data to Parquet files.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence")
+#[pyclass(
+    name = "ParquetDataCatalog",
+    module = "nautilus_trader.core.nautilus_pyo3.persistence"
 )]
-pub struct ParquetDataCatalogV2 {
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")]
+pub struct PyParquetDataCatalog {
     inner: ParquetDataCatalog,
 }
 
 #[pymethods]
-impl ParquetDataCatalogV2 {
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl PyParquetDataCatalog {
     /// Create a new `ParquetCatalog` with the given base path and optional parameters.
     ///
     /// # Parameters
@@ -51,7 +70,7 @@ impl ParquetDataCatalogV2 {
     #[pyo3(signature = (base_path, storage_options=None, batch_size=None, compression=None, max_row_group_size=None))]
     #[must_use]
     pub fn new(
-        base_path: String,
+        base_path: &str,
         storage_options: Option<HashMap<String, String>>,
         batch_size: Option<usize>,
         compression: Option<u8>,
@@ -84,7 +103,7 @@ impl ParquetDataCatalogV2 {
 
         Self {
             inner: ParquetDataCatalog::from_uri(
-                &base_path,
+                base_path,
                 storage_options,
                 batch_size,
                 compression,
@@ -302,8 +321,9 @@ impl ParquetDataCatalogV2 {
 
     /// Write instruments to Parquet files in the catalog.
     ///
-    /// Instruments are stored by instrument ID in `data/instruments/{instrument_id}/instrument.parquet`.
-    /// Multiple instruments with the same ID are written as multiple rows in the same file.
+    /// Instruments are stored under `data/instruments/{instrument_id}/` using timestamp-ranged
+    /// parquet file names, allowing multiple historical versions of the same instrument to be
+    /// written across separate calls.
     ///
     /// # Parameters
     ///
@@ -338,15 +358,27 @@ impl ParquetDataCatalogV2 {
     /// # Parameters
     ///
     /// - `instrument_ids`: Optional list of instrument IDs to filter by. If `None`, returns all instruments.
+    /// - `start`: Optional inclusive lower bound for `ts_init` filtering.
+    /// - `end`: Optional inclusive upper bound for `ts_init` filtering.
     ///
     /// # Returns
     ///
     /// Returns a list of instrument objects (e.g. CurrencyPair, Equity).
-    #[pyo3(signature = (instrument_ids=None))]
-    pub fn instruments(&self, instrument_ids: Option<Vec<String>>) -> PyResult<Vec<Py<PyAny>>> {
+    #[pyo3(signature = (instrument_ids=None, start=None, end=None))]
+    #[expect(clippy::needless_pass_by_value)]
+    pub fn instruments(
+        &self,
+        instrument_ids: Option<Vec<String>>,
+        start: Option<u64>,
+        end: Option<u64>,
+    ) -> PyResult<Vec<Py<PyAny>>> {
         let rust_instruments = self
             .inner
-            .query_instruments(instrument_ids)
+            .query_instruments_filtered(
+                instrument_ids.as_deref(),
+                start.map(UnixNanos::from),
+                end.map(UnixNanos::from),
+            )
             .map_err(|e| PyIOError::new_err(format!("Failed to query instruments: {e}")))?;
         Python::attach(|py| {
             rust_instruments
@@ -365,6 +397,7 @@ impl ParquetDataCatalogV2 {
     /// - `start`: Start timestamp (nanoseconds since Unix epoch)
     /// - `end`: End timestamp (nanoseconds since Unix epoch)
     #[pyo3(signature = (data_cls, instrument_id=None, *, start, end))]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn extend_file_name(
         &self,
         data_cls: &str,
@@ -377,7 +410,7 @@ impl ParquetDataCatalogV2 {
         let end_nanos = UnixNanos::from(end);
 
         self.inner
-            .extend_file_name(data_cls, instrument_id, start_nanos, end_nanos)
+            .extend_file_name(data_cls, instrument_id.as_deref(), start_nanos, end_nanos)
             .map_err(|e| PyIOError::new_err(format!("Failed to extend file name: {e}")))
     }
 
@@ -417,6 +450,7 @@ impl ParquetDataCatalogV2 {
     /// - `ensure_contiguous_files`: Optional flag to ensure files are contiguous
     /// - `deduplicate`: Optional flag to deduplicate rows when combining files
     #[pyo3(signature = (type_name, instrument_id=None, start=None, end=None, ensure_contiguous_files=None, deduplicate=None))]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn consolidate_data(
         &self,
         type_name: &str,
@@ -433,7 +467,7 @@ impl ParquetDataCatalogV2 {
         self.inner
             .consolidate_data(
                 type_name,
-                instrument_id,
+                instrument_id.as_deref(),
                 start_nanos,
                 end_nanos,
                 ensure_contiguous_files,
@@ -496,6 +530,7 @@ impl ParquetDataCatalogV2 {
     /// - `end`: Optional end timestamp for consolidation range (nanoseconds since Unix epoch)
     /// - `ensure_contiguous_files`: Optional flag to control file naming strategy
     #[pyo3(signature = (type_name, identifier=None, period_nanos=None, start=None, end=None, ensure_contiguous_files=None))]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn consolidate_data_by_period(
         &mut self,
         type_name: &str,
@@ -512,7 +547,7 @@ impl ParquetDataCatalogV2 {
         self.inner
             .consolidate_data_by_period(
                 type_name,
-                identifier,
+                identifier.as_deref(),
                 period_nanos,
                 start_nanos,
                 end_nanos,
@@ -535,13 +570,14 @@ impl ParquetDataCatalogV2 {
     /// - `data_cls`: The data class name
     /// - `instrument_id`: Optional instrument ID filter
     #[pyo3(signature = (data_cls, instrument_id=None))]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn reset_data_file_names(
         &self,
         data_cls: &str,
         instrument_id: Option<String>,
     ) -> PyResult<()> {
         self.inner
-            .reset_data_file_names(data_cls, instrument_id)
+            .reset_data_file_names(data_cls, instrument_id.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to reset data file names: {e}")))
     }
 
@@ -599,6 +635,7 @@ impl ParquetDataCatalogV2 {
     /// - The method ensures data integrity by using atomic operations where possible
     /// - Empty directories are not automatically removed after deletion
     #[pyo3(signature = (type_name, instrument_id=None, start=None, end=None))]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn delete_data_range(
         &mut self,
         type_name: &str,
@@ -611,8 +648,66 @@ impl ParquetDataCatalogV2 {
         let end_nanos = end.map(UnixNanos::from);
 
         self.inner
-            .delete_data_range(type_name, instrument_id, start_nanos, end_nanos)
+            .delete_data_range(type_name, instrument_id.as_deref(), start_nanos, end_nanos)
             .map_err(|e| PyIOError::new_err(format!("Failed to delete data range: {e}")))
+    }
+
+    /// Write custom data to Parquet files.
+    ///
+    /// Requires `CustomData` wrappers. Callers must wrap raw custom objects in
+    /// `CustomData(data_type=DataType(cls, metadata=...), data=...)` before writing.
+    #[pyo3(signature = (data, start=None, end=None, skip_disjoint_check=false))]
+    pub fn write_custom_data(
+        &self,
+        _py: Python<'_>,
+        data: Vec<Bound<'_, PyAny>>,
+        start: Option<u64>,
+        end: Option<u64>,
+        skip_disjoint_check: bool,
+    ) -> PyResult<String> {
+        use nautilus_model::data::CustomData;
+
+        let mut custom_items: Vec<CustomData> = Vec::with_capacity(data.len());
+        for obj in data {
+            let custom = obj.extract::<CustomData>().map_err(|_| {
+                to_pytype_err(
+                    "write_custom_data requires CustomData wrappers; wrap with CustomData(data_type=DataType(cls, metadata=...), data=...)",
+                )
+            })?;
+            custom_items.push(custom);
+        }
+
+        let start_nanos = start.map(UnixNanos::from);
+        let end_nanos = end.map(UnixNanos::from);
+
+        self.inner
+            .write_custom_data_batch(
+                custom_items,
+                start_nanos,
+                end_nanos,
+                Some(skip_disjoint_check),
+            )
+            .map(|path| path.to_string_lossy().to_string())
+            .map_err(|e| PyIOError::new_err(format!("Failed to write custom data: {e}")))
+    }
+
+    /// List all instrument IDs available in the catalog for a given data type.
+    pub fn list_instruments(&self, data_type: &str) -> PyResult<Vec<String>> {
+        self.inner
+            .list_instruments(data_type)
+            .map_err(|e| PyIOError::new_err(format!("Failed to list instruments: {e}")))
+    }
+
+    /// List all Parquet files in the catalog for a given data type and instrument.
+    pub fn list_parquet_files(
+        &self,
+        data_type: &str,
+        instrument_id: &str,
+    ) -> PyResult<Vec<String>> {
+        let directory = format!("data/{data_type}/{instrument_id}");
+        self.inner
+            .list_parquet_files(&directory)
+            .map_err(|e| PyIOError::new_err(format!("Failed to list parquet files: {e}")))
     }
 
     /// Query files in the catalog matching the specified criteria.
@@ -659,6 +754,7 @@ impl ParquetDataCatalogV2 {
     ///
     /// Returns a list of (start, end) timestamp tuples representing missing intervals.
     #[pyo3(signature = (start, end, data_cls, instrument_id=None))]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn get_missing_intervals_for_request(
         &self,
         start: u64,
@@ -667,7 +763,7 @@ impl ParquetDataCatalogV2 {
         instrument_id: Option<String>,
     ) -> PyResult<Vec<(u64, u64)>> {
         self.inner
-            .get_missing_intervals_for_request(start, end, data_cls, instrument_id)
+            .get_missing_intervals_for_request(start, end, data_cls, instrument_id.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to get missing intervals: {e}")))
     }
 
@@ -682,13 +778,14 @@ impl ParquetDataCatalogV2 {
     ///
     /// Returns the first timestamp as nanoseconds since Unix epoch, or None if no data exists.
     #[pyo3(signature = (data_cls, instrument_id=None))]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn query_first_timestamp(
         &self,
         data_cls: &str,
         instrument_id: Option<String>,
     ) -> PyResult<Option<u64>> {
         self.inner
-            .query_first_timestamp(data_cls, instrument_id)
+            .query_first_timestamp(data_cls, instrument_id.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to query first timestamp: {e}")))
     }
 
@@ -703,13 +800,14 @@ impl ParquetDataCatalogV2 {
     ///
     /// Returns the last timestamp as nanoseconds since Unix epoch, or None if no data exists.
     #[pyo3(signature = (data_cls, instrument_id=None))]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn query_last_timestamp(
         &self,
         data_cls: &str,
         instrument_id: Option<String>,
     ) -> PyResult<Option<u64>> {
         self.inner
-            .query_last_timestamp(data_cls, instrument_id)
+            .query_last_timestamp(data_cls, instrument_id.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to query last timestamp: {e}")))
     }
 
@@ -724,14 +822,181 @@ impl ParquetDataCatalogV2 {
     ///
     /// Returns a list of (start, end) timestamp tuples representing covered intervals.
     #[pyo3(signature = (data_cls, instrument_id=None))]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn get_intervals(
         &self,
         data_cls: &str,
         instrument_id: Option<String>,
     ) -> PyResult<Vec<(u64, u64)>> {
         self.inner
-            .get_intervals(data_cls, instrument_id)
+            .get_intervals(data_cls, instrument_id.as_deref())
             .map_err(|e| PyIOError::new_err(format!("Failed to get intervals: {e}")))
+    }
+
+    /// Query Parquet files for data matching the given criteria.
+    #[pyo3(signature = (data_type, identifiers=None, start=None, end=None, where_clause=None, files=None, optimize_file_loading=true))]
+    #[expect(clippy::too_many_arguments)]
+    pub fn query(
+        &mut self,
+        py: Python<'_>,
+        data_type: &str,
+        identifiers: Option<Vec<String>>,
+        start: Option<u64>,
+        end: Option<u64>,
+        where_clause: Option<&str>,
+        files: Option<Vec<String>>,
+        optimize_file_loading: bool,
+    ) -> PyResult<Vec<Py<PyAny>>> {
+        let start_nanos = start.map(UnixNanos::from);
+        let end_nanos = end.map(UnixNanos::from);
+
+        let data = match data_type {
+            "quotes" => {
+                let ticks = self
+                    .inner
+                    .query_typed_data::<QuoteTick>(
+                        identifiers,
+                        start_nanos,
+                        end_nanos,
+                        where_clause,
+                        files,
+                        optimize_file_loading,
+                    )
+                    .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+                ticks.into_iter().map(Data::from).collect()
+            }
+            "trades" => {
+                let ticks = self
+                    .inner
+                    .query_typed_data::<TradeTick>(
+                        identifiers,
+                        start_nanos,
+                        end_nanos,
+                        where_clause,
+                        files,
+                        optimize_file_loading,
+                    )
+                    .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+                ticks.into_iter().map(Data::from).collect()
+            }
+            "bars" => {
+                let bars = self
+                    .inner
+                    .query_typed_data::<Bar>(
+                        identifiers,
+                        start_nanos,
+                        end_nanos,
+                        where_clause,
+                        files,
+                        optimize_file_loading,
+                    )
+                    .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+                bars.into_iter().map(Data::from).collect()
+            }
+            "order_book_deltas" => {
+                let deltas = self
+                    .inner
+                    .query_typed_data::<OrderBookDelta>(
+                        identifiers,
+                        start_nanos,
+                        end_nanos,
+                        where_clause,
+                        files,
+                        optimize_file_loading,
+                    )
+                    .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+                deltas.into_iter().map(Data::from).collect()
+            }
+            "order_book_depths" => {
+                let depths = self
+                    .inner
+                    .query_typed_data::<OrderBookDepth10>(
+                        identifiers,
+                        start_nanos,
+                        end_nanos,
+                        where_clause,
+                        files,
+                        optimize_file_loading,
+                    )
+                    .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+                depths.into_iter().map(Data::from).collect()
+            }
+            "index_prices" => {
+                let prices = self
+                    .inner
+                    .query_typed_data::<IndexPriceUpdate>(
+                        identifiers,
+                        start_nanos,
+                        end_nanos,
+                        where_clause,
+                        files,
+                        optimize_file_loading,
+                    )
+                    .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+                prices.into_iter().map(Data::from).collect()
+            }
+            "mark_prices" => {
+                let prices = self
+                    .inner
+                    .query_typed_data::<MarkPriceUpdate>(
+                        identifiers,
+                        start_nanos,
+                        end_nanos,
+                        where_clause,
+                        files,
+                        optimize_file_loading,
+                    )
+                    .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+                prices.into_iter().map(Data::from).collect()
+            }
+            "instrument_status" => {
+                let statuses = self
+                    .inner
+                    .query_typed_data::<InstrumentStatus>(
+                        identifiers,
+                        start_nanos,
+                        end_nanos,
+                        where_clause,
+                        files,
+                        optimize_file_loading,
+                    )
+                    .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+                statuses.into_iter().map(Data::from).collect()
+            }
+            "instrument_closes" => {
+                let closes = self
+                    .inner
+                    .query_typed_data::<InstrumentClose>(
+                        identifiers,
+                        start_nanos,
+                        end_nanos,
+                        where_clause,
+                        files,
+                        optimize_file_loading,
+                    )
+                    .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?;
+                closes.into_iter().map(Data::from).collect()
+            }
+            _ => py
+                .detach(|| {
+                    self.inner.query_custom_data_dynamic(
+                        data_type,
+                        identifiers.as_deref(),
+                        start_nanos,
+                        end_nanos,
+                        where_clause,
+                        files.clone(),
+                        optimize_file_loading,
+                    )
+                })
+                .map_err(|e| PyIOError::new_err(format!("Query failed: {e}")))?,
+        };
+
+        let mut python_objects = Vec::new();
+        for item in data {
+            python_objects.push(data_to_pyobject(py, item)?);
+        }
+        Ok(python_objects)
     }
 
     /// Query quote tick data from Parquet files.
@@ -754,20 +1019,17 @@ impl ParquetDataCatalogV2 {
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
     ) -> PyResult<Vec<QuoteTick>> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
-        // Use the backend catalog's generic query_typed_data function
-        // Use optimize_file_loading=true (default) for normal queries to match Python behavior
         self.inner
             .query_typed_data::<QuoteTick>(
                 identifiers,
                 start_nanos,
                 end_nanos,
-                where_clause.as_deref(),
+                where_clause,
                 None,
                 true, // optimize_file_loading=true for directory-based registration (default)
             )
@@ -794,20 +1056,17 @@ impl ParquetDataCatalogV2 {
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
     ) -> PyResult<Vec<TradeTick>> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
-        // Use the backend catalog's generic query_typed_data function
-        // Use optimize_file_loading=true (default) for normal queries to match Python behavior
         self.inner
             .query_typed_data::<TradeTick>(
                 identifiers,
                 start_nanos,
                 end_nanos,
-                where_clause.as_deref(),
+                where_clause,
                 None,
                 true, // optimize_file_loading=true for directory-based registration (default)
             )
@@ -834,20 +1093,17 @@ impl ParquetDataCatalogV2 {
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
     ) -> PyResult<Vec<OrderBookDelta>> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
-        // Use the backend catalog's generic query_typed_data function
-        // Use optimize_file_loading=true (default) for normal queries to match Python behavior
         self.inner
             .query_typed_data::<OrderBookDelta>(
                 identifiers,
                 start_nanos,
                 end_nanos,
-                where_clause.as_deref(),
+                where_clause,
                 None,
                 true, // optimize_file_loading=true for directory-based registration (default)
             )
@@ -874,20 +1130,17 @@ impl ParquetDataCatalogV2 {
         identifiers: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
     ) -> PyResult<Vec<Bar>> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
-        // Use the backend catalog's generic query_typed_data function
-        // Use optimize_file_loading=true (default) for normal queries to match Python behavior
         self.inner
             .query_typed_data::<Bar>(
                 identifiers,
                 start_nanos,
                 end_nanos,
-                where_clause.as_deref(),
+                where_clause,
                 None,
                 true, // optimize_file_loading=true for directory-based registration (default)
             )
@@ -912,20 +1165,17 @@ impl ParquetDataCatalogV2 {
         instrument_ids: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
     ) -> PyResult<Vec<OrderBookDepth10>> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
-        // Use the backend catalog's generic query_typed_data function
-        // Use optimize_file_loading=true (default) for normal queries to match Python behavior
         self.inner
             .query_typed_data::<OrderBookDepth10>(
                 instrument_ids,
                 start_nanos,
                 end_nanos,
-                where_clause.as_deref(),
+                where_clause,
                 None,
                 true, // optimize_file_loading=true for directory-based registration (default)
             )
@@ -950,20 +1200,17 @@ impl ParquetDataCatalogV2 {
         instrument_ids: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
     ) -> PyResult<Vec<MarkPriceUpdate>> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
-        // Use the backend catalog's generic query_typed_data function
-        // Use optimize_file_loading=true (default) for normal queries to match Python behavior
         self.inner
             .query_typed_data::<MarkPriceUpdate>(
                 instrument_ids,
                 start_nanos,
                 end_nanos,
-                where_clause.as_deref(),
+                where_clause,
                 None,
                 true, // optimize_file_loading=true for directory-based registration (default)
             )
@@ -988,20 +1235,17 @@ impl ParquetDataCatalogV2 {
         instrument_ids: Option<Vec<String>>,
         start: Option<u64>,
         end: Option<u64>,
-        where_clause: Option<String>,
+        where_clause: Option<&str>,
     ) -> PyResult<Vec<IndexPriceUpdate>> {
-        // Convert u64 timestamps to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
 
-        // Use the backend catalog's generic query_typed_data function
-        // Use optimize_file_loading=true (default) for normal queries to match Python behavior
         self.inner
             .query_typed_data::<IndexPriceUpdate>(
                 instrument_ids,
                 start_nanos,
                 end_nanos,
-                where_clause.as_deref(),
+                where_clause,
                 None,
                 true, // optimize_file_loading=true for directory-based registration (default)
             )
@@ -1019,6 +1263,17 @@ impl ParquetDataCatalogV2 {
             .map_err(|e| PyIOError::new_err(format!("Failed to list data types: {e}")))
     }
 
+    /// List all live run IDs available in the catalog.
+    ///
+    /// # Returns
+    ///
+    /// Returns a list of live run IDs (as directory stems) in the catalog.
+    pub fn list_live_runs(&self) -> PyResult<Vec<String>> {
+        self.inner
+            .list_live_runs()
+            .map_err(|e| PyIOError::new_err(format!("Failed to list live runs: {e}")))
+    }
+
     /// List all backtest run IDs available in the catalog.
     ///
     /// # Returns
@@ -1030,15 +1285,11 @@ impl ParquetDataCatalogV2 {
             .map_err(|e| PyIOError::new_err(format!("Failed to list backtest runs: {e}")))
     }
 
-    /// List all live run IDs available in the catalog.
-    ///
-    /// # Returns
-    ///
-    /// Returns a list of live run IDs (as directory stems) in the catalog.
-    pub fn list_live_runs(&self) -> PyResult<Vec<String>> {
+    /// List all backtest run instances available in the catalog.
+    pub fn list_backtests(&self) -> PyResult<Vec<String>> {
         self.inner
-            .list_live_runs()
-            .map_err(|e| PyIOError::new_err(format!("Failed to list live runs: {e}")))
+            .list_backtest_runs()
+            .map_err(|e| PyIOError::new_err(format!("Failed to list backtests: {e}")))
     }
 
     /// Read data from a live run instance.
@@ -1051,32 +1302,17 @@ impl ParquetDataCatalogV2 {
     ///
     /// Returns a list of data objects from the live run, sorted by timestamp.
     #[pyo3(signature = (instance_id))]
-    pub fn read_live_run(&self, instance_id: &str) -> PyResult<Vec<Py<PyAny>>> {
-        // Read data from backend
+    pub fn read_live_run(&self, py: Python<'_>, instance_id: &str) -> PyResult<Vec<Py<PyAny>>> {
         let data = self
             .inner
             .read_live_run(instance_id)
             .map_err(|e| PyIOError::new_err(format!("Failed to read live run: {e}")))?;
 
-        // Convert Data enum variants to Python objects
-        Python::attach(|py| {
-            let mut python_objects = Vec::new();
-            for item in data {
-                let py_obj: Py<PyAny> = match item {
-                    Data::Quote(quote) => Py::new(py, quote)?.into(),
-                    Data::Trade(trade) => Py::new(py, trade)?.into(),
-                    Data::Bar(bar) => Py::new(py, bar)?.into(),
-                    Data::Delta(delta) => Py::new(py, delta)?.into(),
-                    Data::Deltas(deltas) => Py::new(py, (*deltas).clone())?.into(),
-                    Data::Depth10(depth) => Py::new(py, *depth)?.into(),
-                    Data::IndexPriceUpdate(price) => Py::new(py, price)?.into(),
-                    Data::MarkPriceUpdate(price) => Py::new(py, price)?.into(),
-                    Data::InstrumentClose(close) => Py::new(py, close)?.into(),
-                };
-                python_objects.push(py_obj);
-            }
-            Ok(python_objects)
-        })
+        let mut python_objects = Vec::new();
+        for item in data {
+            python_objects.push(data_to_pyobject(py, item)?);
+        }
+        Ok(python_objects)
     }
 
     /// Read data from a backtest run instance.
@@ -1089,32 +1325,17 @@ impl ParquetDataCatalogV2 {
     ///
     /// Returns a list of data objects from the backtest run, sorted by timestamp.
     #[pyo3(signature = (instance_id))]
-    pub fn read_backtest(&self, instance_id: &str) -> PyResult<Vec<Py<PyAny>>> {
-        // Read data from backend
+    pub fn read_backtest(&self, py: Python<'_>, instance_id: &str) -> PyResult<Vec<Py<PyAny>>> {
         let data = self
             .inner
             .read_backtest(instance_id)
             .map_err(|e| PyIOError::new_err(format!("Failed to read backtest: {e}")))?;
 
-        // Convert Data enum variants to Python objects
-        Python::attach(|py| {
-            let mut python_objects = Vec::new();
-            for item in data {
-                let py_obj: Py<PyAny> = match item {
-                    Data::Quote(quote) => Py::new(py, quote)?.into(),
-                    Data::Trade(trade) => Py::new(py, trade)?.into(),
-                    Data::Bar(bar) => Py::new(py, bar)?.into(),
-                    Data::Delta(delta) => Py::new(py, delta)?.into(),
-                    Data::Deltas(deltas) => Py::new(py, (*deltas).clone())?.into(),
-                    Data::Depth10(depth) => Py::new(py, *depth)?.into(),
-                    Data::IndexPriceUpdate(price) => Py::new(py, price)?.into(),
-                    Data::MarkPriceUpdate(price) => Py::new(py, price)?.into(),
-                    Data::InstrumentClose(close) => Py::new(py, close)?.into(),
-                };
-                python_objects.push(py_obj);
-            }
-            Ok(python_objects)
-        })
+        let mut python_objects = Vec::new();
+        for item in data {
+            python_objects.push(data_to_pyobject(py, item)?);
+        }
+        Ok(python_objects)
     }
 
     /// Convert stream data from feather files to parquet files.
@@ -1154,6 +1375,7 @@ impl ParquetDataCatalogV2 {
     /// )
     /// ```
     #[pyo3(signature = (instance_id, data_cls, subdirectory=None, identifiers=None, use_ts_event_for_ts_init=false))]
+    #[expect(clippy::needless_pass_by_value)]
     pub fn convert_stream_to_data(
         &mut self,
         instance_id: &str,
@@ -1163,11 +1385,12 @@ impl ParquetDataCatalogV2 {
         use_ts_event_for_ts_init: bool,
     ) -> PyResult<()> {
         let subdir = subdirectory.unwrap_or("backtest");
+
         match self.inner.convert_stream_to_data(
             instance_id,
             data_cls,
             Some(subdir),
-            identifiers,
+            identifiers.as_deref(),
             use_ts_event_for_ts_init,
         ) {
             Ok(()) => Ok(()),
@@ -1175,5 +1398,46 @@ impl ParquetDataCatalogV2 {
                 "Failed to convert stream to data: {e}"
             ))),
         }
+    }
+
+    /// Query custom data from Parquet files.
+    #[pyo3(signature = (type_name, identifiers=None, start=None, end=None, where_clause=None))]
+    #[expect(clippy::needless_pass_by_value)]
+    pub fn query_custom_data(
+        &mut self,
+        py: Python<'_>,
+        type_name: &str,
+        identifiers: Option<Vec<String>>,
+        start: Option<u64>,
+        end: Option<u64>,
+        where_clause: Option<&str>,
+    ) -> PyResult<Vec<Py<PyAny>>> {
+        let start_nanos = start.map(UnixNanos::from);
+        let end_nanos = end.map(UnixNanos::from);
+
+        let data = py
+            .detach(|| {
+                self.inner.query_custom_data_dynamic(
+                    type_name,
+                    identifiers.as_deref(),
+                    start_nanos,
+                    end_nanos,
+                    where_clause,
+                    None,
+                    true,
+                )
+            })
+            .map_err(|e| PyIOError::new_err(format!("Failed to query custom data: {e}")))?;
+
+        let mut python_objects = Vec::new();
+
+        for item in data {
+            let py_obj: Py<PyAny> = match item {
+                Data::Custom(custom) => Py::new(py, custom.clone())?.into_any(),
+                _ => return Err(PyIOError::new_err("Expected custom data")),
+            };
+            python_objects.push(py_obj);
+        }
+        Ok(python_objects)
     }
 }

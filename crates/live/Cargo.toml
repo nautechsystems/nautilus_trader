@@ -18,11 +18,19 @@ workspace = true
 
 [lib]
 name = "nautilus_live"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
-default = []
-streaming = ["nautilus-persistence", "nautilus-system/streaming"]
+default = ["node"]
+node = [
+  "dep:nautilus-data",
+  "dep:nautilus-portfolio",
+  "dep:nautilus-risk",
+  "dep:nautilus-system",
+  "dep:nautilus-trading",
+]
+examples = ["node", "nautilus-trading/examples"]
+streaming = ["node", "nautilus-persistence", "nautilus-system/streaming"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
@@ -34,15 +42,20 @@ extension-module = [
 ]
 ffi = ["nautilus-common/ffi", "nautilus-core/ffi", "nautilus-model/ffi"]
 python = [
+  "node",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-execution/python",
   "nautilus-model/python",
+  "nautilus-persistence?/python",
+  "nautilus-portfolio/python",
   "nautilus-system/python",
+  "nautilus-trading/python",
   "pyo3",
+  "pyo3-stub-gen",
   "streaming",
 ]
-defi = ["nautilus-common/defi", "nautilus-data/defi"]
+defi = ["dep:nautilus-data", "nautilus-common/defi", "nautilus-data/defi"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -51,17 +64,19 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
-nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
+
+nautilus-data = { workspace = true, optional = true }
 nautilus-persistence = { workspace = true, optional = true }
-nautilus-portfolio = { workspace = true }
-nautilus-risk = { workspace = true }
-nautilus-system = { workspace = true, features = ["live"] }
-nautilus-trading = { workspace = true }
+nautilus-portfolio = { workspace = true, optional = true }
+nautilus-risk = { workspace = true, optional = true }
+nautilus-system = { workspace = true, features = ["live"], optional = true }
+nautilus-trading = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+bon = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
@@ -72,6 +87,7 @@ tokio = { workspace = true }
 ustr = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 async-trait = { workspace = true }
@@ -84,3 +100,13 @@ ustr = { workspace = true }
 [[bench]]
 name = "runner"
 harness = false
+
+[[test]]
+name = "manager"
+path = "tests/manager.rs"
+required-features = ["node"]
+
+[[test]]
+name = "node"
+path = "tests/node.rs"
+required-features = ["node"]

@@ -24,6 +24,9 @@ cdef extern from "../includes/backtest.h":
     # Drops a [`TimeEventAccumulator_API`] instance.
     void time_event_accumulator_drop(TimeEventAccumulator_API accumulator);
 
+    # Clears all events from the accumulator heap without deallocating the accumulator itself.
+    void time_event_accumulator_clear(TimeEventAccumulator_API *accumulator);
+
     # Advance the clock and push events to the heap.
     void time_event_accumulator_advance_clock(TimeEventAccumulator_API *accumulator,
                                               TestClock_API *clock,

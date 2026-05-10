@@ -60,6 +60,7 @@ class TestBacktestLongRequest:
 
         # Verify all bars are for the correct instrument
         expected_bar_type = f"{future_symbols[0]}.XCME-1-MINUTE-LAST-EXTERNAL"
+
         for msg in bar_messages:
             assert expected_bar_type in msg, (
                 f"Expected bar type {expected_bar_type} in message {msg}"

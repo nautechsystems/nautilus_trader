@@ -243,7 +243,7 @@ mod tests {
     }
 
     #[rstest]
-    #[allow(clippy::needless_collect)] // Collect needed for thread handles
+    #[expect(clippy::needless_collect)] // Collect needed for thread handles
     fn test_venue_constants_thread_safety() {
         use std::thread;
 
@@ -283,7 +283,7 @@ mod tests {
     }
 
     #[rstest]
-    #[allow(clippy::needless_collect)] // Collect needed for thread handles
+    #[expect(clippy::needless_collect)] // Collect needed for thread handles
     fn test_venue_map_thread_safety() {
         use std::thread;
 

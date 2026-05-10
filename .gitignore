@@ -46,6 +46,7 @@ htmlcov/
 
 # Rust related
 *target/
+*target-v2/
 **/*.rs.bk
 
 # Python related
@@ -72,8 +73,12 @@ _build/
 build/
 dist/
 env/
+.tmp-pre-commit/
 *.bak
 *.sh
+!scripts/ci/install-cargo-nextest.sh
+!scripts/ci/verify-ci-inputs.sh
+!.pre-commit-hooks/*.sh
 *tmp/
 *temp/
 
@@ -90,6 +95,7 @@ output.json
 mcp/*.json
 .claude/
 claude.config.json
+.codex/
 .cursor/
 .aider*
 .continue/
@@ -101,6 +107,8 @@ GEMINI.md
 
 # Nautilus specific
 .ipynb_checkpoints/
+/docs/getting_started/*.ipynb
+/docs/tutorials/*.ipynb
 bench_data/
 /api_reference/
 /catalog/
@@ -114,6 +122,7 @@ nautilus_trader/test_kit/mocks/.nautilus/
 nautilus_trader.egg-info
 tests/test_data/catalog/
 tests/test_data/large/*
+tests/test_data/local/
 tests/unit_tests/catalog/
 tests/unit_tests/persistence/catalog/
 tests/test_data/**/backtest/**

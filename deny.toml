@@ -27,7 +27,7 @@ ignore = [
   # TODO: Monitor upstream TLS dependencies for migration
   { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a security vulnerability)" },
 
-  # unic-* crates are unmaintained, pulled in via pyo3-stub-gen→rustpython-parser
+  # unic-* crates are unmaintained, pulled in via pyo3-stub-gen->rustpython-parser
   # This is dev-time only for generating .pyi stub files, not a runtime security risk
   # TODO: Monitor https://github.com/Jij-Inc/pyo3-stub-gen for migration away from rustpython-parser
   { id = "RUSTSEC-2025-0075", reason = "unic-char-range unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
@@ -76,6 +76,7 @@ allow = [
   "LGPL-3.0-or-later",
   "OpenSSL",
   "Unlicense",
+  "bzip2-1.0.6",
 ]
 
 confidence-threshold = 0.8
@@ -129,7 +130,7 @@ deny = []
 
 # Skip certain crates during duplicate detection.
 # These are transitive duplicates from upstream crates outside our control.
-# Last reviewed: 2025-11-29
+# Last reviewed: 2026-03-25
 skip = [
   # Crypto ecosystem - version-locked together, pulled by various blockchain crates
   { crate = "block-buffer" },
@@ -138,6 +139,7 @@ skip = [
 
   # RNG ecosystem - version-locked together, pulled by crypto and blockchain crates
   { crate = "getrandom" },
+  { crate = "r-efi" },
   { crate = "rand" },
   { crate = "rand_chacha" },
   { crate = "rand_core" },
@@ -149,6 +151,10 @@ skip = [
   { crate = "derive_more" },
   { crate = "derive_more-impl" },
 
+  # syn 1 and strsim 0.10 - transitive via madsim -> darling 0.14 (dev-only simulator)
+  { crate = "syn" },
+  { crate = "strsim" },
+
   # Enum derive macros - strum 0.27 (alloy, hypersync) vs 0.28 (nautilus)
   { crate = "strum" },
   { crate = "strum_macros" },
@@ -156,13 +162,32 @@ skip = [
   # Case conversion - version fragmentation via derive_more
   { crate = "convert_case" },
 
+  # Arrow/Parquet ecosystem - hypersync pins arrow 57, nautilus uses arrow 58
+  { crate = "lz4_flex" },
+  { crate = "arrow" },
+  { crate = "arrow-arith" },
+  { crate = "arrow-array" },
+  { crate = "arrow-buffer" },
+  { crate = "arrow-cast" },
+  { crate = "arrow-csv" },
+  { crate = "arrow-data" },
+  { crate = "arrow-ipc" },
+  { crate = "arrow-json" },
+  { crate = "arrow-ord" },
+  { crate = "arrow-row" },
+  { crate = "arrow-schema" },
+  { crate = "arrow-select" },
+  { crate = "arrow-string" },
+  { crate = "parquet" },
+
+  # Redox OS syscall - parking_lot (0.5.x) vs sqlx-postgres/whoami (0.7.x)
+  { crate = "redox_syscall" },
+
   # Common utility crates with version fragmentation across ecosystem
-  { crate = "base64" },
   { crate = "hashbrown" },
   { crate = "itertools" },
   { crate = "foldhash" },
   { crate = "rustc-hash" },
-  { crate = "ordered-float" },
   { crate = "petgraph" },
   { crate = "socket2" },
 
@@ -181,12 +206,16 @@ skip = [
   { crate = "reqwest" },
   { crate = "wasm-streams" },
 
+  # WASI bindings - getrandom pulls distinct wit-bindgen generations via wasip2/wasip3
+  { crate = "wit-bindgen" },
+
   # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.25.0
   { crate = "capnp" },
 
   # TOML parser - cbindgen requires 0.9.x, pyo3-stub-gen requires 1.0.x
   { crate = "toml" },
   { crate = "toml_datetime" },
+  { crate = "winnow" },
 
   # TLS roots - version fragmentation in TLS ecosystem
   { crate = "webpki-roots" },
@@ -197,7 +226,6 @@ skip = [
   { crate = "windows_aarch64_gnullvm" },
   { crate = "windows_aarch64_msvc" },
   { crate = "windows_i686_gnu" },
-  { crate = "windows_i686_gnullvm" },
   { crate = "windows_i686_msvc" },
   { crate = "windows_x86_64_gnu" },
   { crate = "windows_x86_64_gnullvm" },

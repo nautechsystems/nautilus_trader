@@ -21,7 +21,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::StackStr;
+use nautilus_core::{StackStr, correctness::CorrectnessResult};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Represents a valid trade match ID (assigned by a trading venue).
@@ -37,6 +37,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct TradeId(StackStr);
 
@@ -54,7 +58,7 @@ impl TradeId {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+    pub fn new_checked<T: AsRef<str>>(value: T) -> CorrectnessResult<Self> {
         Ok(Self(StackStr::new_checked(value.as_ref())?))
     }
 
@@ -77,7 +81,7 @@ impl TradeId {
     ///
     /// Returns an error if `bytes` is empty, contains non-ASCII characters,
     /// or exceeds 36 bytes (excluding trailing null terminator).
-    pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
+    pub fn from_bytes(bytes: &[u8]) -> CorrectnessResult<Self> {
         Ok(Self(StackStr::from_bytes(bytes)?))
     }
 
@@ -129,6 +133,7 @@ impl<'de> Deserialize<'de> for TradeId {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::correctness::CorrectnessError;
     use rstest::rstest;
 
     use crate::identifiers::{TradeId, stubs::*};
@@ -137,6 +142,19 @@ mod tests {
     fn test_trade_id_new_valid() {
         let trade_id = TradeId::new("TRADE12345");
         assert_eq!(trade_id.to_string(), "TRADE12345");
+    }
+
+    #[rstest]
+    fn test_trade_id_new_checked_returns_typed_error_with_stable_display() {
+        let error = TradeId::new_checked("").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: "String is empty".to_string(),
+            }
+        );
+        assert_eq!(error.to_string(), "String is empty");
     }
 
     #[rstest]

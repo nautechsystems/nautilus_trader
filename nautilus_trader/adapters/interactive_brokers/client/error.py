@@ -36,7 +36,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
 
     WARNING_CODES: Final[set[int]] = {1101, 1102, 110, 165, 202, 399, 404, 434, 492, 10167}
     CLIENT_ERRORS: Final[set[int]] = {502, 503, 504, 10038, 10182, 1100, 2110}
-    CONNECTIVITY_LOST_CODES: Final[set[int]] = {1100, 1300, 2110}
+    CONNECTIVITY_LOST_CODES: Final[set[int]] = {326, 1100, 1300, 2110}
     CONNECTIVITY_RESTORED_CODES: Final[set[int]] = {1101, 1102}
     ORDER_REJECTION_CODES: Final[set[int]] = {201, 203, 321, 10289, 10293}
     SUPPRESS_ERROR_LOGGING_CODES: Final[set[int]] = {200}

@@ -27,6 +27,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
+from nautilus_trader.core.nautilus_pyo3 import HyperliquidEnvironment
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
@@ -107,10 +108,16 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
         # Configuration
         self._config = config
-        self._log.info(f"config.testnet={config.testnet}", LogColor.BLUE)
+        environment = (
+            config.environment
+            if config.environment is not None
+            else (
+                HyperliquidEnvironment.TESTNET if config.testnet else HyperliquidEnvironment.MAINNET
+            )
+        )
+        self._log.info(f"config.environment={environment}", LogColor.BLUE)
         self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
-        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
 
         # HTTP client (uses EVM private key for authentication, not API key)
         self._http_client = client
@@ -119,7 +126,8 @@ class HyperliquidDataClient(LiveMarketDataClient):
         # WebSocket client for market data
         self._ws_client = nautilus_pyo3.HyperliquidWebSocketClient(
             url=config.base_url_ws,
-            testnet=config.testnet,
+            environment=environment,
+            proxy_url=config.proxy_url,
         )
 
     @property
@@ -266,6 +274,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         instruments = []
+
         for instrument_id in request.instrument_ids:
             instrument = self.instrument_provider.find(instrument_id)
             if instrument:

@@ -57,7 +57,7 @@ NautilusTrader integration guide.
 | Stock Perpetuals  | -         | -       | *Not yet supported*. Currently on testnet only.     |
 | Futures           | ✓         | ✓       | Traditional fixed expiration contracts.             |
 | Quanto Futures    | ✓         | ✓       | Settled in different currency than underlying.      |
-| Prediction Markets| ✓         | ✓       | Event-based contracts, 0-100 pricing, USDT settled. |
+| Prediction Markets| ✓         | ✓       | Event‑based contracts, 0-100 pricing, USDT settled. |
 | Options           | -         | -       | *Not provided by BitMEX*.                           |
 
 :::note
@@ -85,14 +85,14 @@ The adapter recognizes the following instrument type codes:
 
 | Code     | Type                 | Status      | Description                                     |
 |----------|----------------------|-------------|-------------------------------------------------|
-| `FFWCSX` | Perpetual Contract   | Supported   | Crypto-based perpetual swaps (e.g., XBTUSD).    |
-| `FFWCSF` | Perpetual FX         | Supported   | FX-based perpetual contracts.                   |
+| `FFWCSX` | Perpetual Contract   | Supported   | Crypto‑based perpetual swaps (e.g., XBTUSD).    |
+| `FFWCSF` | Perpetual FX         | Supported   | FX‑based perpetual contracts.                   |
 | `FFCCSX` | Futures              | Supported   | Calendar futures with fixed expiration.         |
-| `FFICSX` | Prediction Market    | Supported   | Event-based prediction contracts.               |
+| `FFICSX` | Prediction Market    | Supported   | Event‑based prediction contracts.               |
 | `IFXXXP` | Spot                 | Supported   | Spot trading pairs.                             |
-| `FFSCSX` | Stock Perpetual      | Unsupported | Stock/equity-based perpetuals. Testnet only.    |
-| `SRMCSX` | Swap Rate            | Unsupported | Yield-based swap products (historical).         |
-| `MR****` | Index                | Reference   | BitMEX indices (non-tradeable, for price ref).  |
+| `FFSCSX` | Stock Perpetual      | Unsupported | Stock/equity‑based perpetuals. Testnet only.    |
+| `SRMCSX` | Swap Rate            | Unsupported | Yield‑based swap products (historical).         |
+| `MR****` | Index                | Reference   | BitMEX indices (non‑tradeable, for price ref).  |
 
 See [BitMEX Typ Values](https://support.bitmex.com/hc/en-gb/articles/6299296145565-What-are-the-Typ-Values-for-Instrument-endpoint) for more details.
 
@@ -223,7 +223,7 @@ Choose the trigger type that matches your strategy and/or risk preferences.
 | Reference price | Nautilus `TriggerType` | BitMEX value  | Notes                                                                           |
 |-----------------|------------------------|---------------|---------------------------------------------------------------------------------|
 | Last trade      | `LAST_PRICE`           | `LastPrice`   | BitMEX default; triggers on the last traded price.                              |
-| Mark price      | `MARK_PRICE`           | `MarkPrice`   | Recommended for many stop-loss use cases to reduce stop-outs from price spikes. |
+| Mark price      | `MARK_PRICE`           | `MarkPrice`   | Recommended for many stop‑loss use cases to reduce stop‑outs from price spikes. |
 | Index price     | `INDEX_PRICE`          | `IndexPrice`  | Tracks the external index; useful for some contracts.                           |
 
 - If no `trigger_type` is provided, BitMEX uses its venue default (`LastPrice`).
@@ -289,7 +289,7 @@ to `Pegged` on the exchange side.
 |----------------|------------------------------------------------------------------|
 | `PrimaryPeg`   | Pegs to the best bid (buy) or best ask (sell).                   |
 | `MarketPeg`    | Pegs to the opposite side (best ask for buy, best bid for sell). |
-| `MidPricePeg`  | Pegs to the mid-price between bid and ask.                       |
+| `MidPricePeg`  | Pegs to the mid‑price between bid and ask.                       |
 | `LastPeg`      | Pegs to the last traded price.                                   |
 
 **Requirements**:
@@ -356,7 +356,7 @@ See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API 
 
 | Feature             | Supported | Notes                                              |
 |---------------------|-----------|----------------------------------------------------|
-| Query positions     | ✓         | REST and real-time position updates via WebSocket. |
+| Query positions     | ✓         | REST and real‑time position updates via WebSocket. |
 | Cross margin        | ✓         | Default margin mode.                               |
 | Isolated margin     | ✓         |                                                    |
 
@@ -366,8 +366,34 @@ See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API 
 |----------------------|-----------|----------------------------------------------|
 | Query open orders    | ✓         | List all active orders.                      |
 | Query order history  | ✓         | Historical order data.                       |
-| Order status updates | ✓         | Real-time order state changes via WebSocket. |
+| Order status updates | ✓         | Real‑time order state changes via WebSocket. |
 | Trade history        | ✓         | Execution and fill reports.                  |
+
+### Liquidation and ADL handling
+
+BitMEX surfaces forced-close fills through the `execType` field on the
+`execution` channel:
+
+| `execType`    | Meaning                                                      |
+|---------------|--------------------------------------------------------------|
+| `Trade`       | Normal execution (user or taker‑initiated).                  |
+| `Liquidation` | Position was force‑closed by the liquidation engine. BitMEX uses this code for both auto‑deleveraging and counterparty liquidation fills. |
+| `Bankruptcy`  | Account bankruptcy; position closed against the insurance fund. |
+| `Settlement`  | Scheduled contract settlement.                               |
+| `Funding`     | Funding settlement on open positions.                        |
+
+The adapter routes `Liquidation` and `Bankruptcy` through the standard
+`FillReport` path and logs a warning on bankruptcy executions. BitMEX's public
+API does **not** distinguish auto-deleveraging from counterparty liquidation
+in `execType`; both appear as `Liquidation`. An ADL-closed position can
+usually be identified by zero commission and the absence of a matching order
+in the local cache (the engine creates an external order for it).
+
+Upstream references:
+
+- [`/execution` field definitions](https://support.bitmex.com/hc/en-gb/articles/6205689858077--execution-field-definitions)
+- [Auto-Deleveraging overview](https://support.bitmex.com/hc/en-gb/articles/18589621443357-What-is-Auto-Deleveraging)
+- [Liquidation overview](https://support.bitmex.com/hc/en-gb/articles/360003188434-Liquidations)
 
 ## Market data
 
@@ -383,6 +409,15 @@ See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API 
 BitMEX caps each REST response at 1,000 rows and requires manual pagination via `start`/`startTime`. The current adapter returns only the
 first page; wider pagination support is scheduled for a future update.
 :::
+
+### Trade ID derivation
+
+Trade ticks and fills use the venue-provided `trdMatchID` (UUID) as the
+`TradeId`. When the venue omits `trdMatchID` (bucketed trades or certain
+execution types), the execution path falls back to the venue's `execID`; market
+data parsers fall back to a deterministic FNV-1a hash of the symbol,
+`ts_event`, price, size, and side. The same venue event yields the same trade
+ID across replays, keeping downstream dedup intact.
 
 ## Connection management
 
@@ -404,6 +439,14 @@ BitMEX uses an `api-expires` header for request authentication to prevent replay
 
 - Signed requests include an `api-expires` Unix timestamp set `recv_window_ms / 1000` seconds ahead (10 seconds by default).
 - BitMEX rejects any request once that timestamp has passed, so keep latency within your configured window.
+
+## Funding rates
+
+The adapter receives funding rate data from the
+[Funding](https://www.bitmex.com/app/wsAPI#Funding)
+WebSocket stream. BitMEX returns a `fundingInterval` datetime field in each message,
+and the adapter reads the hours and minutes to compute the `interval` field on
+`FundingRateUpdate`.
 
 ## Rate limiting
 
@@ -580,10 +623,10 @@ The broadcaster exposes metrics including total cancels, successful cancels, fai
 
 | Metric                   | Type   | Description                                                                                                           |
 |--------------------------|--------|-----------------------------------------------------------------------------------------------------------------------|
-| `total_cancels`          | `u64`  | Total number of cancel operations initiated (includes single, batch, and cancel-all requests).                        |
+| `total_cancels`          | `u64`  | Total number of cancel operations initiated (includes single, batch, and cancel‑all requests).                        |
 | `successful_cancels`     | `u64`  | Number of cancel operations that successfully received acknowledgement from BitMEX.                                   |
 | `failed_cancels`         | `u64`  | Number of cancel operations where all HTTP clients in the pool failed (no healthy clients or all requests failed).    |
-| `expected_rejects`       | `u64`  | Number of expected rejection patterns detected (e.g., post-only order rejections).                                    |
+| `expected_rejects`       | `u64`  | Number of expected rejection patterns detected (e.g., post‑only order rejections).                                    |
 | `idempotent_successes`   | `u64`  | Number of idempotent success responses (order already cancelled, order not found, unable to cancel due to state).     |
 | `healthy_clients`        | `usize`| Current number of healthy HTTP clients in the pool (clients that passed recent health checks).                        |
 | `total_clients`          | `usize`| Total number of HTTP clients configured in the pool (`canceller_pool_size`).                                          |
@@ -748,17 +791,16 @@ The BitMEX data client provides the following configuration options:
 | `api_secret`                      | `None`   | Optional API secret; if `None`, loaded from `BITMEX_API_SECRET` or `BITMEX_TESTNET_API_SECRET` (when `testnet=True`). |
 | `base_url_http`                   | `None`   | Override for the REST base URL (defaults to production). |
 | `base_url_ws`                     | `None`   | Override for the WebSocket base URL (defaults to production). |
-| `testnet`                         | `False`  | Route requests to the BitMEX testnet when `True`. |
+| `testnet`                     | `False`  | Route requests to the BitMEX testnet when `True`. |
 | `http_timeout_secs`               | `60`     | Request timeout applied to HTTP calls. |
-| `max_retries`                     | `None`   | Maximum retry attempts for HTTP calls (disabled when `None`). |
+| `max_retries`                     | `3`      | Maximum retry attempts for HTTP calls. |
 | `retry_delay_initial_ms`          | `1,000`  | Initial backoff delay (milliseconds) between retries. |
-| `retry_delay_max_ms`              | `5,000`  | Maximum backoff delay (milliseconds) between retries. |
+| `retry_delay_max_ms`              | `10,000` | Maximum backoff delay (milliseconds) between retries. |
 | `recv_window_ms`                  | `10,000` | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
 | `update_instruments_interval_mins`| `60`     | Interval (minutes) between instrument catalogue refreshes. |
 | `max_requests_per_second`         | `10`     | Burst rate limit enforced by the adapter for REST calls. |
 | `max_requests_per_minute`         | `120`    | Rolling minute rate limit enforced by the adapter for REST calls. |
-| `http_proxy_url`                  | `None`   | Optional HTTP proxy URL. |
-| `ws_proxy_url`                    | `None`   | Optional WebSocket proxy URL. *Not yet implemented; reserved for future use.* |
+| `proxy_url`                       | `None`   | Optional proxy URL for HTTP and WebSocket transports. |
 
 ### Execution client configuration options
 
@@ -772,17 +814,16 @@ The BitMEX execution client provides the following configuration options:
 | `base_url_ws`            | `None`   | Override for the WebSocket base URL (defaults to production). |
 | `testnet`                | `False`  | Route orders to the BitMEX testnet when `True`. |
 | `http_timeout_secs`      | `60`     | Request timeout applied to HTTP calls. |
-| `max_retries`            | `None`   | Maximum retry attempts for HTTP calls (disabled when `None`). |
+| `max_retries`            | `3`      | Maximum retry attempts for HTTP calls. |
 | `retry_delay_initial_ms` | `1,000`  | Initial backoff delay (milliseconds) between retries. |
-| `retry_delay_max_ms`     | `5,000`  | Maximum backoff delay (milliseconds) between retries. |
+| `retry_delay_max_ms`     | `10,000` | Maximum backoff delay (milliseconds) between retries. |
 | `recv_window_ms`         | `10,000` | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
 | `max_requests_per_second`| `10`     | Burst rate limit enforced by the adapter for REST calls. |
 | `max_requests_per_minute`| `120`    | Rolling minute rate limit enforced by the adapter for REST calls. |
 | `deadmans_switch_timeout_secs` | `None`   | Timeout in seconds for the dead man's switch. `None` disables. See [Dead man's switch](#dead-mans-switch). |
 | `canceller_pool_size`    | `None`   | Number of HTTP clients in the cancel broadcaster pool. `None` resolves to 1. See [Cancel broadcaster](#cancel-broadcaster). |
 | `submitter_pool_size`    | `None`   | Number of HTTP clients in the submit broadcaster pool. `None` resolves to 1. See [Submit broadcaster](#submit-broadcaster). |
-| `http_proxy_url`         | `None`   | Optional HTTP proxy URL. |
-| `ws_proxy_url`           | `None`   | Optional WebSocket proxy URL. *Not yet implemented; reserved for future use.* |
+| `proxy_url`              | `None`   | Optional proxy URL for HTTP and WebSocket transports. |
 | `submitter_proxy_urls`   | `None`   | Optional list of proxy URLs for submit broadcaster path diversity. *Not yet wired through Python integration.* |
 | `canceller_proxy_urls`   | `None`   | Optional list of proxy URLs for cancel broadcaster path diversity. *Not yet wired through Python integration.* |
 

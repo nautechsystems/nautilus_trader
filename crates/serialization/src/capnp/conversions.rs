@@ -441,7 +441,7 @@ impl<'a> FromCapnp<'a> for InstrumentId {
 impl<'a> ToCapnp<'a> for Price {
     type Builder = types_capnp::price::Builder<'a>;
 
-    #[allow(clippy::useless_conversion)] // Needed for non-high-precision builds
+    #[expect(clippy::useless_conversion)] // Needed for non-high-precision builds
     fn to_capnp(&self, mut builder: Self::Builder) {
         let raw_i128: i128 = self.raw.into();
         let lo = raw_i128 as u64;
@@ -477,7 +477,7 @@ impl<'a> FromCapnp<'a> for Price {
         #[cfg(feature = "high-precision")]
         let raw = raw_i128;
 
-        #[allow(clippy::useless_conversion)] // Needed for non-high-precision builds
+        #[expect(clippy::useless_conversion)] // Needed for non-high-precision builds
         Ok(Self::from_raw(raw.into(), precision))
     }
 }
@@ -485,7 +485,7 @@ impl<'a> FromCapnp<'a> for Price {
 impl<'a> ToCapnp<'a> for Quantity {
     type Builder = types_capnp::quantity::Builder<'a>;
 
-    #[allow(clippy::useless_conversion)] // Needed for non-high-precision builds
+    #[expect(clippy::useless_conversion)] // Needed for non-high-precision builds
     fn to_capnp(&self, mut builder: Self::Builder) {
         let raw_u128: u128 = self.raw.into();
         let lo = raw_u128 as u64;
@@ -519,7 +519,7 @@ impl<'a> FromCapnp<'a> for Quantity {
         #[cfg(feature = "high-precision")]
         let raw = raw_u128;
 
-        #[allow(clippy::useless_conversion)] // Needed for non-high-precision builds
+        #[expect(clippy::useless_conversion)] // Needed for non-high-precision builds
         Ok(Self::from_raw(raw.into(), precision))
     }
 }
@@ -1150,6 +1150,24 @@ pub fn market_status_action_from_capnp(
     }
 }
 
+#[must_use]
+pub fn optional_bool_to_capnp(value: Option<bool>) -> enums_capnp::OptionalBool {
+    match value {
+        None => enums_capnp::OptionalBool::Unknown,
+        Some(true) => enums_capnp::OptionalBool::True,
+        Some(false) => enums_capnp::OptionalBool::False,
+    }
+}
+
+#[must_use]
+pub fn optional_bool_from_capnp(value: enums_capnp::OptionalBool) -> Option<bool> {
+    match value {
+        enums_capnp::OptionalBool::Unknown => None,
+        enums_capnp::OptionalBool::True => Some(true),
+        enums_capnp::OptionalBool::False => Some(false),
+    }
+}
+
 impl<'a> ToCapnp<'a> for Currency {
     type Builder = types_capnp::currency::Builder<'a>;
 
@@ -1179,7 +1197,7 @@ impl<'a> FromCapnp<'a> for Currency {
 impl<'a> ToCapnp<'a> for Money {
     type Builder = types_capnp::money::Builder<'a>;
 
-    #[allow(clippy::useless_conversion)] // Needed for non-high-precision builds
+    #[expect(clippy::useless_conversion)] // Needed for non-high-precision builds
     fn to_capnp(&self, mut builder: Self::Builder) {
         let mut raw_builder = builder.reborrow().init_raw();
 
@@ -1263,8 +1281,12 @@ impl<'a> ToCapnp<'a> for MarginBalance {
         let maintenance_builder = builder.reborrow().init_maintenance();
         self.maintenance.to_capnp(maintenance_builder);
 
-        let instrument_builder = builder.init_instrument();
-        self.instrument_id.to_capnp(instrument_builder);
+        // Only set the instrument pointer for per-instrument entries; leave
+        // unset to signal account-wide (cross margin) balances.
+        if let Some(instrument_id) = self.instrument_id {
+            let instrument_builder = builder.init_instrument();
+            instrument_id.to_capnp(instrument_builder);
+        }
     }
 }
 
@@ -1278,8 +1300,12 @@ impl<'a> FromCapnp<'a> for MarginBalance {
         let maintenance_reader = reader.get_maintenance()?;
         let maintenance = Money::from_capnp(maintenance_reader)?;
 
-        let instrument_reader = reader.get_instrument()?;
-        let instrument_id = InstrumentId::from_capnp(instrument_reader)?;
+        let instrument_id = if reader.has_instrument() {
+            let instrument_reader = reader.get_instrument()?;
+            Some(InstrumentId::from_capnp(instrument_reader)?)
+        } else {
+            None
+        };
 
         Ok(Self::new(initial, maintenance, instrument_id))
     }
@@ -1696,8 +1722,15 @@ impl<'a> ToCapnp<'a> for FundingRateUpdate {
         let rate_builder = builder.reborrow().init_rate();
         self.rate.to_capnp(rate_builder);
 
-        let mut next_funding_time_builder = builder.reborrow().init_next_funding_time();
-        next_funding_time_builder.set_value(self.next_funding_ns.map_or(0, |ns| *ns));
+        if let Some(interval) = self.interval {
+            builder.reborrow().set_interval(interval);
+            builder.reborrow().set_has_interval(true);
+        }
+
+        if let Some(next_funding_ns) = self.next_funding_ns {
+            let mut next_funding_time_builder = builder.reborrow().init_next_funding_time();
+            next_funding_time_builder.set_value(*next_funding_ns);
+        }
 
         let mut ts_event_builder = builder.reborrow().init_ts_event();
         ts_event_builder.set_value(*self.ts_event);
@@ -1717,12 +1750,17 @@ impl<'a> FromCapnp<'a> for FundingRateUpdate {
         let rate_reader = reader.get_rate()?;
         let rate = Decimal::from_capnp(rate_reader)?;
 
-        let next_funding_time_reader = reader.get_next_funding_time()?;
-        let next_funding_time_value = next_funding_time_reader.get_value();
-        let next_funding_ns = if next_funding_time_value == 0 {
-            None
+        let interval = if reader.get_has_interval() {
+            Some(reader.get_interval())
         } else {
-            Some(next_funding_time_value.into())
+            None
+        };
+
+        let next_funding_ns = if reader.has_next_funding_time() {
+            let next_funding_time_reader = reader.get_next_funding_time()?;
+            Some(next_funding_time_reader.get_value().into())
+        } else {
+            None
         };
 
         let ts_event_reader = reader.get_ts_event()?;
@@ -1734,6 +1772,7 @@ impl<'a> FromCapnp<'a> for FundingRateUpdate {
         Ok(Self {
             instrument_id,
             rate,
+            interval,
             next_funding_ns,
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
@@ -1797,11 +1836,18 @@ impl<'a> ToCapnp<'a> for InstrumentStatus {
         self.instrument_id.to_capnp(instrument_id_builder);
 
         builder.set_action(market_status_action_to_capnp(self.action));
-        builder.set_reason(self.reason.as_ref().map_or("", |s| s.as_str()));
-        builder.set_trading_event(self.trading_event.as_ref().map_or("", |s| s.as_str()));
-        builder.set_is_trading(self.is_trading.unwrap_or(false));
-        builder.set_is_quoting(self.is_quoting.unwrap_or(false));
-        builder.set_is_short_sell_restricted(self.is_short_sell_restricted.unwrap_or(false));
+
+        if let Some(reason) = self.reason {
+            builder.reborrow().set_reason(reason.as_str());
+        }
+
+        if let Some(trading_event) = self.trading_event {
+            builder.reborrow().set_trading_event(trading_event.as_str());
+        }
+
+        builder.set_is_trading(optional_bool_to_capnp(self.is_trading));
+        builder.set_is_quoting(optional_bool_to_capnp(self.is_quoting));
+        builder.set_is_short_sell_restricted(optional_bool_to_capnp(self.is_short_sell_restricted));
 
         let mut ts_event_builder = builder.reborrow().init_ts_event();
         ts_event_builder.set_value(*self.ts_event);
@@ -1820,23 +1866,22 @@ impl<'a> FromCapnp<'a> for InstrumentStatus {
 
         let action = market_status_action_from_capnp(reader.get_action()?);
 
-        let reason_str = reader.get_reason()?.to_str()?;
-        let reason = if reason_str.is_empty() {
-            None
+        let reason = if reader.has_reason() {
+            Some(Ustr::from(reader.get_reason()?.to_str()?))
         } else {
-            Some(Ustr::from(reason_str))
+            None
         };
 
-        let trading_event_str = reader.get_trading_event()?.to_str()?;
-        let trading_event = if trading_event_str.is_empty() {
-            None
+        let trading_event = if reader.has_trading_event() {
+            Some(Ustr::from(reader.get_trading_event()?.to_str()?))
         } else {
-            Some(Ustr::from(trading_event_str))
+            None
         };
 
-        let is_trading = Some(reader.get_is_trading());
-        let is_quoting = Some(reader.get_is_quoting());
-        let is_short_sell_restricted = Some(reader.get_is_short_sell_restricted());
+        let is_trading = optional_bool_from_capnp(reader.get_is_trading()?);
+        let is_quoting = optional_bool_from_capnp(reader.get_is_quoting()?);
+        let is_short_sell_restricted =
+            optional_bool_from_capnp(reader.get_is_short_sell_restricted()?);
 
         let ts_event_reader = reader.get_ts_event()?;
         let ts_event = ts_event_reader.get_value();
@@ -2091,8 +2136,8 @@ impl<'a> ToCapnp<'a> for OrderBookDeltas {
 
         let mut deltas_builder = builder.reborrow().init_deltas(self.deltas.len() as u32);
         for (i, delta) in self.deltas.iter().enumerate() {
-            let delta_builder = deltas_builder.reborrow().get(i as u32);
-            delta.to_capnp(delta_builder);
+            let entry_builder = deltas_builder.reborrow().get(i as u32);
+            delta.to_capnp(entry_builder);
         }
 
         builder.set_flags(self.flags);
@@ -2205,6 +2250,7 @@ impl<'a> FromCapnp<'a> for OrderBookDepth10 {
         // Convert bids (BookLevel list to BookOrder array)
         let bids_reader = reader.get_bids()?;
         let mut bids = [NULL_ORDER; 10];
+
         for (i, level_reader) in bids_reader.iter().enumerate().take(10) {
             let price_reader = level_reader.get_price()?;
             let price = Price::from_capnp(price_reader)?;
@@ -2218,6 +2264,7 @@ impl<'a> FromCapnp<'a> for OrderBookDepth10 {
         // Convert asks (BookLevel list to BookOrder array)
         let asks_reader = reader.get_asks()?;
         let mut asks = [NULL_ORDER; 10];
+
         for (i, level_reader) in asks_reader.iter().enumerate().take(10) {
             let price_reader = level_reader.get_price()?;
             let price = Price::from_capnp(price_reader)?;
@@ -3364,6 +3411,7 @@ impl<'a> ToCapnp<'a> for OrderUpdated {
         ts_init_builder.set_value(*self.ts_init);
 
         builder.set_reconciliation(self.reconciliation != 0);
+        builder.set_is_quote_quantity(self.is_quote_quantity);
     }
 }
 
@@ -3437,6 +3485,7 @@ impl<'a> FromCapnp<'a> for OrderUpdated {
             price,
             trigger_price,
             protection_price,
+            is_quote_quantity: reader.get_is_quote_quantity(),
             event_id,
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
@@ -4517,13 +4566,7 @@ impl<'a> FromCapnp<'a> for PositionAdjusted {
         };
 
         let reason = if reader.has_reason() {
-            let reason_reader = reader.get_reason()?;
-            let text = reason_reader.to_str()?;
-            if text.is_empty() {
-                None
-            } else {
-                Some(Ustr::from(text))
-            }
+            Some(Ustr::from(reader.get_reason()?.to_str()?))
         } else {
             None
         };
@@ -4724,10 +4767,21 @@ mod tests {
         let initial = Money::new(500.0, Currency::USD());
         let maintenance = Money::new(250.0, Currency::USD());
         let instrument_id = InstrumentId::from("BTC-USD-PERP.BINANCE");
-        let balance = MarginBalance::new(initial, maintenance, instrument_id);
+        let balance = MarginBalance::new(initial, maintenance, Some(instrument_id));
         let bytes = serialize_margin_balance(&balance).unwrap();
         let decoded = deserialize_margin_balance(&bytes).unwrap();
         assert_eq!(balance, decoded);
+    }
+
+    #[rstest]
+    fn test_margin_balance_account_scope_roundtrip() {
+        let initial = Money::new(500.0, Currency::USD());
+        let maintenance = Money::new(250.0, Currency::USD());
+        let balance = MarginBalance::new(initial, maintenance, None);
+        let bytes = serialize_margin_balance(&balance).unwrap();
+        let decoded = deserialize_margin_balance(&bytes).unwrap();
+        assert_eq!(balance, decoded);
+        assert!(decoded.instrument_id.is_none());
     }
 
     // Identifier round-trip coverage
@@ -5128,6 +5182,7 @@ mod tests {
         FundingRateUpdate::new(
             InstrumentId::from("BTCUSD-PERP.BINANCE"),
             dec!(0.0001),
+            Some(60),
             Some(UnixNanos::from(1_000_000)),
             UnixNanos::from(5),
             UnixNanos::from(6),

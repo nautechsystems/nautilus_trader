@@ -15,7 +15,11 @@
 
 use std::{env, time::Duration};
 
-use nautilus_hyperliquid::{common::consts::ws_url, websocket::client::HyperliquidWebSocketClient};
+use nautilus_hyperliquid::{
+    common::{consts::ws_url, enums::HyperliquidEnvironment},
+    websocket::client::HyperliquidWebSocketClient,
+};
+use nautilus_network::websocket::TransportBackend;
 use tokio::{pin, signal};
 
 #[tokio::main]
@@ -23,15 +27,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
     let args: Vec<String> = env::args().collect();
-    let testnet = args.get(1).is_some_and(|s| s == "testnet");
+    let environment = if args.get(1).is_some_and(|s| s == "testnet") {
+        HyperliquidEnvironment::Testnet
+    } else {
+        HyperliquidEnvironment::Mainnet
+    };
 
     log::info!("Starting Hyperliquid WebSocket execution example");
-    log::info!("Testnet: {testnet}");
+    log::info!("Environment: {environment:?}");
 
-    let ws_url = ws_url(testnet);
+    let ws_url = ws_url(environment);
     log::info!("WebSocket URL: {ws_url}");
 
-    let mut client = HyperliquidWebSocketClient::new(Some(ws_url.to_string()), testnet, None);
+    let mut client = HyperliquidWebSocketClient::new(
+        Some(ws_url.to_string()),
+        environment,
+        None,
+        TransportBackend::default(),
+        None,
+    );
     client.connect().await?;
     log::info!("Connected to Hyperliquid WebSocket");
 

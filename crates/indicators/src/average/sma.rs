@@ -31,6 +31,10 @@ const MAX_PERIOD: usize = 1_024;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
+)]
 pub struct SimpleMovingAverage {
     pub period: usize,
     pub price_type: PriceType,
@@ -390,6 +394,7 @@ mod tests {
     #[rstest]
     fn sma_multiple_resets() {
         let mut sma = SimpleMovingAverage::new(4, None);
+
         for cycle in 0..5 {
             for x in 0..4 {
                 sma.update_raw(f64::from(x));

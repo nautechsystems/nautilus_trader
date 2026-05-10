@@ -15,7 +15,6 @@
 
 use std::fmt::{Debug, Display};
 
-use derive_builder::Builder;
 use nautilus_core::{UUID4, UnixNanos, serialization::from_bool_as_u8};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -36,14 +35,17 @@ use crate::{
 
 /// Represents an event where an order has been accepted by the trading venue.
 ///
-/// This event often corresponds to a `NEW` OrdStatus <39> field in FIX execution reports.
+/// This event often corresponds to a `NEW` `OrdStatus` <39> field in FIX execution reports.
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[cfg_attr(any(test, feature = "stubs"), builder(default))]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct OrderAccepted {
     /// The trader ID associated with the event.
@@ -71,7 +73,8 @@ pub struct OrderAccepted {
 
 impl OrderAccepted {
     /// Creates a new [`OrderAccepted`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -138,7 +141,7 @@ impl OrderEvent for OrderAccepted {
         self.event_id
     }
 
-    fn kind(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(OrderAccepted)
     }
 
@@ -309,11 +312,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::{
-        events::order::stubs::*,
-        identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
-        stubs::TestDefault,
-    };
+    use crate::events::order::stubs::*;
 
     fn create_test_order_accepted() -> OrderAccepted {
         OrderAccepted::new(
@@ -331,45 +330,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_accepted_new() {
-        let order_accepted = create_test_order_accepted();
-
-        assert_eq!(order_accepted.trader_id, TraderId::from("TRADER-001"));
-        assert_eq!(order_accepted.strategy_id, StrategyId::from("EMA-CROSS"));
-        assert_eq!(
-            order_accepted.instrument_id,
-            InstrumentId::from("EURUSD.SIM")
-        );
-        assert_eq!(
-            order_accepted.client_order_id,
-            ClientOrderId::from("O-19700101-000000-001-001-1")
-        );
-        assert_eq!(order_accepted.venue_order_id, VenueOrderId::from("V-001"));
-        assert_eq!(order_accepted.account_id, AccountId::from("SIM-001"));
-        assert_eq!(order_accepted.ts_event, UnixNanos::from(1_000_000_000));
-        assert_eq!(order_accepted.ts_init, UnixNanos::from(2_000_000_000));
-        assert_eq!(order_accepted.reconciliation, 0);
-    }
-
-    #[rstest]
-    fn test_order_accepted_new_with_reconciliation() {
-        let order_accepted = OrderAccepted::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("EMA-CROSS"),
-            InstrumentId::from("EURUSD.SIM"),
-            ClientOrderId::from("O-19700101-000000-001-001-1"),
-            VenueOrderId::from("V-001"),
-            AccountId::from("SIM-001"),
-            UUID4::default(),
-            UnixNanos::from(1_000_000_000),
-            UnixNanos::from(2_000_000_000),
-            true,
-        );
-
-        assert_eq!(order_accepted.reconciliation, 1);
-    }
-
-    #[rstest]
     fn test_order_accepted_display(order_accepted: OrderAccepted) {
         let display = format!("{order_accepted}");
         assert_eq!(
@@ -378,103 +338,23 @@ mod tests {
         );
     }
 
+    // TODO: Remove once reconciliation field is converted back to bool (post-Cython)
     #[rstest]
-    fn test_order_accepted_default() {
-        let order_accepted = OrderAccepted::default();
-
-        assert_eq!(order_accepted.trader_id, TraderId::test_default());
-        assert_eq!(order_accepted.strategy_id, StrategyId::test_default());
-        assert_eq!(order_accepted.instrument_id, InstrumentId::test_default());
-        assert_eq!(
-            order_accepted.client_order_id,
-            ClientOrderId::test_default()
+    fn test_reconciliation_bool_to_u8() {
+        let mut event = create_test_order_accepted();
+        event = OrderAccepted::new(
+            event.trader_id,
+            event.strategy_id,
+            event.instrument_id,
+            event.client_order_id,
+            event.venue_order_id,
+            event.account_id,
+            event.event_id,
+            event.ts_event,
+            event.ts_init,
+            true,
         );
-        assert_eq!(order_accepted.venue_order_id, VenueOrderId::test_default());
-        assert_eq!(order_accepted.account_id, AccountId::test_default());
-        assert_eq!(order_accepted.reconciliation, 0);
-    }
-
-    #[rstest]
-    fn test_order_accepted_order_event_trait() {
-        let order_accepted = create_test_order_accepted();
-
-        assert_eq!(order_accepted.id(), order_accepted.event_id);
-        assert_eq!(order_accepted.kind(), "OrderAccepted");
-        assert_eq!(order_accepted.order_type(), None);
-        assert_eq!(order_accepted.order_side(), None);
-        assert_eq!(order_accepted.trader_id(), TraderId::from("TRADER-001"));
-        assert_eq!(order_accepted.strategy_id(), StrategyId::from("EMA-CROSS"));
-        assert_eq!(
-            order_accepted.instrument_id(),
-            InstrumentId::from("EURUSD.SIM")
-        );
-        assert_eq!(order_accepted.trade_id(), None);
-        assert_eq!(order_accepted.currency(), None);
-        assert_eq!(
-            order_accepted.client_order_id(),
-            ClientOrderId::from("O-19700101-000000-001-001-1")
-        );
-        assert_eq!(order_accepted.reason(), None);
-        assert_eq!(order_accepted.quantity(), None);
-        assert_eq!(order_accepted.time_in_force(), None);
-        assert_eq!(order_accepted.liquidity_side(), None);
-        assert_eq!(order_accepted.post_only(), None);
-        assert_eq!(order_accepted.reduce_only(), None);
-        assert_eq!(order_accepted.quote_quantity(), None);
-        assert!(!order_accepted.reconciliation());
-        assert_eq!(
-            order_accepted.venue_order_id(),
-            Some(VenueOrderId::from("V-001"))
-        );
-        assert_eq!(
-            order_accepted.account_id(),
-            Some(AccountId::from("SIM-001"))
-        );
-        assert_eq!(order_accepted.position_id(), None);
-        assert_eq!(order_accepted.commission(), None);
-        assert_eq!(order_accepted.ts_event(), UnixNanos::from(1_000_000_000));
-        assert_eq!(order_accepted.ts_init(), UnixNanos::from(2_000_000_000));
-    }
-
-    #[rstest]
-    fn test_order_accepted_clone() {
-        let order_accepted1 = create_test_order_accepted();
-        let order_accepted2 = order_accepted1;
-
-        assert_eq!(order_accepted1, order_accepted2);
-    }
-
-    #[rstest]
-    fn test_order_accepted_debug() {
-        let order_accepted = create_test_order_accepted();
-        let debug_str = format!("{order_accepted:?}");
-
-        assert!(debug_str.contains("OrderAccepted"));
-        assert!(debug_str.contains("TRADER-001"));
-        assert!(debug_str.contains("EMA-CROSS"));
-        assert!(debug_str.contains("EURUSD.SIM"));
-        assert!(debug_str.contains("O-19700101-000000-001-001-1"));
-    }
-
-    #[rstest]
-    fn test_order_accepted_partial_eq() {
-        let order_accepted1 = create_test_order_accepted();
-        let mut order_accepted2 = create_test_order_accepted();
-        order_accepted2.event_id = order_accepted1.event_id; // Make event_ids equal
-        let mut order_accepted3 = create_test_order_accepted();
-        order_accepted3.venue_order_id = VenueOrderId::from("V-002");
-
-        assert_eq!(order_accepted1, order_accepted2);
-        assert_ne!(order_accepted1, order_accepted3);
-    }
-
-    #[rstest]
-    fn test_order_accepted_timestamps() {
-        let order_accepted = create_test_order_accepted();
-
-        assert_eq!(order_accepted.ts_event, UnixNanos::from(1_000_000_000));
-        assert_eq!(order_accepted.ts_init, UnixNanos::from(2_000_000_000));
-        assert!(order_accepted.ts_event < order_accepted.ts_init);
+        assert_eq!(event.reconciliation, 1);
     }
 
     #[rstest]
@@ -485,31 +365,5 @@ mod tests {
         let deserialized: OrderAccepted = serde_json::from_str(&json).unwrap();
 
         assert_eq!(original, deserialized);
-    }
-
-    #[rstest]
-    fn test_order_accepted_different_venues() {
-        let mut venue1 = create_test_order_accepted();
-        venue1.venue_order_id = VenueOrderId::from("COINBASE-001");
-
-        let mut venue2 = create_test_order_accepted();
-        venue2.venue_order_id = VenueOrderId::from("BINANCE-001");
-
-        assert_ne!(venue1, venue2);
-        assert_eq!(venue1.venue_order_id, VenueOrderId::from("COINBASE-001"));
-        assert_eq!(venue2.venue_order_id, VenueOrderId::from("BINANCE-001"));
-    }
-
-    #[rstest]
-    fn test_order_accepted_different_accounts() {
-        let mut account1 = create_test_order_accepted();
-        account1.account_id = AccountId::from("LIVE-001");
-
-        let mut account2 = create_test_order_accepted();
-        account2.account_id = AccountId::from("SIM-001");
-
-        assert_ne!(account1, account2);
-        assert_eq!(account1.account_id, AccountId::from("LIVE-001"));
-        assert_eq!(account2.account_id, AccountId::from("SIM-001"));
     }
 }

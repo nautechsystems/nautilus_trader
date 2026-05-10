@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
     let config = KrakenDataClientConfig::default();
     let token = CancellationToken::new();
 
-    let mut client = KrakenSpotWebSocketClient::new(config, token.clone());
+    let mut client = KrakenSpotWebSocketClient::new(config, token.clone(), None);
 
     client.connect().await?;
 

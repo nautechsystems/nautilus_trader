@@ -14,12 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use bytes::Bytes;
-use nautilus_common::{
-    cache::database::CacheDatabaseAdapter, custom::CustomData, live::get_runtime, signal::Signal,
-};
+use nautilus_common::{cache::database::CacheDatabaseAdapter, live::get_runtime, signal::Signal};
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
-    data::{Bar, DataType, QuoteTick, TradeTick},
+    data::{Bar, CustomData, DataType, QuoteTick, TradeTick},
     events::{OrderSnapshot, PositionSnapshot},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     python::{
@@ -36,6 +34,7 @@ use crate::sql::{cache::PostgresCacheDatabase, queries::DatabaseQueries};
 
 #[pymethods]
 impl PostgresCacheDatabase {
+    /// Connects to the Postgres cache database using the provided connection parameters.
     #[staticmethod]
     #[pyo3(name = "connect")]
     #[pyo3(signature = (host=None, port=None, username=None, password=None, database=None))]
@@ -93,6 +92,7 @@ impl PostgresCacheDatabase {
             let result = DatabaseQueries::load_instrument(&self.pool, &instrument_id)
                 .await
                 .unwrap();
+
             match result {
                 Some(instrument) => {
                     let py_object = instrument_any_to_pyobject(py, instrument)?;
@@ -108,6 +108,7 @@ impl PostgresCacheDatabase {
         get_runtime().block_on(async {
             let result = DatabaseQueries::load_instruments(&self.pool).await.unwrap();
             let mut instruments = Vec::new();
+
             for instrument in result {
                 let py_object = instrument_any_to_pyobject(py, instrument)?;
                 instruments.push(py_object);
@@ -126,6 +127,7 @@ impl PostgresCacheDatabase {
             let result = DatabaseQueries::load_order(&self.pool, &client_order_id)
                 .await
                 .unwrap();
+
             match result {
                 Some(order) => {
                     let py_object = order_any_to_pyobject(py, order)?;
@@ -142,6 +144,7 @@ impl PostgresCacheDatabase {
             let result = DatabaseQueries::load_account(&self.pool, &account_id)
                 .await
                 .unwrap();
+
             match result {
                 Some(account) => {
                     let py_object = account_any_to_pyobject(py, account)?;
@@ -159,6 +162,7 @@ impl PostgresCacheDatabase {
                 .await
                 .unwrap();
             let mut quotes = Vec::new();
+
             for quote in result {
                 let py_object = quote.into_py_any(py)?;
                 quotes.push(py_object);
@@ -174,6 +178,7 @@ impl PostgresCacheDatabase {
                 .await
                 .unwrap();
             let mut trades = Vec::new();
+
             for trade in result {
                 let py_object = trade.into_py_any(py)?;
                 trades.push(py_object);
@@ -189,6 +194,7 @@ impl PostgresCacheDatabase {
                 .await
                 .unwrap();
             let mut bars = Vec::new();
+
             for bar in result {
                 let py_object = bar.into_py_any(py)?;
                 bars.push(py_object);
@@ -207,12 +213,11 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "load_custom_data")]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_load_custom_data(&self, data_type: DataType) -> PyResult<Vec<CustomData>> {
-        get_runtime().block_on(async {
-            DatabaseQueries::load_custom_data(&self.pool, &data_type)
-                .await
-                .map_err(to_pyruntime_err)
-        })
+        get_runtime()
+            .block_on(async { DatabaseQueries::load_custom_data(&self.pool, &data_type).await })
+            .map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "load_order_snapshot")]
@@ -270,11 +275,13 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "add_order_snapshot")]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_add_order_snapshot(&self, snapshot: OrderSnapshot) -> PyResult<()> {
         self.add_order_snapshot(&snapshot).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_position_snapshot")]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_add_position_snapshot(&self, snapshot: PositionSnapshot) -> PyResult<()> {
         self.add_position_snapshot(&snapshot)
             .map_err(to_pyruntime_err)
@@ -302,11 +309,13 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "add_signal")]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_add_signal(&self, signal: Signal) -> PyResult<()> {
         self.add_signal(&signal).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_custom_data")]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_add_custom_data(&self, data: CustomData) -> PyResult<()> {
         self.add_custom_data(&data).map_err(to_pyruntime_err)
     }

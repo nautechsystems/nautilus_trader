@@ -20,7 +20,9 @@ use ustr::Ustr;
 use crate::signal::Signal;
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Signal {
+    /// Represents a generic signal.
     #[new]
     fn py_new(name: &str, value: String, ts_event: u64, ts_init: u64) -> Self {
         Self::new(

@@ -30,7 +30,7 @@ repos:
       - id: gitlint
 
   - repo: https://github.com/scop/pre-commit-shfmt
-    rev: v3.12.0-2
+    rev: v3.13.1-1
     hooks:
       - id: shfmt
         args: ["-i", "2", "-ci", "-sr", "-ln", "bash", "-w"]
@@ -67,14 +67,14 @@ repos:
         types_or: [rust, python, cython, toml, yaml, rst, markdown]
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.1
+    rev: v2.4.2
     hooks:
       - id: codespell
         description: Checks for common misspellings
         types_or: [rust, python, cython, toml, yaml, rst, markdown]
 
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.0
+    rev: v8.30.1
     hooks:
       - id: gitleaks
         name: gitleaks (secrets scan)
@@ -85,19 +85,27 @@ repos:
   #  GitHub Actions linting (complementary tools covering different aspects)
   ##############################################################################
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.11
+    rev: v1.7.12
     hooks:
       - id: actionlint
         name: actionlint (syntax/structure)
         description: Checks GitHub Actions workflow syntax and structural correctness
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.22.0
+    rev: v1.24.1
     hooks:
       - id: zizmor
         name: zizmor (security)
         description: Scans GitHub Actions workflows for security misconfigurations
-        args: ["--no-online-audits", "--min-severity", "medium", ".github/"]
+        args:
+          [
+            "--no-online-audits",
+            "--min-severity",
+            "medium",
+            "--config",
+            ".zizmor.yml",
+            ".github/",
+          ]
         pass_filenames: false
 
   ##############################################################################
@@ -115,7 +123,8 @@ repos:
 
       - id: check-non-latin-text
         name: check non-Latin text
-        description: Detect non-Latin characters (CJK, Cyrillic, Arabic, etc.) to enforce English-only
+        description: Detect non-Latin characters (CJK, Cyrillic, Arabic, etc.) to
+          enforce English-only
         entry: bash .pre-commit-hooks/check_non_latin_text.sh
         language: system
         types: [text]
@@ -152,6 +161,21 @@ repos:
         types_or: [rust, python, cython]
         pass_filenames: false
 
+      - id: check-no-legacy-paths-v2
+        name: check no legacy paths v2
+        description: Fails on legacy nautilus_pyo3 references anywhere under python/
+        entry: bash .pre-commit-hooks/check_no_legacy_paths_v2.sh
+        language: system
+        files: ^python/
+        pass_filenames: false
+
+      - id: check-links-offline
+        name: check links (offline)
+        description: Verifies internal markdown links resolve on disk via lychee
+        entry: bash .pre-commit-hooks/check_links_offline.sh
+        language: system
+        files: '(\.md$|^docs/.*\.py$)'
+
   ##############################################################################
   #  Rust formatting and linting
   ##############################################################################
@@ -181,6 +205,14 @@ repos:
         files: '\.rs$|Cargo\.toml$'
         pass_filenames: false
 
+      - id: check-dst-conventions
+        name: check DST conventions
+        description: Enforces deterministic simulation testing path bans
+        entry: bash .pre-commit-hooks/check_dst_conventions.sh
+        language: system
+        files: '\.rs$'
+        pass_filenames: false
+
       - id: check-pyo3-conventions
         name: check pyo3 conventions
         description: Enforces PyO3 naming conventions
@@ -194,7 +226,7 @@ repos:
         description: Enforces testing standardizations and conventions
         entry: bash .pre-commit-hooks/check_testing_conventions.sh
         language: system
-        types_or: [rust]
+        types_or: [rust, python]
         pass_filenames: false
 
       - id: check-nautilus-conventions
@@ -205,20 +237,28 @@ repos:
         files: '\.rs$'
         pass_filenames: false
 
-      - id: check-if-spacing
-        name: check if spacing
-        description: Enforces blank line above if statements
-        entry: bash .pre-commit-hooks/check_if_spacing.sh
+      - id: check-formatting-rs
+        name: check formatting (Rust)
+        description: Enforces formatting conventions in Rust code
+        entry: bash .pre-commit-hooks/check_formatting_rs.sh
         language: system
         files: '\.rs$'
         pass_filenames: false
 
+      - id: check-formatting-py
+        name: check formatting (Python)
+        description: Enforces formatting conventions in Python code
+        entry: bash .pre-commit-hooks/check_formatting_py.sh
+        language: system
+        files: '\.py$'
+        pass_filenames: false
+
       - id: check-docs-conventions
         name: check docs conventions
-        description: Enforces Rust documentation conventions
+        description: Enforces documentation conventions
         entry: bash .pre-commit-hooks/check_docs_conventions.sh
         language: system
-        files: '\.rs$'
+        files: '\.(rs|md)$'
         pass_filenames: false
 
       - id: check-cargo-conventions
@@ -241,36 +281,21 @@ repos:
 
       - id: cargo-clippy
         name: cargo clippy
-        description: Run the Clippy linter on the workspace
-        entry: cargo clippy
+        description: Run the Clippy linter on changed crates
+        entry: bash scripts/clippy-changed.sh
         language: system
-        args:
-          [
-            "--workspace",
-            "--all-targets",
-            "--features",
-            "ffi,python,high-precision,defi",
-            "--profile",
-            "nextest", # Reduce rebuild triggers between testing and linting
-            "--",
-            "-D",
-            "warnings",
-          ]
         files: '\.(rs|toml)$'
         types: [file]
         pass_filenames: false
 
-      # TODO: Too slow for standard development flows
-      # - id: cargo-doc
-      #   name: cargo doc
-      #   description: Check documentation builds without errors or warnings
-      #   entry:
-      #     cargo doc --workspace --features "ffi,python,high-precision,defi"
-      #     --profile nextest --no-deps --quiet
-      #   language: system
-      #   files: '\.(rs|toml)$'
-      #   types: [file]
-      #   pass_filenames: false
+      - id: cargo-doc
+        name: cargo doc
+        description: Check documentation builds on changed crates
+        entry: bash scripts/doc-changed.sh
+        language: system
+        files: '\.(rs|toml)$'
+        types: [file]
+        pass_filenames: false
 
   ##############################################################################
   #  Python/Cython formatting and linting
@@ -289,7 +314,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.4
+    rev: v0.15.12
     hooks:
       - id: ruff
         name: ruff
@@ -298,6 +323,7 @@ repos:
         name: ruff-format
 
   - repo: https://github.com/pycqa/isort
+    # Pinned to 8.0.1: do not bump until isort 9.x leaves alpha
     rev: 8.0.1
     hooks:
       - id: isort
@@ -307,45 +333,47 @@ repos:
         args: ["--settings-file", "pyproject.toml"]
 
   - repo: https://github.com/PyCQA/docformatter
+    # Pinned to 1.7.7 because v1.7.8 conflicts with this repo's Ruff docstring rules
     rev: v1.7.7
     hooks:
       - id: docformatter
         language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
         additional_dependencies: [tomli]
-        args: [
-          "--wrap-summaries", "88",
-          "--wrap-descriptions", "88",
-          "--make-summary-multi-line",
-          "--pre-summary-newline",
-          "--blank",
-          "--recursive",
-          "--in-place",
-        ]
+        args:
+          [
+            "--wrap-summaries",
+            "88",
+            "--wrap-descriptions",
+            "88",
+            "--make-summary-multi-line",
+            "--pre-summary-newline",
+            "--blank",
+            "--recursive",
+            "--in-place",
+          ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+    rev: v1.20.2
     hooks:
       - id: mypy
         language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
-        exclude: (^python/|^nautilus_trader/.*\.pyi$)
-        args: [
-          "--config", "pyproject.toml",
-          "--allow-incomplete-defs",
-        ]
-        additional_dependencies: [
-          msgspec,
-          types-frozendict,
-          types-pytz,
-          types-redis,
-          types-requests,
-          types-toml,
-        ]
+        exclude: (^python/|^nautilus_trader/.*\.pyi$|^docs/(getting_started|tutorials)/)
+        args: ["--config", "pyproject.toml", "--allow-incomplete-defs"]
+        additional_dependencies:
+          [
+            msgspec,
+            types-frozendict,
+            types-pytz,
+            types-redis,
+            types-requests,
+            types-toml,
+          ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.10.7 # Must match uv-version file
+    rev: 0.11.8 # Must match [tool.uv] required-version in pyproject.toml
     hooks:
       - id: uv-lock
-        files: ^python/uv\.lock$
+        files: ^(uv\.lock|python/uv\.lock)$
 
   - repo: https://github.com/kynan/nbstripout
     rev: 0.9.1
@@ -356,7 +384,7 @@ repos:
   #  Markdown formatting and linting
   ##############################################################################
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.21.0
+    rev: v0.22.1
     hooks:
       - id: markdownlint-cli2
         name: markdownlint

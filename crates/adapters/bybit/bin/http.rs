@@ -62,10 +62,11 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn test_public_endpoints() -> anyhow::Result<()> {
-    let client = BybitHttpClient::new(None, Some(60), None, None, None, None, None)?;
+    let client = BybitHttpClient::new(None, 60, 3, 1000, 10_000, 5_000, None)?;
 
     // Test 1: Get server time
     println!("1. Testing GET /v5/market/time");
+
     match client.get_server_time().await {
         Ok(response) => {
             println!(
@@ -176,21 +177,12 @@ async fn test_public_endpoints() -> anyhow::Result<()> {
 
 async fn test_authenticated_endpoints() -> anyhow::Result<()> {
     let client = BybitHttpClient::new_with_env(
-        None,
-        None,
-        None,
-        false,
-        true,
-        Some(60),
-        None,
-        None,
-        None,
-        None,
-        None,
+        None, None, None, false, true, 60, 3, 1000, 10_000, 5_000, None,
     )?;
 
     // Test 1: Get open orders
     println!("\n1. Testing GET /v5/order/realtime (open orders)");
+
     match client
         .get_open_orders(
             BybitProductType::Linear,

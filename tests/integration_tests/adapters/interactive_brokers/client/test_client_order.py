@@ -244,6 +244,7 @@ async def test_orderStatus(ib_client):
         avg_fill_price=100.0,
         filled=Decimal(100),
         remaining=Decimal(0),
+        why_held="",
     )
 
 
@@ -285,6 +286,7 @@ async def test_orderStatus_with_zero_avg_fill_price(ib_client):
         avg_fill_price=0.0,
         filled=Decimal(50),
         remaining=Decimal(50),
+        why_held="",
     )
 
 

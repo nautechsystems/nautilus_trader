@@ -51,7 +51,6 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         DATABENTO: DatabentoDataClientConfig(
-            api_key=None,  # 'DATABENTO_API_KEY' env var
             http_gateway=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             use_exchange_as_venue=True,

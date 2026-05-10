@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (instruments, inst_id_codes) = rest_client.request_instruments(inst_type, None).await?;
 
     let mut ws_client = OKXWebSocketClient::from_env().unwrap();
-    ws_client.cache_instruments(instruments.clone());
+    ws_client.cache_instruments(&instruments);
     ws_client.cache_inst_id_codes(inst_id_codes);
     ws_client.connect().await?;
 
@@ -74,6 +74,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             None, // reduce_only
             None, // quote_quantity
             None, // position_side
+            None, // attach_algo_ords
+            None, // px_usd
+            None, // px_vol
         )
         .await;
 

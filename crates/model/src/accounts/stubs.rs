@@ -19,9 +19,15 @@
 use rstest::fixture;
 
 use crate::{
-    accounts::{Account, AccountAny, CashAccount, MarginAccount},
+    accounts::{Account, AccountAny, BettingAccount, CashAccount, MarginAccount},
     enums::{AccountType, LiquiditySide},
-    events::account::{state::AccountState, stubs::*},
+    events::account::{
+        state::AccountState,
+        stubs::{
+            betting_account_state, cash_account_state, cash_account_state_million_usd,
+            cash_account_state_million_usdt, cash_account_state_multi, margin_account_state,
+        },
+    },
     identifiers::stubs::{account_id, uuid4},
     instruments::InstrumentAny,
     types::{AccountBalance, Currency, Money, Price, Quantity},
@@ -65,6 +71,11 @@ pub fn margin_account(margin_account_state: AccountState) -> MarginAccount {
 #[fixture]
 pub fn cash_account(cash_account_state: AccountState) -> CashAccount {
     CashAccount::new(cash_account_state, true, false)
+}
+
+#[fixture]
+pub fn betting_account(betting_account_state: AccountState) -> BettingAccount {
+    BettingAccount::new(betting_account_state, true)
 }
 
 #[fixture]

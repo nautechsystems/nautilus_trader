@@ -22,7 +22,9 @@ use std::{
 use ahash::AHashSet;
 use nautilus_core::{
     UnixNanos,
-    correctness::{check_equal, check_predicate_true, check_slice_not_empty},
+    correctness::{
+        CorrectnessResultExt, FAILED, check_equal, check_predicate_true, check_slice_not_empty,
+    },
 };
 use serde::{Deserialize, Serialize};
 
@@ -64,13 +66,14 @@ impl OrderList {
         client_order_ids: Vec<ClientOrderId>,
         ts_init: UnixNanos,
     ) -> Self {
-        check_slice_not_empty(client_order_ids.as_slice(), stringify!(client_order_ids)).unwrap();
+        check_slice_not_empty(client_order_ids.as_slice(), stringify!(client_order_ids))
+            .expect_display(FAILED);
         let unique: HashSet<&ClientOrderId> = client_order_ids.iter().collect();
         check_predicate_true(
             unique.len() == client_order_ids.len(),
             "client_order_ids must not contain duplicates",
         )
-        .unwrap();
+        .expect_display(FAILED);
         Self {
             id: order_list_id,
             instrument_id,
@@ -97,7 +100,7 @@ impl OrderList {
     /// - Orders contain duplicate client order IDs.
     #[must_use]
     pub fn from_orders(orders: &[OrderAny], ts_init: UnixNanos) -> Self {
-        check_slice_not_empty(orders, stringify!(orders)).unwrap();
+        check_slice_not_empty(orders, stringify!(orders)).expect_display(FAILED);
 
         let first = &orders[0];
         let order_list_id = first
@@ -120,28 +123,28 @@ impl OrderList {
                 "order_list_id",
                 "first order order_list_id",
             )
-            .unwrap();
+            .expect_display(FAILED);
             check_equal(
                 &order.trader_id(),
                 &trader_id,
                 "trader_id",
                 "first order trader_id",
             )
-            .unwrap();
+            .expect_display(FAILED);
             check_equal(
                 &order.instrument_id(),
                 &instrument_id,
                 "instrument_id",
                 "first order instrument_id",
             )
-            .unwrap();
+            .expect_display(FAILED);
             check_equal(
                 &order.strategy_id(),
                 &strategy_id,
                 "strategy_id",
                 "first order strategy_id",
             )
-            .unwrap();
+            .expect_display(FAILED);
             check_predicate_true(
                 seen_ids.insert(order.client_order_id()),
                 &format!(
@@ -149,7 +152,7 @@ impl OrderList {
                     order.client_order_id()
                 ),
             )
-            .unwrap();
+            .expect_display(FAILED);
         }
 
         let client_order_ids = orders.iter().map(|o| o.client_order_id()).collect();
@@ -260,9 +263,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(
-        expected = "called `Result::unwrap()` on an `Err` value: the 'client_order_ids'"
-    )]
+    #[should_panic(expected = "Condition failed: the 'client_order_ids'")]
     fn test_order_list_creation_with_empty_orders() {
         let orders: Vec<ClientOrderId> = vec![];
 

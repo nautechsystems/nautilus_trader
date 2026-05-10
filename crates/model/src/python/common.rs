@@ -30,12 +30,14 @@ pub const PY_MODULE_MODEL: &str = "nautilus_trader.core.nautilus_pyo3.model";
 /// Python iterator over the variants of an enum.
 #[allow(missing_debug_implementations)]
 #[pyclass]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")]
 pub struct EnumIterator {
     // Type erasure for code reuse, generic types can't be exposed to Python
     iter: Box<dyn Iterator<Item = Py<PyAny>> + Send + Sync>,
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl EnumIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
@@ -171,10 +173,10 @@ pub fn commissions_from_vec(py: Python<'_>, commissions: Vec<Money>) -> PyResult
 /// # Errors
 ///
 /// Returns a `PyErr` if Python list creation or conversion fails.
-pub fn commissions_from_indexmap(
-    py: Python<'_>,
-    commissions: IndexMap<Currency, Money>,
-) -> PyResult<Bound<'_, PyAny>> {
+pub fn commissions_from_indexmap<'py>(
+    py: Python<'py>,
+    commissions: &IndexMap<Currency, Money>,
+) -> PyResult<Bound<'py, PyAny>> {
     commissions_from_vec(py, commissions.values().copied().collect())
 }
 

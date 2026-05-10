@@ -46,11 +46,13 @@ from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesIns
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLoader
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.serialization import register_serializable_type
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import make_dict_deserializer
 from nautilus_trader.serialization.arrow.serializer import make_dict_serializer
 from nautilus_trader.serialization.arrow.serializer import register_arrow
+from nautilus_trader.serialization.arrow.serializer import register_rust_custom_serializer
 
 
 register_serializable_type(
@@ -65,31 +67,49 @@ register_serializable_type(
     BinanceTicker.from_dict,
 )
 
-BINANCE_BAR_ARROW_SCHEMA: Final[pa.schema] = pa.schema(
+
+_binance_mod = nautilus_pyo3.binance  # type: ignore[attr-defined]
+
+
+def _convert_binance_bar_to_pyo3(bar: BinanceBar) -> object:
+    return _binance_mod.BinanceBar.from_dict(BinanceBar.to_dict(bar))
+
+
+register_rust_custom_serializer(
+    "BinanceBar",
+    _binance_mod.binance_bar_to_arrow_record_batch_bytes,
+    _convert_binance_bar_to_pyo3,
+    data_cls=BinanceBar,
+)
+
+
+BINANCE_FUTURES_MARK_PRICE_UPDATE_ARROW_SCHEMA: Final[pa.schema] = pa.schema(
     {
-        "bar_type": pa.dictionary(pa.int16(), pa.string()),
         "instrument_id": pa.dictionary(pa.int64(), pa.string()),
-        "open": pa.string(),
-        "high": pa.string(),
-        "low": pa.string(),
-        "close": pa.string(),
-        "volume": pa.string(),
-        "quote_volume": pa.string(),
-        "count": pa.uint64(),
-        "taker_buy_base_volume": pa.string(),
-        "taker_buy_quote_volume": pa.string(),
+        "mark": pa.string(),
+        "index": pa.string(),
+        "estimated_settle": pa.string(),
+        "funding_rate": pa.string(),
+        "next_funding_ns": pa.uint64(),
         "ts_event": pa.uint64(),
         "ts_init": pa.uint64(),
     },
 )
 
-NAUTILUS_ARROW_SCHEMA[BinanceBar] = BINANCE_BAR_ARROW_SCHEMA
+NAUTILUS_ARROW_SCHEMA[BinanceFuturesMarkPriceUpdate] = (
+    BINANCE_FUTURES_MARK_PRICE_UPDATE_ARROW_SCHEMA
+)
 
 register_arrow(
-    BinanceBar,
-    BINANCE_BAR_ARROW_SCHEMA,
-    encoder=make_dict_serializer(BINANCE_BAR_ARROW_SCHEMA),
-    decoder=make_dict_deserializer(BinanceBar),
+    BinanceFuturesMarkPriceUpdate,
+    BINANCE_FUTURES_MARK_PRICE_UPDATE_ARROW_SCHEMA,
+    encoder=make_dict_serializer(BINANCE_FUTURES_MARK_PRICE_UPDATE_ARROW_SCHEMA),
+    decoder=make_dict_deserializer(BinanceFuturesMarkPriceUpdate),
+)
+
+decode_binance_spot_client_order_id = nautilus_pyo3.binance.decode_binance_spot_client_order_id  # type: ignore[attr-defined]
+decode_binance_futures_client_order_id = (
+    nautilus_pyo3.binance.decode_binance_futures_client_order_id  # type: ignore[attr-defined]
 )
 
 __all__ = [
@@ -107,5 +127,7 @@ __all__ = [
     "BinanceLiveExecClientFactory",
     "BinanceOrderBookDeltaDataLoader",
     "BinanceSpotInstrumentProvider",
+    "decode_binance_futures_client_order_id",
+    "decode_binance_spot_client_order_id",
     "get_cached_binance_http_client",
 ]

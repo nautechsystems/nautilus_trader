@@ -14,15 +14,16 @@
 // -------------------------------------------------------------------------------------------------
 
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ustr::Ustr;
 
-use crate::{
+use crate::common::{
     enums::{TardisExchange, TardisInstrumentType, TardisOptionType},
     parse::deserialize_uppercase,
 };
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 /// The metadata of a particular instrument.
 /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
@@ -42,12 +43,15 @@ pub struct TardisInstrumentInfo {
     /// If the instrument is actively listed.
     pub active: bool,
     /// The listing date in ISO format.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub listing: Option<DateTime<Utc>>,
     /// The available from date in ISO format.
     pub available_since: DateTime<Utc>,
     /// The available to date in ISO format.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub available_to: Option<DateTime<Utc>>,
     /// The contract expiry date in ISO format (applicable to futures and options).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub expiry: Option<DateTime<Utc>>,
     /// The instrument price increment.
     pub price_increment: f64,
@@ -60,22 +64,32 @@ pub struct TardisInstrumentInfo {
     /// The instrument taker fee: consider it as illustrative only, as it depends in practice on account traded volume levels, different categories, VIP levels, owning exchange currency etc.
     pub taker_fee: f64,
     /// If the instrument is inverse (only for derivatives such as futures and perpetual swaps).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub inverse: Option<bool>,
     /// The instrument contract multiplier (only for derivatives).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub contract_multiplier: Option<f64>,
     /// If the instrument is quanto (only for quanto instruments).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub quanto: Option<bool>,
     /// The instrument settlement currency (only for Quanto instruments where settlement currency is different both base and quote currency).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub settlement_currency: Option<Ustr>,
     /// The instrument strike price (only for options).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub strike_price: Option<f64>,
     /// The option type (only for options).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub option_type: Option<TardisOptionType>,
     /// The changes for the instrument (best-effort basis from Tardis).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub changes: Option<Vec<TardisInstrumentChanges>>,
+    /// Additional fields from the Tardis API not explicitly modeled above.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 /// The changes info returned by the exchanges API.
 pub struct TardisInstrumentChanges {
@@ -101,4 +115,7 @@ pub struct TardisInstrumentChanges {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub taker_fee: Option<f64>,
+    /// Additional fields from the Tardis API not explicitly modeled above.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
 }

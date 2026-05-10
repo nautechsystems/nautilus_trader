@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! [NautilusTrader](http://nautilustrader.io) adapter for the
+//! [NautilusTrader](https://nautilustrader.io) adapter for the
 //! [Bybit](https://www.bybit.com/) cryptocurrency exchange.
 //!
 //! The `nautilus-bybit` crate provides client bindings (HTTP & WebSocket), data
@@ -22,16 +22,13 @@
 //! The official Bybit API reference can be found at <https://bybit-exchange.github.io/docs/v5/intro>.
 //! All public links inside this crate reference the English version of the documentation.
 //!
-//! # Platform
+//! # NautilusTrader
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-//! algorithmic trading platform, providing quantitative traders with the ability to backtest
-//! portfolios of automated trading strategies on historical data with an event-driven engine,
-//! and also deploy those same strategies live, with no code changes.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
+//! engine for multi-asset, multi-venue trading systems.
 //!
-//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software
-//! correctness and safety at the highest level, with the aim of supporting mission-critical trading
-//! system backtesting and live deployment workloads.
+//! The system spans research, deterministic simulation, and live execution within a single
+//! event-driven architecture, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
@@ -58,7 +55,6 @@
 pub mod common;
 pub mod config;
 pub mod data;
-pub mod error;
 pub mod execution;
 pub mod factories;
 pub mod http;

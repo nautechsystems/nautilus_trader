@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Risk engine for [NautilusTrader](http://nautilustrader.io).
+//! Risk engine for [NautilusTrader](https://nautilustrader.io).
 //!
-//! The `nautilus-risk` crate provides comprehensive risk management capabilities including pre-trade
+//! The `nautilus-risk` crate provides risk management capabilities including pre-trade
 //! order validation, position sizing calculations, and trading controls. This system ensures
 //! trading operations remain within defined risk parameters and regulatory constraints:
 //!
@@ -25,15 +25,13 @@
 //! - **Trading controls**: Rate limiting, balance validation, and exposure management.
 //! - **Account protection**: Multi-currency balance checks and margin requirement validation.
 //!
-//! # Platform
+//! # NautilusTrader
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-//! algorithmic trading platform, providing quantitative traders with the ability to backtest
-//! portfolios of automated trading strategies on historical data with an event-driven engine,
-//! and also deploy those same strategies live, with no code changes.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
+//! engine for multi-asset, multi-venue trading systems.
 //!
-//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
-//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+//! The system spans research, deterministic simulation, and live execution within a single
+//! event-driven architecture, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
@@ -56,6 +54,9 @@
 
 pub mod engine;
 pub mod sizing;
+
+#[cfg(feature = "python")]
+pub mod python;
 
 // Re-exports
 pub use engine::RiskEngine;

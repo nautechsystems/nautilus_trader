@@ -165,6 +165,7 @@ cdef class Portfolio(PortfolioFacade):
         self._pending_calcs: set[InstrumentId] = set()
         self._bar_close_prices: dict[InstrumentId, Price] = {}
         self._last_account_state_log_ts: dict[AccountId, uint64_t] = {}
+        self._venues_missing_price: dict[Venue, set[InstrumentId]] = {}
 
         self.analyzer = PortfolioAnalyzer()
 
@@ -753,6 +754,7 @@ cdef class Portfolio(PortfolioFacade):
         self._snapshot_last_per_position.clear()
         self._snapshot_processed_counts.clear()
         self._snapshot_account_ids.clear()
+        self._venues_missing_price.clear()
         self.analyzer.reset()
 
         self.initialized = False
@@ -832,7 +834,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        dict[Currency, Money] or ``None``
+        dict[InstrumentId, Money] or ``None``
 
         """
         cdef Account account = self._get_account(venue, account_id, "initial (order) margins", "'venue' or 'account_id' must be provided")
@@ -854,7 +856,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        dict[Currency, Money] or ``None``
+        dict[InstrumentId, Money] or ``None``
 
         """
         cdef Account account = self._get_account(venue, account_id, "maintenance (position) margins", "'venue' or 'account_id' must be provided")
@@ -1106,6 +1108,136 @@ cdef class Portfolio(PortfolioFacade):
                 return {}
 
         return {k: Money(v, k) for k, v in net_exposures.items()}
+
+    cpdef dict mark_values(self, Venue venue=None, AccountId account_id=None):
+        """
+        Return the per-currency mark-to-market value of open positions for the
+        given venue or account (if found).
+
+        Longs contribute positive notional, shorts contribute negative notional.
+        Instruments that cannot be priced are tracked via `missing_price_instruments`.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue for the open positions.
+        account_id : AccountId, optional
+            The account ID for the open positions. The missing-price tracker is
+            venue-scoped, so filtering by `account_id` does not narrow the tracker.
+
+        Returns
+        -------
+        dict[Currency, Money]
+
+        """
+        cdef dict values = {}
+        cdef set unpriced = set()
+        cdef Venue tracker_venue = self._accumulate_mark_values(venue, account_id, values, unpriced)
+
+        if tracker_venue is not None:
+            self._update_missing_price_state(tracker_venue, unpriced)
+        elif venue is not None and account_id is None:
+            # Only clear the tracker on an unfiltered sweep, otherwise we could
+            # wipe another account's flags on the same venue.
+            self._venues_missing_price.pop(venue, None)
+
+        return {c: Money(v, c) for c, v in values.items()}
+
+    cpdef dict equity(self, Venue venue=None, AccountId account_id=None):
+        """
+        Return the per-currency total equity for the given venue or account (if found).
+
+        For cash and betting accounts: ``balance.total + Σ mark_value(open positions)``.
+        For margin accounts: ``balance.total + Σ unrealized_pnl(open positions)``.
+
+        Instruments that cannot be priced are tracked via `missing_price_instruments`,
+        so equity understatement surfaces via a warn-once log.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue for the account.
+        account_id : AccountId, optional
+            The account ID (takes priority if both venue and account_id are provided).
+
+        Returns
+        -------
+        dict[Currency, Money]
+
+        """
+        cdef Account account = self._cache.account_for_venue(venue, account_id)
+        if account is None:
+            return {}
+
+        cdef dict equity = {}
+        cdef Currency ccy
+        cdef Money money
+        for ccy, money in account.balances_total().items():
+            equity[ccy] = money.as_f64_c()
+
+        cdef dict contributions
+        cdef set unpriced
+        cdef list positions_open
+        cdef set instrument_ids
+        cdef InstrumentId instrument_id
+        cdef Money pnl
+        cdef Venue tracker_venue
+        if account.is_margin_account:
+            # Iterate directly so unpriced instruments surface via the tracker,
+            # mirroring the cash/betting path.
+            positions_open = self._cache.positions_open(
+                venue=venue,
+                instrument_id=None,
+                strategy_id=None,
+                side=PositionSide.NO_POSITION_SIDE,
+                account_id=account_id,
+            )
+            if positions_open:
+                tracker_venue = venue if venue is not None else (<Position>positions_open[0]).instrument_id.venue
+                instrument_ids = {p.instrument_id for p in positions_open}
+                unpriced = set()
+                for instrument_id in instrument_ids:
+                    pnl = self.unrealized_pnl(instrument_id, price=None, account_id=account_id)
+                    if pnl is None:
+                        unpriced.add(instrument_id)
+                        continue
+                    equity[pnl.currency] = equity.get(pnl.currency, 0.0) + pnl.as_f64_c()
+                self._update_missing_price_state(tracker_venue, unpriced)
+            elif venue is not None and account_id is None:
+                self._venues_missing_price.pop(venue, None)
+        else:
+            contributions = self.mark_values(venue, account_id)
+            for ccy, money in contributions.items():
+                equity[ccy] = equity.get(ccy, 0.0) + money.as_f64_c()
+
+        return {c: Money(v, c) for c, v in equity.items()}
+
+    cpdef list missing_price_instruments(self, Venue venue):
+        """
+        Return the instruments currently flagged as unpriced for the given venue.
+
+        An entry is added the first time `mark_values` or `equity` cannot source a
+        price, mark xrate, or cached instrument for an open position (after also
+        emitting a warn log), and removed once the instrument is priced again so a
+        subsequent drop re-warns.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue to query.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        Condition.not_none(venue, "venue")
+
+        cdef set tracked = self._venues_missing_price.get(venue)
+        if tracked is None:
+            return []
+
+        return list(tracked)
 
     cpdef Money realized_pnl(self, InstrumentId instrument_id, AccountId account_id=None, Currency target_currency=None):
         """
@@ -2718,6 +2850,103 @@ cdef class Portfolio(PortfolioFacade):
             instrument_id=instrument_id,
             price_type=PriceType.LAST,
         ) or self._bar_close_prices.get(instrument_id)
+
+    cdef Venue _accumulate_mark_values(self, Venue venue, AccountId account_id, dict values, set unpriced):
+        cdef list positions = self._cache.positions_open(
+            venue=venue,
+            instrument_id=None,
+            strategy_id=None,
+            side=PositionSide.NO_POSITION_SIDE,
+            account_id=account_id,
+        )
+        if not positions:
+            return None
+
+        # Positions filtered by account_id share a venue (one account is at one venue),
+        # so we can derive a tracker venue even when the caller did not supply one.
+        cdef Venue resolved_venue = venue if venue is not None else (<Position>positions[0]).instrument_id.venue
+
+        cdef Account account = self._cache.account_for_venue(venue, account_id)
+        cdef dict xrate_cache = {}
+
+        cdef Position position
+        cdef double sign
+        cdef Instrument instrument
+        cdef Price price
+        cdef Currency settlement
+        cdef Currency currency
+        cdef object xrate
+        cdef double notional
+        for position in positions:
+            if position.is_closed_c():
+                continue
+
+            if position.side == PositionSide.LONG:
+                sign = 1.0
+            elif position.side == PositionSide.SHORT:
+                sign = -1.0
+            else:
+                continue
+
+            instrument = self._cache.instrument(position.instrument_id)
+            if instrument is None:
+                unpriced.add(position.instrument_id)
+                continue
+
+            price = self._get_price(position)
+            if price is None:
+                unpriced.add(position.instrument_id)
+                continue
+
+            settlement = instrument.get_cost_currency()
+
+            if (
+                self._convert_to_account_base_currency
+                and account is not None
+                and account.base_currency is not None
+            ):
+                if settlement in xrate_cache:
+                    xrate = xrate_cache[settlement]
+                else:
+                    xrate = self._get_xrate_to_account_base(instrument, account, position.instrument_id)
+                    xrate_cache[settlement] = xrate
+
+                if xrate is None:
+                    unpriced.add(position.instrument_id)
+                    continue
+
+                currency = account.base_currency
+            else:
+                xrate = 1.0
+                currency = settlement
+
+            notional = position.notional_value(price).as_f64_c() * <double>xrate
+            values[currency] = values.get(currency, 0.0) + sign * notional
+
+        return resolved_venue
+
+    cdef void _update_missing_price_state(self, Venue venue, set unpriced):
+        if venue is None:
+            return
+
+        cdef set tracked = self._venues_missing_price.get(venue)
+        if tracked is None:
+            tracked = set()
+            self._venues_missing_price[venue] = tracked
+
+        cdef InstrumentId instrument_id
+        for instrument_id in unpriced:
+            if instrument_id not in tracked:
+                tracked.add(instrument_id)
+                self._log.warning(
+                    f"No price available for open position {instrument_id}; "
+                    f"subscribe to quotes, trades or bars for continuous mark-to-market equity"
+                )
+
+        # Instruments that are now priced should be removed so a future price drop re-warns
+        cdef list stale = [iid for iid in tracked if iid not in unpriced]
+        for instrument_id in stale:
+            tracked.discard(instrument_id)
 
     cdef Money _convert_money_if_needed(
         self,

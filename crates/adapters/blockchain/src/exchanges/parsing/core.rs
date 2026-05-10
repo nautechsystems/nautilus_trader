@@ -19,6 +19,7 @@
 //! to ensure consistent extraction logic.
 
 use alloy::primitives::Address;
+use nautilus_core::hex;
 
 /// Extract address from 32-byte topic (address in last 20 bytes).
 ///

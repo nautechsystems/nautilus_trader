@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Turmoil integration tests for the SocketClient.
+//! Turmoil integration tests for the `SocketClient`.
 //!
 //! These tests use turmoil's network simulation to test the actual production
-//! SocketClient code under various network conditions.
+//! `SocketClient` code under various network conditions.
 
 #![cfg(feature = "turmoil")]
 
@@ -27,6 +27,23 @@ use rstest::{fixture, rstest};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::stream::Mode;
 use turmoil::{Builder, net};
+
+// 2-second budget in simulated time, covering reconnect timings across these tests.
+const POLL_ITERS: u32 = 200;
+const POLL_STEP: Duration = Duration::from_millis(10);
+
+async fn wait_for<F>(mut condition: F) -> bool
+where
+    F: FnMut() -> bool,
+{
+    for _ in 0..POLL_ITERS {
+        if condition() {
+            return true;
+        }
+        tokio::time::sleep(POLL_STEP).await;
+    }
+    false
+}
 
 /// Default test socket configuration.
 #[fixture]
@@ -60,7 +77,7 @@ async fn echo_server() -> Result<(), Box<dyn std::error::Error>> {
 
                 loop {
                     match stream.read(&mut buffer).await {
-                        Ok(0) => break,
+                        Ok(0) | Err(_) => break,
                         Ok(n) => {
                             // Check for termination message
                             if buffer.starts_with(b"close\r\n") {
@@ -72,7 +89,6 @@ async fn echo_server() -> Result<(), Box<dyn std::error::Error>> {
                                 break;
                             }
                         }
-                        Err(_) => break,
                     }
                 }
             });
@@ -94,22 +110,16 @@ fn test_turmoil_real_socket_basic_connect(socket_config: SocketConfig) {
         // Verify client is active
         assert!(client.is_active(), "Client should be active after connect");
 
-        // Send a test message
         client
             .send_bytes(b"hello".to_vec())
             .await
             .expect("Should send data");
 
-        // Wait a bit
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Send close message
         client
             .send_bytes(b"close".to_vec())
             .await
             .expect("Should send close");
 
-        // Close the client
         client.close().await;
         assert!(client.is_closed(), "Client should be closed");
 
@@ -132,24 +142,18 @@ fn test_turmoil_real_socket_reconnection(mut socket_config: SocketConfig) {
 
         // Accept first connection
         if let Ok((mut stream, _)) = listener.accept().await {
-            // Read one message
             let mut buffer = vec![0; 1024];
             let _ = stream.read(&mut buffer).await;
-            // Echo it back
             let _ = stream.write_all(b"first\r\n").await;
-            // Close the connection
             drop(stream);
         }
 
-        // Wait a bit before accepting second connection
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
-        // Accept second connection and run echo server
+        // Accept second connection and run echo loop
         if let Ok((mut stream, _)) = listener.accept().await {
             let mut buffer = vec![0; 1024];
             loop {
                 match stream.read(&mut buffer).await {
-                    Ok(0) => break,
+                    Ok(0) | Err(_) => break,
                     Ok(n) => {
                         if buffer.starts_with(b"close\r\n") {
                             break;
@@ -159,7 +163,6 @@ fn test_turmoil_real_socket_reconnection(mut socket_config: SocketConfig) {
                             break;
                         }
                     }
-                    Err(_) => break,
                 }
             }
         }
@@ -172,23 +175,27 @@ fn test_turmoil_real_socket_reconnection(mut socket_config: SocketConfig) {
             .await
             .expect("Should connect");
 
-        // Send first message
         client
             .send_bytes(b"first_msg".to_vec())
             .await
             .expect("Should send first message");
 
-        // Wait for server to close connection
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        // Server closes after echoing; wait for the client to cycle through
+        // reconnection and return to an active state before the next send.
+        assert!(
+            wait_for(|| client.is_reconnecting() || !client.is_active()).await,
+            "Client should observe server disconnect"
+        );
+        assert!(
+            wait_for(|| client.is_active()).await,
+            "Client should reconnect after server close"
+        );
 
-        // Client should detect disconnection and attempt reconnection
-        // Send another message after reconnection
         client
             .send_bytes(b"second_msg".to_vec())
             .await
             .expect("Should send second message after reconnect");
 
-        // Close
         client.send_bytes(b"close".to_vec()).await.ok();
         client.close().await;
 
@@ -211,33 +218,27 @@ fn test_turmoil_real_socket_network_partition(mut socket_config: SocketConfig) {
             .await
             .expect("Should connect");
 
-        // Send message before partition
         client
             .send_bytes(b"before_partition".to_vec())
             .await
             .expect("Should send before partition");
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Create network partition
         turmoil::partition("client", "server");
-
-        // Wait a bit
         tokio::time::sleep(Duration::from_millis(200)).await;
-
-        // Repair partition
         turmoil::repair("client", "server");
 
-        // Wait for reconnection
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        // Either the connection survived the partition or reconnect restored it;
+        // poll until the client is active again before sending.
+        assert!(
+            wait_for(|| client.is_active()).await,
+            "Client should be active after partition repair"
+        );
 
-        // Should be able to send after repair
         client
             .send_bytes(b"after_partition".to_vec())
             .await
             .expect("Should send after partition repair");
 
-        // Close
         client.send_bytes(b"close".to_vec()).await.ok();
         client.close().await;
 
@@ -275,6 +276,50 @@ fn test_turmoil_real_socket_close_during_reconnect(mut socket_config: SocketConf
         assert!(
             !client.is_active(),
             "Client should not be active after close"
+        );
+
+        Ok(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[rstest]
+fn test_turmoil_real_socket_disconnect_during_backoff(mut socket_config: SocketConfig) {
+    socket_config.reconnect_timeout_ms = Some(1_000);
+    socket_config.reconnect_delay_initial_ms = Some(10_000); // Long backoff
+    socket_config.reconnect_delay_max_ms = Some(10_000);
+    socket_config.reconnect_backoff_factor = Some(1.0);
+    socket_config.reconnect_jitter_ms = Some(0);
+
+    let mut sim = Builder::new()
+        .simulation_duration(Duration::from_secs(30))
+        .build();
+
+    sim.host("server", echo_server);
+
+    sim.client("client", async move {
+        let client = SocketClient::connect(socket_config, None, None, None)
+            .await
+            .expect("Should connect");
+
+        assert!(client.is_active());
+
+        // Partition to force reconnect
+        turmoil::partition("client", "server");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        // Client should be reconnecting; reconnect attempt fails, enters 10s backoff
+        tokio::time::sleep(Duration::from_millis(1_500)).await;
+
+        let start = tokio::time::Instant::now();
+        client.close().await;
+        let elapsed = start.elapsed();
+
+        assert!(client.is_closed(), "Client should be closed");
+        assert!(
+            elapsed < Duration::from_secs(3),
+            "Close should interrupt backoff, took {elapsed:?}"
         );
 
         Ok(())

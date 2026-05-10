@@ -30,6 +30,7 @@ fn bench_black_scholes_greeks_moneyness(c: &mut Criterion) {
     // Test different moneyness levels and call/put - all should have similar timings
     // since the same code path is executed regardless of moneyness or option type
     let mut group = c.benchmark_group("black_scholes_greeks");
+
     for (spot, moneyness_label) in [(90.0, "otm"), (100.0, "atm"), (110.0, "itm")] {
         for (is_call, option_type) in [(true, "call"), (false, "put")] {
             group.bench_with_input(
@@ -62,6 +63,7 @@ fn bench_imply_vol_and_greeks_moneyness(c: &mut Criterion) {
     let t = 1.0;
 
     let mut group = c.benchmark_group("imply_vol_and_greeks");
+
     for (spot, moneyness_label) in [(90.0, "otm"), (100.0, "atm"), (110.0, "itm")] {
         for (is_call, option_type) in [(true, "call"), (false, "put")] {
             // Calculate theoretical price for this scenario
@@ -97,6 +99,7 @@ fn bench_refine_vol_and_greeks_moneyness(c: &mut Criterion) {
     let t = 1.0;
 
     let mut group = c.benchmark_group("refine_vol_and_greeks");
+
     for (spot, moneyness_label) in [(90.0, "otm"), (100.0, "atm"), (110.0, "itm")] {
         for (is_call, option_type) in [(true, "call"), (false, "put")] {
             // Calculate target price for this scenario

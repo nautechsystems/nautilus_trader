@@ -106,52 +106,52 @@ class TestPrice:
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Price(-0, precision=0), Decimal(0)],
-            [Price(0, precision=0), Decimal(0)],
-            [Price(1, precision=0), Decimal(1)],
-            [Price(-1, precision=0), Decimal(1)],
-            [Price(-1.1, precision=1), Decimal("1.1")],
+            [Price(-0, precision=0), Price(0, precision=0)],
+            [Price(0, precision=0), Price(0, precision=0)],
+            [Price(1, precision=0), Price(1, precision=0)],
+            [Price(-1, precision=0), Price(1, precision=0)],
+            [Price(-1.1, precision=1), Price(1.1, precision=1)],
         ],
     )
-    def test_abs_with_various_values_returns_expected_decimal(self, value, expected):
+    def test_abs_with_various_values_returns_expected_price(self, value, expected):
         # Arrange, Act
         result = abs(value)
 
         # Assert
+        assert isinstance(result, Price)
         assert result == expected
 
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [
-                Price(-1.0, precision=0),
-                Decimal(1),
-            ],  # Matches built-in decimal.Decimal behavior
-            [
-                Price(0, 0),
-                Decimal(0),
-            ],
+            [Price(-1.0, precision=0), Price(-1.0, precision=0)],
+            [Price(0, precision=0), Price(0, precision=0)],
+            [Price(1.5, precision=1), Price(1.5, precision=1)],
         ],
     )
-    def test_pos_with_various_values_returns_expected_decimal(self, value, expected):
+    def test_pos_with_various_values_returns_expected_price(self, value, expected):
         # Arrange, Act
         result = +value
 
         # Assert
+        assert isinstance(result, Price)
         assert result == expected
 
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Price(1, precision=0), Decimal(-1)],
-            [Price(0, precision=0), Decimal(0)],
+            [Price(1, precision=0), Price(-1, precision=0)],
+            [Price(-1, precision=0), Price(1, precision=0)],
+            [Price(0, precision=0), Price(0, precision=0)],
+            [Price(-1.5, precision=1), Price(1.5, precision=1)],
         ],
     )
-    def test_neg_with_various_values_returns_expected_decimal(self, value, expected):
+    def test_neg_with_various_values_returns_expected_price(self, value, expected):
         # Arrange, Act
         result = -value
 
         # Assert
+        assert isinstance(result, Price)
         assert result == expected
 
     @pytest.mark.parametrize(
@@ -624,6 +624,51 @@ class TestPrice:
         assert price1 == price2
         assert str(price1) == "1000.000"
         assert price1.precision == 3
+
+    def test_checked_add_within_bounds(self) -> None:
+        # Arrange
+        a = Price(10.0, 2)
+        b = Price(5.0, 2)
+
+        # Act
+        result = a.checked_add(b)
+
+        # Assert
+        assert result == Price(15.0, 2)
+
+    def test_checked_add_above_max_returns_none(self) -> None:
+        # Arrange
+        near_max = Price(PRICE_MAX, 0)
+        one = Price(1.0, 0)
+
+        # Act
+        result = near_max.checked_add(one)
+
+        # Assert
+        assert result is None
+
+    def test_checked_sub_within_bounds(self) -> None:
+        # Arrange
+        a = Price(10.0, 2)
+        b = Price(3.0, 2)
+
+        # Act
+        result = a.checked_sub(b)
+
+        # Assert
+        assert result == Price(7.0, 2)
+        assert b.checked_sub(a) == Price(-7.0, 2)
+
+    def test_checked_sub_below_min_returns_none(self) -> None:
+        # Arrange
+        near_min = Price(PRICE_MIN, 0)
+        one = Price(1.0, 0)
+
+        # Act
+        result = near_min.checked_sub(one)
+
+        # Assert
+        assert result is None
 
     def test_equality(self):
         # Arrange, Act

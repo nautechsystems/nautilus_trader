@@ -61,51 +61,63 @@ use ahash::AHashMap;
 use log::LevelFilter;
 use ustr::Ustr;
 
+use super::writer::FileWriterConfig;
+
 /// Configuration for the Nautilus logger.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
 )]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
+)]
+#[derive(Debug, Clone, PartialEq, Eq, bon::Builder)]
 pub struct LoggerConfig {
     /// Maximum log level for stdout output.
+    #[builder(default = LevelFilter::Info)]
     pub stdout_level: LevelFilter,
     /// Maximum log level for file output (`Off` disables file logging).
+    #[builder(default = LevelFilter::Off)]
     pub fileout_level: LevelFilter,
     /// Per-component log level overrides (exact match).
+    #[builder(default)]
     pub component_level: AHashMap<Ustr, LevelFilter>,
     /// Per-module path log level overrides (prefix match).
+    #[builder(default)]
     pub module_level: AHashMap<Ustr, LevelFilter>,
     /// Log only components with explicit level filters.
+    #[builder(default)]
     pub log_components_only: bool,
     /// Use ANSI color codes in output.
+    #[builder(default = true)]
     pub is_colored: bool,
     /// Print configuration to stdout at startup.
+    #[builder(default)]
     pub print_config: bool,
     /// Initialize the tracing subscriber for external Rust crate logs.
+    #[builder(default)]
     pub use_tracing: bool,
+    /// If all logging should be bypassed.
+    #[builder(default)]
+    pub bypass_logging: bool,
+    /// File writer configuration for log file output.
+    pub file_config: Option<FileWriterConfig>,
+    /// If the log file should be cleared before use.
+    #[builder(default)]
+    pub clear_log_file: bool,
 }
 
 impl Default for LoggerConfig {
-    /// Creates a new default [`LoggerConfig`] instance.
     fn default() -> Self {
-        Self {
-            stdout_level: LevelFilter::Info,
-            fileout_level: LevelFilter::Off,
-            component_level: AHashMap::new(),
-            module_level: AHashMap::new(),
-            log_components_only: false,
-            is_colored: true,
-            print_config: false,
-            use_tracing: false,
-        }
+        Self::builder().build()
     }
 }
 
 impl LoggerConfig {
     /// Creates a new [`LoggerConfig`] instance.
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         stdout_level: LevelFilter,
         fileout_level: LevelFilter,
@@ -115,6 +127,9 @@ impl LoggerConfig {
         is_colored: bool,
         print_config: bool,
         use_tracing: bool,
+        bypass_logging: bool,
+        file_config: Option<FileWriterConfig>,
+        clear_log_file: bool,
     ) -> Self {
         Self {
             stdout_level,
@@ -125,6 +140,9 @@ impl LoggerConfig {
             is_colored,
             print_config,
             use_tracing,
+            bypass_logging,
+            file_config,
+            clear_log_file,
         }
     }
 
@@ -158,6 +176,7 @@ impl LoggerConfig {
                     "is_colored" => config.is_colored = true,
                     "print_config" => config.print_config = true,
                     "use_tracing" => config.use_tracing = true,
+                    "bypass_logging" => config.bypass_logging = true,
                     _ => anyhow::bail!("Invalid spec pair: {kv}"),
                 }
                 continue;
@@ -184,6 +203,9 @@ impl LoggerConfig {
                 }
                 "use_tracing" => {
                     config.use_tracing = parse_bool_value(v);
+                }
+                "bypass_logging" => {
+                    config.bypass_logging = parse_bool_value(v);
                 }
                 "stdout" => {
                     config.stdout_level = parse_level(v)?;
@@ -244,6 +266,9 @@ mod tests {
         assert!(!config.log_components_only);
         assert!(config.is_colored);
         assert!(!config.print_config);
+        assert!(!config.bypass_logging);
+        assert!(config.file_config.is_none());
+        assert!(!config.clear_log_file);
     }
 
     #[rstest]
@@ -559,5 +584,23 @@ mod tests {
     fn test_default_module_level_is_empty() {
         let config = LoggerConfig::default();
         assert!(config.module_level.is_empty());
+    }
+
+    #[rstest]
+    fn test_from_spec_bypass_logging_bare() {
+        let config = LoggerConfig::from_spec("bypass_logging").unwrap();
+        assert!(config.bypass_logging);
+    }
+
+    #[rstest]
+    fn test_from_spec_bypass_logging_true() {
+        let config = LoggerConfig::from_spec("bypass_logging=true").unwrap();
+        assert!(config.bypass_logging);
+    }
+
+    #[rstest]
+    fn test_from_spec_bypass_logging_false() {
+        let config = LoggerConfig::from_spec("bypass_logging=false").unwrap();
+        assert!(!config.bypass_logging);
     }
 }

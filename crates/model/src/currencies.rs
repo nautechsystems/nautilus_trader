@@ -138,6 +138,7 @@ static XTZ_LOCK: OnceLock<Currency> = OnceLock::new();
 static USDC_LOCK: OnceLock<Currency> = OnceLock::new();
 static USDC_POS_LOCK: OnceLock<Currency> = OnceLock::new();
 static USDP_LOCK: OnceLock<Currency> = OnceLock::new();
+static PUSD_LOCK: OnceLock<Currency> = OnceLock::new();
 static USDT_LOCK: OnceLock<Currency> = OnceLock::new();
 static ZEC_LOCK: OnceLock<Currency> = OnceLock::new();
 
@@ -1215,6 +1216,18 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
+    pub fn pUSD() -> Self {
+        *PUSD_LOCK.get_or_init(|| Self {
+            code: Ustr::from("pUSD"),
+            precision: 6,
+            iso4217: 0,
+            name: Ustr::from("Polymarket USD"),
+            currency_type: CurrencyType::Crypto,
+        })
+    }
+
+    #[allow(non_snake_case)]
+    #[must_use]
     pub fn ZEC() -> Self {
         *ZEC_LOCK.get_or_init(|| Self {
             code: Ustr::from("ZEC"),
@@ -1319,7 +1332,35 @@ pub static CURRENCY_MAP: LazyLock<Mutex<HashMap<String, Currency>>> = LazyLock::
     map.insert(Currency::USDC().code.to_string(), Currency::USDC());
     map.insert(Currency::USDC_POS().code.to_string(), Currency::USDC_POS());
     map.insert(Currency::USDP().code.to_string(), Currency::USDP());
+    map.insert(Currency::pUSD().code.to_string(), Currency::pUSD());
     map.insert(Currency::USDT().code.to_string(), Currency::USDT());
     map.insert(Currency::ZEC().code.to_string(), Currency::ZEC());
     Mutex::new(map)
 });
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::enums::CurrencyType;
+
+    #[rstest]
+    fn test_pusd_currency_invariants() {
+        // pUSD is Polymarket's CLOB V2 collateral token; the adapter assumes
+        // 6-decimal precision matching the underlying USDC backing, the code
+        // string `"pUSD"`, and discoverability via the global registry.
+        let pusd = Currency::pUSD();
+        assert_eq!(pusd.code.as_str(), "pUSD");
+        assert_eq!(pusd.precision, 6);
+        assert_eq!(pusd.iso4217, 0);
+        assert_eq!(pusd.currency_type, CurrencyType::Crypto);
+
+        // Registered in the global map and round-trips by code.
+        let from_map = Currency::try_from_str("pUSD").expect("pUSD must be registered");
+        assert_eq!(from_map, pusd);
+
+        // The locked accessor is idempotent.
+        assert_eq!(Currency::pUSD(), Currency::pUSD());
+    }
+}

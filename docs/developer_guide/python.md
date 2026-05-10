@@ -51,7 +51,7 @@ class ThrottledEnqueuer(Generic[T]):
 ### Docstrings
 
 The [NumPy docstring spec](https://numpydoc.readthedocs.io/en/latest/format.html) is used throughout the codebase.
-This needs to be adhered to consistently to ensure the docs build correctly.
+This needs to be followed consistently so the docs build correctly.
 
 **Python** docstrings should be written in the **imperative mood** – e.g. *"Return a cached client."*
 
@@ -73,6 +73,23 @@ Exceptions where docstrings are acceptable:
 
 When a private method needs context (such as a tricky precondition or side effect), prefer a short inline comment (`#`) near the relevant logic rather than a docstring.
 
+### Properties vs methods (PyO3 bindings)
+
+When exposing Rust types to Python via PyO3, use `#[getter]` (property) or a plain
+method based on what the call site communicates, not whether the value can change:
+
+- **Property (`#[getter]`):** cheap, side-effect-free, attribute-like view of current
+  state. Scalar fields, predicates, and lightweight derived values belong here even if
+  they change over the object's lifetime.
+  Examples: `status`, `side`, `quantity`, `price`, `is_open`, `has_inputs`,
+  `realized_pnl`, `venue_order_id`.
+- **Method (no `#[getter]`):** actions, mutations, nontrivial work, allocations/copies,
+  I/O, or anything that takes arguments.
+  Examples: `apply(fill)`, `unrealized_pnl(price)`, `calculate_pnl(...)`.
+- **Gray area (prefer method):** getters that clone or allocate a collection each call.
+  Using a method signals the cost to the caller.
+  Examples: `events()`, `adjustments()`, `client_order_ids()`, `trade_ids()`.
+
 ### Test naming
 
 Descriptive names explaining the scenario:
@@ -89,10 +106,10 @@ def test_sma_with_single_input_returns_expected_value(self):
 
 ## Cython (legacy)
 
-:::warning[Deprecation notice]
-Cython is being phased out in favor of Rust implementations. New code should use Rust. This section documents legacy Cython code only.
+:::note
+This section covers Cython conventions for `.pyx` and `.pxd` files.
 :::
 
-For legacy `.pyx` and `.pxd` files, ensure that all functions and methods returning `void` or a primitive C type (such as `bint`, `int`, `double`) include the `except *` keyword in the signature. This ensures Python exceptions are not ignored.
+For `.pyx` and `.pxd` files, make sure all functions and methods returning `void` or a primitive C type (such as `bint`, `int`, `double`) include the `except *` keyword in the signature. Without it, Python exceptions are silently ignored.
 
 For more information, see the [Cython docs](https://cython.readthedocs.io/en/latest/index.html).

@@ -13,11 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import contextlib
+from decimal import Decimal
 from typing import Any
 
 import pytest
 
 from nautilus_trader.backtest.engine import OrderMatchingEngine
+from nautilus_trader.backtest.models import BestPriceFillModel
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import MakerTakerFeeModel
 from nautilus_trader.common.component import MessageBus
@@ -44,18 +47,23 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderModifyRejected
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.model.orders import MarketIfTouchedOrder
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import StopMarketOrder
+from nautilus_trader.model.orders import TrailingStopLimitOrder
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -352,6 +360,56 @@ class TestOrderMatchingEngine:
         # L1_MBP book update_trade_tick sets both bid/ask to trade price
         assert matching_engine.best_bid_price() == Price.from_str("1000.000")
         assert matching_engine.best_ask_price() == Price.from_str("1000.000")
+
+    def test_stale_trade_tick_does_not_mutate_book(self) -> None:
+        # Arrange - seed with a quote at ts_event=2
+        quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=1000.0,
+            ask_price=1000.0,
+            ts_event=2,
+            ts_init=2,
+        )
+        self.matching_engine.process_quote_tick(quote)
+
+        # Act - feed a stale trade with older ts_event=1
+        stale_trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=1100.0,
+            aggressor_side=AggressorSide.BUYER,
+            ts_event=1,
+            ts_init=1,
+        )
+        self.matching_engine.process_trade_tick(stale_trade)
+
+        # Assert - book and matching state unchanged
+        assert self.matching_engine.best_bid_price() == Price.from_str("1000.000")
+        assert self.matching_engine.best_ask_price() == Price.from_str("1000.000")
+
+    def test_stale_quote_tick_does_not_mutate_book(self) -> None:
+        # Arrange - seed with a trade at ts_event=2
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=1000.0,
+            aggressor_side=AggressorSide.BUYER,
+            ts_event=2,
+            ts_init=2,
+        )
+        self.matching_engine.process_trade_tick(trade)
+
+        # Act - feed a stale quote with older ts_event=1
+        stale_quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=1100.0,
+            ask_price=1200.0,
+            ts_event=1,
+            ts_init=1,
+        )
+        self.matching_engine.process_quote_tick(stale_quote)
+
+        # Assert - book and matching state unchanged
+        assert self.matching_engine.best_bid_price() == Price.from_str("1000.000")
+        assert self.matching_engine.best_ask_price() == Price.from_str("1000.000")
 
     def test_trade_execution_difference_buyer_aggressor(self) -> None:
         # This test demonstrates that trade_execution=True vs False produces the same result
@@ -3650,6 +3708,88 @@ class TestOrderMatchingEngine:
         filled_events = [m for m in messages if isinstance(m, OrderFilled)]
         assert len(filled_events) == 1, f"Stop should fill, was {len(filled_events)} fills"
 
+    def test_l1_ask_tracks_trade_price_across_seller_trades(self) -> None:
+        # Regression test: L1_MBP ask must not become stale after trades at
+        # lower prices. Previously the ask only monotonically increased and a
+        # restore block overwrote the correct value with the stale high-water mark.
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=990.0,
+            ask_price=1010.0,
+        )
+        self.matching_engine.process_quote_tick(quote)
+
+        # Three seller trades: 1000 -> 1050 -> 900
+        for i, price in enumerate([1000.0, 1050.0, 900.0], start=1):
+            trade = TestDataStubs.trade_tick(
+                instrument=self.instrument,
+                price=price,
+                aggressor_side=AggressorSide.SELLER,
+                ts_event=i,
+                ts_init=i,
+            )
+            self.matching_engine.process_trade_tick(trade)
+
+        # Submit market BUY: should fill at 900 (latest trade), not stale 1050
+        messages.clear()
+        order = TestExecStubs.market_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+        )
+        self.matching_engine.process_order(order, self.account_id)
+
+        fills = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(fills) == 1
+        assert fills[0].last_px == Price.from_str("900.000")
+
+    def test_l1_trade_only_best_price_fill_model_tracks_price(self) -> None:
+        # The exact scenario from the bug report: trade-only data (no quotes),
+        # BestPriceFillModel, CASH account, NETTING OMS. The fill model builds
+        # a synthetic L2 book from core.bid/core.ask so stale core values
+        # produce wrong fill prices.
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=BestPriceFillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.CASH,
+            reject_stop_orders=True,
+            trade_execution=True,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # No quote: only trade ticks, seller trades at 100 -> 105 -> 90
+        for i, price in enumerate([100.0, 105.0, 90.0], start=1):
+            trade = TestDataStubs.trade_tick(
+                instrument=self.instrument,
+                price=price,
+                aggressor_side=AggressorSide.SELLER,
+                ts_event=i,
+                ts_init=i,
+            )
+            engine.process_trade_tick(trade)
+
+        messages.clear()
+        order = TestExecStubs.market_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+        )
+        engine.process_order(order, self.account_id)
+
+        fills = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(fills) == 1
+        assert fills[0].last_px == Price.from_str("90.000")
+
 
 def _create_bar_execution_matching_engine() -> OrderMatchingEngine:
     clock = TestClock()
@@ -3726,6 +3866,96 @@ def test_bar_execution_respects_size_increment(volume: str) -> None:
 
     # Act - Should not raise
     matching_engine.process_bar(bar)
+
+
+def test_bar_execution_bumps_trade_id_counter_per_tick() -> None:
+    """
+    Bar processing must bump the trade-id counter for every O/H/L/C tick.
+
+    Regression for Rust/Python parity: the Python `_generate_trade_id_str`
+    previously skipped the counter bump for high/low/close ticks, so the
+    four synthetic bar ticks all shared the same `TradeId` — and subsequent
+    fills on the same matching engine landed on counter values lower than
+    their Rust counterparts. Rust's `IdsGenerator::generate_trade_id` bumps
+    on every call; this test pins the Python matching engine to that contract
+    by observing the counter suffix encoded in a fill's `TradeId` after a bar.
+
+    """
+    # Arrange
+    clock = TestClock()
+    trader_id = TestIdStubs.trader_id()
+    msgbus = MessageBus(trader_id=trader_id, clock=clock)
+    instrument = _ETHUSDT_PERP_BINANCE
+    cache = TestComponentStubs.cache()
+    cache.add_instrument(instrument)
+
+    matching_engine = OrderMatchingEngine(
+        instrument=instrument,
+        raw_id=0,
+        fill_model=FillModel(),
+        fee_model=MakerTakerFeeModel(),
+        book_type=BookType.L1_MBP,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        reject_stop_orders=False,
+        bar_execution=True,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    bar_spec = BarSpecification(
+        step=1,
+        aggregation=BarAggregation.MINUTE,
+        price_type=PriceType.LAST,
+    )
+    bar_type = BarType(
+        instrument_id=instrument.id,
+        bar_spec=bar_spec,
+        aggregation_source=AggregationSource.EXTERNAL,
+    )
+    bar = Bar(
+        bar_type=bar_type,
+        open=Price.from_str("1000.00"),
+        high=Price.from_str("1005.00"),
+        low=Price.from_str("995.00"),
+        close=Price.from_str("1000.00"),
+        volume=Quantity.from_str("100.000"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    # Act: process a bar with no resting orders, then trigger a fill via a
+    # trade tick crossing a fresh market order. The fill's counter suffix
+    # reflects cumulative bumps since engine init.
+    matching_engine.process_bar(bar)
+
+    market_order = TestExecStubs.market_order(
+        instrument=instrument,
+        order_side=OrderSide.BUY,
+        quantity=instrument.make_qty(1.0),
+    )
+    messages: list[Any] = []
+    msgbus.register("ExecEngine.process", messages.append)
+    matching_engine.process_order(
+        market_order,
+        TestIdStubs.account_id(),
+    )
+
+    # Assert: one fill, counter reflects open + high + low + close bumps plus
+    # the market-order fill, so the fill carries `-005`.
+    fills = [m for m in messages if isinstance(m, OrderFilled)]
+    assert len(fills) == 1, (
+        f"Expected one fill from the market order, was {[type(m).__name__ for m in messages]}"
+    )
+    trade_id_value = fills[0].trade_id.value
+    parts = trade_id_value.split("-")
+    assert parts[0] == "T", trade_id_value
+    assert len(parts) == 3, trade_id_value
+    assert len(parts[1]) == 16, trade_id_value
+    assert parts[2] == "005", (
+        f"Expected counter suffix 005 after four bar ticks + one fill, was {trade_id_value}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -10816,3 +11046,327 @@ class TestTradeConsumptionSeeding:
         # Assert
         fills = [m for m in messages if isinstance(m, OrderFilled)]
         assert len(fills) == 1
+
+
+class TestOrderMatchingEngineQuoteQuantity:
+    """
+    Tests that quote-denominated quantities are converted to base quantities before fill
+    simulation (parity with live adapter semantics).
+    """
+
+    def setup(self):
+        self.clock = TestClock()
+        self.trader_id = TestIdStubs.trader_id()
+        self.msgbus = MessageBus(trader_id=self.trader_id, clock=self.clock)
+        self.instrument = TestInstrumentProvider.ethusdt_binance()
+        self.account_id = TestIdStubs.account_id()
+        self.cache = TestComponentStubs.cache()
+        self.cache.add_instrument(self.instrument)
+
+        self.matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.CASH,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.messages: list[Any] = []
+
+        # Simulate the ExecutionEngine applying order events back to the order
+        # so that OrderUpdated conversions take effect synchronously. Some events
+        # (e.g. OrderFilled on an un-accepted order) violate the FSM; swallow
+        # those rather than masking legitimate test failures.
+        def _handle(event):
+            self.messages.append(event)
+            order = self.cache.order(event.client_order_id)
+            if order is not None:
+                with contextlib.suppress(Exception):
+                    order.apply(event)
+
+        self.msgbus.register("ExecEngine.process", _handle)
+
+    def _seed_book(self, bid_price: float, ask_price: float) -> None:
+        quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=bid_price,
+            ask_price=ask_price,
+        )
+        self.matching_engine.process_quote_tick(quote)
+
+    def _make_market_order(self, side: OrderSide, quantity: Quantity) -> MarketOrder:
+        return MarketOrder(
+            trader_id=self.trader_id,
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=self.instrument.id,
+            client_order_id=TestIdStubs.client_order_id(),
+            order_side=side,
+            quantity=quantity,
+            init_id=UUID4(),
+            ts_init=0,
+            quote_quantity=True,
+        )
+
+    def test_market_buy_quote_quantity_converted_at_best_ask(self) -> None:
+        # Arrange: asymmetric spread so ask is distinguishable from bid
+        self._seed_book(bid_price=990.0, ask_price=1010.0)
+
+        # 200 USDT quote notional at ask 1010 -> 0.19802 ETH (BUY must use ask, not bid)
+        order = self._make_market_order(OrderSide.BUY, Quantity.from_str("200"))
+        self.cache.add_order(order, position_id=None)
+
+        # Act
+        self.matching_engine.process_order(order, self.account_id)
+
+        # Assert
+        updates = [m for m in self.messages if isinstance(m, OrderUpdated)]
+        fills = [m for m in self.messages if isinstance(m, OrderFilled)]
+
+        assert len(updates) == 1
+        assert updates[0].quantity == Quantity.from_str("0.19802")
+        assert updates[0].is_quote_quantity is False
+
+        assert len(fills) == 1
+        assert fills[0].last_qty == Quantity.from_str("0.19802")
+        assert order.is_quote_quantity is False
+        assert order.quantity == Quantity.from_str("0.19802")
+
+    def test_market_sell_quote_quantity_converted_at_best_bid(self) -> None:
+        # Arrange: asymmetric spread so bid is distinguishable from ask
+        self._seed_book(bid_price=1990.0, ask_price=2010.0)
+
+        # 500 USDT quote notional at bid 1990 -> 0.25126 ETH (SELL must use bid, not ask)
+        order = self._make_market_order(OrderSide.SELL, Quantity.from_str("500"))
+        self.cache.add_order(order, position_id=None)
+
+        # Act
+        self.matching_engine.process_order(order, self.account_id)
+
+        # Assert
+        updates = [m for m in self.messages if isinstance(m, OrderUpdated)]
+        fills = [m for m in self.messages if isinstance(m, OrderFilled)]
+
+        assert len(updates) == 1
+        assert updates[0].quantity == Quantity.from_str("0.25126")
+        assert updates[0].is_quote_quantity is False
+        assert len(fills) == 1
+        assert fills[0].last_qty == Quantity.from_str("0.25126")
+
+    def test_market_buy_quote_quantity_without_market_is_rejected(self) -> None:
+        # Arrange (no book seeded)
+        order = self._make_market_order(OrderSide.BUY, Quantity.from_str("200"))
+        self.cache.add_order(order, position_id=None)
+
+        # Act
+        self.matching_engine.process_order(order, self.account_id)
+
+        # Assert
+        rejected = [m for m in self.messages if isinstance(m, OrderRejected)]
+        assert len(rejected) == 1
+        assert "quote quantity" in rejected[0].reason
+
+    def test_limit_buy_quote_quantity_converted_using_limit_price(self) -> None:
+        # Arrange
+        self._seed_book(bid_price=999.0, ask_price=1001.0)
+
+        # 100 USDT quote notional at limit 1000 -> 0.1 ETH base
+        order = LimitOrder(
+            trader_id=self.trader_id,
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=self.instrument.id,
+            client_order_id=TestIdStubs.client_order_id(),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("100"),
+            price=Price.from_str("1000.00"),
+            init_id=UUID4(),
+            ts_init=0,
+            quote_quantity=True,
+        )
+        self.cache.add_order(order, position_id=None)
+
+        # Act
+        self.matching_engine.process_order(order, self.account_id)
+
+        # Assert
+        updates = [m for m in self.messages if isinstance(m, OrderUpdated)]
+        assert len(updates) == 1
+        assert updates[0].quantity == Quantity.from_str("0.10000")
+        assert updates[0].is_quote_quantity is False
+        assert order.quantity == Quantity.from_str("0.10000")
+
+    def test_stop_market_buy_quote_quantity_converts_at_trigger(self) -> None:
+        # Arrange: use a stop-friendly engine that does not reject stops pre-trigger.
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.CASH,
+            reject_stop_orders=False,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Seed a starting book below the trigger
+        quote0 = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=1000.0,
+            ask_price=1000.0,
+        )
+        matching_engine.process_quote_tick(quote0)
+
+        order = StopMarketOrder(
+            trader_id=self.trader_id,
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=self.instrument.id,
+            client_order_id=TestIdStubs.client_order_id(),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("200"),
+            trigger_price=Price.from_str("1050.00"),
+            trigger_type=TriggerType.DEFAULT,
+            init_id=UUID4(),
+            ts_init=0,
+            quote_quantity=True,
+        )
+        self.cache.add_order(order, position_id=None)
+
+        # Act: submit (conversion is deferred for trigger-style market orders)
+        matching_engine.process_order(order, self.account_id)
+
+        assert not [m for m in self.messages if isinstance(m, OrderRejected)]
+        assert not [m for m in self.messages if isinstance(m, OrderUpdated)]
+        assert order.is_quote_quantity is True
+
+        # Move the market through the trigger; conversion now fires at fill time.
+        trigger_quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=1100.0,
+            ask_price=1100.0,
+        )
+        matching_engine.process_quote_tick(trigger_quote)
+
+        # Assert: conversion used the trigger-time ask (1100), not submission (1000).
+        updates = [m for m in self.messages if isinstance(m, OrderUpdated)]
+        fills = [m for m in self.messages if isinstance(m, OrderFilled)]
+        assert len(updates) == 1
+        assert updates[0].is_quote_quantity is False
+        # 200 USDT / 1100 = 0.181818... rounded to 5dp
+        assert updates[0].quantity == Quantity.from_str("0.18182")
+        assert len(fills) == 1
+        assert fills[0].last_qty == Quantity.from_str("0.18182")
+
+    def test_trailing_stop_limit_quote_quantity_defers_to_fill_time(self) -> None:
+        # Arrange: stop-friendly engine so the trailing stop can rest pre-trigger.
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.CASH,
+            reject_stop_orders=False,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Seed a starting book; submission-time convert would use this price.
+        matching_engine.process_quote_tick(
+            TestDataStubs.quote_tick(
+                instrument=self.instrument,
+                bid_price=1090.0,
+                ask_price=1110.0,
+            ),
+        )
+
+        # Trailing BUY with an initial limit price of 1100. Even though a price is
+        # present at submission, the conversion must defer until fill time so the
+        # eventual (possibly-trailed) limit price is used.
+        order = TrailingStopLimitOrder(
+            trader_id=self.trader_id,
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=self.instrument.id,
+            client_order_id=TestIdStubs.client_order_id(),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("200"),
+            price=Price.from_str("1100.00"),
+            trigger_price=Price.from_str("1105.00"),
+            trigger_type=TriggerType.DEFAULT,
+            limit_offset=Decimal(5),
+            trailing_offset=Decimal(10),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            init_id=UUID4(),
+            ts_init=0,
+            quote_quantity=True,
+        )
+        self.cache.add_order(order, position_id=None)
+
+        # Act: submit (no submission-time conversion for trailing orders).
+        matching_engine.process_order(order, self.account_id)
+
+        assert not [m for m in self.messages if isinstance(m, OrderUpdated)]
+        assert order.is_quote_quantity is True
+
+    def test_inverse_instrument_quote_quantity_passes_through(self) -> None:
+        # Arrange: inverse instrument (BitMEX XBT/USD). Quote quantity is native
+        # for inverse instruments; the conversion path must not run.
+        inverse_instrument = TestInstrumentProvider.xbtusd_bitmex()
+        cache = TestComponentStubs.cache()
+        cache.add_instrument(inverse_instrument)
+
+        messages: list[Any] = []
+        msgbus = MessageBus(trader_id=self.trader_id, clock=self.clock)
+        msgbus.register("ExecEngine.process", messages.append)
+
+        matching_engine = OrderMatchingEngine(
+            instrument=inverse_instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            msgbus=msgbus,
+            cache=cache,
+            clock=self.clock,
+        )
+
+        matching_engine.process_quote_tick(
+            TestDataStubs.quote_tick(
+                instrument=inverse_instrument,
+                bid_price=50000.0,
+                ask_price=50000.0,
+            ),
+        )
+
+        order = MarketOrder(
+            trader_id=self.trader_id,
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=inverse_instrument.id,
+            client_order_id=TestIdStubs.client_order_id(),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+            init_id=UUID4(),
+            ts_init=0,
+            quote_quantity=True,
+        )
+        cache.add_order(order, position_id=None)
+
+        # Act
+        matching_engine.process_order(order, self.account_id)
+
+        # Assert: no OrderUpdated emitted, flag preserved on the order.
+        updates = [m for m in messages if isinstance(m, OrderUpdated)]
+        fills = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(updates) == 0
+        assert len(fills) == 1
+        assert order.is_quote_quantity is True

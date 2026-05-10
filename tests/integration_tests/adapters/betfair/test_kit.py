@@ -128,10 +128,11 @@ class BetfairTestStubs:
                 "SportsAPING/v1.0/listClearedOrders": BetfairResponses.list_cleared_orders,
             }
             kw = {}
+
             if rpc_method == "SportsAPING/v1.0/listMarketCatalogue":
                 kw = {"filter_": request.params.filter}
             if rpc_method in responses:
-                response = responses[rpc_method](**kw)  # type: ignore
+                response = responses[rpc_method](**kw)
                 if "id" in response:
                     response["id"] = request.id
                 resp = MagicMock(spec=ClientResponse)
@@ -450,6 +451,7 @@ class BetfairResponses:
     @staticmethod
     def betting_list_market_catalogue(filter_: MarketFilter | None = None) -> dict:
         result = BetfairResponses.load("betting_list_market_catalogue.json")
+
         if filter_:
             result = [r for r in result if r["marketId"] in filter_.market_ids]  # type: ignore
         return {"jsonrpc": "2.0", "result": result, "id": 1}
@@ -809,6 +811,7 @@ class BetfairDataProvider:
     @staticmethod
     def mcm_to_instruments(mcm: MCM, currency="GBP") -> list[BettingInstrument]:
         instruments: list[BettingInstrument] = []
+
         for mc in mcm.mc:
             if mc.market_definition:
                 market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
@@ -829,6 +832,7 @@ class BetfairDataProvider:
 
         instruments: list[BettingInstrument] = []
         data = []
+
         for mcm in BetfairDataProvider.read_mcm(f"{market_id}.bz2"):
             if not instruments:
                 instruments = BetfairDataProvider.mcm_to_instruments(mcm)

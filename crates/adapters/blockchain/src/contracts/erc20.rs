@@ -411,6 +411,7 @@ fn parse_batch_token_results(
 #[cfg(test)]
 mod tests {
     use alloy::primitives::{Bytes, address};
+    use nautilus_core::hex;
     use rstest::{fixture, rstest};
 
     use super::*;

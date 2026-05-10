@@ -15,15 +15,13 @@
 
 //! Example demonstrating live execution testing with the Binance Spot adapter.
 //!
-//! Run with: `cargo run --example binance-spot-exec-tester --package nautilus-binance`
+//! Run with: `cargo run --example binance-spot-exec-tester --package nautilus-binance --features examples`
 //!
-//! Requires environment variables:
-//! - BINANCE_API_KEY: Your Binance API key
-//! - BINANCE_API_SECRET: Your Binance API secret
-//!
-//! Optional environment variables (for SBE data streams):
-//! - BINANCE_ED25519_API_KEY
-//! - BINANCE_ED25519_API_SECRET
+//! Requires environment variables based on the configured environment
+//! (Ed25519 keys are auto-detected):
+//! - Mainnet: `BINANCE_API_KEY` / `BINANCE_API_SECRET`
+//! - Testnet: `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`
+//! - Demo: `BINANCE_DEMO_API_KEY` / `BINANCE_DEMO_API_SECRET`
 
 use nautilus_binance::{
     common::enums::{BinanceEnvironment, BinanceProductType},
@@ -36,7 +34,9 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
+use nautilus_trading::strategy::StrategyConfig;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -54,12 +54,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         environment: BinanceEnvironment::Mainnet,
         api_key: None,
         api_secret: None,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
     let exec_config = BinanceExecClientConfig {
         trader_id,
         account_id,
+        product_types: vec![BinanceProductType::Spot],
+        environment: BinanceEnvironment::Mainnet,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -75,21 +79,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let mut tester_config = ExecTesterConfig::new(
-        StrategyId::from("EXEC_TESTER-001"),
-        instrument_id,
-        client_id,
-        Quantity::from("0.0001"), // Small quantity for testing
-    )
-    .with_log_data(false)
-    .with_enable_limit_sells(false)
-    .with_close_positions_on_stop(false);
-
-    // Use UUIDs for unique client order IDs across restarts
-    tester_config.base.use_uuid_client_order_ids = true;
-
-    tester_config.base.external_order_claims = Some(vec![instrument_id]);
-    tester_config.use_post_only = true;
+    let order_qty = Quantity::from("0.0001"); // Small quantity for testing
+    let tester_config = ExecTesterConfig::builder()
+        .base(StrategyConfig {
+            strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
+            external_order_claims: Some(vec![instrument_id]),
+            ..Default::default()
+        })
+        .instrument_id(instrument_id)
+        .client_id(client_id)
+        .order_qty(order_qty)
+        .log_data(false)
+        .enable_limit_sells(false)
+        .open_position_on_start_qty(order_qty.as_decimal())
+        .use_post_only(true)
+        .build();
 
     let tester = ExecTester::new(tester_config);
 

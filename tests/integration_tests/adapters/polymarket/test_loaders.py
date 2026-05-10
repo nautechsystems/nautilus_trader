@@ -14,9 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import pkgutil
+from decimal import Decimal
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import Mock
+from unittest.mock import patch
 
 import msgspec.json
 import pytest
@@ -26,6 +28,24 @@ from nautilus_trader.adapters.polymarket.loaders import PolymarketDataLoader
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
+
+
+@pytest.fixture(autouse=True)
+def patch_fetch_fee_schedules():
+    """
+    Patch the Gamma `fetch_fee_schedules` helper used by
+    from_market_slug/from_event_slug.
+
+    The slug/event response fixtures in this repo do not carry `feeSchedule`,
+    so the loaders fall back to a Gamma lookup. This fixture stubs that lookup
+    to return empty, keeping tests hermetic.
+
+    """
+    with patch(
+        "nautilus_trader.adapters.polymarket.loaders.fetch_fee_schedules",
+        new=AsyncMock(return_value={}),
+    ) as mocked:
+        yield mocked
 
 
 @pytest.fixture
@@ -188,6 +208,83 @@ async def test_from_market_slug_uses_slug_endpoint(
         "https://clob.polymarket.com/markets/"
         "0x270d5aa3b23be0d4e713361d603b187dd1919c71c74226ad867699f33972c5f2"
     )
+
+
+@pytest.mark.asyncio
+async def test_from_market_slug_populates_taker_fee_from_gamma_payload(
+    market_slug_data,
+    market_details_data,
+    patch_fetch_fee_schedules,
+):
+    """
+    If the slug response already carries feeSchedule, the loader uses it directly and
+    does not call fetch_fee_schedules.
+    """
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+    slug_with_schedule = {**market_slug_data, "feeSchedule": {"rate": 0.03}}
+
+    slug_response = Mock()
+    slug_response.status = 200
+    slug_response.body = msgspec.json.encode(slug_with_schedule)
+
+    details_response = Mock()
+    details_response.status = 200
+    details_response.body = msgspec.json.encode(market_details_data)
+
+    mock_http_client.get = AsyncMock(side_effect=[slug_response, details_response])
+
+    # Act
+    loader = await PolymarketDataLoader.from_market_slug(
+        "kamala-harris-divorce-in-2025",
+        http_client=mock_http_client,
+    )
+
+    # Assert
+    assert loader.instrument.taker_fee == Decimal("0.03")
+    assert loader.instrument.maker_fee == Decimal(0)
+    patch_fetch_fee_schedules.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_from_market_slug_falls_back_to_fetch_fee_schedules(
+    market_slug_data,
+    market_details_data,
+    patch_fetch_fee_schedules,
+):
+    """
+    When the slug response lacks feeSchedule, the loader falls back to a
+    fetch_fee_schedules lookup by condition ID.
+    """
+    # Arrange
+    mock_http_client = MagicMock(spec=nautilus_pyo3.HttpClient)
+
+    slug_response = Mock()
+    slug_response.status = 200
+    slug_response.body = msgspec.json.encode(market_slug_data)
+
+    details_response = Mock()
+    details_response.status = 200
+    details_response.body = msgspec.json.encode(market_details_data)
+
+    mock_http_client.get = AsyncMock(side_effect=[slug_response, details_response])
+    patch_fetch_fee_schedules.return_value = {
+        market_slug_data["conditionId"]: {"rate": 0.072},
+    }
+
+    # Act
+    loader = await PolymarketDataLoader.from_market_slug(
+        "kamala-harris-divorce-in-2025",
+        http_client=mock_http_client,
+    )
+
+    # Assert
+    assert loader.instrument.taker_fee == Decimal("0.072")
+    assert loader.instrument.maker_fee == Decimal(0)
+    patch_fetch_fee_schedules.assert_awaited_once()
+    assert patch_fetch_fee_schedules.await_args.kwargs["condition_ids"] == [
+        market_slug_data["conditionId"],
+    ]
 
 
 @pytest.mark.asyncio

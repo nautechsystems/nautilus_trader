@@ -28,7 +28,6 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import ImportableStrategyConfig
-from nautilus_trader.config import NautilusKernelConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.rust.model import BookType
 from nautilus_trader.model.book import OrderBook
@@ -393,7 +392,7 @@ class TestPersistenceStreaming:
         assert self.catalog.fs.exists(config_file)
         raw = self.catalog.fs.open(config_file, "rb").read()
         assert isinstance(raw, bytes)
-        assert NautilusKernelConfig.parse(raw)
+        assert BacktestEngineConfig.parse(raw)
 
     def test_feather_reader_returns_cython_objects(
         self,

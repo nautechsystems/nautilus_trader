@@ -32,6 +32,7 @@ use crate::{
 /// - `amount1` is zero (division by zero)
 /// - `sqrt(amount1)` is zero during overflow handling
 /// - Mathematical operations result in overflow during `mul_div`
+#[must_use]
 pub fn encode_sqrt_ratio_x96(amount0: u128, amount1: u128) -> U160 {
     let amount0_u256 = U256::from(amount0);
     let amount1_u256 = U256::from(amount1);
@@ -177,6 +178,7 @@ fn get_next_sqrt_price_from_amount1_rounding_down(
 ///
 /// # Panics
 /// Panics if `sqrt_price_x96` is zero or if `liquidity` is zero.
+#[must_use]
 pub fn get_next_sqrt_price_from_input(
     sqrt_price_x96: U160,
     liquidity: u128,
@@ -200,6 +202,7 @@ pub fn get_next_sqrt_price_from_input(
 ///
 /// # Panics
 /// Panics if `sqrt_price_x96` is zero or if `liquidity` is zero.
+#[must_use]
 pub fn get_next_sqrt_price_from_output(
     sqrt_price_x96: U160,
     liquidity: u128,
@@ -320,14 +323,15 @@ pub fn get_amounts_for_liquidity(
 }
 
 /// Expands an amount to 18 decimal places (multiplies by 10^18).
+#[must_use]
 pub fn expand_to_18_decimals(amount: u64) -> u128 {
-    amount as u128 * 10u128.pow(18)
+    u128::from(amount) * 10u128.pow(18)
 }
 
 /// Converts a sqrt price X96 to a raw Price (token1/token0 ratio without decimal adjustment).
 ///
-/// To get fixed-point representation: (sqrtPriceX96^2 * 10^FIXED_PRECISION) / 2^192
-/// We use FullMath::mul_div to handle the overflow from price_x192 * 10^FIXED_PRECISION
+/// To get fixed-point representation: (sqrtPriceX96^2 * `10^FIXED_PRECISION`) / 2^192
+/// We use `FullMath::mul_div` to handle the overflow from `price_x192` * `10^FIXED_PRECISION`
 ///
 /// # Errors
 ///
@@ -336,7 +340,7 @@ pub fn decode_sqrt_price_x96_to_price(sqrt_price_x96: U160) -> anyhow::Result<Pr
     let sqrt_price = U256::from(sqrt_price_x96);
     let price_x192 = sqrt_price * sqrt_price;
 
-    let fixed_scalar = U256::from(10u128.pow(FIXED_PRECISION as u32));
+    let fixed_scalar = U256::from(10u128.pow(u32::from(FIXED_PRECISION)));
     let divisor = U256::from(1u128) << 192;
     let price_raw_u256 = FullMath::mul_div(price_x192, fixed_scalar, divisor)?;
 
@@ -370,8 +374,8 @@ pub fn decode_sqrt_price_x96_to_price_tokens_adjusted(
     let sqrt_price = U256::from(sqrt_price_x96);
     let price_x192 = sqrt_price * sqrt_price;
 
-    let decimal_diff = token0_decimals as i32 - token1_decimals as i32;
-    let fixed_scalar = U256::from(10u128.pow(FIXED_PRECISION as u32));
+    let decimal_diff = i32::from(token0_decimals) - i32::from(token1_decimals);
+    let fixed_scalar = U256::from(10u128.pow(u32::from(FIXED_PRECISION)));
     let divisor_base = U256::from(1u128) << 192;
 
     let numerator = if invert {
@@ -555,7 +559,7 @@ mod tests {
     fn test_fails_if_output_amount_is_greater_than_virtual_reserves_of_token1() {
         let price = U160::from_str_radix("20282409603651670423947251286016", 10).unwrap();
         let liquidity = 1024;
-        let amount_out = U256::from(262145);
+        let amount_out = U256::from(262_145);
         let _ = get_next_sqrt_price_from_output(price, liquidity, amount_out, true);
     }
 
@@ -564,7 +568,7 @@ mod tests {
     fn test_fails_if_output_amount_is_exactly_virtual_reserves_of_token1() {
         let price = U160::from_str_radix("20282409603651670423947251286016", 10).unwrap();
         let liquidity = 1024;
-        let amount_out = U256::from(262144);
+        let amount_out = U256::from(262_144);
         let _ = get_next_sqrt_price_from_output(price, liquidity, amount_out, true);
     }
 
@@ -572,7 +576,7 @@ mod tests {
     fn test_succeeds_if_output_amount_is_just_less_than_virtual_reserves_of_token1() {
         let price = U160::from_str_radix("20282409603651670423947251286016", 10).unwrap();
         let liquidity = 1024;
-        let amount_out = U256::from(262143);
+        let amount_out = U256::from(262_143);
         let result = get_next_sqrt_price_from_output(price, liquidity, amount_out, true);
         assert_eq!(
             result,
@@ -641,19 +645,19 @@ mod tests {
         assert_eq!(encode_sqrt_ratio_x96(1, 1), Q96_U160);
         assert_eq!(
             encode_sqrt_ratio_x96(100, 1),
-            U160::from(792281625142643375935439503360_u128)
+            U160::from(792_281_625_142_643_375_935_439_503_360_u128)
         );
         assert_eq!(
             encode_sqrt_ratio_x96(1, 100),
-            U160::from(7922816251426433759354395033_u128)
+            U160::from(7_922_816_251_426_433_759_354_395_033_u128)
         );
         assert_eq!(
             encode_sqrt_ratio_x96(111, 333),
-            U160::from(45742400955009932534161870629_u128)
+            U160::from(45_742_400_955_009_932_534_161_870_629_u128)
         );
         assert_eq!(
             encode_sqrt_ratio_x96(333, 111),
-            U160::from(137227202865029797602485611888_u128)
+            U160::from(137_227_202_865_029_797_602_485_611_888_u128)
         );
     }
 
@@ -770,11 +774,11 @@ mod tests {
             U160::from_str_radix("2018382873588440326581633304624437", 10).unwrap();
 
         let raw_price = decode_sqrt_price_x96_to_price(sqrt_price_x96).unwrap();
-        assert_eq!(raw_price.as_f64(), 649004842.70137);
+        assert_eq!(raw_price.as_f64(), 649_004_842.701_37);
 
         // We want the adjusted price inverted as USDC is token0 and WETH is token1
         let adjusted_price =
             decode_sqrt_price_x96_to_price_tokens_adjusted(sqrt_price_x96, 6, 18, true).unwrap();
-        assert_eq!(adjusted_price.as_f64(), 1540.8205520280458);
+        assert_eq!(adjusted_price.as_f64(), 1_540.820_552_028_045_8);
     }
 }

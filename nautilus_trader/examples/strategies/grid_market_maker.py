@@ -161,6 +161,7 @@ class GridMarketMaker(Strategy):
             self.cache.orders_open(instrument_id=instrument_id, strategy_id=self.id)
             or self.cache.orders_inflight(instrument_id=instrument_id, strategy_id=self.id),
         )
+
         if not self._should_requote(mid) and has_resting:
             return
 
@@ -191,6 +192,7 @@ class GridMarketMaker(Strategy):
 
         expire_time = None
         tif = TimeInForce.GTC
+
         if self.config.expire_time_secs is not None:
             expire_time = self.clock.utc_now() + timedelta(seconds=self.config.expire_time_secs)
             tif = TimeInForce.GTD
@@ -272,6 +274,7 @@ class GridMarketMaker(Strategy):
     ) -> tuple[float, Decimal, Decimal]:
         net_qty = 0.0
         net_dec = Decimal(0)
+
         for pos in self.cache.positions_open(instrument_id=instrument_id, strategy_id=self.id):
             net_qty += pos.signed_qty
             qty_dec = Decimal(str(pos.quantity))
@@ -280,6 +283,7 @@ class GridMarketMaker(Strategy):
         pending_buy = Decimal(0)
         pending_sell = Decimal(0)
         seen: set[ClientOrderId] = set()
+
         for order in (
             *self.cache.orders_open(instrument_id=instrument_id, strategy_id=self.id),
             *self.cache.orders_inflight(instrument_id=instrument_id, strategy_id=self.id),
@@ -329,6 +333,7 @@ class GridMarketMaker(Strategy):
                 sell_price = Price(round_up(sell_f64, price_inc), self._price_precision)
                 min_px = self._instrument.min_price
                 max_px = self._instrument.max_price
+
                 if (min_px is not None and buy_price < min_px) or (
                     max_px is not None and buy_price > max_px
                 ):

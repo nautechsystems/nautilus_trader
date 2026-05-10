@@ -303,6 +303,10 @@ async def test_submit_limit_order(exec_client_builder, monkeypatch, instrument):
 
         # Assert
         ws_client.submit_order.assert_awaited_once()
+        kwargs = ws_client.submit_order.call_args.kwargs
+        assert isinstance(kwargs["order_side"], nautilus_pyo3.OrderSide)
+        assert isinstance(kwargs["order_type"], nautilus_pyo3.OrderType)
+        assert isinstance(kwargs["time_in_force"], nautilus_pyo3.TimeInForce)
     finally:
         await client._disconnect()
 

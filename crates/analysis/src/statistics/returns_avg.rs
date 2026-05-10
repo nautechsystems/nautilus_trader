@@ -25,6 +25,10 @@ use crate::{Returns, statistic::PortfolioStatistic};
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.analysis")
+)]
 pub struct ReturnsAverage {}
 
 impl Display for ReturnsAverage {
@@ -68,7 +72,7 @@ mod tests {
 
     use super::*;
 
-    fn create_returns(values: Vec<f64>) -> Returns {
+    fn create_returns(values: &[f64]) -> Returns {
         let mut new_return = BTreeMap::new();
         for (i, value) in values.iter().enumerate() {
             new_return.insert(UnixNanos::from(i as u64), *value);
@@ -79,7 +83,7 @@ mod tests {
     #[rstest]
     fn test_empty_returns() {
         let avg = ReturnsAverage {};
-        let returns = create_returns(vec![]);
+        let returns = create_returns(&[]);
         let result = avg.calculate_from_returns(&returns);
         assert!(result.is_some());
         assert!(result.unwrap().is_nan());
@@ -88,7 +92,7 @@ mod tests {
     #[rstest]
     fn test_all_zero() {
         let avg = ReturnsAverage {};
-        let returns = create_returns(vec![0.0, 0.0, 0.0]);
+        let returns = create_returns(&[0.0, 0.0, 0.0]);
         let result = avg.calculate_from_returns(&returns);
         assert!(result.is_some());
         // Average of [0.0, 0.0, 0.0] = 0.0
@@ -98,7 +102,7 @@ mod tests {
     #[rstest]
     fn test_mixed_with_zeros() {
         let avg = ReturnsAverage {};
-        let returns = create_returns(vec![10.0, -20.0, 0.0, 30.0, -40.0]);
+        let returns = create_returns(&[10.0, -20.0, 0.0, 30.0, -40.0]);
         let result = avg.calculate_from_returns(&returns);
         assert!(result.is_some());
         // Average of [10.0, -20.0, 0.0, 30.0, -40.0] = -20 / 5 = -4.0
@@ -108,7 +112,7 @@ mod tests {
     #[rstest]
     fn test_zeros_included_in_average() {
         let avg = ReturnsAverage {};
-        let returns = create_returns(vec![1.0, 0.0, 0.0]);
+        let returns = create_returns(&[1.0, 0.0, 0.0]);
         let result = avg.calculate_from_returns(&returns);
         assert!(result.is_some());
         // Average of [1.0, 0.0, 0.0] = 1.0 / 3 = 0.333...

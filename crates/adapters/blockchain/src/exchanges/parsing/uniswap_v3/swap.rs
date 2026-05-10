@@ -54,11 +54,11 @@ sol! {
 /// # Panics
 ///
 /// Panics if the contract address is not set in the log.
-pub fn parse_swap_event_hypersync(dex: SharedDex, log: HypersyncLog) -> anyhow::Result<SwapEvent> {
-    validate_event_signature_hash("SwapEvent", SWAP_EVENT_SIGNATURE_HASH, &log)?;
+pub fn parse_swap_event_hypersync(dex: SharedDex, log: &HypersyncLog) -> anyhow::Result<SwapEvent> {
+    validate_event_signature_hash("SwapEvent", SWAP_EVENT_SIGNATURE_HASH, log)?;
 
-    let sender = extract_address_from_topic(&log, 1, "sender")?;
-    let recipient = extract_address_from_topic(&log, 2, "recipient")?;
+    let sender = extract_address_from_topic(log, 1, "sender")?;
+    let recipient = extract_address_from_topic(log, 2, "recipient")?;
 
     if let Some(data) = &log.data {
         let data_bytes = data.as_ref();
@@ -84,10 +84,10 @@ pub fn parse_swap_event_hypersync(dex: SharedDex, log: HypersyncLog) -> anyhow::
         Ok(SwapEvent::new(
             dex,
             pool_identifier,
-            extract_block_number(&log)?,
-            extract_transaction_hash(&log)?,
-            extract_transaction_index(&log)?,
-            extract_log_index(&log)?,
+            extract_block_number(log)?,
+            extract_transaction_hash(log)?,
+            extract_transaction_index(log)?,
+            extract_log_index(log)?,
             sender,
             recipient,
             decoded.amount0,
@@ -204,7 +204,7 @@ mod tests {
     #[rstest]
     fn test_parse_swap_event_hypersync(hypersync_log: HypersyncLog) {
         let dex = arbitrum::UNISWAP_V3.dex.clone();
-        let event = parse_swap_event_hypersync(dex, hypersync_log).unwrap();
+        let event = parse_swap_event_hypersync(dex, &hypersync_log).unwrap();
 
         assert_eq!(
             event.pool_identifier.to_string(),
@@ -274,7 +274,7 @@ mod tests {
     #[rstest]
     fn test_hypersync_rpc_match(hypersync_log: HypersyncLog, rpc_log: RpcLog) {
         let dex = arbitrum::UNISWAP_V3.dex.clone();
-        let event_hypersync = parse_swap_event_hypersync(dex.clone(), hypersync_log).unwrap();
+        let event_hypersync = parse_swap_event_hypersync(dex.clone(), &hypersync_log).unwrap();
         let event_rpc = parse_swap_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(event_hypersync.pool_identifier, event_rpc.pool_identifier);

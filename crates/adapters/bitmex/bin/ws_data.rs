@@ -16,8 +16,12 @@
 use std::{env, time::Duration};
 
 use futures_util::StreamExt;
-use nautilus_bitmex::{http::client::BitmexHttpClient, websocket::client::BitmexWebSocketClient};
+use nautilus_bitmex::{
+    common::enums::BitmexEnvironment, http::client::BitmexHttpClient,
+    websocket::client::BitmexWebSocketClient,
+};
 use nautilus_model::{data::bar::BarType, identifiers::InstrumentId};
+use nautilus_network::websocket::TransportBackend;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -26,37 +30,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     let subscription_type = args.get(1).map_or("all", String::as_str);
     let symbol = args.get(2).map_or("XBTUSD", String::as_str);
-    let testnet = args.get(3).is_some_and(|s| s == "testnet");
+    let environment = if args.get(3).is_some_and(|s| s == "testnet") {
+        BitmexEnvironment::Testnet
+    } else {
+        BitmexEnvironment::Mainnet
+    };
 
     log::info!("Starting Bitmex WebSocket test");
     log::info!("Subscription type: {subscription_type}");
     log::info!("Symbol: {symbol}");
-    log::info!("Testnet: {testnet}");
+    log::info!("Environment: {environment}");
 
     // Configure URLs
-    let (http_url, ws_url) = if testnet {
-        (
+    let (http_url, ws_url) = match environment {
+        BitmexEnvironment::Testnet => (
             Some("https://testnet.bitmex.com".to_string()),
             Some("wss://ws.testnet.bitmex.com/realtime".to_string()),
-        )
-    } else {
-        (None, None) // Use default production URLs
+        ),
+        BitmexEnvironment::Mainnet => (None, None),
     };
 
     log::info!("Fetching instruments from HTTP API...");
     let http_client = BitmexHttpClient::new(
-        http_url, // base_url
-        None,     // api_key
-        None,     // api_secret
-        testnet,  // testnet
-        Some(60), // timeout_secs
-        None,     // max_retries
-        None,     // retry_delay_ms
-        None,     // retry_delay_max_ms
-        None,     // recv_window_ms
-        None,     // max_requests_per_second
-        None,     // max_requests_per_minute
-        None,     // proxy_url
+        http_url,    // base_url
+        None,        // api_key
+        None,        // api_secret
+        environment, // environment
+        60,          // timeout_secs
+        3,           // max_retries
+        1_000,       // retry_delay_ms
+        10_000,      // retry_delay_max_ms
+        10_000,      // recv_window_ms
+        10,          // max_requests_per_second
+        120,         // max_requests_per_minute
+        None,        // proxy_url
     )
     .expect("Failed to create HTTP client");
 
@@ -68,14 +75,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create WebSocket client
     let mut ws_client = BitmexWebSocketClient::new(
-        ws_url,  // url: defaults to wss://ws.bitmex.com/realtime
-        None,    // No API key for public feeds
-        None,    // No API secret
-        None,    // Account ID
-        Some(5), // 5 second heartbeat
+        ws_url, // url: defaults to wss://ws.bitmex.com/realtime
+        None,   // No API key for public feeds
+        None,   // No API secret
+        None,   // Account ID
+        5,      // 5 second heartbeat
+        TransportBackend::default(),
+        None,
     )
     .unwrap();
-    ws_client.cache_instruments(instruments);
     ws_client.connect().await?;
 
     // Give the connection a moment to stabilize

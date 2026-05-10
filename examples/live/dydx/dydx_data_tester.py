@@ -35,6 +35,7 @@ from nautilus_trader.adapters.dydx.constants import DYDX
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.core.nautilus_pyo3 import DydxNetwork
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -60,9 +61,8 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         DYDX: DydxDataClientConfig(
-            wallet_address=None,  # 'DYDX_WALLET_ADDRESS' or 'DYDX_TESTNET_WALLET_ADDRESS' env var
+            environment=DydxNetwork.MAINNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=False,  # Mainnet by default; flip to True for testnet
         ),
     },
     timeout_connection=20.0,

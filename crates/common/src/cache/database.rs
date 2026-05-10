@@ -24,7 +24,10 @@ use bytes::Bytes;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, DataType, FundingRateUpdate, GreeksData, QuoteTick, TradeTick, YieldCurveData},
+    data::{
+        Bar, CustomData, DataType, FundingRateUpdate, QuoteTick, TradeTick,
+        greeks::{GreeksData, YieldCurveData},
+    },
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
@@ -38,7 +41,7 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use crate::{custom::CustomData, signal::Signal};
+use crate::signal::Signal;
 
 #[derive(Debug, Default)]
 pub struct CacheMap {

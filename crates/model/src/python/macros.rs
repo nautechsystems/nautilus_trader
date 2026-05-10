@@ -19,6 +19,7 @@
 macro_rules! identifier_for_python {
     ($ty:ty) => {
         #[pymethods]
+        #[pyo3_stub_gen::derive::gen_stub_pymethods]
         impl $ty {
             #[new]
             fn py_new(value: &str) -> PyResult<Self> {

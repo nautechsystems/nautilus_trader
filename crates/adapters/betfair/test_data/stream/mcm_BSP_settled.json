@@ -1,0 +1,93 @@
+{
+  "op": "mcm",
+  "id": 1,
+  "clk": "AHkAugEAtQE=",
+  "pt": 1627625400000,
+  "mc": [
+    {
+      "id": "1.185781465",
+      "marketDefinition": {
+        "bspMarket": true,
+        "turnInPlayEnabled": true,
+        "persistenceEnabled": true,
+        "marketBaseRate": 5,
+        "eventId": "30738595",
+        "eventTypeId": "7",
+        "numberOfWinners": 1,
+        "bettingType": "ODDS",
+        "marketType": "WIN",
+        "marketTime": "2021-07-30T06:20:00.000Z",
+        "suspendTime": "2021-07-30T06:20:00.000Z",
+        "bspReconciled": true,
+        "complete": true,
+        "inPlay": false,
+        "crossMatching": false,
+        "runnersVoidable": false,
+        "numberOfActiveRunners": 0,
+        "betDelay": 0,
+        "status": "CLOSED",
+        "runners": [
+          {
+            "adjustmentFactor": 24.229,
+            "status": "WINNER",
+            "sortPriority": 1,
+            "id": 9249757,
+            "bsp": 5.73
+          },
+          {
+            "adjustmentFactor": 43.866,
+            "status": "PLACED",
+            "sortPriority": 2,
+            "id": 40273293,
+            "bsp": 2.14
+          },
+          {
+            "adjustmentFactor": 3.572,
+            "status": "LOSER",
+            "sortPriority": 3,
+            "id": 11120000,
+            "bsp": 28.56
+          },
+          {
+            "adjustmentFactor": 0,
+            "status": "REMOVED",
+            "sortPriority": 4,
+            "removalDate": "2021-07-30T05:10:00.000Z",
+            "id": 37433527
+          }
+        ],
+        "regulators": ["MR_INT"],
+        "venue": "Morphettville",
+        "countryCode": "AU",
+        "discountAllowed": true,
+        "timezone": "Australia/Adelaide",
+        "openDate": "2021-07-30T02:45:00.000Z",
+        "version": 3938278999,
+        "raceType": "Flat",
+        "priceLadderDefinition": {
+          "type": "CLASSIC"
+        }
+      },
+      "rc": [
+        {
+          "ltp": 5.5,
+          "tv": 1890.32,
+          "spn": 5.68,
+          "spf": 5.73,
+          "id": 9249757
+        },
+        {
+          "ltp": 2.1,
+          "tv": 3201.15,
+          "id": 40273293
+        },
+        {
+          "tv": 0,
+          "id": 23678734
+        }
+      ],
+      "img": false,
+      "tv": 8442.61
+    }
+  ]
+}

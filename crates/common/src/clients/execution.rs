@@ -19,12 +19,13 @@ use async_trait::async_trait;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
-    enums::OmsType,
+    enums::{LiquiditySide, OmsType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
+    instruments::InstrumentAny,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance},
+    types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
 
 use super::log_not_implemented;
@@ -99,8 +100,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if submission fails.
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -109,8 +110,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if submission fails.
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -119,8 +120,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if modification fails.
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -129,8 +130,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if cancellation fails.
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -139,8 +140,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if cancellation fails.
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -149,8 +150,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if batch cancellation fails.
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -159,8 +160,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    fn query_account(&self, cmd: &QueryAccount) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn query_account(&self, cmd: QueryAccount) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -169,8 +170,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -252,5 +253,31 @@ pub trait ExecutionClient {
         _ts_init: UnixNanos,
     ) {
         // Default no-op implementation
+    }
+
+    /// Handles an instrument update received via the message bus.
+    ///
+    /// Exec clients that need live instrument updates (e.g. for internal maps)
+    /// can override this to process instruments for their venue.
+    fn on_instrument(&mut self, _instrument: InstrumentAny) {
+        // Default no-op
+    }
+
+    /// Calculates the commission for a reconciliation fill.
+    ///
+    /// Override this method to provide venue-specific commission logic
+    /// for inferred fills generated during reconciliation.
+    ///
+    /// Returns `None` by default, signaling callers to use their own
+    /// generic commission formula.
+    #[expect(unused_variables)]
+    fn calculate_commission(
+        &self,
+        instrument: &InstrumentAny,
+        last_qty: Quantity,
+        last_px: Price,
+        liquidity_side: LiquiditySide,
+    ) -> Option<Money> {
+        None
     }
 }

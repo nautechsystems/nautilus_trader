@@ -17,7 +17,7 @@ FROM base AS builder
 
 # Install build deps
 RUN apt-get update && \
-    apt-get install -y curl clang git make pkg-config capnproto libcapnp-dev && \
+    apt-get install -y curl clang lld git make pkg-config capnproto libcapnp-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -25,8 +25,9 @@ RUN apt-get update && \
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
 
 # Install UV
-COPY uv-version ./
-RUN UV_VERSION=$(cat uv-version) && curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
+COPY scripts/uv-version.sh scripts/
+COPY pyproject.toml ./
+RUN UV_VERSION=$(bash scripts/uv-version.sh) && curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
 
 # Install package requirements
 COPY uv.lock pyproject.toml build.py ./

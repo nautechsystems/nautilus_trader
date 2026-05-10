@@ -18,12 +18,6 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use nautilus_model::{
-    data::{Data, InstrumentStatus, funding::FundingRateUpdate},
-    events::{AccountState, OrderUpdated},
-    instruments::InstrumentAny,
-    reports::{FillReport, OrderStatusReport, PositionStatusReport},
-};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
@@ -93,27 +87,23 @@ pub struct BitmexSubscription {
     pub args: Vec<Ustr>,
 }
 
-/// Unified WebSocket message type for BitMEX.
-#[derive(Clone, Debug)]
-pub enum NautilusWsMessage {
-    Data(Vec<Data>),
-    Instruments(Vec<InstrumentAny>),
-    InstrumentStatus(InstrumentStatus),
-    OrderStatusReports(Vec<OrderStatusReport>),
-    OrderUpdated(Box<OrderUpdated>),
-    OrderUpdates(Vec<OrderUpdated>),
-    FillReports(Vec<FillReport>),
-    PositionStatusReports(Vec<PositionStatusReport>),
-    FundingRateUpdates(Vec<FundingRateUpdate>),
-    AccountStates(Vec<AccountState>),
+/// Output message from the BitMEX WebSocket handler.
+///
+/// Contains venue-specific types that consumers parse into Nautilus domain types.
+#[derive(Debug)]
+pub enum BitmexWsMessage {
+    /// Table-based data message from the BitMEX WS stream.
+    Table(BitmexTableMessage),
+    /// Emitted when the underlying WebSocket reconnects.
     Reconnected,
+    /// Emitted when authentication succeeds.
     Authenticated,
 }
 
 /// Represents all possible message types from the BitMEX WebSocket API.
 #[derive(Debug, Display, Deserialize)]
 #[serde(untagged)]
-pub enum BitmexWsMessage {
+pub(super) enum BitmexWsFrame {
     /// Table websocket message.
     Table(BitmexTableMessage),
     /// Initial welcome message received when connecting to the WebSocket.
@@ -129,8 +119,8 @@ pub enum BitmexWsMessage {
         /// Whether heartbeat is enabled for this connection.
         #[serde(rename = "heartbeatEnabled")]
         heartbeat_enabled: bool,
-        /// Rate limit information.
-        limit: BitmexRateLimit,
+        /// Rate limit information (absent on some endpoints).
+        limit: Option<BitmexRateLimit>,
         /// Application name (testnet only).
         #[serde(rename = "appName")]
         app_name: Option<String>,
@@ -921,6 +911,8 @@ pub struct BitmexFundingMsg {
     pub timestamp: DateTime<Utc>,
     /// The instrument symbol the funding applies to.
     pub symbol: Ustr,
+    /// The interval for this funding.
+    pub funding_interval: DateTime<Utc>,
     /// The funding rate for this interval.
     #[serde(with = "rust_decimal::serde::float")]
     pub funding_rate: Decimal,

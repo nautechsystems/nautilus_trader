@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Kraken adapter.
 //!
-//! Run with: `cargo run -p nautilus-kraken --example kraken-data-tester`
+//! Run with: `cargo run -p nautilus-kraken --example kraken-data-tester --features examples`
 //!
 //! Environment variables (optional for public data):
 //! - KRAKEN_API_KEY: Your Kraken API key
@@ -32,6 +32,7 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId},
     stubs::TestDefault,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 // *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -49,12 +50,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match product_type {
             KrakenProductType::Spot => {
                 // Spot symbols are normalized to BTC (from Kraken's XBT)
-                let symbols = vec!["BTC/USD", "ETH/USD"];
+                let symbols = vec!["BTC/USD"];
+                // let symbols = vec!["BTC/USD", "ETH/USD"];
                 (symbols, true, false, false)
             }
             KrakenProductType::Futures => {
                 // Futures perpetual symbols use PF_ prefix (e.g., PF_XBTUSD, PF_ETHUSD)
-                let symbols = vec!["PF_XBTUSD", "PF_ETHUSD"];
+                let symbols = vec!["PF_XBTUSD"];
+                // let symbols = vec!["PF_XBTUSD", "PF_ETHUSD"];
                 (symbols, false, true, true)
             }
         };
@@ -82,6 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: None,    // Will use 'KRAKEN_API_KEY' env var if available
         api_secret: None, // Will use 'KRAKEN_API_SECRET' env var if available
         product_type,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -93,16 +97,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let tester_config = DataTesterConfig::new(client_id, instrument_ids)
-        .with_subscribe_quotes(true)
-        .with_subscribe_trades(true)
-        .with_bar_types(bar_types)
-        .with_subscribe_bars(subscribe_bars)
-        .with_subscribe_mark_prices(subscribe_mark_prices)
-        .with_subscribe_index_prices(subscribe_index_prices)
-        .with_request_trades(true)
-        .with_request_bars(subscribe_bars)
-        .with_log_data(true);
+    let tester_config = DataTesterConfig::builder()
+        .client_id(client_id)
+        .instrument_ids(instrument_ids)
+        .subscribe_quotes(true)
+        .subscribe_trades(true)
+        .bar_types(bar_types)
+        .subscribe_bars(subscribe_bars)
+        .subscribe_mark_prices(subscribe_mark_prices)
+        .subscribe_index_prices(subscribe_index_prices)
+        .request_trades(true)
+        .request_bars(subscribe_bars)
+        // .book_interval_ms(NonZeroUsize::new(10).unwrap())
+        // .subscribe_book_at_interval(true)
+        .manage_book(true)
+        .build();
 
     let tester = DataTester::new(tester_config);
 

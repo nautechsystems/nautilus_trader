@@ -24,7 +24,8 @@ use nautilus_common::live::get_runtime;
 use nautilus_network::{
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, SubscriptionState, WebSocketClient, WebSocketConfig, channel_message_handler,
+        AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
+        channel_message_handler,
     },
 };
 
@@ -44,6 +45,16 @@ const POLYMARKET_HEARTBEAT_SECS: u64 = 30;
 pub enum WsChannel {
     Market,
     User,
+}
+
+// Market channel streams continuously; user channel can legitimately be quiet
+// when no orders or fills exist, so give it a longer window before treating
+// silence as a zombie connection.
+fn idle_timeout_ms_for(channel: WsChannel) -> u64 {
+    match channel {
+        WsChannel::Market => 60_000,
+        WsChannel::User => 300_000,
+    }
 }
 
 /// Lightweight handle for subscribing/unsubscribing to market data.
@@ -72,6 +83,16 @@ impl WsSubscriptionHandle {
             .send(HandlerCommand::UnsubscribeMarket(asset_ids))
             .map_err(|e| anyhow::anyhow!("Failed to send UnsubscribeMarket: {e}"))
     }
+
+    // Constructs a handle around a raw command sender. Test-only: lets unit
+    // tests observe the commands the handle emits without spinning up the real
+    // feed handler.
+    #[cfg(test)]
+    pub(crate) fn from_sender(sender: tokio::sync::mpsc::UnboundedSender<HandlerCommand>) -> Self {
+        Self {
+            cmd_tx: Arc::new(tokio::sync::RwLock::new(sender)),
+        }
+    }
 }
 
 /// Provides a WebSocket client for the Polymarket CLOB API.
@@ -94,6 +115,8 @@ pub struct PolymarketWebSocketClient {
     // Arc<AtomicBool> allows mutation from &self in subscribe_user().
     user_subscribed: Arc<AtomicBool>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
+    subscribe_new_markets: bool,
+    transport_backend: TransportBackend,
 }
 
 impl PolymarketWebSocketClient {
@@ -101,21 +124,47 @@ impl PolymarketWebSocketClient {
     ///
     /// If `base_url` is `None`, the default production URL is used.
     #[must_use]
-    pub fn new_market(base_url: Option<String>) -> Self {
+    pub fn new_market(
+        base_url: Option<String>,
+        subscribe_new_markets: bool,
+        transport_backend: TransportBackend,
+    ) -> Self {
         let url = base_url.unwrap_or_else(|| clob_ws_market_url().to_string());
-        Self::new_inner(WsChannel::Market, url, None)
+        Self::new_inner(
+            WsChannel::Market,
+            url,
+            None,
+            subscribe_new_markets,
+            transport_backend,
+        )
     }
 
     /// Creates a new user-channel client (authenticated).
     ///
     /// If `base_url` is `None`, the default production URL is used.
     #[must_use]
-    pub fn new_user(base_url: Option<String>, credential: Credential) -> Self {
+    pub fn new_user(
+        base_url: Option<String>,
+        credential: Credential,
+        transport_backend: TransportBackend,
+    ) -> Self {
         let url = base_url.unwrap_or_else(|| clob_ws_user_url().to_string());
-        Self::new_inner(WsChannel::User, url, Some(credential))
+        Self::new_inner(
+            WsChannel::User,
+            url,
+            Some(credential),
+            false,
+            transport_backend,
+        )
     }
 
-    fn new_inner(channel: WsChannel, url: String, credential: Option<Credential>) -> Self {
+    fn new_inner(
+        channel: WsChannel,
+        url: String,
+        credential: Option<Credential>,
+        subscribe_new_markets: bool,
+        transport_backend: TransportBackend,
+    ) -> Self {
         let (placeholder_tx, _) = tokio::sync::mpsc::unbounded_channel();
         Self {
             channel,
@@ -129,6 +178,8 @@ impl PolymarketWebSocketClient {
             auth_tracker: AuthTracker::new(),
             user_subscribed: Arc::new(AtomicBool::new(false)),
             task_handle: None,
+            subscribe_new_markets,
+            transport_backend,
         }
     }
 
@@ -136,7 +187,6 @@ impl PolymarketWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the connection cannot be established.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         let mode = ConnectionMode::from_atomic(&self.connection_mode);
         if mode.is_active() || mode.is_reconnect() {
@@ -156,7 +206,9 @@ impl PolymarketWebSocketClient {
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(200),
             reconnect_max_attempts: None,
-            idle_timeout_ms: None,
+            idle_timeout_ms: Some(idle_timeout_ms_for(self.channel)),
+            backend: self.transport_backend,
+            proxy_url: None,
         };
 
         let client =
@@ -209,6 +261,7 @@ impl PolymarketWebSocketClient {
         let subscriptions = self.subscriptions.clone();
         let auth_tracker = self.auth_tracker.clone();
         let user_subscribed = self.user_subscribed.load(Ordering::Relaxed);
+        let subscribe_new_markets = self.subscribe_new_markets;
 
         let stream_handle = get_runtime().spawn(async move {
             let mut handler = FeedHandler::new(
@@ -221,6 +274,7 @@ impl PolymarketWebSocketClient {
                 subscriptions,
                 auth_tracker,
                 user_subscribed,
+                subscribe_new_markets,
             );
 
             loop {
@@ -248,6 +302,19 @@ impl PolymarketWebSocketClient {
         });
         self.task_handle = Some(stream_handle);
         Ok(())
+    }
+
+    /// Force-close fallback for the sync `stop()` path.
+    /// Prefer `disconnect()` for graceful shutdown.
+    pub(crate) fn abort(&mut self) {
+        self.signal.store(true, Ordering::Relaxed);
+        self.connection_mode
+            .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+
+        if let Some(handle) = self.task_handle.take() {
+            handle.abort();
+        }
+        self.auth_tracker.invalidate();
     }
 
     /// Disconnects the WebSocket connection.
@@ -400,5 +467,19 @@ impl PolymarketWebSocketClient {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::{WsChannel, idle_timeout_ms_for};
+
+    #[rstest]
+    #[case::market(WsChannel::Market, 60_000)]
+    #[case::user(WsChannel::User, 300_000)]
+    fn test_idle_timeout_ms_for_channel(#[case] channel: WsChannel, #[case] expected: u64) {
+        assert_eq!(idle_timeout_ms_for(channel), expected);
     }
 }

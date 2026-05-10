@@ -137,6 +137,7 @@ pub fn parse_funding_rate(
     Ok(FundingRateUpdate::new(
         instrument_id,
         ax_rate.funding_rate,
+        None,
         None, // AX doesn't provide next funding time
         ax_timestamp_ns_to_unix_nanos(ax_rate.timestamp_ns)?,
         ts_init,
@@ -318,12 +319,14 @@ pub fn parse_account_state(
 
         let currency = get_currency(symbol_str);
 
-        let total = Money::from_decimal(balance.amount, currency)
-            .with_context(|| format!("Failed to convert balance for {symbol_str}"))?;
-        let locked = Money::new(0.0, currency);
-        let free = total;
-
-        balances.push(AccountBalance::new(total, locked, free));
+        // The /balances endpoint does not include margin data, so locked
+        // is always zero here. The /risk-snapshot endpoint provides
+        // initial_margin_required_total which could be used, but that
+        // requires an additional HTTP call on every account state refresh.
+        let balance =
+            AccountBalance::from_total_and_locked(balance.amount, Decimal::ZERO, currency)
+                .with_context(|| format!("Failed to convert balance for {symbol_str}"))?;
+        balances.push(balance);
     }
 
     if balances.is_empty() {
@@ -361,7 +364,7 @@ pub fn parse_order_status_report<F>(
     account_id: AccountId,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-    cid_resolver: Option<F>,
+    cid_resolver: Option<&F>,
 ) -> anyhow::Result<OrderStatusReport>
 where
     F: Fn(u64) -> Option<ClientOrderId>,
@@ -404,7 +407,6 @@ where
 
     if let Some(cid) = order.cid {
         let client_order_id = cid_resolver
-            .as_ref()
             .and_then(|resolver| resolver(cid))
             .unwrap_or_else(|| cid_to_client_order_id(cid));
         report = report.with_client_order_id(client_order_id);
@@ -456,12 +458,17 @@ pub fn parse_fill_report(
         LiquiditySide::Maker
     };
 
-    let ts_event = UnixNanos::from(
-        fill.timestamp
-            .timestamp_nanos_opt()
-            .unwrap_or(0)
-            .unsigned_abs(),
-    );
+    let ts_event = match fill.timestamp.timestamp_nanos_opt() {
+        Some(nanos) => UnixNanos::from(nanos.unsigned_abs()),
+        None => {
+            log::warn!(
+                "Timestamp overflow for fill {} (timestamp={}), defaulting to 0",
+                fill.trade_id,
+                fill.timestamp
+            );
+            UnixNanos::from(0u64)
+        }
+    };
 
     Ok(FillReport::new(
         account_id,
@@ -526,13 +533,17 @@ pub fn parse_position_status_report(
         None
     };
 
-    let ts_last = UnixNanos::from(
-        position
-            .timestamp
-            .timestamp_nanos_opt()
-            .unwrap_or(0)
-            .unsigned_abs(),
-    );
+    let ts_last = match position.timestamp.timestamp_nanos_opt() {
+        Some(nanos) => UnixNanos::from(nanos.unsigned_abs()),
+        None => {
+            log::warn!(
+                "Timestamp overflow for position {} (timestamp={}), defaulting to 0",
+                position.symbol,
+                position.timestamp
+            );
+            UnixNanos::from(0u64)
+        }
+    };
 
     Ok(PositionStatusReport::new(
         account_id,

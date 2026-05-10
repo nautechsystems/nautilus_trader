@@ -40,6 +40,7 @@ pub trait FeeModel {
 pub enum FeeModelAny {
     Fixed(FixedFeeModel),
     MakerTaker(MakerTakerFeeModel),
+    PerContract(PerContractFeeModel),
 }
 
 impl FeeModel for FeeModelAny {
@@ -55,6 +56,9 @@ impl FeeModel for FeeModelAny {
             Self::MakerTaker(model) => {
                 model.get_commission(order, fill_quantity, fill_px, instrument)
             }
+            Self::PerContract(model) => {
+                model.get_commission(order, fill_quantity, fill_px, instrument)
+            }
         }
     }
 }
@@ -66,6 +70,17 @@ impl Default for FeeModelAny {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+)]
 pub struct FixedFeeModel {
     commission: Money,
     zero_commission: Money,
@@ -108,6 +123,60 @@ impl FeeModel for FixedFeeModel {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+)]
+pub struct PerContractFeeModel {
+    commission: Money,
+}
+
+impl PerContractFeeModel {
+    /// Creates a new [`PerContractFeeModel`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `commission` is negative.
+    pub fn new(commission: Money) -> anyhow::Result<Self> {
+        if commission.raw < 0 {
+            anyhow::bail!("Commission must be greater than or equal to zero")
+        }
+        Ok(Self { commission })
+    }
+}
+
+impl FeeModel for PerContractFeeModel {
+    fn get_commission(
+        &self,
+        _order: &OrderAny,
+        fill_quantity: Quantity,
+        _fill_px: Price,
+        _instrument: &InstrumentAny,
+    ) -> anyhow::Result<Money> {
+        let total = self.commission.as_f64() * fill_quantity.as_f64();
+        Ok(Money::new(total, self.commission.currency))
+    }
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+)]
 pub struct MakerTakerFeeModel;
 
 impl FeeModel for MakerTakerFeeModel {
@@ -147,7 +216,7 @@ mod tests {
     };
     use rstest::rstest;
 
-    use super::{FeeModel, FixedFeeModel, MakerTakerFeeModel};
+    use super::{FeeModel, FixedFeeModel, MakerTakerFeeModel, PerContractFeeModel};
 
     #[rstest]
     fn test_fixed_model_single_fill() {
@@ -263,5 +332,55 @@ mod tests {
             .get_commission(&fill, Quantity::from(100_000), Price::from("1.0"), &aud_usd)
             .unwrap();
         assert_eq!(commission.as_decimal(), expected_commission);
+    }
+
+    #[rstest]
+    fn test_per_contract_fee_model() {
+        let commission_per_contract = Money::new(0.50, Currency::USD());
+        let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
+        let fee_model = PerContractFeeModel::new(commission_per_contract).unwrap();
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(aud_usd.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100))
+            .build();
+        let accepted_order = TestOrderStubs::make_accepted_order(&market_order);
+        let commission = fee_model
+            .get_commission(
+                &accepted_order,
+                Quantity::from(100),
+                Price::from("1.0"),
+                &aud_usd,
+            )
+            .unwrap();
+        assert_eq!(commission, Money::new(50.0, Currency::USD()));
+    }
+
+    #[rstest]
+    fn test_per_contract_fee_model_partial_fill() {
+        let commission_per_contract = Money::new(1.25, Currency::USD());
+        let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
+        let fee_model = PerContractFeeModel::new(commission_per_contract).unwrap();
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(aud_usd.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(1000))
+            .build();
+        let accepted_order = TestOrderStubs::make_accepted_order(&market_order);
+        let commission = fee_model
+            .get_commission(
+                &accepted_order,
+                Quantity::from(400),
+                Price::from("1.0"),
+                &aud_usd,
+            )
+            .unwrap();
+        assert_eq!(commission, Money::new(500.0, Currency::USD()));
+    }
+
+    #[rstest]
+    fn test_per_contract_fee_model_negative_commission_fails() {
+        let result = PerContractFeeModel::new(Money::new(-1.0, Currency::USD()));
+        assert!(result.is_err());
     }
 }

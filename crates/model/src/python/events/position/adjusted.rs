@@ -28,8 +28,15 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PositionAdjusted {
-    #[allow(clippy::too_many_arguments)]
+    /// Represents an adjustment to a position's quantity or realized PnL.
+    ///
+    /// This event is used to track changes to positions that occur outside of normal
+    /// order fills, such as:
+    /// - Commission adjustments that affect the actual quantity held (e.g., crypto spot commissions)
+    /// - Funding payments that affect realized PnL (e.g., perpetual futures funding)
+    #[expect(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (trader_id, strategy_id, instrument_id, position_id, account_id, adjustment_type, quantity_change, pnl_change, reason, event_id, ts_event, ts_init))]
     fn py_new(
@@ -172,16 +179,19 @@ impl PositionAdjusted {
         dict.set_item("position_id", self.position_id.to_string())?;
         dict.set_item("account_id", self.account_id.to_string())?;
         dict.set_item("adjustment_type", self.adjustment_type.to_string())?;
+
         match self.quantity_change {
             Some(quantity_change) => {
                 dict.set_item("quantity_change", quantity_change.to_string())?;
             }
             None => dict.set_item("quantity_change", py.None())?,
         }
+
         match self.pnl_change {
             Some(pnl_change) => dict.set_item("pnl_change", pnl_change.to_string())?,
             None => dict.set_item("pnl_change", py.None())?,
         }
+
         match self.reason {
             Some(reason) => dict.set_item("reason", reason.to_string())?,
             None => dict.set_item("reason", py.None())?,

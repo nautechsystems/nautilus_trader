@@ -24,6 +24,7 @@ from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport FundingRateUpdate
 from nautilus_trader.model.data cimport IndexPriceUpdate
+from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -61,6 +62,7 @@ cdef class CacheFacade:
     cpdef list mark_prices(self, InstrumentId instrument_id)
     cpdef list index_prices(self, InstrumentId instrument_id)
     cpdef list funding_rates(self, InstrumentId instrument_id)
+    cpdef list instrument_statuses(self, InstrumentId instrument_id)
     cpdef list bars(self, BarType bar_type)
     cpdef Price price(self, InstrumentId instrument_id, PriceType price_type)
     cpdef dict[InstrumentId, Price] prices(self, PriceType price_type)
@@ -73,6 +75,7 @@ cdef class CacheFacade:
     cpdef MarkPriceUpdate mark_price(self, InstrumentId instrument_id, int index=*)
     cpdef IndexPriceUpdate index_price(self, InstrumentId instrument_id, int index=*)
     cpdef FundingRateUpdate funding_rate(self, InstrumentId instrument_id, int index=*)
+    cpdef InstrumentStatus instrument_status(self, InstrumentId instrument_id, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)
     cpdef int book_update_count(self, InstrumentId instrument_id)
     cpdef int quote_tick_count(self, InstrumentId instrument_id)
@@ -80,6 +83,7 @@ cdef class CacheFacade:
     cpdef int mark_price_count(self, InstrumentId instrument_id)
     cpdef int index_price_count(self, InstrumentId instrument_id)
     cpdef int funding_rate_count(self, InstrumentId instrument_id)
+    cpdef int instrument_status_count(self, InstrumentId instrument_id)
     cpdef int bar_count(self, BarType bar_type)
     cpdef bint has_order_book(self, InstrumentId instrument_id)
     cpdef bint has_quote_ticks(self, InstrumentId instrument_id)
@@ -87,6 +91,7 @@ cdef class CacheFacade:
     cpdef bint has_mark_prices(self, InstrumentId instrument_id)
     cpdef bint has_index_prices(self, InstrumentId instrument_id)
     cpdef bint has_funding_rates(self, InstrumentId instrument_id)
+    cpdef bint has_instrument_statuses(self, InstrumentId instrument_id)
     cpdef bint has_bars(self, BarType bar_type)
 
     cpdef get_xrate(

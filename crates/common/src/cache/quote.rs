@@ -110,7 +110,7 @@ impl QuoteCache {
     /// Returns an error if:
     /// - Any required field is `None` and there is no cached quote.
     /// - The first quote received is incomplete (no cached values to merge with).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn process(
         &mut self,
         instrument_id: InstrumentId,

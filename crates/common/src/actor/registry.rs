@@ -35,6 +35,24 @@
 //!   allowing aliased mutable access. This is technically undefined behavior but is
 //!   required by the re-entrant callback pattern. Higher-level discipline is required.
 //! - **Thread-local only**: Guards must not be sent across threads.
+//!
+//! # Invariants
+//!
+//! These contracts must hold regardless of how the registry is implemented
+//! internally. The first three are verified by tests in this module. The
+//! fourth is a usage discipline enforced by convention.
+//!
+//! - **Thread isolation**: Each thread has its own registry instance. An actor
+//!   registered on one thread is never visible from another.
+//! - **Guard survival**: An [`ActorRef`] keeps its actor alive via reference
+//!   counting. Removing or replacing an actor in the registry does not invalidate
+//!   existing guards.
+//! - **Type safety**: [`get_actor_unchecked`] and [`try_get_actor_unchecked`]
+//!   verify the concrete type at runtime before casting. A type mismatch panics
+//!   or returns `None`, respectively.
+//! - **Short-lived guards**: Guards must be obtained, used, and dropped within a
+//!   single synchronous scope. Never store an [`ActorRef`] in a struct or hold
+//!   one across an `.await` point.
 
 use std::{
     any::TypeId,
@@ -352,5 +370,97 @@ mod tests {
 
         let result = try_get_actor_unchecked::<TestActor>(&id);
         assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_registry_is_thread_local() {
+        clear_actor_registry();
+
+        let id = Ustr::from("thread-local-actor");
+        let actor = TestActor { id, value: 42 };
+        register_actor(actor);
+
+        assert!(actor_exists(&id));
+        assert_eq!(actor_count(), 1);
+
+        let visible_on_other_thread = std::thread::spawn(move || {
+            // Each thread gets its own empty registry
+            (actor_exists(&id), actor_count())
+        })
+        .join()
+        .unwrap();
+
+        assert!(!visible_on_other_thread.0);
+        assert_eq!(visible_on_other_thread.1, 0);
+    }
+
+    #[rstest]
+    fn test_actor_ref_survives_registry_removal() {
+        clear_actor_registry();
+
+        let id = Ustr::from("removable-actor");
+        let actor = TestActor { id, value: 7 };
+        register_actor(actor);
+        assert_eq!(actor_count(), 1);
+
+        let mut guard = get_actor_unchecked::<TestActor>(&id);
+
+        get_actor_registry().remove(&id);
+        assert!(!actor_exists(&id));
+        assert_eq!(actor_count(), 0);
+
+        assert_eq!(guard.value, 7);
+        guard.value = 99;
+        assert_eq!(guard.value, 99);
+    }
+
+    #[rstest]
+    fn test_actor_ref_survives_same_id_replacement() {
+        clear_actor_registry();
+
+        let id = Ustr::from("replaceable-actor");
+        let actor_a = TestActor { id, value: 1 };
+        register_actor(actor_a);
+
+        let guard_a = get_actor_unchecked::<TestActor>(&id);
+        assert_eq!(guard_a.value, 1);
+
+        let actor_b = TestActor { id, value: 2 };
+        register_actor(actor_b);
+
+        // Old guard still sees actor A
+        assert_eq!(guard_a.value, 1);
+
+        // Fresh lookup sees actor B
+        let guard_b = get_actor_unchecked::<TestActor>(&id);
+        assert_eq!(guard_b.value, 2);
+        assert_eq!(actor_count(), 1);
+    }
+
+    #[should_panic(expected = "Actor type mismatch")]
+    #[rstest]
+    fn test_get_actor_unchecked_panics_on_type_mismatch() {
+        #[derive(Debug)]
+        struct OtherActor {
+            id: Ustr,
+        }
+
+        impl Actor for OtherActor {
+            fn id(&self) -> Ustr {
+                self.id
+            }
+            fn handle(&mut self, _msg: &dyn Any) {}
+            fn as_any(&self) -> &dyn Any {
+                self
+            }
+        }
+
+        clear_actor_registry();
+
+        let id = Ustr::from("typed-actor");
+        let actor = OtherActor { id };
+        register_actor(actor);
+
+        let _guard = get_actor_unchecked::<TestActor>(&id);
     }
 }

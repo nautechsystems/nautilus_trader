@@ -52,9 +52,11 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LimitOrder {
+    /// Creates a new `LimitOrder` instance.
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, order_side, quantity, price, time_in_force, post_only, reduce_only, quote_quantity, init_id, ts_init, expire_time=None, display_qty=None, emulation_trigger=None, trigger_instrument_id=None, contingency_type=None, order_list_id=None, linked_order_ids=None, parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None))]
     fn py_new(
         trader_id: TraderId,
@@ -131,8 +133,8 @@ impl LimitOrder {
 
     #[staticmethod]
     #[pyo3(name = "create")]
-    fn py_create(init: OrderInitialized) -> PyResult<Self> {
-        Ok(Self::from(init))
+    fn py_create(init: OrderInitialized) -> Self {
+        Self::from(init)
     }
 
     #[staticmethod]
@@ -443,7 +445,6 @@ impl LimitOrder {
         self.ts_last.as_u64()
     }
 
-    #[getter]
     #[pyo3(name = "events")]
     fn py_events(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
         self.events()
@@ -488,7 +489,8 @@ impl LimitOrder {
         let is_post_only = get_required::<bool>(values, "is_post_only")?;
         let is_reduce_only = get_required::<bool>(values, "is_reduce_only")?;
         let is_quote_quantity = get_required::<bool>(values, "is_quote_quantity")?;
-        let display_qty = get_optional::<Quantity>(values, "display_qty")?;
+        let display_qty =
+            get_optional_parsed(values, "display_qty", |s| Ok(Quantity::from(s.as_str())))?;
         let emulation_trigger = get_optional_parsed(values, "emulation_trigger", |s| {
             s.parse::<TriggerType>().map_err(|e| e.to_string())
         })?;
@@ -580,7 +582,7 @@ impl LimitOrder {
         dict.set_item("ts_last", self.ts_last.as_u64())?;
         dict.set_item(
             "commissions",
-            commissions_from_indexmap(py, self.commissions().clone())?,
+            commissions_from_indexmap(py, self.commissions())?,
         )?;
         self.venue_order_id.map_or_else(
             || dict.set_item("venue_order_id", py.None()),
@@ -623,6 +625,7 @@ impl LimitOrder {
             || dict.set_item("exec_algorithm_id", py.None()),
             |x| dict.set_item("exec_algorithm_id", x.to_string()),
         )?;
+
         match &self.exec_algorithm_params {
             Some(exec_algorithm_params) => {
                 let py_exec_algorithm_params = PyDict::new(py);

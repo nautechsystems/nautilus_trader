@@ -15,7 +15,6 @@
 
 use std::fmt::{Debug, Display};
 
-use derive_builder::Builder;
 use nautilus_core::{UUID4, UnixNanos, serialization::from_bool_as_u8};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -36,12 +35,15 @@ use crate::{
 
 /// Represents an event where an order has been canceled at the trading venue.
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[cfg_attr(any(test, feature = "stubs"), builder(default))]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct OrderCanceled {
     /// The trader ID associated with the event.
@@ -69,7 +71,8 @@ pub struct OrderCanceled {
 
 impl OrderCanceled {
     /// Creates a new [`OrderCanceled`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -144,7 +147,7 @@ impl OrderEvent for OrderCanceled {
         self.event_id
     }
 
-    fn kind(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(OrderCanceled)
     }
 
@@ -310,4 +313,36 @@ impl OrderEvent for OrderCanceled {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use nautilus_core::{UUID4, UnixNanos};
+    use rstest::rstest;
+
+    use super::*;
+    use crate::identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId};
+
+    // TODO: Remove once reconciliation field is converted back to bool (post-Cython)
+    #[rstest]
+    fn test_reconciliation_bool_to_u8() {
+        let order_canceled = OrderCanceled::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("EMA-CROSS"),
+            InstrumentId::from("EURUSD.SIM"),
+            ClientOrderId::from("O-19700101-000000-001-001-1"),
+            UUID4::default(),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            true,
+            None,
+            None,
+        );
+        assert_eq!(order_canceled.reconciliation, 1);
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip() {
+        let original = OrderCanceled::default();
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderCanceled = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
+    }
+}

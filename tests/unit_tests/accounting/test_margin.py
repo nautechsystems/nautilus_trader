@@ -18,6 +18,9 @@ from decimal import Decimal
 import pytest
 
 from nautilus_trader.accounting.accounts.margin import MarginAccount
+from nautilus_trader.accounting.manager import AccountsManager
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
@@ -33,6 +36,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -47,6 +51,31 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 ADABTC_BINANCE = TestInstrumentProvider.adabtc_binance()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+
+
+def _fresh_margin_account() -> MarginAccount:
+    """
+    Build a margin account with no pre-populated margin balances.
+    """
+    event = AccountState(
+        account_id=TestIdStubs.account_id(),
+        account_type=AccountType.MARGIN,
+        base_currency=USD,
+        reported=True,
+        balances=[
+            AccountBalance(
+                Money(1_000_000, USD),
+                Money(0, USD),
+                Money(1_000_000, USD),
+            ),
+        ],
+        margins=[],
+        info={},
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+    )
+    return MarginAccount(event)
 
 
 class TestMarginAccount:
@@ -72,6 +101,32 @@ class TestMarginAccount:
         assert account == account
         assert account == account
         assert account.default_leverage == Decimal(1)
+
+    def test_instantiate_multi_asset_margin_account_with_empty_balances(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM-000"),
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        account = MarginAccount(event)
+
+        # Assert
+        assert account.base_currency is None
+        assert account.last_event == event
+        assert account.events == [event]
+        assert account.event_count == 1
+        assert account.currencies() == []
+        assert account.balances_total() == {}
 
     def test_set_default_leverage(self):
         # Arrange
@@ -145,6 +200,336 @@ class TestMarginAccount:
         # Assert
         assert account.margin_maint(AUDUSD_SIM.id) == margin
         assert account.margins_maint() == {AUDUSD_SIM.id: margin}
+
+    def test_apply_replaces_margin_balances_from_account_state(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+        event = AccountState(
+            account_id=account.id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                ),
+            ],
+            margins=[
+                MarginBalance(
+                    Money(12_500, USD),
+                    Money(25_000, USD),
+                    USDJPY_SIM.id,
+                ),
+            ],
+            info={},
+            event_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act
+        account.apply(event)
+
+        # Assert
+        assert account.margin_init(USDJPY_SIM.id) == Money(12_500, USD)
+        assert account.margin_maint(USDJPY_SIM.id) == Money(25_000, USD)
+        assert account.margin_init(AUDUSD_SIM.id) is None
+        assert account.margin_maint(AUDUSD_SIM.id) is None
+
+    def test_apply_empty_balance_update_to_multi_asset_margin_account_is_noop(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM-000"),
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                ),
+            ],
+            margins=[
+                MarginBalance(
+                    Money(12_500, USD),
+                    Money(25_000, USD),
+                    USDJPY_SIM.id,
+                ),
+                MarginBalance(
+                    Money(5_000, USD),
+                    Money(10_000, USD),
+                    None,
+                ),
+            ],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        account = MarginAccount(event)
+        new_event = AccountState(
+            account_id=AccountId("SIM-000"),
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act
+        account.apply(new_event)
+
+        # Assert
+        assert account.last_event == new_event
+        assert account.event_count == 2
+        assert account.balance_total(USD) == Money(1_000_000, USD)
+        assert account.margin_init(USDJPY_SIM.id) == Money(12_500, USD)
+        assert account.margin_maint(USDJPY_SIM.id) == Money(25_000, USD)
+        assert account.account_margins_init()[USD] == Money(5_000, USD)
+        assert account.account_margins_maint()[USD] == Money(10_000, USD)
+
+    def test_apply_routes_account_wide_margin_by_currency(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+        event = AccountState(
+            account_id=account.id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                ),
+            ],
+            margins=[
+                MarginBalance(
+                    Money(12_500, USD),
+                    Money(25_000, USD),
+                    None,  # account-wide entry keyed by currency
+                ),
+            ],
+            info={},
+            event_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act
+        account.apply(event)
+
+        # Assert
+        assert account.margins() == {}
+        assert USD in account.account_margins()
+        assert account.margin_init_for_currency(USD) == Money(12_500, USD)
+        assert account.margin_maint_for_currency(USD) == Money(25_000, USD)
+        assert account.account_margins_init()[USD] == Money(12_500, USD)
+        assert account.account_margins_maint()[USD] == Money(25_000, USD)
+        # Strict per-instrument lookup must not pick up account-wide entries.
+        assert account.margin_init(USDJPY_SIM.id) is None
+        assert account.margin_maint(USDJPY_SIM.id) is None
+
+    def test_apply_routes_mixed_per_instrument_and_account_wide(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+        event = AccountState(
+            account_id=account.id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                ),
+            ],
+            margins=[
+                MarginBalance(Money(100, USD), Money(50, USD), USDJPY_SIM.id),
+                MarginBalance(Money(200, USD), Money(150, USD), None),
+            ],
+            info={},
+            event_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act
+        account.apply(event)
+
+        # Assert
+        assert account.margin_init(USDJPY_SIM.id) == Money(100, USD)
+        assert account.margin_init_for_currency(USD) == Money(200, USD)
+        assert account.total_margin_init(USD) == Money(300, USD)
+        assert account.total_margin_maint(USD) == Money(200, USD)
+
+    def test_update_margin_routes_account_wide_entry(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+        per_instrument_before = dict(account.margins())
+        account_wide = MarginBalance(Money(1_500, USD), Money(750, USD), None)
+
+        # Act
+        account.update_margin(account_wide)
+
+        # Assert
+        assert account.margin_for_currency(USD) == account_wide
+        assert account.margin_init_for_currency(USD) == Money(1_500, USD)
+        assert account.margin_maint_for_currency(USD) == Money(750, USD)
+        # Account-wide entry must not leak into per-instrument storage.
+        assert account.margins() == per_instrument_before
+
+    def test_total_margin_sums_per_instrument_and_account_wide(self):
+        # Arrange
+        account = _fresh_margin_account()
+
+        # Act
+        account.update_margin(MarginBalance(Money(80, USD), Money(20, USD), USDJPY_SIM.id))
+        account.update_margin(MarginBalance(Money(200, USD), Money(100, USD), None))
+
+        # Assert
+        assert account.total_margin_init(USD) == Money(280, USD)
+        assert account.total_margin_maint(USD) == Money(120, USD)
+
+    def test_total_margin_ignores_mismatched_currency(self):
+        # Arrange
+        account = _fresh_margin_account()
+
+        # Act
+        account.update_margin(MarginBalance(Money(100, USD), Money(50, USD), None))
+        account.update_margin(MarginBalance(Money("1.5", BTC), Money("0.5", BTC), None))
+
+        # Assert
+        assert account.total_margin_init(USD) == Money(100, USD)
+        assert account.total_margin_init(BTC) == Money("1.5", BTC)
+        assert account.total_margin_maint(USD) == Money(50, USD)
+        assert account.total_margin_maint(BTC) == Money("0.5", BTC)
+
+    def test_clear_account_margin_removes_entry_and_recalculates(self):
+        # Arrange
+        account = _fresh_margin_account()
+        account.update_margin(MarginBalance(Money(500, USD), Money(250, USD), None))
+        assert account.margin_for_currency(USD) is not None
+
+        # Act
+        account.clear_account_margin(USD)
+
+        # Assert
+        assert account.margin_for_currency(USD) is None
+        assert account.margin_init_for_currency(USD) is None
+        assert account.margin_maint_for_currency(USD) is None
+        assert account.total_margin_init(USD) == Money(0, USD)
+
+    def test_margin_for_currency_returns_none_when_absent(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+
+        # Act / Assert
+        assert account.margin_for_currency(USD) is None
+        assert account.margin_init_for_currency(USD) is None
+        assert account.margin_maint_for_currency(USD) is None
+
+    def test_accounts_manager_generate_account_state_includes_account_margins(self):
+        # Arrange
+        clock = TestClock()
+        logger = Logger("TestAccountsManager")
+        cache = Cache()
+        account = _fresh_margin_account()
+        account.update_margin(MarginBalance(Money(150, USD), Money(75, USD), USDJPY_SIM.id))
+        account.update_margin(MarginBalance(Money(500, USD), Money(250, USD), None))
+        cache.add_account(account)
+
+        manager = AccountsManager(cache=cache, clock=clock, logger=logger)
+
+        # Act
+        state = manager.generate_account_state(account, ts_event=0)
+
+        # Assert: regenerated event must retain both per-instrument and account-wide entries.
+        assert len(state.margins) == 2
+        per_instrument = [m for m in state.margins if m.instrument_id is not None]
+        account_wide = [m for m in state.margins if m.instrument_id is None]
+        assert len(per_instrument) == 1
+        assert per_instrument[0].initial == Money(150, USD)
+        assert len(account_wide) == 1
+        assert account_wide[0].initial == Money(500, USD)
+        assert account_wide[0].currency == USD
+
+    @pytest.mark.parametrize(
+        (
+            "per_instrument_initial",
+            "per_instrument_maint",
+            "account_wide_initial",
+            "account_wide_maint",
+            "expected_locked",
+        ),
+        [
+            # Only per-instrument: locked = initial + maintenance
+            (100, 50, 0, 0, 150),
+            # Only account-wide: locked = initial + maintenance
+            (0, 0, 200, 150, 350),
+            # Both: locked sums across buckets
+            (100, 50, 200, 150, 500),
+        ],
+        ids=["per_instrument_only", "account_wide_only", "mixed"],
+    )
+    def test_recalculate_balance_sums_per_instrument_and_account_wide(
+        self,
+        per_instrument_initial,
+        per_instrument_maint,
+        account_wide_initial,
+        account_wide_maint,
+        expected_locked,
+    ):
+        # Arrange
+        account = _fresh_margin_account()
+        if per_instrument_initial or per_instrument_maint:
+            account.update_margin(
+                MarginBalance(
+                    Money(per_instrument_initial, USD),
+                    Money(per_instrument_maint, USD),
+                    USDJPY_SIM.id,
+                ),
+            )
+        if account_wide_initial or account_wide_maint:
+            account.update_margin(
+                MarginBalance(
+                    Money(account_wide_initial, USD),
+                    Money(account_wide_maint, USD),
+                    None,
+                ),
+            )
+
+        # Assert: balance.locked reflects the combined margin reservation.
+        assert account.balance_locked(USD) == Money(expected_locked, USD)
+        assert account.balance_total(USD) == Money(1_000_000, USD)
+        assert account.balance_free(USD) == Money(1_000_000 - expected_locked, USD)
+
+    def test_accounts_manager_generate_account_state_survives_round_trip(self):
+        # Arrange — regenerating and re-applying must not drop account-wide margins.
+        clock = TestClock()
+        logger = Logger("TestAccountsManager")
+        cache = Cache()
+        account = _fresh_margin_account()
+        account.update_margin(MarginBalance(Money(500, USD), Money(250, USD), None))
+        cache.add_account(account)
+
+        manager = AccountsManager(cache=cache, clock=clock, logger=logger)
+
+        # Act
+        regenerated = manager.generate_account_state(account, ts_event=1)
+        account.apply(regenerated)
+
+        # Assert
+        assert account.margin_init_for_currency(USD) == Money(500, USD)
+        assert account.margin_maint_for_currency(USD) == Money(250, USD)
 
     def test_recalculate_balance_uses_raw_and_clamps(self):
         # Arrange

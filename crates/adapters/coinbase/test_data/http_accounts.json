@@ -1,0 +1,49 @@
+{
+  "accounts": [
+    {
+      "uuid": "8bfc20d7-f7c6-4422-bf07-8243ca4169fe",
+      "name": "BTC Wallet",
+      "currency": "BTC",
+      "available_balance": {
+        "value": "1.23456789",
+        "currency": "BTC"
+      },
+      "default": true,
+      "active": true,
+      "created_at": "2021-05-31T09:59:59Z",
+      "updated_at": "2024-01-15T10:30:00Z",
+      "deleted_at": null,
+      "type": "CRYPTO",
+      "ready": true,
+      "hold": {
+        "value": "0.00500000",
+        "currency": "BTC"
+      },
+      "retail_portfolio_id": "portfolio-001"
+    },
+    {
+      "uuid": "9cfc20d7-f7c6-4422-bf07-8243ca4169ff",
+      "name": "USD Wallet",
+      "currency": "USD",
+      "available_balance": {
+        "value": "10000.50",
+        "currency": "USD"
+      },
+      "default": false,
+      "active": true,
+      "created_at": "2021-05-31T09:59:59Z",
+      "updated_at": "2024-01-15T10:30:00Z",
+      "deleted_at": null,
+      "type": "FIAT",
+      "ready": true,
+      "hold": {
+        "value": "450.00",
+        "currency": "USD"
+      },
+      "retail_portfolio_id": "portfolio-001"
+    }
+  ],
+  "has_next": false,
+  "cursor": "",
+  "size": 2
+}

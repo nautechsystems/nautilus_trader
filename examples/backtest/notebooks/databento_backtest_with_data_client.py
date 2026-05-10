@@ -224,7 +224,6 @@ venues = [
 
 data_clients: dict = {
     "databento-001": DatabentoDataClientConfig(
-        api_key=None,  # 'DATABENTO_API_KEY' env var is used
         routing=RoutingConfig(
             default=False,
             venues=frozenset(["XCME"]),

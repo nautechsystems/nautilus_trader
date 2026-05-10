@@ -15,7 +15,6 @@
 
 use std::fmt::{Debug, Display};
 
-use derive_builder::Builder;
 use nautilus_core::{UUID4, UnixNanos, serialization::from_bool_as_u8};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -37,12 +36,15 @@ use crate::{
 /// Represents an event where a `CancelOrder` command has been rejected by the
 /// trading venue.
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[cfg_attr(any(test, feature = "stubs"), builder(default))]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct OrderCancelRejected {
     /// The trader ID associated with the event.
@@ -72,7 +74,8 @@ pub struct OrderCancelRejected {
 
 impl OrderCancelRejected {
     /// Creates a new [`OrderCancelRejected`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -151,7 +154,7 @@ impl OrderEvent for OrderCancelRejected {
         self.event_id
     }
 
-    fn kind(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(OrderCancelRejected)
     }
 
@@ -330,5 +333,13 @@ mod tests {
             display,
             "OrderCancelRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, venue_order_id=001, account_id=SIM-001, reason='ORDER_DOES_NOT_EXIST', ts_event=0)"
         );
+    }
+
+    #[rstest]
+    fn test_order_cancel_rejected_serialization() {
+        let original = OrderCancelRejected::default();
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderCancelRejected = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
     }
 }

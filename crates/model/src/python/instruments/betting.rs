@@ -34,8 +34,10 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BettingInstrument {
-    #[allow(clippy::too_many_arguments)]
+    /// Represents a betting instrument with complete market and selection details.
+    #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     #[new]
     #[pyo3(signature = (instrument_id, raw_symbol, event_type_id, event_type_name, competition_id, competition_name, event_id, event_name, event_country_code, event_open_date, betting_type, market_id, market_name, market_type, market_start_time, selection_id, selection_name, selection_handicap, currency, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, info=None))]
     fn py_new(
@@ -139,7 +141,7 @@ impl BettingInstrument {
     }
 
     #[getter]
-    fn type_str(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(BettingInstrument)
     }
 
@@ -258,7 +260,7 @@ impl BettingInstrument {
     }
 
     #[getter]
-    #[pyo3(name = "selection_name")]
+    #[pyo3(name = "selection_handicap")]
     fn py_selection_handicap(&self) -> f64 {
         self.selection_handicap
     }
@@ -347,6 +349,7 @@ impl BettingInstrument {
         // Convert HashMap<String, serde_json::Value> back to Python dict
         if let Some(ref info_map) = self.info {
             let py_dict = PyDict::new(py);
+
             for (key, value) in info_map {
                 // Convert serde_json::Value back to Python object via JSON
                 let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
@@ -414,6 +417,7 @@ impl BettingInstrument {
         // Serialize info dict
         if let Some(ref info_map) = self.info {
             let info_dict = PyDict::new(py);
+
             for (key, value) in info_map {
                 let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
                 let py_value =
@@ -424,26 +428,32 @@ impl BettingInstrument {
         } else {
             dict.set_item("info", PyDict::new(py))?;
         }
+
         match self.max_quantity {
             Some(value) => dict.set_item("max_quantity", value.to_string())?,
             None => dict.set_item("max_quantity", py.None())?,
         }
+
         match self.min_quantity {
             Some(value) => dict.set_item("min_quantity", value.to_string())?,
             None => dict.set_item("min_quantity", py.None())?,
         }
+
         match self.max_notional {
             Some(value) => dict.set_item("max_notional", value.to_string())?,
             None => dict.set_item("max_notional", py.None())?,
         }
+
         match self.min_notional {
             Some(value) => dict.set_item("min_notional", value.to_string())?,
             None => dict.set_item("min_notional", py.None())?,
         }
+
         match self.max_price {
             Some(value) => dict.set_item("max_price", value.to_string())?,
             None => dict.set_item("max_price", py.None())?,
         }
+
         match self.min_price {
             Some(value) => dict.set_item("min_price", value.to_string())?,
             None => dict.set_item("min_price", py.None())?,

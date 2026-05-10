@@ -8,22 +8,83 @@ on:
   push:
     branches: [master, nightly, develop, test-ci, test-pre-commit]
   pull_request:
-    branches: ['*']
+    branches-ignore: [master, nightly]
+
+concurrency:
+  # yamllint disable-line rule:line-length
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('{0}-{1}', github.ref_name, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Fork PRs cannot access repo/org variables so allow lists are empty;
+  # fall back to audit mode which logs calls without blocking them.
+  EGRESS_POLICY: >-
+    ${{ github.event.pull_request.head.repo.fork && 'audit'
+    || vars.STEP_SECURITY_EGRESS_POLICY
+    || 'block' }}
 
 jobs:
-  pre-commit:
-    runs-on: ubuntu-22.04 # (glibc 2.35) wider runtime range than 24.04/glibc 2.39
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      run-tests: ${{ steps.plan.outputs.run_tests }}
+      run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Plan
+        id: plan
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: bash scripts/ci/plan.sh
+
+  pre-commit:
+    # Self-hosted for internal work; Depot for fork PRs.
+    runs-on: >-
+      ${{ github.event.pull_request.head.repo.fork
+      && fromJson('["depot-ubuntu-22.04-8"]')
+      || fromJson('["self-hosted", "Linux", "X64", "build"]') }}
+    env:
+      # Self-hosted persists target dir outside the workspace so it survives
+      # actions/checkout's git clean -ffdx. Fork PRs run on Depot and fall
+      # through to Swatinem/rust-cache on the workspace target dir.
+      CARGO_TARGET_DIR: >-
+        ${{ github.event.pull_request.head.repo.fork
+        && format('{0}/target', github.workspace)
+        || '/home/runner/.cache/cargo-target/pre-commit' }}
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+
+      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
+      - name: Verify immutable CI inputs (post-checkout)
+        run: bash scripts/ci/verify-ci-inputs.sh post-checkout
 
       - name: Common setup
         uses: ./.github/actions/common-setup
@@ -33,9 +94,10 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
           build-type: "pre-commit"
+          rust-cache-enabled: ${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}
 
       - name: Run pre-commit
-        run: pre-commit run --all-files
+        run: prek run --all-files
 
       - name: Verify capnp schemas are up-to-date
         run: make check-capnp-schemas
@@ -47,9 +109,12 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -72,9 +137,12 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -91,25 +159,37 @@ jobs:
         run: cargo vet --locked
 
   build-linux-x86:
-    if: github.ref != 'refs/heads/test-pre-commit'
+    if: github.ref != 'refs/heads/test-pre-commit' && needs.plan.outputs.run-tests == 'true'
     strategy:
       fail-fast: false
+      # PRs build on 3.13 only: ruff target-version=py312 guards syntax in pre-commit,
+      # and 3.13 exercises the `python_version < '3.14'` dependency cohort
+      # (defusedxml, nautilus-ibapi, protobuf). Pushes (develop/nightly/master) run
+      # the full matrix before any wheel publishes.
       matrix:
-        os:
-          - ubuntu-22.04 # (glibc 2.35) wider runtime range than 24.04/glibc 2.39
-        python-version:
-          - "3.12"
-          - "3.13"
-          - "3.14"
+        python-version: ${{ fromJSON(github.event_name == 'pull_request' && '["3.13"]' || '["3.12", "3.13", "3.14"]') }}
     defaults:
       run:
         shell: bash
-    name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    # Ubuntu 22.04 (glibc 2.35) wider runtime range than 24.04/glibc 2.39
+    # Pushes to develop route to the self-hosted build pool; PRs and other
+    # branches route to Depot.
+    name: build - python ${{ matrix.python-version }} (ubuntu-22.04)
+    runs-on: >-
+      ${{ github.event_name == 'push' && github.ref_name == 'develop'
+      && fromJson('["self-hosted", "Linux", "X64", "build"]')
+      || fromJson('["depot-ubuntu-22.04-8"]') }}
     needs:
+      - plan
       - pre-commit
     env:
       BUILD_MODE: release
+      # Self-hosted develop pushes keep Rust artifacts outside the workspace so
+      # they survive actions/checkout's git clean -ffdx between runs.
+      CARGO_TARGET_DIR: >-
+        ${{ github.event_name == 'push' && github.ref_name == 'develop'
+        && format('/home/runner/.cache/cargo-target/build-linux-x86/py{0}', matrix.python-version)
+        || format('{0}/target/build-linux-x86', github.workspace) }}
       RUST_BACKTRACE: 1
     # yamllint disable rule:line-length
     services:
@@ -130,13 +210,16 @@ jobs:
           POSTGRES_DB: nautilus
         ports:
           - 5432:5432
-        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries 5
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -144,11 +227,21 @@ jobs:
         with:
           persist-credentials: false
 
+      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
+      - name: Verify immutable CI inputs (post-checkout)
+        run: bash scripts/ci/verify-ci-inputs.sh post-checkout
+
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
+          # Persistent CARGO_TARGET_DIR on the self-hosted build pool replaces
+          # Swatinem/rust-cache for develop push builds.
+          rust-cache-enabled: ${{ github.event_name == 'push' && github.ref_name == 'develop' && 'false' || 'true' }}
+          rust-cache-key: build-linux-x86
+          rust-cache-workspaces: . -> target/build-linux-x86
+          rust-cache-save-if: ${{ github.event_name == 'push' }}
 
       - name: Install Nautilus CLI
         env:
@@ -167,8 +260,23 @@ jobs:
       - name: Cached test data
         uses: ./.github/actions/common-test-data
 
-      - name: Run Rust tests
-        run: make cargo-test EXTRA_FEATURES="capnp,hypersync"
+      - name: Run Rust tests (core)
+        if: needs.plan.outputs.run-rust-tests == 'true'
+        run: make cargo-test-core EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
+
+      - name: Run Rust tests (adapters)
+        if: needs.plan.outputs.run-rust-tests == 'true'
+        run: make cargo-test-adapters EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
+
+      - name: Clean Rust test artifacts
+        if: needs.plan.outputs.run-rust-tests == 'true'
+        run: |
+          rm -rf "${CARGO_TARGET_DIR}/nextest"
+          df -h .
+
+      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
+      - name: Verify immutable CI inputs (pre-wheel build)
+        run: bash scripts/ci/verify-ci-inputs.sh pre-wheel-build
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
@@ -188,8 +296,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-22.04-arm
         python-version:
           - "3.12"
           - "3.13"
@@ -197,11 +303,13 @@ jobs:
     defaults:
       run:
         shell: bash
-    name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: build - python ${{ matrix.python-version }} (ubuntu-22.04-arm)
+    runs-on: depot-ubuntu-22.04-arm-8
     # Pause job on develop branch (takes ~1-1.5 hrs)
     # - test-pre-commit: only run linting jobs
+    # yamllint disable-line rule:line-length
     if: >
+      needs.plan.outputs.run-tests == 'true' &&
       !(
         (github.event_name == 'push' &&
           (github.ref_name == 'develop' || github.ref_name == 'test-pre-commit'))
@@ -209,11 +317,12 @@ jobs:
           github.base_ref == 'develop')
       )
     needs:
+      - plan
       - pre-commit
     env:
       BUILD_MODE: release
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-linux-arm
       RUST_BACKTRACE: 1
-      CARGO_BUILD_JOBS: 1
     # yamllint disable rule:line-length
     services:
       redis:
@@ -233,13 +342,16 @@ jobs:
           POSTGRES_DB: nautilus
         ports:
           - 5432:5432
-        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries 5
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -247,11 +359,18 @@ jobs:
         with:
           persist-credentials: false
 
+      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
+      - name: Verify immutable CI inputs (post-checkout)
+        run: bash scripts/ci/verify-ci-inputs.sh post-checkout
+
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
+          rust-cache-key: build-linux-arm
+          rust-cache-workspaces: . -> target/build-linux-arm
+          rust-cache-save-if: ${{ github.event_name == 'push' }}
 
       - name: Install Nautilus CLI
         env:
@@ -270,8 +389,23 @@ jobs:
       - name: Cached test data
         uses: ./.github/actions/common-test-data
 
-      - name: Run Rust tests
-        run: make cargo-test EXTRA_FEATURES="capnp"
+      - name: Run Rust tests (core)
+        if: needs.plan.outputs.run-rust-tests == 'true'
+        run: make cargo-test-core EXTRA_FEATURES="capnp" NEXTEST_PROFILE=ci
+
+      - name: Run Rust tests (adapters)
+        if: needs.plan.outputs.run-rust-tests == 'true'
+        run: make cargo-test-adapters EXTRA_FEATURES="capnp" NEXTEST_PROFILE=ci
+
+      - name: Clean Rust test artifacts
+        if: needs.plan.outputs.run-rust-tests == 'true'
+        run: |
+          rm -rf "${CARGO_TARGET_DIR}/nextest"
+          df -h .
+
+      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
+      - name: Verify immutable CI inputs (pre-wheel build)
+        run: bash scripts/ci/verify-ci-inputs.sh pre-wheel-build
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
@@ -287,12 +421,16 @@ jobs:
         uses: ./.github/actions/upload-artifact-wheel
 
   build-macos:
-    if: github.ref != 'refs/heads/test-pre-commit'
+    # macOS builds run on nightly/master pushes only (too slow for develop/PR).
+    # Develop-branch macOS coverage runs via nightly-tests.yml on a daily schedule.
+    if: >
+      needs.plan.outputs.run-tests == 'true' &&
+      github.event_name == 'push' &&
+      github.ref != 'refs/heads/develop' &&
+      github.ref != 'refs/heads/test-pre-commit'
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - macos-latest
         python-version:
           - "3.12"
           - "3.13"
@@ -300,18 +438,23 @@ jobs:
     defaults:
       run:
         shell: bash
-    name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: build - python ${{ matrix.python-version }} (macos)
+    runs-on: macos-latest
     needs:
+      - plan
       - pre-commit
     env:
       BUILD_MODE: release
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-macos
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -319,23 +462,114 @@ jobs:
         with:
           persist-credentials: false
 
+      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
+      - name: Verify immutable CI inputs (post-checkout)
+        run: bash scripts/ci/verify-ci-inputs.sh post-checkout
+
+      - name: Log macOS runner version
+        run: |
+          echo "::group::macOS runner info"
+          sw_vers
+          uname -a
+          echo "::endgroup::"
+
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
+          rust-cache-key: build-macos
+          rust-cache-workspaces: . -> target/build-macos
+          rust-cache-on-failure: "false"
+          rust-cache-save-if: ${{ github.event_name == 'push' }}
 
       - name: Cached test data
         uses: ./.github/actions/common-test-data
 
-      - name: Run Rust tests
-        run: make cargo-test EXTRA_FEATURES="capnp,hypersync"
+      - name: Set compile jobs from cache state
+        run: bash scripts/ci/set-cargo-build-jobs.sh
+
+      - name: Run Rust tests (core)
+        if: needs.plan.outputs.run-rust-tests == 'true'
+        run: make cargo-test-core EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
+
+      - name: Run Rust tests (adapters)
+        if: needs.plan.outputs.run-rust-tests == 'true'
+        run: make cargo-test-adapters EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
+
+      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
+      - name: Verify immutable CI inputs (pre-wheel build)
+        run: bash scripts/ci/verify-ci-inputs.sh pre-wheel-build
 
       - name: Build and install wheel
+        id: build-wheel
         uses: ./.github/actions/common-wheel-build
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-macos
+          PARALLEL_BUILD: false
         with:
           python-version: ${{ matrix.python-version }}
           github_ref: ${{ github.ref }}
+
+      - name: Diagnose failed macOS wheel build
+        if: failure() && steps.build-wheel.outcome == 'failure'
+        env:
+          # yamllint disable-line rule:line-length
+          MACOS_WHEEL_TARGET_DIR: ${{ github.workspace }}/target/build-macos/release
+        run: |
+          set +e
+
+          echo "::group::macOS runner and toolchain"
+          uname -a
+          sw_vers
+          rustc -Vv || true
+          cargo -Vv || true
+          python --version || true
+          which python || true
+          env | rg '^(ARCHFLAGS|CARGO|DYLD_LIBRARY_PATH|LD_LIBRARY_PATH|LIBRARY_PATH|PYO3|RUST)=' || true
+          echo "::endgroup::"
+
+          if [ ! -d "$MACOS_WHEEL_TARGET_DIR" ]; then
+            echo "Wheel target dir not found: $MACOS_WHEEL_TARGET_DIR"
+            exit 0
+          fi
+
+          build_scripts="$(find "$MACOS_WHEEL_TARGET_DIR/build" -type f -name build-script-build | sort)"
+
+          echo "::group::macOS build-script artifacts"
+          if [ -z "$build_scripts" ]; then
+            echo "No build-script-build artifacts found"
+          else
+            while IFS= read -r build_script; do
+              [ -z "$build_script" ] && continue
+              echo "--- $build_script"
+              ls -l "$build_script"
+              shasum -a 256 "$build_script" || true
+              file "$build_script" || true
+              otool -hv "$build_script" || true
+            done <<< "$build_scripts"
+          fi
+          echo "::endgroup::"
+
+          echo "::group::macOS Rust archives"
+          for archive in \
+            "$MACOS_WHEEL_TARGET_DIR/libnautilus_backtest.a" \
+            "$MACOS_WHEEL_TARGET_DIR/libnautilus_common.a" \
+            "$MACOS_WHEEL_TARGET_DIR/libnautilus_core.a" \
+            "$MACOS_WHEEL_TARGET_DIR/libnautilus_model.a" \
+            "$MACOS_WHEEL_TARGET_DIR/libnautilus_persistence.a"; do
+            if [ ! -f "$archive" ]; then
+              echo "Missing archive: $archive"
+              continue
+            fi
+
+            echo "--- $archive"
+            ls -l "$archive"
+            shasum -a 256 "$archive" || true
+            file "$archive" || true
+            ar -t "$archive" | head -n 20 || true
+          done
+          echo "::endgroup::"
 
       - name: Run tests
         run: |
@@ -345,12 +579,20 @@ jobs:
         uses: ./.github/actions/upload-artifact-wheel
 
   build-windows:
-    if: github.ref != 'refs/heads/test-pre-commit'
+    # Windows builds run on nightly/master pushes only (too slow for develop/PR).
+    # Develop-branch Windows coverage runs via nightly-tests.yml on a daily schedule.
+    # yamllint disable-line rule:line-length
+    if: >
+      needs.plan.outputs.run-tests == 'true' &&
+      !(
+        (github.event_name == 'push' &&
+          (github.ref_name == 'develop' || github.ref_name == 'test-pre-commit'))
+        || (github.event_name == 'pull_request' &&
+          github.base_ref == 'develop')
+      )
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - windows-latest
         python-version:
           - "3.12"
           - "3.13"
@@ -358,20 +600,25 @@ jobs:
     defaults:
       run:
         shell: bash
-    name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: build - python ${{ matrix.python-version }} (windows)
+    runs-on: depot-windows-2022-8
     needs:
+      - plan
       - pre-commit
     env:
       BUILD_MODE: release
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-windows
       HIGH_PRECISION: false
       PARALLEL_BUILD: false
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -379,11 +626,22 @@ jobs:
         with:
           persist-credentials: false
 
+      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
+      - name: Verify immutable CI inputs (post-checkout)
+        run: bash scripts/ci/verify-ci-inputs.sh post-checkout
+
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
+          rust-cache-key: build-windows
+          rust-cache-workspaces: . -> target/build-windows
+          rust-cache-save-if: ${{ github.event_name == 'push' }}
+
+      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
+      - name: Verify immutable CI inputs (pre-wheel build)
+        run: bash scripts/ci/verify-ci-inputs.sh pre-wheel-build
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
@@ -412,9 +670,9 @@ jobs:
       attestations: write # Required for attestations
     needs:
       - build-linux-x86
-      - build-macos
-      - build-windows
+      # - build-windows # Windows builds moved to nightly only
       # - build-linux-arm # Keep for nightly only (slow build)
+      # - build-macos # macOS builds moved to nightly only
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/develop'
     env:
@@ -425,11 +683,12 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
-          allowed-endpoints: |
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
@@ -439,7 +698,7 @@ jobs:
           persist-credentials: false
 
       - name: Download built wheels
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
           pattern: "nautilus_trader-*.whl"
@@ -447,7 +706,7 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: 'dist/nautilus_trader-*.whl'
 
@@ -461,6 +720,70 @@ jobs:
         run: |
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh
 
+  security-gate-nightly:
+    name: security-gate-nightly
+    runs-on: ubuntu-latest
+    needs:
+      - build-linux-x86
+      - build-linux-arm
+      - build-macos
+      - build-windows
+    if: >
+      github.event_name == 'push' && github.ref == 'refs/heads/nightly'
+    steps:
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Requires admin access to modify; does not widen attack surface.
+      # See .github/OVERVIEW.md "Security gate override" for rationale.
+      - name: Check security gate override
+        id: gate
+        run: |
+          override="${{ vars.SECURITY_GATE_OVERRIDE }}"
+          if [ -n "$override" ] && [ "$(date -u +%s)" -lt "$(date -u -d "$override" +%s 2>/dev/null || echo 0)" ]; then
+            echo "::warning::Security gate override active until $override"
+            echo "override_active=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "override_active=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install cargo-audit
+        if: steps.gate.outputs.override_active != 'true'
+        uses: ./.github/actions/cargo-tool-install
+        with:
+          tool-name: cargo-audit
+
+      - name: Run cargo-audit (fail on vulnerabilities)
+        if: steps.gate.outputs.override_active != 'true'
+        run: cargo audit --deny unsound
+
+      - name: Run osv-scanner
+        id: osv-scan
+        if: steps.gate.outputs.override_active != 'true'
+        continue-on-error: true
+        uses: google/osv-scanner-action/osv-scanner-action@c51854704019a247608d928f370c98740469d4b5 # v2.3.5
+        with:
+          scan-args: |
+            --config=osv-scanner.toml
+            --format json
+            --output=/github/workspace/osv-results.json
+            --lockfile=Cargo.lock
+            --lockfile=uv.lock
+            --lockfile=python/uv.lock
+
+      - name: Check OSV severity (fail on critical/high only)
+        if: steps.osv-scan.outcome == 'failure' && steps.gate.outputs.override_active != 'true'
+        run: bash scripts/ci/osv-severity-gate.sh osv-results.json
+
   publish-wheels-nightly:
     name: publish-wheels-nightly
     runs-on: ubuntu-latest
@@ -471,10 +794,7 @@ jobs:
       id-token: write # Required for attestations
       attestations: write # Required for attestations
     needs:
-      - build-linux-x86
-      - build-linux-arm
-      - build-macos
-      - build-windows
+      - security-gate-nightly
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/nightly'
     env:
@@ -485,11 +805,12 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
-          allowed-endpoints: |
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
             ${{ secrets.CLOUDFLARE_R2_ALLOWED_HOST }}:443
 
       - name: Checkout repository
@@ -499,7 +820,7 @@ jobs:
           persist-credentials: false
 
       - name: Download built wheels
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
           pattern: "nautilus_trader-*.whl"
@@ -507,7 +828,7 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: 'dist/nautilus_trader-*.whl'
 
@@ -545,11 +866,12 @@ jobs:
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
-          allowed-endpoints: |
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
             pypi.org:443
             files.pythonhosted.org:443
             upload.pypi.org:443
@@ -561,18 +883,18 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Get uv version
+      - name: Get uv version from pyproject.toml
         shell: bash
         run: |
-          echo "UV_VERSION=$(cat uv-version)" >> "$GITHUB_ENV"
+          echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> "$GITHUB_ENV"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b # v7.3.0
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: ${{ env.UV_VERSION }}
 
       - name: Download built wheels for PyPI and GitHub release
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
           pattern: "nautilus_trader-*.whl"
@@ -580,7 +902,7 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: 'dist/nautilus_trader-*.whl'
 
@@ -660,11 +982,12 @@ jobs:
       tag_name: ${{ env.TAG_NAME }}
     steps:
       # Security hardening
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
-          allowed-endpoints: |
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -696,7 +1019,7 @@ jobs:
       - name: Create GitHub release
         id: create-release
         # https://github.com/softprops/action-gh-release v2.5.0
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -719,11 +1042,12 @@ jobs:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
-          allowed-endpoints: |
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
             pypi.org:443
             files.pythonhosted.org:443
             upload.pypi.org:443
@@ -746,7 +1070,7 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest sdist provenance
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: 'dist/*.tar.gz'
 

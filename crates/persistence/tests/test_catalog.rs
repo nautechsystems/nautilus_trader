@@ -13,26 +13,36 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, fs, io::Write, str::FromStr};
+use std::{collections::HashMap, fs, io::Write, str::FromStr, sync::Arc};
 
 use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     data::{
-        Bar, BarSpecification, BarType, BookOrder, Data, HasTsInit, IndexPriceUpdate,
-        MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BarSpecification, BarType, BookOrder, CustomData, Data, DataType, HasTsInit,
+        IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
         depth::DEPTH10_LEN, is_monotonically_increasing_by_init, to_variant,
     },
-    enums::{AggregationSource, AggressorSide, BarAggregation, BookAction, OrderSide, PriceType},
+    enums::{
+        AggregationSource, AggressorSide, BarAggregation, BookAction, CurrencyType, OrderSide,
+        PriceType,
+    },
     identifiers::{InstrumentId, Symbol, TradeId},
-    instruments::{CurrencyPair, Instrument, InstrumentAny},
+    instruments::{
+        CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
+        stubs::{audusd_sim, equity_aapl},
+    },
     types::{Currency, Price, Quantity},
 };
-use nautilus_persistence::backend::{
-    catalog::ParquetDataCatalog,
-    session::{DataBackendSession, QueryResult},
+use nautilus_persistence::{
+    backend::{
+        catalog::ParquetDataCatalog,
+        session::{DataBackendSession, QueryResult},
+    },
+    test_data::{MacroYieldCurveData, RustTestCustomData, RustTestParamsCustomData},
 };
-use nautilus_serialization::arrow::ArrowSchemaProvider;
+use nautilus_serialization::{arrow::ArrowSchemaProvider, ensure_custom_data_registered};
 use nautilus_testkit::common::get_nautilus_test_data_file_path;
+use object_store::local::LocalFileSystem;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::json;
@@ -40,8 +50,18 @@ use tempfile::TempDir;
 
 fn create_temp_catalog() -> (TempDir, ParquetDataCatalog) {
     let temp_dir = TempDir::new().unwrap();
-    let catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
     (temp_dir, catalog)
+}
+
+/// Registers all test custom data types once so catalog decode can resolve them regardless of test order.
+fn ensure_test_custom_data_registered() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        ensure_custom_data_registered::<MacroYieldCurveData>();
+        ensure_custom_data_registered::<RustTestCustomData>();
+        ensure_custom_data_registered::<RustTestParamsCustomData>();
+    });
 }
 
 fn audusd_sim_id() -> InstrumentId {
@@ -82,7 +102,7 @@ fn create_order_book_depth10(ts_init: u64) -> OrderBookDepth10 {
     let mut quantity = 100.0;
     let mut order_id = 1;
 
-    #[allow(clippy::needless_range_loop)]
+    #[expect(clippy::needless_range_loop)]
     for i in 0..DEPTH10_LEN {
         let order = BookOrder::new(
             OrderSide::Buy,
@@ -103,7 +123,7 @@ fn create_order_book_depth10(ts_init: u64) -> OrderBookDepth10 {
     quantity = 100.0;
     order_id = 11;
 
-    #[allow(clippy::needless_range_loop)]
+    #[expect(clippy::needless_range_loop)]
     for i in 0..DEPTH10_LEN {
         let order = BookOrder::new(
             OrderSide::Sell,
@@ -243,7 +263,7 @@ fn test_quote_tick_query() {
 
     let mut catalog = DataBackendSession::new(10_000);
     catalog
-        .add_file::<QuoteTick>("quote_005", file_path.as_str(), None)
+        .add_file::<QuoteTick>("quote_005", file_path.as_str(), None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
@@ -268,6 +288,7 @@ fn test_quote_tick_query_with_filter() {
             "quote_005",
             file_path.as_str(),
             Some("SELECT * FROM quote_005 WHERE ts_init >= 1701388832486000000 ORDER BY ts_init"),
+            None,
         )
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
@@ -283,10 +304,10 @@ fn test_quote_tick_multiple_query() {
     let file_path_trades = get_nautilus_test_data_file_path("trades.parquet");
 
     catalog
-        .add_file::<QuoteTick>("quote_tick", file_path_quotes.as_str(), None)
+        .add_file::<QuoteTick>("quote_tick", file_path_quotes.as_str(), None, None)
         .unwrap();
     catalog
-        .add_file::<TradeTick>("quote_tick_2", file_path_trades.as_str(), None)
+        .add_file::<TradeTick>("quote_tick_2", file_path_trades.as_str(), None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
@@ -302,7 +323,7 @@ fn test_trade_tick_query() {
 
     let mut catalog = DataBackendSession::new(10_000);
     catalog
-        .add_file::<TradeTick>("trade_001", file_path.as_str(), None)
+        .add_file::<TradeTick>("trade_001", file_path.as_str(), None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
@@ -324,7 +345,7 @@ fn test_bar_query() {
 
     let mut catalog = DataBackendSession::new(10_000);
     catalog
-        .add_file::<Bar>("bar_001", file_path.as_str(), None)
+        .add_file::<Bar>("bar_001", file_path.as_str(), None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
@@ -352,7 +373,7 @@ fn test_datafusion_parquet_round_trip() {
 
     let mut session = DataBackendSession::new(1000);
     session
-        .add_file::<QuoteTick>("test_data", file_path.as_str(), None)
+        .add_file::<QuoteTick>("test_data", file_path.as_str(), None, None)
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
     let quote_ticks: Vec<Data> = query_result.collect();
@@ -372,7 +393,7 @@ fn test_datafusion_parquet_round_trip() {
     {
         let writer_props = WriterProperties::builder()
             .set_compression(Compression::SNAPPY)
-            .set_max_row_group_size(1000)
+            .set_max_row_group_row_count(Some(1000))
             .build();
 
         let mut writer =
@@ -387,7 +408,7 @@ fn test_datafusion_parquet_round_trip() {
     // Read back from parquet
     let mut session = DataBackendSession::new(1000);
     session
-        .add_file::<QuoteTick>("test_data", temp_file_path.to_str().unwrap(), None)
+        .add_file::<QuoteTick>("test_data", temp_file_path.to_str().unwrap(), None, None)
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
@@ -409,7 +430,7 @@ fn test_rust_write_2_bars_to_catalog() {
         .unwrap();
 
     let bar_type = bars[0].bar_type.to_string();
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert_eq!(intervals, vec![(1, 2)]);
 }
 
@@ -426,8 +447,62 @@ fn test_rust_append_data_to_catalog() {
     catalog.write_to_parquet(bars2, None, None, None).unwrap();
 
     let bar_type = bars1[0].bar_type.to_string();
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert_eq!(intervals, vec![(1, 2), (3, 3)]);
+}
+
+#[rstest]
+fn test_rust_get_intervals_without_identifier_aggregates_across_partitions() {
+    // Regression: `get_intervals(cls, None)` must union intervals across every
+    // per-identifier subdirectory, not just the parent directory's top level.
+    let (_temp_dir, catalog) = create_temp_catalog();
+
+    let audusd = create_quote_ticks_for_instrument("AUD/USD.SIM", 1_000, 2);
+    let ethusdt = create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 5_000, 2);
+
+    catalog.write_to_parquet(audusd, None, None, None).unwrap();
+    catalog.write_to_parquet(ethusdt, None, None, None).unwrap();
+
+    let aud_intervals = catalog
+        .get_intervals("quotes", Some("AUD/USD.SIM"))
+        .unwrap();
+    let eth_intervals = catalog
+        .get_intervals("quotes", Some("ETH/USDT.BINANCE"))
+        .unwrap();
+    let all_intervals = catalog.get_intervals("quotes", None).unwrap();
+
+    assert_eq!(aud_intervals, vec![(1_000, 2_000)]);
+    assert_eq!(eth_intervals, vec![(5_000, 6_000)]);
+    assert_eq!(all_intervals, vec![(1_000, 2_000), (5_000, 6_000)]);
+}
+
+#[rstest]
+fn test_rust_get_intervals_without_identifier_merges_overlapping_partitions() {
+    // Regression: intervals must be merged into a disjoint sorted union so
+    // `query_last_timestamp` returns the true max end, not just the end of the
+    // last interval when sorted by start. One identifier straddles the other.
+    let (_temp_dir, catalog) = create_temp_catalog();
+
+    let audusd = create_quote_ticks_for_instrument("AUD/USD.SIM", 1_000, 10);
+    let ethusdt = create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 5_000, 2);
+
+    catalog.write_to_parquet(audusd, None, None, None).unwrap();
+    catalog.write_to_parquet(ethusdt, None, None, None).unwrap();
+
+    let all_intervals = catalog.get_intervals("quotes", None).unwrap();
+    assert_eq!(all_intervals, vec![(1_000, 10_000)]);
+
+    let last_ts = catalog.query_last_timestamp("quotes", None).unwrap();
+    assert_eq!(last_ts, Some(10_000));
+}
+
+#[rstest]
+fn test_rust_get_intervals_without_identifier_on_empty_directory() {
+    // No data written: the type directory does not exist. `get_intervals(cls, None)`
+    // must return an empty vec instead of erroring.
+    let (_temp_dir, catalog) = create_temp_catalog();
+    let intervals = catalog.get_intervals("quotes", None).unwrap();
+    assert_eq!(intervals, Vec::<(u64, u64)>::new());
 }
 
 #[rstest]
@@ -444,10 +519,10 @@ fn test_rust_consolidate_catalog() {
 
     let bar_type = bars1[0].bar_type.to_string();
     catalog
-        .consolidate_data("bars", Some(bar_type.clone()), None, None, None, None)
+        .consolidate_data("bars", Some(bar_type.as_str()), None, None, None, None)
         .unwrap();
 
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert_eq!(intervals, vec![(1, 3)]);
 }
 
@@ -470,7 +545,7 @@ fn test_rust_consolidate_catalog_with_time_range() {
     catalog
         .consolidate_data(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(UnixNanos::from(1)),
             Some(UnixNanos::from(2)),
             None,
@@ -478,7 +553,7 @@ fn test_rust_consolidate_catalog_with_time_range() {
         )
         .unwrap();
 
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert_eq!(intervals, vec![(1, 2), (3, 3)]);
 }
 
@@ -521,7 +596,7 @@ fn test_rust_consolidate_with_deduplication() {
     // Consolidate with deduplication enabled; disable disjoint check since
     // we intentionally wrote overlapping files to seed the duplicates
     catalog
-        .consolidate_data("bars", Some(bar_type), None, None, Some(false), Some(true))
+        .consolidate_data("bars", Some(&bar_type), None, None, Some(false), Some(true))
         .unwrap();
 
     // After consolidation there should be a single file
@@ -584,7 +659,7 @@ fn test_rust_consolidate_index_with_deduplication() {
     // Consolidate with deduplication enabled; disable disjoint check since
     // we intentionally wrote overlapping files to seed the duplicates
     catalog
-        .consolidate_data("bars", Some(bar_type), None, None, Some(false), Some(true))
+        .consolidate_data("bars", Some(&bar_type), None, None, Some(false), Some(true))
         .unwrap();
 
     // After consolidation there should be a single file
@@ -624,7 +699,7 @@ fn test_register_object_store_from_uri_local_file() {
 
     // Add file using the registered object store
     session
-        .add_file::<TradeTick>("trade_ticks", &file_path, None)
+        .add_file::<TradeTick>("trade_ticks", &file_path, None, None)
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
@@ -667,7 +742,7 @@ fn test_rust_get_missing_intervals() {
 
     let bar_type = bars1[0].bar_type.to_string();
     let missing = catalog
-        .get_missing_intervals_for_request(0, 10, "bars", Some(bar_type))
+        .get_missing_intervals_for_request(0, 10, "bars", Some(&bar_type))
         .unwrap();
 
     assert_eq!(missing, vec![(0, 0), (3, 4), (7, 10)]);
@@ -684,12 +759,12 @@ fn test_rust_reset_data_file_names() {
     let bar_type = bars[0].bar_type.to_string();
     // Get intervals before reset
     let intervals_before = catalog
-        .get_intervals("bars", Some(bar_type.clone()))
+        .get_intervals("bars", Some(bar_type.as_str()))
         .unwrap();
     assert_eq!(intervals_before, vec![(1, 3)]);
 
     // Reset file names
-    let result = catalog.reset_data_file_names("bars", Some(bar_type));
+    let result = catalog.reset_data_file_names("bars", Some(&bar_type));
 
     // The operation should succeed (even if it changes the intervals)
     assert!(result.is_ok());
@@ -716,13 +791,15 @@ fn test_rust_extend_file_name() {
     catalog
         .extend_file_name(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             UnixNanos::from(2),
             UnixNanos::from(3),
         )
         .unwrap();
 
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog
+        .get_intervals("bars", Some(bar_type.as_str()))
+        .unwrap();
     assert_eq!(intervals, vec![(1, 3), (4, 4)]);
 }
 
@@ -883,9 +960,7 @@ fn test_rust_query_files_with_multiple_files() {
 fn test_rust_get_intervals_empty() {
     let (_temp_dir, catalog) = create_temp_catalog();
 
-    let intervals = catalog
-        .get_intervals("bars", Some("AUD/USD.SIM".to_string()))
-        .unwrap();
+    let intervals = catalog.get_intervals("bars", Some("AUD/USD.SIM")).unwrap();
 
     assert!(intervals.is_empty());
 }
@@ -907,7 +982,7 @@ fn test_consolidate_data_by_period_basic() {
     catalog
         .consolidate_data_by_period(
             "bars",
-            Some("AUD/USD.SIM".to_string()),
+            Some("AUD/USD.SIM"),
             Some(3_600_000_000_000), // 1 hour in nanoseconds
             None,
             None,
@@ -930,7 +1005,7 @@ fn test_consolidate_data_by_period_basic() {
     catalog
         .consolidate_data_by_period(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(3_600_000_000_000), // 1 hour in nanoseconds
             None,
             None,
@@ -939,7 +1014,7 @@ fn test_consolidate_data_by_period_basic() {
         .unwrap();
 
     // Should have consolidated into period-based files
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
 
     // The exact intervals depend on the implementation, but we should have fewer files
     assert!(!intervals.is_empty());
@@ -966,7 +1041,7 @@ fn test_consolidate_data_by_period_with_time_range() {
     catalog
         .consolidate_data_by_period(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(86_400_000_000_000), // 1 day in nanoseconds
             Some(UnixNanos::from(2000)),
             Some(UnixNanos::from(4000)),
@@ -975,7 +1050,7 @@ fn test_consolidate_data_by_period_with_time_range() {
         .unwrap();
 
     // Operation should complete without error
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert!(!intervals.is_empty());
 }
 
@@ -987,7 +1062,7 @@ fn test_consolidate_data_by_period_empty_data() {
     // Consolidate empty catalog
     let result = catalog.consolidate_data_by_period(
         "bars",
-        Some(bar_type),
+        Some(&bar_type),
         Some(86_400_000_000_000), // 1 day in nanoseconds
         None,
         None,
@@ -1024,7 +1099,7 @@ fn test_consolidate_data_by_period_different_periods() {
     for period_nanos in periods {
         let result = catalog.consolidate_data_by_period(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(period_nanos),
             None,
             None,
@@ -1050,7 +1125,7 @@ fn test_consolidate_data_by_period_ensure_contiguous_files_false() {
     catalog
         .consolidate_data_by_period(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
@@ -1059,8 +1134,51 @@ fn test_consolidate_data_by_period_ensure_contiguous_files_false() {
         .unwrap();
 
     // Operation should complete without error
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert!(!intervals.is_empty());
+}
+
+#[rstest]
+fn test_consolidate_data_by_period_fragment_per_flush() {
+    // Regression for #3857: fragment-per-flush catalogs (one bar per file, with the file
+    // interval shaped as [ts, ts]) were split into single-file groups under the old
+    // `prev_end + 1 == curr_start` rule, causing pairwise merging. Period-based grouping
+    // collapses an hour's worth of single-bar files into one daily file.
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let hour_ns: u64 = 3_600_000_000_000;
+    let mut last_bar_type: Option<String> = None;
+
+    for i in 0..24 {
+        let bar = create_bar(i * hour_ns + 1);
+        last_bar_type = Some(bar.bar_type.to_string());
+        catalog
+            .write_to_parquet(vec![bar], None, None, Some(true))
+            .unwrap();
+    }
+
+    let bar_type = last_bar_type.unwrap();
+    assert_eq!(
+        catalog
+            .get_intervals("bars", Some(&bar_type))
+            .unwrap()
+            .len(),
+        24
+    );
+
+    catalog
+        .consolidate_data_by_period(
+            "bars",
+            Some(bar_type.as_str()),
+            Some(86_400_000_000_000),
+            None,
+            None,
+            Some(false),
+        )
+        .unwrap();
+
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
+    assert_eq!(intervals.len(), 1);
 }
 
 #[rstest]
@@ -1088,9 +1206,9 @@ fn test_consolidate_catalog_by_period_basic() {
 
     // Operation should complete without error
     let bar_type = bars[0].bar_type.to_string();
-    let bar_intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let bar_intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     let quote_intervals = catalog
-        .get_intervals("quotes", Some("ETH/USDT.BINANCE".to_string()))
+        .get_intervals("quotes", Some("ETH/USDT.BINANCE"))
         .unwrap();
 
     assert!(!bar_intervals.is_empty());
@@ -1119,7 +1237,7 @@ fn test_consolidate_catalog_by_period_with_time_range() {
 
     // Operation should complete without error
     let bar_type = bars[0].bar_type.to_string();
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert!(!intervals.is_empty());
 }
 
@@ -1175,7 +1293,7 @@ fn test_consolidate_data_by_period_multiple_instruments() {
     catalog
         .consolidate_data_by_period(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
@@ -1184,9 +1302,9 @@ fn test_consolidate_data_by_period_multiple_instruments() {
         .unwrap();
 
     // Only AUD/USD bars should be affected
-    let aud_intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let aud_intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     let eth_intervals = catalog
-        .get_intervals("quotes", Some("ETH/USDT.BINANCE".to_string()))
+        .get_intervals("quotes", Some("ETH/USDT.BINANCE"))
         .unwrap();
 
     assert!(!aud_intervals.is_empty());
@@ -1200,7 +1318,7 @@ fn test_consolidate_data_by_period_invalid_type() {
     // Consolidate non-existent data type
     let result = catalog.consolidate_data_by_period(
         "invalid_type",
-        Some("AUD/USD.SIM-1-MINUTE-BID-EXTERNAL".to_string()),
+        Some("AUD/USD.SIM-1-MINUTE-BID-EXTERNAL"),
         Some(86_400_000_000_000), // 1 day in nanoseconds
         None,
         None,
@@ -1352,14 +1470,14 @@ fn test_generic_consolidate_data_by_period_quotes() {
 
     // Verify we have multiple files initially
     let initial_intervals = catalog
-        .get_intervals("quotes", Some("ETH/USDT.BINANCE".to_string()))
+        .get_intervals("quotes", Some("ETH/USDT.BINANCE"))
         .unwrap();
     assert_eq!(initial_intervals.len(), 3);
 
     // consolidate using generic function
     catalog
         .consolidate_data_by_period_generic::<QuoteTick>(
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
@@ -1369,7 +1487,7 @@ fn test_generic_consolidate_data_by_period_quotes() {
 
     // should have fewer files after consolidation
     let final_intervals = catalog
-        .get_intervals("quotes", Some("ETH/USDT.BINANCE".to_string()))
+        .get_intervals("quotes", Some("ETH/USDT.BINANCE"))
         .unwrap();
     assert!(final_intervals.len() <= initial_intervals.len());
 }
@@ -1380,6 +1498,7 @@ fn test_generic_consolidate_data_by_period_bars() {
 
     // Create multiple small files with contiguous timestamps
     let mut bars_list = Vec::new();
+
     for i in 0..3 {
         let bars = vec![create_bar(1000 + i)];
         bars_list.push(bars[0]);
@@ -1389,14 +1508,14 @@ fn test_generic_consolidate_data_by_period_bars() {
     let bar_type = bars_list[0].bar_type.to_string();
     // Verify we have multiple files initially
     let initial_intervals = catalog
-        .get_intervals("bars", Some(bar_type.clone()))
+        .get_intervals("bars", Some(bar_type.as_str()))
         .unwrap();
     assert_eq!(initial_intervals.len(), 3);
 
     // consolidate using generic function
     catalog
         .consolidate_data_by_period_generic::<Bar>(
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
@@ -1405,7 +1524,7 @@ fn test_generic_consolidate_data_by_period_bars() {
         .unwrap();
 
     // should have fewer files after consolidation
-    let final_intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let final_intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert!(final_intervals.len() <= initial_intervals.len());
 }
 
@@ -1415,7 +1534,7 @@ fn test_generic_consolidate_data_by_period_empty_catalog() {
 
     // consolidate empty catalog
     let result = catalog.consolidate_data_by_period_generic::<QuoteTick>(
-        Some("ETH/USDT.BINANCE".to_string()),
+        Some("ETH/USDT.BINANCE"),
         Some(86_400_000_000_000), // 1 day in nanoseconds
         None,
         None,
@@ -1436,6 +1555,7 @@ fn test_generic_consolidate_data_by_period_with_time_range() {
         create_quote_tick(5000),
         create_quote_tick(10000),
     ];
+
     for quote in quotes {
         catalog
             .write_to_parquet(vec![quote], None, None, None)
@@ -1445,7 +1565,7 @@ fn test_generic_consolidate_data_by_period_with_time_range() {
     // consolidate with time range
     catalog
         .consolidate_data_by_period_generic::<QuoteTick>(
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(86_400_000_000_000), // 1 day in nanoseconds
             Some(UnixNanos::from(2000)),
             Some(UnixNanos::from(8000)),
@@ -1455,7 +1575,7 @@ fn test_generic_consolidate_data_by_period_with_time_range() {
 
     // operation should complete without error
     let intervals = catalog
-        .get_intervals("quotes", Some("ETH/USDT.BINANCE".to_string()))
+        .get_intervals("quotes", Some("ETH/USDT.BINANCE"))
         .unwrap();
     assert!(!intervals.is_empty());
 }
@@ -1466,6 +1586,7 @@ fn test_consolidation_workflow_end_to_end() {
 
     // Create multiple small files
     let mut bars_list = Vec::new();
+
     for i in 0..5 {
         let bars = vec![create_bar(1000 + i * 1000)];
         bars_list.push(bars[0]);
@@ -1475,17 +1596,17 @@ fn test_consolidation_workflow_end_to_end() {
     let bar_type = bars_list[0].bar_type.to_string();
     // Verify we have multiple files initially
     let initial_intervals = catalog
-        .get_intervals("bars", Some(bar_type.clone()))
+        .get_intervals("bars", Some(bar_type.as_str()))
         .unwrap();
     assert_eq!(initial_intervals.len(), 5);
 
     // consolidate all files
     catalog
-        .consolidate_data("bars", Some(bar_type.clone()), None, None, None, None)
+        .consolidate_data("bars", Some(bar_type.as_str()), None, None, None, None)
         .unwrap();
 
     // should have fewer files after consolidation
-    let final_intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let final_intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert!(final_intervals.len() <= initial_intervals.len());
 }
 
@@ -1508,7 +1629,7 @@ fn test_consolidation_preserves_data_integrity() {
     catalog
         .consolidate_data_by_period(
             "bars",
-            Some(bar_type.clone()),
+            Some(bar_type.as_str()),
             Some(86_400_000_000_000), // 1 day in nanoseconds
             None,
             None,
@@ -1517,7 +1638,7 @@ fn test_consolidation_preserves_data_integrity() {
         .unwrap();
 
     // data should still be accessible after consolidation
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
 
     // Should have at least one interval covering our data
     assert!(!intervals.is_empty());
@@ -1553,7 +1674,7 @@ fn test_to_object_path_trailing_slash() {
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(base_dir.clone(), None, None, None, None);
+    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
 
     // Build a sample path under the catalog base
     let sample_path = format!(
@@ -1561,15 +1682,104 @@ fn test_to_object_path_trailing_slash() {
         base_dir.to_string_lossy()
     );
 
-    let object_path = catalog.to_object_path(&sample_path);
+    let object_path = catalog.to_object_path(&sample_path).unwrap();
 
     assert!(
         !object_path
             .as_ref()
             .starts_with(base_dir.to_string_lossy().as_ref())
     );
+    assert_eq!(
+        object_path.as_ref(),
+        "data/quotes/XYZ/2021-01-01T00-00-00-000000000Z_2021-01-01T00-00-01-000000000Z.parquet"
+    );
+
+    let sibling_path = format!(
+        "{}/data/quotes/file.parquet",
+        base_dir.with_file_name("catalog2").display()
+    );
+    let sibling_object_path = catalog.to_object_path(&sibling_path).unwrap();
+    assert_eq!(
+        sibling_object_path.as_ref(),
+        sibling_path.replace('\\', "/").trim_start_matches('/')
+    );
+    assert!(sibling_object_path.as_ref().contains("catalog2/data"));
 }
 
+#[cfg(feature = "cloud")]
+#[rstest]
+fn test_remote_to_object_path_preserves_base_path() {
+    let catalog =
+        ParquetDataCatalog::from_uri("s3://bucket/base/path", None, None, None, None).unwrap();
+
+    let relative = catalog.to_object_path("data/quotes/file.parquet").unwrap();
+    assert_eq!(relative.as_ref(), "base/path/data/quotes/file.parquet");
+
+    let with_base = catalog
+        .to_object_path("base/path/data/quotes/file.parquet")
+        .unwrap();
+    assert_eq!(with_base.as_ref(), "base/path/data/quotes/file.parquet");
+
+    let full_uri = catalog
+        .to_object_path("s3://bucket/base/path/data/quotes/file.parquet")
+        .unwrap();
+    assert_eq!(full_uri.as_ref(), "base/path/data/quotes/file.parquet");
+
+    let parsed = catalog
+        .to_object_path_parsed("data/quotes/file.parquet")
+        .unwrap();
+    assert_eq!(parsed.as_ref(), "base/path/data/quotes/file.parquet");
+
+    let parsed_with_base = catalog
+        .to_object_path_parsed("base/path/data/quotes/file.parquet")
+        .unwrap();
+    assert_eq!(
+        parsed_with_base.as_ref(),
+        "base/path/data/quotes/file.parquet"
+    );
+
+    let parsed_full_uri = catalog
+        .to_object_path_parsed("s3://bucket/base/path/data/quotes/file.parquet")
+        .unwrap();
+    assert_eq!(
+        parsed_full_uri.as_ref(),
+        "base/path/data/quotes/file.parquet"
+    );
+
+    let parsed_encoded = catalog
+        .to_object_path_parsed("base/path/data/%5E/file.parquet")
+        .unwrap();
+    assert_eq!(parsed_encoded.as_ref(), "base/path/data/%5E/file.parquet");
+}
+
+#[cfg(feature = "cloud")]
+#[rstest]
+fn test_remote_to_object_path_rejects_cross_store_uri() {
+    let catalog =
+        ParquetDataCatalog::from_uri("s3://bucket/base/path", None, None, None, None).unwrap();
+
+    // Different bucket on the same scheme
+    let cross_bucket = catalog.to_object_path("s3://other-bucket/data/quotes/file.parquet");
+    let err = cross_bucket.unwrap_err().to_string();
+    assert!(err.contains("Cross-store"), "unexpected error: {err}");
+    assert!(err.contains("other-bucket"), "unexpected error: {err}");
+
+    // Different scheme entirely
+    let cross_scheme = catalog.to_object_path("gs://bucket/base/path/data/quotes/file.parquet");
+    assert!(cross_scheme.is_err());
+
+    // Cross-store error also surfaces through the parsed (no percent-encoding) variant
+    let parsed_cross = catalog
+        .to_object_path_parsed("https://elsewhere.example.com/file.parquet")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        parsed_cross.contains("Cross-store"),
+        "unexpected error: {parsed_cross}"
+    );
+}
+
+#[cfg(feature = "cloud")]
 #[rstest]
 fn test_is_remote_uri() {
     // Test S3 URIs
@@ -1584,7 +1794,7 @@ fn test_extract_data_cls_and_identifier_from_path_moved() {
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(base_dir.clone(), None, None, None, None);
+    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
 
     // Test path with instrument ID
     let path_with_id = format!("{}/data/quotes/BTCUSD", base_dir.to_string_lossy());
@@ -1602,6 +1812,33 @@ fn test_extract_data_cls_and_identifier_from_path_moved() {
     assert_eq!(data_cls, Some("trades".to_string()));
     assert_eq!(identifier, None);
 
+    // Test custom data path with identifier
+    let path_custom_with_id = format!(
+        "{}/data/custom/RustTestCustomData/RUST.TEST",
+        base_dir.to_string_lossy()
+    );
+    let (data_cls, identifier) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_custom_with_id)
+        .unwrap();
+    assert_eq!(data_cls, Some("custom/RustTestCustomData".to_string()));
+    assert_eq!(identifier, Some("RUST.TEST".to_string()));
+
+    // Test custom data path with identifier subdirs
+    let path_custom_subdirs = format!("{}/data/custom/MyType/foo/bar", base_dir.to_string_lossy());
+    let (data_cls, identifier) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_custom_subdirs)
+        .unwrap();
+    assert_eq!(data_cls, Some("custom/MyType".to_string()));
+    assert_eq!(identifier, Some("foo/bar".to_string()));
+
+    // Test custom data path without identifier
+    let path_custom_no_id = format!("{}/data/custom/MyType", base_dir.to_string_lossy());
+    let (data_cls, identifier) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_custom_no_id)
+        .unwrap();
+    assert_eq!(data_cls, Some("custom/MyType".to_string()));
+    assert_eq!(identifier, None);
+
     // Test invalid path
     let invalid_path = "/invalid/path";
     let (data_cls, identifier) = catalog
@@ -1611,38 +1848,99 @@ fn test_extract_data_cls_and_identifier_from_path_moved() {
     assert_eq!(identifier, None);
 }
 
+/// Ensures custom data path built by make_path_custom_data (via custom module) matches
+/// the format expected by extract_data_cls_and_identifier_from_path (catalog behavior unchanged after extraction).
+#[rstest]
+fn test_make_path_custom_data_roundtrip() {
+    let tmp = tempfile::tempdir().unwrap();
+    let base_dir = tmp.path().join("catalog");
+    std::fs::create_dir_all(&base_dir).unwrap();
+
+    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
+
+    let path_no_id = catalog.make_path_custom_data("MyCustomType", None).unwrap();
+    assert!(path_no_id.contains("data/custom/MyCustomType"));
+    let (data_cls, identifier) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_no_id)
+        .unwrap();
+    assert_eq!(data_cls.as_deref(), Some("custom/MyCustomType"));
+    assert_eq!(identifier, None);
+
+    let path_with_id = catalog
+        .make_path_custom_data("RustTestCustomData", Some("RUST.TEST"))
+        .unwrap();
+    assert!(path_with_id.contains("data/custom/RustTestCustomData"));
+    let (data_cls2, identifier2) = catalog
+        .extract_data_cls_and_identifier_from_path(&path_with_id)
+        .unwrap();
+    assert_eq!(data_cls2.as_deref(), Some("custom/RustTestCustomData"));
+    assert_eq!(identifier2.as_deref(), Some("RUST.TEST"));
+}
+
 #[rstest]
 fn test_group_contiguous_intervals_moved() {
     let tmp = tempfile::tempdir().unwrap();
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(base_dir, None, None, None, None);
+    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
 
-    // Test contiguous intervals
+    // Legacy chunked files: gap of 1ns, one group regardless of period
     let intervals = vec![(1, 5), (6, 10), (11, 15)];
-    let groups = catalog.group_contiguous_intervals(&intervals);
+    let groups = catalog.group_contiguous_intervals(&intervals, 1);
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0], intervals);
 
-    // Test non-contiguous intervals (gap between 5 and 8)
+    // Non-contiguous intervals (gaps of 3 and 2) split under a tight period
     let intervals = vec![(1, 5), (8, 10), (12, 15)];
-    let groups = catalog.group_contiguous_intervals(&intervals);
+    let groups = catalog.group_contiguous_intervals(&intervals, 1);
     assert_eq!(groups.len(), 3);
     assert_eq!(groups[0], vec![(1, 5)]);
     assert_eq!(groups[1], vec![(8, 10)]);
     assert_eq!(groups[2], vec![(12, 15)]);
 
-    // Test empty intervals
-    let intervals = vec![];
-    let groups = catalog.group_contiguous_intervals(&intervals);
+    // Same intervals collapse into one group when the period tolerates the gaps
+    let groups = catalog.group_contiguous_intervals(&intervals, 5);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0], intervals);
+
+    // Fragment-per-flush pattern (one bar per file, start == end): consecutive intervals
+    // are separated by the bar interval (one hour), not by 1ns. The old contiguity rule
+    // split these into single-file groups; the period-based rule collapses them under a
+    // 1-day period.
+    let hour: u64 = 3_600_000_000_000;
+    let day: u64 = 86_400_000_000_000;
+    let intervals = vec![(0, 0), (hour, hour), (2 * hour, 2 * hour)];
+    let groups = catalog.group_contiguous_intervals(&intervals, day);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0], intervals);
+
+    // Same fragment-per-flush intervals split under a tight (sub-hour) period
+    let groups = catalog.group_contiguous_intervals(&intervals, 60);
+    assert_eq!(groups.len(), 3);
+
+    // Empty intervals
+    let intervals: Vec<(u64, u64)> = vec![];
+    let groups = catalog.group_contiguous_intervals(&intervals, 1);
     assert_eq!(groups.len(), 0);
 
-    // Test single interval
+    // Single interval
     let intervals = vec![(1, 5)];
-    let groups = catalog.group_contiguous_intervals(&intervals);
+    let groups = catalog.group_contiguous_intervals(&intervals, 1);
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0], vec![(1, 5)]);
+
+    // Boundary: gap exactly equal to period merges (comparison is strict `>`)
+    let period: u64 = 1_000;
+    let intervals = vec![(0, 0), (period, period)];
+    let groups = catalog.group_contiguous_intervals(&intervals, period);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0], intervals);
+
+    // Boundary: one nanosecond past the period splits
+    let intervals = vec![(0, 0), (period + 1, period + 1)];
+    let groups = catalog.group_contiguous_intervals(&intervals, period);
+    assert_eq!(groups.len(), 2);
 }
 
 #[rstest]
@@ -1651,7 +1949,7 @@ fn test_prepare_consolidation_queries_basic_moved() {
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(base_dir, None, None, None, None);
+    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
 
     // Test basic period consolidation
     let intervals = vec![(1000, 5000), (5001, 10000)];
@@ -1671,13 +1969,13 @@ fn test_prepare_consolidation_queries_basic_moved() {
 }
 
 #[rstest]
-#[allow(clippy::needless_collect)] // Collect needed for .len() and .iter().find()
+#[expect(clippy::needless_collect)] // Collect needed for .len() and .iter().find()
 fn test_prepare_consolidation_queries_with_splits_moved() {
     let tmp = tempfile::tempdir().unwrap();
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(base_dir, None, None, None, None);
+    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
 
     // Test with interval splitting
     // File: [1000, 5000], Request: start=2000, end=4000
@@ -1690,7 +1988,7 @@ fn test_prepare_consolidation_queries_with_splits_moved() {
     let queries = catalog
         .prepare_consolidation_queries(
             "quotes",
-            Some("EURUSD".to_string()),
+            Some("EURUSD"),
             &intervals,
             period_nanos,
             start,
@@ -1731,6 +2029,7 @@ fn test_prepare_consolidation_queries_with_splits_moved() {
     assert!(!split_after.use_period_boundaries);
 }
 
+#[cfg(feature = "cloud")]
 #[rstest]
 fn test_is_remote_uri_extended_moved() {
     // Test GCS URIs
@@ -1775,7 +2074,7 @@ fn test_is_remote_uri_extended_moved() {
 
     // Test local paths (should not be remote)
     let tmp = tempfile::tempdir().unwrap();
-    let local_catalog = ParquetDataCatalog::new(tmp.path().to_path_buf(), None, None, None, None);
+    let local_catalog = ParquetDataCatalog::new(tmp.path(), None, None, None, None);
     assert!(!local_catalog.is_remote_uri());
 
     let tmp_file = tempfile::tempdir().unwrap();
@@ -1784,19 +2083,26 @@ fn test_is_remote_uri_extended_moved() {
     assert!(!file_catalog.is_remote_uri());
 }
 
+#[cfg(feature = "cloud")]
 #[rstest]
 fn test_reconstruct_full_uri_moved() {
     // Test S3 URI reconstruction
     let s3_catalog =
         ParquetDataCatalog::from_uri("s3://bucket/base/path", None, None, None, None).unwrap();
     let reconstructed = s3_catalog.reconstruct_full_uri("data/quotes/file.parquet");
-    assert_eq!(reconstructed, "s3://bucket/data/quotes/file.parquet");
+    assert_eq!(
+        reconstructed,
+        "s3://bucket/base/path/data/quotes/file.parquet"
+    );
 
     // Test GCS URI reconstruction
     let gcs_catalog =
         ParquetDataCatalog::from_uri("gs://bucket/base/path", None, None, None, None).unwrap();
     let reconstructed = gcs_catalog.reconstruct_full_uri("data/trades/file.parquet");
-    assert_eq!(reconstructed, "gs://bucket/data/trades/file.parquet");
+    assert_eq!(
+        reconstructed,
+        "gs://bucket/base/path/data/trades/file.parquet"
+    );
 
     // Test Azure URI reconstruction
     let azure_test_options = Some(
@@ -1809,21 +2115,45 @@ fn test_reconstruct_full_uri_moved() {
         ParquetDataCatalog::from_uri("az://container/path", azure_test_options, None, None, None)
             .unwrap();
     let reconstructed = azure_catalog.reconstruct_full_uri("data/bars/file.parquet");
-    assert_eq!(reconstructed, "az://container/data/bars/file.parquet");
+    assert_eq!(reconstructed, "az://container/path/data/bars/file.parquet");
 
     // Test HTTP URI reconstruction
     let http_catalog =
-        ParquetDataCatalog::from_uri("https://example.com/base/path", None, None, None, None)
+        ParquetDataCatalog::from_uri("https://example.com:9000/base/path", None, None, None, None)
             .unwrap();
     let reconstructed = http_catalog.reconstruct_full_uri("data/quotes/file.parquet");
     assert_eq!(
         reconstructed,
-        "https://example.com/data/quotes/file.parquet"
+        "https://example.com:9000/base/path/data/quotes/file.parquet"
+    );
+
+    // Test ABFS URI reconstruction preserves the container in the authority
+    let abfs_catalog = ParquetDataCatalog::from_uri(
+        "abfs://container@account.dfs.core.windows.net/base/path",
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let reconstructed = abfs_catalog.reconstruct_full_uri("data/quotes/file.parquet");
+    assert_eq!(
+        reconstructed,
+        "abfs://container@account.dfs.core.windows.net/base/path/data/quotes/file.parquet"
+    );
+
+    let reconstructed = s3_catalog.reconstruct_full_uri("data/%5E/file.parquet");
+    assert_eq!(reconstructed, "s3://bucket/base/path/data/%5E/file.parquet");
+
+    let full_uri = "s3://bucket/base/path/data/quotes/file.parquet";
+    assert_eq!(
+        s3_catalog.reconstruct_full_uri(full_uri),
+        "s3://bucket/base/path/data/quotes/file.parquet"
     );
 
     // Test local path (should return full absolute path)
     let tmp = tempfile::tempdir().unwrap();
-    let local_catalog = ParquetDataCatalog::new(tmp.path().to_path_buf(), None, None, None, None);
+    let local_catalog = ParquetDataCatalog::new(tmp.path(), None, None, None, None);
     let reconstructed = local_catalog.reconstruct_full_uri("data/quotes/file.parquet");
     let expected = format!("{}/data/quotes/file.parquet", tmp.path().display());
     assert_eq!(reconstructed, expected);
@@ -1852,7 +2182,7 @@ fn test_delete_data_range_complete_file_deletion() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(0)),
             Some(UnixNanos::from(3_000_000_000)),
         )
@@ -1883,7 +2213,7 @@ fn test_delete_data_range_partial_file_overlap_start() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(0)),
             Some(UnixNanos::from(1_500_000_000)),
         )
@@ -1916,7 +2246,7 @@ fn test_delete_data_range_partial_file_overlap_end() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(2_500_000_000)),
             Some(UnixNanos::from(4_000_000_000)),
         )
@@ -1950,7 +2280,7 @@ fn test_delete_data_range_partial_file_overlap_middle() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(1_500_000_000)),
             Some(UnixNanos::from(3_500_000_000)),
         )
@@ -1972,7 +2302,7 @@ fn test_delete_data_range_no_data() {
     // delete from empty catalog - should not raise any errors
     let result = catalog.delete_data_range(
         "quotes",
-        Some("ETH/USDT.BINANCE".to_string()),
+        Some("ETH/USDT.BINANCE"),
         Some(UnixNanos::from(1_000_000_000)),
         Some(UnixNanos::from(2_000_000_000)),
     );
@@ -2001,7 +2331,7 @@ fn test_delete_data_range_no_intersection() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(3_000_000_000)),
             Some(UnixNanos::from(4_000_000_000)),
         )
@@ -2201,7 +2531,7 @@ fn test_prepare_delete_operations_basic() {
     let operations = catalog
         .prepare_delete_operations(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             &intervals,
             Some(UnixNanos::from(2000)),
             Some(UnixNanos::from(8000)),
@@ -2230,7 +2560,7 @@ fn test_prepare_delete_operations_no_intersection() {
     let operations = catalog
         .prepare_delete_operations(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             &intervals,
             Some(UnixNanos::from(5000)),
             Some(UnixNanos::from(6000)),
@@ -2259,7 +2589,7 @@ fn test_delete_data_range_nanosecond_precision_boundaries() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(1_000_000_001)),
             Some(UnixNanos::from(1_000_000_002)),
         )
@@ -2294,7 +2624,7 @@ fn test_delete_data_range_single_file_double_split() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(2_500_000_000)),
             Some(UnixNanos::from(3_500_000_000)),
         )
@@ -2330,7 +2660,7 @@ fn test_delete_data_range_saturating_arithmetic_edge_cases() {
     catalog
         .delete_data_range(
             "quotes",
-            Some("ETH/USDT.BINANCE".to_string()),
+            Some("ETH/USDT.BINANCE"),
             Some(UnixNanos::from(0)),
             Some(UnixNanos::from(1)),
         )
@@ -2367,6 +2697,17 @@ fn test_make_local_path() {
     let path = make_local_path("/base", &["data"]);
     let expected = PathBuf::from("/base").join("data");
     assert_eq!(path, expected);
+}
+
+#[rstest]
+fn test_safe_directory_identifier() {
+    use nautilus_persistence::backend::catalog::safe_directory_identifier;
+
+    assert_eq!(safe_directory_identifier("foo//bar"), "foo/bar");
+    assert_eq!(safe_directory_identifier("foo/bar"), "foo/bar");
+    assert_eq!(safe_directory_identifier("foo/../bar"), "foo/bar");
+    assert_eq!(safe_directory_identifier(""), "");
+    assert_eq!(safe_directory_identifier("RUST.TEST"), "RUST.TEST");
 }
 
 #[rstest]
@@ -2557,8 +2898,7 @@ fn test_catalog_query_multiple_instruments_table_naming() {
     // This verifies the table naming fix for identifier-dependent table names
 
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog =
-        ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     // Create quote ticks for multiple instruments with different identifier patterns
     let eurusd_quotes = create_quote_ticks_for_instrument("EUR/USD.SIM", 1000, 3);
@@ -2597,6 +2937,7 @@ fn test_catalog_query_multiple_instruments_table_naming() {
 
     // Verify we have data from all three instruments
     let mut instrument_counts = HashMap::new();
+
     for item in &data {
         if let Data::Quote(quote) = item {
             *instrument_counts
@@ -2618,8 +2959,7 @@ fn test_catalog_query_multiple_instruments_table_naming() {
 fn test_query_directory_based_registration() {
     // Test that directory-based registration (optimize_file_loading=true) reads all files in directory
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog =
-        ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     // Create multiple batches of quotes for the same instrument with disjoint timestamp ranges
     // Each batch needs non-overlapping timestamps to create separate files
@@ -2662,8 +3002,7 @@ fn test_query_directory_based_registration() {
 fn test_query_file_based_registration() {
     // Test that file-based registration (optimize_file_loading=false) only reads specified files
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog =
-        ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     // Create multiple batches of quotes for the same instrument with disjoint timestamp ranges
     let instrument_id = "GBP/USD.SIM";
@@ -2710,8 +3049,7 @@ fn test_query_file_based_registration() {
 fn test_query_directory_based_vs_file_based() {
     // Test that directory-based and file-based registration produce same results when all files are specified
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog =
-        ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     // Create multiple batches of quotes with disjoint timestamp ranges
     let instrument_id = "AUD/USD.SIM";
@@ -2756,6 +3094,409 @@ fn test_query_directory_based_vs_file_based() {
 }
 
 #[rstest]
+fn test_rust_custom_data_roundtrip() {
+    use std::sync::Arc;
+
+    use nautilus_model::{
+        data::{CustomData, Data, DataType},
+        identifiers::InstrumentId,
+    };
+
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let instrument_id = InstrumentId::from("RUST.TEST");
+    let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+
+    let original_data = [
+        RustTestCustomData {
+            instrument_id,
+            value: 1.23,
+            flag: true,
+            ts_event: UnixNanos::from(1),
+            ts_init: UnixNanos::from(1),
+        },
+        RustTestCustomData {
+            instrument_id,
+            value: 4.56,
+            flag: false,
+            ts_event: UnixNanos::from(2),
+            ts_init: UnixNanos::from(2),
+        },
+    ];
+
+    // Write as CustomData with identifier so path is custom/type/identifier
+    let custom_data: Vec<CustomData> = original_data
+        .iter()
+        .cloned()
+        .map(|item| CustomData::new(Arc::new(item), data_type.clone()))
+        .collect();
+
+    catalog
+        .write_custom_data_batch(custom_data, None, None, Some(false))
+        .unwrap();
+
+    // Read back via dynamic custom data query
+    let ids = vec![instrument_id.to_string()];
+    let loaded: Vec<Data> = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(&ids),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(loaded.len(), original_data.len());
+
+    for (expected, actual) in original_data.iter().zip(loaded.iter()) {
+        if let Data::Custom(custom) = actual {
+            assert_eq!(custom.data_type.type_name(), "RustTestCustomData");
+            assert_eq!(
+                custom.data_type.identifier(),
+                Some(instrument_id.to_string().as_str())
+            );
+            let rust: &RustTestCustomData = custom
+                .data
+                .as_any()
+                .downcast_ref::<RustTestCustomData>()
+                .expect("Expected RustTestCustomData");
+            assert_eq!(expected, rust);
+        } else {
+            panic!("Expected Data::Custom variant");
+        }
+    }
+}
+
+#[rstest]
+fn test_rust_custom_data_remote_query_registers_object_store() {
+    ensure_test_custom_data_registered();
+
+    let temp_dir = TempDir::new().unwrap();
+    let local_store = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    catalog.base_path = "catalog".to_string();
+    catalog.original_uri = "s3://test-bucket/catalog".to_string();
+    catalog.object_store = Arc::new(local_store);
+
+    let instrument_id = InstrumentId::from("RUST.REMOTE");
+    let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+    let original_data = [
+        RustTestCustomData {
+            instrument_id,
+            value: 10.0,
+            flag: true,
+            ts_event: UnixNanos::from(10),
+            ts_init: UnixNanos::from(10),
+        },
+        RustTestCustomData {
+            instrument_id,
+            value: 20.0,
+            flag: false,
+            ts_event: UnixNanos::from(20),
+            ts_init: UnixNanos::from(20),
+        },
+    ];
+    let custom_data: Vec<CustomData> = original_data
+        .iter()
+        .cloned()
+        .map(|item| CustomData::new(Arc::new(item), data_type.clone()))
+        .collect();
+
+    catalog
+        .write_custom_data_batch(custom_data, None, None, Some(false))
+        .unwrap();
+
+    let ids = vec![instrument_id.to_string()];
+    let discovered_files = catalog
+        .list_parquet_files_with_criteria("custom/RustTestCustomData", Some(&ids), None, None)
+        .unwrap();
+    let explicit_files: Vec<String> = discovered_files
+        .iter()
+        .map(|path| catalog.reconstruct_full_uri(path))
+        .collect();
+
+    let loaded_discovered = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(&ids),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+    let loaded_explicit = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(&ids),
+            None,
+            None,
+            None,
+            Some(explicit_files),
+            false,
+        )
+        .unwrap();
+
+    assert_eq!(discovered_files.len(), 1);
+    assert!(discovered_files[0].starts_with("catalog/data/custom/RustTestCustomData/"));
+
+    for loaded in [&loaded_discovered, &loaded_explicit] {
+        assert_eq!(loaded.len(), original_data.len());
+        for (expected, actual) in original_data.iter().zip(loaded.iter()) {
+            if let Data::Custom(custom) = actual {
+                assert_eq!(custom.data_type.type_name(), "RustTestCustomData");
+                assert_eq!(
+                    custom.data_type.identifier(),
+                    Some(instrument_id.to_string()).as_deref(),
+                );
+                let rust_data: &RustTestCustomData = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<RustTestCustomData>()
+                    .expect("Expected RustTestCustomData");
+                assert_eq!(expected, rust_data);
+            } else {
+                panic!("Expected custom data, was {actual:?}");
+            }
+        }
+    }
+}
+
+#[rstest]
+fn test_rust_custom_data_roundtrip_with_params_field() {
+    use std::sync::Arc;
+
+    use nautilus_model::data::{CustomData, Data, DataType};
+
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let data_type = DataType::new("RustTestParamsCustomData", None, None);
+
+    let mut params_a = Params::new();
+    params_a.insert("key".to_string(), json!("alpha"));
+    params_a.insert("count".to_string(), json!(1_u64));
+    params_a.insert("enabled".to_string(), json!(true));
+
+    let mut params_b = Params::new();
+    params_b.insert("key".to_string(), json!("beta"));
+    params_b.insert(
+        "nested".to_string(),
+        json!({"level": 2, "tags": ["x", "y"]}),
+    );
+
+    let original_data = [
+        RustTestParamsCustomData {
+            name: "first".to_string(),
+            params: params_a,
+            ts_event: UnixNanos::from(10),
+            ts_init: UnixNanos::from(10),
+        },
+        RustTestParamsCustomData {
+            name: "second".to_string(),
+            params: params_b,
+            ts_event: UnixNanos::from(20),
+            ts_init: UnixNanos::from(20),
+        },
+    ];
+
+    let custom_data: Vec<CustomData> = original_data
+        .iter()
+        .cloned()
+        .map(|item| CustomData::new(Arc::new(item), data_type.clone()))
+        .collect();
+
+    catalog
+        .write_custom_data_batch(custom_data, None, None, Some(false))
+        .unwrap();
+
+    let loaded: Vec<Data> = catalog
+        .query_custom_data_dynamic(
+            "RustTestParamsCustomData",
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(loaded.len(), original_data.len());
+
+    for (expected, actual) in original_data.iter().zip(loaded.iter()) {
+        if let Data::Custom(custom) = actual {
+            assert_eq!(custom.data_type.type_name(), "RustTestParamsCustomData");
+            let rust: &RustTestParamsCustomData = custom
+                .data
+                .as_any()
+                .downcast_ref::<RustTestParamsCustomData>()
+                .expect("Expected RustTestParamsCustomData");
+            assert_eq!(expected, rust);
+        } else {
+            panic!("Expected Data::Custom variant");
+        }
+    }
+}
+
+/// Regression: write_data_enum groups custom data by full DataType (type_name + identifier + metadata).
+/// Same type_name with different identifiers must produce separate batches and be readable back.
+#[rstest]
+#[ignore = "Slow regression test (>120s) for custom data identifier batching; run manually when changing catalog custom data write/query paths"]
+fn test_write_data_enum_mixed_custom_data_identifiers() {
+    use std::sync::Arc;
+
+    use nautilus_model::{
+        data::{CustomData, Data, DataType},
+        identifiers::InstrumentId,
+    };
+
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let id_a = InstrumentId::from("RUST.A");
+    let id_b = InstrumentId::from("RUST.B");
+    let data_type_a = DataType::new("RustTestCustomData", None, Some(id_a.to_string()));
+    let data_type_b = DataType::new("RustTestCustomData", None, Some(id_b.to_string()));
+
+    let custom_a = [
+        RustTestCustomData {
+            instrument_id: id_a,
+            value: 1.0,
+            flag: true,
+            ts_event: UnixNanos::from(1),
+            ts_init: UnixNanos::from(1),
+        },
+        RustTestCustomData {
+            instrument_id: id_a,
+            value: 2.0,
+            flag: false,
+            ts_event: UnixNanos::from(2),
+            ts_init: UnixNanos::from(2),
+        },
+    ];
+    let custom_b = [RustTestCustomData {
+        instrument_id: id_b,
+        value: 10.0,
+        flag: true,
+        ts_event: UnixNanos::from(10),
+        ts_init: UnixNanos::from(10),
+    }];
+
+    let data: Vec<Data> = custom_a
+        .iter()
+        .cloned()
+        .map(|item| Data::Custom(CustomData::new(Arc::new(item), data_type_a.clone())))
+        .chain(
+            custom_b
+                .iter()
+                .cloned()
+                .map(|item| Data::Custom(CustomData::new(Arc::new(item), data_type_b.clone()))),
+        )
+        .collect();
+
+    catalog
+        .write_data_enum(&data, None, None, Some(false))
+        .unwrap();
+
+    let ids_a = vec![id_a.to_string()];
+    let loaded_a: Vec<Data> = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(&ids_a),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+    let ids_b = vec![id_b.to_string()];
+    let loaded_b: Vec<Data> = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(&ids_b),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(loaded_a.len(), 2, "identifier A should have 2 items");
+    assert_eq!(loaded_b.len(), 1, "identifier B should have 1 item");
+}
+
+#[rstest]
+#[cfg(feature = "python")]
+fn test_macro_yield_curve_data_roundtrip() {
+    use std::sync::Arc;
+
+    use nautilus_model::data::{CustomData, Data, DataType};
+
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let data_type = DataType::new("MacroYieldCurveData", None, None);
+
+    let tenors = vec![0.25, 0.5, 1.0, 2.0, 5.0];
+    let interest_rates = vec![0.025, 0.03, 0.035, 0.04, 0.045];
+
+    let original_data = [
+        MacroYieldCurveData {
+            curve_name: "USD".to_string(),
+            tenors,
+            interest_rates,
+            ts_event: UnixNanos::from(1),
+            ts_init: UnixNanos::from(1),
+        },
+        MacroYieldCurveData {
+            curve_name: "EUR".to_string(),
+            tenors: vec![1.0, 2.0],
+            interest_rates: vec![0.02, 0.025],
+            ts_event: UnixNanos::from(2),
+            ts_init: UnixNanos::from(2),
+        },
+    ];
+
+    let custom_data: Vec<CustomData> = original_data
+        .iter()
+        .cloned()
+        .map(|item| CustomData::new(Arc::new(item), data_type.clone()))
+        .collect();
+
+    catalog
+        .write_custom_data_batch(custom_data, None, None, Some(false))
+        .unwrap();
+
+    let loaded: Vec<Data> = catalog
+        .query_custom_data_dynamic("MacroYieldCurveData", None, None, None, None, None, true)
+        .unwrap();
+
+    assert_eq!(loaded.len(), original_data.len());
+
+    for (expected, actual) in original_data.iter().zip(loaded.iter()) {
+        if let Data::Custom(custom) = actual {
+            assert_eq!(custom.data_type.type_name(), "MacroYieldCurveData");
+            let macro_curve: &MacroYieldCurveData = custom
+                .data
+                .as_any()
+                .downcast_ref::<MacroYieldCurveData>()
+                .expect("Expected MacroYieldCurveData");
+            assert_eq!(expected, macro_curve);
+        } else {
+            panic!("Expected Data::Custom variant");
+        }
+    }
+}
+
+#[rstest]
 #[cfg(feature = "cloud")]
 fn test_query_directory_based_registration_with_cloud_uri() {
     // Test that directory-based registration works with cloud storage URIs
@@ -2797,8 +3538,7 @@ fn test_query_directory_based_registration_with_cloud_uri() {
 
     // Also test with a local path to ensure directory-based registration works there too
     let temp_dir = TempDir::new().unwrap();
-    let mut local_catalog =
-        ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let mut local_catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     // Create multiple batches of quotes with disjoint timestamp ranges
     let instrument_id = "USD/JPY.SIM";
@@ -2844,12 +3584,12 @@ fn test_duplicate_table_registration() {
 
     // First registration
     session
-        .add_file::<QuoteTick>("test_table", file_path.as_str(), None)
+        .add_file::<QuoteTick>("test_table", file_path.as_str(), None, None)
         .unwrap();
 
     // Second registration of the same table (should not add duplicate data)
     session
-        .add_file::<QuoteTick>("test_table", file_path.as_str(), None)
+        .add_file::<QuoteTick>("test_table", file_path.as_str(), None, None)
         .unwrap();
 
     let query_result: QueryResult = session.get_query_result();
@@ -2927,7 +3667,7 @@ fn test_write_skips_if_file_exists() {
 
     // Verify only one file exists
     let bar_type = create_bar(1).bar_type.to_string();
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert_eq!(intervals, vec![(1, 2)]);
 }
 
@@ -2960,7 +3700,7 @@ fn test_write_succeeds_with_disjoint_intervals() {
     // Write non-overlapping interval (5, 6) - should succeed
     let bars2 = vec![create_bar(5), create_bar(6)];
     catalog.write_to_parquet(bars2, None, None, None).unwrap();
-    let intervals = catalog.get_intervals("bars", Some(bar_type)).unwrap();
+    let intervals = catalog.get_intervals("bars", Some(&bar_type)).unwrap();
     assert_eq!(intervals, vec![(1, 2), (5, 6)]);
 }
 
@@ -2993,7 +3733,7 @@ fn test_query_first_timestamp() {
     let bar_type = bars[0].bar_type.to_string();
     // Query first timestamp
     let first_ts = catalog
-        .query_first_timestamp("bars", Some(bar_type))
+        .query_first_timestamp("bars", Some(&bar_type))
         .unwrap();
 
     assert!(first_ts.is_some());
@@ -3007,7 +3747,7 @@ fn test_query_first_timestamp_empty() {
     let bar_type = create_bar(1).bar_type.to_string();
     // Query first timestamp when no data exists
     let first_ts = catalog
-        .query_first_timestamp("bars", Some(bar_type))
+        .query_first_timestamp("bars", Some(&bar_type))
         .unwrap();
 
     assert!(first_ts.is_none());
@@ -3026,7 +3766,7 @@ fn test_query_last_timestamp() {
     let bar_type = bars[0].bar_type.to_string();
     // Query last timestamp
     let last_ts = catalog
-        .query_last_timestamp("bars", Some(bar_type))
+        .query_last_timestamp("bars", Some(&bar_type))
         .unwrap();
 
     assert!(last_ts.is_some());
@@ -3148,7 +3888,8 @@ fn test_instrument_roundtrip_with_info_params() {
 
     catalog.write_instruments(vec![instrument_any]).unwrap();
 
-    let read = catalog.query_instruments(Some(vec![id_str])).unwrap();
+    let ids = vec![id_str];
+    let read = catalog.query_instruments(Some(&ids)).unwrap();
     assert_eq!(read.len(), 1, "Should read back exactly one instrument");
 
     let read_any = &read[0];
@@ -3161,4 +3902,154 @@ fn test_instrument_roundtrip_with_info_params() {
         Some(info),
         "info (Params) must roundtrip unchanged"
     );
+}
+
+#[rstest]
+fn test_write_instruments_appends_time_series_versions_for_same_instrument() {
+    let temp_dir = TempDir::new().unwrap();
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+    let base = audusd_sim();
+    let base_id = base.id;
+    let base_info = base.info.clone().unwrap_or_default();
+
+    let mut instrument_v1 = base.clone();
+    let mut info_v1 = base_info.clone();
+    info_v1.insert("venue_extra".to_string(), json!("v1"));
+    instrument_v1.info = Some(info_v1);
+    instrument_v1.ts_event = UnixNanos::from(1_000);
+    instrument_v1.ts_init = UnixNanos::from(1_000);
+
+    let mut instrument_v2 = base;
+    let mut info_v2 = base_info;
+    info_v2.insert("venue_extra".to_string(), json!("v2"));
+    instrument_v2.info = Some(info_v2);
+    instrument_v2.ts_event = UnixNanos::from(2_000);
+    instrument_v2.ts_init = UnixNanos::from(2_000);
+
+    let instrument_v1 = InstrumentAny::CurrencyPair(instrument_v1);
+    let instrument_v2 = InstrumentAny::CurrencyPair(instrument_v2);
+
+    catalog.write_instruments(vec![instrument_v1]).unwrap();
+    catalog.write_instruments(vec![instrument_v2]).unwrap();
+
+    let id_str = base_id.to_string();
+    let ids = vec![id_str.clone()];
+    let read = catalog.query_instruments(Some(&ids)).unwrap();
+    assert_eq!(read.len(), 2, "Should read back both instrument versions");
+    assert_eq!(HasTsInit::ts_init(&read[0]), UnixNanos::from(1_000));
+    assert_eq!(HasTsInit::ts_init(&read[1]), UnixNanos::from(2_000));
+
+    let filtered = catalog
+        .query_instruments_filtered(
+            Some(&ids),
+            Some(UnixNanos::from(1_500)),
+            Some(UnixNanos::from(2_500)),
+        )
+        .unwrap();
+    assert_eq!(filtered.len(), 1, "Should filter to the matching version");
+    assert_eq!(HasTsInit::ts_init(&filtered[0]), UnixNanos::from(2_000));
+
+    let intervals = catalog.get_intervals("instruments", Some(&id_str)).unwrap();
+    assert_eq!(intervals, vec![(1_000, 1_000), (2_000, 2_000)]);
+}
+
+#[rstest]
+fn test_write_instruments_groups_by_type_and_id_before_encoding() {
+    let temp_dir = TempDir::new().unwrap();
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+    let currency_pair = audusd_sim();
+    let shared_id = currency_pair.id;
+
+    let mut equity = equity_aapl();
+    equity.id = shared_id;
+    equity.ts_event = UnixNanos::from(2_000);
+    equity.ts_init = UnixNanos::from(2_000);
+
+    let mut currency_pair = currency_pair;
+    currency_pair.ts_event = UnixNanos::from(1_000);
+    currency_pair.ts_init = UnixNanos::from(1_000);
+
+    let written = catalog
+        .write_instruments(vec![
+            InstrumentAny::Equity(equity),
+            InstrumentAny::CurrencyPair(currency_pair),
+        ])
+        .unwrap();
+
+    assert_eq!(written.len(), 2);
+
+    let id_str = shared_id.to_string();
+    let intervals = catalog.get_intervals("instruments", Some(&id_str)).unwrap();
+    assert_eq!(intervals, vec![(1_000, 1_000), (2_000, 2_000)]);
+
+    let ids = vec![id_str];
+    let read = catalog.query_instruments(Some(&ids)).unwrap();
+    assert_eq!(read.len(), 2);
+    assert!(matches!(read[0], InstrumentAny::CurrencyPair(_)));
+    assert!(matches!(read[1], InstrumentAny::Equity(_)));
+    assert_eq!(HasTsInit::ts_init(&read[0]), UnixNanos::from(1_000));
+    assert_eq!(HasTsInit::ts_init(&read[1]), UnixNanos::from(2_000));
+}
+
+// Regression: instrument decode must not fail on base currencies that are not
+// pre-registered in CURRENCY_MAP (e.g. newly listed exchange assets). See issue #3898.
+#[rstest]
+fn test_instrument_roundtrip_with_unregistered_base_currency() {
+    // Use a deliberately unusual code that is not pre-registered in CURRENCY_MAP,
+    // and construct the Currency via `Currency::new` so the write path does not
+    // register it in the global map. This mirrors the fresh-session read scenario
+    // reported in issue #3898.
+    let unknown_code = "XUNREG1";
+    assert!(
+        Currency::try_from_str(unknown_code).is_none(),
+        "test precondition: '{unknown_code}' must not be pre-registered",
+    );
+
+    let base_currency = Currency::new(unknown_code, 8, 0, unknown_code, CurrencyType::Crypto);
+    let quote_currency = Currency::from("USDT");
+
+    let instrument_id = InstrumentId::from("XUNREG1USDT-PERP.BINANCE");
+    let perp = CryptoPerpetual::new(
+        instrument_id,
+        Symbol::from("XUNREG1USDT"),
+        base_currency,
+        quote_currency,
+        quote_currency,
+        false,
+        4,
+        0,
+        Price::from("0.0001"),
+        Quantity::from("1"),
+        None,
+        None,
+        None,
+        Some(Quantity::from("1")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(Decimal::from(2) / Decimal::from(10_000)),
+        Some(Decimal::from(4) / Decimal::from(10_000)),
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let (_temp_dir, catalog) = create_temp_catalog();
+    catalog
+        .write_instruments(vec![InstrumentAny::CryptoPerpetual(perp)])
+        .unwrap();
+
+    let ids = vec![instrument_id.to_string()];
+    let read = catalog.query_instruments(Some(&ids)).unwrap();
+    assert_eq!(read.len(), 1);
+    let InstrumentAny::CryptoPerpetual(decoded) = &read[0] else {
+        panic!("expected CryptoPerpetual");
+    };
+    assert_eq!(decoded.base_currency.code.as_str(), unknown_code);
+    assert_eq!(decoded.base_currency.currency_type, CurrencyType::Crypto);
 }

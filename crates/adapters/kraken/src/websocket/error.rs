@@ -49,3 +49,9 @@ impl From<serde_json::Error> for KrakenWsError {
         Self::JsonError(error.to_string())
     }
 }
+
+impl From<String> for KrakenWsError {
+    fn from(message: String) -> Self {
+        Self::AuthenticationError(message)
+    }
+}

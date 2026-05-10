@@ -39,6 +39,7 @@ pub struct RawSwapData {
 
 impl RawSwapData {
     /// Creates a new [`RawSwapData`] instance with the specified values.
+    #[must_use]
     pub fn new(amount0: I256, amount1: I256, sqrt_price_x96: U160) -> Self {
         Self {
             amount0,
@@ -57,6 +58,10 @@ impl RawSwapData {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct PoolSwap {
     /// The blockchain network where the swap occurred.
@@ -101,7 +106,7 @@ pub struct PoolSwap {
 impl PoolSwap {
     /// Creates a new [`PoolSwap`] instance with the specified properties.
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         chain: SharedChain,
         dex: SharedDex,

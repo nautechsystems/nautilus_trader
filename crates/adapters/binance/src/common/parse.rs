@@ -43,21 +43,22 @@ use serde_json::Value;
 
 use crate::{
     common::{
+        consts::BINANCE,
+        encoder::decode_broker_id,
         enums::{BinanceContractStatus, BinanceKlineInterval, BinanceTradingStatus},
-        fixed::{mantissa_to_price, mantissa_to_quantity},
+    },
+    futures::http::models::{BinanceFuturesCoinSymbol, BinanceFuturesUsdSymbol},
+    spot::{
+        http::models::{
+            BinanceAccountTrade, BinanceKlines, BinanceLotSizeFilterSbe, BinanceNewOrderResponse,
+            BinanceOrderResponse, BinancePriceFilterSbe, BinanceSymbolSbe, BinanceTrades,
+        },
         sbe::spot::{
             order_side::OrderSide as SbeOrderSide, order_status::OrderStatus as SbeOrderStatus,
             order_type::OrderType as SbeOrderType, time_in_force::TimeInForce as SbeTimeInForce,
         },
     },
-    futures::http::models::{BinanceFuturesCoinSymbol, BinanceFuturesUsdSymbol},
-    spot::http::models::{
-        BinanceAccountTrade, BinanceKlines, BinanceLotSizeFilterSbe, BinanceNewOrderResponse,
-        BinanceOrderResponse, BinancePriceFilterSbe, BinanceSymbolSbe, BinanceTrades,
-    },
 };
-
-const BINANCE_VENUE: &str = "BINANCE";
 const CONTRACT_TYPE_PERPETUAL: &str = "PERPETUAL";
 
 /// Returns a currency from the internal map or creates a new crypto currency.
@@ -133,7 +134,7 @@ pub fn parse_usdm_instrument(
 
     let instrument_id = InstrumentId::new(
         Symbol::from_str_unchecked(format!("{}-PERP", symbol.symbol)),
-        Venue::new(BINANCE_VENUE),
+        Venue::new(BINANCE),
     );
     let raw_symbol = Symbol::new(symbol.symbol.as_str());
 
@@ -232,7 +233,7 @@ pub fn parse_coinm_instrument(
 
     let instrument_id = InstrumentId::new(
         Symbol::from_str_unchecked(format!("{}-PERP", symbol.symbol)),
-        Venue::new(BINANCE_VENUE),
+        Venue::new(BINANCE),
     );
     let raw_symbol = Symbol::new(symbol.symbol.as_str());
 
@@ -296,16 +297,41 @@ pub fn parse_coinm_instrument(
 /// SBE status value for Trading.
 const SBE_STATUS_TRADING: u8 = 0;
 
-/// Parses an SBE price filter into tick_size, max_price, min_price.
-fn parse_sbe_price_filter(
-    filter: &BinancePriceFilterSbe,
-) -> anyhow::Result<(Price, Option<Price>, Option<Price>)> {
-    let precision = (-filter.price_exponent).max(0) as u8;
+/// Derives the number of significant decimal places from an SBE mantissa/exponent pair.
+///
+/// Binance SBE encodes values as `mantissa * 10^exponent` where `exponent` is a global
+/// fixed-point encoding parameter (typically -8), not the instrument's trading precision.
+/// The actual precision is determined by how many trailing zeros the mantissa carries.
+///
+/// # Examples
+///
+/// - ETHUSDC tick_size: mantissa=1_000_000, exp=-8 → 0.01 → precision=2
+/// - DOGEUSDT tick_size: mantissa=1_000, exp=-8 → 0.00001 → precision=5
+/// - SHIBUSDT tick_size: mantissa=1, exp=-8 → 0.00000001 → precision=8
+/// - BTCTRY tick_size: mantissa=100_000_000, exp=-8 → 1.0 → precision=0
+fn sbe_mantissa_precision(mantissa: i64, exponent: i8) -> u8 {
+    if mantissa == 0 {
+        return 0;
+    }
+    let mut m = mantissa.abs();
+    let mut trailing_zeros: i8 = 0;
 
-    let tick_size = mantissa_to_price(filter.tick_size, filter.price_exponent, precision);
+    while m > 0 && m % 10 == 0 {
+        m /= 10;
+        trailing_zeros += 1;
+    }
+    (-exponent - trailing_zeros).max(0) as u8
+}
+
+/// Parses an SBE price filter into tick_size, max_price, min_price.
+fn parse_sbe_price_filter(filter: &BinancePriceFilterSbe) -> (Price, Option<Price>, Option<Price>) {
+    let precision = sbe_mantissa_precision(filter.tick_size, filter.price_exponent);
+
+    let tick_size =
+        Price::from_mantissa_exponent(filter.tick_size, filter.price_exponent, precision);
 
     let max_price = if filter.max_price != 0 {
-        Some(mantissa_to_price(
+        Some(Price::from_mantissa_exponent(
             filter.max_price,
             filter.price_exponent,
             precision,
@@ -315,7 +341,7 @@ fn parse_sbe_price_filter(
     };
 
     let min_price = if filter.min_price != 0 {
-        Some(mantissa_to_price(
+        Some(Price::from_mantissa_exponent(
             filter.min_price,
             filter.price_exponent,
             precision,
@@ -324,20 +350,21 @@ fn parse_sbe_price_filter(
         None
     };
 
-    Ok((tick_size, max_price, min_price))
+    (tick_size, max_price, min_price)
 }
 
 /// Parses an SBE lot size filter into step_size, max_qty, min_qty.
 fn parse_sbe_lot_size_filter(
     filter: &BinanceLotSizeFilterSbe,
-) -> anyhow::Result<(Quantity, Option<Quantity>, Option<Quantity>)> {
-    let precision = (-filter.qty_exponent).max(0) as u8;
+) -> (Quantity, Option<Quantity>, Option<Quantity>) {
+    let precision = sbe_mantissa_precision(filter.step_size, filter.qty_exponent);
 
-    let step_size = mantissa_to_quantity(filter.step_size, filter.qty_exponent, precision);
+    let step_size =
+        Quantity::from_mantissa_exponent(filter.step_size as u64, filter.qty_exponent, precision);
 
     let max_qty = if filter.max_qty != 0 {
-        Some(mantissa_to_quantity(
-            filter.max_qty,
+        Some(Quantity::from_mantissa_exponent(
+            filter.max_qty as u64,
             filter.qty_exponent,
             precision,
         ))
@@ -346,8 +373,8 @@ fn parse_sbe_lot_size_filter(
     };
 
     let min_qty = if filter.min_qty != 0 {
-        Some(mantissa_to_quantity(
-            filter.min_qty,
+        Some(Quantity::from_mantissa_exponent(
+            filter.min_qty as u64,
             filter.qty_exponent,
             precision,
         ))
@@ -355,7 +382,7 @@ fn parse_sbe_lot_size_filter(
         None
     };
 
-    Ok((step_size, max_qty, min_qty))
+    (step_size, max_qty, min_qty)
 }
 
 /// Parses a Binance Spot SBE symbol into a Nautilus CurrencyPair instrument.
@@ -384,7 +411,7 @@ pub fn parse_spot_instrument_sbe(
 
     let instrument_id = InstrumentId::new(
         Symbol::from_str_unchecked(&symbol.symbol),
-        Venue::new(BINANCE_VENUE),
+        Venue::new(BINANCE),
     );
     let raw_symbol = Symbol::new(&symbol.symbol);
 
@@ -394,7 +421,7 @@ pub fn parse_spot_instrument_sbe(
         .as_ref()
         .context("Missing PRICE_FILTER in symbol filters")?;
 
-    let (tick_size, max_price, min_price) = parse_sbe_price_filter(price_filter)?;
+    let (tick_size, max_price, min_price) = parse_sbe_price_filter(price_filter);
 
     let lot_filter = symbol
         .filters
@@ -402,7 +429,7 @@ pub fn parse_spot_instrument_sbe(
         .as_ref()
         .context("Missing LOT_SIZE in symbol filters")?;
 
-    let (step_size, max_quantity, min_quantity) = parse_sbe_lot_size_filter(lot_filter)?;
+    let (step_size, max_quantity, min_quantity) = parse_sbe_lot_size_filter(lot_filter);
 
     // Spot has no leverage, use 1.0 margin
     let default_margin = Decimal::new(1, 0);
@@ -455,8 +482,16 @@ pub fn parse_spot_trades_sbe(
     let mut result = Vec::with_capacity(trades.trades.len());
 
     for trade in &trades.trades {
-        let price = mantissa_to_price(trade.price_mantissa, trades.price_exponent, price_precision);
-        let size = mantissa_to_quantity(trade.qty_mantissa, trades.qty_exponent, size_precision);
+        let price = Price::from_mantissa_exponent(
+            trade.price_mantissa,
+            trades.price_exponent,
+            price_precision,
+        );
+        let size = Quantity::from_mantissa_exponent(
+            trade.qty_mantissa as u64,
+            trades.qty_exponent,
+            size_precision,
+        );
 
         // is_buyer_maker means the buyer was the maker, so the aggressor was selling
         let aggressor_side = if trade.is_buyer_maker {
@@ -540,11 +575,11 @@ pub const fn map_time_in_force_sbe(tif: SbeTimeInForce) -> TimeInForce {
 /// # Errors
 ///
 /// Returns an error if any field cannot be parsed.
-#[allow(clippy::too_many_arguments)]
 pub fn parse_order_status_report_sbe(
     order: &BinanceOrderResponse,
     account_id: AccountId,
     instrument: &InstrumentAny,
+    broker_id: &str,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
@@ -552,7 +587,7 @@ pub fn parse_order_status_report_sbe(
     let size_precision = instrument.size_precision();
 
     let price = if order.price_mantissa != 0 {
-        Some(mantissa_to_price(
+        Some(Price::from_mantissa_exponent(
             order.price_mantissa,
             order.price_exponent,
             price_precision,
@@ -561,10 +596,13 @@ pub fn parse_order_status_report_sbe(
         None
     };
 
-    let quantity =
-        mantissa_to_quantity(order.orig_qty_mantissa, order.qty_exponent, size_precision);
-    let filled_qty = mantissa_to_quantity(
-        order.executed_qty_mantissa,
+    let quantity = Quantity::from_mantissa_exponent(
+        order.orig_qty_mantissa as u64,
+        order.qty_exponent,
+        size_precision,
+    );
+    let filled_qty = Quantity::from_mantissa_exponent(
+        order.executed_qty_mantissa as u64,
         order.qty_exponent,
         size_precision,
     );
@@ -590,7 +628,7 @@ pub fn parse_order_status_report_sbe(
     // Parse trigger price for stop orders
     let trigger_price = order.stop_price_mantissa.and_then(|mantissa| {
         if mantissa != 0 {
-            Some(mantissa_to_price(
+            Some(Price::from_mantissa_exponent(
                 mantissa,
                 order.price_exponent,
                 price_precision,
@@ -614,7 +652,7 @@ pub fn parse_order_status_report_sbe(
     };
 
     // Parse timestamps (SBE uses microseconds)
-    let ts_event = UnixNanos::from(order.update_time as u64 * 1000);
+    let ts_event = UnixNanos::from_micros(order.update_time as u64);
 
     // Build order list ID if present
     let order_list_id = order.order_list_id.and_then(|id| {
@@ -629,12 +667,15 @@ pub fn parse_order_status_report_sbe(
     let post_only = order.order_type == SbeOrderType::LimitMaker;
 
     // Parse order creation time (SBE uses microseconds)
-    let ts_accepted = UnixNanos::from(order.time as u64 * 1000);
+    let ts_accepted = UnixNanos::from_micros(order.time as u64);
 
     let mut report = OrderStatusReport::new(
         account_id,
         instrument_id,
-        Some(ClientOrderId::new(order.client_order_id.clone())),
+        Some(ClientOrderId::new(decode_broker_id(
+            &order.client_order_id,
+            broker_id,
+        ))),
         VenueOrderId::new(order.order_id.to_string()),
         order_side,
         order_type,
@@ -685,6 +726,7 @@ pub fn parse_new_order_response_sbe(
     response: &BinanceNewOrderResponse,
     account_id: AccountId,
     instrument: &InstrumentAny,
+    broker_id: &str,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
@@ -692,7 +734,7 @@ pub fn parse_new_order_response_sbe(
     let size_precision = instrument.size_precision();
 
     let price = if response.price_mantissa != 0 {
-        Some(mantissa_to_price(
+        Some(Price::from_mantissa_exponent(
             response.price_mantissa,
             response.price_exponent,
             price_precision,
@@ -701,13 +743,13 @@ pub fn parse_new_order_response_sbe(
         None
     };
 
-    let quantity = mantissa_to_quantity(
-        response.orig_qty_mantissa,
+    let quantity = Quantity::from_mantissa_exponent(
+        response.orig_qty_mantissa as u64,
         response.qty_exponent,
         size_precision,
     );
-    let filled_qty = mantissa_to_quantity(
-        response.executed_qty_mantissa,
+    let filled_qty = Quantity::from_mantissa_exponent(
+        response.executed_qty_mantissa as u64,
         response.qty_exponent,
         size_precision,
     );
@@ -733,7 +775,7 @@ pub fn parse_new_order_response_sbe(
 
     let trigger_price = response.stop_price_mantissa.and_then(|mantissa| {
         if mantissa != 0 {
-            Some(mantissa_to_price(
+            Some(Price::from_mantissa_exponent(
                 mantissa,
                 response.price_exponent,
                 price_precision,
@@ -755,7 +797,7 @@ pub fn parse_new_order_response_sbe(
     };
 
     // SBE uses microseconds; for new orders transact_time is both creation and event time
-    let ts_event = UnixNanos::from(response.transact_time as u64 * 1000);
+    let ts_event = UnixNanos::from_micros(response.transact_time as u64);
     let ts_accepted = ts_event;
 
     let order_list_id = response.order_list_id.and_then(|id| {
@@ -772,7 +814,10 @@ pub fn parse_new_order_response_sbe(
     let mut report = OrderStatusReport::new(
         account_id,
         instrument_id,
-        Some(ClientOrderId::new(response.client_order_id.clone())),
+        Some(ClientOrderId::new(decode_broker_id(
+            &response.client_order_id,
+            broker_id,
+        ))),
         VenueOrderId::new(response.order_id.to_string()),
         order_side,
         order_type,
@@ -829,8 +874,13 @@ pub fn parse_fill_report_sbe(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let last_px = mantissa_to_price(trade.price_mantissa, trade.price_exponent, price_precision);
-    let last_qty = mantissa_to_quantity(trade.qty_mantissa, trade.qty_exponent, size_precision);
+    let last_px =
+        Price::from_mantissa_exponent(trade.price_mantissa, trade.price_exponent, price_precision);
+    let last_qty = Quantity::from_mantissa_exponent(
+        trade.qty_mantissa as u64,
+        trade.qty_exponent,
+        size_precision,
+    );
 
     // Commission still uses Decimal → f64 since Money::new takes f64
     let comm_exp = trade.commission_exponent as i32;
@@ -852,7 +902,7 @@ pub fn parse_fill_report_sbe(
     };
 
     // Parse timestamp (SBE uses microseconds)
-    let ts_event = UnixNanos::from(trade.time as u64 * 1000);
+    let ts_event = UnixNanos::from_micros(trade.time as u64);
 
     Ok(FillReport::new(
         account_id,
@@ -889,10 +939,17 @@ pub fn parse_klines_to_bars(
     let mut bars = Vec::with_capacity(klines.klines.len());
 
     for kline in &klines.klines {
-        let open = mantissa_to_price(kline.open_price, klines.price_exponent, price_precision);
-        let high = mantissa_to_price(kline.high_price, klines.price_exponent, price_precision);
-        let low = mantissa_to_price(kline.low_price, klines.price_exponent, price_precision);
-        let close = mantissa_to_price(kline.close_price, klines.price_exponent, price_precision);
+        let open =
+            Price::from_mantissa_exponent(kline.open_price, klines.price_exponent, price_precision);
+        let high =
+            Price::from_mantissa_exponent(kline.high_price, klines.price_exponent, price_precision);
+        let low =
+            Price::from_mantissa_exponent(kline.low_price, klines.price_exponent, price_precision);
+        let close = Price::from_mantissa_exponent(
+            kline.close_price,
+            klines.price_exponent,
+            price_precision,
+        );
 
         // Volume is 128-bit so we still use Decimal path for now
         let volume_mantissa = i128::from_le_bytes(kline.volume);
@@ -900,7 +957,7 @@ pub fn parse_klines_to_bars(
             Decimal::from_i128_with_scale(volume_mantissa, (-klines.qty_exponent as i32) as u32);
         let volume = Quantity::new(volume_dec.to_f64().unwrap_or(0.0), size_precision);
 
-        let ts_event = UnixNanos::from(kline.open_time as u64 * 1_000_000);
+        let ts_event = UnixNanos::from_micros(kline.open_time as u64);
 
         let bar = Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init);
         bars.push(bar);
@@ -966,7 +1023,10 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::enums::BinanceTradingStatus;
+    use crate::common::{
+        consts::BINANCE_NAUTILUS_SPOT_BROKER_ID,
+        enums::{BinanceContractStatus, BinanceTradingStatus},
+    };
 
     fn sample_usdm_symbol() -> BinanceFuturesUsdSymbol {
         BinanceFuturesUsdSymbol {
@@ -1008,6 +1068,92 @@ mod tests {
                 }),
             ],
         }
+    }
+
+    fn sample_coinm_symbol() -> BinanceFuturesCoinSymbol {
+        BinanceFuturesCoinSymbol {
+            symbol: Ustr::from("BTCUSD_PERP"),
+            pair: Ustr::from("BTCUSD"),
+            contract_type: "PERPETUAL".to_string(),
+            delivery_date: 4_133_404_800_000,
+            onboard_date: 1_569_398_400_000,
+            contract_status: Some(BinanceContractStatus::Trading),
+            contract_size: 100,
+            maint_margin_percent: "2.5000".to_string(),
+            required_margin_percent: "5.0000".to_string(),
+            base_asset: Ustr::from("BTC"),
+            quote_asset: Ustr::from("USD"),
+            margin_asset: Ustr::from("BTC"),
+            price_precision: 1,
+            quantity_precision: 0,
+            base_asset_precision: 8,
+            quote_precision: 8,
+            equal_qty_precision: None,
+            trigger_protect: Some("0.0500".to_string()),
+            liquidation_fee: Some("0.012500".to_string()),
+            market_take_bound: Some("0.05".to_string()),
+            order_types: vec!["LIMIT".to_string(), "MARKET".to_string()],
+            time_in_force: vec!["GTC".to_string(), "IOC".to_string()],
+            filters: vec![
+                json!({
+                    "filterType": "PRICE_FILTER",
+                    "tickSize": "0.10",
+                    "maxPrice": "1000000",
+                    "minPrice": "0.10"
+                }),
+                json!({
+                    "filterType": "LOT_SIZE",
+                    "stepSize": "1",
+                    "maxQty": "1000",
+                    "minQty": "1"
+                }),
+            ],
+        }
+    }
+
+    fn sample_spot_symbol_sbe() -> BinanceSymbolSbe {
+        BinanceSymbolSbe {
+            symbol: "ETHUSDT".to_string(),
+            base_asset: "ETH".to_string(),
+            quote_asset: "USDT".to_string(),
+            base_asset_precision: 8,
+            quote_asset_precision: 8,
+            status: SBE_STATUS_TRADING,
+            order_types: 0,
+            iceberg_allowed: true,
+            oco_allowed: true,
+            oto_allowed: false,
+            quote_order_qty_market_allowed: true,
+            allow_trailing_stop: true,
+            cancel_replace_allowed: true,
+            amend_allowed: true,
+            is_spot_trading_allowed: true,
+            is_margin_trading_allowed: false,
+            filters: crate::spot::http::models::BinanceSymbolFiltersSbe {
+                price_filter: Some(BinancePriceFilterSbe {
+                    price_exponent: -8,
+                    min_price: 1_000_000,
+                    max_price: 100_000_000_000_000,
+                    tick_size: 1_000_000,
+                }),
+                lot_size_filter: Some(BinanceLotSizeFilterSbe {
+                    qty_exponent: -8,
+                    min_qty: 10_000,
+                    max_qty: 900_000_000_000,
+                    step_size: 10_000,
+                }),
+            },
+            permissions: vec![vec!["SPOT".to_string()]],
+        }
+    }
+
+    fn sample_spot_instrument() -> InstrumentAny {
+        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        parse_spot_instrument_sbe(&sample_spot_symbol_sbe(), ts, ts).unwrap()
+    }
+
+    fn sample_account_id() -> AccountId {
+        AccountId::from("BINANCE-SPOT-001")
     }
 
     #[rstest]
@@ -1069,6 +1215,317 @@ mod tests {
                 .to_string()
                 .contains("Missing PRICE_FILTER")
         );
+    }
+
+    #[rstest]
+    fn test_parse_coinm_perpetual() {
+        let symbol = sample_coinm_symbol();
+        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+
+        let result = parse_coinm_instrument(&symbol, ts, ts).unwrap();
+
+        match result {
+            InstrumentAny::CryptoPerpetual(perp) => {
+                assert_eq!(perp.id.to_string(), "BTCUSD_PERP-PERP.BINANCE");
+                assert_eq!(perp.raw_symbol.to_string(), "BTCUSD_PERP");
+                assert_eq!(perp.base_currency.code.as_str(), "BTC");
+                assert_eq!(perp.quote_currency.code.as_str(), "USD");
+                assert_eq!(perp.settlement_currency.code.as_str(), "BTC");
+                assert!(perp.is_inverse);
+                assert_eq!(perp.price_increment, Price::from_str("0.10").unwrap());
+                assert_eq!(perp.size_increment, Quantity::from_str("1").unwrap());
+            }
+            other => panic!("Expected CryptoPerpetual, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_spot_instrument_sbe() {
+        let symbol = sample_spot_symbol_sbe();
+        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+
+        let result = parse_spot_instrument_sbe(&symbol, ts, ts).unwrap();
+
+        match result {
+            InstrumentAny::CurrencyPair(pair) => {
+                assert_eq!(pair.id.to_string(), "ETHUSDT.BINANCE");
+                assert_eq!(pair.raw_symbol.to_string(), "ETHUSDT");
+                assert_eq!(pair.base_currency.code.as_str(), "ETH");
+                assert_eq!(pair.quote_currency.code.as_str(), "USDT");
+                assert_eq!(pair.price_increment, Price::from_str("0.01").unwrap());
+                assert_eq!(pair.size_increment, Quantity::from_str("0.0001").unwrap());
+            }
+            other => panic!("Expected CurrencyPair, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_spot_trades_sbe() {
+        let instrument = sample_spot_instrument();
+        let trades = BinanceTrades {
+            price_exponent: -2,
+            qty_exponent: -4,
+            trades: vec![
+                crate::spot::http::models::BinanceTrade {
+                    id: 1,
+                    price_mantissa: 12_345,
+                    qty_mantissa: 25_000,
+                    quote_qty_mantissa: 0,
+                    time: 1_700_000_000_000_000,
+                    is_buyer_maker: false,
+                    is_best_match: true,
+                },
+                crate::spot::http::models::BinanceTrade {
+                    id: 2,
+                    price_mantissa: 12_340,
+                    qty_mantissa: 10_000,
+                    quote_qty_mantissa: 0,
+                    time: 1_700_000_000_500_000,
+                    is_buyer_maker: true,
+                    is_best_match: true,
+                },
+            ],
+        };
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let result = parse_spot_trades_sbe(&trades, &instrument, ts_init).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].instrument_id, instrument.id());
+        assert_eq!(result[0].price.as_f64(), 123.45);
+        assert_eq!(result[0].size.as_f64(), 2.5);
+        assert_eq!(result[0].aggressor_side, AggressorSide::Buyer);
+        assert_eq!(result[0].trade_id, TradeId::new("1"));
+        assert_eq!(
+            result[0].ts_event,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+        assert_eq!(result[0].ts_init, ts_init);
+        assert_eq!(result[1].aggressor_side, AggressorSide::Seller);
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_sbe() {
+        let instrument = sample_spot_instrument();
+        let order = BinanceOrderResponse {
+            price_exponent: -2,
+            qty_exponent: -4,
+            order_id: 42,
+            order_list_id: Some(77),
+            price_mantissa: 12_345,
+            orig_qty_mantissa: 25_000,
+            executed_qty_mantissa: 10_000,
+            cummulative_quote_qty_mantissa: 123_450_000,
+            status: SbeOrderStatus::PartiallyFilled,
+            time_in_force: SbeTimeInForce::Gtc,
+            order_type: SbeOrderType::LimitMaker,
+            side: SbeOrderSide::Buy,
+            stop_price_mantissa: None,
+            iceberg_qty_mantissa: None,
+            time: 1_700_000_000_000_000,
+            update_time: 1_700_000_000_100_000,
+            is_working: true,
+            working_time: Some(1_700_000_000_050_000),
+            orig_quote_order_qty_mantissa: 0,
+            self_trade_prevention_mode:
+                crate::spot::sbe::spot::self_trade_prevention_mode::SelfTradePreventionMode::None,
+            client_order_id: "client-123".to_string(),
+            symbol: "ETHUSDT".to_string(),
+        };
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let report = parse_order_status_report_sbe(
+            &order,
+            sample_account_id(),
+            &instrument,
+            BINANCE_NAUTILUS_SPOT_BROKER_ID,
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(report.account_id, sample_account_id());
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::new("client-123"))
+        );
+        assert_eq!(report.venue_order_id, VenueOrderId::new("42"));
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+        assert_eq!(report.quantity.as_f64(), 2.5);
+        assert_eq!(report.filled_qty.as_f64(), 1.0);
+        assert_eq!(report.order_list_id, Some(OrderListId::new("77")));
+        assert_eq!(report.price, Some(Price::new(123.45, 2)));
+        assert_eq!(report.avg_px.unwrap().to_string(), "123.45");
+        assert!(report.post_only);
+        assert_eq!(
+            report.ts_accepted,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+        assert_eq!(
+            report.ts_last,
+            UnixNanos::from(1_700_000_000_100_000_000u64)
+        );
+        assert_eq!(report.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_new_order_response_sbe() {
+        let instrument = sample_spot_instrument();
+        let response = BinanceNewOrderResponse {
+            price_exponent: -2,
+            qty_exponent: -4,
+            order_id: 99,
+            order_list_id: Some(7),
+            transact_time: 1_700_000_000_000_000,
+            price_mantissa: 12_100,
+            orig_qty_mantissa: 20_000,
+            executed_qty_mantissa: 5_000,
+            cummulative_quote_qty_mantissa: 60_500_000,
+            status: SbeOrderStatus::New,
+            time_in_force: SbeTimeInForce::Gtc,
+            order_type: SbeOrderType::StopLossLimit,
+            side: SbeOrderSide::Sell,
+            stop_price_mantissa: Some(12_000),
+            working_time: Some(1_700_000_000_000_000),
+            self_trade_prevention_mode:
+                crate::spot::sbe::spot::self_trade_prevention_mode::SelfTradePreventionMode::None,
+            client_order_id: "client-456".to_string(),
+            symbol: "ETHUSDT".to_string(),
+            fills: vec![],
+        };
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let report = parse_new_order_response_sbe(
+            &response,
+            sample_account_id(),
+            &instrument,
+            BINANCE_NAUTILUS_SPOT_BROKER_ID,
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(report.account_id, sample_account_id());
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::new("client-456"))
+        );
+        assert_eq!(report.venue_order_id, VenueOrderId::new("99"));
+        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_type, OrderType::StopLimit);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert_eq!(report.quantity.as_f64(), 2.0);
+        assert_eq!(report.filled_qty.as_f64(), 0.5);
+        assert_eq!(report.order_list_id, Some(OrderListId::new("7")));
+        assert_eq!(report.price, Some(Price::new(121.0, 2)));
+        assert_eq!(report.trigger_price, Some(Price::new(120.0, 2)));
+        assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
+        assert_eq!(report.avg_px.unwrap().to_string(), "121");
+        assert!(!report.post_only);
+        assert_eq!(
+            report.ts_accepted,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+        assert_eq!(
+            report.ts_last,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_sbe() {
+        let instrument = sample_spot_instrument();
+        let trade = BinanceAccountTrade {
+            price_exponent: -2,
+            qty_exponent: -4,
+            commission_exponent: -8,
+            id: 123,
+            order_id: 456,
+            order_list_id: None,
+            price_mantissa: 12_345,
+            qty_mantissa: 25_000,
+            quote_qty_mantissa: 0,
+            commission_mantissa: 10_000,
+            time: 1_700_000_000_000_000,
+            is_buyer: false,
+            is_maker: true,
+            is_best_match: true,
+            symbol: "ETHUSDT".to_string(),
+            commission_asset: "USDT".to_string(),
+        };
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let report = parse_fill_report_sbe(
+            &trade,
+            sample_account_id(),
+            &instrument,
+            Currency::from("USDT"),
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(report.account_id, sample_account_id());
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(report.venue_order_id, VenueOrderId::new("456"));
+        assert_eq!(report.trade_id, TradeId::new("123"));
+        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.last_qty.as_f64(), 2.5);
+        assert_eq!(report.last_px.as_f64(), 123.45);
+        assert_eq!(report.liquidity_side, LiquiditySide::Maker);
+        assert_eq!(report.commission.as_f64(), 0.0001);
+        assert_eq!(
+            report.ts_event,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+        assert_eq!(report.ts_init, ts_init);
+        assert!(report.client_order_id.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_klines_to_bars() {
+        use nautilus_model::enums::{AggregationSource, PriceType};
+
+        let instrument = sample_spot_instrument();
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+            AggregationSource::External,
+        );
+        let klines = BinanceKlines {
+            price_exponent: -2,
+            qty_exponent: -4,
+            klines: vec![crate::spot::http::models::BinanceKline {
+                open_time: 1_700_000_000_000_000,
+                open_price: 12_000,
+                high_price: 12_500,
+                low_price: 11_900,
+                close_price: 12_345,
+                volume: 1_234_500_i128.to_le_bytes(),
+                close_time: 1_700_000_059_999_000,
+                quote_volume: 0_i128.to_le_bytes(),
+                num_trades: 100,
+                taker_buy_base_volume: 0_i128.to_le_bytes(),
+                taker_buy_quote_volume: 0_i128.to_le_bytes(),
+            }],
+        };
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let bars = parse_klines_to_bars(&klines, bar_type, &instrument, ts_init).unwrap();
+
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].bar_type, bar_type);
+        assert_eq!(bars[0].open, Price::new(120.0, 2));
+        assert_eq!(bars[0].high, Price::new(125.0, 2));
+        assert_eq!(bars[0].low, Price::new(119.0, 2));
+        assert_eq!(bars[0].close, Price::new(123.45, 2));
+        assert_eq!(bars[0].volume, Quantity::new(123.45, 4));
+        assert_eq!(
+            bars[0].ts_event,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+        assert_eq!(bars[0].ts_init, ts_init);
     }
 
     mod bar_spec_tests {
@@ -1153,6 +1610,92 @@ mod tests {
                     .to_string()
                     .contains("Unsupported bar aggregation")
             );
+        }
+    }
+
+    mod sbe_precision_tests {
+        use super::*;
+        use crate::spot::http::models::{BinanceLotSizeFilterSbe, BinancePriceFilterSbe};
+
+        #[rstest]
+        #[case::precision_0(100_000_000, -8, 0)]
+        #[case::precision_1(10_000_000, -8, 1)]
+        #[case::precision_2(1_000_000, -8, 2)]
+        #[case::precision_3(100_000, -8, 3)]
+        #[case::precision_4(10_000, -8, 4)]
+        #[case::precision_5(1_000, -8, 5)]
+        #[case::precision_6(100, -8, 6)]
+        #[case::precision_7(10, -8, 7)]
+        #[case::precision_8(1, -8, 8)]
+        fn test_sbe_mantissa_precision(
+            #[case] mantissa: i64,
+            #[case] exponent: i8,
+            #[case] expected: u8,
+        ) {
+            let result = sbe_mantissa_precision(mantissa, exponent);
+            assert_eq!(
+                result, expected,
+                "mantissa={mantissa}, exponent={exponent}: expected {expected}, was {result}"
+            );
+        }
+
+        #[rstest]
+        fn test_sbe_mantissa_precision_zero_mantissa() {
+            assert_eq!(sbe_mantissa_precision(0, -8), 0);
+        }
+
+        #[rstest]
+        fn test_sbe_mantissa_precision_positive_exponent() {
+            assert_eq!(sbe_mantissa_precision(1, 0), 0);
+            assert_eq!(sbe_mantissa_precision(5, 2), 0);
+        }
+
+        #[rstest]
+        fn test_parse_sbe_price_filter_ethusdc() {
+            let filter = BinancePriceFilterSbe {
+                price_exponent: -8,
+                min_price: 1_000_000,
+                max_price: 100_000_000_000_000,
+                tick_size: 1_000_000,
+            };
+
+            let (tick_size, max_price, min_price) = parse_sbe_price_filter(&filter);
+
+            assert_eq!(tick_size.precision, 2, "tick_size precision");
+            assert_eq!(tick_size.as_f64(), 0.01);
+            assert_eq!(max_price.unwrap().precision, 2);
+            assert_eq!(min_price.unwrap().precision, 2);
+        }
+
+        #[rstest]
+        fn test_parse_sbe_price_filter_shibusdt() {
+            let filter = BinancePriceFilterSbe {
+                price_exponent: -8,
+                min_price: 1,
+                max_price: 100_000_000,
+                tick_size: 1,
+            };
+
+            let (tick_size, _, _) = parse_sbe_price_filter(&filter);
+
+            assert_eq!(tick_size.precision, 8);
+            assert_eq!(tick_size.as_f64(), 0.00000001);
+        }
+
+        #[rstest]
+        fn test_parse_sbe_lot_size_filter_ethusdc() {
+            let filter = BinanceLotSizeFilterSbe {
+                qty_exponent: -8,
+                min_qty: 10_000,
+                max_qty: 900_000_000_000,
+                step_size: 10_000,
+            };
+
+            let (step_size, max_qty, min_qty) = parse_sbe_lot_size_filter(&filter);
+
+            assert_eq!(step_size.precision, 4, "step_size precision");
+            assert_eq!(min_qty.unwrap().precision, 4);
+            assert_eq!(max_qty.unwrap().precision, 4);
         }
     }
 }

@@ -29,6 +29,10 @@ use nautilus_model::{
 use crate::error::DydxError;
 
 /// Default expiration for GTC conditional orders (90 days).
+///
+/// The protocol limit (`StatefulOrderTimeWindow`) is 95 days. This default
+/// leaves a 5-day buffer so the order timestamp never exceeds the window
+/// when the local clock is slightly ahead of the last block time.
 pub const GTC_CONDITIONAL_ORDER_EXPIRATION_DAYS: i64 = 90;
 
 /// Order flag for short-term orders (expire by block height).

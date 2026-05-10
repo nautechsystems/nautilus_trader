@@ -20,6 +20,7 @@ use alloy::{
     sol,
     sol_types::{SolCall, private::primitives::aliases::I24},
 };
+use nautilus_core::hex;
 use nautilus_model::{
     defi::{
         data::block::BlockPosition,

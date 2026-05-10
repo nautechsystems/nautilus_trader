@@ -996,3 +996,37 @@ class TestBinanceFuturesAlgoOrderHandlers:
         # Assert - order should be removed from triggered set
         assert client_order_id not in exec_client._triggered_algo_order_ids
         exec_client.generate_order_canceled.assert_called_once()
+
+    def test_order_trade_update_sends_status_report_when_instrument_not_in_cache(self, mocker):
+        # Arrange: tracked order (strategy_id present) but instrument missing from cache
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_order_update_liquidation.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceFuturesOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        exec_client = mocker.MagicMock()
+        exec_client.account_id = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = StrategyId("S-001")
+        exec_client._get_cached_instrument_id.return_value = BTCUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = None  # Not in cache
+        exec_client._clock.timestamp_ns.return_value = 1759347763167000000
+
+        # Act
+        wrapper.data.o.handle_order_trade_update(exec_client)
+
+        # Assert: OrderStatusReport sent for reconciliation, no exception raised
+        exec_client._log.warning.assert_called()
+        warning_msgs = [c[0][0] for c in exec_client._log.warning.call_args_list]
+        assert any("not in cache" in msg for msg in warning_msgs)
+
+        exec_client._send_order_status_report.assert_called_once()
+        report = exec_client._send_order_status_report.call_args[0][0]
+        assert report.instrument_id == BTCUSDT_BINANCE.id
+        assert report.client_order_id == ClientOrderId("autoclose-1234567890123456")
+        assert report.venue_order_id == VenueOrderId("9876543210")
+
+        # No fill report or order events generated
+        exec_client._send_fill_report.assert_not_called()
+        exec_client.generate_order_filled.assert_not_called()

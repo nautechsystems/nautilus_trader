@@ -1,0 +1,93 @@
+{
+  "orders": [
+    {
+      "order_id": "0000-000000-000001",
+      "product_id": "BTC-USD",
+      "user_id": "2222-000000-000000",
+      "order_configuration": {
+        "limit_limit_gtc": {
+          "base_size": "0.01",
+          "limit_price": "45000.00",
+          "post_only": false
+        }
+      },
+      "side": "BUY",
+      "client_order_id": "11111-000000-000001",
+      "status": "OPEN",
+      "time_in_force": "GOOD_UNTIL_CANCELLED",
+      "created_time": "2024-01-15T10:00:00Z",
+      "completion_percentage": "0",
+      "filled_size": "0",
+      "average_filled_price": "0",
+      "fee": "0",
+      "number_of_fills": "0",
+      "filled_value": "0",
+      "pending_cancel": false,
+      "size_in_quote": false,
+      "total_fees": "0",
+      "size_inclusive_of_fees": false,
+      "total_value_after_fees": "0",
+      "trigger_status": "INVALID_ORDER_TYPE",
+      "order_type": "LIMIT",
+      "reject_reason": "",
+      "settled": false,
+      "product_type": "SPOT",
+      "reject_message": "",
+      "cancel_message": "",
+      "order_placement_source": "RETAIL_ADVANCED",
+      "outstanding_hold_amount": "450.00",
+      "is_liquidation": false,
+      "last_fill_time": null,
+      "leverage": "",
+      "margin_type": "",
+      "retail_portfolio_id": "",
+      "originating_order_id": "",
+      "attached_order_id": ""
+    },
+    {
+      "order_id": "0000-000000-000002",
+      "product_id": "ETH-USD",
+      "user_id": "2222-000000-000000",
+      "order_configuration": {
+        "market_market_ioc": {
+          "quote_size": "100"
+        }
+      },
+      "side": "SELL",
+      "client_order_id": "11111-000000-000002",
+      "status": "FILLED",
+      "time_in_force": "IMMEDIATE_OR_CANCEL",
+      "created_time": "2024-01-15T10:05:00Z",
+      "completion_percentage": "100",
+      "filled_size": "0.0325",
+      "average_filled_price": "3076.92",
+      "fee": "0.50",
+      "number_of_fills": "1",
+      "filled_value": "100",
+      "pending_cancel": false,
+      "size_in_quote": true,
+      "total_fees": "0.50",
+      "size_inclusive_of_fees": false,
+      "total_value_after_fees": "99.50",
+      "trigger_status": "INVALID_ORDER_TYPE",
+      "order_type": "MARKET",
+      "reject_reason": "",
+      "settled": true,
+      "product_type": "SPOT",
+      "reject_message": "",
+      "cancel_message": "",
+      "order_placement_source": "RETAIL_ADVANCED",
+      "outstanding_hold_amount": "0",
+      "is_liquidation": false,
+      "last_fill_time": "2024-01-15T10:05:00Z",
+      "leverage": "",
+      "margin_type": "",
+      "retail_portfolio_id": "",
+      "originating_order_id": "",
+      "attached_order_id": ""
+    }
+  ],
+  "sequence": "0",
+  "has_next": false,
+  "cursor": ""
+}

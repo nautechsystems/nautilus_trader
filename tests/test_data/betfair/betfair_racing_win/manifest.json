@@ -1,0 +1,20 @@
+{
+  "slug": "betfair_racing_win",
+  "vendor": "betfair",
+  "source_type": "self-recorded",
+  "source_filters": {
+    "market_id": "1.245077076",
+    "market_type": "WIN",
+    "event_type_id": "7",
+    "event_date": "2025-06-26",
+    "venue": "Nottingham",
+    "race_type": "Flat"
+  },
+  "target_files": [
+    "betfair_1.245077076_2025-06-26_deltas.parquet"
+  ],
+  "cache_dir": "betfair/betfair_racing_win",
+  "fetch_command": "Copy 1.245077076.gz to tests/test_data/local/betfair/",
+  "transform_command": "cargo run -p nautilus-betfair --example betfair-load-file -- tests/test_data/local/betfair/1.245077076.gz",
+  "notes": "Horse racing WIN market at Nottingham with 6 runners (2 removed pre-race). Complete lifecycle from OPEN through CLOSED with BSP settlement. Winner: runner 75925986 (BSP 2.446)."
+}

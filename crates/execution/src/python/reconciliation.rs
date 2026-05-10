@@ -15,9 +15,13 @@
 
 //! Python bindings for reconciliation functions.
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::{UnixNanos, python::to_pyvalue_err};
 use nautilus_model::{
-    python::instruments::pyobject_to_instrument_any, reports::ExecutionMassStatus,
+    enums::{OrderSide, OrderType},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
+    python::instruments::pyobject_to_instrument_any,
+    reports::ExecutionMassStatus,
+    types::{Price, Quantity},
 };
 use pyo3::{
     IntoPyObjectExt,
@@ -27,7 +31,8 @@ use pyo3::{
 use rust_decimal::Decimal;
 
 use crate::reconciliation::{
-    calculate_reconciliation_price, process_mass_status_for_reconciliation,
+    calculate_reconciliation_price, create_inferred_reconciliation_trade_id,
+    create_position_reconciliation_venue_order_id, process_mass_status_for_reconciliation,
 };
 
 /// Process mass status for position reconciliation.
@@ -43,6 +48,7 @@ use crate::reconciliation::{
 ///
 /// Returns an error if instrument conversion or reconciliation fails.
 #[pyfunction(name = "adjust_fills_for_partial_window")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]
 #[pyo3(signature = (mass_status, instrument, tolerance=None))]
 pub fn py_adjust_fills_for_partial_window(
     py: Python<'_>,
@@ -79,7 +85,24 @@ pub fn py_adjust_fills_for_partial_window(
 }
 
 /// Calculate the price needed for a reconciliation order to achieve target position.
+///
+/// This is a pure function that calculates what price a fill would need to have
+/// to move from the current position state to the target position state with the
+/// correct average price, accounting for the netting simulation logic.
+///
+/// # Returns
+///
+/// Returns `Some(Decimal)` if a valid reconciliation price can be calculated, `None` otherwise.
+///
+/// # Notes
+///
+/// The function handles four scenarios:
+/// 1. Position to flat: reconciliation_px = current_avg_px (close at current average)
+/// 2. Flat to position: reconciliation_px = target_avg_px
+/// 3. Position flip (sign change): reconciliation_px = target_avg_px (due to value reset in simulation)
+/// 4. Accumulation/reduction: weighted average formula
 #[pyfunction(name = "calculate_reconciliation_price")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]
 #[pyo3(signature = (current_position_qty, current_position_avg_px, target_position_qty, target_position_avg_px))]
 pub fn py_calculate_reconciliation_price(
     current_position_qty: Decimal,
@@ -92,5 +115,76 @@ pub fn py_calculate_reconciliation_price(
         current_position_avg_px,
         target_position_qty,
         target_position_avg_px,
+    )
+}
+
+/// Create a deterministic `TradeId` for an inferred reconciliation fill.
+///
+/// The `account_id` scopes the ID to the venue account, preventing cross-account
+/// collisions on venues where `venue_order_id` is only account-unique. The `ts_last`
+/// (venue-provided) differentiates successive reconciliation incidents with the same
+/// shape while keeping cross-restart replays deterministic.
+#[pyfunction(name = "create_inferred_reconciliation_trade_id")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]
+#[pyo3(signature = (account_id, instrument_id, client_order_id, venue_order_id, order_side, order_type, filled_qty, last_qty, last_px, position_id, ts_last))]
+#[expect(clippy::too_many_arguments)]
+pub fn py_create_inferred_reconciliation_trade_id(
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: Option<VenueOrderId>,
+    order_side: OrderSide,
+    order_type: OrderType,
+    filled_qty: Quantity,
+    last_qty: Quantity,
+    last_px: Price,
+    position_id: PositionId,
+    ts_last: u64,
+) -> TradeId {
+    create_inferred_reconciliation_trade_id(
+        account_id,
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        order_side,
+        order_type,
+        filled_qty,
+        last_qty,
+        last_px,
+        position_id,
+        UnixNanos::from(ts_last),
+    )
+}
+
+/// The `account_id` scopes the ID to the venue account, preventing cross-account
+/// collisions where the engine would otherwise fall back to `ClientOrderId::from(venue_order_id)`
+/// and conflate orders from different accounts. The `ts_last` (venue-provided) ensures that
+/// successive reconciliation incidents with the same shape get distinct IDs, while the same
+/// logical event replayed after restart still hashes the same (venue re-reports identical ts).
+#[pyfunction(name = "create_position_reconciliation_venue_order_id")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]
+#[pyo3(signature = (account_id, instrument_id, order_side, order_type, quantity, price=None, venue_position_id=None, ts_last=0, tag=None))]
+#[expect(clippy::needless_pass_by_value, clippy::too_many_arguments)]
+pub fn py_create_position_reconciliation_venue_order_id(
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    order_side: OrderSide,
+    order_type: OrderType,
+    quantity: Quantity,
+    price: Option<Price>,
+    venue_position_id: Option<PositionId>,
+    ts_last: u64,
+    tag: Option<String>,
+) -> VenueOrderId {
+    create_position_reconciliation_venue_order_id(
+        account_id,
+        instrument_id,
+        order_side,
+        order_type,
+        quantity,
+        price,
+        venue_position_id,
+        tag.as_deref(),
+        UnixNanos::from(ts_last),
     )
 }

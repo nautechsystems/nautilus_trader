@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     Params, UnixNanos,
-    correctness::{FAILED, check_equal_u8},
+    correctness::{CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8},
 };
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -42,6 +42,10 @@ use crate::{
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct IndexInstrument {
     /// The instrument ID.
@@ -75,7 +79,7 @@ impl IndexInstrument {
     /// # Errors
     ///
     /// Returns an error if any input validation fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new_checked(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -87,7 +91,7 @@ impl IndexInstrument {
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> CorrectnessResult<Self> {
         check_equal_u8(
             price_precision,
             price_increment.precision,
@@ -122,7 +126,8 @@ impl IndexInstrument {
     /// # Panics
     ///
     /// Panics if any parameter is invalid (see `new_checked`).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -147,7 +152,7 @@ impl IndexInstrument {
             ts_event,
             ts_init,
         )
-        .expect(FAILED)
+        .expect_display(FAILED)
     }
 }
 
@@ -291,11 +296,48 @@ impl Instrument for IndexInstrument {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{IndexInstrument, stubs::*};
+    use crate::{
+        enums::{AssetClass, InstrumentClass},
+        identifiers::{InstrumentId, Symbol},
+        instruments::{IndexInstrument, Instrument, stubs::*},
+        types::{Currency, Price, Quantity},
+    };
 
     #[rstest]
-    fn test_equality(index_instrument_spx: IndexInstrument) {
-        let cloned = index_instrument_spx.clone();
-        assert_eq!(index_instrument_spx, cloned);
+    fn test_trait_accessors(index_instrument_spx: IndexInstrument) {
+        assert_eq!(index_instrument_spx.id(), InstrumentId::from("SPX.INDEX"));
+        assert_eq!(index_instrument_spx.asset_class(), AssetClass::Index);
+        assert_eq!(
+            index_instrument_spx.instrument_class(),
+            InstrumentClass::Spot
+        );
+        assert_eq!(index_instrument_spx.quote_currency(), Currency::USD());
+        assert!(!index_instrument_spx.is_inverse());
+        assert_eq!(index_instrument_spx.price_precision(), 2);
+        assert_eq!(index_instrument_spx.size_precision(), 0);
+    }
+
+    #[rstest]
+    fn test_new_checked_price_precision_mismatch() {
+        let result = IndexInstrument::new_checked(
+            InstrumentId::from("SPX.INDEX"),
+            Symbol::from("SPX"),
+            Currency::USD(),
+            4, // mismatch
+            0,
+            Price::from("0.01"),
+            Quantity::from("1"),
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip(index_instrument_spx: IndexInstrument) {
+        let json = serde_json::to_string(&index_instrument_spx).unwrap();
+        let deserialized: IndexInstrument = serde_json::from_str(&json).unwrap();
+        assert_eq!(index_instrument_spx, deserialized);
     }
 }

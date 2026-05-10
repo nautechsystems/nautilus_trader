@@ -20,7 +20,10 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{FAILED, check_string_contains, check_valid_string_ascii};
+use nautilus_core::correctness::{
+    CorrectnessResult, CorrectnessResultExt, FAILED, check_predicate_false, check_string_contains,
+    check_valid_string_ascii,
+};
 use ustr::Ustr;
 
 use super::Venue;
@@ -31,6 +34,10 @@ use super::Venue;
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct AccountId(Ustr);
 
@@ -52,20 +59,20 @@ impl AccountId {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+    pub fn new_checked<T: AsRef<str>>(value: T) -> CorrectnessResult<Self> {
         let value = value.as_ref();
         check_valid_string_ascii(value, stringify!(value))?;
         check_string_contains(value, "-", stringify!(value))?;
 
         if let Some((issuer, account)) = value.split_once('-') {
-            anyhow::ensure!(
-                !issuer.is_empty(),
-                "`value` issuer part (before '-') cannot be empty"
-            );
-            anyhow::ensure!(
-                !account.is_empty(),
-                "`value` account part (after '-') cannot be empty"
-            );
+            check_predicate_false(
+                issuer.is_empty(),
+                "`value` issuer part (before '-') cannot be empty",
+            )?;
+            check_predicate_false(
+                account.is_empty(),
+                "`value` account part (after '-') cannot be empty",
+            )?;
         }
 
         Ok(Self(Ustr::from(value)))
@@ -77,7 +84,7 @@ impl AccountId {
     ///
     /// Panics if `value` is not a valid string, or value length is greater than 36.
     pub fn new<T: AsRef<str>>(value: T) -> Self {
-        Self::new_checked(value).expect(FAILED)
+        Self::new_checked(value).expect_display(FAILED)
     }
 
     /// Sets the inner identifier value.
@@ -133,19 +140,20 @@ impl Display for AccountId {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::correctness::CorrectnessError;
     use rstest::rstest;
 
     use super::*;
     use crate::identifiers::stubs::*;
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "invalid string for 'value', was empty")]
     fn test_account_id_new_invalid_string() {
         AccountId::new("");
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "did not contain '-'")]
     fn test_account_id_new_missing_hyphen() {
         AccountId::new("123456789");
     }
@@ -193,5 +201,39 @@ mod tests {
     #[rstest]
     fn test_new_checked_with_empty_account_returns_error() {
         assert!(AccountId::new_checked("IB-").is_err());
+    }
+
+    #[rstest]
+    fn test_new_checked_with_empty_issuer_returns_typed_error_with_stable_display() {
+        let error = AccountId::new_checked("-123456").unwrap_err();
+
+        match error {
+            CorrectnessError::PredicateViolation { ref message } => {
+                assert_eq!(message, "`value` issuer part (before '-') cannot be empty");
+            }
+            other => panic!("Expected typed predicate violation, was: {other:?}"),
+        }
+
+        assert_eq!(
+            error.to_string(),
+            "`value` issuer part (before '-') cannot be empty"
+        );
+    }
+
+    #[rstest]
+    fn test_new_checked_with_empty_account_returns_typed_error_with_stable_display() {
+        let error = AccountId::new_checked("IB-").unwrap_err();
+
+        match error {
+            CorrectnessError::PredicateViolation { ref message } => {
+                assert_eq!(message, "`value` account part (after '-') cannot be empty");
+            }
+            other => panic!("Expected typed predicate violation, was: {other:?}"),
+        }
+
+        assert_eq!(
+            error.to_string(),
+            "`value` account part (after '-') cannot be empty"
+        );
     }
 }

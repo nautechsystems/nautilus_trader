@@ -43,6 +43,10 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct StopLimitOrder {
     pub price: Price,
     pub trigger_price: Price,
@@ -65,7 +69,7 @@ impl StopLimitOrder {
     /// - The `quantity` is not positive.
     /// - The `display_qty` (when provided) exceeds `quantity`.
     /// - The `time_in_force` is `GTD` **and** `expire_time` is `None` or zero.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new_checked(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -94,7 +98,7 @@ impl StopLimitOrder {
         tags: Option<Vec<Ustr>>,
         init_id: UUID4,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, OrderError> {
         check_positive_quantity(quantity, stringify!(quantity))?;
         check_display_qty(display_qty, quantity)?;
         check_time_in_force(time_in_force, expire_time)?;
@@ -154,7 +158,8 @@ impl StopLimitOrder {
     /// # Panics
     ///
     /// Panics if any order validation fails (see [`StopLimitOrder::new_checked`]).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -213,7 +218,7 @@ impl StopLimitOrder {
             init_id,
             ts_init,
         )
-        .expect(FAILED)
+        .unwrap_or_else(|e| panic!("{FAILED}: {e}"))
     }
 }
 
@@ -454,10 +459,6 @@ impl Order for StopLimitOrder {
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
-        if let OrderEventAny::Updated(ref event) = event {
-            self.update(event);
-        }
-
         let is_order_filled = matches!(event, OrderEventAny::Filled(_));
         let is_order_triggered = matches!(event, OrderEventAny::Triggered(_));
         let ts_event = if is_order_triggered {
@@ -466,7 +467,11 @@ impl Order for StopLimitOrder {
             None
         };
 
-        self.core.apply(event)?;
+        self.core.apply(event.clone())?;
+
+        if let OrderEventAny::Updated(ref event) = event {
+            self.update(event);
+        }
 
         if is_order_triggered {
             self.is_triggered = true;
@@ -481,8 +486,6 @@ impl Order for StopLimitOrder {
     }
 
     fn update(&mut self, event: &OrderUpdated) {
-        self.quantity = event.quantity;
-
         if let Some(price) = event.price {
             self.price = price;
         }
@@ -608,7 +611,7 @@ mod tests {
     use super::*;
     use crate::{
         enums::{OrderSide, TimeInForce, TriggerType},
-        events::order::initialized::OrderInitializedBuilder,
+        events::order::spec::OrderInitializedSpec,
         identifiers::InstrumentId,
         instruments::{CurrencyPair, stubs::*},
         orders::{OrderTestBuilder, stubs::TestOrderStubs},
@@ -616,10 +619,10 @@ mod tests {
     };
 
     #[rstest]
-    fn test_initialize(_audusd_sim: CurrencyPair) {
+    fn test_initialize(audusd_sim: CurrencyPair) {
         // ---------------------------------------------------------------------
         let order = OrderTestBuilder::new(OrderType::StopLimit)
-            .instrument_id(_audusd_sim.id)
+            .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
             .trigger_price(Price::from("0.68000"))
             .price(Price::from("0.68100"))
@@ -656,9 +659,9 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "display_qty` may not exceed `quantity")]
     fn test_display_qty_gt_quantity_err(audusd_sim: CurrencyPair) {
-        OrderTestBuilder::new(OrderType::StopLimit)
+        let _ = OrderTestBuilder::new(OrderType::StopLimit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
             .trigger_price(Price::from("30300"))
@@ -670,9 +673,9 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "Quantity must be non-negative")]
     fn test_display_qty_negative_err(audusd_sim: CurrencyPair) {
-        OrderTestBuilder::new(OrderType::StopLimit)
+        let _ = OrderTestBuilder::new(OrderType::StopLimit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
             .trigger_price(Price::from("30300"))
@@ -684,9 +687,9 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "expire_time` is required for `GTD` order")]
     fn test_gtd_without_expire_time_err(audusd_sim: CurrencyPair) {
-        OrderTestBuilder::new(OrderType::StopLimit)
+        let _ = OrderTestBuilder::new(OrderType::StopLimit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
             .trigger_price(Price::from("30300"))
@@ -733,7 +736,7 @@ mod tests {
     #[rstest]
     fn test_stop_limit_order_expire_time() {
         // Create a stop limit order with an expire time
-        let expire_time = UnixNanos::from(1234567890);
+        let expire_time = UnixNanos::from(1_234_567_890);
         let order = OrderTestBuilder::new(OrderType::StopLimit)
             .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
             .quantity(Quantity::from(10))
@@ -832,18 +835,17 @@ mod tests {
     #[rstest]
     fn test_stop_limit_order_from_order_initialized() {
         // Create an OrderInitialized event with all required fields for a StopLimitOrder
-        let order_initialized = OrderInitializedBuilder::default()
+        let order_initialized = OrderInitializedSpec::builder()
             .order_type(OrderType::StopLimit)
             .quantity(Quantity::from(10))
-            .price(Some(Price::new(100.0, 2)))
-            .trigger_price(Some(Price::new(95.0, 2)))
-            .trigger_type(Some(TriggerType::Default))
+            .price(Price::new(100.0, 2))
+            .trigger_price(Price::new(95.0, 2))
+            .trigger_type(TriggerType::Default)
             .post_only(true)
             .reduce_only(true)
-            .expire_time(Some(UnixNanos::from(1234567890)))
-            .display_qty(Some(Quantity::from(5)))
-            .build()
-            .unwrap();
+            .expire_time(UnixNanos::from(1_234_567_890))
+            .display_qty(Quantity::from(5))
+            .build();
 
         // Convert the OrderInitialized event into a StopLimitOrder
         let order: StopLimitOrder = order_initialized.clone().into();

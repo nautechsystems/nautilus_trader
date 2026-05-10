@@ -27,9 +27,9 @@
 //! ## Trading API (`trading`)
 //!
 //! Request/response pattern for order management via `ws-api.binance.com`:
-//! - Order placement
-//! - Order cancellation
-//! - Cancel-replace operations
+//! - Order placement, cancellation, cancel-replace operations
+//! - Session authentication (`session.logon`)
+//! - Inline user data stream (`userDataStream.subscribe`)
 
 pub mod error;
 pub mod streams;

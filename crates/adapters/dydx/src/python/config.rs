@@ -21,10 +21,16 @@ use pyo3::prelude::*;
 use crate::config::{DydxDataClientConfig, DydxExecClientConfig};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DydxDataClientConfig {
+    /// Configuration for the dYdX data client.
     #[new]
-    fn py_new() -> Self {
-        Self::default()
+    #[pyo3(signature = (proxy_url=None))]
+    fn py_new(proxy_url: Option<String>) -> Self {
+        Self {
+            proxy_url,
+            ..Self::default()
+        }
     }
 
     fn __repr__(&self) -> String {
@@ -33,12 +39,16 @@ impl DydxDataClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DydxExecClientConfig {
+    /// Configuration for the dYdX execution client.
     #[new]
-    fn py_new(trader_id: TraderId, account_id: AccountId) -> Self {
+    #[pyo3(signature = (trader_id, account_id, proxy_url=None))]
+    fn py_new(trader_id: TraderId, account_id: AccountId, proxy_url: Option<String>) -> Self {
         Self {
             trader_id,
             account_id,
+            proxy_url,
             ..Self::default()
         }
     }

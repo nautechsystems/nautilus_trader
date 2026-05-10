@@ -1,5 +1,8 @@
 @0xf0a1b2c3d4e5f607;
 # Cap'n Proto schema for Nautilus identifier types
+#
+# WARNING: This schema is not yet stable and may change without notice
+# between releases. Do not depend on wire compatibility across versions.
 
 # Base identifier types - all are interned strings (Ustr) in Rust
 struct TraderId {

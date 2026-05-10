@@ -15,9 +15,17 @@
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 
+pub mod config;
 pub mod node;
 
+use nautilus_portfolio::config::PortfolioConfig;
 use pyo3::prelude::*;
+
+pyo3_stub_gen::reexport_module_members!(
+    "nautilus_trader.live",
+    "nautilus_trader.portfolio",
+    "PortfolioConfig"
+);
 
 /// Loaded as `nautilus_pyo3.live`.
 ///
@@ -28,5 +36,14 @@ use pyo3::prelude::*;
 pub fn live(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::node::LiveNode>()?;
     m.add_class::<node::LiveNodeBuilderPy>()?;
+    m.add_class::<crate::config::LiveNodeConfig>()?;
+    m.add_class::<crate::config::LiveDataEngineConfig>()?;
+    m.add_class::<crate::config::LiveRiskEngineConfig>()?;
+    m.add_class::<crate::config::LiveExecEngineConfig>()?;
+    m.add_class::<crate::config::RoutingConfig>()?;
+    m.add_class::<crate::config::InstrumentProviderConfig>()?;
+    m.add_class::<crate::config::LiveDataClientConfig>()?;
+    m.add_class::<crate::config::LiveExecClientConfig>()?;
+    m.add_class::<PortfolioConfig>()?;
     Ok(())
 }

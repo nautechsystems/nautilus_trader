@@ -30,16 +30,10 @@
 //! An order with `horizon_secs=60` and `interval_secs=10` will spawn 6 child
 //! orders over 60 seconds, one every 10 seconds.
 
-use std::{
-    ops::{Deref, DerefMut},
-    time::Duration,
-};
+use std::time::Duration;
 
 use ahash::AHashMap;
-use nautilus_common::{
-    actor::{DataActor, DataActorCore},
-    timer::TimeEvent,
-};
+use nautilus_common::{actor::DataActor, nautilus_actor, timer::TimeEvent};
 use nautilus_model::{
     enums::OrderType,
     identifiers::ClientOrderId,
@@ -88,20 +82,9 @@ impl TwapAlgorithm {
     }
 }
 
-impl Deref for TwapAlgorithm {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.core.actor
-    }
-}
-
-impl DerefMut for TwapAlgorithm {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core.actor
-    }
-}
-
 impl DataActor for TwapAlgorithm {}
+
+nautilus_actor!(TwapAlgorithm);
 
 impl ExecutionAlgorithm for TwapAlgorithm {
     fn core_mut(&mut self) -> &mut ExecutionAlgorithmCore {
@@ -423,7 +406,7 @@ mod tests {
             .unwrap();
     }
 
-    fn add_instrument_to_cache(algo: &mut TwapAlgorithm) {
+    fn add_instrument_to_cache(algo: &TwapAlgorithm) {
         use nautilus_model::instruments::{InstrumentAny, stubs::crypto_perpetual_ethusdt};
 
         let instrument = crypto_perpetual_ethusdt();
@@ -570,7 +553,7 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
-        add_instrument_to_cache(&mut algo);
+        add_instrument_to_cache(&algo);
 
         let mut params = IndexMap::new();
         params.insert(Ustr::from("horizon_secs"), Ustr::from("30"));
@@ -588,7 +571,7 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
-        add_instrument_to_cache(&mut algo);
+        add_instrument_to_cache(&algo);
 
         let mut params = IndexMap::new();
         params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
@@ -614,7 +597,7 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
-        add_instrument_to_cache(&mut algo);
+        add_instrument_to_cache(&algo);
 
         // 1.2 qty over 60s with 20s intervals = 3 intervals of 0.4 each (divides evenly)
         let mut params = IndexMap::new();
@@ -640,7 +623,7 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
-        add_instrument_to_cache(&mut algo);
+        add_instrument_to_cache(&algo);
 
         // 1.0 qty over 60s with 20s intervals = 3 intervals
         // Raw is scaled to FIXED_PRECISION: 9 (standard) or 16 (high-precision)
@@ -679,7 +662,7 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
-        add_instrument_to_cache(&mut algo);
+        add_instrument_to_cache(&algo);
 
         // Use qty that divides evenly: 1.2 / 3 = 0.4 each
         let mut params = IndexMap::new();
@@ -707,7 +690,7 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
-        add_instrument_to_cache(&mut algo);
+        add_instrument_to_cache(&algo);
 
         // 2 intervals: first spawned immediately, one in scheduled_sizes
         let mut params = IndexMap::new();
@@ -735,7 +718,7 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
-        add_instrument_to_cache(&mut algo);
+        add_instrument_to_cache(&algo);
 
         let mut params = IndexMap::new();
         params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
@@ -782,7 +765,7 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
-        add_instrument_to_cache(&mut algo);
+        add_instrument_to_cache(&algo);
 
         let mut params = IndexMap::new();
         params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
@@ -813,7 +796,7 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
-        add_instrument_to_cache(&mut algo);
+        add_instrument_to_cache(&algo);
 
         // Use fractional interval like Python tests: 3 second horizon, 0.5 second interval
         let mut params = IndexMap::new();
@@ -889,7 +872,7 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
-        add_instrument_to_cache(&mut algo);
+        add_instrument_to_cache(&algo);
 
         let mut params = IndexMap::new();
         params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
@@ -908,7 +891,7 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
-        add_instrument_to_cache(&mut algo);
+        add_instrument_to_cache(&algo);
 
         let mut params = IndexMap::new();
         params.insert(Ustr::from("horizon_secs"), Ustr::from("-10"));
@@ -927,7 +910,7 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
-        add_instrument_to_cache(&mut algo);
+        add_instrument_to_cache(&algo);
 
         let mut params = IndexMap::new();
         params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
@@ -946,7 +929,7 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
-        add_instrument_to_cache(&mut algo);
+        add_instrument_to_cache(&algo);
 
         let mut params = IndexMap::new();
         params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
@@ -964,7 +947,7 @@ mod tests {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
 
-        add_instrument_to_cache(&mut algo);
+        add_instrument_to_cache(&algo);
 
         let mut params = IndexMap::new();
         params.insert(Ustr::from("horizon_secs"), Ustr::from("inf"));

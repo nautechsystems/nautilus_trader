@@ -20,30 +20,36 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use ahash::AHashSet;
 use async_trait::async_trait;
+use indexmap::IndexSet;
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
     clock::TestClock,
-    messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateOrderStatusReports,
-        GeneratePositionStatusReports, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
-        SubmitOrderList,
+    messages::{
+        ExecutionReport,
+        execution::{
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateOrderStatusReports,
+            GeneratePositionStatusReports, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+            SubmitOrderList, TradingCommand,
+        },
     },
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::{
     engine::ExecutionEngine, reconciliation::process_mass_status_for_reconciliation,
 };
-use nautilus_live::manager::{ExecutionManager, ExecutionManagerConfig, ExecutionReport};
+use nautilus_live::manager::{ExecutionManager, ExecutionManagerConfig};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
         AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
-        PositionSideSpecified, TimeInForce,
+        PositionSideSpecified, TimeInForce, TriggerType,
     },
-    events::{OrderEventAny, OrderFilled, account::state::AccountState},
+    events::{
+        OrderEventAny, OrderFilled, OrderPendingCancel, OrderPendingUpdate,
+        account::state::AccountState,
+    },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
         TraderId, Venue, VenueOrderId,
@@ -128,7 +134,14 @@ impl TestContext {
             .unwrap();
     }
 
-    fn add_position(&self, position: Position) {
+    fn add_order_with_client_id(&self, order: OrderAny, client_id: ClientId) {
+        self.cache
+            .borrow_mut()
+            .add_order(order, None, Some(client_id), false)
+            .unwrap();
+    }
+
+    fn add_position(&self, position: &Position) {
         self.cache
             .borrow_mut()
             .add_position(position, OmsType::Hedging)
@@ -260,46 +273,139 @@ fn test_fill_deduplication_prune_removes_expired() {
 }
 
 #[rstest]
-fn test_reconcile_report_returns_empty_when_order_not_in_cache() {
-    let mut ctx = TestContext::new();
-    let client_order_id = ClientOrderId::from("O-MISSING");
-
-    let report = ExecutionReport {
-        client_order_id,
-        venue_order_id: Some(VenueOrderId::from("V-001")),
-        status: OrderStatus::Accepted,
-        filled_qty: Quantity::from(0),
-        avg_px: None,
-        ts_event: UnixNanos::from(1_000_000),
+fn test_observe_order_report_clears_inflight_tracking() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 5,
+        ..Default::default()
     };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-001");
 
-    let events = ctx.manager.reconcile_report(report).unwrap();
+    ctx.add_instrument(test_instrument());
+    let order = create_submitted_order("O-001", instrument_id, OrderSide::Buy, "1.0", "3000.00");
+    ctx.add_order(order);
 
-    assert!(events.is_empty());
+    // Register as inflight
+    ctx.manager.register_inflight(client_order_id);
+
+    // Simulate venue responding with an OrderStatusReport
+    let order_report = create_order_status_report(
+        Some(client_order_id),
+        VenueOrderId::from("V-001"),
+        instrument_id,
+        OrderStatus::Accepted,
+        Quantity::from("1.0"),
+        Quantity::from(0),
+    );
+    let report = ExecutionReport::Order(Box::new(order_report));
+
+    ctx.manager.observe_execution_report(&report);
+
+    // Advance time past threshold so inflight check would trigger if still tracked
+    ctx.advance_time(200_000_000);
+
+    // Inflight check should return empty — tracking was cleared by observation
+    let result = ctx.manager.check_inflight_orders();
+    assert!(result.events.is_empty());
 }
 
 #[rstest]
-fn test_reconcile_report_handles_missing_venue_order_id() {
+fn test_observe_pending_order_report_keeps_inflight_tracking() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 3,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-PENDING");
+
+    ctx.add_instrument(test_instrument());
+    let order =
+        create_submitted_order("O-PENDING", instrument_id, OrderSide::Buy, "1.0", "3000.00");
+    ctx.add_order(order);
+
+    ctx.manager.register_inflight(client_order_id);
+
+    // Venue reports PendingUpdate (interim acknowledgement, not terminal)
+    let order_report = create_order_status_report(
+        Some(client_order_id),
+        VenueOrderId::from("V-001"),
+        instrument_id,
+        OrderStatus::PendingUpdate,
+        Quantity::from("1.0"),
+        Quantity::from(0),
+    );
+    let report = ExecutionReport::Order(Box::new(order_report));
+
+    ctx.manager.observe_execution_report(&report);
+
+    // Inflight tracking should still be active
+    ctx.advance_time(200_000_000);
+    let result = ctx.manager.check_inflight_orders();
+
+    // Order is still tracked: should generate a query (retry 1 < max 3)
+    assert_eq!(result.queries.len(), 1);
+    assert!(result.events.is_empty());
+}
+
+#[rstest]
+fn test_observe_fill_report_does_not_mark_fill_processed() {
+    // Fill dedup marking is deferred to node.rs after dispatch to avoid
+    // permanently losing fills when the execution engine cannot apply them
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let trade_id = TradeId::from("T-001");
+
+    ctx.add_instrument(test_instrument());
+
+    let fill_report = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        VenueOrderId::from("V-001"),
+        trade_id,
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::new(0.0, Currency::USDT()),
+        LiquiditySide::Maker,
+        Some(ClientOrderId::from("O-001")),
+        None, // venue_position_id
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None, // report_id
+    );
+    let report = ExecutionReport::Fill(Box::new(fill_report));
+
+    ctx.manager.observe_execution_report(&report);
+
+    // observe_execution_report should NOT mark fills as processed;
+    // that happens post-dispatch in the event loop
+    assert!(!ctx.manager.is_fill_recently_processed(&trade_id));
+}
+
+#[rstest]
+fn test_observe_position_report_records_activity() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
 
-    ctx.add_instrument(test_instrument());
-    let order = create_limit_order("O-001", instrument_id, OrderSide::Buy, "1.0", "3000.00");
-    ctx.add_order(order);
+    let position_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("1.0"),
+        UnixNanos::from(3_000_000),
+        UnixNanos::from(3_000_000),
+        None, // report_id
+        None, // venue_position_id
+        Some(dec!(3000.0)),
+    );
+    let report = ExecutionReport::Position(Box::new(position_report));
 
-    let report = ExecutionReport {
-        client_order_id: ClientOrderId::from("O-001"),
-        venue_order_id: None, // Missing venue order ID
-        status: OrderStatus::Accepted,
-        filled_qty: Quantity::from(0),
-        avg_px: None,
-        ts_event: UnixNanos::from(1_000_000),
-    };
-
-    let events = ctx.manager.reconcile_report(report).unwrap();
-
-    // Should return empty since venue_order_id is required
-    assert!(events.is_empty());
+    // Should complete without panic — position activity is recorded internally
+    ctx.manager.observe_execution_report(&report);
 }
 
 #[tokio::test]
@@ -559,14 +665,18 @@ async fn test_triggered_event_generated_before_canceled() {
 
     ctx.add_instrument(test_instrument());
 
-    // Create and cache an accepted order
-    let mut order = create_submitted_order(
-        "O-TRIG-CANCEL",
-        instrument_id,
-        OrderSide::Buy,
-        "1.0",
-        "3000.00",
-    );
+    // Create and cache an accepted StopLimit order (must be triggerable)
+    let mut order = OrderTestBuilder::new(OrderType::StopLimit)
+        .client_order_id(client_order_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("3000.00"))
+        .trigger_price(Price::from("3100.00"))
+        .trigger_type(TriggerType::LastPrice)
+        .build();
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    order.apply(submitted).unwrap();
     let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
     order.apply(accepted).unwrap();
     ctx.add_order(order);
@@ -1177,12 +1287,12 @@ fn test_inflight_order_generates_rejection_after_max_retries() {
     ctx.manager.register_inflight(client_order_id);
     ctx.advance_time(200_000_000); // 200ms, past threshold
 
-    let events = ctx.manager.check_inflight_orders();
+    let result = ctx.manager.check_inflight_orders();
 
-    assert_eq!(events.len(), 1);
-    assert!(matches!(events[0], OrderEventAny::Rejected(_)));
+    assert_eq!(result.events.len(), 1);
+    assert!(matches!(result.events[0], OrderEventAny::Rejected(_)));
 
-    if let OrderEventAny::Rejected(rejected) = &events[0] {
+    if let OrderEventAny::Rejected(rejected) = &result.events[0] {
         assert_eq!(rejected.client_order_id, client_order_id);
         assert_eq!(rejected.reason.as_str(), "INFLIGHT_TIMEOUT");
     }
@@ -1215,10 +1325,10 @@ fn test_inflight_check_skips_filtered_order_ids() {
     ctx.manager.register_inflight(filtered_id);
     ctx.advance_time(200_000_000);
 
-    let events = ctx.manager.check_inflight_orders();
+    let result = ctx.manager.check_inflight_orders();
 
     // Filtered order should not generate rejection
-    assert!(events.is_empty());
+    assert!(result.events.is_empty());
 }
 
 #[rstest]
@@ -1226,7 +1336,6 @@ fn test_config_default_values() {
     let config = ExecutionManagerConfig::default();
 
     assert!(config.reconciliation);
-    assert_eq!(config.reconciliation_startup_delay_secs, 10.0);
     assert_eq!(config.lookback_mins, Some(60));
     assert!(!config.filter_unclaimed_external);
     assert!(!config.filter_position_reports);
@@ -1373,21 +1482,396 @@ fn test_inflight_increments_retry_count_before_max() {
 
     ctx.manager.register_inflight(client_order_id);
 
-    // First check - past threshold, retry count becomes 1
+    // First check - past threshold, retry count becomes 1, generates QueryOrder
     ctx.advance_time(200_000_000);
-    let events1 = ctx.manager.check_inflight_orders();
-    assert!(events1.is_empty()); // Not at max yet
+    let result1 = ctx.manager.check_inflight_orders();
+    assert!(result1.events.is_empty()); // Not at max yet
+    assert_eq!(result1.queries.len(), 1);
 
-    // Second check - retry count becomes 2
+    // Second check - retry count becomes 2, generates QueryOrder
     ctx.advance_time(200_000_000);
-    let events2 = ctx.manager.check_inflight_orders();
-    assert!(events2.is_empty()); // Still not at max
+    let result2 = ctx.manager.check_inflight_orders();
+    assert!(result2.events.is_empty()); // Still not at max
+    assert_eq!(result2.queries.len(), 1);
 
     // Third check - retry count becomes 3, equals max, generates rejection
     ctx.advance_time(200_000_000);
-    let events3 = ctx.manager.check_inflight_orders();
-    assert_eq!(events3.len(), 1);
-    assert!(matches!(events3[0], OrderEventAny::Rejected(_)));
+    let result3 = ctx.manager.check_inflight_orders();
+    assert_eq!(result3.events.len(), 1);
+    assert!(matches!(result3.events[0], OrderEventAny::Rejected(_)));
+    assert!(result3.queries.is_empty());
+}
+
+#[rstest]
+fn test_inflight_pending_update_generates_canceled() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 1,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-PENDING-UPD");
+    let venue_order_id = VenueOrderId::from("V-001");
+
+    ctx.add_instrument(test_instrument());
+
+    let order = create_pending_update_order(
+        "O-PENDING-UPD",
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+        venue_order_id,
+    );
+    ctx.add_order(order);
+
+    ctx.manager.register_inflight(client_order_id);
+    ctx.advance_time(200_000_000); // 200ms, past threshold
+
+    let result = ctx.manager.check_inflight_orders();
+
+    assert_eq!(result.events.len(), 1);
+    assert!(
+        matches!(result.events[0], OrderEventAny::Canceled(_)),
+        "Expected Canceled for PendingUpdate, was {:?}",
+        result.events[0]
+    );
+
+    if let OrderEventAny::Canceled(canceled) = &result.events[0] {
+        assert_eq!(canceled.client_order_id, client_order_id);
+    }
+}
+
+#[rstest]
+fn test_inflight_pending_cancel_generates_canceled() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 1,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-PENDING-CXL");
+    let venue_order_id = VenueOrderId::from("V-002");
+
+    ctx.add_instrument(test_instrument());
+
+    let order = create_pending_cancel_order(
+        "O-PENDING-CXL",
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+        venue_order_id,
+    );
+    ctx.add_order(order);
+
+    ctx.manager.register_inflight(client_order_id);
+    ctx.advance_time(200_000_000);
+
+    let result = ctx.manager.check_inflight_orders();
+
+    assert_eq!(result.events.len(), 1);
+    assert!(
+        matches!(result.events[0], OrderEventAny::Canceled(_)),
+        "Expected Canceled for PendingCancel, was {:?}",
+        result.events[0]
+    );
+
+    if let OrderEventAny::Canceled(canceled) = &result.events[0] {
+        assert_eq!(canceled.client_order_id, client_order_id);
+    }
+}
+
+#[rstest]
+fn test_inflight_generates_query_before_max_retries() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 3,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-QUERY");
+
+    ctx.add_instrument(test_instrument());
+    let order = create_submitted_order("O-QUERY", instrument_id, OrderSide::Buy, "1.0", "3000.00");
+    ctx.add_order(order);
+
+    ctx.manager.register_inflight(client_order_id);
+
+    // First check - past threshold, retry 1 < max 3 -> generates QueryOrder
+    ctx.advance_time(200_000_000);
+    let result = ctx.manager.check_inflight_orders();
+
+    assert!(
+        result.events.is_empty(),
+        "Should not generate terminal events yet"
+    );
+    assert_eq!(result.queries.len(), 1, "Should generate one QueryOrder");
+
+    if let TradingCommand::QueryOrder(query) = &result.queries[0] {
+        assert_eq!(query.client_order_id, client_order_id);
+    } else {
+        panic!("Expected QueryOrder, was {:?}", result.queries[0]);
+    }
+}
+
+#[rstest]
+fn test_inflight_no_query_at_max_retries() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 2,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-MAX");
+
+    ctx.add_instrument(test_instrument());
+    let order = create_submitted_order("O-MAX", instrument_id, OrderSide::Buy, "1.0", "3000.00");
+    ctx.add_order(order);
+
+    ctx.manager.register_inflight(client_order_id);
+
+    // First check - intermediate, generates query
+    ctx.advance_time(200_000_000);
+    let result1 = ctx.manager.check_inflight_orders();
+    assert!(result1.events.is_empty());
+    assert_eq!(result1.queries.len(), 1);
+
+    // Second check - at max retries, generates terminal event only
+    ctx.advance_time(200_000_000);
+    let result2 = ctx.manager.check_inflight_orders();
+
+    assert_eq!(
+        result2.events.len(),
+        1,
+        "Should generate terminal event at max retries"
+    );
+    assert!(
+        result2.queries.is_empty(),
+        "Should not generate queries at max retries"
+    );
+    assert!(matches!(result2.events[0], OrderEventAny::Rejected(_)));
+}
+
+#[rstest]
+fn test_inflight_query_preserves_client_id_routing() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 3,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-ROUTED");
+    let client_id = ClientId::from("EXEC-002");
+
+    ctx.add_instrument(test_instrument());
+    let order = create_submitted_order("O-ROUTED", instrument_id, OrderSide::Buy, "1.0", "3000.00");
+    ctx.add_order_with_client_id(order, client_id);
+
+    ctx.manager.register_inflight(client_order_id);
+    ctx.advance_time(200_000_000);
+
+    let result = ctx.manager.check_inflight_orders();
+    assert_eq!(result.queries.len(), 1);
+
+    if let TradingCommand::QueryOrder(query) = &result.queries[0] {
+        assert_eq!(
+            query.client_id,
+            Some(client_id),
+            "QueryOrder should preserve the execution client routing"
+        );
+        assert_eq!(query.client_order_id, client_order_id);
+    } else {
+        panic!("Expected QueryOrder, was {:?}", result.queries[0]);
+    }
+}
+
+#[rstest]
+fn test_inflight_query_throttled_within_threshold() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 5,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-THROTTLE");
+
+    ctx.add_instrument(test_instrument());
+    let order = create_submitted_order(
+        "O-THROTTLE",
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+    );
+    ctx.add_order(order);
+
+    ctx.manager.register_inflight(client_order_id);
+
+    // First check past threshold generates a query
+    ctx.advance_time(200_000_000);
+    let result1 = ctx.manager.check_inflight_orders();
+    assert_eq!(result1.queries.len(), 1);
+
+    // Immediate second check without advancing time is throttled
+    let result2 = ctx.manager.check_inflight_orders();
+    assert!(result2.queries.is_empty(), "Query should be throttled");
+    assert!(result2.events.is_empty());
+
+    // Advance past threshold again, query should fire
+    ctx.advance_time(200_000_000);
+    let result3 = ctx.manager.check_inflight_orders();
+    assert_eq!(result3.queries.len(), 1);
+}
+
+#[rstest]
+fn test_inflight_accepted_order_at_max_retries_no_event() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 1,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-ACCEPTED");
+    let venue_order_id = VenueOrderId::from("V-001");
+
+    ctx.add_instrument(test_instrument());
+    let order = create_accepted_order(
+        "O-ACCEPTED",
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+        venue_order_id,
+    );
+    ctx.add_order(order);
+
+    ctx.manager.register_inflight(client_order_id);
+    ctx.advance_time(200_000_000);
+
+    let result = ctx.manager.check_inflight_orders();
+
+    // Accepted orders are already resolved, no terminal event generated
+    assert!(result.events.is_empty());
+    assert!(result.queries.is_empty());
+
+    // Tracking should be cleared, subsequent check also empty
+    ctx.advance_time(200_000_000);
+    let result2 = ctx.manager.check_inflight_orders();
+    assert!(result2.events.is_empty());
+}
+
+#[rstest]
+fn test_inflight_order_not_in_cache_at_max_retries_no_event() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 1,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let client_order_id = ClientOrderId::from("O-MISSING");
+
+    // Register inflight without adding order to cache
+    ctx.manager.register_inflight(client_order_id);
+    ctx.advance_time(200_000_000);
+
+    let result = ctx.manager.check_inflight_orders();
+
+    assert!(result.events.is_empty());
+    assert!(result.queries.is_empty());
+
+    // Tracking cleared, subsequent check also empty
+    ctx.advance_time(200_000_000);
+    let result2 = ctx.manager.check_inflight_orders();
+    assert!(result2.events.is_empty());
+}
+
+#[rstest]
+fn test_inflight_terminal_event_clears_tracking() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 1,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-TERM");
+
+    ctx.add_instrument(test_instrument());
+    let order = create_submitted_order("O-TERM", instrument_id, OrderSide::Buy, "1.0", "3000.00");
+    ctx.add_order(order);
+
+    ctx.manager.register_inflight(client_order_id);
+    ctx.advance_time(200_000_000);
+
+    // First check generates terminal rejection
+    let result1 = ctx.manager.check_inflight_orders();
+    assert_eq!(result1.events.len(), 1);
+    assert!(matches!(result1.events[0], OrderEventAny::Rejected(_)));
+
+    // Second check should return empty (tracking was cleared)
+    ctx.advance_time(200_000_000);
+    let result2 = ctx.manager.check_inflight_orders();
+    assert!(result2.events.is_empty());
+    assert!(result2.queries.is_empty());
+}
+
+#[rstest]
+fn test_observe_fill_report_without_client_order_id_uses_cache_fallback() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 5,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let trade_id = TradeId::from("T-FALLBACK");
+
+    ctx.add_instrument(test_instrument());
+
+    // Add order to cache so venue_order_id -> client_order_id mapping exists
+    let mut order =
+        create_submitted_order("O-001", instrument_id, OrderSide::Buy, "1.0", "3000.00");
+    let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
+    order.apply(accepted).unwrap();
+    ctx.add_order(order);
+
+    // Register inflight so we can verify activity recording deferred the check
+    ctx.manager.register_inflight(client_order_id);
+
+    // Create fill report without client_order_id
+    let fill_report = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        trade_id,
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::new(0.0, Currency::USDT()),
+        LiquiditySide::Maker,
+        None, // No client_order_id: triggers cache fallback
+        None,
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+    );
+    let report = ExecutionReport::Fill(Box::new(fill_report));
+
+    // observe should resolve client_order_id via cache and record activity
+    ctx.manager.observe_execution_report(&report);
+
+    // Fill marking is deferred to post-dispatch in the event loop
+    assert!(!ctx.manager.is_fill_recently_processed(&trade_id));
 }
 
 #[tokio::test]
@@ -1501,8 +1985,8 @@ fn test_clear_recon_tracking_removes_inflight() {
     ctx.advance_time(200_000_000);
 
     // Check should not generate events since order was cleared
-    let events = ctx.manager.check_inflight_orders();
-    assert!(events.is_empty());
+    let result = ctx.manager.check_inflight_orders();
+    assert!(result.events.is_empty());
 }
 
 /// Creates an accepted order with venue_order_id set
@@ -1517,6 +2001,70 @@ fn create_accepted_order(
     let mut order = create_submitted_order(client_order_id, instrument_id, side, quantity, price);
     let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
     order.apply(accepted).unwrap();
+    order
+}
+
+fn create_pending_update_order(
+    client_order_id: &str,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    quantity: &str,
+    price: &str,
+    venue_order_id: VenueOrderId,
+) -> OrderAny {
+    let mut order = create_accepted_order(
+        client_order_id,
+        instrument_id,
+        side,
+        quantity,
+        price,
+        venue_order_id,
+    );
+    let pending = OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        test_account_id(),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(venue_order_id),
+    ));
+    order.apply(pending).unwrap();
+    order
+}
+
+fn create_pending_cancel_order(
+    client_order_id: &str,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    quantity: &str,
+    price: &str,
+    venue_order_id: VenueOrderId,
+) -> OrderAny {
+    let mut order = create_accepted_order(
+        client_order_id,
+        instrument_id,
+        side,
+        quantity,
+        price,
+        venue_order_id,
+    );
+    let pending = OrderEventAny::PendingCancel(OrderPendingCancel::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        test_account_id(),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(venue_order_id),
+    ));
+    order.apply(pending).unwrap();
     order
 }
 
@@ -3192,7 +3740,7 @@ async fn test_reconcile_hedge_position_matching_quantities() {
 
     // Add existing position to cache with 5.0 qty
     let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -3244,7 +3792,7 @@ async fn test_reconcile_hedge_position_discrepancy_generates_order() {
 
     // Add existing position to cache with 5.0 qty
     let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -3340,7 +3888,7 @@ async fn test_reconcile_hedge_position_discrepancy_disabled() {
 
     // Add existing position with different qty than venue reports
     let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -3985,7 +4533,7 @@ async fn test_netting_position_cross_zero_long_to_short() {
         "5.0",
         "3000.00",
     );
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -4041,6 +4589,10 @@ async fn test_netting_position_cross_zero_long_to_short() {
     // Second fill should be SELL 3.0 (open short)
     assert_eq!(fill_events[1].order_side, OrderSide::Sell);
     assert_eq!(fill_events[1].last_qty, Quantity::from("3.0"));
+
+    // Close and open legs must hash to distinct venue_order_ids so the engine
+    // can tell them apart across reconciliation replays.
+    assert_ne!(fill_events[0].venue_order_id, fill_events[1].venue_order_id);
 }
 
 #[tokio::test]
@@ -4060,7 +4612,7 @@ async fn test_netting_position_cross_zero_short_to_long() {
         "4.0",
         "3000.00",
     );
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -4116,6 +4668,10 @@ async fn test_netting_position_cross_zero_short_to_long() {
     // Second fill should be BUY 2.0 (open long)
     assert_eq!(fill_events[1].order_side, OrderSide::Buy);
     assert_eq!(fill_events[1].last_qty, Quantity::from("2.0"));
+
+    // Close and open legs must hash to distinct venue_order_ids so the engine
+    // can tell them apart across reconciliation replays.
+    assert_ne!(fill_events[0].venue_order_id, fill_events[1].venue_order_id);
 }
 
 #[tokio::test]
@@ -4135,7 +4691,7 @@ async fn test_netting_position_flat_report_closes_cached_position() {
         "5.0",
         "3000.00",
     );
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -4848,7 +5404,7 @@ async fn test_cross_zero_with_missing_cached_avg_px_returns_none() {
         "5.0",
         "0.00", // Zero price - will be treated as no avg_px in some paths
     );
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -4899,7 +5455,7 @@ async fn test_cross_zero_with_missing_venue_avg_px_closes_only() {
         "5.0",
         "3000.00",
     );
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
@@ -5548,7 +6104,7 @@ async fn test_filtered_client_order_ids_skips_matching_orders() {
     // Orders in filtered_client_order_ids should be skipped during reconciliation
     let filtered_id = ClientOrderId::from("O-FILTERED-001");
     let config = ExecutionManagerConfig {
-        filtered_client_order_ids: AHashSet::from([filtered_id]),
+        filtered_client_order_ids: IndexSet::from([filtered_id]),
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -5598,7 +6154,7 @@ async fn test_filtered_client_order_ids_skips_orphan_fills() {
     let filtered_id = ClientOrderId::from("O-FILTERED-002");
     let venue_order_id = VenueOrderId::from("V-FILTERED-002");
     let config = ExecutionManagerConfig {
-        filtered_client_order_ids: AHashSet::from([filtered_id]),
+        filtered_client_order_ids: IndexSet::from([filtered_id]),
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -5666,7 +6222,7 @@ async fn test_filtered_client_order_ids_skips_orphan_fills_via_venue_order_id_lo
     let filtered_id = ClientOrderId::from("O-FILTERED-003");
     let venue_order_id = VenueOrderId::from("V-FILTERED-003");
     let config = ExecutionManagerConfig {
-        filtered_client_order_ids: AHashSet::from([filtered_id]),
+        filtered_client_order_ids: IndexSet::from([filtered_id]),
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -5733,7 +6289,7 @@ async fn test_reconciliation_instrument_ids_filters_other_instruments() {
     // Only instruments in reconciliation_instrument_ids should be reconciled
     let included_instrument = test_instrument_id();
     let config = ExecutionManagerConfig {
-        reconciliation_instrument_ids: AHashSet::from([included_instrument]),
+        reconciliation_instrument_ids: IndexSet::from([included_instrument]),
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -5809,7 +6365,7 @@ async fn test_reconciliation_instrument_ids_filters_position_reports() {
     // Position reports for instruments NOT in reconciliation_instrument_ids should be skipped
     let included_instrument_id = test_instrument_id();
     let config = ExecutionManagerConfig {
-        reconciliation_instrument_ids: AHashSet::from([included_instrument_id]),
+        reconciliation_instrument_ids: IndexSet::from([included_instrument_id]),
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -5921,35 +6477,35 @@ impl ExecutionClient for MockExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, _cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, _cmd: SubmitOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn submit_order_list(&self, _cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, _cmd: SubmitOrderList) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn modify_order(&self, _cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, _cmd: ModifyOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn cancel_order(&self, _cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order(&self, _cmd: CancelOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn cancel_all_orders(&self, _cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, _cmd: CancelAllOrders) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, _cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, _cmd: BatchCancelOrders) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn query_order(&self, _cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -6002,8 +6558,8 @@ async fn test_check_open_orders_defers_with_recent_local_activity() {
     .with_avg_px(100.0)
     .unwrap();
 
-    let mock_client = Rc::new(MockExecutionClient::new(vec![report]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client];
+    let mock_client = MockExecutionClient::new(vec![report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     let events = ctx.manager.check_open_orders(&clients).await;
 
@@ -6058,8 +6614,8 @@ async fn test_check_open_orders_proceeds_after_threshold_exceeded() {
     .with_avg_px(100.0)
     .unwrap();
 
-    let mock_client = Rc::new(MockExecutionClient::new(vec![report]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client];
+    let mock_client = MockExecutionClient::new(vec![report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     let events = ctx.manager.check_open_orders(&clients).await;
 
@@ -6115,8 +6671,8 @@ async fn test_check_open_orders_proceeds_without_local_activity() {
     .with_avg_px(100.0)
     .unwrap();
 
-    let mock_client = Rc::new(MockExecutionClient::new(vec![report]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client];
+    let mock_client = MockExecutionClient::new(vec![report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     let events = ctx.manager.check_open_orders(&clients).await;
 
@@ -6157,9 +6713,9 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected() 
     ctx.add_order(order.clone());
     ctx.cache.borrow_mut().update_order(&order).unwrap();
 
-    // Venue returns no reports - order was never placed
-    let mock_client = Rc::new(MockExecutionClient::new(vec![]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client];
+    // Venue returns no reports, order was never placed
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     let events = ctx.manager.check_open_orders(&clients).await;
 
@@ -6189,10 +6745,10 @@ async fn test_position_check_retries_stops_after_max() {
 
     // Add position to cache but NOT the instrument — forces reconciliation to
     // return None on the cache.instrument() lookup
-    ctx.add_position(position);
+    ctx.add_position(&position);
 
-    let mock_client = Rc::new(MockExecutionClient::new(vec![]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client.clone()];
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     // First attempt: detects discrepancy, can't reconcile, retry count -> 1
     let events = ctx.manager.check_positions_consistency(&clients).await;
@@ -6222,9 +6778,9 @@ async fn test_position_check_retries_clears_when_discrepancy_resolves() {
     let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
 
     // First: add position without instrument to force a failed retry
-    ctx.add_position(position);
-    let mock_client = Rc::new(MockExecutionClient::new(vec![]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client.clone()];
+    ctx.add_position(&position);
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     let events = ctx.manager.check_positions_consistency(&clients).await;
     assert!(events.is_empty()); // Failed, retry count = 1
@@ -6255,10 +6811,10 @@ async fn test_position_check_stale_retries_pruned_when_position_closed() {
 
     ctx.add_instrument(instrument.clone());
     let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
-    ctx.add_position(position.clone());
+    ctx.add_position(&position);
 
-    let mock_client = Rc::new(MockExecutionClient::new(vec![]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client.clone()];
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     // First call: reconciliation succeeds (generates events to match venue=flat)
     let events = ctx.manager.check_positions_consistency(&clients).await;
@@ -6303,7 +6859,7 @@ async fn test_position_check_stale_retries_pruned_when_position_closed() {
         "3.0",
         "3100.00",
     );
-    ctx.add_position(position2);
+    ctx.add_position(&position2);
 
     // Should produce events (counter was pruned, not suppressed)
     let events = ctx.manager.check_positions_consistency(&clients).await;
@@ -6380,35 +6936,35 @@ impl ExecutionClient for MockPositionExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, _cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, _cmd: SubmitOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn submit_order_list(&self, _cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, _cmd: SubmitOrderList) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn modify_order(&self, _cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, _cmd: ModifyOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn cancel_order(&self, _cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order(&self, _cmd: CancelOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn cancel_all_orders(&self, _cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, _cmd: CancelAllOrders) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, _cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, _cmd: BatchCancelOrders) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn query_order(&self, _cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -6454,11 +7010,11 @@ async fn test_position_check_dedup_skips_second_hedge_position_same_instrument()
     );
 
     // Omit instrument from cache to force the retry path
-    ctx.add_position(pos_long);
-    ctx.add_position(pos_short);
+    ctx.add_position(&pos_long);
+    ctx.add_position(&pos_short);
 
-    let mock_client = Rc::new(MockExecutionClient::new(vec![]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client.clone()];
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     // Three cycles: each increments retry by 1 (not 2) thanks to dedup
     ctx.manager.check_positions_consistency(&clients).await;
@@ -6498,7 +7054,7 @@ async fn test_position_check_flat_venue_report_does_not_protect_stale_counter() 
         "5.0",
         "3000.00",
     );
-    ctx.add_position(position.clone());
+    ctx.add_position(&position);
 
     let flat_report = PositionStatusReport::new(
         test_account_id(),
@@ -6511,8 +7067,8 @@ async fn test_position_check_flat_venue_report_does_not_protect_stale_counter() 
         None,
         None,
     );
-    let mock_client = Rc::new(MockPositionExecutionClient::new(vec![], vec![flat_report]));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client.clone()];
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![flat_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     let events = ctx.manager.check_positions_consistency(&clients).await;
     assert!(!events.is_empty());
@@ -6552,7 +7108,7 @@ async fn test_position_check_flat_venue_report_does_not_protect_stale_counter() 
         "3.0",
         "3100.00",
     );
-    ctx.add_position(position2);
+    ctx.add_position(&position2);
 
     let events = ctx.manager.check_positions_consistency(&clients).await;
     assert!(
@@ -6581,7 +7137,7 @@ async fn test_position_check_nonflat_venue_report_protects_counter() {
         "5.0",
         "3000.00",
     );
-    ctx.add_position(position.clone());
+    ctx.add_position(&position);
 
     let venue_report = PositionStatusReport::new(
         test_account_id(),
@@ -6594,11 +7150,8 @@ async fn test_position_check_nonflat_venue_report_protects_counter() {
         None,
         Some(dec!(3000.00)),
     );
-    let mock_client = Rc::new(MockPositionExecutionClient::new(
-        vec![],
-        vec![venue_report.clone()],
-    ));
-    let clients: Vec<Rc<dyn ExecutionClient>> = vec![mock_client.clone()];
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report.clone()]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
 
     let events = ctx.manager.check_positions_consistency(&clients).await;
     assert!(!events.is_empty());
@@ -6637,7 +7190,7 @@ async fn test_position_check_nonflat_venue_report_protects_counter() {
         "3.0",
         "3100.00",
     );
-    ctx.add_position(position2);
+    ctx.add_position(&position2);
 
     // Counter retained — retries still exhausted
     let events = ctx.manager.check_positions_consistency(&clients).await;

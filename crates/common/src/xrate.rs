@@ -62,6 +62,7 @@ pub fn get_exchange_rate(
         PriceType::Ask => quotes_ask,
         PriceType::Mid => {
             let mut mid_quotes = AHashMap::new();
+
             for (pair, bid) in &quotes_bid {
                 let ask = quotes_ask
                     .get(pair)

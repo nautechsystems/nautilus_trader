@@ -22,6 +22,7 @@ use pyo3::prelude::*;
 use crate::{statistic::PortfolioStatistic, statistics::loser_min::MinLoser};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MinLoser {
     #[new]
     fn py_new() -> Self {
@@ -39,6 +40,7 @@ impl MinLoser {
     }
 
     #[pyo3(name = "calculate_from_realized_pnls")]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_calculate_from_realized_pnls(&mut self, realized_pnls: Vec<f64>) -> Option<f64> {
         self.calculate_from_realized_pnls(&realized_pnls)
     }

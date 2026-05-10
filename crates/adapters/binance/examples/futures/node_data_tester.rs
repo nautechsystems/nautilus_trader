@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Binance Futures USD-M adapter.
 //!
-//! Run with: `cargo run --example binance-futures-data-tester --package nautilus-binance`
+//! Run with: `cargo run --example binance-futures-data-tester --package nautilus-binance --features examples`
 //!
 //! Uses testnet by default for safety.
 
@@ -32,6 +32,7 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId},
     stubs::TestDefault,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 #[tokio::main]
@@ -51,6 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         environment: BinanceEnvironment::Testnet,
         api_key: None,
         api_secret: None,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -63,10 +65,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_data_client(None, Box::new(client_factory), Box::new(binance_config))?
         .build()?;
 
-    let tester_config = DataTesterConfig::new(client_id, instrument_ids)
-        .with_subscribe_book_at_interval(true)
-        .with_book_depth(NonZeroUsize::new(20))
-        .with_book_interval_ms(NonZeroUsize::new(10).unwrap());
+    let tester_config = DataTesterConfig::builder()
+        .client_id(client_id)
+        .instrument_ids(instrument_ids)
+        .subscribe_book_at_interval(true)
+        .book_depth(NonZeroUsize::new(20).unwrap())
+        .book_interval_ms(NonZeroUsize::new(10).unwrap())
+        .manage_book(true)
+        .build();
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

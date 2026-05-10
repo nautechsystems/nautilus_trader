@@ -24,23 +24,25 @@ use pyo3::prelude::*;
 use crate::config::{BlockchainDataClientConfig, DexPoolFilters};
 
 #[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
+#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.blockchain")]
 impl DexPoolFilters {
-    /// Creates a new `DexPoolFilters` instance.
+    /// Defines filtering criteria for the DEX pool universe that the data client will operate on.
     #[new]
     #[must_use]
     pub fn py_new(remove_pools_with_empty_erc20_fields: Option<bool>) -> Self {
-        Self::new(remove_pools_with_empty_erc20_fields)
+        Self::builder()
+            .maybe_remove_pools_with_empty_erc20fields(remove_pools_with_empty_erc20_fields)
+            .build()
     }
 }
 
 #[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
+#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.blockchain")]
 impl BlockchainDataClientConfig {
-    /// Creates a new `BlockchainDataClientConfig` instance.
+    /// Configuration for blockchain data clients.
     #[new]
-    #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (chain, dex_ids, http_rpc_url, rpc_requests_per_second=None, multicall_calls_per_rpc_request=None, wss_rpc_url=None, use_hypersync_for_live_data=true, from_block=None, pool_filters=None, postgres_cache_database_config=None))]
+    #[expect(clippy::too_many_arguments)]
+    #[pyo3(signature = (chain, dex_ids, http_rpc_url, rpc_requests_per_second=None, multicall_calls_per_rpc_request=None, wss_rpc_url=None, use_hypersync_for_live_data=true, from_block=None, pool_filters=None, postgres_cache_database_config=None, proxy_url=None))]
     fn py_new(
         #[gen_stub(
             override_type(
@@ -70,19 +72,21 @@ impl BlockchainDataClientConfig {
             ),
         )]
         postgres_cache_database_config: Option<PostgresConnectOptions>,
+        proxy_url: Option<String>,
     ) -> Self {
-        Self::new(
-            Arc::new(chain.clone()),
-            dex_ids,
-            http_rpc_url,
-            rpc_requests_per_second,
-            multicall_calls_per_rpc_request,
-            wss_rpc_url,
-            use_hypersync_for_live_data,
-            from_block,
-            pool_filters,
-            postgres_cache_database_config,
-        )
+        Self::builder()
+            .chain(Arc::new(chain.clone()))
+            .dex_ids(dex_ids)
+            .http_rpc_url(http_rpc_url)
+            .maybe_rpc_requests_per_second(rpc_requests_per_second)
+            .maybe_multicall_calls_per_rpc_request(multicall_calls_per_rpc_request)
+            .maybe_wss_rpc_url(wss_rpc_url)
+            .use_hypersync_for_live_data(use_hypersync_for_live_data)
+            .maybe_from_block(from_block)
+            .maybe_pool_filters(pool_filters)
+            .maybe_postgres_cache_database_config(postgres_cache_database_config)
+            .maybe_proxy_url(proxy_url)
+            .build()
     }
 
     /// Returns the chain configuration.
@@ -123,9 +127,15 @@ impl BlockchainDataClientConfig {
 
     /// Returns the starting block for sync.
     #[getter]
-    #[allow(clippy::wrong_self_convention)]
+    #[expect(clippy::wrong_self_convention)]
     const fn from_block(&self) -> Option<u64> {
         self.from_block
+    }
+
+    /// Returns the optional proxy URL for HTTP and WebSocket transports.
+    #[getter]
+    fn proxy_url(&self) -> Option<String> {
+        self.proxy_url.clone()
     }
 
     /// Returns a string representation of the configuration.

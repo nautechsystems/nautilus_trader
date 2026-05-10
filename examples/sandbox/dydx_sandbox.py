@@ -67,7 +67,6 @@ async def main():
         ),
         data_clients={
             "DYDX": DydxDataClientConfig(
-                wallet_address=None,  # 'DYDX_WALLET_ADDRESS' env var
                 instrument_provider=instrument_provider_config,
                 is_testnet=False,  # If client uses the testnet
             ),

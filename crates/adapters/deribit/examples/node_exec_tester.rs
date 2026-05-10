@@ -15,10 +15,10 @@
 
 //! Example demonstrating live execution testing with the Deribit adapter.
 //!
-//! Run with: `cargo run --example deribit-exec-tester --package nautilus-deribit`
+//! Run with: `cargo run --example deribit-exec-tester --package nautilus-deribit --features examples`
 //!
 //! For production, set USE_TESTNET=false:
-//! `USE_TESTNET=false cargo run --example deribit-exec-tester --package nautilus-deribit`
+//! `USE_TESTNET=false cargo run --example deribit-exec-tester --package nautilus-deribit --features examples`
 //!
 //! Environment variables:
 //! - DERIBIT_TESTNET_API_KEY / DERIBIT_API_KEY: Your Deribit API key
@@ -26,6 +26,7 @@
 
 use nautilus_common::enums::Environment;
 use nautilus_deribit::{
+    common::enums::DeribitEnvironment,
     config::{DeribitDataClientConfig, DeribitExecClientConfig},
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
     http::models::DeribitProductType,
@@ -35,14 +36,21 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
+use nautilus_trading::strategy::StrategyConfig;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    // Read USE_TESTNET from environment (default true for safety)
-    let use_testnet = std::env::var("USE_TESTNET").map_or(true, |v| v.to_lowercase() != "false");
+    // Read DERIBIT_ENVIRONMENT from environment (default testnet for safety)
+    let deribit_environment =
+        if std::env::var("USE_TESTNET").map_or(true, |v| v.to_lowercase() != "false") {
+            DeribitEnvironment::Testnet
+        } else {
+            DeribitEnvironment::Mainnet
+        };
 
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");
@@ -55,7 +63,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: None,    // Will use env var
         api_secret: None, // Will use env var
         product_types: vec![DeribitProductType::Future],
-        use_testnet,
+        environment: deribit_environment,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -65,7 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: None,    // Will use env var
         api_secret: None, // Will use env var
         product_types: vec![DeribitProductType::Future],
-        use_testnet,
+        environment: deribit_environment,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -81,20 +91,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let order_qty = Quantity::from(10); // 10 USD contracts (Deribit minimum)
 
-    let mut tester_config = ExecTesterConfig::new(
-        StrategyId::from("EXEC_TESTER-001"),
-        instrument_id,
-        client_id,
-        order_qty,
-    )
-    .with_subscribe_trades(true)
-    .with_subscribe_quotes(true)
-    .with_open_position_on_start(order_qty.as_decimal())
-    .with_use_post_only(true)
-    .with_log_data(false);
-
-    // Use UUIDs for unique client order IDs across restarts
-    tester_config.base.use_uuid_client_order_ids = true;
+    let tester_config = ExecTesterConfig::builder()
+        .base(StrategyConfig {
+            strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
+            external_order_claims: Some(vec![instrument_id]),
+            ..Default::default()
+        })
+        .instrument_id(instrument_id)
+        .client_id(client_id)
+        .order_qty(order_qty)
+        .open_position_on_start_qty(order_qty.as_decimal())
+        .use_post_only(true)
+        .log_data(false)
+        .build();
 
     let tester = ExecTester::new(tester_config);
 

@@ -39,7 +39,7 @@ flowchart LR
 | Component            | Purpose                                                    |
 |----------------------|------------------------------------------------------------|
 | `HttpClient`         | REST API communication.                                    |
-| `WebSocketClient`    | Real-time streaming connection.                            |
+| `WebSocketClient`    | Real‑time streaming connection.                            |
 | `InstrumentProvider` | Loads and parses instrument definitions from the venue.    |
 | `DataClient`         | Handles market data subscriptions and requests.            |
 | `ExecutionClient`    | Handles order submission, modification, and cancellation.  |
@@ -48,10 +48,11 @@ flowchart LR
 
 Instrument providers parse venue API responses into Nautilus `Instrument` objects.
 
-The use cases for the instruments available from an `InstrumentProvider` are either:
+An `InstrumentProvider` serves two use cases:
 
-- Used standalone to discover the instruments available for an integration, using these for research or backtesting purposes
-- Used in a `sandbox` or `live` [environment context](architecture.md#environment-contexts) for consumption by actors/strategies
+- Standalone discovery of available instruments for research or backtesting
+- Runtime loading in a `sandbox` or `live` [environment context](architecture.md#environment-contexts)
+  for actors and strategies
 
 ### Research and backtesting
 
@@ -96,10 +97,10 @@ if __name__ == "__main__":
 
 ### Live trading
 
-Each integration is implementation specific, and there are generally two options for the behavior of an `InstrumentProvider` within a `TradingNode` for live trading,
-as configured:
+Each integration handles this differently. An `InstrumentProvider` within a `TradingNode`
+generally offers two loading behaviors:
 
-- All instruments are automatically loaded on start:
+- Load all instruments on start:
 
 ```python
 from nautilus_trader.config import InstrumentProviderConfig
@@ -107,7 +108,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 InstrumentProviderConfig(load_all=True)
 ```
 
-- Only those instruments explicitly specified in the configuration are loaded on start:
+- Load only the instruments specified in configuration:
 
 ```python
 InstrumentProviderConfig(load_ids=["BTCUSDT-PERP.BINANCE", "ETHUSDT-PERP.BINANCE"])
@@ -120,7 +121,7 @@ and normalize incoming data into Nautilus types.
 
 ### Requesting data
 
-Actors and strategies can request data using built-in methods. The data is returned via callbacks:
+Actors and strategies can request data using built-in methods. Data returns via callbacks:
 
 ```python
 from nautilus_trader.model import Instrument, InstrumentId
@@ -178,12 +179,12 @@ Key responsibilities:
 - Reconcile order state with the venue.
 - Handle account and position updates.
 
-Order flow is managed through the `ExecutionEngine`, which routes commands to the appropriate
+The `ExecutionEngine` routes commands to the appropriate
 execution client based on the order's venue. See the [Execution](execution.md) guide for details
 on order management from a strategy perspective.
 
 :::tip
-For implementing a custom adapter, see the [Adapter Developer Guide](../developer_guide/adapters.md).
+For building a custom adapter, see the [Adapter Developer Guide](../developer_guide/adapters.md).
 :::
 
 ## Related guides

@@ -26,6 +26,7 @@ use anyhow::Context;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
+use nautilus_core::AtomicMap;
 use nautilus_model::{
     data::BarType,
     identifiers::{AccountId, ClientOrderId, InstrumentId},
@@ -34,13 +35,18 @@ use nautilus_model::{
 use nautilus_network::{
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, SubscriptionState, WebSocketClient, WebSocketConfig, channel_message_handler,
+        AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
+        channel_message_handler,
     },
 };
 use ustr::Ustr;
 
 use crate::{
-    common::{enums::HyperliquidBarInterval, parse::bar_type_to_interval},
+    common::{
+        consts::ws_url,
+        enums::{HyperliquidBarInterval, HyperliquidEnvironment},
+        parse::bar_type_to_interval,
+    },
     websocket::{
         enums::HyperliquidWsChannel,
         handler::{FeedHandler, HandlerCommand},
@@ -70,6 +76,10 @@ pub(super) enum AssetContextDataType {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.hyperliquid")
+)]
 pub struct HyperliquidWebSocketClient {
     url: String,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
@@ -78,12 +88,14 @@ pub struct HyperliquidWebSocketClient {
     out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
     auth_tracker: AuthTracker,
     subscriptions: SubscriptionState,
-    instruments: Arc<DashMap<Ustr, InstrumentAny>>,
-    bar_types: Arc<DashMap<String, BarType>>,
+    instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
+    bar_types: Arc<AtomicMap<String, BarType>>,
     asset_context_subs: Arc<DashMap<Ustr, AHashSet<AssetContextDataType>>>,
     cloid_cache: Arc<DashMap<Ustr, ClientOrderId>>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
     account_id: Option<AccountId>,
+    transport_backend: TransportBackend,
+    proxy_url: Option<String>,
 }
 
 impl Clone for HyperliquidWebSocketClient {
@@ -102,6 +114,8 @@ impl Clone for HyperliquidWebSocketClient {
             cloid_cache: Arc::clone(&self.cloid_cache),
             task_handle: None,
             account_id: self.account_id,
+            transport_backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         }
     }
 }
@@ -109,19 +123,19 @@ impl Clone for HyperliquidWebSocketClient {
 impl HyperliquidWebSocketClient {
     /// Creates a new Hyperliquid WebSocket client without connecting.
     ///
-    /// If `url` is `None`, the appropriate URL will be determined based on the `testnet` flag:
-    /// - `testnet=false`: `wss://api.hyperliquid.xyz/ws`
-    /// - `testnet=true`: `wss://api.hyperliquid-testnet.xyz/ws`
+    /// If `url` is `None`, the appropriate URL will be determined from the `environment`:
+    /// - `Mainnet`: `wss://api.hyperliquid.xyz/ws`
+    /// - `Testnet`: `wss://api.hyperliquid-testnet.xyz/ws`
     ///
     /// The connection will be established when `connect()` is called.
-    pub fn new(url: Option<String>, testnet: bool, account_id: Option<AccountId>) -> Self {
-        let url = url.unwrap_or_else(|| {
-            if testnet {
-                "wss://api.hyperliquid-testnet.xyz/ws".to_string()
-            } else {
-                "wss://api.hyperliquid.xyz/ws".to_string()
-            }
-        });
+    pub fn new(
+        url: Option<String>,
+        environment: HyperliquidEnvironment,
+        account_id: Option<AccountId>,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
+    ) -> Self {
+        let url = url.unwrap_or_else(|| ws_url(environment).to_string());
         let connection_mode = Arc::new(ArcSwap::new(Arc::new(AtomicU8::new(
             ConnectionMode::Closed as u8,
         ))));
@@ -131,8 +145,8 @@ impl HyperliquidWebSocketClient {
             signal: Arc::new(AtomicBool::new(false)),
             auth_tracker: AuthTracker::new(),
             subscriptions: SubscriptionState::new(':'),
-            instruments: Arc::new(DashMap::new()),
-            bar_types: Arc::new(DashMap::new()),
+            instruments: Arc::new(AtomicMap::new()),
+            bar_types: Arc::new(AtomicMap::new()),
             asset_context_subs: Arc::new(DashMap::new()),
             cloid_cache: Arc::new(DashMap::new()),
             cmd_tx: {
@@ -143,6 +157,8 @@ impl HyperliquidWebSocketClient {
             out_rx: None,
             task_handle: None,
             account_id,
+            transport_backend,
+            proxy_url,
         }
     }
 
@@ -165,6 +181,8 @@ impl HyperliquidWebSocketClient {
             reconnect_jitter_ms: Some(200),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
         let client =
             WebSocketClient::connect(cfg, Some(message_handler), None, None, vec![], None).await?;
@@ -187,11 +205,8 @@ impl HyperliquidWebSocketClient {
         }
 
         // Initialize handler with existing instruments
-        let instruments_vec: Vec<InstrumentAny> = self
-            .instruments
-            .iter()
-            .map(|entry| entry.value().clone())
-            .collect();
+        let instruments_vec: Vec<InstrumentAny> =
+            self.instruments.load().values().cloned().collect();
 
         if !instruments_vec.is_empty()
             && let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments_vec))
@@ -228,6 +243,7 @@ impl HyperliquidWebSocketClient {
                     "Resubscribing to {} active subscriptions after reconnection",
                     topics.len()
                 );
+
                 for topic in topics {
                     match subscription_from_topic(&topic) {
                         Ok(subscription) => {
@@ -245,6 +261,7 @@ impl HyperliquidWebSocketClient {
                     }
                 }
             };
+
             loop {
                 match handler.next().await {
                     Some(NautilusWsMessage::Reconnected) => {
@@ -281,6 +298,18 @@ impl HyperliquidWebSocketClient {
 
     pub fn set_task_handle(&mut self, handle: tokio::task::JoinHandle<()>) {
         self.task_handle = Some(handle);
+    }
+
+    /// Force-close fallback for the sync `stop()` path.
+    /// Prefer `disconnect()` for graceful shutdown.
+    pub(crate) fn abort(&mut self) {
+        self.signal.store(true, Ordering::Relaxed);
+        self.connection_mode
+            .store(Arc::new(AtomicU8::new(ConnectionMode::Closed as u8)));
+
+        if let Some(handle) = self.task_handle.take() {
+            handle.abort();
+        }
     }
 
     /// Disconnects the WebSocket connection.
@@ -337,15 +366,15 @@ impl HyperliquidWebSocketClient {
     /// - Perps use base currency (e.g., "BTC")
     /// - Spot uses @{pair_index} format (e.g., "@107") or slash format for PURR
     pub fn cache_instruments(&mut self, instruments: Vec<InstrumentAny>) {
-        self.instruments.clear();
+        let mut map = AHashMap::new();
+
         for inst in instruments {
             let coin = inst.raw_symbol().inner();
-            self.instruments.insert(coin, inst);
+            map.insert(coin, inst);
         }
-        log::info!(
-            "Hyperliquid instrument cache initialized with {} instruments",
-            self.instruments.len()
-        );
+        let count = map.len();
+        self.instruments.store(map);
+        log::info!("Hyperliquid instrument cache initialized with {count} instruments");
     }
 
     /// Caches a single instrument.
@@ -360,6 +389,12 @@ impl HyperliquidWebSocketClient {
         if let Ok(cmd_tx) = self.cmd_tx.try_read() {
             let _ = cmd_tx.send(HandlerCommand::UpdateInstrument(instrument));
         }
+    }
+
+    /// Returns a shared reference to the instrument cache.
+    #[must_use]
+    pub fn instruments_cache(&self) -> Arc<AtomicMap<Ustr, InstrumentAny>> {
+        self.instruments.clone()
     }
 
     /// Caches spot fill coin mappings for instrument lookup.
@@ -427,14 +462,15 @@ impl HyperliquidWebSocketClient {
     /// Searches the cache for a matching instrument ID.
     pub fn get_instrument(&self, id: &InstrumentId) -> Option<InstrumentAny> {
         self.instruments
-            .iter()
-            .find(|entry| entry.value().id() == *id)
-            .map(|entry| entry.value().clone())
+            .load()
+            .values()
+            .find(|inst| inst.id() == *id)
+            .cloned()
     }
 
     /// Gets an instrument from the cache by raw_symbol (coin).
     pub fn get_instrument_by_symbol(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instruments.get(symbol).map(|e| e.value().clone())
+        self.instruments.get_cloned(symbol)
     }
 
     /// Returns the count of confirmed subscriptions.
@@ -448,11 +484,23 @@ impl HyperliquidWebSocketClient {
     pub fn get_bar_type(&self, coin: &str, interval: &str) -> Option<BarType> {
         // Use canonical key format matching subscribe_bars
         let key = format!("candle:{coin}:{interval}");
-        self.bar_types.get(&key).map(|entry| *entry.value())
+        self.bar_types.load().get(&key).copied()
     }
 
     /// Subscribe to L2 order book for an instrument.
     pub async fn subscribe_book(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        self.subscribe_book_with_options(instrument_id, None, None)
+            .await
+    }
+
+    /// Subscribe to L2 order book with optional `nSigFigs` / `mantissa`
+    /// precision controls passed through to the venue's `l2Book` stream.
+    pub async fn subscribe_book_with_options(
+        &self,
+        instrument_id: InstrumentId,
+        n_sig_figs: Option<u32>,
+        mantissa: Option<u32>,
+    ) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
             .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
@@ -467,8 +515,8 @@ impl HyperliquidWebSocketClient {
 
         let subscription = SubscriptionRequest::L2Book {
             coin,
-            mantissa: None,
-            n_sig_figs: None,
+            mantissa,
+            n_sig_figs,
         };
 
         cmd_tx
@@ -476,6 +524,82 @@ impl HyperliquidWebSocketClient {
                 subscriptions: vec![subscription],
             })
             .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
+        Ok(())
+    }
+
+    /// Subscribe to order book depth-10 snapshots.
+    ///
+    /// Reuses the same `l2Book` WebSocket subscription as
+    /// [`Self::subscribe_book`] and flags the handler to additionally emit
+    /// `NautilusWsMessage::Depth10` for this coin.
+    pub async fn subscribe_book_depth10(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        self.subscribe_book_depth10_with_options(instrument_id, None, None)
+            .await
+    }
+
+    /// Subscribe to depth-10 snapshots with optional `nSigFigs` /
+    /// `mantissa` precision controls.
+    pub async fn subscribe_book_depth10_with_options(
+        &self,
+        instrument_id: InstrumentId,
+        n_sig_figs: Option<u32>,
+        mantissa: Option<u32>,
+    ) -> anyhow::Result<()> {
+        let instrument = self
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let coin = instrument.raw_symbol().inner();
+
+        let cmd_tx = self.cmd_tx.read().await;
+
+        cmd_tx
+            .send(HandlerCommand::UpdateInstrument(instrument.clone()))
+            .map_err(|e| anyhow::anyhow!("Failed to send UpdateInstrument command: {e}"))?;
+
+        cmd_tx
+            .send(HandlerCommand::SetDepth10Sub {
+                coin,
+                subscribed: true,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send SetDepth10Sub command: {e}"))?;
+
+        let subscription = SubscriptionRequest::L2Book {
+            coin,
+            mantissa,
+            n_sig_figs,
+        };
+
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                subscriptions: vec![subscription],
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
+        Ok(())
+    }
+
+    /// Unsubscribe from order book depth-10 snapshots.
+    ///
+    /// Clears the depth10 emission flag only; the underlying `l2Book`
+    /// stream stays open so active deltas subscribers keep receiving
+    /// updates. Call [`Self::unsubscribe_book`] separately to tear down
+    /// the stream entirely.
+    pub async fn unsubscribe_book_depth10(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<()> {
+        let instrument = self
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let coin = instrument.raw_symbol().inner();
+
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::SetDepth10Sub {
+                coin,
+                subscribed: false,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send SetDepth10Sub command: {e}"))?;
         Ok(())
     }
 
@@ -959,11 +1083,11 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::enums::HyperliquidBarInterval;
+    use crate::{common::enums::HyperliquidBarInterval, websocket::handler::subscription_to_key};
 
     /// Generates a unique topic key for a subscription request.
     fn subscription_topic(sub: &SubscriptionRequest) -> String {
-        crate::websocket::handler::subscription_to_key(sub)
+        subscription_to_key(sub)
     }
 
     #[rstest]

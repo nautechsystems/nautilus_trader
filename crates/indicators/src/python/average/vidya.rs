@@ -25,7 +25,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl VariableIndexDynamicAverage {
+    /// Creates a new `VariableIndexDynamicAverage` instance.
     #[new]
     #[pyo3(signature = (period, price_type=None, cmo_ma_type=None))]
     #[must_use]

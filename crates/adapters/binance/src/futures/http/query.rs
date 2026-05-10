@@ -16,8 +16,6 @@
 //! Binance Futures HTTP query parameter builders.
 
 use derive_builder::Builder;
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::common::enums::{
@@ -426,15 +424,6 @@ pub struct BinanceSetMarginTypeParams {
 /// Single order item for batch submit operations.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(
-    feature = "python",
-    pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.binance",
-        name = "FuturesBatchOrderItem",
-        get_all,
-        from_py_object,
-    )
-)]
 pub struct BatchOrderItem {
     /// Trading symbol.
     pub symbol: String,
@@ -490,67 +479,9 @@ pub struct BatchOrderItem {
     pub self_trade_prevention_mode: Option<String>,
 }
 
-#[cfg(feature = "python")]
-#[pymethods]
-impl BatchOrderItem {
-    #[new]
-    #[pyo3(signature = (symbol, side, order_type, time_in_force=None, quantity=None, price=None, reduce_only=None, new_client_order_id=None, stop_price=None, position_side=None, activation_price=None, callback_rate=None, working_type=None, price_protect=None, close_position=None, good_till_date=None, price_match=None, self_trade_prevention_mode=None))]
-    #[allow(clippy::too_many_arguments)]
-    fn py_new(
-        symbol: String,
-        side: String,
-        order_type: String,
-        time_in_force: Option<String>,
-        quantity: Option<String>,
-        price: Option<String>,
-        reduce_only: Option<bool>,
-        new_client_order_id: Option<String>,
-        stop_price: Option<String>,
-        position_side: Option<String>,
-        activation_price: Option<String>,
-        callback_rate: Option<String>,
-        working_type: Option<String>,
-        price_protect: Option<bool>,
-        close_position: Option<bool>,
-        good_till_date: Option<i64>,
-        price_match: Option<String>,
-        self_trade_prevention_mode: Option<String>,
-    ) -> Self {
-        Self {
-            symbol,
-            side,
-            order_type,
-            time_in_force,
-            quantity,
-            price,
-            reduce_only,
-            new_client_order_id,
-            stop_price,
-            position_side,
-            activation_price,
-            callback_rate,
-            working_type,
-            price_protect,
-            close_position,
-            good_till_date,
-            price_match,
-            self_trade_prevention_mode,
-        }
-    }
-}
-
 /// Single cancel item for batch cancel operations.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(
-    feature = "python",
-    pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.binance",
-        name = "FuturesBatchCancelItem",
-        get_all,
-        from_py_object,
-    )
-)]
 pub struct BatchCancelItem {
     /// Trading symbol.
     pub symbol: String,
@@ -587,46 +518,9 @@ impl BatchCancelItem {
     }
 }
 
-#[cfg(feature = "python")]
-#[pymethods]
-impl BatchCancelItem {
-    #[new]
-    #[pyo3(signature = (symbol, order_id=None, orig_client_order_id=None))]
-    fn py_new(symbol: String, order_id: Option<i64>, orig_client_order_id: Option<String>) -> Self {
-        Self {
-            symbol,
-            order_id,
-            orig_client_order_id,
-        }
-    }
-
-    /// Creates a batch cancel item by order ID.
-    #[staticmethod]
-    #[pyo3(name = "by_order_id")]
-    fn py_by_order_id(symbol: String, order_id: i64) -> Self {
-        Self::by_order_id(symbol, order_id)
-    }
-
-    /// Creates a batch cancel item by client order ID.
-    #[staticmethod]
-    #[pyo3(name = "by_client_order_id")]
-    fn py_by_client_order_id(symbol: String, client_order_id: String) -> Self {
-        Self::by_client_order_id(symbol, client_order_id)
-    }
-}
-
 /// Single modify item for batch modify operations.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(
-    feature = "python",
-    pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.binance",
-        name = "FuturesBatchModifyItem",
-        get_all,
-        from_py_object,
-    )
-)]
 pub struct BatchModifyItem {
     /// Trading symbol.
     pub symbol: String,
@@ -642,30 +536,6 @@ pub struct BatchModifyItem {
     pub quantity: String,
     /// New price.
     pub price: String,
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl BatchModifyItem {
-    #[new]
-    #[pyo3(signature = (symbol, side, quantity, price, order_id=None, orig_client_order_id=None))]
-    fn py_new(
-        symbol: String,
-        side: String,
-        quantity: String,
-        price: String,
-        order_id: Option<i64>,
-        orig_client_order_id: Option<String>,
-    ) -> Self {
-        Self {
-            symbol,
-            order_id,
-            orig_client_order_id,
-            side,
-            quantity,
-            price,
-        }
-    }
 }
 
 /// Listen key request parameters.
@@ -732,7 +602,7 @@ pub struct BinanceNewAlgoOrderParams {
     #[builder(default)]
     pub reduce_only: Option<bool>,
     /// Activation price for TRAILING_STOP_MARKET orders.
-    #[serde(rename = "activationPrice", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "activatePrice", skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub activation_price: Option<String>,
     /// Callback rate for TRAILING_STOP_MARKET orders (0.1 to 10, where 1 = 1%).
@@ -888,5 +758,96 @@ mod tests {
 
         assert_eq!(params.symbol.as_deref(), Some("BNBUSDT"));
         assert!(params.recv_window.is_none());
+    }
+
+    #[rstest]
+    fn test_new_algo_order_params_serialization_uses_activate_price() {
+        let params = BinanceNewAlgoOrderParamsBuilder::default()
+            .symbol("ETHUSDT")
+            .side(BinanceSide::Sell)
+            .order_type(BinanceFuturesOrderType::TrailingStopMarket)
+            .algo_type(BinanceAlgoType::Conditional)
+            .quantity("0.1")
+            .activation_price("10000.00")
+            .callback_rate("0.25")
+            .build()
+            .unwrap();
+
+        let serialized = serde_urlencoded::to_string(&params).unwrap();
+        let query: std::collections::HashMap<String, String> =
+            serde_urlencoded::from_str(&serialized).unwrap();
+
+        assert_eq!(query.get("activatePrice"), Some(&"10000.00".to_string()));
+        assert_eq!(query.get("callbackRate"), Some(&"0.25".to_string()));
+        assert!(!query.contains_key("activationPrice"));
+    }
+
+    #[rstest]
+    fn test_new_order_params_with_price_match_serializes_correctly() {
+        let params = BinanceNewOrderParams {
+            symbol: "BTCUSDT".to_string(),
+            side: BinanceSide::Buy,
+            order_type: BinanceFuturesOrderType::Limit,
+            time_in_force: Some(BinanceTimeInForce::Gtc),
+            quantity: Some("0.001".to_string()),
+            price: None,
+            new_client_order_id: Some("test-order-001".to_string()),
+            stop_price: None,
+            reduce_only: None,
+            position_side: None,
+            close_position: None,
+            activation_price: None,
+            callback_rate: None,
+            working_type: None,
+            price_protect: None,
+            new_order_resp_type: None,
+            good_till_date: None,
+            recv_window: None,
+            price_match: Some(BinancePriceMatch::Opponent5),
+            self_trade_prevention_mode: None,
+        };
+
+        let serialized = serde_urlencoded::to_string(&params).unwrap();
+        let query: std::collections::HashMap<String, String> =
+            serde_urlencoded::from_str(&serialized).unwrap();
+
+        assert_eq!(query.get("priceMatch"), Some(&"OPPONENT_5".to_string()));
+        assert!(!query.contains_key("price"));
+        assert_eq!(query.get("symbol"), Some(&"BTCUSDT".to_string()));
+        assert_eq!(query.get("side"), Some(&"BUY".to_string()));
+        assert_eq!(query.get("type"), Some(&"LIMIT".to_string()));
+    }
+
+    #[rstest]
+    fn test_new_order_params_without_price_match_omits_field() {
+        let params = BinanceNewOrderParams {
+            symbol: "BTCUSDT".to_string(),
+            side: BinanceSide::Buy,
+            order_type: BinanceFuturesOrderType::Limit,
+            time_in_force: Some(BinanceTimeInForce::Gtc),
+            quantity: Some("0.001".to_string()),
+            price: Some("50000.00".to_string()),
+            new_client_order_id: Some("test-order-002".to_string()),
+            stop_price: None,
+            reduce_only: None,
+            position_side: None,
+            close_position: None,
+            activation_price: None,
+            callback_rate: None,
+            working_type: None,
+            price_protect: None,
+            new_order_resp_type: None,
+            good_till_date: None,
+            recv_window: None,
+            price_match: None,
+            self_trade_prevention_mode: None,
+        };
+
+        let serialized = serde_urlencoded::to_string(&params).unwrap();
+        let query: std::collections::HashMap<String, String> =
+            serde_urlencoded::from_str(&serialized).unwrap();
+
+        assert!(!query.contains_key("priceMatch"));
+        assert_eq!(query.get("price"), Some(&"50000.00".to_string()));
     }
 }

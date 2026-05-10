@@ -15,7 +15,7 @@
 
 //! Functions for introspecting the running Python interpreter & installed packages.
 
-#![allow(
+#![expect(
     clippy::manual_let_else,
     reason = "Prefer explicit control flow for error handling"
 )]

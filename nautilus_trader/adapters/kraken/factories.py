@@ -83,18 +83,26 @@ def get_cached_kraken_spot_http_client(
     nautilus_pyo3.KrakenSpotHttpClient
 
     """
-    return nautilus_pyo3.KrakenSpotHttpClient(
-        api_key=api_key,
-        api_secret=api_secret,
-        base_url=base_url,
-        demo=demo,
-        timeout_secs=timeout_secs,
-        max_retries=max_retries,
-        retry_delay_ms=retry_delay_ms,
-        retry_delay_max_ms=retry_delay_max_ms,
-        proxy_url=proxy_url,
-        max_requests_per_second=max_requests_per_second,
-    )
+    kwargs: dict = {
+        "api_key": api_key,
+        "api_secret": api_secret,
+        "base_url": base_url,
+        "demo": demo,
+        "proxy_url": proxy_url,
+    }
+
+    if timeout_secs is not None:
+        kwargs["timeout_secs"] = timeout_secs
+    if max_retries is not None:
+        kwargs["max_retries"] = max_retries
+    if retry_delay_ms is not None:
+        kwargs["retry_delay_ms"] = retry_delay_ms
+    if retry_delay_max_ms is not None:
+        kwargs["retry_delay_max_ms"] = retry_delay_max_ms
+    if max_requests_per_second is not None:
+        kwargs["max_requests_per_second"] = max_requests_per_second
+
+    return nautilus_pyo3.KrakenSpotHttpClient(**kwargs)
 
 
 @lru_cache(1)
@@ -148,18 +156,26 @@ def get_cached_kraken_futures_http_client(
     nautilus_pyo3.KrakenFuturesHttpClient
 
     """
-    return nautilus_pyo3.KrakenFuturesHttpClient(
-        api_key=api_key,
-        api_secret=api_secret,
-        base_url=base_url,
-        demo=demo,
-        timeout_secs=timeout_secs,
-        max_retries=max_retries,
-        retry_delay_ms=retry_delay_ms,
-        retry_delay_max_ms=retry_delay_max_ms,
-        proxy_url=proxy_url,
-        max_requests_per_second=max_requests_per_second,
-    )
+    kwargs: dict = {
+        "api_key": api_key,
+        "api_secret": api_secret,
+        "base_url": base_url,
+        "demo": demo,
+        "proxy_url": proxy_url,
+    }
+
+    if timeout_secs is not None:
+        kwargs["timeout_secs"] = timeout_secs
+    if max_retries is not None:
+        kwargs["max_retries"] = max_retries
+    if retry_delay_ms is not None:
+        kwargs["retry_delay_ms"] = retry_delay_ms
+    if retry_delay_max_ms is not None:
+        kwargs["retry_delay_max_ms"] = retry_delay_max_ms
+    if max_requests_per_second is not None:
+        kwargs["max_requests_per_second"] = max_requests_per_second
+
+    return nautilus_pyo3.KrakenFuturesHttpClient(**kwargs)
 
 
 @lru_cache(1)
@@ -253,7 +269,7 @@ class KrakenLiveDataClientFactory(LiveDataClientFactory):
                 max_retries=config.max_retries,
                 retry_delay_ms=config.retry_delay_initial_ms,
                 retry_delay_max_ms=config.retry_delay_max_ms,
-                proxy_url=config.http_proxy_url,
+                proxy_url=config.proxy_url,
                 max_requests_per_second=config.max_requests_per_second,
             )
 
@@ -267,7 +283,7 @@ class KrakenLiveDataClientFactory(LiveDataClientFactory):
                 max_retries=config.max_retries,
                 retry_delay_ms=config.retry_delay_initial_ms,
                 retry_delay_max_ms=config.retry_delay_max_ms,
-                proxy_url=config.http_proxy_url,
+                proxy_url=config.proxy_url,
                 max_requests_per_second=config.max_requests_per_second,
             )
 
@@ -346,7 +362,7 @@ class KrakenLiveExecClientFactory(LiveExecClientFactory):
                 max_retries=config.max_retries,
                 retry_delay_ms=config.retry_delay_initial_ms,
                 retry_delay_max_ms=config.retry_delay_max_ms,
-                proxy_url=config.http_proxy_url,
+                proxy_url=config.proxy_url,
                 max_requests_per_second=config.max_requests_per_second,
             )
 
@@ -360,7 +376,7 @@ class KrakenLiveExecClientFactory(LiveExecClientFactory):
                 max_retries=config.max_retries,
                 retry_delay_ms=config.retry_delay_initial_ms,
                 retry_delay_max_ms=config.retry_delay_max_ms,
-                proxy_url=config.http_proxy_url,
+                proxy_url=config.proxy_url,
                 max_requests_per_second=config.max_requests_per_second,
             )
 

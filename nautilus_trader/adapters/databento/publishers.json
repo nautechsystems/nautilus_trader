@@ -1,626 +1,644 @@
 [
-  {
-    "publisher_id": 1,
-    "dataset": "GLBX.MDP3",
-    "venue": "GLBX",
-    "description": "CME Globex MDP 3.0"
-  },
-  {
-    "publisher_id": 2,
-    "dataset": "XNAS.ITCH",
-    "venue": "XNAS",
-    "description": "Nasdaq TotalView-ITCH"
-  },
-  {
-    "publisher_id": 3,
-    "dataset": "XBOS.ITCH",
-    "venue": "XBOS",
-    "description": "Nasdaq BX TotalView-ITCH"
-  },
-  {
-    "publisher_id": 4,
-    "dataset": "XPSX.ITCH",
-    "venue": "XPSX",
-    "description": "Nasdaq PSX TotalView-ITCH"
-  },
-  {
-    "publisher_id": 5,
-    "dataset": "BATS.PITCH",
-    "venue": "BATS",
-    "description": "Cboe BZX Depth"
-  },
-  {
-    "publisher_id": 6,
-    "dataset": "BATY.PITCH",
-    "venue": "BATY",
-    "description": "Cboe BYX Depth"
-  },
-  {
-    "publisher_id": 7,
-    "dataset": "EDGA.PITCH",
-    "venue": "EDGA",
-    "description": "Cboe EDGA Depth"
-  },
-  {
-    "publisher_id": 8,
-    "dataset": "EDGX.PITCH",
-    "venue": "EDGX",
-    "description": "Cboe EDGX Depth"
-  },
-  {
-    "publisher_id": 9,
-    "dataset": "XNYS.PILLAR",
-    "venue": "XNYS",
-    "description": "NYSE Integrated"
-  },
-  {
-    "publisher_id": 10,
-    "dataset": "XCIS.PILLAR",
-    "venue": "XCIS",
-    "description": "NYSE National Integrated"
-  },
-  {
-    "publisher_id": 11,
-    "dataset": "XASE.PILLAR",
-    "venue": "XASE",
-    "description": "NYSE American Integrated"
-  },
-  {
-    "publisher_id": 12,
-    "dataset": "XCHI.PILLAR",
-    "venue": "XCHI",
-    "description": "NYSE Texas Integrated"
-  },
-  {
-    "publisher_id": 13,
-    "dataset": "XCIS.BBO",
-    "venue": "XCIS",
-    "description": "NYSE National BBO"
-  },
-  {
-    "publisher_id": 14,
-    "dataset": "XCIS.TRADES",
-    "venue": "XCIS",
-    "description": "NYSE National Trades"
-  },
-  {
-    "publisher_id": 15,
-    "dataset": "MEMX.MEMOIR",
-    "venue": "MEMX",
-    "description": "MEMX Memoir Depth"
-  },
-  {
-    "publisher_id": 16,
-    "dataset": "EPRL.DOM",
-    "venue": "EPRL",
-    "description": "MIAX Pearl Depth"
-  },
-  {
-    "publisher_id": 17,
-    "dataset": "XNAS.NLS",
-    "venue": "FINN",
-    "description": "FINRA/Nasdaq TRF Carteret"
-  },
-  {
-    "publisher_id": 18,
-    "dataset": "XNAS.NLS",
-    "venue": "FINC",
-    "description": "FINRA/Nasdaq TRF Chicago"
-  },
-  {
-    "publisher_id": 19,
-    "dataset": "XNYS.TRADES",
-    "venue": "FINY",
-    "description": "FINRA/NYSE TRF"
-  },
-  {
-    "publisher_id": 20,
-    "dataset": "OPRA.PILLAR",
-    "venue": "AMXO",
-    "description": "OPRA - NYSE American Options"
-  },
-  {
-    "publisher_id": 21,
-    "dataset": "OPRA.PILLAR",
-    "venue": "XBOX",
-    "description": "OPRA - BOX Options"
-  },
-  {
-    "publisher_id": 22,
-    "dataset": "OPRA.PILLAR",
-    "venue": "XCBO",
-    "description": "OPRA - Cboe Options"
-  },
-  {
-    "publisher_id": 23,
-    "dataset": "OPRA.PILLAR",
-    "venue": "EMLD",
-    "description": "OPRA - MIAX Emerald"
-  },
-  {
-    "publisher_id": 24,
-    "dataset": "OPRA.PILLAR",
-    "venue": "EDGO",
-    "description": "OPRA - Cboe EDGX Options"
-  },
-  {
-    "publisher_id": 25,
-    "dataset": "OPRA.PILLAR",
-    "venue": "GMNI",
-    "description": "OPRA - Nasdaq GEMX"
-  },
-  {
-    "publisher_id": 26,
-    "dataset": "OPRA.PILLAR",
-    "venue": "XISX",
-    "description": "OPRA - Nasdaq ISE"
-  },
-  {
-    "publisher_id": 27,
-    "dataset": "OPRA.PILLAR",
-    "venue": "MCRY",
-    "description": "OPRA - Nasdaq MRX"
-  },
-  {
-    "publisher_id": 28,
-    "dataset": "OPRA.PILLAR",
-    "venue": "XMIO",
-    "description": "OPRA - MIAX Options"
-  },
-  {
-    "publisher_id": 29,
-    "dataset": "OPRA.PILLAR",
-    "venue": "ARCO",
-    "description": "OPRA - NYSE Arca Options"
-  },
-  {
-    "publisher_id": 30,
-    "dataset": "OPRA.PILLAR",
-    "venue": "OPRA",
-    "description": "OPRA - Options Price Reporting Authority"
-  },
-  {
-    "publisher_id": 31,
-    "dataset": "OPRA.PILLAR",
-    "venue": "MPRL",
-    "description": "OPRA - MIAX Pearl"
-  },
-  {
-    "publisher_id": 32,
-    "dataset": "OPRA.PILLAR",
-    "venue": "XNDQ",
-    "description": "OPRA - Nasdaq Options"
-  },
-  {
-    "publisher_id": 33,
-    "dataset": "OPRA.PILLAR",
-    "venue": "XBXO",
-    "description": "OPRA - Nasdaq BX Options"
-  },
-  {
-    "publisher_id": 34,
-    "dataset": "OPRA.PILLAR",
-    "venue": "C2OX",
-    "description": "OPRA - Cboe C2 Options"
-  },
-  {
-    "publisher_id": 35,
-    "dataset": "OPRA.PILLAR",
-    "venue": "XPHL",
-    "description": "OPRA - Nasdaq PHLX"
-  },
-  {
-    "publisher_id": 36,
-    "dataset": "OPRA.PILLAR",
-    "venue": "BATO",
-    "description": "OPRA - Cboe BZX Options"
-  },
-  {
-    "publisher_id": 37,
-    "dataset": "OPRA.PILLAR",
-    "venue": "MXOP",
-    "description": "OPRA - MEMX Options"
-  },
-  {
-    "publisher_id": 38,
-    "dataset": "IEXG.TOPS",
-    "venue": "IEXG",
-    "description": "IEX TOPS"
-  },
-  {
-    "publisher_id": 39,
-    "dataset": "DBEQ.BASIC",
-    "venue": "XCHI",
-    "description": "DBEQ Basic - NYSE Texas"
-  },
-  {
-    "publisher_id": 40,
-    "dataset": "DBEQ.BASIC",
-    "venue": "XCIS",
-    "description": "DBEQ Basic - NYSE National"
-  },
-  {
-    "publisher_id": 41,
-    "dataset": "DBEQ.BASIC",
-    "venue": "IEXG",
-    "description": "DBEQ Basic - IEX"
-  },
-  {
-    "publisher_id": 42,
-    "dataset": "DBEQ.BASIC",
-    "venue": "EPRL",
-    "description": "DBEQ Basic - MIAX Pearl"
-  },
-  {
-    "publisher_id": 43,
-    "dataset": "ARCX.PILLAR",
-    "venue": "ARCX",
-    "description": "NYSE Arca Integrated"
-  },
-  {
-    "publisher_id": 44,
-    "dataset": "XNYS.BBO",
-    "venue": "XNYS",
-    "description": "NYSE BBO"
-  },
-  {
-    "publisher_id": 45,
-    "dataset": "XNYS.TRADES",
-    "venue": "XNYS",
-    "description": "NYSE Trades"
-  },
-  {
-    "publisher_id": 46,
-    "dataset": "XNAS.QBBO",
-    "venue": "XNAS",
-    "description": "Nasdaq QBBO"
-  },
-  {
-    "publisher_id": 47,
-    "dataset": "XNAS.NLS",
-    "venue": "XNAS",
-    "description": "Nasdaq Trades"
-  },
-  {
-    "publisher_id": 48,
-    "dataset": "EQUS.PLUS",
-    "venue": "XCHI",
-    "description": "Databento US Equities Plus - NYSE Texas"
-  },
-  {
-    "publisher_id": 49,
-    "dataset": "EQUS.PLUS",
-    "venue": "XCIS",
-    "description": "Databento US Equities Plus - NYSE National"
-  },
-  {
-    "publisher_id": 50,
-    "dataset": "EQUS.PLUS",
-    "venue": "IEXG",
-    "description": "Databento US Equities Plus - IEX"
-  },
-  {
-    "publisher_id": 51,
-    "dataset": "EQUS.PLUS",
-    "venue": "EPRL",
-    "description": "Databento US Equities Plus - MIAX Pearl"
-  },
-  {
-    "publisher_id": 52,
-    "dataset": "EQUS.PLUS",
-    "venue": "XNAS",
-    "description": "Databento US Equities Plus - Nasdaq"
-  },
-  {
-    "publisher_id": 53,
-    "dataset": "EQUS.PLUS",
-    "venue": "XNYS",
-    "description": "Databento US Equities Plus - NYSE"
-  },
-  {
-    "publisher_id": 54,
-    "dataset": "EQUS.PLUS",
-    "venue": "FINN",
-    "description": "Databento US Equities Plus - FINRA/Nasdaq TRF Carteret"
-  },
-  {
-    "publisher_id": 55,
-    "dataset": "EQUS.PLUS",
-    "venue": "FINY",
-    "description": "Databento US Equities Plus - FINRA/NYSE TRF"
-  },
-  {
-    "publisher_id": 56,
-    "dataset": "EQUS.PLUS",
-    "venue": "FINC",
-    "description": "Databento US Equities Plus - FINRA/Nasdaq TRF Chicago"
-  },
-  {
-    "publisher_id": 57,
-    "dataset": "IFEU.IMPACT",
-    "venue": "IFEU",
-    "description": "ICE Europe Commodities"
-  },
-  {
-    "publisher_id": 58,
-    "dataset": "NDEX.IMPACT",
-    "venue": "NDEX",
-    "description": "ICE Endex"
-  },
-  {
-    "publisher_id": 59,
-    "dataset": "DBEQ.BASIC",
-    "venue": "DBEQ",
-    "description": "Databento US Equities Basic - Consolidated"
-  },
-  {
-    "publisher_id": 60,
-    "dataset": "EQUS.PLUS",
-    "venue": "EQUS",
-    "description": "EQUS Plus - Consolidated"
-  },
-  {
-    "publisher_id": 61,
-    "dataset": "OPRA.PILLAR",
-    "venue": "SPHR",
-    "description": "OPRA - MIAX Sapphire"
-  },
-  {
-    "publisher_id": 62,
-    "dataset": "EQUS.ALL",
-    "venue": "XCHI",
-    "description": "Databento US Equities (All Feeds) - NYSE Texas"
-  },
-  {
-    "publisher_id": 63,
-    "dataset": "EQUS.ALL",
-    "venue": "XCIS",
-    "description": "Databento US Equities (All Feeds) - NYSE National"
-  },
-  {
-    "publisher_id": 64,
-    "dataset": "EQUS.ALL",
-    "venue": "IEXG",
-    "description": "Databento US Equities (All Feeds) - IEX"
-  },
-  {
-    "publisher_id": 65,
-    "dataset": "EQUS.ALL",
-    "venue": "EPRL",
-    "description": "Databento US Equities (All Feeds) - MIAX Pearl"
-  },
-  {
-    "publisher_id": 66,
-    "dataset": "EQUS.ALL",
-    "venue": "XNAS",
-    "description": "Databento US Equities (All Feeds) - Nasdaq"
-  },
-  {
-    "publisher_id": 67,
-    "dataset": "EQUS.ALL",
-    "venue": "XNYS",
-    "description": "Databento US Equities (All Feeds) - NYSE"
-  },
-  {
-    "publisher_id": 68,
-    "dataset": "EQUS.ALL",
-    "venue": "FINN",
-    "description": "Databento US Equities (All Feeds) - FINRA/Nasdaq TRF Carteret"
-  },
-  {
-    "publisher_id": 69,
-    "dataset": "EQUS.ALL",
-    "venue": "FINY",
-    "description": "Databento US Equities (All Feeds) - FINRA/NYSE TRF"
-  },
-  {
-    "publisher_id": 70,
-    "dataset": "EQUS.ALL",
-    "venue": "FINC",
-    "description": "Databento US Equities (All Feeds) - FINRA/Nasdaq TRF Chicago"
-  },
-  {
-    "publisher_id": 71,
-    "dataset": "EQUS.ALL",
-    "venue": "BATS",
-    "description": "Databento US Equities (All Feeds) - Cboe BZX"
-  },
-  {
-    "publisher_id": 72,
-    "dataset": "EQUS.ALL",
-    "venue": "BATY",
-    "description": "Databento US Equities (All Feeds) - Cboe BYX"
-  },
-  {
-    "publisher_id": 73,
-    "dataset": "EQUS.ALL",
-    "venue": "EDGA",
-    "description": "Databento US Equities (All Feeds) - Cboe EDGA"
-  },
-  {
-    "publisher_id": 74,
-    "dataset": "EQUS.ALL",
-    "venue": "EDGX",
-    "description": "Databento US Equities (All Feeds) - Cboe EDGX"
-  },
-  {
-    "publisher_id": 75,
-    "dataset": "EQUS.ALL",
-    "venue": "XBOS",
-    "description": "Databento US Equities (All Feeds) - Nasdaq BX"
-  },
-  {
-    "publisher_id": 76,
-    "dataset": "EQUS.ALL",
-    "venue": "XPSX",
-    "description": "Databento US Equities (All Feeds) - Nasdaq PSX"
-  },
-  {
-    "publisher_id": 77,
-    "dataset": "EQUS.ALL",
-    "venue": "MEMX",
-    "description": "Databento US Equities (All Feeds) - MEMX"
-  },
-  {
-    "publisher_id": 78,
-    "dataset": "EQUS.ALL",
-    "venue": "XASE",
-    "description": "Databento US Equities (All Feeds) - NYSE American"
-  },
-  {
-    "publisher_id": 79,
-    "dataset": "EQUS.ALL",
-    "venue": "ARCX",
-    "description": "Databento US Equities (All Feeds) - NYSE Arca"
-  },
-  {
-    "publisher_id": 80,
-    "dataset": "EQUS.ALL",
-    "venue": "LTSE",
-    "description": "Databento US Equities (All Feeds) - Long-Term Stock Exchange"
-  },
-  {
-    "publisher_id": 81,
-    "dataset": "XNAS.BASIC",
-    "venue": "XNAS",
-    "description": "Nasdaq Basic - Nasdaq"
-  },
-  {
-    "publisher_id": 82,
-    "dataset": "XNAS.BASIC",
-    "venue": "FINN",
-    "description": "Nasdaq Basic - FINRA/Nasdaq TRF Carteret"
-  },
-  {
-    "publisher_id": 83,
-    "dataset": "XNAS.BASIC",
-    "venue": "FINC",
-    "description": "Nasdaq Basic - FINRA/Nasdaq TRF Chicago"
-  },
-  {
-    "publisher_id": 84,
-    "dataset": "IFEU.IMPACT",
-    "venue": "XOFF",
-    "description": "ICE Europe - Off-Market Trades"
-  },
-  {
-    "publisher_id": 85,
-    "dataset": "NDEX.IMPACT",
-    "venue": "XOFF",
-    "description": "ICE Endex - Off-Market Trades"
-  },
-  {
-    "publisher_id": 86,
-    "dataset": "XNAS.NLS",
-    "venue": "XBOS",
-    "description": "Nasdaq NLS - Nasdaq BX"
-  },
-  {
-    "publisher_id": 87,
-    "dataset": "XNAS.NLS",
-    "venue": "XPSX",
-    "description": "Nasdaq NLS - Nasdaq PSX"
-  },
-  {
-    "publisher_id": 88,
-    "dataset": "XNAS.BASIC",
-    "venue": "XBOS",
-    "description": "Nasdaq Basic - Nasdaq BX"
-  },
-  {
-    "publisher_id": 89,
-    "dataset": "XNAS.BASIC",
-    "venue": "XPSX",
-    "description": "Nasdaq Basic - Nasdaq PSX"
-  },
-  {
-    "publisher_id": 90,
-    "dataset": "EQUS.SUMMARY",
-    "venue": "EQUS",
-    "description": "Databento Equities Summary"
-  },
-  {
-    "publisher_id": 91,
-    "dataset": "XCIS.TRADESBBO",
-    "venue": "XCIS",
-    "description": "NYSE National Trades and BBO"
-  },
-  {
-    "publisher_id": 92,
-    "dataset": "XNYS.TRADESBBO",
-    "venue": "XNYS",
-    "description": "NYSE Trades and BBO"
-  },
-  {
-    "publisher_id": 93,
-    "dataset": "XNAS.BASIC",
-    "venue": "EQUS",
-    "description": "Nasdaq Basic - Consolidated"
-  },
-  {
-    "publisher_id": 94,
-    "dataset": "EQUS.ALL",
-    "venue": "EQUS",
-    "description": "Databento US Equities (All Feeds) - Consolidated"
-  },
-  {
-    "publisher_id": 95,
-    "dataset": "EQUS.MINI",
-    "venue": "EQUS",
-    "description": "Databento US Equities Mini"
-  },
-  {
-    "publisher_id": 96,
-    "dataset": "XNYS.TRADES",
-    "venue": "EQUS",
-    "description": "NYSE Trades - Consolidated"
-  },
-  {
-    "publisher_id": 97,
-    "dataset": "IFUS.IMPACT",
-    "venue": "IFUS",
-    "description": "ICE Futures US"
-  },
-  {
-    "publisher_id": 98,
-    "dataset": "IFUS.IMPACT",
-    "venue": "XOFF",
-    "description": "ICE Futures US - Off-Market Trades"
-  },
-  {
-    "publisher_id": 99,
-    "dataset": "IFLL.IMPACT",
-    "venue": "IFLL",
-    "description": "ICE Europe Financials"
-  },
-  {
-    "publisher_id": 100,
-    "dataset": "IFLL.IMPACT",
-    "venue": "XOFF",
-    "description": "ICE Europe Financials - Off-Market Trades"
-  },
-  {
-    "publisher_id": 101,
-    "dataset": "XEUR.EOBI",
-    "venue": "XEUR",
-    "description": "Eurex EOBI"
-  },
-  {
-    "publisher_id": 102,
-    "dataset": "XEEE.EOBI",
-    "venue": "XEEE",
-    "description": "European Energy Exchange EOBI"
-  },
-  {
-    "publisher_id": 103,
-    "dataset": "XEUR.EOBI",
-    "venue": "XOFF",
-    "description": "Eurex EOBI - Off-Market Trades"
-  },
-  {
-    "publisher_id": 104,
-    "dataset": "XEEE.EOBI",
-    "venue": "XOFF",
-    "description": "European Energy Exchange EOBI - Off-Market Trades"
-  }
+    {
+        "publisher_id": 1,
+        "dataset": "GLBX.MDP3",
+        "venue": "GLBX",
+        "description": "CME Globex MDP 3.0"
+    },
+    {
+        "publisher_id": 2,
+        "dataset": "XNAS.ITCH",
+        "venue": "XNAS",
+        "description": "Nasdaq TotalView-ITCH"
+    },
+    {
+        "publisher_id": 3,
+        "dataset": "XBOS.ITCH",
+        "venue": "XBOS",
+        "description": "Nasdaq BX TotalView-ITCH"
+    },
+    {
+        "publisher_id": 4,
+        "dataset": "XPSX.ITCH",
+        "venue": "XPSX",
+        "description": "Nasdaq PSX TotalView-ITCH"
+    },
+    {
+        "publisher_id": 5,
+        "dataset": "BATS.PITCH",
+        "venue": "BATS",
+        "description": "Cboe BZX Depth"
+    },
+    {
+        "publisher_id": 6,
+        "dataset": "BATY.PITCH",
+        "venue": "BATY",
+        "description": "Cboe BYX Depth"
+    },
+    {
+        "publisher_id": 7,
+        "dataset": "EDGA.PITCH",
+        "venue": "EDGA",
+        "description": "Cboe EDGA Depth"
+    },
+    {
+        "publisher_id": 8,
+        "dataset": "EDGX.PITCH",
+        "venue": "EDGX",
+        "description": "Cboe EDGX Depth"
+    },
+    {
+        "publisher_id": 9,
+        "dataset": "XNYS.PILLAR",
+        "venue": "XNYS",
+        "description": "NYSE Integrated"
+    },
+    {
+        "publisher_id": 10,
+        "dataset": "XCIS.PILLAR",
+        "venue": "XCIS",
+        "description": "NYSE National Integrated"
+    },
+    {
+        "publisher_id": 11,
+        "dataset": "XASE.PILLAR",
+        "venue": "XASE",
+        "description": "NYSE American Integrated"
+    },
+    {
+        "publisher_id": 12,
+        "dataset": "XCHI.PILLAR",
+        "venue": "XCHI",
+        "description": "NYSE Texas Integrated"
+    },
+    {
+        "publisher_id": 13,
+        "dataset": "XCIS.BBO",
+        "venue": "XCIS",
+        "description": "NYSE National BBO"
+    },
+    {
+        "publisher_id": 14,
+        "dataset": "XCIS.TRADES",
+        "venue": "XCIS",
+        "description": "NYSE National Trades"
+    },
+    {
+        "publisher_id": 15,
+        "dataset": "MEMX.MEMOIR",
+        "venue": "MEMX",
+        "description": "MEMX Memoir Depth"
+    },
+    {
+        "publisher_id": 16,
+        "dataset": "EPRL.DOM",
+        "venue": "EPRL",
+        "description": "MIAX Pearl Depth"
+    },
+    {
+        "publisher_id": 17,
+        "dataset": "XNAS.NLS",
+        "venue": "FINN",
+        "description": "FINRA/Nasdaq TRF Carteret"
+    },
+    {
+        "publisher_id": 18,
+        "dataset": "XNAS.NLS",
+        "venue": "FINC",
+        "description": "FINRA/Nasdaq TRF Chicago"
+    },
+    {
+        "publisher_id": 19,
+        "dataset": "XNYS.TRADES",
+        "venue": "FINY",
+        "description": "FINRA/NYSE TRF"
+    },
+    {
+        "publisher_id": 20,
+        "dataset": "OPRA.PILLAR",
+        "venue": "AMXO",
+        "description": "OPRA - NYSE American Options"
+    },
+    {
+        "publisher_id": 21,
+        "dataset": "OPRA.PILLAR",
+        "venue": "XBOX",
+        "description": "OPRA - BOX Options"
+    },
+    {
+        "publisher_id": 22,
+        "dataset": "OPRA.PILLAR",
+        "venue": "XCBO",
+        "description": "OPRA - Cboe Options"
+    },
+    {
+        "publisher_id": 23,
+        "dataset": "OPRA.PILLAR",
+        "venue": "EMLD",
+        "description": "OPRA - MIAX Emerald"
+    },
+    {
+        "publisher_id": 24,
+        "dataset": "OPRA.PILLAR",
+        "venue": "EDGO",
+        "description": "OPRA - Cboe EDGX Options"
+    },
+    {
+        "publisher_id": 25,
+        "dataset": "OPRA.PILLAR",
+        "venue": "GMNI",
+        "description": "OPRA - Nasdaq GEMX"
+    },
+    {
+        "publisher_id": 26,
+        "dataset": "OPRA.PILLAR",
+        "venue": "XISX",
+        "description": "OPRA - Nasdaq ISE"
+    },
+    {
+        "publisher_id": 27,
+        "dataset": "OPRA.PILLAR",
+        "venue": "MCRY",
+        "description": "OPRA - Nasdaq MRX"
+    },
+    {
+        "publisher_id": 28,
+        "dataset": "OPRA.PILLAR",
+        "venue": "XMIO",
+        "description": "OPRA - MIAX Options"
+    },
+    {
+        "publisher_id": 29,
+        "dataset": "OPRA.PILLAR",
+        "venue": "ARCO",
+        "description": "OPRA - NYSE Arca Options"
+    },
+    {
+        "publisher_id": 30,
+        "dataset": "OPRA.PILLAR",
+        "venue": "OPRA",
+        "description": "OPRA - Options Price Reporting Authority"
+    },
+    {
+        "publisher_id": 31,
+        "dataset": "OPRA.PILLAR",
+        "venue": "MPRL",
+        "description": "OPRA - MIAX Pearl"
+    },
+    {
+        "publisher_id": 32,
+        "dataset": "OPRA.PILLAR",
+        "venue": "XNDQ",
+        "description": "OPRA - Nasdaq Options"
+    },
+    {
+        "publisher_id": 33,
+        "dataset": "OPRA.PILLAR",
+        "venue": "XBXO",
+        "description": "OPRA - Nasdaq BX Options"
+    },
+    {
+        "publisher_id": 34,
+        "dataset": "OPRA.PILLAR",
+        "venue": "C2OX",
+        "description": "OPRA - Cboe C2 Options"
+    },
+    {
+        "publisher_id": 35,
+        "dataset": "OPRA.PILLAR",
+        "venue": "XPHL",
+        "description": "OPRA - Nasdaq PHLX"
+    },
+    {
+        "publisher_id": 36,
+        "dataset": "OPRA.PILLAR",
+        "venue": "BATO",
+        "description": "OPRA - Cboe BZX Options"
+    },
+    {
+        "publisher_id": 37,
+        "dataset": "OPRA.PILLAR",
+        "venue": "MXOP",
+        "description": "OPRA - MEMX Options"
+    },
+    {
+        "publisher_id": 38,
+        "dataset": "IEXG.TOPS",
+        "venue": "IEXG",
+        "description": "IEX TOPS"
+    },
+    {
+        "publisher_id": 39,
+        "dataset": "DBEQ.BASIC",
+        "venue": "XCHI",
+        "description": "DBEQ Basic - NYSE Texas"
+    },
+    {
+        "publisher_id": 40,
+        "dataset": "DBEQ.BASIC",
+        "venue": "XCIS",
+        "description": "DBEQ Basic - NYSE National"
+    },
+    {
+        "publisher_id": 41,
+        "dataset": "DBEQ.BASIC",
+        "venue": "IEXG",
+        "description": "DBEQ Basic - IEX"
+    },
+    {
+        "publisher_id": 42,
+        "dataset": "DBEQ.BASIC",
+        "venue": "EPRL",
+        "description": "DBEQ Basic - MIAX Pearl"
+    },
+    {
+        "publisher_id": 43,
+        "dataset": "ARCX.PILLAR",
+        "venue": "ARCX",
+        "description": "NYSE Arca Integrated"
+    },
+    {
+        "publisher_id": 44,
+        "dataset": "XNYS.BBO",
+        "venue": "XNYS",
+        "description": "NYSE BBO"
+    },
+    {
+        "publisher_id": 45,
+        "dataset": "XNYS.TRADES",
+        "venue": "XNYS",
+        "description": "NYSE Trades"
+    },
+    {
+        "publisher_id": 46,
+        "dataset": "XNAS.QBBO",
+        "venue": "XNAS",
+        "description": "Nasdaq QBBO"
+    },
+    {
+        "publisher_id": 47,
+        "dataset": "XNAS.NLS",
+        "venue": "XNAS",
+        "description": "Nasdaq Trades"
+    },
+    {
+        "publisher_id": 48,
+        "dataset": "EQUS.PLUS",
+        "venue": "XCHI",
+        "description": "Databento US Equities Plus - NYSE Texas"
+    },
+    {
+        "publisher_id": 49,
+        "dataset": "EQUS.PLUS",
+        "venue": "XCIS",
+        "description": "Databento US Equities Plus - NYSE National"
+    },
+    {
+        "publisher_id": 50,
+        "dataset": "EQUS.PLUS",
+        "venue": "IEXG",
+        "description": "Databento US Equities Plus - IEX"
+    },
+    {
+        "publisher_id": 51,
+        "dataset": "EQUS.PLUS",
+        "venue": "EPRL",
+        "description": "Databento US Equities Plus - MIAX Pearl"
+    },
+    {
+        "publisher_id": 52,
+        "dataset": "EQUS.PLUS",
+        "venue": "XNAS",
+        "description": "Databento US Equities Plus - Nasdaq"
+    },
+    {
+        "publisher_id": 53,
+        "dataset": "EQUS.PLUS",
+        "venue": "XNYS",
+        "description": "Databento US Equities Plus - NYSE"
+    },
+    {
+        "publisher_id": 54,
+        "dataset": "EQUS.PLUS",
+        "venue": "FINN",
+        "description": "Databento US Equities Plus - FINRA/Nasdaq TRF Carteret"
+    },
+    {
+        "publisher_id": 55,
+        "dataset": "EQUS.PLUS",
+        "venue": "FINY",
+        "description": "Databento US Equities Plus - FINRA/NYSE TRF"
+    },
+    {
+        "publisher_id": 56,
+        "dataset": "EQUS.PLUS",
+        "venue": "FINC",
+        "description": "Databento US Equities Plus - FINRA/Nasdaq TRF Chicago"
+    },
+    {
+        "publisher_id": 57,
+        "dataset": "IFEU.IMPACT",
+        "venue": "IFEU",
+        "description": "ICE Europe Commodities"
+    },
+    {
+        "publisher_id": 58,
+        "dataset": "NDEX.IMPACT",
+        "venue": "NDEX",
+        "description": "ICE Endex"
+    },
+    {
+        "publisher_id": 59,
+        "dataset": "DBEQ.BASIC",
+        "venue": "DBEQ",
+        "description": "Databento US Equities Basic - Consolidated"
+    },
+    {
+        "publisher_id": 60,
+        "dataset": "EQUS.PLUS",
+        "venue": "EQUS",
+        "description": "EQUS Plus - Consolidated"
+    },
+    {
+        "publisher_id": 61,
+        "dataset": "OPRA.PILLAR",
+        "venue": "SPHR",
+        "description": "OPRA - MIAX Sapphire"
+    },
+    {
+        "publisher_id": 62,
+        "dataset": "EQUS.ALL",
+        "venue": "XCHI",
+        "description": "Databento US Equities (All Feeds) - NYSE Texas"
+    },
+    {
+        "publisher_id": 63,
+        "dataset": "EQUS.ALL",
+        "venue": "XCIS",
+        "description": "Databento US Equities (All Feeds) - NYSE National"
+    },
+    {
+        "publisher_id": 64,
+        "dataset": "EQUS.ALL",
+        "venue": "IEXG",
+        "description": "Databento US Equities (All Feeds) - IEX"
+    },
+    {
+        "publisher_id": 65,
+        "dataset": "EQUS.ALL",
+        "venue": "EPRL",
+        "description": "Databento US Equities (All Feeds) - MIAX Pearl"
+    },
+    {
+        "publisher_id": 66,
+        "dataset": "EQUS.ALL",
+        "venue": "XNAS",
+        "description": "Databento US Equities (All Feeds) - Nasdaq"
+    },
+    {
+        "publisher_id": 67,
+        "dataset": "EQUS.ALL",
+        "venue": "XNYS",
+        "description": "Databento US Equities (All Feeds) - NYSE"
+    },
+    {
+        "publisher_id": 68,
+        "dataset": "EQUS.ALL",
+        "venue": "FINN",
+        "description": "Databento US Equities (All Feeds) - FINRA/Nasdaq TRF Carteret"
+    },
+    {
+        "publisher_id": 69,
+        "dataset": "EQUS.ALL",
+        "venue": "FINY",
+        "description": "Databento US Equities (All Feeds) - FINRA/NYSE TRF"
+    },
+    {
+        "publisher_id": 70,
+        "dataset": "EQUS.ALL",
+        "venue": "FINC",
+        "description": "Databento US Equities (All Feeds) - FINRA/Nasdaq TRF Chicago"
+    },
+    {
+        "publisher_id": 71,
+        "dataset": "EQUS.ALL",
+        "venue": "BATS",
+        "description": "Databento US Equities (All Feeds) - Cboe BZX"
+    },
+    {
+        "publisher_id": 72,
+        "dataset": "EQUS.ALL",
+        "venue": "BATY",
+        "description": "Databento US Equities (All Feeds) - Cboe BYX"
+    },
+    {
+        "publisher_id": 73,
+        "dataset": "EQUS.ALL",
+        "venue": "EDGA",
+        "description": "Databento US Equities (All Feeds) - Cboe EDGA"
+    },
+    {
+        "publisher_id": 74,
+        "dataset": "EQUS.ALL",
+        "venue": "EDGX",
+        "description": "Databento US Equities (All Feeds) - Cboe EDGX"
+    },
+    {
+        "publisher_id": 75,
+        "dataset": "EQUS.ALL",
+        "venue": "XBOS",
+        "description": "Databento US Equities (All Feeds) - Nasdaq BX"
+    },
+    {
+        "publisher_id": 76,
+        "dataset": "EQUS.ALL",
+        "venue": "XPSX",
+        "description": "Databento US Equities (All Feeds) - Nasdaq PSX"
+    },
+    {
+        "publisher_id": 77,
+        "dataset": "EQUS.ALL",
+        "venue": "MEMX",
+        "description": "Databento US Equities (All Feeds) - MEMX"
+    },
+    {
+        "publisher_id": 78,
+        "dataset": "EQUS.ALL",
+        "venue": "XASE",
+        "description": "Databento US Equities (All Feeds) - NYSE American"
+    },
+    {
+        "publisher_id": 79,
+        "dataset": "EQUS.ALL",
+        "venue": "ARCX",
+        "description": "Databento US Equities (All Feeds) - NYSE Arca"
+    },
+    {
+        "publisher_id": 80,
+        "dataset": "EQUS.ALL",
+        "venue": "LTSE",
+        "description": "Databento US Equities (All Feeds) - Long-Term Stock Exchange"
+    },
+    {
+        "publisher_id": 81,
+        "dataset": "XNAS.BASIC",
+        "venue": "XNAS",
+        "description": "Nasdaq Basic - Nasdaq"
+    },
+    {
+        "publisher_id": 82,
+        "dataset": "XNAS.BASIC",
+        "venue": "FINN",
+        "description": "Nasdaq Basic - FINRA/Nasdaq TRF Carteret"
+    },
+    {
+        "publisher_id": 83,
+        "dataset": "XNAS.BASIC",
+        "venue": "FINC",
+        "description": "Nasdaq Basic - FINRA/Nasdaq TRF Chicago"
+    },
+    {
+        "publisher_id": 84,
+        "dataset": "IFEU.IMPACT",
+        "venue": "XOFF",
+        "description": "ICE Europe - Off-Market Trades"
+    },
+    {
+        "publisher_id": 85,
+        "dataset": "NDEX.IMPACT",
+        "venue": "XOFF",
+        "description": "ICE Endex - Off-Market Trades"
+    },
+    {
+        "publisher_id": 86,
+        "dataset": "XNAS.NLS",
+        "venue": "XBOS",
+        "description": "Nasdaq NLS - Nasdaq BX"
+    },
+    {
+        "publisher_id": 87,
+        "dataset": "XNAS.NLS",
+        "venue": "XPSX",
+        "description": "Nasdaq NLS - Nasdaq PSX"
+    },
+    {
+        "publisher_id": 88,
+        "dataset": "XNAS.BASIC",
+        "venue": "XBOS",
+        "description": "Nasdaq Basic - Nasdaq BX"
+    },
+    {
+        "publisher_id": 89,
+        "dataset": "XNAS.BASIC",
+        "venue": "XPSX",
+        "description": "Nasdaq Basic - Nasdaq PSX"
+    },
+    {
+        "publisher_id": 90,
+        "dataset": "EQUS.SUMMARY",
+        "venue": "EQUS",
+        "description": "Databento Equities Summary"
+    },
+    {
+        "publisher_id": 91,
+        "dataset": "XCIS.TRADESBBO",
+        "venue": "XCIS",
+        "description": "NYSE National Trades and BBO"
+    },
+    {
+        "publisher_id": 92,
+        "dataset": "XNYS.TRADESBBO",
+        "venue": "XNYS",
+        "description": "NYSE Trades and BBO"
+    },
+    {
+        "publisher_id": 93,
+        "dataset": "XNAS.BASIC",
+        "venue": "EQUS",
+        "description": "Nasdaq Basic - Consolidated"
+    },
+    {
+        "publisher_id": 94,
+        "dataset": "EQUS.ALL",
+        "venue": "EQUS",
+        "description": "Databento US Equities (All Feeds) - Consolidated"
+    },
+    {
+        "publisher_id": 95,
+        "dataset": "EQUS.MINI",
+        "venue": "EQUS",
+        "description": "Databento US Equities Mini"
+    },
+    {
+        "publisher_id": 96,
+        "dataset": "XNYS.TRADES",
+        "venue": "EQUS",
+        "description": "NYSE Trades - Consolidated"
+    },
+    {
+        "publisher_id": 97,
+        "dataset": "IFUS.IMPACT",
+        "venue": "IFUS",
+        "description": "ICE Futures US"
+    },
+    {
+        "publisher_id": 98,
+        "dataset": "IFUS.IMPACT",
+        "venue": "XOFF",
+        "description": "ICE Futures US - Off-Market Trades"
+    },
+    {
+        "publisher_id": 99,
+        "dataset": "IFLL.IMPACT",
+        "venue": "IFLL",
+        "description": "ICE Europe Financials"
+    },
+    {
+        "publisher_id": 100,
+        "dataset": "IFLL.IMPACT",
+        "venue": "XOFF",
+        "description": "ICE Europe Financials - Off-Market Trades"
+    },
+    {
+        "publisher_id": 101,
+        "dataset": "XEUR.EOBI",
+        "venue": "XEUR",
+        "description": "Eurex EOBI"
+    },
+    {
+        "publisher_id": 102,
+        "dataset": "XEEE.EOBI",
+        "venue": "XEEE",
+        "description": "European Energy Exchange EOBI"
+    },
+    {
+        "publisher_id": 103,
+        "dataset": "XEUR.EOBI",
+        "venue": "XOFF",
+        "description": "Eurex EOBI - Off-Market Trades"
+    },
+    {
+        "publisher_id": 104,
+        "dataset": "XEEE.EOBI",
+        "venue": "XOFF",
+        "description": "European Energy Exchange EOBI - Off-Market Trades"
+    },
+    {
+        "publisher_id": 105,
+        "dataset": "XCBF.PITCH",
+        "venue": "XCBF",
+        "description": "Cboe Futures Exchange"
+    },
+    {
+        "publisher_id": 106,
+        "dataset": "XCBF.PITCH",
+        "venue": "XOFF",
+        "description": "Cboe Futures Exchange - Off-Market Trades"
+    },
+    {
+        "publisher_id": 107,
+        "dataset": "OCEA.MEMOIR",
+        "venue": "OCEA",
+        "description": "Blue Ocean ATS MEMOIR"
+    }
 ]

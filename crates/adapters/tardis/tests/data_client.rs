@@ -19,13 +19,17 @@ use std::{
     any::Any,
     cell::{OnceCell, RefCell},
     rc::Rc,
+    time::Duration,
 };
 
 use nautilus_common::{
-    cache::Cache, clock::TestClock, live::runner::set_data_event_sender, messages::DataEvent,
+    cache::Cache,
+    clock::TestClock,
+    factories::{ClientConfig, DataClientFactory},
+    live::runner::set_data_event_sender,
+    messages::DataEvent,
 };
 use nautilus_model::identifiers::ClientId;
-use nautilus_system::factories::{ClientConfig, DataClientFactory};
 use nautilus_tardis::{config::TardisDataClientConfig, factories::TardisDataClientFactory};
 use rstest::rstest;
 
@@ -118,4 +122,32 @@ fn test_factory_create_wrong_config_type_errors() {
 
     let err = result.err().unwrap();
     assert!(err.to_string().contains("Invalid config type"));
+}
+
+/// Tests the SIGINT shutdown sequence: stop() then disconnect() must
+/// complete promptly even when called on an already-disconnected client.
+#[rstest]
+#[tokio::test]
+async fn test_stop_then_disconnect_completes() {
+    setup_test_env();
+
+    let factory = TardisDataClientFactory::new();
+    let config = TardisDataClientConfig::default();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let mut client = factory.create("TARDIS", &config, cache, clock).unwrap();
+
+    assert!(client.is_disconnected());
+
+    // stop() should not panic or block on a disconnected client
+    client.stop().unwrap();
+
+    // disconnect() must complete within 2 seconds (no handles to await)
+    let result = tokio::time::timeout(Duration::from_secs(2), client.disconnect()).await;
+    assert!(
+        result.is_ok(),
+        "disconnect() should complete within 2 seconds"
+    );
+    assert!(result.unwrap().is_ok());
+    assert!(client.is_disconnected());
 }

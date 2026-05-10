@@ -58,3 +58,7 @@ reason = "bincode unmaintained, transitive via hypersync-client (not a security 
 [[IgnoredVulns]]
 id = "GHSA-7gcm-g887-7qv7"
 reason = "protobuf JSON recursion DoS, no fix available yet, low risk for internal use (we don't parse untrusted JSON with protobuf)"
+
+[[IgnoredVulns]]
+id = "GHSA-6w46-j5rx-g56g"
+reason = "pytest tmpdir local tampering (fixed in 9.0.3); dev/test-only dependency intentionally pinned to 7.x, not a runtime risk"

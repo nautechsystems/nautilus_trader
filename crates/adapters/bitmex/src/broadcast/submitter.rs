@@ -56,7 +56,10 @@ use nautilus_model::{
 use tokio::{sync::RwLock, task::JoinHandle, time::interval};
 
 use crate::{
-    common::{consts::BITMEX_HTTP_TESTNET_URL, enums::BitmexPegPriceType},
+    common::{
+        consts::BITMEX_HTTP_TESTNET_URL,
+        enums::{BitmexEnvironment, BitmexPegPriceType},
+    },
     http::client::BitmexHttpClient,
 };
 
@@ -89,7 +92,7 @@ trait SubmitExecutor: Send + Sync {
     fn health_check(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + '_>>;
 
     /// Submits a single order.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn submit_order(
         &self,
         instrument_id: InstrumentId,
@@ -127,7 +130,6 @@ impl SubmitExecutor for BitmexHttpClient {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn submit_order(
         &self,
         instrument_id: InstrumentId,
@@ -187,22 +189,22 @@ pub struct SubmitBroadcasterConfig {
     pub api_secret: Option<String>,
     /// Base URL for BitMEX HTTP API.
     pub base_url: Option<String>,
-    /// If connecting to BitMEX testnet.
-    pub testnet: bool,
+    /// BitMEX environment (mainnet or testnet).
+    pub environment: BitmexEnvironment,
     /// Timeout in seconds for HTTP requests.
-    pub timeout_secs: Option<u64>,
+    pub timeout_secs: u64,
     /// Maximum number of retry attempts for failed requests.
-    pub max_retries: Option<u32>,
+    pub max_retries: u32,
     /// Initial delay in milliseconds between retry attempts.
-    pub retry_delay_ms: Option<u64>,
+    pub retry_delay_ms: u64,
     /// Maximum delay in milliseconds between retry attempts.
-    pub retry_delay_max_ms: Option<u64>,
+    pub retry_delay_max_ms: u64,
     /// Expiration window in milliseconds for signed requests.
-    pub recv_window_ms: Option<u64>,
+    pub recv_window_ms: u64,
     /// Maximum REST burst rate (requests per second).
-    pub max_requests_per_second: Option<u32>,
+    pub max_requests_per_second: u32,
     /// Maximum REST rolling rate (requests per minute).
-    pub max_requests_per_minute: Option<u32>,
+    pub max_requests_per_minute: u32,
     /// Interval in seconds between health check pings.
     pub health_check_interval_secs: u64,
     /// Timeout in seconds for health check requests.
@@ -224,14 +226,14 @@ impl Default for SubmitBroadcasterConfig {
             api_key: None,
             api_secret: None,
             base_url: None,
-            testnet: false,
-            timeout_secs: Some(60),
-            max_retries: None,
-            retry_delay_ms: Some(1_000),
-            retry_delay_max_ms: Some(5_000),
-            recv_window_ms: Some(10_000),
-            max_requests_per_second: Some(10),
-            max_requests_per_minute: Some(120),
+            environment: BitmexEnvironment::Mainnet,
+            timeout_secs: 60,
+            max_retries: 3,
+            retry_delay_ms: 1_000,
+            retry_delay_max_ms: 5_000,
+            recv_window_ms: 10_000,
+            max_requests_per_second: 10,
+            max_requests_per_minute: 120,
             health_check_interval_secs: 30,
             health_check_timeout_secs: 5,
             expected_reject_patterns: vec!["Duplicate clOrdID".to_string()],
@@ -320,7 +322,7 @@ impl TransportClient {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     async fn submit_order(
         &self,
         instrument_id: InstrumentId,
@@ -386,6 +388,10 @@ impl TransportClient {
 /// in parallel, short-circuits when the first successful acknowledgement is received,
 /// and handles expected rejection patterns (duplicate clOrdID) with appropriate log levels.
 #[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bitmex")
+)]
 #[derive(Debug)]
 pub struct SubmitBroadcaster {
     config: SubmitBroadcasterConfig,
@@ -407,11 +413,11 @@ impl SubmitBroadcaster {
     pub fn new(config: SubmitBroadcasterConfig) -> anyhow::Result<Self> {
         let mut transports = Vec::with_capacity(config.pool_size);
 
-        // Synthesize base_url when testnet is true but base_url is None
-        let base_url = if config.testnet && config.base_url.is_none() {
-            Some(BITMEX_HTTP_TESTNET_URL.to_string())
-        } else {
-            config.base_url.clone()
+        let base_url = match config.environment {
+            BitmexEnvironment::Testnet if config.base_url.is_none() => {
+                Some(BITMEX_HTTP_TESTNET_URL.to_string())
+            }
+            _ => config.base_url.clone(),
         };
 
         for i in 0..config.pool_size {
@@ -637,7 +643,7 @@ impl SubmitBroadcaster {
     /// # Errors
     ///
     /// Returns an error if all submit requests fail or no healthy clients are available.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn broadcast_submit(
         &self,
         instrument_id: InstrumentId,
@@ -696,6 +702,7 @@ impl SubmitBroadcaster {
         );
 
         let mut handles = Vec::new();
+
         for transport in healthy_transports {
             // All transports use the same client_order_id. If multiple succeed,
             // BitMEX rejects duplicates with "duplicate clOrdID" (expected rejection).
@@ -775,7 +782,7 @@ impl SubmitBroadcaster {
     }
 
     /// Caches an instrument in all HTTP clients in the pool.
-    pub fn cache_instrument(&self, instrument: InstrumentAny) {
+    pub fn cache_instrument(&self, instrument: &InstrumentAny) {
         for transport in self.transports.iter() {
             transport.executor.add_instrument(instrument.clone());
         }
@@ -851,7 +858,7 @@ mod tests {
 
     /// Mock executor for testing.
     #[derive(Clone)]
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     struct MockExecutor {
         handler: Arc<
             dyn Fn() -> Pin<Box<dyn Future<Output = anyhow::Result<OrderStatusReport>> + Send>>
@@ -877,7 +884,6 @@ mod tests {
             Box::pin(async { Ok(()) })
         }
 
-        #[allow(clippy::too_many_arguments)]
         fn submit_order(
             &self,
             _instrument_id: InstrumentId,
@@ -1149,45 +1155,39 @@ mod tests {
 
     #[tokio::test]
     async fn test_default_config() {
-        let config = SubmitBroadcasterConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            ..Default::default()
-        };
+        let report = create_test_report("ORDER-1");
+        let transports: Vec<TransportClient> = (0..3)
+            .map(|i| {
+                let r = report.clone();
+                create_stub_transport(&format!("client-{i}"), move || {
+                    let r = r.clone();
+                    async move { Ok(r) }
+                })
+            })
+            .collect();
 
-        let broadcaster = SubmitBroadcaster::new(config);
-        assert!(broadcaster.is_ok());
-
-        let broadcaster = broadcaster.unwrap();
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
         let metrics = broadcaster.get_metrics_async().await;
 
-        // Default pool_size is 3
         assert_eq!(metrics.total_clients, 3);
     }
 
     #[tokio::test]
     async fn test_broadcaster_lifecycle() {
-        let config = SubmitBroadcasterConfig {
-            pool_size: 2,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            testnet: false,
-            timeout_secs: Some(5),
-            max_retries: None,
-            retry_delay_ms: None,
-            retry_delay_max_ms: None,
-            recv_window_ms: None,
-            max_requests_per_second: None,
-            max_requests_per_minute: None,
-            health_check_interval_secs: 60,
-            health_check_timeout_secs: 1,
-            expected_reject_patterns: vec![],
-            proxy_urls: vec![],
-        };
+        let report = create_test_report("ORDER-1");
+        let transports: Vec<TransportClient> = (0..2)
+            .map(|i| {
+                let r = report.clone();
+                create_stub_transport(&format!("client-{i}"), move || {
+                    let r = r.clone();
+                    async move { Ok(r) }
+                })
+            })
+            .collect();
 
-        let broadcaster = SubmitBroadcaster::new(config).unwrap();
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
 
         // Should not be running initially
         assert!(!broadcaster.running.load(Ordering::Relaxed));
@@ -1256,18 +1256,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_broadcaster_creation_with_pool() {
-        let config = SubmitBroadcasterConfig {
-            pool_size: 4,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            ..Default::default()
-        };
+        let report = create_test_report("ORDER-1");
+        let transports: Vec<TransportClient> = (0..4)
+            .map(|i| {
+                let r = report.clone();
+                create_stub_transport(&format!("client-{i}"), move || {
+                    let r = r.clone();
+                    async move { Ok(r) }
+                })
+            })
+            .collect();
 
-        let broadcaster = SubmitBroadcaster::new(config);
-        assert!(broadcaster.is_ok());
-
-        let broadcaster = broadcaster.unwrap();
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
         let metrics = broadcaster.get_metrics_async().await;
         assert_eq!(metrics.total_clients, 4);
     }
@@ -1327,7 +1328,7 @@ mod tests {
             pool_size: 1,
             api_key: Some("test_key".to_string()),
             api_secret: Some("test_secret".to_string()),
-            testnet: true,
+            environment: BitmexEnvironment::Testnet,
             base_url: None,
             ..Default::default()
         };
@@ -1337,16 +1338,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_clone_for_async() {
+    async fn test_constructor_honors_default_pool_size() {
         let config = SubmitBroadcasterConfig {
-            pool_size: 1,
             api_key: Some("test_key".to_string()),
             api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
+            base_url: Some("http://127.0.0.1:19999".to_string()),
             ..Default::default()
         };
 
+        let expected_pool = config.pool_size;
         let broadcaster = SubmitBroadcaster::new(config).unwrap();
+        let metrics = broadcaster.get_metrics_async().await;
+
+        assert_eq!(metrics.total_clients, expected_pool);
+    }
+
+    #[tokio::test]
+    async fn test_clone_for_async() {
+        let report = create_test_report("ORDER-1");
+        let transports = vec![create_stub_transport("client-0", move || {
+            let r = report.clone();
+            async move { Ok(r) }
+        })];
+
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
         let cloned = broadcaster.clone_for_async();
 
         // Verify they share the same atomics
@@ -1423,15 +1439,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_metrics_initialization_and_health() {
-        let config = SubmitBroadcasterConfig {
-            pool_size: 2,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            ..Default::default()
-        };
+        let report = create_test_report("ORDER-1");
+        let transports: Vec<TransportClient> = (0..2)
+            .map(|i| {
+                let r = report.clone();
+                create_stub_transport(&format!("client-{i}"), move || {
+                    let r = r.clone();
+                    async move { Ok(r) }
+                })
+            })
+            .collect();
 
-        let broadcaster = SubmitBroadcaster::new(config).unwrap();
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
         let metrics = broadcaster.get_metrics_async().await;
 
         assert_eq!(metrics.total_submits, 0);
@@ -1444,16 +1464,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_check_task_lifecycle() {
-        let config = SubmitBroadcasterConfig {
-            pool_size: 2,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            health_check_interval_secs: 1,
-            ..Default::default()
-        };
+        let report = create_test_report("ORDER-1");
+        let transports: Vec<TransportClient> = (0..2)
+            .map(|i| {
+                let r = report.clone();
+                create_stub_transport(&format!("client-{i}"), move || {
+                    let r = r.clone();
+                    async move { Ok(r) }
+                })
+            })
+            .collect();
 
-        let broadcaster = SubmitBroadcaster::new(config).unwrap();
+        let config = SubmitBroadcasterConfig::default();
+        let broadcaster = SubmitBroadcaster::new_with_transports(config, transports);
 
         // Start should spawn health check task
         broadcaster.start().await.unwrap();
@@ -1539,7 +1562,6 @@ mod tests {
                 Box::pin(async { Ok(()) })
             }
 
-            #[allow(clippy::too_many_arguments)]
             fn submit_order(
                 &self,
                 _instrument_id: InstrumentId,
@@ -1665,7 +1687,6 @@ mod tests {
                 Box::pin(async { Ok(()) })
             }
 
-            #[allow(clippy::too_many_arguments)]
             fn submit_order(
                 &self,
                 _instrument_id: InstrumentId,

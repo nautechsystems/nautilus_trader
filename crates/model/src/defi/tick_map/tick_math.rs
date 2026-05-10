@@ -17,14 +17,14 @@ use alloy_primitives::{U160, U256};
 
 use crate::defi::tick_map::{bit_math::most_significant_bit, tick::PoolTick};
 
-/// The minimum value that can be returned from get_sqrt_ratio_at_tick
-pub const MIN_SQRT_RATIO: U160 = U160::from_limbs([4295128739u64, 0, 0]);
+/// The minimum value that can be returned from `get_sqrt_ratio_at_tick`
+pub const MIN_SQRT_RATIO: U160 = U160::from_limbs([4_295_128_739_u64, 0, 0]);
 
-/// The maximum value that can be returned from get_sqrt_ratio_at_tick
+/// The maximum value that can be returned from `get_sqrt_ratio_at_tick`
 pub const MAX_SQRT_RATIO: U160 = U160::from_limbs([
-    0x5d951d5263988d26u64, // Lower 64 bits
-    0xefd1fc6a50648849u64, // Middle 64 bits
-    0xfffd8963u64,         // Upper 32 bits
+    0x5d95_1d52_6398_8d26_u64, // Lower 64 bits
+    0xefd1_fc6a_5064_8849_u64, // Middle 64 bits
+    0xfffd_8963_u64,           // Upper 32 bits
 ]);
 
 /// Returns the sqrt ratio as a Q64.96 for the given tick. The sqrt ratio is computed as
@@ -42,6 +42,7 @@ pub const MAX_SQRT_RATIO: U160 = U160::from_limbs([
 ///
 /// Panics if the absolute tick exceeds [`PoolTick::MAX_TICK`].
 #[inline]
+#[must_use]
 pub fn get_sqrt_ratio_at_tick(tick: i32) -> U160 {
     // Validate range before abs() to avoid overflow panic on i32::MIN
     assert!(
@@ -155,7 +156,7 @@ pub fn get_sqrt_ratio_at_tick(tick: i32) -> U160 {
         ratio = U256::MAX / ratio;
     }
 
-    ratio = (ratio + U256::from(0xffffffffu32)) >> 32;
+    ratio = (ratio + U256::from(0xffff_ffff_u32)) >> 32;
     U160::from(ratio)
 }
 
@@ -170,7 +171,8 @@ pub fn get_sqrt_ratio_at_tick(tick: i32) -> U160 {
 /// - `sqrt_price_x96 < MIN_SQRT_RATIO` (too small)
 /// - `sqrt_price_x96 >= MAX_SQRT_RATIO` (too large)
 ///
-/// Valid range is approximately from tick -887272 to +887272.
+/// Valid range is approximately from tick `-887272` to `+887272`.
+#[must_use]
 pub fn get_tick_at_sqrt_ratio(sqrt_price_x96: U160) -> i32 {
     assert!(
         sqrt_price_x96 >= MIN_SQRT_RATIO && sqrt_price_x96 < MAX_SQRT_RATIO,
@@ -198,6 +200,7 @@ pub fn get_tick_at_sqrt_ratio(sqrt_price_x96: U160) -> i32 {
 
     // 14 iterations to compute the fractional part
     let mut decimals = U256::ZERO;
+
     for i in (50..=63).rev() {
         r = (r * r) >> 127;
         let f = r >> 128;
@@ -213,7 +216,7 @@ pub fn get_tick_at_sqrt_ratio(sqrt_price_x96: U160) -> i32 {
     // sqrt_ratio = sqrt(1.0001^tick)
     // tick = log_{sqrt(1.0001)}(sqrt_ratio) = log_2(sqrt_ratio) / log_2(sqrt(1.0001))
     // 2**64 / log_2(sqrt(1.0001)) = 255738958999603826347141
-    let log_sqrt10001 = log_2_x64 * U256::from(255738958999603826347141u128);
+    let log_sqrt10001 = log_2_x64 * U256::from(255_738_958_999_603_826_347_141_u128);
 
     // Calculate tick bounds using wrapping arithmetic
     let tick_low_offset =
@@ -227,14 +230,14 @@ pub fn get_tick_at_sqrt_ratio(sqrt_price_x96: U160) -> i32 {
     // Convert to i32 by directly casting
     // The values after >> 128 should fit in i32 range
     // For negative values, the wraparound in U256 will be preserved in the cast
-    let tick_low = tick_low_u256.as_le_bytes()[0] as i32
-        | ((tick_low_u256.as_le_bytes()[1] as i32) << 8)
-        | ((tick_low_u256.as_le_bytes()[2] as i32) << 16)
-        | ((tick_low_u256.as_le_bytes()[3] as i32) << 24);
-    let tick_hi = tick_hi_u256.as_le_bytes()[0] as i32
-        | ((tick_hi_u256.as_le_bytes()[1] as i32) << 8)
-        | ((tick_hi_u256.as_le_bytes()[2] as i32) << 16)
-        | ((tick_hi_u256.as_le_bytes()[3] as i32) << 24);
+    let tick_low = i32::from(tick_low_u256.as_le_bytes()[0])
+        | (i32::from(tick_low_u256.as_le_bytes()[1]) << 8)
+        | (i32::from(tick_low_u256.as_le_bytes()[2]) << 16)
+        | (i32::from(tick_low_u256.as_le_bytes()[3]) << 24);
+    let tick_hi = i32::from(tick_hi_u256.as_le_bytes()[0])
+        | (i32::from(tick_hi_u256.as_le_bytes()[1]) << 8)
+        | (i32::from(tick_hi_u256.as_le_bytes()[2]) << 16)
+        | (i32::from(tick_hi_u256.as_le_bytes()[3]) << 24);
 
     // Final selection
     if tick_low == tick_hi {
@@ -305,21 +308,21 @@ mod tests {
     fn test_get_tick_at_sqrt_ration_various_values() {
         assert_eq!(
             get_tick_at_sqrt_ratio(U160::from_str("511495728837967332084595714").unwrap()),
-            -100860
+            -100_860
         );
         assert_eq!(
             get_tick_at_sqrt_ratio(U160::from_str("14464772219441977173490711849216").unwrap()),
-            104148
+            104_148
         );
         assert_eq!(
             get_tick_at_sqrt_ratio(U160::from_str("17148448136625419841777674413284").unwrap()),
-            107552
+            107_552
         );
     }
 
     #[rstest]
     fn test_get_tick_at_sqrt_ratio_min_tick_plus_one() {
-        let result = get_tick_at_sqrt_ratio(U160::from(4295343490u64));
+        let result = get_tick_at_sqrt_ratio(U160::from(4_295_343_490_u64));
         assert_eq!(result, PoolTick::MIN_TICK + 1);
     }
 
@@ -356,8 +359,8 @@ mod tests {
 
     #[rstest]
     #[case::min_sqrt_ratio(MIN_SQRT_RATIO)]
-    #[case::price_10_12_to_1(encode_sqrt_ratio_x96(1, 1000000000000))] // 10^12 / 1
-    #[case::price_10_6_to_1(encode_sqrt_ratio_x96(1, 1000000))] // 10^6 / 1
+    #[case::price_10_12_to_1(encode_sqrt_ratio_x96(1, 1_000_000_000_000))] // 10^12 / 1
+    #[case::price_10_6_to_1(encode_sqrt_ratio_x96(1, 1_000_000))] // 10^6 / 1
     #[case::price_1_to_64(encode_sqrt_ratio_x96(64, 1))] // 1 / 64
     #[case::price_1_to_8(encode_sqrt_ratio_x96(8, 1))] // 1 / 8
     #[case::price_1_to_2(encode_sqrt_ratio_x96(2, 1))] // 1 / 2
@@ -365,8 +368,8 @@ mod tests {
     #[case::price_2_to_1(encode_sqrt_ratio_x96(1, 2))] // 2 / 1
     #[case::price_8_to_1(encode_sqrt_ratio_x96(1, 8))] // 8 / 1
     #[case::price_64_to_1(encode_sqrt_ratio_x96(1, 64))] // 64 / 1
-    #[case::price_1_to_10_6(encode_sqrt_ratio_x96(1000000, 1))] // 1 / 10^6
-    #[case::price_1_to_10_12(encode_sqrt_ratio_x96(1000000000000, 1))] // 1 / 10^12
+    #[case::price_1_to_10_6(encode_sqrt_ratio_x96(1_000_000, 1))] // 1 / 10^6
+    #[case::price_1_to_10_12(encode_sqrt_ratio_x96(1_000_000_000_000, 1))] // 1 / 10^12
     #[case::max_sqrt_ratio_minus_one(MAX_SQRT_RATIO - U160::from(1))]
     fn test_get_tick_at_sqrt_ratio_accuracy(#[case] ratio: U160) {
         let tick = get_tick_at_sqrt_ratio(ratio);
@@ -416,7 +419,7 @@ mod tests {
         // Note: Very high ticks (above ~790227) produce sqrt_ratios >= MAX_SQRT_RATIO,
         // so we limit our test to ticks that produce valid sqrt_ratios
         let test_ticks = vec![
-            -887272, -100000, -1000, -100, -1, 0, 1, 100, 1000, 100000, 700000,
+            -887_272, -100_000, -1000, -100, -1, 0, 1, 100, 1000, 100_000, 700_000,
         ];
 
         for original_tick in test_ticks {

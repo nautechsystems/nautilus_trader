@@ -26,6 +26,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.nautilus_pyo3 import BitmexEnvironment
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
@@ -35,7 +36,7 @@ def get_bitmex_http_client(
     api_key: str | None = None,
     api_secret: str | None = None,
     base_url: str | None = None,
-    testnet: bool = False,
+    environment: BitmexEnvironment = BitmexEnvironment.MAINNET,
     timeout_secs: int | None = None,
     max_retries: int | None = None,
     retry_delay_ms: int | None = None,
@@ -49,8 +50,8 @@ def get_bitmex_http_client(
     Cache and return a BitMEX HTTP client with the given key and secret.
 
     If ``api_key`` and ``api_secret`` are ``None``, then they will be sourced from the
-    environment variables ``BITMEX_API_KEY`` and ``BITMEX_API_SECRET`` for production,
-    or ``BITMEX_TESTNET_API_KEY`` and ``BITMEX_TESTNET_API_SECRET`` when ``testnet=True``.
+    environment variables ``BITMEX_API_KEY`` and ``BITMEX_API_SECRET`` for mainnet,
+    or ``BITMEX_TESTNET_API_KEY`` and ``BITMEX_TESTNET_API_SECRET`` for testnet.
 
     Parameters
     ----------
@@ -60,8 +61,8 @@ def get_bitmex_http_client(
         The BitMEX API secret for the client.
     base_url : str, optional
         The base URL for the BitMEX API.
-    testnet : bool, default False
-        If the client should connect to the testnet.
+    environment : BitmexEnvironment, default MAINNET
+        The BitMEX environment (MAINNET or TESTNET).
     timeout_secs : int, optional
         The timeout in seconds for HTTP requests.
     max_retries : int, optional
@@ -84,20 +85,30 @@ def get_bitmex_http_client(
     nautilus_pyo3.BitmexHttpClient
 
     """
-    return nautilus_pyo3.BitmexHttpClient(
-        api_key=api_key,
-        api_secret=api_secret,
-        base_url=base_url,
-        testnet=testnet,
-        timeout_secs=timeout_secs,
-        max_retries=max_retries,
-        retry_delay_ms=retry_delay_ms,
-        retry_delay_max_ms=retry_delay_max_ms,
-        recv_window_ms=recv_window_ms,
-        max_requests_per_second=max_requests_per_second,
-        max_requests_per_minute=max_requests_per_minute,
-        proxy_url=proxy_url,
-    )
+    kwargs: dict = {
+        "api_key": api_key,
+        "api_secret": api_secret,
+        "base_url": base_url,
+        "environment": environment,
+        "proxy_url": proxy_url,
+    }
+
+    if timeout_secs is not None:
+        kwargs["timeout_secs"] = timeout_secs
+    if max_retries is not None:
+        kwargs["max_retries"] = max_retries
+    if retry_delay_ms is not None:
+        kwargs["retry_delay_ms"] = retry_delay_ms
+    if retry_delay_max_ms is not None:
+        kwargs["retry_delay_max_ms"] = retry_delay_max_ms
+    if recv_window_ms is not None:
+        kwargs["recv_window_ms"] = recv_window_ms
+    if max_requests_per_second is not None:
+        kwargs["max_requests_per_second"] = max_requests_per_second
+    if max_requests_per_minute is not None:
+        kwargs["max_requests_per_minute"] = max_requests_per_minute
+
+    return nautilus_pyo3.BitmexHttpClient(**kwargs)
 
 
 @lru_cache(maxsize=1)
@@ -167,11 +178,17 @@ class BitmexLiveDataClientFactory(LiveDataClientFactory):
         BitmexDataClient
 
         """
+        env = (
+            config.environment
+            if config.environment is not None
+            else (BitmexEnvironment.TESTNET if config.testnet else BitmexEnvironment.MAINNET)
+        )
+
         client = get_bitmex_http_client(
             api_key=config.api_key,
             api_secret=config.api_secret,
             base_url=config.base_url_http,
-            testnet=config.testnet,
+            environment=env,
             timeout_secs=config.http_timeout_secs,
             max_retries=config.max_retries,
             retry_delay_ms=config.retry_delay_initial_ms,
@@ -179,7 +196,7 @@ class BitmexLiveDataClientFactory(LiveDataClientFactory):
             recv_window_ms=config.recv_window_ms,
             max_requests_per_second=config.max_requests_per_second,
             max_requests_per_minute=config.max_requests_per_minute,
-            proxy_url=config.http_proxy_url,
+            proxy_url=config.proxy_url,
         )
 
         provider = get_bitmex_instrument_provider(
@@ -237,11 +254,17 @@ class BitmexLiveExecClientFactory(LiveExecClientFactory):
         BitmexExecutionClient
 
         """
+        env = (
+            config.environment
+            if config.environment is not None
+            else (BitmexEnvironment.TESTNET if config.testnet else BitmexEnvironment.MAINNET)
+        )
+
         client = get_bitmex_http_client(
             api_key=config.api_key,
             api_secret=config.api_secret,
             base_url=config.base_url_http,
-            testnet=config.testnet,
+            environment=env,
             timeout_secs=config.http_timeout_secs,
             max_retries=config.max_retries,
             retry_delay_ms=config.retry_delay_initial_ms,
@@ -249,7 +272,7 @@ class BitmexLiveExecClientFactory(LiveExecClientFactory):
             recv_window_ms=config.recv_window_ms,
             max_requests_per_second=config.max_requests_per_second,
             max_requests_per_minute=config.max_requests_per_minute,
-            proxy_url=config.http_proxy_url,
+            proxy_url=config.proxy_url,
         )
 
         provider = get_bitmex_instrument_provider(

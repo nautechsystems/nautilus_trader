@@ -16,7 +16,7 @@
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence.catalog import BaseDataCatalog
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
@@ -24,6 +24,7 @@ from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.data_topics cimport TopicCache
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport SpreadQuoteAggregator
@@ -33,6 +34,7 @@ from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestForwardPrices
 from nautilus_trader.data.messages cimport RequestFundingRates
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
@@ -51,6 +53,8 @@ from nautilus_trader.data.messages cimport SubscribeInstrumentClose
 from nautilus_trader.data.messages cimport SubscribeInstruments
 from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
 from nautilus_trader.data.messages cimport SubscribeMarkPrices
+from nautilus_trader.data.messages cimport SubscribeOptionChain
+from nautilus_trader.data.messages cimport SubscribeOptionGreeks
 from nautilus_trader.data.messages cimport SubscribeOrderBook
 from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
@@ -63,6 +67,8 @@ from nautilus_trader.data.messages cimport UnsubscribeInstrumentClose
 from nautilus_trader.data.messages cimport UnsubscribeInstruments
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentStatus
 from nautilus_trader.data.messages cimport UnsubscribeMarkPrices
+from nautilus_trader.data.messages cimport UnsubscribeOptionChain
+from nautilus_trader.data.messages cimport UnsubscribeOptionGreeks
 from nautilus_trader.data.messages cimport UnsubscribeOrderBook
 from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
@@ -75,6 +81,7 @@ from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport MarkPriceUpdate
+from nautilus_trader.model.data cimport OptionGreeks
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
@@ -91,7 +98,7 @@ cdef class DataEngine(Component):
     cdef readonly Cache _cache
     cdef readonly DataClient _default_client
     cdef readonly set[ClientId] _external_clients
-    cdef readonly dict[str, ParquetDataCatalog] _catalogs
+    cdef readonly dict[str, BaseDataCatalog] _catalogs
 
     cdef readonly dict[ClientId, DataClient] _clients
     cdef readonly dict[Venue, DataClient] _routing_map
@@ -106,12 +113,18 @@ cdef class DataEngine(Component):
     cdef readonly dict[InstrumentId, list[OrderBookDelta]] _buffered_deltas_map
     cdef readonly dict[str, SnapshotInfo] _snapshot_info
 
+    cdef readonly dict _option_chain_managers
+    cdef readonly dict _option_chain_instrument_index
+    cdef readonly dict _option_chain_timer_names
+    cdef readonly dict _pending_option_chain_requests
+
     cdef readonly dict[UUID4, RequestData] _request_group_parent_request
     cdef readonly dict[UUID4, int] _request_group_n_components
     cdef readonly dict[UUID4, UUID4] _request_group_parent_request_id
     cdef readonly dict[UUID4, list] _request_group_responses
     cdef readonly dict[UUID4, object] _long_request_generator
     cdef readonly dict[UUID4, RequestData] _requests
+    cdef readonly dict[UUID4, object] _request_workflows
     cdef readonly dict[UUID4, UUID4] _parent_long_request_id
     cdef readonly dict[UUID4, UUID4] _parent_join_request_id
     cdef readonly dict[UUID4, UUID4] _parent_request_id
@@ -173,6 +186,7 @@ cdef class DataEngine(Component):
     cpdef list subscribed_bars(self)
     cpdef list subscribed_instrument_status(self)
     cpdef list subscribed_instrument_close(self)
+    cpdef list subscribed_option_greeks(self)
     cpdef list subscribed_synthetic_quotes(self)
     cpdef list subscribed_synthetic_trades(self)
 
@@ -206,6 +220,8 @@ cdef class DataEngine(Component):
     cpdef void _handle_subscribe_data(self, DataClient client, SubscribeData command)
     cpdef void _handle_subscribe_instrument_status(self, MarketDataClient client, SubscribeInstrumentStatus command)
     cpdef void _handle_subscribe_instrument_close(self, MarketDataClient client, SubscribeInstrumentClose command)
+    cpdef void _handle_subscribe_option_greeks(self, MarketDataClient client, SubscribeOptionGreeks command)
+    cpdef void _handle_subscribe_option_chain(self, MarketDataClient client, SubscribeOptionChain command)
     cpdef void _handle_unsubscribe_instruments(self, MarketDataClient client, UnsubscribeInstruments command)
     cpdef void _handle_unsubscribe_instrument(self, MarketDataClient client, UnsubscribeInstrument command)
     cpdef void _handle_unsubscribe_order_book(self, MarketDataClient client, UnsubscribeOrderBook command)
@@ -218,6 +234,22 @@ cdef class DataEngine(Component):
     cpdef void _handle_unsubscribe_data(self, DataClient client, UnsubscribeData command)
     cpdef void _handle_unsubscribe_instrument_status(self, MarketDataClient client, UnsubscribeInstrumentStatus command)
     cpdef void _handle_unsubscribe_instrument_close(self, MarketDataClient client, UnsubscribeInstrumentClose command)
+    cpdef void _handle_unsubscribe_option_greeks(self, MarketDataClient client, UnsubscribeOptionGreeks command)
+    cpdef void _handle_unsubscribe_option_chain(self, MarketDataClient client, UnsubscribeOptionChain command)
+
+# -- OPTION CHAIN HELPERS -------------------------------------------------------------------------
+
+    cdef void _subscribe_option_chain_instruments(self, MarketDataClient client, list active_ids, SubscribeOptionChain command)
+    cdef void _unsubscribe_option_chain_instruments(self, MarketDataClient client, list instrument_ids)
+    cdef void _create_option_chain_manager(self, SubscribeOptionChain command, object initial_atm_price)
+    cdef void _handle_forward_prices_response(self, object correlation_id, list forward_prices)
+    cdef object _find_sample_instrument(self, object series_id)
+    cdef void _complete_option_chain_bootstrap(self, str series_key, object manager)
+    cdef void _teardown_option_chain(self, str series_key, MarketDataClient client)
+    cdef void _expire_option_chain_instrument(self, InstrumentId instrument_id, str series_key)
+    cdef void _update_option_chains(self, Instrument instrument)
+    cdef void _feed_quote_to_option_chain(self, QuoteTick tick)
+    cdef void _feed_greeks_to_option_chain(self, OptionGreeks option_greeks)
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
@@ -229,7 +261,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_request_order_book_deltas(self, DataClient client, RequestOrderBookDeltas request)
     cpdef void _handle_request_order_book_depth(self, DataClient client, RequestOrderBookDepth request)
     cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request)
-    cpdef void _handle_order_book_deltas_snapshot_replay(self, DataResponse response)
+    cpdef list _handle_order_book_deltas_snapshot_replay(self, UUID4 correlation_id, list data, dict params)
     cpdef tuple _bound_dates(self, RequestData request)
     cpdef void _date_range_client_request(self, DataClient client, RequestData request)
     cpdef void _handle_date_range_request(self, DataClient client, RequestData request)
@@ -262,6 +294,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_custom_data(self, CustomData data, bint historical = *)
     cpdef void _handle_instrument_status(self, InstrumentStatus data, bint historical = *)
     cpdef void _handle_close_price(self, InstrumentClose data, bint historical = *)
+    cpdef void _handle_option_greeks(self, OptionGreeks option_greeks)
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------
 
@@ -288,6 +321,9 @@ cdef class DataEngine(Component):
 
     cdef tuple _get_bar_aggregator_key(self, BarType bar_type, UUID4 request_id = *)
     cdef tuple _get_spread_quote_aggregator_key(self, InstrumentId spread_instrument_id, UUID4 request_id = *)
+    cdef object _ensure_request_workflows(self, RequestData request)
+    cdef object _inherit_request_workflows(self, RequestData target, RequestData source)
+    cdef dict _request_response_params(self, UUID4 request_id, dict fallback_params = *)
     cdef list _get_bar_types_from_aggregators(self)
     cpdef void _init_historical_aggregators(self, RequestData request)
     cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command)

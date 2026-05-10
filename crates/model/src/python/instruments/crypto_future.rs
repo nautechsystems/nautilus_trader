@@ -28,12 +28,15 @@ use rust_decimal::Decimal;
 use crate::{
     identifiers::{InstrumentId, Symbol},
     instruments::CryptoFuture,
+    python::instruments::register_crypto_currencies_from_dict,
     types::{Currency, Money, Price, Quantity},
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CryptoFuture {
-    #[allow(clippy::too_many_arguments)]
+    /// Represents a deliverable futures contract instrument, with crypto assets as underlying and for settlement.
+    #[expect(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (instrument_id, raw_symbol, underlying, quote_currency, settlement_currency, is_inverse, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment,ts_event, ts_init, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, info=None))]
     fn py_new(
@@ -119,7 +122,7 @@ impl CryptoFuture {
     }
 
     #[getter]
-    fn type_str(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(CryptoFuture)
     }
 
@@ -203,8 +206,8 @@ impl CryptoFuture {
 
     #[getter]
     #[pyo3(name = "lot_size")]
-    fn py_lot_size(&self) -> Option<Quantity> {
-        Some(self.lot_size)
+    fn py_lot_size(&self) -> Quantity {
+        self.lot_size
     }
 
     #[getter]
@@ -273,6 +276,7 @@ impl CryptoFuture {
         // Convert HashMap<String, serde_json::Value> back to Python dict
         if let Some(ref info_map) = self.info {
             let py_dict = PyDict::new(py);
+
             for (key, value) in info_map {
                 // Convert serde_json::Value back to Python object via JSON
                 let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
@@ -301,6 +305,7 @@ impl CryptoFuture {
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
+        register_crypto_currencies_from_dict(py, &values, &["underlying"]);
         from_dict_pyo3(py, values)
     }
 
@@ -330,6 +335,7 @@ impl CryptoFuture {
         // Serialize info dict
         if let Some(ref info_map) = self.info {
             let info_dict = PyDict::new(py);
+
             for (key, value) in info_map {
                 let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
                 let py_value =
@@ -348,22 +354,27 @@ impl CryptoFuture {
             Some(value) => dict.set_item("max_quantity", value.to_string())?,
             None => dict.set_item("max_quantity", py.None())?,
         }
+
         match self.min_quantity {
             Some(value) => dict.set_item("min_quantity", value.to_string())?,
             None => dict.set_item("min_quantity", py.None())?,
         }
+
         match self.max_notional {
             Some(value) => dict.set_item("max_notional", value.to_string())?,
             None => dict.set_item("max_notional", py.None())?,
         }
+
         match self.min_notional {
             Some(value) => dict.set_item("min_notional", value.to_string())?,
             None => dict.set_item("min_notional", py.None())?,
         }
+
         match self.max_price {
             Some(value) => dict.set_item("max_price", value.to_string())?,
             None => dict.set_item("max_price", py.None())?,
         }
+
         match self.min_price {
             Some(value) => dict.set_item("min_price", value.to_string())?,
             None => dict.set_item("min_price", py.None())?,
@@ -377,7 +388,11 @@ mod tests {
     use pyo3::{prelude::*, types::PyDict};
     use rstest::rstest;
 
-    use crate::instruments::{CryptoFuture, stubs::*};
+    use crate::{
+        enums::CurrencyType,
+        instruments::{CryptoFuture, stubs::*},
+        types::Currency,
+    };
 
     #[rstest]
     fn test_dict_round_trip(crypto_future_btcusdt: CryptoFuture) {
@@ -388,6 +403,24 @@ mod tests {
             let values: Py<PyDict> = values.extract(py).unwrap();
             let new_crypto_future = CryptoFuture::py_from_dict(py, values).unwrap();
             assert_eq!(crypto_future, new_crypto_future);
+        });
+    }
+
+    #[rstest]
+    fn test_from_dict_unknown_underlying_registers_as_crypto(crypto_future_btcusdt: CryptoFuture) {
+        // Regression: newly listed underlyings must round-trip through `from_dict`
+        // without requiring prior registration of the currency in the Rust map.
+        Python::initialize();
+        Python::attach(|py| {
+            let values = crypto_future_btcusdt.py_to_dict(py).unwrap();
+            let values: Py<PyDict> = values.extract(py).unwrap();
+            values.bind(py).set_item("underlying", "NEWFUT").unwrap();
+
+            let new_future = CryptoFuture::py_from_dict(py, values).unwrap();
+            assert_eq!(new_future.underlying.code.as_str(), "NEWFUT");
+            assert_eq!(new_future.underlying.precision, 8);
+            assert_eq!(new_future.underlying.currency_type, CurrencyType::Crypto);
+            assert!(Currency::try_from_str("NEWFUT").is_some());
         });
     }
 }

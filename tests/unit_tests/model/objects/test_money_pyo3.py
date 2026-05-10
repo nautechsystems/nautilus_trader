@@ -191,6 +191,83 @@ class TestMoney:
             Money.from_str(value)
 
     @pytest.mark.parametrize(
+        ("amount", "expected"),
+        [
+            [1.0, True],
+            [0.0, False],
+            [-1.0, False],
+        ],
+    )
+    def test_is_positive(self, amount: float, expected: bool) -> None:
+        # Arrange
+        money = Money(amount, USD)
+
+        # Act, Assert
+        assert money.is_positive() is expected
+
+    def test_checked_add_within_bounds(self) -> None:
+        # Arrange
+        a = Money(100.0, USD)
+        b = Money(50.0, USD)
+
+        # Act
+        result = a.checked_add(b)
+
+        # Assert
+        assert result == Money(150.0, USD)
+
+    def test_checked_add_above_max_returns_none(self) -> None:
+        # Arrange
+        near_max = Money(MONEY_MAX, USD)
+        one = Money(1.0, USD)
+
+        # Act
+        result = near_max.checked_add(one)
+
+        # Assert
+        assert result is None
+
+    def test_checked_sub_within_bounds(self) -> None:
+        # Arrange
+        a = Money(100.0, USD)
+        b = Money(40.0, USD)
+
+        # Act
+        result = a.checked_sub(b)
+
+        # Assert
+        assert result == Money(60.0, USD)
+
+    def test_checked_sub_below_min_returns_none(self) -> None:
+        # Arrange
+        near_min = Money(MONEY_MIN, USD)
+        one = Money(1.0, USD)
+
+        # Act
+        result = near_min.checked_sub(one)
+
+        # Assert
+        assert result is None
+
+    def test_checked_add_currency_mismatch_raises_value_error(self) -> None:
+        # Arrange
+        usd = Money(100.0, USD)
+        aud = Money(50.0, AUD)
+
+        # Act, Assert
+        with pytest.raises(ValueError):
+            usd.checked_add(aud)
+
+    def test_checked_sub_currency_mismatch_raises_value_error(self) -> None:
+        # Arrange
+        usd = Money(100.0, USD)
+        aud = Money(50.0, AUD)
+
+        # Act, Assert
+        with pytest.raises(ValueError):
+            usd.checked_sub(aud)
+
+    @pytest.mark.parametrize(
         ("value", "expected"),
         [
             ["1.00 USDT", Money(1.00, USDT)],
@@ -247,6 +324,7 @@ class TestMoney:
             (Decimal("-99.99"), USD),
             (Decimal("100.12345678"), USDT),
         ]
+
         for decimal_val, currency in test_values:
             money_from_decimal = Money.from_decimal(decimal_val, currency)
             money_from_str = Money.from_str(f"{decimal_val} {currency.code}")
@@ -546,56 +624,63 @@ class TestMoneyArithmetic:
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Money(1.00, USD), "-1.00"],
-            [Money(-1.00, USD), "1.00"],
-            [Money(0.00, USD), "0.00"],
+            [Money(1.00, USD), Money(-1.00, USD)],
+            [Money(-1.00, USD), Money(1.00, USD)],
+            [Money(0.00, USD), Money(0.00, USD)],
         ],
     )
-    def test_negation(self, value: Money, expected: str) -> None:
-        # Arrange
-        from decimal import Decimal
-
-        # Act
-        result = -value  # type: ignore[operator]
+    def test_negation(self, value: Money, expected: Money) -> None:
+        # Arrange, Act
+        result = -value
 
         # Assert
-        assert isinstance(result, Decimal)
-        assert result == Decimal(expected)
+        assert isinstance(result, Money)
+        assert result == expected
 
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Money(1.00, USD), "1.00"],
-            [Money(-1.00, USD), "1.00"],
-            [Money(0.00, USD), "0.00"],
+            [Money(1.00, USD), Money(1.00, USD)],
+            [Money(-1.00, USD), Money(1.00, USD)],
+            [Money(0.00, USD), Money(0.00, USD)],
         ],
     )
-    def test_abs(self, value: Money, expected: str) -> None:
-        # Arrange
-        from decimal import Decimal
-
-        # Act
-        result = abs(value)  # type: ignore[arg-type, var-annotated]
+    def test_abs(self, value: Money, expected: Money) -> None:
+        # Arrange, Act
+        result = abs(value)
 
         # Assert
-        assert isinstance(result, Decimal)
-        assert result == Decimal(expected)
+        assert isinstance(result, Money)
+        assert result == expected
 
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Money(1.00, USD), "1.00"],
-            [Money(-1.00, USD), "1.00"],  # PyO3 returns absolute value
-            [Money(0.00, USD), "0.00"],
+            [Money(1.00, USD), Money(1.00, USD)],
+            [Money(-1.00, USD), Money(-1.00, USD)],
+            [Money(0.00, USD), Money(0.00, USD)],
         ],
     )
-    def test_pos(self, value: Money, expected: str) -> None:
-        # Arrange
-        from decimal import Decimal
-
-        # Act
-        result = +value  # type: ignore[operator]
+    def test_pos(self, value: Money, expected: Money) -> None:
+        # Arrange, Act
+        result = +value
 
         # Assert
-        assert isinstance(result, Decimal)
-        assert result == Decimal(expected)
+        assert isinstance(result, Money)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            [Money(50.25, USD), 50],
+            [Money(-50.25, USD), -50],
+            [Money(0.00, USD), 0],
+        ],
+    )
+    def test_int_returns_expected_value(self, value: Money, expected: int) -> None:
+        # Arrange, Act
+        result = int(value)
+
+        # Assert
+        assert isinstance(result, int)
+        assert result == expected

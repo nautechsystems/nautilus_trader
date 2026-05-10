@@ -22,18 +22,20 @@ use std::fmt::Debug;
 use aws_lc_rs::hmac;
 use nautilus_core::{
     env::resolve_env_var_pair,
-    string::{REDACTED, mask_api_key},
+    hex,
+    string::secret::{REDACTED, mask_api_key},
 };
 use zeroize::ZeroizeOnDrop;
 
+use crate::common::enums::BitmexEnvironment;
+
 /// Returns the environment variable names for API credentials,
-/// based on the network.
+/// based on the environment.
 #[must_use]
-pub fn credential_env_vars(testnet: bool) -> (&'static str, &'static str) {
-    if testnet {
-        ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET")
-    } else {
-        ("BITMEX_API_KEY", "BITMEX_API_SECRET")
+pub fn credential_env_vars(environment: BitmexEnvironment) -> (&'static str, &'static str) {
+    match environment {
+        BitmexEnvironment::Testnet => ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET"),
+        BitmexEnvironment::Mainnet => ("BITMEX_API_KEY", "BITMEX_API_SECRET"),
     }
 }
 
@@ -71,9 +73,9 @@ impl Credential {
     pub fn resolve(
         api_key: Option<String>,
         api_secret: Option<String>,
-        testnet: bool,
+        environment: BitmexEnvironment,
     ) -> Option<Self> {
-        let (key_var, secret_var) = credential_env_vars(testnet);
+        let (key_var, secret_var) = credential_env_vars(environment);
         let (k, s) = resolve_env_var_pair(api_key, api_secret, key_var, secret_var)?;
         Some(Self::new(k, s))
     }
@@ -170,12 +172,14 @@ mod tests {
         );
     }
 
+    use crate::common::enums::BitmexEnvironment;
+
     #[rstest]
     fn test_resolve_with_both_args() {
         let result = Credential::resolve(
             Some("my_key".to_string()),
             Some("my_secret".to_string()),
-            false,
+            BitmexEnvironment::Mainnet,
         );
 
         assert!(result.is_some());
@@ -184,12 +188,12 @@ mod tests {
 
     #[rstest]
     fn test_resolve_with_no_args_no_env() {
-        let (key_var, secret_var) = credential_env_vars(false);
+        let (key_var, secret_var) = credential_env_vars(BitmexEnvironment::Mainnet);
         if std::env::var(key_var).is_ok() || std::env::var(secret_var).is_ok() {
             return;
         }
 
-        let result = Credential::resolve(None, None, false);
+        let result = Credential::resolve(None, None, BitmexEnvironment::Mainnet);
 
         assert!(result.is_none());
     }

@@ -33,18 +33,17 @@ use super::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use crate::uuid::{UUID4, UUID4_LEN};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl UUID4 {
-    /// Creates a new [`UUID4`] instance.
-    ///
-    /// If a string value is provided, it attempts to parse it into a UUID.
-    /// If no value is provided, a new random UUID is generated.
+    /// Represents a Universally Unique Identifier (UUID)
+    /// version 4 based on a 128-bit label as specified in RFC 4122.
     #[new]
     fn py_new() -> Self {
         Self::new()
     }
 
     /// Sets the state of the `UUID4` instance during unpickling.
-    #[allow(
+    #[expect(
         clippy::needless_pass_by_value,
         reason = "Python FFI requires owned types"
     )]
@@ -96,7 +95,7 @@ impl UUID4 {
 
     /// A safe constructor used during unpickling to ensure the correct initialization of `UUID4`.
     #[staticmethod]
-    #[allow(
+    #[expect(
         clippy::unnecessary_wraps,
         reason = "Python FFI requires Result return type"
     )]
@@ -114,7 +113,7 @@ impl UUID4 {
     }
 
     /// Returns a hash value for the `UUID4` instance.
-    #[allow(
+    #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_possible_wrap,
         reason = "Intentional cast for Python interop"

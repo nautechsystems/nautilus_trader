@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Technical analysis indicators for [NautilusTrader](http://nautilustrader.io).
+//! Technical analysis indicators for [NautilusTrader](https://nautilustrader.io).
 //!
-//! The `nautilus-indicators` crate provides a comprehensive collection of technical analysis indicators
+//! The `nautilus-indicators` crate provides a collection of technical analysis indicators
 //! for quantitative trading and market research. This includes a wide variety of indicators
 //! organized by category, with a unified trait-based architecture for consistent usage:
 //!
@@ -30,15 +30,13 @@
 //! usage and efficient circular buffer implementations. The crate supports both Rust-native
 //! usage and Python integration for strategy development and backtesting.
 //!
-//! # Platform
+//! # NautilusTrader
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-//! algorithmic trading platform, providing quantitative traders with the ability to backtest
-//! portfolios of automated trading strategies on historical data with an event-driven engine,
-//! and also deploy those same strategies live, with no code changes.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
+//! engine for multi-asset, multi-venue trading systems.
 //!
-//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
-//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+//! The system spans research, deterministic simulation, and live execution within a single
+//! event-driven architecture, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!

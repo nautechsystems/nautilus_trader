@@ -43,16 +43,13 @@ pub use stream::{
     stream_funding_rates, stream_quotes, stream_trades,
 };
 
-use super::{
-    csv::record::{
-        TardisBookUpdateRecord, TardisDerivativeTickerRecord, TardisQuoteRecord, TardisTradeRecord,
-    },
-    parse::{
-        parse_aggressor_side, parse_book_action, parse_instrument_id, parse_order_side,
-        parse_timestamp,
-    },
+use super::csv::record::{
+    TardisBookUpdateRecord, TardisDerivativeTickerRecord, TardisQuoteRecord, TardisTradeRecord,
 };
-use crate::parse::parse_price;
+use crate::common::parse::{
+    derive_trade_id, parse_aggressor_side, parse_book_action, parse_instrument_id,
+    parse_order_side, parse_price, parse_timestamp,
+};
 
 fn infer_precision(value: f64) -> u8 {
     let mut buf = ryu::Buffer::new(); // Stack allocation
@@ -83,11 +80,13 @@ fn create_csv_reader<P: AsRef<Path>>(
                 Err(e) => {
                     if attempt == max_retries {
                         anyhow::bail!(
-                            "Failed to open file '{path_ref:?}' after {max_retries} attempts: {e}"
+                            "Failed to open file '{}' after {max_retries} attempts: {e}",
+                            path_ref.display()
                         );
                     }
                     log::warn!(
-                        "Attempt {attempt}/{max_retries} failed to open file '{path_ref:?}': {e}. Retrying after {delay_ms}ms..."
+                        "Attempt {attempt}/{max_retries} failed to open file '{}': {e}. Retrying after {delay_ms}ms...",
+                        path_ref.display()
                     );
                     std::thread::sleep(Duration::from_millis(delay_ms));
                 }
@@ -124,11 +123,13 @@ fn create_csv_reader<P: AsRef<Path>>(
             Err(e) => {
                 if attempt == MAX_RETRIES {
                     anyhow::bail!(
-                        "Failed to read gzip header from '{filepath_ref:?}' after {MAX_RETRIES} attempts: {e}"
+                        "Failed to read gzip header from '{}' after {MAX_RETRIES} attempts: {e}",
+                        filepath_ref.display()
                     );
                 }
                 log::warn!(
-                    "Attempt {attempt}/{MAX_RETRIES} failed to read header from '{filepath_ref:?}': {e}. Retrying after {DELAY_MS}ms..."
+                    "Attempt {attempt}/{MAX_RETRIES} failed to read header from '{}': {e}. Retrying after {DELAY_MS}ms...",
+                    filepath_ref.display()
                 );
                 std::thread::sleep(Duration::from_millis(DELAY_MS));
             }
@@ -136,7 +137,10 @@ fn create_csv_reader<P: AsRef<Path>>(
     }
 
     if header_buf[0] != 0x1f || header_buf[1] != 0x8b {
-        anyhow::bail!("File '{filepath_ref:?}' has .gz extension but invalid gzip header");
+        anyhow::bail!(
+            "File '{}' has .gz extension but invalid gzip header",
+            filepath_ref.display()
+        );
     }
 
     for attempt in 1..=MAX_RETRIES {
@@ -145,11 +149,13 @@ fn create_csv_reader<P: AsRef<Path>>(
             Err(e) => {
                 if attempt == MAX_RETRIES {
                     anyhow::bail!(
-                        "Failed to reset file position for '{filepath_ref:?}' after {MAX_RETRIES} attempts: {e}"
+                        "Failed to reset file position for '{}' after {MAX_RETRIES} attempts: {e}",
+                        filepath_ref.display()
                     );
                 }
                 log::warn!(
-                    "Attempt {attempt}/{MAX_RETRIES} failed to seek in '{filepath_ref:?}': {e}. Retrying after {DELAY_MS}ms..."
+                    "Attempt {attempt}/{MAX_RETRIES} failed to seek in '{}': {e}. Retrying after {DELAY_MS}ms...",
+                    filepath_ref.display()
                 );
                 std::thread::sleep(Duration::from_millis(DELAY_MS));
             }
@@ -267,9 +273,19 @@ fn parse_trade_record(
 
     let price = parse_price(data.price, price_precision);
     let aggressor_side = parse_aggressor_side(&data.side);
-    let trade_id = TradeId::new(&data.id);
     let ts_event = parse_timestamp(data.timestamp);
     let ts_init = parse_timestamp(data.local_timestamp);
+    let trade_id = if data.id.is_empty() {
+        derive_trade_id(
+            data.symbol,
+            ts_event.as_u64(),
+            data.price,
+            data.amount,
+            &data.side,
+        )
+    } else {
+        TradeId::new(&data.id)
+    };
 
     TradeTick::new(
         instrument_id,
@@ -306,6 +322,7 @@ fn parse_derivative_ticker_record(
     Some(FundingRateUpdate::new(
         instrument_id,
         rate,
+        None,
         next_funding_ns,
         ts_event,
         ts_init,

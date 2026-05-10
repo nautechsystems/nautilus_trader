@@ -22,10 +22,7 @@
 //! Run with: `cargo run -p nautilus-backtest --features examples,streaming --example node-ema-cross`
 
 use nautilus_backtest::{
-    config::{
-        BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig,
-        NautilusDataType,
-    },
+    config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig, NautilusDataType},
     node::BacktestNode,
 };
 use nautilus_model::{
@@ -96,66 +93,33 @@ fn main() -> anyhow::Result<()> {
 
     let temp_dir = TempDir::new()?;
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None, None, None, None);
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
     catalog.write_instruments(vec![instrument])?;
     catalog.write_to_parquet(quotes, None, None, None)?;
 
     println!("Wrote {num_quotes} quotes to catalog: {catalog_path}");
 
     // Configure the backtest run
-    let venue_config = BacktestVenueConfig::new(
-        Ustr::from("SIM"),
-        OmsType::Hedging,
-        AccountType::Margin,
-        BookType::L1_MBP,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        vec!["1_000_000 USD".to_string()],
-        None,
-        None,
-        None,
-        None,
-    );
+    let venue_config = BacktestVenueConfig::builder()
+        .name(Ustr::from("SIM"))
+        .oms_type(OmsType::Hedging)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec!["1_000_000 USD".to_string()])
+        .build();
 
-    let data_config = BacktestDataConfig::new(
-        NautilusDataType::QuoteTick,
-        catalog_path,
-        None,
-        None,
-        Some(instrument_id),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
+    let data_config = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::QuoteTick)
+        .catalog_path(catalog_path)
+        .instrument_id(instrument_id)
+        .build();
 
-    let run_config = BacktestRunConfig::new(
-        Some("ema-cross-run".to_string()),
-        vec![venue_config],
-        vec![data_config],
-        BacktestEngineConfig::default(),
-        Some(100), // Stream in chunks of 100
-        None,
-        None,
-        None,
-    );
+    let run_config = BacktestRunConfig::builder()
+        .id("ema-cross-run".to_string())
+        .venues(vec![venue_config])
+        .data(vec![data_config])
+        .chunk_size(100) // Stream in chunks of 100
+        .build();
 
     // Build and run the backtest
     let mut node = BacktestNode::new(vec![run_config])?;

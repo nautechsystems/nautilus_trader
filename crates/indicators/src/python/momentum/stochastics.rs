@@ -23,23 +23,15 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Stochastics {
-    /// Creates a new Stochastics indicator.
+    /// Creates a new `Stochastics` instance with default parameters.
     ///
-    /// Parameters
-    /// ----------
-    /// period_k : int
-    ///     The lookback period for %K calculation (highest high / lowest low).
-    /// period_d : int
-    ///     The smoothing period for %D calculation.
-    /// slowing : int, optional
-    ///     The slowing period for %K smoothing. Default is 1 (no slowing).
-    ///     Use >1 for MA smoothed %K.
-    /// ma_type : MovingAverageType, optional
-    ///     The MA type for slowing and MA-based %D. Default is Exponential.
-    /// d_method : StochasticsDMethod, optional
-    ///     The %D calculation method. Default is Ratio (Nautilus original).
-    ///     Use MovingAverage for MA smoothed %D.
+    /// This is the backward-compatible constructor that produces identical output
+    /// to the original Nautilus implementation, setting the following to:
+    /// - `slowing = 1` (no slowing applied to %K)
+    /// - `ma_type = Exponential` (unused when slowing = 1 or with Ratio method)
+    /// - `d_method = Ratio` (Nautilus native %D calculation)
     #[new]
     #[pyo3(signature = (period_k, period_d, slowing=None, ma_type=None, d_method=None))]
     #[must_use]
@@ -126,6 +118,13 @@ impl Stochastics {
         self.initialized
     }
 
+    /// Updates the indicator with raw price values.
+    ///
+    /// # Parameters
+    ///
+    /// - `high`: The high price for the period.
+    /// - `low`: The low price for the period.
+    /// - `close`: The close price for the period.
     #[pyo3(name = "update_raw")]
     fn py_update_raw(&mut self, high: f64, low: f64, close: f64) {
         self.update_raw(high, low, close);

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Core foundational types and utilities for [NautilusTrader](http://nautilustrader.io).
+//! Core foundational types and utilities for [NautilusTrader](https://nautilustrader.io).
 //!
 //! The `nautilus-core` crate is designed to be lightweight, efficient, and to provide zero-cost abstractions
 //! wherever possible. It supplies the essential building blocks used across the NautilusTrader
@@ -27,15 +27,13 @@
 //! - Cross-platform environment utilities.
 //! - Abstractions over common collections.
 //!
-//! # Platform
+//! # NautilusTrader
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-//! algorithmic trading platform, providing quantitative traders with the ability to backtest
-//! portfolios of automated trading strategies on historical data with an event-driven engine,
-//! and also deploy those same strategies live, with no code changes.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
+//! engine for multi-asset, multi-venue trading systems.
 //!
-//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
-//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+//! The system spans research, deterministic simulation, and live execution within a single
+//! event-driven architecture, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!
@@ -49,12 +47,25 @@
 //! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
+#![warn(clippy::pedantic)]
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![allow(
+    clippy::inline_always,
+    reason = "hot-path predicate guards use #[inline(always)] intentionally for constant-folding"
+)]
+#![allow(
+    clippy::manual_let_else,
+    reason = "match can be clearer than let-else for some patterns"
+)]
+#![allow(
+    clippy::redundant_closure_for_method_calls,
+    reason = "causes clippy ICE on Rust 1.94; matches the workaround in workspace Cargo.toml"
+)]
 
 pub mod collections;
 pub mod consts;
@@ -62,14 +73,11 @@ pub mod correctness;
 pub mod datetime;
 pub mod drop;
 pub mod env;
-pub mod formatting;
+pub mod hex;
 pub mod math;
 pub mod message;
 pub mod nanos;
 pub mod params;
-pub mod stack_str;
-
-pub mod parsing;
 pub mod paths;
 pub mod serialization;
 pub mod shared;
@@ -90,11 +98,12 @@ compile_error!("Unsupported platform: Nautilus supports only Linux, macOS, and W
 #[cfg(feature = "python")]
 pub use crate::params::from_pydict;
 pub use crate::{
+    collections::{AtomicMap, AtomicSet},
     drop::CleanDrop,
     nanos::UnixNanos,
     params::Params,
     shared::{SharedCell, WeakCell},
-    stack_str::{STACKSTR_CAPACITY, StackStr},
+    string::stack_str::{STACKSTR_CAPACITY, StackStr},
     time::AtomicTime,
     uuid::UUID4,
 };

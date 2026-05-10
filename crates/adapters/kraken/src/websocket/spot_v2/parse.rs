@@ -16,6 +16,7 @@
 //! WebSocket message parsers for converting Kraken streaming data to Nautilus domain models.
 
 use anyhow::Context;
+use chrono::{DateTime, Utc};
 use nautilus_core::{UUID4, nanos::UnixNanos};
 use nautilus_model::{
     data::{Bar, BarSpecification, BarType, BookOrder, OrderBookDelta, QuoteTick, TradeTick},
@@ -67,8 +68,7 @@ pub fn parse_quote_tick(
         format!("Failed to construct ask Quantity with precision {size_precision}")
     })?;
 
-    // Kraken ticker doesn't include timestamp
-    let ts_event = ts_init;
+    let ts_event = datetime_to_nanos(ticker.timestamp, "ticker.timestamp")?;
 
     Ok(QuoteTick::new(
         instrument_id,
@@ -108,7 +108,7 @@ pub fn parse_trade_tick(
     };
 
     let trade_id = TradeId::new_checked(trade.trade_id.to_string())?;
-    let ts_event = parse_rfc3339_timestamp(&trade.timestamp, "trade.timestamp")?;
+    let ts_event = datetime_to_nanos(trade.timestamp, "trade.timestamp")?;
 
     TradeTick::new_checked(
         instrument_id,
@@ -141,12 +141,7 @@ pub fn parse_book_deltas(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    // Parse timestamp if available, otherwise use ts_init
-    let ts_event = if let Some(ref timestamp) = book.timestamp {
-        parse_rfc3339_timestamp(timestamp, "book.timestamp")?
-    } else {
-        ts_init
-    };
+    let ts_event = datetime_to_nanos(book.timestamp, "book.timestamp")?;
 
     let mut deltas = Vec::new();
     let mut current_sequence = sequence;
@@ -188,7 +183,7 @@ pub fn parse_book_deltas(
     Ok(deltas)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn parse_book_level(
     level: &KrakenWsBookLevel,
     side: OrderSide,
@@ -226,10 +221,11 @@ fn parse_book_level(
     ))
 }
 
-fn parse_rfc3339_timestamp(value: &str, field: &str) -> anyhow::Result<UnixNanos> {
-    value
-        .parse::<UnixNanos>()
-        .map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}': {e}"))
+fn datetime_to_nanos(value: DateTime<Utc>, field: &str) -> anyhow::Result<UnixNanos> {
+    let nanos = value
+        .timestamp_nanos_opt()
+        .with_context(|| format!("Failed to convert {field}='{value}' to nanoseconds"))?;
+    Ok(UnixNanos::from(nanos as u64))
 }
 
 /// Parses Kraken WebSocket OHLC data into a Nautilus bar.
@@ -319,6 +315,9 @@ fn parse_order_type(order_type: Option<KrakenOrderType>) -> OrderType {
         Some(KrakenOrderType::TakeProfit) => OrderType::MarketIfTouched,
         Some(KrakenOrderType::StopLossLimit) => OrderType::StopLimit,
         Some(KrakenOrderType::TakeProfitLimit) => OrderType::LimitIfTouched,
+        // Trailing stops lack offset fields in WS reports, map to non-trailing equivalents
+        Some(KrakenOrderType::TrailingStop) => OrderType::StopMarket,
+        Some(KrakenOrderType::TrailingStopLimit) => OrderType::StopLimit,
         Some(KrakenOrderType::SettlePosition) => OrderType::Market,
         None => OrderType::Limit,
     }
@@ -400,7 +399,7 @@ pub fn parse_ws_order_status_report(
         .context("Failed to parse order_qty")?
         .unwrap_or(filled_qty);
 
-    let ts_event = parse_rfc3339_timestamp(&exec.timestamp, "execution.timestamp")?;
+    let ts_event = datetime_to_nanos(exec.timestamp, "execution.timestamp")?;
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -540,7 +539,7 @@ pub fn parse_ws_fill_report(
         Money::new(0.0, instrument.quote_currency())
     };
 
-    let ts_event = parse_rfc3339_timestamp(&exec.timestamp, "execution.timestamp")?;
+    let ts_event = datetime_to_nanos(exec.timestamp, "execution.timestamp")?;
 
     let client_order_id = exec
         .cl_ord_id
@@ -627,6 +626,11 @@ mod tests {
         assert!(quote_tick.ask_price.as_f64() > 0.0);
         assert!(quote_tick.bid_size.as_f64() > 0.0);
         assert!(quote_tick.ask_size.as_f64() > 0.0);
+        assert_eq!(
+            quote_tick.ts_event,
+            UnixNanos::from(1_671_960_659_123_456_000)
+        );
+        assert_eq!(quote_tick.ts_init, TS);
     }
 
     #[rstest]
@@ -645,6 +649,11 @@ mod tests {
             trade_tick.aggressor_side,
             AggressorSide::Buyer | AggressorSide::Seller
         ));
+        assert_eq!(
+            trade_tick.ts_event,
+            UnixNanos::from(1_696_613_755_440_295_000)
+        );
+        assert_eq!(trade_tick.ts_init, TS);
     }
 
     #[rstest]
@@ -676,6 +685,10 @@ mod tests {
         assert_eq!(first_delta.instrument_id, instrument.id());
         assert!(first_delta.order.price.as_f64() > 0.0);
         assert!(first_delta.order.size.as_f64() > 0.0);
+
+        let expected_ts_event = UnixNanos::from(1_696_613_755_440_295_000);
+        assert!(deltas.iter().all(|d| d.ts_event == expected_ts_event));
+        assert!(deltas.iter().all(|d| d.ts_init == TS));
     }
 
     #[rstest]
@@ -693,13 +706,28 @@ mod tests {
         let first_delta = &deltas[0];
         assert_eq!(first_delta.instrument_id, instrument.id());
         assert!(first_delta.order.price.as_f64() > 0.0);
+
+        let expected_ts_event = UnixNanos::from(1_696_613_755_440_295_000);
+        assert!(deltas.iter().all(|d| d.ts_event == expected_ts_event));
+        assert!(deltas.iter().all(|d| d.ts_init == TS));
     }
 
     #[rstest]
-    fn test_parse_rfc3339_timestamp() {
-        let timestamp = "2023-10-06T17:35:55.440295Z";
-        let result = parse_rfc3339_timestamp(timestamp, "test").unwrap();
-        assert!(result.as_u64() > 0);
+    fn test_datetime_to_nanos() {
+        let dt = "2023-10-06T17:35:55.440295Z"
+            .parse::<DateTime<Utc>>()
+            .unwrap();
+        let result = datetime_to_nanos(dt, "test").unwrap();
+        assert_eq!(result, UnixNanos::from(1_696_613_755_440_295_000));
+    }
+
+    #[rstest]
+    fn test_datetime_to_nanos_out_of_range_errors() {
+        let dt = "1500-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let result = datetime_to_nanos(dt, "test");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("test"));
     }
 
     #[rstest]

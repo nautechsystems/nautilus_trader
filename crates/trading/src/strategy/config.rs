@@ -23,10 +23,19 @@ use nautilus_model::{
 use serde::{Deserialize, Serialize};
 
 /// The base model for all trading strategy configurations.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, bon::Builder)]
+#[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.trading",
+        subclass,
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")
 )]
 pub struct StrategyConfig {
     /// The unique ID for the strategy. Will become the strategy ID if not None.
@@ -36,9 +45,11 @@ pub struct StrategyConfig {
     pub order_id_tag: Option<String>,
     /// If UUID4's should be used for client order ID values.
     #[serde(default = "default_false")]
+    #[builder(default)]
     pub use_uuid_client_order_ids: bool,
     /// If hyphens should be used in generated client order ID values.
     #[serde(default = "default_true")]
+    #[builder(default = true)]
     pub use_hyphens_in_client_order_ids: bool,
     /// The order management system type for the strategy. This will determine
     /// how the `ExecutionEngine` handles position IDs.
@@ -49,40 +60,50 @@ pub struct StrategyConfig {
     /// If OTO, OCO, and OUO **open** contingent orders should be managed automatically by the strategy.
     /// Any emulated orders which are active local will be managed by the `OrderEmulator` instead.
     #[serde(default = "default_false")]
+    #[builder(default)]
     pub manage_contingent_orders: bool,
     /// If all order GTD time in force expirations should be managed by the strategy.
     /// If True, then will ensure open orders have their GTD timers re-activated on start.
     #[serde(default = "default_false")]
+    #[builder(default)]
     pub manage_gtd_expiry: bool,
     /// If the strategy should automatically perform a market exit when stopped.
     /// If true, calling stop() will first cancel all orders and close all positions
     /// before the strategy transitions to the STOPPED state.
     #[serde(default = "default_false")]
+    #[builder(default)]
     pub manage_stop: bool,
     /// The interval in milliseconds to check for in-flight orders and open positions
     /// during a market exit.
     #[serde(default = "default_market_exit_interval_ms")]
+    #[builder(default = 100)]
     pub market_exit_interval_ms: u64,
     /// The maximum number of attempts to wait for orders and positions to close
     /// during a market exit before completing. Defaults to 100 attempts
     /// (10 seconds at 100ms intervals).
     #[serde(default = "default_market_exit_max_attempts")]
+    #[builder(default = 100)]
     pub market_exit_max_attempts: u64,
     /// The time in force for closing market orders during a market exit.
     #[serde(default = "default_market_exit_time_in_force")]
+    #[builder(default = TimeInForce::Gtc)]
     pub market_exit_time_in_force: TimeInForce,
     /// If closing market orders during a market exit should be reduce only.
     #[serde(default = "default_true")]
+    #[builder(default = true)]
     pub market_exit_reduce_only: bool,
     /// If events should be logged by the strategy.
     /// If False, then only warning events and above are logged.
     #[serde(default = "default_true")]
+    #[builder(default = true)]
     pub log_events: bool,
     /// If commands should be logged by the strategy.
     #[serde(default = "default_true")]
+    #[builder(default = true)]
     pub log_commands: bool,
     /// If order rejected events where `due_post_only` is True should be logged as warnings.
     #[serde(default = "default_true")]
+    #[builder(default = true)]
     pub log_rejected_due_post_only_as_warning: bool,
 }
 
@@ -99,10 +120,15 @@ const fn default_market_exit_time_in_force() -> TimeInForce {
 }
 
 /// Configuration for creating strategies from importable paths.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")
 )]
 pub struct ImportableStrategyConfig {
     /// The fully qualified name of the Strategy class.
@@ -115,24 +141,7 @@ pub struct ImportableStrategyConfig {
 
 impl Default for StrategyConfig {
     fn default() -> Self {
-        Self {
-            strategy_id: None,
-            order_id_tag: None,
-            use_uuid_client_order_ids: false,
-            use_hyphens_in_client_order_ids: true,
-            oms_type: None,
-            external_order_claims: None,
-            manage_contingent_orders: false,
-            manage_gtd_expiry: false,
-            manage_stop: false,
-            market_exit_interval_ms: default_market_exit_interval_ms(),
-            market_exit_max_attempts: default_market_exit_max_attempts(),
-            market_exit_time_in_force: TimeInForce::Gtc,
-            market_exit_reduce_only: true,
-            log_events: true,
-            log_commands: true,
-            log_rejected_due_post_only_as_warning: true,
-        }
+        Self::builder().build()
     }
 }
 

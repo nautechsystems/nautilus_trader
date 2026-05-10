@@ -21,16 +21,16 @@ pub mod config;
 pub mod factories;
 
 #[cfg(feature = "hypersync")]
+use nautilus_common::factories::{ClientConfig, DataClientFactory};
+#[cfg(feature = "hypersync")]
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 #[cfg(feature = "hypersync")]
-use nautilus_system::{
-    factories::{ClientConfig, DataClientFactory},
-    get_global_pyo3_registry,
-};
+use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 /// Extractor function for `BlockchainDataClientFactory`.
 #[cfg(feature = "hypersync")]
+#[expect(clippy::needless_pass_by_value)] // Must match FactoryExtractor function pointer signature
 fn extract_blockchain_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -45,6 +45,7 @@ fn extract_blockchain_factory(
 
 /// Extractor function for `BlockchainDataClientConfig`.
 #[cfg(feature = "hypersync")]
+#[expect(clippy::needless_pass_by_value)] // Must match ConfigExtractor function pointer signature
 fn extract_blockchain_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
     match config.extract::<crate::config::BlockchainDataClientConfig>(py) {
         Ok(concrete_config) => Ok(Box::new(concrete_config)),

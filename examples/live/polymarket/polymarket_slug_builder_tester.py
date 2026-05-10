@@ -69,10 +69,6 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         POLYMARKET: PolymarketDataClientConfig(
-            private_key=None,  # 'POLYMARKET_PK' env var
-            api_key=None,  # 'POLYMARKET_API_KEY' env var
-            api_secret=None,  # 'POLYMARKET_API_SECRET' env var
-            passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
             instrument_config=instrument_config,
             compute_effective_deltas=True,
             update_instruments_interval_mins=15,  # Refresh every 15 mins for UpDown markets

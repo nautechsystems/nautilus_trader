@@ -86,7 +86,7 @@ pub unsafe extern "C" fn synthetic_instrument_new(
         .into_iter()
         .map(InstrumentId::from)
         .collect::<Vec<InstrumentId>>();
-    let formula = unsafe { cstr_as_str(formula_ptr).to_string() };
+    let formula = unsafe { cstr_as_str(formula_ptr) };
     let synth = SyntheticInstrument::new(
         symbol,
         price_precision,
@@ -193,7 +193,7 @@ pub unsafe extern "C" fn synthetic_instrument_change_formula(
     formula_ptr: *const c_char,
 ) {
     let formula = unsafe { cstr_as_str(formula_ptr) };
-    synth.change_formula(formula.to_string()).unwrap();
+    synth.change_formula(formula).unwrap();
 }
 
 #[unsafe(no_mangle)]

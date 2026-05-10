@@ -13,12 +13,61 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Generic SBE decode error types.
+//! Generic SBE error types.
 
 use std::{error::Error, fmt::Display};
 
 /// Maximum allowed group size to prevent DoS from malformed data.
 pub const MAX_GROUP_SIZE: u32 = 10_000;
+
+/// SBE encode error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SbeEncodeError {
+    /// String field exceeds the supported encoded length.
+    StringTooLong {
+        /// The field name.
+        field: &'static str,
+        /// Actual string byte length.
+        len: usize,
+        /// Maximum encodable byte length.
+        max: usize,
+    },
+    /// Group count exceeds safety limit.
+    GroupSizeTooLarge {
+        /// The group name.
+        group: &'static str,
+        /// Actual count.
+        count: usize,
+        /// Maximum allowed.
+        max: u32,
+    },
+    /// Numeric value cannot fit the target encoded type.
+    NumericOverflow {
+        /// The field name or description.
+        field: &'static str,
+    },
+}
+
+impl Display for SbeEncodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::StringTooLong { field, len, max } => {
+                write!(
+                    f,
+                    "String field `{field}` length {len} exceeds maximum {max}"
+                )
+            }
+            Self::GroupSizeTooLarge { group, count, max } => {
+                write!(f, "Group `{group}` size {count} exceeds maximum {max}")
+            }
+            Self::NumericOverflow { field } => {
+                write!(f, "Numeric value overflows encoded field {field}")
+            }
+        }
+    }
+}
+
+impl Error for SbeEncodeError {}
 
 /// SBE decode error.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +111,23 @@ pub enum SbeDecodeError {
     },
     /// Invalid UTF-8 in string field.
     InvalidUtf8,
+    /// Invalid enum discriminant.
+    InvalidEnumValue {
+        /// The enum type name.
+        type_name: &'static str,
+        /// The invalid encoded value.
+        value: u16,
+    },
+    /// Numeric value cannot fit the target type.
+    NumericOverflow {
+        /// The target type name.
+        type_name: &'static str,
+    },
+    /// Encoded field value is invalid.
+    InvalidValue {
+        /// The field name or description.
+        field: &'static str,
+    },
 }
 
 impl Display for SbeDecodeError {
@@ -90,6 +156,13 @@ impl Display for SbeDecodeError {
                 write!(f, "Invalid block length: expected {expected}, was {actual}")
             }
             Self::InvalidUtf8 => write!(f, "Invalid UTF-8 in string field"),
+            Self::InvalidEnumValue { type_name, value } => {
+                write!(f, "Invalid enum value {value} for {type_name}")
+            }
+            Self::NumericOverflow { type_name } => {
+                write!(f, "Numeric value overflows target type {type_name}")
+            }
+            Self::InvalidValue { field } => write!(f, "Invalid value for {field}"),
         }
     }
 }
@@ -101,6 +174,30 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_string_too_long_display() {
+        let err = SbeEncodeError::StringTooLong {
+            field: "symbol",
+            len: 300,
+            max: 65535,
+        };
+        assert_eq!(
+            err.to_string(),
+            "String field `symbol` length 300 exceeds maximum 65535"
+        );
+    }
+
+    #[rstest]
+    fn test_numeric_overflow_display() {
+        let err = SbeEncodeError::NumericOverflow {
+            field: "BarSpecification.step",
+        };
+        assert_eq!(
+            err.to_string(),
+            "Numeric value overflows encoded field BarSpecification.step"
+        );
+    }
 
     #[rstest]
     fn test_buffer_too_short_display() {
@@ -137,5 +234,14 @@ mod tests {
         let err1 = SbeDecodeError::InvalidUtf8;
         let err2 = SbeDecodeError::InvalidUtf8;
         assert_eq!(err1, err2);
+    }
+
+    #[rstest]
+    fn test_invalid_enum_value_display() {
+        let err = SbeDecodeError::InvalidEnumValue {
+            type_name: "OrderSide",
+            value: 99,
+        };
+        assert_eq!(err.to_string(), "Invalid enum value 99 for OrderSide");
     }
 }

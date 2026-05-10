@@ -21,6 +21,7 @@ use std::{
     sync::Arc,
 };
 
+use ahash::AHashMap;
 use chrono_tz::Tz;
 use datafusion::arrow::{
     datatypes::Schema, error::ArrowError, ipc::writer::StreamWriter, record_batch::RecordBatch,
@@ -33,15 +34,29 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
-        Bar, Data, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose,
+        Bar, CatalogPathPrefix, CustomData, CustomDataTrait, Data, FundingRateUpdate,
+        IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
+        OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose, encode_custom_to_arrow,
+        get_arrow_schema,
+    },
+    events::{
+        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEmulated, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
+        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSnapshot,
+        OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged,
+        PositionClosed, PositionOpened, PositionSnapshot,
     },
     instruments::InstrumentAny,
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 use nautilus_serialization::arrow::{EncodeToRecordBatch, KEY_INSTRUMENT_ID};
-use object_store::{ObjectStore, path::Path};
+use object_store::{ObjectStore, ObjectStoreExt, path::Path};
 
-use super::catalog::{CatalogPathPrefix, urisafe_instrument_id};
+use super::catalog::urisafe_instrument_id;
+use crate::backend::{
+    catalog::safe_directory_identifier,
+    custom::{augment_batch_with_data_type_column, schema_with_data_type_column},
+};
 
 #[derive(Debug, Default, PartialEq, PartialOrd, Hash, Eq, Clone)]
 pub struct FileWriterPath {
@@ -244,6 +259,64 @@ impl FeatherWriter {
         Ok(())
     }
 
+    /// Writes a batch of data values as one or more `RecordBatch`es.
+    ///
+    /// Uses `T::chunk_metadata` to derive the file schema metadata. This protects
+    /// types like `OrderBookDelta` from having their file metadata poisoned by a
+    /// leading sentinel row (e.g. `BookAction::Clear`, which carries
+    /// `price_precision=0, size_precision=0`).
+    ///
+    /// Per-instrument types are partitioned by instrument so a mixed-instrument
+    /// batch lands in the correct file for each instrument.
+    pub async fn write_batch<T>(&mut self, data: Vec<T>) -> Result<(), Box<dyn std::error::Error>>
+    where
+        T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
+    {
+        if data.is_empty() || !self.should_write::<T>() {
+            return Ok(());
+        }
+
+        // Group by logical writer identity (instrument_id for per-instrument types).
+        // Grouping on FileWriterPath would split same-instrument rows across distinct
+        // timestamped paths when the writer does not yet exist under a LiveClock.
+        let type_str = T::path_prefix();
+        let needs_instrument =
+            self.per_instrument_types.contains(type_str) || type_str.starts_with("custom_");
+
+        let mut groups: AHashMap<Option<String>, Vec<T>> = AHashMap::new();
+
+        for item in data {
+            let instrument_id = if needs_instrument {
+                T::metadata(&item).get(KEY_INSTRUMENT_ID).cloned()
+            } else {
+                None
+            };
+            groups.entry(instrument_id).or_default().push(item);
+        }
+
+        for group in groups.into_values() {
+            let path = self.get_writer_path(&group[0])?;
+            let metadata = T::chunk_metadata(&group);
+
+            if !self.writers.contains_key(&path) {
+                self.create_writer_with_metadata::<T>(path.clone(), metadata.clone())?;
+            }
+
+            let batch = T::encode_batch(&metadata, &group)?;
+
+            if let Some(writer) = self.writers.get_mut(&path) {
+                let should_rotate = writer.write_record_batch(&batch)?;
+                if should_rotate || self.check_scheduled_rotation(&path) {
+                    self.rotate_writer(&path).await?;
+                }
+            }
+        }
+
+        self.check_flush().await?;
+
+        Ok(())
+    }
+
     /// Checks if enough time has passed since last flush and flushes if needed.
     async fn check_flush(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.flush_interval_ms == 0 {
@@ -366,7 +439,7 @@ impl FeatherWriter {
         let mut writer = self.writers.remove(path).unwrap();
         let bytes = writer.take_buffer()?;
         self.store.put(&path.path, bytes.into()).await?;
-        let new_path = self.regen_writer_path(path)?;
+        let new_path = self.regen_writer_path(path);
         self.writers.insert(new_path, writer);
         Ok(())
     }
@@ -376,8 +449,22 @@ impl FeatherWriter {
     where
         T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
     {
+        self.create_writer_with_metadata::<T>(path, T::metadata(data))
+    }
+
+    /// Creates (and inserts) a new `FileWriter` for type T with pre-computed metadata.
+    ///
+    /// Use this variant when the caller has selected metadata from a chunk
+    /// (e.g. via `T::chunk_metadata`) to avoid schema poisoning by sentinel rows.
+    fn create_writer_with_metadata<T>(
+        &mut self,
+        path: FileWriterPath,
+        metadata: HashMap<String, String>,
+    ) -> Result<(), ArrowError>
+    where
+        T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
+    {
         let schema = if self.per_instrument_types.contains(T::path_prefix()) {
-            let metadata = T::metadata(data);
             T::get_schema(Some(metadata))
         } else {
             T::get_schema(None)
@@ -386,6 +473,51 @@ impl FeatherWriter {
         let writer = FeatherBuffer::new(&schema, self.rotation_config.clone())?;
         self.writers.insert(path, writer);
         Ok(())
+    }
+
+    /// Creates (and inserts) a new `FeatherBuffer` for custom data at the given path.
+    fn create_custom_writer(
+        &mut self,
+        path: FileWriterPath,
+        type_name: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if self.writers.contains_key(&path) {
+            return Ok(());
+        }
+        let base_schema = get_arrow_schema(type_name).ok_or_else(|| {
+            format!("Custom data type \"{type_name}\" is not registered for Arrow encoding")
+        })?;
+        let schema = schema_with_data_type_column(base_schema.as_ref(), type_name);
+        let writer = FeatherBuffer::new(&schema, self.rotation_config.clone())
+            .map_err(|e| format!("Failed to create feather buffer for custom {type_name}: {e}"))?;
+        self.writers.insert(path, writer);
+        Ok(())
+    }
+
+    /// Encodes a single `CustomData` into a `RecordBatch` with `data_type` column (catalog-compatible).
+    fn encode_custom_to_batch(
+        custom: &CustomData,
+    ) -> Result<RecordBatch, Box<dyn std::error::Error>> {
+        let type_name = custom.data.type_name();
+        let data_type_json = custom
+            .data_type
+            .to_persistence_json()
+            .map_err(|e| format!("Failed to serialize data_type for persistence: {e}"))?;
+        let dt_meta = custom.data_type.metadata_string_map();
+        let items: [Arc<dyn CustomDataTrait>; 1] = [Arc::clone(&custom.data)];
+        let batch = encode_custom_to_arrow(type_name, &items)
+            .map_err(|e| format!("Failed to encode custom data: {e}"))?
+            .ok_or_else(|| {
+                format!("Custom data type \"{type_name}\" is not registered for Arrow")
+            })?;
+        let batch = augment_batch_with_data_type_column(
+            &batch,
+            &data_type_json,
+            type_name,
+            dt_meta.as_ref(),
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(batch)
     }
 
     /// Flushes all active `FeatherBuffers` by writing any remaining buffered bytes to the object store.
@@ -439,6 +571,7 @@ impl FeatherWriter {
     /// its current buffer size and file path.
     pub fn get_current_file_info(&self) -> HashMap<String, (u64, String)> {
         let mut info = HashMap::new();
+
         for (path, buffer) in &self.writers {
             let key = match &path.instrument_id {
                 Some(id) => format!("{}:{}", path.type_str, id),
@@ -481,30 +614,69 @@ impl FeatherWriter {
         false
     }
 
-    fn regen_writer_path(
-        &self,
-        path: &FileWriterPath,
-    ) -> Result<FileWriterPath, Box<dyn std::error::Error>> {
+    fn regen_writer_path(&self, path: &FileWriterPath) -> FileWriterPath {
         let type_str = path.type_str.clone();
         let instrument_id = path.instrument_id.clone();
         let timestamp = self.clock.borrow().timestamp_ns();
         // Note: Path removes prefixing slashes
         let mut path = Path::from(self.base_path.clone());
 
-        if let Some(ref instrument_id) = instrument_id {
+        if type_str.starts_with("data/custom/") {
+            // Custom data: data/custom/{type_name}/[{identifier_segments}/]{file_stem}_{ts}.feather
+            let type_name = type_str.strip_prefix("data/custom/").unwrap_or(&type_str);
+            path = path.join("data").join("custom").join(type_name.to_string());
+
+            if let Some(ref id) = instrument_id {
+                let safe = safe_directory_identifier(id);
+                if !safe.is_empty() {
+                    for segment in safe.split('/') {
+                        path = path.join(segment.to_string());
+                    }
+                }
+            }
+            let file_stem = instrument_id.as_deref().unwrap_or(type_name);
+            path = path.join(format!("{file_stem}_{timestamp}.feather"));
+        } else if let Some(ref instrument_id) = instrument_id {
             let safe_id = urisafe_instrument_id(instrument_id);
-            path = path.child(type_str.clone());
-            path = path.child(safe_id.clone());
-            path = path.child(format!("{safe_id}_{timestamp}.feather"));
+            path = path.join(type_str.clone());
+            path = path.join(safe_id.clone());
+            path = path.join(format!("{safe_id}_{timestamp}.feather"));
         } else {
-            path = path.child(format!("{type_str}_{timestamp}.feather"));
+            path = path.join(format!("{type_str}_{timestamp}.feather"));
         }
 
-        Ok(FileWriterPath {
+        FileWriterPath {
             path,
             type_str,
             instrument_id,
-        })
+        }
+    }
+
+    /// Builds `FileWriterPath` for custom data using DataType identifier as folder partition (catalog layout).
+    fn get_writer_path_custom(&self, type_name: &str, identifier: Option<&str>) -> FileWriterPath {
+        let timestamp = self.clock.borrow().timestamp_ns();
+        let type_str = format!("data/custom/{type_name}");
+        let instrument_id = identifier.map(String::from);
+
+        let mut path = Path::from(self.base_path.clone());
+        path = path.join("data").join("custom").join(type_name.to_string());
+
+        if let Some(id) = &identifier {
+            let safe = safe_directory_identifier(id);
+            if !safe.is_empty() {
+                for segment in safe.split('/') {
+                    path = path.join(segment.to_string());
+                }
+            }
+        }
+        let file_stem = identifier.unwrap_or(type_name);
+        path = path.join(format!("{file_stem}_{timestamp}.feather"));
+
+        FileWriterPath {
+            path,
+            type_str,
+            instrument_id,
+        }
     }
 
     /// Generates a key for a `FileWriter` based on type T and optional instrument ID.
@@ -541,11 +713,11 @@ impl FeatherWriter {
 
         if let Some(ref instrument_id) = instrument_id {
             let safe_id = urisafe_instrument_id(instrument_id);
-            path = path.child(type_str);
-            path = path.child(safe_id.clone());
-            path = path.child(format!("{safe_id}_{timestamp}.feather"));
+            path = path.join(type_str);
+            path = path.join(safe_id.clone());
+            path = path.join(format!("{safe_id}_{timestamp}.feather"));
         } else {
-            path = path.child(format!("{type_str}_{timestamp}.feather"));
+            path = path.join(format!("{type_str}_{timestamp}.feather"));
         }
 
         Ok(FileWriterPath {
@@ -558,8 +730,7 @@ impl FeatherWriter {
     /// Writes a Data enum value to the appropriate writer.
     ///
     /// This is a convenience method that routes the Data enum to the appropriate
-    /// typed write method. FundingRateUpdate is intentionally not supported and
-    /// is not a variant of the Data enum here; it is not written to feather.
+    /// typed write method.
     pub async fn write_data(&mut self, data: Data) -> Result<(), Box<dyn std::error::Error>> {
         match data {
             Data::Quote(quote) => self.write(quote).await,
@@ -569,15 +740,52 @@ impl FeatherWriter {
             Data::Depth10(depth) => self.write(*depth).await,
             Data::IndexPriceUpdate(price) => self.write(price).await,
             Data::MarkPriceUpdate(price) => self.write(price).await,
+            Data::InstrumentStatus(status) => self.write(status).await,
             Data::InstrumentClose(close) => self.write(close).await,
+            Data::Custom(custom) => self.write_custom_data(&custom).await,
             Data::Deltas(deltas_api) => {
-                // OrderBookDeltas_API contains multiple deltas - write each one individually
-                for delta in &deltas_api.deltas {
-                    self.write(*delta).await?;
-                }
-                Ok(())
+                // Batch write so chunk_metadata can skip a leading BookAction::Clear sentinel
+                self.write_batch(deltas_api.deltas.clone()).await
             }
         }
+    }
+
+    /// Writes a single custom data value (catalog layout: data/custom/{type_name}/[{identifier}/]).
+    async fn write_custom_data(
+        &mut self,
+        custom: &CustomData,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let type_name = custom.data.type_name();
+        let identifier = custom.data_type.identifier().map(String::from);
+
+        if !self.should_write_custom(type_name) {
+            return Ok(());
+        }
+
+        let path = self.get_writer_path_custom(type_name, identifier.as_deref());
+        if !self.writers.contains_key(&path) {
+            self.create_custom_writer(path.clone(), type_name)?;
+        }
+
+        let batch = Self::encode_custom_to_batch(custom)?;
+
+        if let Some(writer) = self.writers.get_mut(&path) {
+            let should_rotate = writer.write_record_batch(&batch)?;
+            if should_rotate || self.check_scheduled_rotation(&path) {
+                self.rotate_writer(&path).await?;
+            }
+        }
+
+        self.check_flush().await?;
+        Ok(())
+    }
+
+    fn should_write_custom(&self, type_name: &str) -> bool {
+        self.included_types.as_ref().is_none_or(|included| {
+            included.contains(type_name)
+                || included.contains("custom")
+                || included.contains(&format!("custom/{type_name}"))
+        })
     }
 
     /// Writes an instrument to the appropriate writer.
@@ -594,8 +802,7 @@ impl FeatherWriter {
     /// Subscribes to all messages on the message bus (pattern "*").
     ///
     /// This will automatically write all supported data types that are published
-    /// on the message bus to the feather files. FundingRateUpdate is intentionally
-    /// not written; messages of that type are ignored (no downcast handler).
+    /// on the message bus to the feather files.
     ///
     /// The writer must be wrapped in `Rc<RefCell<>>` to be shareable with the message bus handler.
     ///
@@ -614,53 +821,66 @@ impl FeatherWriter {
             let _guard = runtime.enter();
 
             // Try to downcast to various data types and write them
-            if let Some(quote) = message.downcast_ref::<QuoteTick>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*quote)) {
-                    log::warn!("Failed to write QuoteTick: {e}");
-                }
-            } else if let Some(trade) = message.downcast_ref::<TradeTick>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*trade)) {
-                    log::warn!("Failed to write TradeTick: {e}");
-                }
-            } else if let Some(bar) = message.downcast_ref::<Bar>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*bar)) {
-                    log::warn!("Failed to write Bar: {e}");
-                }
-            } else if let Some(delta) = message.downcast_ref::<OrderBookDelta>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*delta)) {
-                    log::warn!("Failed to write OrderBookDelta: {e}");
-                }
-            } else if let Some(depth) = message.downcast_ref::<OrderBookDepth10>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*depth)) {
-                    log::warn!("Failed to write OrderBookDepth10: {e}");
-                }
-            } else if let Some(price) = message.downcast_ref::<IndexPriceUpdate>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*price)) {
-                    log::warn!("Failed to write IndexPriceUpdate: {e}");
-                }
-            } else if let Some(price) = message.downcast_ref::<MarkPriceUpdate>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*price)) {
-                    log::warn!("Failed to write MarkPriceUpdate: {e}");
-                }
-            } else if let Some(close) = message.downcast_ref::<InstrumentClose>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write(*close)) {
-                    log::warn!("Failed to write InstrumentClose: {e}");
-                }
-            } else if let Some(deltas) = message.downcast_ref::<OrderBookDeltas>() {
-                // OrderBookDeltas contains multiple deltas - write each one individually
-                let mut writer = writer.borrow_mut();
-                for delta in &deltas.deltas {
-                    if let Err(e) = runtime.block_on(writer.write(*delta)) {
-                        log::warn!("Failed to write OrderBookDelta from OrderBookDeltas: {e}");
+            macro_rules! try_write {
+                ($message:expr, $type:ty, $name:literal) => {
+                    if let Some(value) = $message.downcast_ref::<$type>() {
+                        let mut writer = writer.borrow_mut();
+                        if let Err(e) = runtime.block_on(writer.write(value.clone())) {
+                            log::warn!("Failed to write {}: {e}", $name);
+                        }
+                        return;
                     }
+                };
+            }
+
+            try_write!(message, QuoteTick, "QuoteTick");
+            try_write!(message, TradeTick, "TradeTick");
+            try_write!(message, Bar, "Bar");
+            try_write!(message, OrderBookDelta, "OrderBookDelta");
+            try_write!(message, OrderBookDepth10, "OrderBookDepth10");
+            try_write!(message, IndexPriceUpdate, "IndexPriceUpdate");
+            try_write!(message, MarkPriceUpdate, "MarkPriceUpdate");
+            try_write!(message, InstrumentStatus, "InstrumentStatus");
+            try_write!(message, InstrumentClose, "InstrumentClose");
+            try_write!(message, FundingRateUpdate, "FundingRateUpdate");
+            try_write!(message, AccountState, "AccountState");
+            try_write!(message, OrderInitialized, "OrderInitialized");
+            try_write!(message, OrderDenied, "OrderDenied");
+            try_write!(message, OrderEmulated, "OrderEmulated");
+            try_write!(message, OrderSubmitted, "OrderSubmitted");
+            try_write!(message, OrderAccepted, "OrderAccepted");
+            try_write!(message, OrderRejected, "OrderRejected");
+            try_write!(message, OrderPendingCancel, "OrderPendingCancel");
+            try_write!(message, OrderCanceled, "OrderCanceled");
+            try_write!(message, OrderCancelRejected, "OrderCancelRejected");
+            try_write!(message, OrderExpired, "OrderExpired");
+            try_write!(message, OrderTriggered, "OrderTriggered");
+            try_write!(message, OrderPendingUpdate, "OrderPendingUpdate");
+            try_write!(message, OrderReleased, "OrderReleased");
+            try_write!(message, OrderModifyRejected, "OrderModifyRejected");
+            try_write!(message, OrderUpdated, "OrderUpdated");
+            try_write!(message, OrderFilled, "OrderFilled");
+            try_write!(message, PositionOpened, "PositionOpened");
+            try_write!(message, PositionChanged, "PositionChanged");
+            try_write!(message, PositionClosed, "PositionClosed");
+            try_write!(message, PositionAdjusted, "PositionAdjusted");
+            try_write!(message, OrderSnapshot, "OrderSnapshot");
+            try_write!(message, PositionSnapshot, "PositionSnapshot");
+            try_write!(message, OrderStatusReport, "OrderStatusReport");
+            try_write!(message, FillReport, "FillReport");
+            try_write!(message, PositionStatusReport, "PositionStatusReport");
+            try_write!(message, ExecutionMassStatus, "ExecutionMassStatus");
+
+            if let Some(deltas) = message.downcast_ref::<OrderBookDeltas>() {
+                // Batch write so chunk_metadata can skip a leading BookAction::Clear sentinel
+                let mut writer = writer.borrow_mut();
+                if let Err(e) = runtime.block_on(writer.write_batch(deltas.deltas.clone())) {
+                    log::warn!("Failed to write OrderBookDeltas: {e}");
+                }
+            } else if let Some(custom) = message.downcast_ref::<CustomData>() {
+                let mut writer = writer.borrow_mut();
+                if let Err(e) = runtime.block_on(writer.write_data(Data::Custom(custom.clone()))) {
+                    log::warn!("Failed to write CustomData: {e}");
                 }
             } else if let Some(instrument) = message.downcast_ref::<InstrumentAny>() {
                 let mut writer = writer.borrow_mut();
@@ -668,7 +888,7 @@ impl FeatherWriter {
                     log::warn!("Failed to write InstrumentAny: {e}");
                 }
             }
-            // Silently ignore other message types (events, commands, etc.)
+            // Silently ignore unsupported message types.
         });
 
         // Subscribe to all messages using wildcard pattern
@@ -682,7 +902,7 @@ impl FeatherWriter {
     }
 
     /// Unsubscribes from the message bus.
-    pub fn unsubscribe_from_message_bus(handler: ShareableMessageHandler) {
+    pub fn unsubscribe_from_message_bus(handler: &ShareableMessageHandler) {
         unsubscribe_any(MStr::pattern("*"), handler);
     }
 }
@@ -1124,5 +1344,92 @@ mod tests {
         // Test writing OrderBookDeltas via write_data
         writer.write_data(Data::Deltas(deltas_api)).await.unwrap();
         writer.flush().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "python")]
+    async fn test_write_custom_data_round_trip() {
+        use std::sync::Arc;
+
+        use futures::StreamExt;
+        use nautilus_model::{
+            data::{CustomData, Data, DataType},
+            identifiers::InstrumentId,
+        };
+        use nautilus_serialization::{
+            arrow::custom::CustomDataDecoder, ensure_custom_data_registered,
+        };
+
+        use crate::test_data::RustTestCustomData;
+
+        ensure_custom_data_registered::<RustTestCustomData>();
+
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path().to_str().unwrap().to_string();
+        let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
+        let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+
+        let mut writer = FeatherWriter::new(
+            base_path.clone(),
+            store.clone(),
+            clock,
+            RotationConfig::NoRotation,
+            None,
+            None,
+            None,
+        );
+
+        let instrument_id = InstrumentId::from("RUST.TEST");
+        let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+        let original = RustTestCustomData {
+            instrument_id,
+            value: 1.23,
+            flag: true,
+            ts_event: UnixNanos::from(1000),
+            ts_init: UnixNanos::from(1000),
+        };
+        let custom = CustomData::new(Arc::new(original.clone()), data_type);
+
+        writer
+            .write_data(Data::Custom(custom))
+            .await
+            .expect("write_data CustomData");
+        writer.flush().await.expect("flush");
+
+        let prefix = Path::from(format!("{base_path}/data/custom/RustTestCustomData"));
+        let mut list_stream = store.list(Some(&prefix));
+        let first = list_stream.next().await.expect("at least one object");
+        let meta = first.expect("list item");
+        let bytes = store
+            .get(&meta.location)
+            .await
+            .expect("get")
+            .bytes()
+            .await
+            .expect("bytes");
+        let mut reader =
+            StreamReader::try_new(Cursor::new(bytes.as_ref()), None).expect("StreamReader");
+        let schema = reader.schema();
+        let metadata: std::collections::HashMap<String, String> = schema
+            .metadata()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let batch = reader.next().expect("batch").expect("batch ok");
+        let decoded =
+            CustomDataDecoder::decode_data_batch(&metadata, batch).expect("decode_data_batch");
+        assert_eq!(decoded.len(), 1);
+        if let Data::Custom(decoded_custom) = &decoded[0] {
+            assert_eq!(decoded_custom.data_type.type_name(), "RustTestCustomData");
+            let rust: &RustTestCustomData = decoded_custom
+                .data
+                .as_any()
+                .downcast_ref::<RustTestCustomData>()
+                .expect("RustTestCustomData");
+            assert_eq!(rust, &original);
+        } else {
+            panic!("Expected Data::Custom");
+        }
     }
 }

@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Command-line interface and tools for [NautilusTrader](http://nautilustrader.io).
+//! Command-line interface and tools for [NautilusTrader](https://nautilustrader.io).
 //!
-//! The `nautilus-cli` crate provides a comprehensive command-line interface for managing and
+//! The `nautilus-cli` crate provides a command-line interface for managing and
 //! operating NautilusTrader installations. It includes tools for database management,
 //! system configuration, and operational utilities:
 //!
@@ -24,15 +24,13 @@
 //! - Configuration validation and setup utilities.
 //! - System administration and operational tools.
 //!
-//! # Platform
+//! # NautilusTrader
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-//! algorithmic trading platform, providing quantitative traders with the ability to backtest
-//! portfolios of automated trading strategies on historical data with an event-driven engine,
-//! and also deploy those same strategies live, with no code changes.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
+//! engine for multi-asset, multi-venue trading systems.
 //!
-//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
-//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+//! The system spans research, deterministic simulation, and live execution within a single
+//! event-driven architecture, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!

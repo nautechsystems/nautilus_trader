@@ -25,6 +25,10 @@ use crate::defi::chain::SharedChain;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Token {
     /// The blockchain network where this token exists.
@@ -65,6 +69,7 @@ impl Token {
     ///
     /// Checks against common stablecoin symbols including USD-pegged tokens,
     /// Euro-pegged tokens, and other algorithmic/collateralized stablecoins.
+    #[must_use]
     pub fn is_stablecoin(&self) -> bool {
         matches!(
             self.symbol.as_str(),
@@ -96,6 +101,7 @@ impl Token {
     ///
     /// Identifies wrapped versions of native currencies like WETH (Wrapped ETH),
     /// WMATIC (Wrapped MATIC), WBNB (Wrapped BNB), etc.
+    #[must_use]
     pub fn is_native_currency(&self) -> bool {
         matches!(
             self.symbol.as_str(),
@@ -121,6 +127,7 @@ impl Token {
     /// - **1**: Stablecoins (USDC, USDT, DAI, etc.) - Highest priority to be quote
     /// - **2**: Native currencies (WETH, WMATIC, WBNB, etc.) - Medium priority
     /// - **3**: Other tokens - Lowest priority (typically become base tokens)
+    #[must_use]
     pub fn get_token_priority(&self) -> u8 {
         if self.is_stablecoin() {
             1

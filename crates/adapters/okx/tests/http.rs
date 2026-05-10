@@ -36,20 +36,29 @@ use axum::{
 use chrono::{Duration as ChronoDuration, Utc};
 use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
-use nautilus_model::{identifiers::InstrumentId, instruments::InstrumentAny};
+use nautilus_model::{
+    enums::{OrderSide, OrderType, TriggerType},
+    identifiers::{AccountId, ClientOrderId, InstrumentId},
+    instruments::{Instrument, InstrumentAny},
+    types::{Price, Quantity},
+};
 use nautilus_network::http::HttpClient;
 use nautilus_okx::{
     common::{
-        enums::{OKXInstrumentType, OKXOrderStatus, OKXPositionMode},
+        enums::{
+            OKXEnvironment, OKXInstrumentType, OKXOrderStatus, OKXPositionMode, OKXTradeMode,
+            OKXTriggerType,
+        },
         models::OKXInstrument,
     },
     http::{
         client::{OKXHttpClient, OKXRawHttpClient, OKXResponse},
         error::OKXHttpError,
+        models::OKXAttachAlgoOrdRequest,
         query::{
-            GetAlgoOrdersParamsBuilder, GetInstrumentsParamsBuilder, GetOrderHistoryParams,
-            GetOrderListParams, GetOrderParamsBuilder, GetPositionTiersParamsBuilder,
-            GetPositionsParamsBuilder, GetTradeFeeParamsBuilder,
+            GetAlgoOrdersParamsBuilder, GetInstrumentsParamsBuilder, GetOptionSummaryParamsBuilder,
+            GetOrderHistoryParams, GetOrderListParams, GetOrderParamsBuilder,
+            GetPositionTiersParamsBuilder, GetPositionsParamsBuilder, GetTradeFeeParamsBuilder,
             GetTransactionDetailsParamsBuilder, SetPositionModeParamsBuilder,
         },
     },
@@ -65,6 +74,12 @@ struct TestServerState {
     last_pending_orders_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     last_order_history_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     last_order_detail_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
+    option_summary_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    option_summary_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    algo_pending_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    algo_history_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    last_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
+    last_algo_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
 }
 
 /// Wait for the test server to be ready by polling a health endpoint.
@@ -108,6 +123,10 @@ fn load_swap_instruments_any() -> Vec<InstrumentAny> {
     load_instruments_from("http_get_instruments_swap.json")
 }
 
+fn load_option_instruments_any() -> Vec<InstrumentAny> {
+    load_instruments_from("http_get_instruments_option.json")
+}
+
 fn load_instruments_from(filename: &str) -> Vec<InstrumentAny> {
     let payload = load_test_data(filename);
     let response: OKXResponse<OKXInstrument> = serde_json::from_value(payload).unwrap();
@@ -126,9 +145,14 @@ fn load_instruments_from(filename: &str) -> Vec<InstrumentAny> {
 fn create_router(state: Arc<TestServerState>) -> Router {
     let instruments_state = state.clone();
     let history_state = state.clone();
+    let option_summary_state = state.clone();
     let pending_state = state.clone();
     let order_history_state = state.clone();
-    let order_detail_state = state;
+    let order_detail_state = state.clone();
+    let order_place_state = state.clone();
+    let algo_pending_state = state.clone();
+    let algo_history_state = state.clone();
+    let algo_order_state = state;
     Router::new()
         .route(
             "/api/v5/public/instruments",
@@ -157,6 +181,19 @@ fn create_router(state: Arc<TestServerState>) -> Router {
         .route(
             "/api/v5/public/mark-price",
             get(|| async { Json(load_test_data("http_get_mark_price.json")) }),
+        )
+        .route(
+            "/api/v5/public/opt-summary",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = option_summary_state.clone();
+                async move {
+                    state.option_summary_queries.lock().await.push(params);
+                    let override_resp = state.option_summary_response.lock().await.clone();
+                    let data = override_resp
+                        .unwrap_or_else(|| load_test_data("http_get_option_summary.json"));
+                    Json(data).into_response()
+                }
+            }),
         )
         .route(
             "/api/v5/market/history-trades",
@@ -208,8 +245,15 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                                 .into_response();
                         }
 
+                        let fixture =
+                            if params.get("instId").map(String::as_str) == Some("ETH-USDT-SWAP") {
+                                "http_get_orders_pending_with_attached_tp_sl.json"
+                            } else {
+                                "http_get_orders_pending.json"
+                            };
+
                         *state.last_pending_orders_query.lock().await = Some(params);
-                        Json(load_test_data("http_get_orders_pending.json")).into_response()
+                        Json(load_test_data(fixture)).into_response()
                     }
                 },
             ),
@@ -260,60 +304,168 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         Json(load_test_data("http_get_orders_history.json")).into_response()
                     }
                 },
+            )
+            .post(move |headers: HeaderMap, Json(payload): Json<Value>| {
+                let state = order_place_state.clone();
+                async move {
+                    if !has_auth_headers(&headers) {
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            Json(json!({
+                                "code": "401",
+                                "msg": "Missing authentication headers",
+                                "data": [],
+                            })),
+                        )
+                            .into_response();
+                    }
+
+                    *state.last_order_body.lock().await = Some(payload);
+                    Json(json!({
+                        "code": "0",
+                        "msg": "",
+                        "data": [
+                            {
+                                "ordId": "12345",
+                                "clOrdId": "O-bracket-entry",
+                                "sCode": "0",
+                                "sMsg": "Order placed",
+                            }
+                        ],
+                    }))
+                    .into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(
+                move |headers: HeaderMap, Query(params): Query<HashMap<String, String>>| {
+                    let state = algo_pending_state.clone();
+                    async move {
+                        if !has_auth_headers(&headers) {
+                            return (
+                                StatusCode::UNAUTHORIZED,
+                                Json(json!({
+                                    "code": "401",
+                                    "msg": "Missing authentication headers",
+                                    "data": [],
+                                })),
+                            )
+                                .into_response();
+                        }
+
+                        state.algo_pending_queries.lock().await.push(params.clone());
+
+                        if params.get("algoClOrdId").map(String::as_str) == Some("O-attached-oco") {
+                            if params.get("ordType").map(String::as_str) != Some("oco") {
+                                return (
+                                    StatusCode::BAD_REQUEST,
+                                    Json(json!({
+                                        "code": "51000",
+                                        "msg": "Parameter ordType error",
+                                        "data": [],
+                                    })),
+                                )
+                                    .into_response();
+                            }
+
+                            return Json(load_test_data(
+                                "http_get_orders_algo_pending_attached_oco.json",
+                            ))
+                            .into_response();
+                        }
+
+                        let fixture = if params.get("algoClOrdId").map(String::as_str)
+                            == Some("O-close-frac-status")
+                        {
+                            "http_get_orders_algo_pending_close_fraction.json"
+                        } else {
+                            "http_get_orders_algo_pending.json"
+                        };
+
+                        Json(load_test_data(fixture)).into_response()
+                    }
+                },
             ),
         )
         .route(
-            "/api/v5/trade/order-algo-pending",
-            get(|headers: HeaderMap| async move {
-                if !has_auth_headers(&headers) {
-                    return (
-                        StatusCode::UNAUTHORIZED,
-                        Json(json!({
-                            "code": "401",
-                            "msg": "Missing authentication headers",
-                            "data": [],
-                        })),
-                    )
-                        .into_response();
-                }
+            "/api/v5/trade/orders-algo-history",
+            get(
+                move |headers: HeaderMap, Query(params): Query<HashMap<String, String>>| {
+                    let state = algo_history_state.clone();
+                    async move {
+                        if !has_auth_headers(&headers) {
+                            return (
+                                StatusCode::UNAUTHORIZED,
+                                Json(json!({
+                                    "code": "401",
+                                    "msg": "Missing authentication headers",
+                                    "data": [],
+                                })),
+                            )
+                                .into_response();
+                        }
 
-                Json(load_test_data("http_get_orders_algo_pending.json")).into_response()
-            }),
-        )
-        .route(
-            "/api/v5/trade/order-algo-history",
-            get(|headers: HeaderMap| async move {
-                if !has_auth_headers(&headers) {
-                    return (
-                        StatusCode::UNAUTHORIZED,
-                        Json(json!({
-                            "code": "401",
-                            "msg": "Missing authentication headers",
-                            "data": [],
-                        })),
-                    )
-                        .into_response();
-                }
+                        state.algo_history_queries.lock().await.push(params.clone());
 
-                Json(load_test_data("http_get_orders_algo_history.json")).into_response()
-            }),
+                        if params.get("algoClOrdId").map(String::as_str) == Some("O-attached-oco") {
+                            if params.get("ordType").map(String::as_str) != Some("oco") {
+                                return (
+                                    StatusCode::BAD_REQUEST,
+                                    Json(json!({
+                                        "code": "51000",
+                                        "msg": "Parameter ordType error",
+                                        "data": [],
+                                    })),
+                                )
+                                    .into_response();
+                            }
+
+                            return Json(json!({
+                                "code": "0",
+                                "msg": "",
+                                "data": [],
+                            }))
+                            .into_response();
+                        }
+
+                        if params.get("algoClOrdId").map(String::as_str)
+                            == Some("O-close-frac-status")
+                        {
+                            return Json(json!({
+                                "code": "0",
+                                "msg": "",
+                                "data": [],
+                            }))
+                            .into_response();
+                        }
+
+                        Json(load_test_data("http_get_orders_algo_history.json")).into_response()
+                    }
+                },
+            ),
         )
         .route(
             "/api/v5/trade/order-algo",
-            post(|headers: HeaderMap| async move {
-                if !has_auth_headers(&headers) {
-                    return (
-                        StatusCode::UNAUTHORIZED,
-                        Json(json!({
-                            "code": "401",
-                            "msg": "Missing authentication headers",
-                            "data": [],
-                        })),
-                    )
-                        .into_response();
-                }
+            post(move |headers: HeaderMap, Json(payload): Json<Value>| {
+                let state = algo_order_state.clone();
+                async move {
+                    if !has_auth_headers(&headers) {
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            Json(json!({
+                                "code": "401",
+                                "msg": "Missing authentication headers",
+                                "data": [],
+                            })),
+                        )
+                            .into_response();
+                    }
 
-                Json(load_test_data("http_place_algo_order_response.json")).into_response()
+                    *state.last_algo_order_body.lock().await = Some(payload);
+                    Json(load_test_data("http_place_algo_order_response.json")).into_response()
+                }
             }),
         )
         .route(
@@ -444,11 +596,11 @@ async fn test_http_get_instruments_returns_data() {
         .unwrap();
     let client = OKXRawHttpClient::new(
         Some(base_url.clone()),
-        Some(60),
-        None,
-        None,
-        None,
-        false,
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -465,8 +617,16 @@ async fn test_http_get_balance_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{addr}");
 
-    let client =
-        OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     let result = client.get_balance().await;
 
@@ -487,11 +647,11 @@ async fn test_http_get_balance_with_credentials_succeeds() {
         "test_secret".to_string(),
         "passphrase".to_string(),
         base_url.clone(),
-        Some(60),
-        None,
-        None,
-        None,
-        false,
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -514,16 +674,17 @@ async fn test_http_get_instruments_handles_rate_limit_error() {
         .unwrap();
     let client = OKXRawHttpClient::new(
         Some(base_url.clone()),
-        Some(60),
-        Some(0),
-        None,
-        None,
-        false,
+        60,
+        0,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
 
     let mut last_error = None;
+
     for _ in 0..5 {
         match client.get_instruments(params.clone()).await {
             Ok(_) => {}
@@ -546,8 +707,16 @@ async fn test_http_get_pending_orders_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{addr}");
 
-    let client =
-        OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     let params = GetOrderListParams {
         inst_type: Some(OKXInstrumentType::Swap),
@@ -577,11 +746,11 @@ async fn test_http_get_pending_orders_returns_live_orders() {
         "secret".to_string(),
         "pass".to_string(),
         base_url.clone(),
-        Some(60),
-        None,
-        None,
-        None,
-        false,
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -624,11 +793,11 @@ async fn test_http_get_order_history_applies_filters() {
         "secret".to_string(),
         "pass".to_string(),
         base_url.clone(),
-        Some(60),
-        None,
-        None,
-        None,
-        false,
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -667,11 +836,11 @@ async fn test_http_get_order_by_client_and_exchange_ids() {
         "secret".to_string(),
         "pass".to_string(),
         base_url.clone(),
-        Some(60),
-        None,
-        None,
-        None,
-        false,
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -700,8 +869,16 @@ async fn test_request_trades_pagination_parameters() {
     let addr = start_test_server(state.clone()).await;
     let base_url = format!("http://{addr}");
 
-    let client =
-        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     for instrument in load_instruments_any() {
         client.cache_instrument(instrument);
@@ -796,8 +973,16 @@ async fn test_request_trades_latest_mode() {
     wait_for_server(addr, "/api/v5/public/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     for instrument in load_instruments_any() {
         client.cache_instrument(instrument);
@@ -898,8 +1083,16 @@ async fn test_request_trades_chronological_order() {
     wait_for_server(addr, "/api/v5/public/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     for instrument in load_instruments_any() {
         client.cache_instrument(instrument);
@@ -966,6 +1159,7 @@ async fn test_request_trades_range_mode_pagination() {
 
                     let data = if let Some(after_id) = after_trade_id {
                         let mut trades = Vec::new();
+
                         for i in 0..100 {
                             let trade_id = after_id - i - 1;
                             if trade_id <= 0 {
@@ -1036,8 +1230,16 @@ async fn test_request_trades_range_mode_pagination() {
     wait_for_server(addr, "/api/v5/public/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     for instrument in load_instruments_any() {
         client.cache_instrument(instrument);
@@ -1105,6 +1307,7 @@ async fn test_request_bars_range_mode_pagination() {
 
                     let data = if let Some(a) = after {
                         let mut bars = Vec::new();
+
                         for i in 0..10 {
                             let ts = a - ((i + 1) * 60_000);
 
@@ -1148,6 +1351,7 @@ async fn test_request_bars_range_mode_pagination() {
 
                     let data = if let Some(a) = after {
                         let mut bars = Vec::new();
+
                         for i in 0..50 {
                             let ts = a - ((i + 1) * 60_000);
 
@@ -1194,8 +1398,16 @@ async fn test_request_bars_range_mode_pagination() {
     wait_for_server(addr, "/api/v5/public/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     for instrument in load_instruments_any() {
         client.cache_instrument(instrument);
@@ -1245,8 +1457,16 @@ async fn test_request_trades_multi_page_chronological_order() {
     let addr = start_test_server(state.clone()).await;
     let base_url = format!("http://{addr}");
 
-    let client =
-        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     for instrument in load_instruments_any() {
         client.cache_instrument(instrument);
@@ -1349,8 +1569,16 @@ async fn test_request_trades_overlapping_pages_chronological_order() {
     wait_for_server(addr, "/api/v5/public/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     for instrument in load_instruments_any() {
         client.cache_instrument(instrument);
@@ -1386,6 +1614,7 @@ async fn test_request_trades_overlapping_pages_chronological_order() {
 
     // Verify no duplicate trade IDs (should deduplicate overlapping trade ID 1008)
     let mut seen_ids = std::collections::HashSet::new();
+
     for trade in &trades {
         assert!(
             seen_ids.insert(trade.trade_id),
@@ -1457,8 +1686,16 @@ async fn test_request_trades_default_limit_with_end_only() {
     wait_for_server(addr, "/api/v5/public/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     for instrument in load_instruments_any() {
         client.cache_instrument(instrument);
@@ -1539,6 +1776,7 @@ async fn test_request_trades_historical_with_filtered_pages() {
                             vec![]
                         } else {
                             let mut trades = Vec::new();
+
                             for i in 0..100 {
                                 let trade_id = after_id - i - 1;
                                 if trade_id < 3102 {
@@ -1597,8 +1835,16 @@ async fn test_request_trades_historical_with_filtered_pages() {
     wait_for_server(addr, "/api/v5/public/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     for instrument in load_instruments_any() {
         client.cache_instrument(instrument);
@@ -1693,8 +1939,16 @@ async fn test_request_trades_multiple_trades_same_id() {
     });
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     for instrument in load_instruments_any() {
         client.cache_instrument(instrument);
@@ -1744,8 +1998,16 @@ async fn test_http_get_order_algo_pending_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{addr}");
 
-    let client =
-        OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     let params = GetAlgoOrdersParamsBuilder::default()
         .inst_type(OKXInstrumentType::Swap)
@@ -1775,11 +2037,11 @@ async fn test_http_get_order_algo_pending_returns_data() {
         "test_secret".to_string(),
         "test_passphrase".to_string(),
         base_url,
-        Some(60),
-        None,
-        None,
-        None,
-        false,
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -1806,11 +2068,11 @@ async fn test_http_get_order_algo_history_returns_data() {
         "test_secret".to_string(),
         "test_passphrase".to_string(),
         base_url,
-        Some(60),
-        None,
-        None,
-        None,
-        false,
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -1822,6 +2084,301 @@ async fn test_http_get_order_algo_history_returns_data() {
     assert_eq!(orders[0].state, OKXOrderStatus::Effective);
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_http_request_algo_order_status_report_parses_close_fraction_conditional_order() {
+    let addr = start_test_server(Arc::new(TestServerState::default())).await;
+    let base_url = format!("http://{addr}");
+
+    let swap_instruments = load_swap_instruments_any();
+    let size_precision = swap_instruments
+        .iter()
+        .find(|instrument| instrument.id() == InstrumentId::from("BTC-USDT-SWAP.OKX"))
+        .expect("expected BTC-USDT-SWAP instrument")
+        .size_precision();
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in swap_instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let report = client
+        .request_algo_order_status_report(
+            AccountId::new("OKX-001"),
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            ClientOrderId::from("O-close-frac-status"),
+        )
+        .await
+        .unwrap()
+        .expect("expected algo report");
+
+    assert_eq!(report.order_type, OrderType::StopMarket);
+    assert_eq!(report.trigger_price, Some(Price::from("50000")));
+    assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
+    assert_eq!(report.price, None);
+    assert_eq!(report.quantity, Quantity::zero(size_precision));
+    assert!(report.reduce_only);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_algo_order_status_report_queries_attached_oco_with_ord_type() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let report = client
+        .request_algo_order_status_report(
+            AccountId::new("OKX-001"),
+            InstrumentId::from("ETH-USDT-SWAP.OKX"),
+            ClientOrderId::from("O-attached-oco"),
+        )
+        .await
+        .unwrap()
+        .expect("expected attached OCO algo report");
+
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("O-attached-oco"))
+    );
+    assert!(report.trigger_price.is_some());
+
+    let pending_queries = state.algo_pending_queries.lock().await.clone();
+    assert!(
+        pending_queries
+            .iter()
+            .any(|query| query.get("ordType").map(String::as_str) == Some("oco")),
+        "expected at least one pending algo query with ordType=oco, found {pending_queries:?}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_order_status_reports_preserves_attached_tp_sl_child_ids() {
+    let addr = start_test_server(Arc::new(TestServerState::default())).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let reports = client
+        .request_order_status_reports(
+            AccountId::new("OKX-001"),
+            Some(OKXInstrumentType::Swap),
+            Some(InstrumentId::from("ETH-USDT-SWAP.OKX")),
+            None,
+            None,
+            true,
+            Some(50),
+        )
+        .await
+        .unwrap();
+
+    let report = reports
+        .into_iter()
+        .find(|report| report.client_order_id == Some(ClientOrderId::from("O-attached-entry")))
+        .expect("expected attached entry report");
+
+    let linked_order_ids = report
+        .linked_order_ids
+        .expect("expected linked child order ids");
+    assert!(linked_order_ids.contains(&ClientOrderId::from("O-attached-sl")));
+    assert!(linked_order_ids.contains(&ClientOrderId::from("O-attached-tp")));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_place_algo_order_with_close_fraction_uses_conditional_close_order_payload() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let response = client
+        .place_algo_order_with_domain_types(
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            OKXTradeMode::Cross,
+            ClientOrderId::from("O-close-frac"),
+            OrderSide::Sell,
+            OrderType::StopMarket,
+            Quantity::from("0.01"),
+            Some(Price::from("50000")),
+            Some(TriggerType::Default),
+            None,
+            None,
+            Some("1".to_string()),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.algo_id, "12345");
+
+    let body = state
+        .last_algo_order_body
+        .lock()
+        .await
+        .clone()
+        .expect("expected algo order payload");
+
+    assert_eq!(body["ordType"], "conditional");
+    assert_eq!(body["closeFraction"], "1");
+    assert_eq!(body["reduceOnly"], true);
+    assert_eq!(body["posSide"], "net");
+    assert_eq!(body["slTriggerPx"], "50000");
+    assert_eq!(body["slOrdPx"], "-1");
+    assert_eq!(body["slTriggerPxType"], "last");
+    assert!(body.get("sz").is_none());
+    assert!(body.get("triggerPx").is_none());
+    assert!(body.get("orderPx").is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_place_order_with_attached_tp_sl_uses_single_oco_payload() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let response = client
+        .place_order_with_domain_types(
+            InstrumentId::from("ETH-USDT-SWAP.OKX"),
+            OKXTradeMode::Cross,
+            ClientOrderId::from("O-bracket-entry"),
+            OrderSide::Buy,
+            OrderType::Market,
+            Quantity::from("0.01"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(vec![OKXAttachAlgoOrdRequest {
+                attach_algo_cl_ord_id: Some("O-bracket-sl".to_string()),
+                sl_trigger_px: Some("39000.00".to_string()),
+                sl_ord_px: Some("-1".to_string()),
+                sl_trigger_px_type: Some(OKXTriggerType::Last),
+                tp_trigger_px: Some("41000.00".to_string()),
+                tp_ord_px: Some("-1".to_string()),
+                tp_trigger_px_type: Some(OKXTriggerType::Last),
+            }]),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.ord_id, Some(Ustr::from("12345")));
+
+    let body = state
+        .last_order_body
+        .lock()
+        .await
+        .clone()
+        .expect("expected order payload");
+
+    assert_eq!(body["instId"], "ETH-USDT-SWAP");
+    assert_eq!(body["tdMode"], "cross");
+    assert_eq!(body["clOrdId"], "O-bracket-entry");
+    assert_eq!(body["side"], "buy");
+    assert_eq!(body["ordType"], "market");
+    assert_eq!(body["sz"], "0.01");
+
+    let attach_algo_ords = body["attachAlgoOrds"]
+        .as_array()
+        .expect("expected attachAlgoOrds array");
+    assert_eq!(attach_algo_ords.len(), 1);
+    assert_eq!(attach_algo_ords[0]["attachAlgoClOrdId"], "O-bracket-sl");
+    assert_eq!(attach_algo_ords[0]["slTriggerPx"], "39000.00");
+    assert_eq!(attach_algo_ords[0]["slOrdPx"], "-1");
+    assert_eq!(attach_algo_ords[0]["tpTriggerPx"], "41000.00");
+    assert_eq!(attach_algo_ords[0]["tpOrdPx"], "-1");
+}
+
 // Note: place_algo_order and cancel_algo_order are on OKXHttpClient (not Raw),
 // and will be tested via WebSocket client tests instead.
 
@@ -1831,8 +2388,16 @@ async fn test_http_set_position_mode_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{addr}");
 
-    let client =
-        OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     let params = SetPositionModeParamsBuilder::default()
         .pos_mode(OKXPositionMode::LongShortMode)
@@ -1858,11 +2423,11 @@ async fn test_http_set_position_mode_returns_response() {
         "test_secret".to_string(),
         "test_passphrase".to_string(),
         base_url,
-        Some(60),
-        None,
-        None,
-        None,
-        false,
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -1893,11 +2458,11 @@ async fn test_http_get_position_tiers_returns_data() {
         "test_secret".to_string(),
         "test_passphrase".to_string(),
         base_url,
-        Some(60),
-        None,
-        None,
-        None,
-        false,
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -1914,8 +2479,16 @@ async fn test_http_get_trade_fee_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{addr}");
 
-    let client =
-        OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     let params = GetTradeFeeParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
@@ -1949,11 +2522,11 @@ async fn test_http_get_trade_fee_returns_data() {
         "test_secret".to_string(),
         "test_passphrase".to_string(),
         base_url,
-        Some(60),
-        None,
-        None,
-        None,
-        false,
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -1970,8 +2543,16 @@ async fn test_http_get_positions_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{addr}");
 
-    let client =
-        OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     let params = GetPositionsParamsBuilder::default().build().unwrap();
 
@@ -1995,11 +2576,11 @@ async fn test_http_get_positions_returns_data() {
         "test_secret".to_string(),
         "test_passphrase".to_string(),
         base_url,
-        Some(60),
-        None,
-        None,
-        None,
-        false,
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -2016,8 +2597,16 @@ async fn test_http_get_fills_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
     let base_url = format!("http://{addr}");
 
-    let client =
-        OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     let params = GetTransactionDetailsParamsBuilder::default()
         .build()
@@ -2045,11 +2634,11 @@ async fn test_http_get_fills_returns_data() {
         "test_secret".to_string(),
         "test_passphrase".to_string(),
         base_url,
-        Some(60),
-        None,
-        None,
-        None,
-        false,
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -2066,8 +2655,16 @@ async fn test_http_get_fills_returns_data() {
 async fn test_http_network_error_invalid_port() {
     let base_url = "http://127.0.0.1:1".to_string();
 
-    let client =
-        OKXRawHttpClient::new(Some(base_url), Some(1), Some(0), None, None, false, None).unwrap();
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        1,
+        0,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     let params = GetInstrumentsParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
@@ -2112,8 +2709,16 @@ async fn test_http_okx_error_response() {
     wait_for_server(addr, "/api/v5/public/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     let params = GetInstrumentsParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
@@ -2182,11 +2787,11 @@ async fn test_http_okx_error_falls_back_to_s_msg_on_http_200() {
         "test_secret".to_string(),
         "test_passphrase".to_string(),
         base_url,
-        Some(60),
-        None,
-        None,
-        None,
-        false,
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -2259,11 +2864,11 @@ async fn test_http_okx_error_falls_back_to_s_msg_on_http_400() {
         "test_secret".to_string(),
         "test_passphrase".to_string(),
         base_url,
-        Some(60),
-        None,
-        None,
-        None,
-        false,
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -2333,11 +2938,11 @@ async fn test_http_okx_error_falls_back_to_s_code_when_s_msg_empty() {
         "test_secret".to_string(),
         "test_passphrase".to_string(),
         base_url,
-        Some(60),
-        None,
-        None,
-        None,
-        false,
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -2380,8 +2985,16 @@ async fn test_http_malformed_json_response() {
     wait_for_server(addr, "/api/v5/public/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     let params = GetInstrumentsParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
@@ -2426,8 +3039,16 @@ async fn test_http_500_internal_server_error() {
     wait_for_server(addr, "/api/v5/public/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     let params = GetInstrumentsParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
@@ -2470,8 +3091,16 @@ async fn test_http_503_service_unavailable() {
     wait_for_server(addr, "/api/v5/public/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXRawHttpClient::new(Some(base_url), Some(60), Some(0), None, None, false, None).unwrap();
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        60,
+        0,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     let params = GetInstrumentsParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
@@ -2520,8 +3149,16 @@ async fn test_http_invalid_response_structure() {
     wait_for_server(addr, "/api/v5/public/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     let params = GetInstrumentsParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
@@ -2573,11 +3210,11 @@ async fn test_http_rate_limit_error_different_code() {
         "test_secret".to_string(),
         "test_passphrase".to_string(),
         base_url,
-        Some(60),
-        Some(0),
-        None,
-        None,
-        false,
+        60,
+        0,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
         None,
     )
     .unwrap();
@@ -2623,8 +3260,16 @@ async fn test_http_empty_response_data() {
     wait_for_server(addr, "/api/v5/public/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     let params = GetInstrumentsParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
@@ -2662,8 +3307,16 @@ async fn test_request_book_snapshot() {
     wait_for_server(addr, "/api/v5/public/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     for instrument in load_swap_instruments_any() {
         client.cache_instrument(instrument);
@@ -2706,8 +3359,16 @@ async fn test_request_funding_rates() {
     wait_for_server(addr, "/api/v5/public/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
 
     for instrument in load_swap_instruments_any() {
         client.cache_instrument(instrument);
@@ -2731,5 +3392,652 @@ async fn test_request_funding_rates() {
     assert_eq!(
         rates[1].instrument_id,
         InstrumentId::from("BTC-USDT-SWAP.OKX")
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_get_option_summary_returns_data() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+    let client = OKXRawHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let params = GetOptionSummaryParamsBuilder::default()
+        .inst_family("BTC-USD")
+        .exp_time("241217")
+        .build()
+        .unwrap();
+    let summaries = client.get_option_summary(params).await.unwrap();
+
+    assert_eq!(summaries.len(), 4);
+    assert_eq!(summaries[0].inst_id, Ustr::from("BTC-USD-241217-92000-C"));
+
+    let queries = state.option_summary_queries.lock().await;
+    assert_eq!(queries.len(), 1);
+    assert_eq!(queries[0].get("instFamily"), Some(&"BTC-USD".to_string()));
+    assert_eq!(queries[0].get("expTime"), Some(&"241217".to_string()));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_forward_prices_for_single_instrument_uses_inst_family_and_exp_time() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_option_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let instrument_id = InstrumentId::from("BTC-USD-241217-92000-C.OKX");
+    let forward_prices = client
+        .request_forward_prices("BTC", Some(instrument_id))
+        .await
+        .unwrap();
+
+    assert_eq!(forward_prices.len(), 1);
+    assert_eq!(forward_prices[0].instrument_id, instrument_id);
+    assert_eq!(forward_prices[0].forward_price.to_string(), "97000");
+    assert_eq!(
+        forward_prices[0].underlying_index.as_deref(),
+        Some("BTC-USD")
+    );
+
+    let queries = state.option_summary_queries.lock().await;
+    assert_eq!(queries.len(), 1);
+    assert_eq!(queries[0].get("instFamily"), Some(&"BTC-USD".to_string()));
+    assert_eq!(queries[0].get("expTime"), Some(&"241217".to_string()));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_forward_prices_bulk_deduplicates_by_expiry() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_option_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let forward_prices = client.request_forward_prices("BTC", None).await.unwrap();
+
+    assert_eq!(forward_prices.len(), 1);
+    assert_eq!(
+        forward_prices[0].instrument_id,
+        InstrumentId::from("BTC-USD-241217-92000-C.OKX")
+    );
+    assert_eq!(forward_prices[0].forward_price.to_string(), "97000");
+
+    let queries = state.option_summary_queries.lock().await;
+    assert_eq!(queries.len(), 1);
+    assert_eq!(queries[0].get("instFamily"), Some(&"BTC-USD".to_string()));
+    assert!(!queries[0].contains_key("expTime"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_forward_prices_errors_on_empty_cache() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let result = client.request_forward_prices("BTC", None).await;
+
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("No cached OKX option families"),
+        "unexpected error: {err}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_forward_prices_skips_zero_fwd_px() {
+    let response = json!({
+        "code": "0",
+        "msg": "",
+        "data": [
+            {
+                "instType": "OPTION",
+                "instId": "BTC-USD-241217-92000-C",
+                "uly": "BTC-USD",
+                "bidVol": "0.45",
+                "askVol": "0.46",
+                "markVol": "0.455",
+                "fwdPx": "0",
+                "ts": "1734166000000"
+            },
+            {
+                "instType": "OPTION",
+                "instId": "BTC-USD-241217-94000-C",
+                "uly": "BTC-USD",
+                "bidVol": "0.45",
+                "askVol": "0.46",
+                "markVol": "0.455",
+                "fwdPx": "97000",
+                "ts": "1734166000000"
+            }
+        ]
+    });
+    let state = Arc::new(TestServerState::default());
+    *state.option_summary_response.lock().await = Some(response);
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_option_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let instrument_id = InstrumentId::from("BTC-USD-241217-94000-C.OKX");
+    let forward_prices = client
+        .request_forward_prices("BTC", Some(instrument_id))
+        .await
+        .unwrap();
+
+    assert_eq!(forward_prices.len(), 1);
+    assert_eq!(forward_prices[0].instrument_id, instrument_id);
+    assert_eq!(forward_prices[0].forward_price.to_string(), "97000");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_forward_prices_skips_non_option_inst_type() {
+    let response = json!({
+        "code": "0",
+        "msg": "",
+        "data": [
+            {
+                "instType": "SWAP",
+                "instId": "BTC-USD-241217-92000-C",
+                "uly": "BTC-USD",
+                "bidVol": "0.45",
+                "askVol": "0.46",
+                "markVol": "0.455",
+                "fwdPx": "97000",
+                "ts": "1734166000000"
+            },
+            {
+                "instType": "OPTION",
+                "instId": "BTC-USD-241217-94000-C",
+                "uly": "BTC-USD",
+                "bidVol": "0.45",
+                "askVol": "0.46",
+                "markVol": "0.455",
+                "fwdPx": "97000",
+                "ts": "1734166000000"
+            }
+        ]
+    });
+    let state = Arc::new(TestServerState::default());
+    *state.option_summary_response.lock().await = Some(response);
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_option_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let instrument_id = InstrumentId::from("BTC-USD-241217-94000-C.OKX");
+    let forward_prices = client
+        .request_forward_prices("BTC", Some(instrument_id))
+        .await
+        .unwrap();
+
+    assert_eq!(forward_prices.len(), 1);
+    assert_eq!(forward_prices[0].instrument_id, instrument_id);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_forward_prices_skips_invalid_fwd_px() {
+    let response = json!({
+        "code": "0",
+        "msg": "",
+        "data": [
+            {
+                "instType": "OPTION",
+                "instId": "BTC-USD-241217-92000-C",
+                "uly": "BTC-USD",
+                "bidVol": "0.45",
+                "askVol": "0.46",
+                "markVol": "0.455",
+                "fwdPx": "not_a_number",
+                "ts": "1734166000000"
+            },
+            {
+                "instType": "OPTION",
+                "instId": "BTC-USD-241217-94000-C",
+                "uly": "BTC-USD",
+                "bidVol": "0.45",
+                "askVol": "0.46",
+                "markVol": "0.455",
+                "fwdPx": "97000",
+                "ts": "1734166000000"
+            }
+        ]
+    });
+    let state = Arc::new(TestServerState::default());
+    *state.option_summary_response.lock().await = Some(response);
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_option_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let instrument_id = InstrumentId::from("BTC-USD-241217-94000-C.OKX");
+    let forward_prices = client
+        .request_forward_prices("BTC", Some(instrument_id))
+        .await
+        .unwrap();
+
+    assert_eq!(forward_prices.len(), 1);
+    assert_eq!(forward_prices[0].instrument_id, instrument_id);
+    assert_eq!(forward_prices[0].forward_price.to_string(), "97000");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_forward_prices_bulk_deduplicates_across_multiple_expiries() {
+    let response = json!({
+        "code": "0",
+        "msg": "",
+        "data": [
+            {
+                "instType": "OPTION",
+                "instId": "BTC-USD-241217-92000-C",
+                "uly": "BTC-USD",
+                "bidVol": "0.45",
+                "askVol": "0.46",
+                "markVol": "0.455",
+                "fwdPx": "97000",
+                "ts": "1734166000000"
+            },
+            {
+                "instType": "OPTION",
+                "instId": "BTC-USD-241217-94000-P",
+                "uly": "BTC-USD",
+                "bidVol": "0.45",
+                "askVol": "0.46",
+                "markVol": "0.455",
+                "fwdPx": "97000",
+                "ts": "1734166000000"
+            },
+            {
+                "instType": "OPTION",
+                "instId": "BTC-USD-250117-100000-C",
+                "uly": "BTC-USD",
+                "bidVol": "0.50",
+                "askVol": "0.51",
+                "markVol": "0.505",
+                "fwdPx": "99000",
+                "ts": "1734166000000"
+            },
+            {
+                "instType": "OPTION",
+                "instId": "BTC-USD-250117-105000-P",
+                "uly": "BTC-USD",
+                "bidVol": "0.50",
+                "askVol": "0.51",
+                "markVol": "0.505",
+                "fwdPx": "99000",
+                "ts": "1734166000000"
+            }
+        ]
+    });
+    let state = Arc::new(TestServerState::default());
+    *state.option_summary_response.lock().await = Some(response);
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_option_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let forward_prices = client.request_forward_prices("BTC", None).await.unwrap();
+
+    assert_eq!(forward_prices.len(), 2);
+    assert_eq!(
+        forward_prices[0].instrument_id,
+        InstrumentId::from("BTC-USD-241217-92000-C.OKX")
+    );
+    assert_eq!(forward_prices[0].forward_price.to_string(), "97000");
+    assert_eq!(
+        forward_prices[1].instrument_id,
+        InstrumentId::from("BTC-USD-250117-100000-C.OKX")
+    );
+    assert_eq!(forward_prices[1].forward_price.to_string(), "99000");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_place_algo_order_returns_error_on_nonzero_scode() {
+    let router = Router::new()
+        .route(
+            "/api/v5/public/instruments",
+            get(|| async { Json(load_test_data("http_get_instruments_swap.json")) }),
+        )
+        .route(
+            "/api/v5/trade/order-algo",
+            post(|_headers: HeaderMap| async {
+                Json(load_test_data("http_place_algo_order_rejected.json"))
+            }),
+        );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    wait_for_server(addr, "/api/v5/public/instruments").await;
+
+    let base_url = format!("http://{addr}");
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let result = client
+        .place_algo_order_with_domain_types(
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            OKXTradeMode::Cross,
+            ClientOrderId::from("Orejtest"),
+            OrderSide::Sell,
+            OrderType::StopMarket,
+            Quantity::from("0.01"),
+            Some(Price::from("50000")),
+            Some(TriggerType::Default),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+    assert!(result.is_err(), "non-zero sCode should return error");
+    let err = result.unwrap_err();
+    let err_str = err.to_string();
+    assert!(
+        err_str.contains("51000"),
+        "error should contain sCode 51000, was: {err_str}"
+    );
+    assert!(
+        err_str.contains("Parameter instId error"),
+        "error should contain sMsg, was: {err_str}"
+    );
+}
+
+/// Verifies that `request_spot_margin_position_reports` resolves a BTC
+/// margin balance to the highest-priority spot pair, never to a derivative
+/// sharing the same base currency. With BTC-USD, BTC-USDT, and
+/// BTC-USDT-SWAP all cached, the USDT-quoted spot pair must win (quote
+/// priority USDT > USD) and the perpetual must never be selected.
+#[rstest]
+#[tokio::test]
+async fn test_http_request_spot_margin_position_reports_prefers_currency_pair() {
+    // Balance payload with a BTC short margin position (`spotInUseAmt` < 0,
+    // non-zero `liab`). Built from a raw string to stay under the `json!`
+    // macro recursion limit on the `OKXBalanceDetail` shape.
+    let balance_body: serde_json::Value = serde_json::from_str(
+        r#"{
+            "code": "0",
+            "msg": "",
+            "data": [{
+                "adjEq": "",
+                "borrowFroz": "",
+                "imr": "0",
+                "isoEq": "0",
+                "mgnRatio": "",
+                "mmr": "0",
+                "notionalUsd": "0",
+                "notionalUsdForBorrow": "0",
+                "notionalUsdForFutures": "0",
+                "notionalUsdForOption": "0",
+                "notionalUsdForSwap": "0",
+                "ordFroz": "0",
+                "totalEq": "0",
+                "uTime": "1744498994783",
+                "upl": "0",
+                "details": [{
+                    "accAvgPx": "",
+                    "availBal": "0",
+                    "availEq": "0",
+                    "borrowFroz": "",
+                    "cashBal": "0",
+                    "ccy": "BTC",
+                    "clSpotInUseAmt": "",
+                    "collateralEnabled": false,
+                    "crossLiab": "0.1",
+                    "disEq": "0",
+                    "eq": "-0.1",
+                    "eqUsd": "0",
+                    "fixedBal": "0",
+                    "frozenBal": "0",
+                    "imr": "0",
+                    "interest": "",
+                    "isoEq": "0",
+                    "isoLiab": "",
+                    "isoUpl": "0",
+                    "liab": "0.1",
+                    "maxLoan": "",
+                    "maxSpotInUseAmt": "",
+                    "mgnRatio": "",
+                    "mmr": "0",
+                    "notionalLever": "0",
+                    "openAvgPx": "",
+                    "ordFrozen": "0",
+                    "rewardBal": "0",
+                    "smtSyncEq": "0",
+                    "spotBal": "",
+                    "spotCopyTradingEq": "0",
+                    "spotInUseAmt": "-0.1",
+                    "spotIsoBal": "0",
+                    "spotUpl": "",
+                    "spotUplRatio": "",
+                    "stgyEq": "0",
+                    "totalPnl": "",
+                    "totalPnlRatio": "",
+                    "twap": "0",
+                    "uTime": "1744498994783",
+                    "upl": "0",
+                    "uplLiab": ""
+                }]
+            }]
+        }"#,
+    )
+    .expect("balance fixture must parse");
+
+    let router = Router::new().route(
+        "/api/v5/account/balance",
+        get(move |headers: HeaderMap| {
+            let body = balance_body.clone();
+            async move {
+                if !has_auth_headers(&headers) {
+                    return (
+                        StatusCode::UNAUTHORIZED,
+                        Json(json!({"code": "401", "msg": "", "data": []})),
+                    )
+                        .into_response();
+                }
+                Json(body).into_response()
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    // No /public/instruments route, so poll an always-404 path to confirm the
+    // server is accepting connections.
+    wait_until_async(
+        || {
+            let addr_copy = addr;
+            async move { tokio::net::TcpStream::connect(addr_copy).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let base_url = format!("http://{addr}");
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    // Seed three sources that all share BTC as the base currency:
+    //   - `http_get_instruments_spot.json` contributes BTC-USD (CurrencyPair)
+    //   - `http_get_instruments_margin.json` contributes BTC-USDT (also
+    //     parses to CurrencyPair via the Margin → spot path)
+    //   - `http_get_instruments_swap.json` contributes BTC-USDT-SWAP
+    //     (CryptoPerpetual)
+    // The filter must pick BTC-USDT (quote-priority USDT > USD), never the
+    // lexically-earlier BTC-USD and never the BTC-USDT-SWAP derivative.
+    for instrument in load_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    for instrument in load_instruments_from("http_get_instruments_margin.json") {
+        client.cache_instrument(instrument);
+    }
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let reports = client
+        .request_spot_margin_position_reports(AccountId::new("OKX-001"))
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1, "expected one BTC margin report");
+    let report = &reports[0];
+
+    assert_eq!(
+        report.instrument_id,
+        InstrumentId::from("BTC-USDT.OKX"),
+        "spot-margin report must prefer the USDT-quoted pair over USD and never a derivative",
+    );
+    assert_ne!(
+        report.instrument_id,
+        InstrumentId::from("BTC-USDT-SWAP.OKX"),
+        "derivative must never win the base-currency lookup",
+    );
+    assert_ne!(
+        report.instrument_id,
+        InstrumentId::from("BTC-USD.OKX"),
+        "USD must lose to USDT in the quote-priority tiebreaker",
     );
 }

@@ -21,7 +21,15 @@ use super::transform_returns;
 use crate::{statistic::PortfolioStatistic, statistics::max_drawdown::MaxDrawdown};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MaxDrawdown {
+    /// Calculates the Maximum Drawdown for returns.
+    ///
+    /// Maximum Drawdown is the maximum observed loss from a peak to a trough,
+    /// before a new peak is attained. It is an indicator of downside risk over
+    /// a specified time period.
+    ///
+    /// Formula: Max((Peak - Trough) / Peak) for all peak-trough sequences
     #[new]
     fn py_new() -> Self {
         Self::new()
@@ -34,8 +42,19 @@ impl MaxDrawdown {
     }
 
     #[pyo3(name = "calculate_from_returns")]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_calculate_from_returns(&self, raw_returns: BTreeMap<u64, f64>) -> Option<f64> {
-        self.calculate_from_returns(&transform_returns(raw_returns))
+        self.calculate_from_returns(&transform_returns(&raw_returns))
+    }
+
+    #[pyo3(name = "calculate_from_realized_pnls")]
+    fn py_calculate_from_realized_pnls(&self, _realized_pnls: Vec<f64>) -> Option<f64> {
+        None
+    }
+
+    #[pyo3(name = "calculate_from_positions")]
+    fn py_calculate_from_positions(&self, _positions: Vec<Py<PyAny>>) -> Option<f64> {
+        None
     }
 
     fn __repr__(&self) -> String {

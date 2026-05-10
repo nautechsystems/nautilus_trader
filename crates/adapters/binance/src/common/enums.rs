@@ -17,7 +17,7 @@
 
 use std::fmt::Display;
 
-use nautilus_model::enums::{OrderSide, OrderType, TimeInForce};
+use nautilus_model::enums::{MarketStatusAction, OrderSide, OrderType, TimeInForce};
 use serde::{Deserialize, Serialize};
 
 /// Binance product type identifier.
@@ -34,6 +34,10 @@ use serde::{Deserialize, Serialize};
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.binance")
 )]
 pub enum BinanceProductType {
     /// Spot trading (api.binance.com).
@@ -122,6 +126,10 @@ impl Display for BinanceProductType {
         rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.binance")
+)]
 pub enum BinanceEnvironment {
     /// Production/mainnet environment.
     #[default]
@@ -188,6 +196,10 @@ impl From<BinanceSide> for OrderSide {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.binance")
+)]
 pub enum BinancePositionSide {
     /// Single position mode (both).
     Both,
@@ -201,14 +213,33 @@ pub enum BinancePositionSide {
 }
 
 /// Margin type applied to a position.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+///
+/// Serializes to the POST format (`CROSSED`/`ISOLATED`) expected by
+/// `/fapi/v1/marginType`. Deserializes from both POST and GET/WS
+/// formats (`cross`/`isolated`) via serde aliases.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.binance",
+        eq,
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.binance")
+)]
 pub enum BinanceMarginType {
     /// Cross margin.
+    #[serde(rename = "CROSSED", alias = "cross")]
     Cross,
     /// Isolated margin.
+    #[serde(rename = "ISOLATED", alias = "isolated")]
     Isolated,
     /// Unknown or undocumented value.
+    #[default]
     #[serde(other)]
     Unknown,
 }
@@ -232,6 +263,8 @@ pub enum BinanceWorkingType {
 pub enum BinanceOrderStatus {
     /// Order accepted and working.
     New,
+    /// Pending new (order list accepted but not yet on book).
+    PendingNew,
     /// Partially filled.
     PartiallyFilled,
     /// Fully filled.
@@ -246,6 +279,10 @@ pub enum BinanceOrderStatus {
     Expired,
     /// Expired in match (IOC/FOK not executed).
     ExpiredInMatch,
+    /// Liquidation with insurance fund.
+    NewInsurance,
+    /// Counterparty liquidation (Auto-Deleveraging).
+    NewAdl,
     /// Unknown or undocumented value.
     #[serde(other)]
     Unknown,
@@ -350,6 +387,8 @@ pub enum BinanceTimeInForce {
     Gtx,
     /// Good till date.
     Gtd,
+    /// Request-for-quote interactive (USD-M Futures).
+    Rpi,
     /// Unknown or undocumented value.
     #[serde(other)]
     Unknown,
@@ -383,10 +422,41 @@ pub enum BinanceIncomeType {
     FundingFee,
     /// Trading commission.
     Commission,
+    /// Commission rebate.
+    CommissionRebate,
+    /// API rebate.
+    ApiRebate,
     /// Insurance clear.
     InsuranceClear,
     /// Referral kickback.
     ReferralKickback,
+    /// Contest reward.
+    ContestReward,
+    /// Cross collateral transfer.
+    CrossCollateralTransfer,
+    /// Options premium fee.
+    OptionsPremiumFee,
+    /// Options settle profit.
+    OptionsSettleProfit,
+    /// Internal transfer.
+    InternalTransfer,
+    /// Auto exchange.
+    AutoExchange,
+    /// Delivered settlement.
+    #[serde(rename = "DELIVERED_SETTELMENT")]
+    DeliveredSettlement,
+    /// Coin swap deposit.
+    CoinSwapDeposit,
+    /// Coin swap withdraw.
+    CoinSwapWithdraw,
+    /// Position limit increase fee.
+    PositionLimitIncreaseFee,
+    /// Strategy UM futures transfer.
+    StrategyUmfuturesTransfer,
+    /// Fee return.
+    FeeReturn,
+    /// BFUSD reward.
+    BfusdReward,
     /// Unknown or undocumented value.
     #[serde(other)]
     Unknown,
@@ -396,37 +466,72 @@ pub enum BinanceIncomeType {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BinancePriceMatch {
-    /// Match opposing side (default).
+    /// No price match (default).
+    None,
+    /// Match opposing side.
     Opponent,
     /// Match opposing side with 5 tick offset.
+    #[serde(rename = "OPPONENT_5")]
     Opponent5,
     /// Match opposing side with 10 tick offset.
+    #[serde(rename = "OPPONENT_10")]
     Opponent10,
     /// Match opposing side with 20 tick offset.
+    #[serde(rename = "OPPONENT_20")]
     Opponent20,
     /// Join current queue on same side.
     Queue,
     /// Join queue with 5 tick offset.
+    #[serde(rename = "QUEUE_5")]
     Queue5,
     /// Join queue with 10 tick offset.
+    #[serde(rename = "QUEUE_10")]
     Queue10,
     /// Join queue with 20 tick offset.
+    #[serde(rename = "QUEUE_20")]
     Queue20,
     /// Unknown or undocumented value.
     #[serde(other)]
     Unknown,
 }
 
+impl BinancePriceMatch {
+    /// Parses a price match mode from a string param value.
+    ///
+    /// Accepts uppercase Binance API values like `"OPPONENT"`, `"OPPONENT_5"`, `"QUEUE_10"`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the value is not a recognized price match mode.
+    pub fn from_param(s: &str) -> anyhow::Result<Self> {
+        let value = s.to_uppercase();
+        serde_json::from_value(serde_json::Value::String(value))
+            .map_err(|_| anyhow::anyhow!("Invalid price_match value: {s:?}"))
+            .and_then(|pm: Self| {
+                if pm == Self::None || pm == Self::Unknown {
+                    anyhow::bail!("Invalid price_match value: {s:?}")
+                }
+                Ok(pm)
+            })
+    }
+}
+
 /// Self-trade prevention mode.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BinanceSelfTradePreventionMode {
+    /// No self-trade prevention.
+    None,
     /// Expire maker orders on self-trade.
     ExpireMaker,
     /// Expire taker orders on self-trade.
     ExpireTaker,
     /// Expire both sides on self-trade.
     ExpireBoth,
+    /// Decrement and cancel (spot).
+    Decrement,
+    /// Transfer to sub-account (spot).
+    Transfer,
     /// Unknown or undocumented value.
     #[serde(other)]
     Unknown,
@@ -457,6 +562,23 @@ pub enum BinanceTradingStatus {
     Unknown,
 }
 
+impl From<BinanceTradingStatus> for MarketStatusAction {
+    fn from(status: BinanceTradingStatus) -> Self {
+        match status {
+            BinanceTradingStatus::Trading => Self::Trading,
+            BinanceTradingStatus::PendingTrading | BinanceTradingStatus::PreTrading => {
+                Self::PreOpen
+            }
+            BinanceTradingStatus::PostTrading => Self::PostClose,
+            BinanceTradingStatus::EndOfDay => Self::Close,
+            BinanceTradingStatus::Halt => Self::Halt,
+            BinanceTradingStatus::AuctionMatch => Self::Cross,
+            BinanceTradingStatus::Break => Self::Pause,
+            BinanceTradingStatus::Unknown => Self::NotAvailableForTrading,
+        }
+    }
+}
+
 /// Contract status for coin-margined futures.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -471,6 +593,12 @@ pub enum BinanceContractStatus {
     Delivering,
     /// Delivered.
     Delivered,
+    /// Pre-settle.
+    PreSettle,
+    /// Settling.
+    Settling,
+    /// Closed.
+    Close,
     /// Pre-delist.
     PreDelisting,
     /// Delisting in progress.
@@ -480,6 +608,26 @@ pub enum BinanceContractStatus {
     /// Unknown or undocumented value.
     #[serde(other)]
     Unknown,
+}
+
+impl From<BinanceContractStatus> for MarketStatusAction {
+    fn from(status: BinanceContractStatus) -> Self {
+        match status {
+            BinanceContractStatus::Trading => Self::Trading,
+            BinanceContractStatus::PendingTrading => Self::PreOpen,
+            BinanceContractStatus::PreDelivering
+            | BinanceContractStatus::PreDelisting
+            | BinanceContractStatus::PreSettle => Self::PreClose,
+            BinanceContractStatus::Delivering
+            | BinanceContractStatus::Delivered
+            | BinanceContractStatus::Settling
+            | BinanceContractStatus::Close => Self::Close,
+            BinanceContractStatus::Delisting => Self::Suspend,
+            BinanceContractStatus::Down | BinanceContractStatus::Unknown => {
+                Self::NotAvailableForTrading
+            }
+        }
+    }
 }
 
 /// WebSocket stream event types.
@@ -516,6 +664,9 @@ pub enum BinanceWsEventType {
     /// Order/trade update event.
     #[serde(rename = "ORDER_TRADE_UPDATE")]
     OrderTradeUpdate,
+    /// Trade Lite event (low-latency fill notification).
+    #[serde(rename = "TRADE_LITE")]
+    TradeLite,
     /// Algo order update event (Binance Futures Algo Service).
     #[serde(rename = "ALGO_UPDATE")]
     AlgoUpdate,
@@ -550,6 +701,7 @@ impl BinanceWsEventType {
             Self::MiniTicker24Hr => "24hrMiniTicker",
             Self::AccountUpdate => "ACCOUNT_UPDATE",
             Self::OrderTradeUpdate => "ORDER_TRADE_UPDATE",
+            Self::TradeLite => "TRADE_LITE",
             Self::AlgoUpdate => "ALGO_UPDATE",
             Self::MarginCall => "MARGIN_CALL",
             Self::AccountConfigUpdate => "ACCOUNT_CONFIG_UPDATE",
@@ -585,6 +737,8 @@ pub enum BinanceFilterType {
     PriceFilter,
     /// Percent price filter.
     PercentPrice,
+    /// Percent price by side filter (spot).
+    PercentPriceBySide,
     /// Lot size filter.
     LotSize,
     /// Market lot size filter.
@@ -593,10 +747,34 @@ pub enum BinanceFilterType {
     Notional,
     /// Min notional filter (futures).
     MinNotional,
+    /// Iceberg parts filter (spot).
+    IcebergParts,
     /// Maximum number of orders filter.
     MaxNumOrders,
     /// Maximum number of algo orders filter.
     MaxNumAlgoOrders,
+    /// Maximum number of iceberg orders filter (spot).
+    MaxNumIcebergOrders,
+    /// Maximum position filter (spot).
+    MaxPosition,
+    /// Trailing delta filter (spot).
+    TrailingDelta,
+    /// Maximum number of order amends filter (spot).
+    MaxNumOrderAmends,
+    /// Maximum number of order lists filter (spot).
+    MaxNumOrderLists,
+    /// Maximum asset filter (spot).
+    MaxAsset,
+    /// Exchange-level maximum number of orders.
+    ExchangeMaxNumOrders,
+    /// Exchange-level maximum number of algo orders.
+    ExchangeMaxNumAlgoOrders,
+    /// Exchange-level maximum number of iceberg orders.
+    ExchangeMaxNumIcebergOrders,
+    /// Exchange-level maximum number of order lists.
+    ExchangeMaxNumOrderLists,
+    /// T+1 sell restriction filter (spot).
+    TPlusSell,
     /// Unknown or undocumented value.
     #[serde(other)]
     Unknown,
@@ -613,18 +791,33 @@ impl Display for BinanceEnvironment {
 }
 
 /// Rate limit type for API request quotas.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BinanceRateLimitType {
+    /// Weighted request limit.
     RequestWeight,
+    /// Order placement limit.
     Orders,
+    /// Raw request count limit (spot).
+    RawRequests,
+    /// Unknown or undocumented value.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Rate limit time interval.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BinanceRateLimitInterval {
+    /// One second interval.
     Second,
+    /// One minute interval.
     Minute,
+    /// One day interval.
     Day,
+    /// Unknown or undocumented value.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Kline (candlestick) interval.
@@ -712,6 +905,7 @@ impl BinanceKlineInterval {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use serde_json::json;
 
     use super::*;
 
@@ -748,5 +942,120 @@ mod tests {
 
         assert!(BinanceProductType::Options.is_options());
         assert!(!BinanceProductType::Spot.is_options());
+    }
+
+    #[rstest]
+    #[case("\"REQUEST_WEIGHT\"", BinanceRateLimitType::RequestWeight)]
+    #[case("\"ORDERS\"", BinanceRateLimitType::Orders)]
+    #[case("\"RAW_REQUESTS\"", BinanceRateLimitType::RawRequests)]
+    #[case("\"UNDOCUMENTED\"", BinanceRateLimitType::Unknown)]
+    fn test_rate_limit_type_deserializes(
+        #[case] raw: &str,
+        #[case] expected: BinanceRateLimitType,
+    ) {
+        let value: BinanceRateLimitType = serde_json::from_str(raw).unwrap();
+        assert_eq!(value, expected);
+    }
+
+    #[rstest]
+    #[case("\"SECOND\"", BinanceRateLimitInterval::Second)]
+    #[case("\"MINUTE\"", BinanceRateLimitInterval::Minute)]
+    #[case("\"DAY\"", BinanceRateLimitInterval::Day)]
+    #[case("\"WEEK\"", BinanceRateLimitInterval::Unknown)]
+    fn test_rate_limit_interval_deserializes(
+        #[case] raw: &str,
+        #[case] expected: BinanceRateLimitInterval,
+    ) {
+        let value: BinanceRateLimitInterval = serde_json::from_str(raw).unwrap();
+        assert_eq!(value, expected);
+    }
+
+    #[rstest]
+    #[case(BinanceMarginType::Cross, "CROSSED", "cross")]
+    #[case(BinanceMarginType::Isolated, "ISOLATED", "isolated")]
+    fn test_margin_type_serde_roundtrip(
+        #[case] variant: BinanceMarginType,
+        #[case] post_format: &str,
+        #[case] get_format: &str,
+    ) {
+        let serialized = serde_json::to_value(variant).unwrap();
+        assert_eq!(serialized, json!(post_format));
+
+        let from_post: BinanceMarginType =
+            serde_json::from_str(&format!("\"{post_format}\"")).unwrap();
+        assert_eq!(from_post, variant);
+
+        let from_get: BinanceMarginType =
+            serde_json::from_str(&format!("\"{get_format}\"")).unwrap();
+        assert_eq!(from_get, variant);
+    }
+
+    #[rstest]
+    fn test_margin_type_unknown_fallback() {
+        let value: BinanceMarginType = serde_json::from_str("\"SOMETHING_NEW\"").unwrap();
+        assert_eq!(value, BinanceMarginType::Unknown);
+    }
+
+    #[rstest]
+    fn test_rate_limit_enums_serialize_to_binance_strings() {
+        assert_eq!(
+            serde_json::to_value(BinanceRateLimitType::RequestWeight).unwrap(),
+            json!("REQUEST_WEIGHT")
+        );
+        assert_eq!(
+            serde_json::to_value(BinanceRateLimitInterval::Minute).unwrap(),
+            json!("MINUTE")
+        );
+    }
+
+    #[rstest]
+    #[case("\"NONE\"", BinancePriceMatch::None)]
+    #[case("\"OPPONENT\"", BinancePriceMatch::Opponent)]
+    #[case("\"OPPONENT_5\"", BinancePriceMatch::Opponent5)]
+    #[case("\"OPPONENT_10\"", BinancePriceMatch::Opponent10)]
+    #[case("\"OPPONENT_20\"", BinancePriceMatch::Opponent20)]
+    #[case("\"QUEUE\"", BinancePriceMatch::Queue)]
+    #[case("\"QUEUE_5\"", BinancePriceMatch::Queue5)]
+    #[case("\"QUEUE_10\"", BinancePriceMatch::Queue10)]
+    #[case("\"QUEUE_20\"", BinancePriceMatch::Queue20)]
+    #[case("\"SOMETHING_NEW\"", BinancePriceMatch::Unknown)]
+    fn test_price_match_deserializes(#[case] raw: &str, #[case] expected: BinancePriceMatch) {
+        let value: BinancePriceMatch = serde_json::from_str(raw).unwrap();
+        assert_eq!(value, expected);
+    }
+
+    #[rstest]
+    #[case(BinancePriceMatch::None, "NONE")]
+    #[case(BinancePriceMatch::Opponent, "OPPONENT")]
+    #[case(BinancePriceMatch::Opponent5, "OPPONENT_5")]
+    #[case(BinancePriceMatch::Opponent10, "OPPONENT_10")]
+    #[case(BinancePriceMatch::Opponent20, "OPPONENT_20")]
+    #[case(BinancePriceMatch::Queue, "QUEUE")]
+    #[case(BinancePriceMatch::Queue5, "QUEUE_5")]
+    #[case(BinancePriceMatch::Queue10, "QUEUE_10")]
+    #[case(BinancePriceMatch::Queue20, "QUEUE_20")]
+    fn test_price_match_serializes(#[case] variant: BinancePriceMatch, #[case] expected: &str) {
+        let serialized = serde_json::to_value(variant).unwrap();
+        assert_eq!(serialized, json!(expected));
+    }
+
+    #[rstest]
+    #[case("OPPONENT", BinancePriceMatch::Opponent)]
+    #[case("opponent", BinancePriceMatch::Opponent)]
+    #[case("OPPONENT_5", BinancePriceMatch::Opponent5)]
+    #[case("opponent_5", BinancePriceMatch::Opponent5)]
+    #[case("QUEUE_20", BinancePriceMatch::Queue20)]
+    #[case("queue_20", BinancePriceMatch::Queue20)]
+    fn test_price_match_from_param_valid(#[case] input: &str, #[case] expected: BinancePriceMatch) {
+        let result = BinancePriceMatch::from_param(input).unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case("NONE")]
+    #[case("invalid")]
+    #[case("")]
+    fn test_price_match_from_param_invalid(#[case] input: &str) {
+        assert!(BinancePriceMatch::from_param(input).is_err());
     }
 }

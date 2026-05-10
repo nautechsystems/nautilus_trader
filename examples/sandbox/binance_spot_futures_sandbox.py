@@ -141,8 +141,6 @@ async def main():
         data_clients={
             "BINANCE_FUTURES": BinanceDataClientConfig(
                 venue=Venue("BINANCE_FUTURES"),
-                api_key=None,  # 'BINANCE_API_KEY' env var
-                api_secret=None,  # 'BINANCE_API_SECRET' env var
                 account_type=BinanceAccountType.USDT_FUTURES,
                 base_url_http=None,  # Override with custom endpoint
                 base_url_ws=None,  # Override with custom endpoint
@@ -152,8 +150,6 @@ async def main():
             ),
             "BINANCE_SPOT": BinanceDataClientConfig(
                 venue=Venue("BINANCE_SPOT"),
-                api_key=None,  # 'BINANCE_API_KEY' env var
-                api_secret=None,  # 'BINANCE_API_SECRET' env var
                 account_type=BinanceAccountType.SPOT,
                 base_url_http=None,  # Override with custom endpoint
                 base_url_ws=None,  # Override with custom endpoint

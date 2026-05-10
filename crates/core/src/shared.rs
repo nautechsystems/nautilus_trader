@@ -81,7 +81,9 @@ impl<T> SharedCell<T> {
 
     /// Attempts to immutably borrow the inner value.
     ///
-    /// Returns `Err` if the value is currently mutably borrowed.
+    /// # Errors
+    ///
+    /// Returns [`BorrowError`] if the value is currently mutably borrowed.
     #[inline]
     pub fn try_borrow(&self) -> Result<Ref<'_, T>, BorrowError> {
         self.0.try_borrow()
@@ -89,7 +91,10 @@ impl<T> SharedCell<T> {
 
     /// Attempts to mutably borrow the inner value.
     ///
-    /// Returns `Err` if the value is currently borrowed (mutably or immutably).
+    /// # Errors
+    ///
+    /// Returns [`BorrowMutError`] if the value is currently borrowed
+    /// (mutably or immutably).
     #[inline]
     pub fn try_borrow_mut(&self) -> Result<RefMut<'_, T>, BorrowMutError> {
         self.0.try_borrow_mut()
@@ -165,5 +170,116 @@ impl<T> From<Weak<RefCell<T>>> for WeakCell<T> {
 impl<T> From<WeakCell<T>> for Weak<RefCell<T>> {
     fn from(cell: WeakCell<T>) -> Self {
         cell.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_shared_cell_new_and_borrow() {
+        let cell = SharedCell::new(42);
+        assert_eq!(*cell.borrow(), 42);
+    }
+
+    #[rstest]
+    fn test_shared_cell_borrow_mut() {
+        let cell = SharedCell::new(0);
+        *cell.borrow_mut() = 99;
+        assert_eq!(*cell.borrow(), 99);
+    }
+
+    #[rstest]
+    fn test_shared_cell_clone_shares_value() {
+        let cell = SharedCell::new(10);
+        let clone = cell.clone();
+        *cell.borrow_mut() = 20;
+        assert_eq!(*clone.borrow(), 20);
+    }
+
+    #[rstest]
+    fn test_shared_cell_strong_weak_counts() {
+        let cell = SharedCell::new(1);
+        assert_eq!(cell.strong_count(), 1);
+        assert_eq!(cell.weak_count(), 0);
+
+        let weak = cell.downgrade();
+        assert_eq!(cell.weak_count(), 1);
+        assert_eq!(cell.strong_count(), 1);
+
+        let clone = cell.clone();
+        assert_eq!(cell.strong_count(), 2);
+        drop(clone);
+        assert_eq!(cell.strong_count(), 1);
+        drop(weak);
+        assert_eq!(cell.weak_count(), 0);
+    }
+
+    #[rstest]
+    fn test_weak_cell_upgrade_succeeds_while_alive() {
+        let cell = SharedCell::new(10);
+        let weak = cell.downgrade();
+        assert!(!weak.is_dropped());
+
+        let upgraded = weak.upgrade();
+        assert!(upgraded.is_some());
+        assert_eq!(*upgraded.unwrap().borrow(), 10);
+    }
+
+    #[rstest]
+    fn test_weak_cell_upgrade_fails_after_drop() {
+        let weak = {
+            let cell = SharedCell::new(10);
+            cell.downgrade()
+        };
+        assert!(weak.is_dropped());
+        assert!(weak.upgrade().is_none());
+    }
+
+    #[rstest]
+    #[expect(clippy::redundant_clone, reason = "Clone is the behavior under test")]
+    fn test_weak_cell_clone() {
+        let cell = SharedCell::new(5);
+        let weak1 = cell.downgrade();
+        let weak2 = weak1.clone();
+        assert_eq!(cell.weak_count(), 2);
+        assert_eq!(*weak2.upgrade().unwrap().borrow(), 5);
+    }
+
+    #[rstest]
+    fn test_try_borrow_fails_while_mutably_borrowed() {
+        let cell = SharedCell::new(0);
+        let _guard = cell.borrow_mut();
+        assert!(cell.try_borrow().is_err());
+    }
+
+    #[rstest]
+    fn test_try_borrow_mut_fails_while_borrowed() {
+        let cell = SharedCell::new(0);
+        let _guard = cell.borrow();
+        assert!(cell.try_borrow_mut().is_err());
+    }
+
+    #[rstest]
+    fn test_from_rc_refcell_roundtrip() {
+        let rc = Rc::new(RefCell::new(5));
+        let cell = SharedCell::from(rc);
+        assert_eq!(*cell.borrow(), 5);
+
+        let back: Rc<RefCell<i32>> = cell.into();
+        assert_eq!(*back.borrow(), 5);
+    }
+
+    #[rstest]
+    fn test_from_weak_refcell_roundtrip() {
+        let rc = Rc::new(RefCell::new(7));
+        let weak_cell = WeakCell::from(Rc::downgrade(&rc));
+        assert_eq!(*weak_cell.upgrade().unwrap().borrow(), 7);
+
+        let back: Weak<RefCell<i32>> = weak_cell.into();
+        assert_eq!(*back.upgrade().unwrap().borrow(), 7);
     }
 }

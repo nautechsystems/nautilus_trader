@@ -16,6 +16,7 @@
 import msgspec
 
 from nautilus_trader.accounting.accounts.base import Account
+from nautilus_trader.accounting.accounts.betting import BettingAccount
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.core import nautilus_pyo3
@@ -59,6 +60,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionContract
 from nautilus_trader.model.instruments import OptionSpread
 from nautilus_trader.model.instruments import PerpetualContract
+from nautilus_trader.model.instruments import TokenizedAsset
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orders import Order
@@ -123,6 +125,8 @@ def transform_instrument_to_pyo3(instrument: Instrument):  # noqa: C901
         return nautilus_pyo3.OptionSpread.from_dict(OptionSpread.to_dict(instrument))
     elif isinstance(instrument, PerpetualContract):
         return nautilus_pyo3.PerpetualContract.from_dict(PerpetualContract.to_dict(instrument))
+    elif isinstance(instrument, TokenizedAsset):
+        return nautilus_pyo3.TokenizedAsset.from_dict(TokenizedAsset.to_dict(instrument))
     else:
         raise ValueError(f"Unknown instrument type: {instrument}")
 
@@ -160,6 +164,8 @@ def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:  # noq
         return OptionSpread.from_pyo3(instrument_pyo3)
     elif isinstance(instrument_pyo3, nautilus_pyo3.PerpetualContract):
         return PerpetualContract.from_pyo3(instrument_pyo3)
+    elif isinstance(instrument_pyo3, nautilus_pyo3.TokenizedAsset):
+        return TokenizedAsset.from_pyo3(instrument_pyo3)
     else:
         raise ValueError(f"Unknown instrument type: {instrument_pyo3}")
 
@@ -218,6 +224,14 @@ def from_order_initialized_cython_to_order_pyo3(order_event):
         return nautilus_pyo3.StopMarketOrder.create(order_event_pyo3)
     elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.STOP_LIMIT:
         return nautilus_pyo3.StopLimitOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.LIMIT_IF_TOUCHED:
+        return nautilus_pyo3.LimitIfTouchedOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.MARKET_TO_LIMIT:
+        return nautilus_pyo3.MarketToLimitOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.TRAILING_STOP_MARKET:
+        return nautilus_pyo3.TrailingStopMarketOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.TRAILING_STOP_LIMIT:
+        return nautilus_pyo3.TrailingStopLimitOrder.create(order_event_pyo3)
     else:
         raise ValueError(f"Unknown order type: {order_event_pyo3.order_type}")
 
@@ -272,6 +286,7 @@ def transform_order_to_pyo3(order: Order):
     if not isinstance(init_event, OrderInitialized):
         raise KeyError("init event should be of type OrderInitialized")
     order_py3 = from_order_initialized_cython_to_order_pyo3(init_event)
+
     for event_cython in events:
         event_pyo3 = transform_order_event_to_pyo3(event_cython)
         order_py3.apply(event_pyo3)
@@ -279,13 +294,14 @@ def transform_order_to_pyo3(order: Order):
 
 
 def transform_order_from_pyo3(order_pyo3) -> Order:
-    events_pyo3 = order_pyo3.events
+    events_pyo3 = order_pyo3.events()
     if len(events_pyo3) == 0:
         raise ValueError("Missing events in order")
     init_event = events_pyo3.pop(0)
     if not isinstance(init_event, nautilus_pyo3.OrderInitialized):
         raise KeyError("init event should be of type OrderInitialized")
     order_cython = from_order_initialized_pyo3_to_order_cython(init_event)
+
     for event_pyo3 in events_pyo3:
         event_cython = transform_order_event_from_pyo3(event_pyo3)
         order_cython.apply(event_cython)
@@ -338,10 +354,12 @@ def from_account_state_pyo3_to_account_cython(
     calculate_account_state: bool,
 ) -> Account:
     account_state_cython = transform_account_state_pyo3_to_cython(account_state_pyo3)
-    if account_state_pyo3.account_type == nautilus_pyo3.AccountType.CASH:
-        return CashAccount(account_state_cython, calculate_account_state)
-    elif account_state_pyo3.account_type == nautilus_pyo3.AccountType.MARGIN:
+    if account_state_pyo3.account_type == nautilus_pyo3.AccountType.MARGIN:
         return MarginAccount(account_state_cython, calculate_account_state)
+    elif account_state_pyo3.account_type == nautilus_pyo3.AccountType.CASH:
+        return CashAccount(account_state_cython, calculate_account_state)
+    elif account_state_pyo3.account_type == nautilus_pyo3.AccountType.BETTING:
+        return BettingAccount(account_state_cython, calculate_account_state)
     else:
         raise ValueError(f"Unsupported account type: {account_state_pyo3.account_type}")
 
@@ -351,10 +369,12 @@ def from_account_state_cython_to_account_pyo3(
     calculate_account_state: bool,
 ):
     account_state_pyo3 = transform_account_state_cython_to_pyo3(account_state)
-    if account_state_pyo3.account_type == nautilus_pyo3.AccountType.CASH:
-        return nautilus_pyo3.CashAccount(account_state_pyo3, calculate_account_state)
-    elif account_state_pyo3.account_type == nautilus_pyo3.AccountType.MARGIN:
+    if account_state_pyo3.account_type == nautilus_pyo3.AccountType.MARGIN:
         return nautilus_pyo3.MarginAccount(account_state_pyo3, calculate_account_state)
+    elif account_state_pyo3.account_type == nautilus_pyo3.AccountType.CASH:
+        return nautilus_pyo3.CashAccount(account_state_pyo3, calculate_account_state)
+    elif account_state_pyo3.account_type == nautilus_pyo3.AccountType.BETTING:
+        return nautilus_pyo3.BettingAccount(account_state_pyo3, calculate_account_state)  # type: ignore[attr-defined]
     else:
         raise ValueError(f"Unsupported account type: {account_state_pyo3.account_type}")
 
@@ -366,6 +386,7 @@ def transform_account_to_pyo3(account: Account):
     init_event = events.pop(0)
     calculate_account_state = account.calculate_account_state
     account_pyo3 = from_account_state_cython_to_account_pyo3(init_event, calculate_account_state)
+
     for account_state_cython in events:
         event_pyo3 = transform_account_state_cython_to_pyo3(account_state_cython)
         account_pyo3.apply(event_pyo3)
@@ -379,6 +400,7 @@ def transform_account_from_pyo3(account_pyo3) -> Account:
     init_event = events_pyo3.pop(0)
     calculate_account_state = account_pyo3.calculate_account_state
     account = from_account_state_pyo3_to_account_cython(init_event, calculate_account_state)
+
     for account_state_pyo3 in events_pyo3:
         event = transform_account_state_pyo3_to_cython(account_state_pyo3)
         account.apply(event)
@@ -432,7 +454,8 @@ def transform_data_type_to_pyo3(data_type: DataType) -> nautilus_pyo3.DataType:
     fully_qualified_name = data_cls.__module__ + ":" + data_cls.__qualname__
     return nautilus_pyo3.DataType(
         fully_qualified_name,
-        data_type.metadata,  # PyO3 expects a `String` for this parameter
+        data_type.metadata,
+        data_type.identifier,
     )
 
 
@@ -442,20 +465,29 @@ def transform_data_type_from_pyo3(data_type_pyo3: nautilus_pyo3.DataType) -> Dat
     return DataType(
         data_cls,
         data_type_pyo3.metadata,
+        data_type_pyo3.identifier,
     )
 
 
 def transform_custom_data_to_pyo3(data: CustomData) -> nautilus_pyo3.CustomData:
+    """
+    Convert cache CustomData to PyO3 CustomData.
+
+    Uses JSON roundtrip: cache CustomData (Cython) -> JSON -> deserialize_custom_from_json
+    -> Rust CustomData wrapper.
+
+    """
     data_type_pyo3 = transform_data_type_to_pyo3(data.data_type)
-    return nautilus_pyo3.CustomData(
-        data_type_pyo3,
-        value=msgspec.json.encode(data.data.to_dict()),
-        ts_event=data.ts_event,
-        ts_init=data.ts_init,
-    )
+    payload = msgspec.json.encode(data.data.to_dict())
+    inner = nautilus_pyo3.deserialize_custom_from_json(data.data_type.type_name, bytes(payload))
+    return nautilus_pyo3.CustomData(data_type_pyo3, inner)
 
 
 def transform_custom_data_from_pyo3(data: nautilus_pyo3.CustomData) -> CustomData:
+    """
+    Convert PyO3 CustomData to cache CustomData.
+    """
     data_type = transform_data_type_from_pyo3(data.data_type)
-    data = Data(data.value, data.ts_event, data.ts_init)
-    return CustomData(data_type, data)
+    value = data.data.to_json()  # type: ignore[attr-defined]
+    inner = Data(msgspec.json.decode(value), data.ts_event, data.ts_init)
+    return CustomData(data_type, inner)

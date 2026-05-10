@@ -353,6 +353,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                     avg_fill_price=avg_fill_price,
                     filled=filled,
                     remaining=remaining,
+                    why_held=why_held,
                 )
 
     async def process_exec_details(

@@ -27,8 +27,10 @@ use crate::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
 };
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderRejected {
-    #[allow(clippy::too_many_arguments)]
+    /// Represents an event where an order has been rejected by the trading venue.
+    #[expect(clippy::too_many_arguments)]
     #[new]
     fn py_new(
         trader_id: TraderId,

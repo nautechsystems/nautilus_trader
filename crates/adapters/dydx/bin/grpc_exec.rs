@@ -43,7 +43,7 @@ use nautilus_dydx::{
     common::{
         consts::{DYDX_GRPC_URLS, DYDX_HTTP_URL, DYDX_TESTNET_GRPC_URLS, DYDX_TESTNET_HTTP_URL},
         credential::credential_env_vars,
-        enums::DydxOrderStatus,
+        enums::{DydxNetwork, DydxOrderStatus},
     },
     execution::wallet::{Account, Wallet},
     grpc::{
@@ -87,8 +87,8 @@ struct Credentials {
     subaccount: u32,
 }
 
-fn load_credentials(is_testnet: bool) -> Result<Credentials, Box<dyn std::error::Error>> {
-    let (pk_var, _) = credential_env_vars(is_testnet);
+fn load_credentials(network: DydxNetwork) -> Result<Credentials, Box<dyn std::error::Error>> {
+    let (pk_var, _) = credential_env_vars(network);
     if let Ok(private_key) = env::var(pk_var) {
         log::info!("Loaded credentials from {pk_var}");
         return Ok(Credentials {
@@ -150,8 +150,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
+    let network = if is_mainnet {
+        DydxNetwork::Mainnet
+    } else {
+        DydxNetwork::Testnet
+    };
+
     // Load credentials
-    let creds = load_credentials(!is_mainnet)?;
+    let creds = load_credentials(network)?;
     let grpc_urls = if is_mainnet {
         DYDX_GRPC_URLS
     } else {
@@ -168,10 +174,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("dYdX gRPC Order Submission Test");
     log::info!("================================");
-    log::info!(
-        "Network:     {}",
-        if is_mainnet { "MAINNET" } else { "TESTNET" }
-    );
+    log::info!("Network:     {network}");
     log::info!("Instrument:  {instrument_str}");
     log::info!("Side:        {side_str}");
     log::info!("Price:       {price_str}");
@@ -202,15 +205,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Connecting to HTTP API: {http_url}");
     let http_client = DydxHttpClient::new(
         Some(http_url.clone()),
-        Some(30),    // timeout_secs
-        None,        // proxy_url
-        !is_mainnet, // is_testnet
-        None,        // retry_config
+        30,      // timeout_secs
+        None,    // proxy_url
+        network, // network
+        None,    // retry_config
     )
     .expect("Failed to create HTTP client");
 
     // Also create raw HTTP client for order queries
-    let raw_http_client = DydxRawHttpClient::new(Some(http_url), Some(30), None, !is_mainnet, None)
+    let raw_http_client = DydxRawHttpClient::new(Some(http_url), 30, None, network, None)
         .expect("Failed to create raw HTTP client");
 
     // Fetch instruments
@@ -377,7 +380,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn run_all_edge_case_tests(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let is_mainnet = args.iter().any(|a| a == "--mainnet");
-    let creds = load_credentials(!is_mainnet)?;
+    let network = if is_mainnet {
+        DydxNetwork::Mainnet
+    } else {
+        DydxNetwork::Testnet
+    };
+    let creds = load_credentials(network)?;
     let wallet = Wallet::from_private_key(&creds.private_key)?;
     let mut account = wallet.account_offline()?;
     let wallet_address = account.address.clone();
@@ -401,27 +409,15 @@ async fn run_all_edge_case_tests(args: &[String]) -> Result<(), Box<dyn std::err
     let (account_number, sequence) = grpc_client.query_address(&wallet_address).await?;
     account.set_account_info(account_number, sequence);
 
-    let http_client = DydxHttpClient::new(
-        Some(http_url.to_string()),
-        Some(30),
-        None,
-        !is_mainnet,
-        None,
-    )?;
-    let raw_http = DydxRawHttpClient::new(
-        Some(http_url.to_string()),
-        Some(30),
-        None,
-        !is_mainnet,
-        None,
-    )?;
+    let http_client = DydxHttpClient::new(Some(http_url.to_string()), 30, None, network, None)?;
+    let raw_http = DydxRawHttpClient::new(Some(http_url.to_string()), 30, None, network, None)?;
 
     http_client.fetch_and_cache_instruments().await?;
     log::info!("Setup complete - wallet: {wallet_address}");
 
     run_all_edge_tests(
         &mut grpc_client,
-        &mut account,
+        &account,
         &wallet_address,
         &http_client,
         &raw_http,
@@ -432,7 +428,7 @@ async fn run_all_edge_case_tests(args: &[String]) -> Result<(), Box<dyn std::err
 
 async fn run_all_edge_tests(
     grpc: &mut DydxGrpcClient,
-    account: &mut Account,
+    account: &Account,
     address: &str,
     http: &DydxHttpClient,
     raw_http: &DydxRawHttpClient,
@@ -656,6 +652,7 @@ async fn test_duplicate_cancel(
     log::info!("First cancel succeeded");
 
     tokio::time::sleep(Duration::from_secs(1)).await;
+
     match cancel_order_by_client_id(
         grpc, account, http, address, client_id, "BTC-USD", is_mainnet,
     )
@@ -670,7 +667,7 @@ async fn test_duplicate_cancel(
 
 async fn test_rapid_sequence(
     grpc: &mut DydxGrpcClient,
-    account: &mut Account,
+    account: &Account,
     http: &DydxHttpClient,
     _raw_http: &DydxRawHttpClient,
     address: &str,
@@ -721,7 +718,7 @@ async fn test_rapid_sequence(
 
 async fn test_batch_cancel(
     grpc: &mut DydxGrpcClient,
-    account: &mut Account,
+    account: &Account,
     http: &DydxHttpClient,
     raw_http: &DydxRawHttpClient,
     address: &str,
@@ -731,6 +728,7 @@ async fn test_batch_cancel(
 
     // Place 5 orders on BTC
     let mut client_ids = Vec::new();
+
     for i in 0..5 {
         let client_id = generate_client_id();
         client_ids.push(client_id);

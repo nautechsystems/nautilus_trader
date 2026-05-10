@@ -20,12 +20,12 @@ use rstest::fixture;
 use ustr::Ustr;
 
 use crate::{
-    enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
+    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
         OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
         OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
-        OrderUpdated,
+        OrderUpdated, order::spec::OrderFilledSpec,
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
@@ -79,27 +79,21 @@ pub fn order_filled(
     client_order_id: ClientOrderId,
     uuid4: UUID4,
 ) -> OrderFilled {
-    OrderFilled::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        VenueOrderId::new("123456"),
-        AccountId::new("SIM-001"),
-        TradeId::new("1"),
-        OrderSide::Buy,
-        OrderType::Limit,
-        Quantity::from_str("0.561").unwrap(),
-        Price::from_str("22000").unwrap(),
-        Currency::from_str("USDT").unwrap(),
-        LiquiditySide::Taker,
-        uuid4,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        None,
-        Some(Money::from("12.2 USDT")),
-    )
+    OrderFilledSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id_ema_cross)
+        .instrument_id(instrument_id_btc_usdt)
+        .client_order_id(client_order_id)
+        .venue_order_id(VenueOrderId::new("123456"))
+        .account_id(AccountId::new("SIM-001"))
+        .trade_id(TradeId::new("1"))
+        .order_type(OrderType::Limit)
+        .last_qty(Quantity::from_str("0.561").unwrap())
+        .last_px(Price::from_str("22000").unwrap())
+        .currency(Currency::from_str("USDT").unwrap())
+        .event_id(uuid4)
+        .commission(Money::from("12.2 USDT"))
+        .build()
 }
 
 #[fixture]
@@ -302,6 +296,7 @@ pub fn order_updated(
         Some(Price::from("22000")),
         None,
         None,
+        false, // is_quote_quantity
     )
 }
 
@@ -588,38 +583,6 @@ impl Default for OrderExpired {
     }
 }
 
-impl TestDefault for OrderFilled {
-    fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            venue_order_id: VenueOrderId::test_default(),
-            account_id: AccountId::test_default(),
-            trade_id: TradeId::test_default(),
-            position_id: None,
-            order_side: OrderSide::Buy,
-            order_type: OrderType::Market,
-            last_qty: Quantity::new(100_000.0, 0),
-            last_px: Price::from("1.00000"),
-            currency: Currency::USD(),
-            commission: None,
-            liquidity_side: LiquiditySide::Taker,
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-        }
-    }
-}
-
-impl Default for OrderFilled {
-    fn default() -> Self {
-        Self::test_default()
-    }
-}
-
 impl TestDefault for OrderInitialized {
     fn test_default() -> Self {
         Self {
@@ -838,6 +801,7 @@ impl TestDefault for OrderUpdated {
             price: None,
             trigger_price: None,
             protection_price: None,
+            is_quote_quantity: false,
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),

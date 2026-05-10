@@ -28,10 +28,12 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PositionStatusReport {
+    /// Represents a position status at a point in time.
     #[new]
     #[pyo3(signature = (account_id, instrument_id, position_side, quantity, ts_last, ts_init, report_id=None, venue_position_id=None, avg_px_open=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         account_id: AccountId,
         instrument_id: InstrumentId,
@@ -42,8 +44,8 @@ impl PositionStatusReport {
         report_id: Option<UUID4>,
         venue_position_id: Option<PositionId>,
         avg_px_open: Option<Decimal>,
-    ) -> PyResult<Self> {
-        Ok(Self::new(
+    ) -> Self {
+        Self::new(
             account_id,
             instrument_id,
             position_side.as_specified(),
@@ -53,7 +55,7 @@ impl PositionStatusReport {
             report_id,
             venue_position_id,
             avg_px_open,
-        ))
+        )
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -132,18 +134,21 @@ impl PositionStatusReport {
         self.ts_init.as_u64()
     }
 
+    /// Checks if this is a flat position (quantity is zero).
     #[getter]
     #[pyo3(name = "is_flat")]
     fn py_is_flat(&self) -> bool {
         self.is_flat()
     }
 
+    /// Checks if this is a long position.
     #[getter]
     #[pyo3(name = "is_long")]
     fn py_is_long(&self) -> bool {
         self.is_long()
     }
 
+    /// Checks if this is a short position.
     #[getter]
     #[pyo3(name = "is_short")]
     fn py_is_short(&self) -> bool {
@@ -172,6 +177,7 @@ impl PositionStatusReport {
         dict.set_item("type", stringify!(PositionStatusReport))?;
         dict.set_item("account_id", self.account_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
+
         match self.venue_position_id {
             Some(venue_position_id) => {
                 dict.set_item("venue_position_id", venue_position_id.to_string())?;

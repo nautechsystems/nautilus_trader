@@ -42,6 +42,7 @@ use std::env;
 
 use futures_util::StreamExt;
 use nautilus_deribit::{
+    common::enums::DeribitEnvironment,
     http::{client::DeribitHttpClient, models::DeribitCurrency},
     websocket::{
         auth::DERIBIT_DATA_SESSION_NAME, client::DeribitWebSocketClient,
@@ -56,23 +57,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
     let args: Vec<String> = env::args().collect();
-    let is_testnet = args.iter().any(|a| a == "--testnet");
+    let environment = if args.iter().any(|a| a == "--testnet") {
+        DeribitEnvironment::Testnet
+    } else {
+        DeribitEnvironment::Mainnet
+    };
     let use_raw = args.iter().any(|a| a == "--raw");
 
     log::info!(
-        "Starting Deribit WebSocket data example ({}, {})",
-        if is_testnet { "testnet" } else { "mainnet" },
+        "Starting Deribit WebSocket data example ({environment}, {})",
         if use_raw { "raw" } else { "100ms" }
     );
 
     // Fetch instruments via HTTP to get proper instrument metadata
     let http_client = DeribitHttpClient::new(
-        None, // base_url
-        is_testnet, None, // timeout_secs
-        None, // max_retries
-        None, // retry_delay_ms
-        None, // retry_delay_max_ms
-        None, // proxy_url
+        None,        // base_url
+        environment, // environment
+        10,          // timeout_secs
+        3,           // max_retries
+        1000,        // retry_delay_ms
+        10_000,      // retry_delay_max_ms
+        None,        // proxy_url
     )?;
     log::info!("Fetching BTC instruments from Deribit...");
     let instruments = http_client
@@ -83,13 +88,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create WebSocket client based on whether raw streams are requested
     let mut ws_client = if use_raw {
         log::info!("Creating authenticated client for raw streams");
-        DeribitWebSocketClient::with_credentials(is_testnet)?
+        DeribitWebSocketClient::with_credentials(environment, None)?
     } else {
         log::info!("Creating public client for 100ms streams");
-        DeribitWebSocketClient::new_public(is_testnet)?
+        DeribitWebSocketClient::new_public(environment, None)?
     };
 
-    ws_client.cache_instruments(instruments);
+    ws_client.cache_instruments(&instruments);
     log::info!("Connecting to Deribit WebSocket...");
     ws_client.connect().await?;
     log::info!("Connected to Deribit WebSocket");

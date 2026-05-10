@@ -15,7 +15,6 @@
 
 use std::fmt::{Debug, Display};
 
-use derive_builder::Builder;
 use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -36,12 +35,15 @@ use crate::{
 
 /// Represents an event where an order has become emulated by the Nautilus system.
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[cfg_attr(any(test, feature = "stubs"), builder(default))]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct OrderEmulated {
     /// The trader ID associated with the event.
@@ -62,7 +64,7 @@ pub struct OrderEmulated {
 
 impl OrderEmulated {
     /// Creates a new [`OrderEmulated`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -117,7 +119,7 @@ impl OrderEvent for OrderEmulated {
         self.event_id
     }
 
-    fn kind(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(OrderEmulated)
     }
 
@@ -295,5 +297,13 @@ mod tests {
             display,
             "OrderEmulated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1)"
         );
+    }
+
+    #[rstest]
+    fn test_order_emulated_serialization() {
+        let original = OrderEmulated::default();
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderEmulated = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
     }
 }

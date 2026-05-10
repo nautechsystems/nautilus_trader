@@ -17,20 +17,33 @@
 #[cfg(feature = "redis")]
 #[cfg(target_os = "linux")] // Databases only tested and supported on Linux
 mod serial_tests {
-    use std::time::Instant;
+    use std::{sync::OnceLock, time::Instant};
 
     use bytes::Bytes;
     use nautilus_common::{
         cache::CacheConfig, enums::SerializationEncoding, msgbus::database::DatabaseConfig,
         testing::wait_until_async,
     };
-    use nautilus_core::UUID4;
+    use nautilus_core::{Params, UUID4};
     use nautilus_infrastructure::redis::{
         cache::RedisCacheDatabase, create_redis_connection, queries::DatabaseQueries,
     };
-    use nautilus_model::{identifiers::TraderId, types::Currency};
+    use nautilus_model::{
+        data::{
+            DataType, HasTsInit,
+            stubs::{ensure_stub_custom_data_registered, stub_custom_data},
+        },
+        identifiers::TraderId,
+        types::Currency,
+    };
     use redis::AsyncCommands;
+    use serde_json::json;
     use ustr::Ustr;
+
+    fn redis_test_mutex() -> &'static tokio::sync::Mutex<()> {
+        static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+    }
 
     async fn get_redis_connection() -> redis::aio::ConnectionManager {
         let config = DatabaseConfig {
@@ -88,6 +101,7 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_scan_keys_empty_database() {
+        let _guard = redis_test_mutex().lock().await;
         let mut con = get_redis_connection().await;
 
         // Ensure clean state
@@ -101,6 +115,7 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_scan_keys_with_matching_keys() {
+        let _guard = redis_test_mutex().lock().await;
         let mut con = get_redis_connection().await;
 
         // Clean state
@@ -130,6 +145,7 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_scan_keys_handles_large_dataset() {
+        let _guard = redis_test_mutex().lock().await;
         let mut con = get_redis_connection().await;
 
         // Clean state
@@ -142,6 +158,18 @@ mod serial_tests {
             let _: () = con.set(key, "value").await.unwrap();
         }
 
+        wait_until_async(
+            || {
+                let mut con = con.clone();
+                async move {
+                    let keys: Vec<String> = con.keys("test:large:*").await.unwrap_or_default();
+                    keys.len() == num_keys
+                }
+            },
+            std::time::Duration::from_secs(5),
+        )
+        .await;
+
         let pattern = "test:large:*".to_string();
         let result = DatabaseQueries::scan_keys(&mut con, pattern).await.unwrap();
 
@@ -150,6 +178,7 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_read_bulk_empty_keys() {
+        let _guard = redis_test_mutex().lock().await;
         let con = get_redis_connection().await;
         let keys: Vec<String> = vec![];
 
@@ -160,6 +189,7 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_read_bulk_single_key() {
+        let _guard = redis_test_mutex().lock().await;
         let mut con = get_redis_connection().await;
 
         // Clean state
@@ -179,6 +209,7 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_read_bulk_multiple_keys() {
+        let _guard = redis_test_mutex().lock().await;
         let mut con = get_redis_connection().await;
 
         // Clean state
@@ -202,6 +233,7 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_read_bulk_with_missing_keys() {
+        let _guard = redis_test_mutex().lock().await;
         let mut con = get_redis_connection().await;
 
         // Clean state
@@ -227,6 +259,7 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_read_bulk_performance_vs_individual() {
+        let _guard = redis_test_mutex().lock().await;
         let mut con = get_redis_connection().await;
 
         // Clean state
@@ -274,6 +307,7 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_load_currencies_empty() {
+        let _guard = redis_test_mutex().lock().await;
         let (database, trader_key) = setup_test_database().await;
 
         let result = DatabaseQueries::load_currencies(
@@ -289,7 +323,8 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_load_currencies_with_bulk_loading() {
-        let (mut database, trader_key) = setup_test_database().await;
+        let _guard = redis_test_mutex().lock().await;
+        let (database, trader_key) = setup_test_database().await;
 
         // Create test currencies
         let currencies = vec![
@@ -346,6 +381,7 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_serialize_deserialize_payload() {
+        let _guard = redis_test_mutex().lock().await;
         let currency = Currency::USD();
 
         // Test JSON encoding
@@ -370,6 +406,7 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_read_bulk_handles_very_large_keys() {
+        let _guard = redis_test_mutex().lock().await;
         let mut con = get_redis_connection().await;
 
         // Clean state
@@ -394,6 +431,7 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_read_bulk_batched() {
+        let _guard = redis_test_mutex().lock().await;
         let mut con = get_redis_connection().await;
 
         // Clean state
@@ -423,6 +461,7 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_read_bulk_batched_zero_batch_size_error() {
+        let _guard = redis_test_mutex().lock().await;
         let con = get_redis_connection().await;
         let keys: Vec<String> = vec!["key1".to_string(), "key2".to_string()];
 
@@ -439,6 +478,7 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_scan_keys_with_special_characters() {
+        let _guard = redis_test_mutex().lock().await;
         let mut con = get_redis_connection().await;
 
         // Clean state
@@ -464,7 +504,8 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_load_currency_single() {
-        let (mut database, trader_key) = setup_test_database().await;
+        let _guard = redis_test_mutex().lock().await;
+        let (database, trader_key) = setup_test_database().await;
 
         let currency = Currency::USD();
         let key = format!("currencies:{}", currency.code);
@@ -507,6 +548,7 @@ mod serial_tests {
 
     #[tokio::test]
     async fn test_load_currency_not_found() {
+        let _guard = redis_test_mutex().lock().await;
         let (database, trader_key) = setup_test_database().await;
 
         let result = DatabaseQueries::load_currency(
@@ -519,5 +561,158 @@ mod serial_tests {
         .unwrap();
 
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_load_custom_data_roundtrip_and_sorting() {
+        let _guard = redis_test_mutex().lock().await;
+        ensure_stub_custom_data_registered();
+        let (database, trader_key) = setup_test_database().await;
+
+        let later = stub_custom_data(2001, 2, None, Some("id1".to_string()));
+        let earlier = stub_custom_data(2000, 1, None, Some("id1".to_string()));
+        database.add_custom_data(&later).unwrap();
+        database.add_custom_data(&earlier).unwrap();
+
+        let data_type = DataType::new("StubCustomData", None, Some("id1".to_string()));
+        let conn = database.con.clone();
+        let custom_pattern = format!("{trader_key}:custom:*");
+        wait_until_async(
+            move || {
+                let mut conn = conn.clone();
+                let custom_pattern = custom_pattern.clone();
+                async move {
+                    let keys: Vec<String> = conn.keys(custom_pattern).await.unwrap_or_default();
+                    keys.len() == 2
+                }
+            },
+            std::time::Duration::from_secs(5),
+        )
+        .await;
+
+        let loaded = DatabaseQueries::load_custom_data(&database.con, &trader_key, &data_type)
+            .await
+            .unwrap();
+
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0], earlier);
+        assert_eq!(loaded[1], later);
+        assert_eq!(loaded[0].ts_init().as_u64(), 2000);
+        assert_eq!(loaded[1].ts_init().as_u64(), 2001);
+    }
+
+    #[tokio::test]
+    async fn test_load_custom_data_filters_by_identifier() {
+        let _guard = redis_test_mutex().lock().await;
+        ensure_stub_custom_data_registered();
+        let (database, trader_key) = setup_test_database().await;
+
+        let data1 = stub_custom_data(2000, 1, None, Some("id1".to_string()));
+        let data2 = stub_custom_data(2001, 2, None, Some("id2".to_string()));
+        database.add_custom_data(&data1).unwrap();
+        database.add_custom_data(&data2).unwrap();
+
+        let data_type1 = DataType::new("StubCustomData", None, Some("id1".to_string()));
+        let data_type2 = DataType::new("StubCustomData", None, Some("id2".to_string()));
+        let conn = database.con.clone();
+        let custom_pattern = format!("{trader_key}:custom:*");
+        wait_until_async(
+            move || {
+                let mut conn = conn.clone();
+                let custom_pattern = custom_pattern.clone();
+                async move {
+                    let keys: Vec<String> = conn.keys(custom_pattern).await.unwrap_or_default();
+                    keys.len() == 2
+                }
+            },
+            std::time::Duration::from_secs(5),
+        )
+        .await;
+
+        let loaded_id1 = DatabaseQueries::load_custom_data(&database.con, &trader_key, &data_type1)
+            .await
+            .unwrap();
+        let loaded_id2 = DatabaseQueries::load_custom_data(&database.con, &trader_key, &data_type2)
+            .await
+            .unwrap();
+
+        assert_eq!(loaded_id1, vec![data1]);
+        assert_eq!(loaded_id2, vec![data2]);
+    }
+
+    #[tokio::test]
+    async fn test_load_custom_data_filters_by_metadata() {
+        let _guard = redis_test_mutex().lock().await;
+        ensure_stub_custom_data_registered();
+        let (database, trader_key) = setup_test_database().await;
+
+        let mut metadata = Params::new();
+        metadata.insert("source".to_string(), json!("redis"));
+        let matching = stub_custom_data(3000, 3, Some(metadata), Some("id1".to_string()));
+        let non_matching = stub_custom_data(3001, 4, None, Some("id1".to_string()));
+        database.add_custom_data(&matching).unwrap();
+        database.add_custom_data(&non_matching).unwrap();
+
+        let data_type = DataType::new(
+            "StubCustomData",
+            matching.data_type.metadata().cloned(),
+            Some("id1".to_string()),
+        );
+        let conn = database.con.clone();
+        let custom_pattern = format!("{trader_key}:custom:*");
+        wait_until_async(
+            move || {
+                let mut conn = conn.clone();
+                let custom_pattern = custom_pattern.clone();
+                async move {
+                    let keys: Vec<String> = conn.keys(custom_pattern).await.unwrap_or_default();
+                    keys.len() == 2
+                }
+            },
+            std::time::Duration::from_secs(5),
+        )
+        .await;
+
+        let loaded = DatabaseQueries::load_custom_data(&database.con, &trader_key, &data_type)
+            .await
+            .unwrap();
+
+        assert_eq!(loaded, vec![matching]);
+    }
+
+    #[tokio::test]
+    async fn test_load_custom_data_skips_unregistered_payloads() {
+        let _guard = redis_test_mutex().lock().await;
+        let (database, trader_key) = setup_test_database().await;
+
+        let unknown_json = json!({
+            "type": "UnknownCustomData",
+            "data_type": {
+                "type_name": "UnknownCustomData",
+                "metadata": {},
+                "identifier": "id1",
+            },
+            "payload": {
+                "ts_init": 1,
+                "value": 1,
+            },
+        });
+
+        let key = format!("{trader_key}:custom:{:020}:unknown", 1);
+        let mut conn = database.con.clone();
+        let _: () = conn
+            .set(
+                &key,
+                serde_json::to_vec(&unknown_json).expect("unknown custom payload should serialize"),
+            )
+            .await
+            .unwrap();
+
+        let data_type = DataType::new("UnknownCustomData", None, Some("id1".to_string()));
+        let loaded = DatabaseQueries::load_custom_data(&database.con, &trader_key, &data_type)
+            .await
+            .unwrap();
+
+        assert!(loaded.is_empty());
     }
 }

@@ -25,6 +25,7 @@ import pandas as pd
 from ibapi.common import MarketDataTypeEnum as IBMarketDataTypeEnum
 
 from nautilus_trader.adapters.interactive_brokers.common import IB
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import (
@@ -44,6 +45,7 @@ from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RoutingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.examples.interactive_brokers import resolve_ib_endpoint
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -56,9 +58,14 @@ from nautilus_trader.trading.strategy import Strategy
 
 
 # %%
+IB_HOST, IB_PORT = resolve_ib_endpoint("IB_EXAMPLE_HOST", "IB_EXAMPLE_PORT")
+
+
+# %%
 class DemoStrategyConfig(StrategyConfig, frozen=True):
     bar_type: BarType
     instrument_id: InstrumentId
+    enable_order_submission: bool = True
 
 
 class DemoStrategy(Strategy):
@@ -77,52 +84,48 @@ class DemoStrategy(Strategy):
         Handle strategy start event.
         """
         self.request_instrument(self.config.instrument_id)
-        # self.request_instruments(
-        #     venue=IB_VENUE,
-        #     params={
-        #         "ib_contracts": [
-        #             {
-        #                 "secType": "IND",
-        #                 "symbol": "SPX",
-        #                 "exchange": "CBOE",
-        #                 "build_options_chain": True,
-        #                 "min_expiry_days": 0,
-        #                 "max_expiry_days": 5,
-        #             },
-        #         ],
-        #     },
-        # )
-        # self.request_instruments(
-        #     venue=IB_VENUE,
-        #     params={
-        #         "ib_contracts": (
-        #             {
-        #                 "secType": "CONTFUT",
-        #                 "exchange": "CME",
-        #                 "symbol": "ES",
-        #                 "build_futures_chain": True,
-        #                 "build_options_chain": True,
-        #                 "min_expiry_days": 0,
-        #                 "max_expiry_days": 2,
-        #             },
-        #         ),
-        #     },
-        # )
-        # self.request_instruments(
-        #     venue=IB_VENUE,
-        #     params={
-        #         "ib_contracts": (
-        #             {
-        #                 "secType": "IND",
-        #                 "exchange": "EUREX",
-        #                 "symbol": "ESTX50",
-        #                 "build_options_chain": True,
-        #                 "min_expiry_days": 0,
-        #                 "max_expiry_days": 2,
-        #             },
-        #         ),
-        #     },
-        # )
+        # self.request_instrument(InstrumentId.from_str("SPXW  260319C06750000.XCBO"))
+        self.request_instruments(
+            venue=IB_VENUE,
+            params={
+                "ib_contracts": [
+                    {
+                        "secType": "STK",
+                        "symbol": "SPY",
+                        "exchange": "SMART",
+                        "primaryExchange": "CBOE",
+                        "build_options_chain": True,
+                        "min_expiry_days": 0,
+                        "max_expiry_days": 3,
+                    },
+                    # {
+                    #     "secType": "IND",
+                    #     "symbol": "SPX",
+                    #     "exchange": "CBOE",
+                    #     "build_options_chain": True,
+                    #     "min_expiry_days": 0,
+                    #     "max_expiry_days": 5,
+                    # },
+                    # {
+                    #     "secType": "CONTFUT",
+                    #     "exchange": "CME",
+                    #     "symbol": "ES",
+                    #     "build_futures_chain": True,
+                    #     "build_options_chain": True,
+                    #     "min_expiry_days": 0,
+                    #     "max_expiry_days": 2,
+                    # },
+                    # {
+                    #     "secType": "IND",
+                    #     "exchange": "EUREX",
+                    #     "symbol": "ESTX50",
+                    #     "build_options_chain": True,
+                    #     "min_expiry_days": 0,
+                    #     "max_expiry_days": 2,
+                    # },
+                ],
+            },
+        )
 
     def on_instrument(self, instrument):
         self.log.info(f"Instrument ID: {instrument.id}")
@@ -143,6 +146,9 @@ class DemoStrategy(Strategy):
             self.config.bar_type,
             params={"start_ns": (utc_now - pd.Timedelta(minutes=2)).value},
         )
+
+        if not self.config.enable_order_submission:
+            return
 
         # Prepare values for order
         last_price = self.instrument.make_price(46745)
@@ -179,7 +185,7 @@ class DemoStrategy(Strategy):
             self.show_portfolio_info("Portfolio state (2 minutes after position opened)")
 
         # Only place one order for demonstration
-        if not self.order_placed:
+        if not self.order_placed and self.config.enable_order_submission:
             # Prepare values for order
             last_price = bar.close
             tick_size = self.instrument.price_increment
@@ -281,7 +287,7 @@ class DemoStrategy(Strategy):
 
 # %%
 # Tested instrument id
-instrument_id = "YMH6.XCBT"  # "^SPX.XCBO", "ES.XCME", "AAPL.XNAS", "YMU5.XCBT"
+instrument_id = "YMM6.XCBT"  # "^SPX.XCBO", "ES.XCME", "AAPL.XNAS", "YMM6.XCBT"
 
 instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
     symbology_method=SymbologyMethod.IB_SIMPLIFIED,
@@ -298,7 +304,8 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
 )
 
 ib_data_client_config = InteractiveBrokersDataClientConfig(
-    ibg_port=7497,
+    ibg_host=IB_HOST,
+    ibg_port=IB_PORT,
     handle_revised_bars=False,
     use_regular_trading_hours=False,
     instrument_provider=instrument_provider_config,
@@ -307,7 +314,8 @@ ib_data_client_config = InteractiveBrokersDataClientConfig(
 )
 
 ib_exec_client_config = InteractiveBrokersExecClientConfig(
-    ibg_port=7497,
+    ibg_host=IB_HOST,
+    ibg_port=IB_PORT,
     instrument_provider=instrument_provider_config,
     routing=RoutingConfig(default=True),
     account_id=os.environ.get("TWS_ACCOUNT"),
@@ -353,6 +361,10 @@ node = TradingNode(config=config_node)
 strategy_config = DemoStrategyConfig(
     bar_type=BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"),
     instrument_id=InstrumentId.from_str(instrument_id),
+    enable_order_submission=os.getenv("IB_EXAMPLE_ENABLE_ORDERS", "1") == "1",
+    manage_stop=True,
+    market_exit_time_in_force=TimeInForce.DAY,
+    market_exit_reduce_only=False,
 )
 strategy = DemoStrategy(config=strategy_config)
 
@@ -380,24 +392,12 @@ def auto_stop_node(node, delay_seconds=15):
     thread.start()
 
 
-# %%
-node.run()
+if __name__ == "__main__":
+    auto_stop_seconds = int(os.getenv("IB_EXAMPLE_AUTO_STOP_SECONDS", "30"))
+    if auto_stop_seconds > 0:
+        auto_stop_node(node, delay_seconds=auto_stop_seconds)
 
-# %%
-# # Start auto-stop timer
-# # auto_stop_node(node, delay_seconds=60)
-
-# try:
-#     node.run()
-# except KeyboardInterrupt:
-#     node.stop()
-# finally:
-#     node.dispose()
-
-# %%
-# node.trader.strategies()[0].on_bar(2)
-
-# %%
-# # ?node.*
-
-# %%
+    try:
+        node.run()
+    finally:
+        node.dispose()

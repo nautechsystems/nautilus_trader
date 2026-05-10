@@ -3,3 +3,5 @@
 
 import enum
 import typing
+
+from nautilus_trader import model

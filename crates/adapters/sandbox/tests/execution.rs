@@ -21,16 +21,22 @@ use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
     clock::{Clock, TestClock},
+    live::set_exec_event_sender,
+    messages::{
+        ExecutionEvent,
+        execution::{SubmitOrder, TradingCommand},
+    },
     msgbus::{self, MessagingSwitchboard, stubs::get_typed_into_message_saving_handler},
 };
-use nautilus_core::UnixNanos;
-use nautilus_execution::client::core::ExecutionClientCore;
+use nautilus_core::{UUID4, UnixNanos};
+use nautilus_execution::{client::core::ExecutionClientCore, engine::ExecutionEngine};
 use nautilus_model::{
     data::QuoteTick,
-    enums::{AccountType, BookType, OmsType},
+    enums::{AccountType, BookType, OmsType, OrderSide, OrderType},
     events::OrderEventAny,
     identifiers::{AccountId, ClientId, InstrumentId, TraderId, Venue},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+    orders::OrderTestBuilder,
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_sandbox::{SandboxExecutionClient, SandboxExecutionClientConfig};
@@ -182,11 +188,16 @@ fn test_config_default() {
 }
 
 #[rstest]
-fn test_config_new(trader_id: TraderId, account_id: AccountId, venue: Venue) {
+fn test_config_builder(trader_id: TraderId, account_id: AccountId, venue: Venue) {
     let usd = Currency::USD();
     let starting_balances = vec![Money::new(50_000.0, usd)];
 
-    let config = SandboxExecutionClientConfig::new(trader_id, account_id, venue, starting_balances);
+    let config = SandboxExecutionClientConfig::builder()
+        .trader_id(trader_id)
+        .account_id(account_id)
+        .venue(venue)
+        .starting_balances(starting_balances)
+        .build();
 
     assert_eq!(config.trader_id, trader_id);
     assert_eq!(config.account_id, account_id);
@@ -196,19 +207,24 @@ fn test_config_new(trader_id: TraderId, account_id: AccountId, venue: Venue) {
 }
 
 #[rstest]
-fn test_config_builder_methods(trader_id: TraderId, account_id: AccountId, venue: Venue) {
+fn test_config_builder_with_overrides(trader_id: TraderId, account_id: AccountId, venue: Venue) {
     let usd = Currency::USD();
     let starting_balances = vec![Money::new(50_000.0, usd)];
 
-    let config = SandboxExecutionClientConfig::new(trader_id, account_id, venue, starting_balances)
-        .with_base_currency(usd)
-        .with_oms_type(OmsType::Hedging)
-        .with_account_type(AccountType::Cash)
-        .with_default_leverage(Decimal::new(10, 0))
-        .with_book_type(BookType::L2_MBP)
-        .with_frozen_account(true)
-        .with_bar_execution(false)
-        .with_trade_execution(true);
+    let config = SandboxExecutionClientConfig::builder()
+        .trader_id(trader_id)
+        .account_id(account_id)
+        .venue(venue)
+        .starting_balances(starting_balances)
+        .base_currency(usd)
+        .oms_type(OmsType::Hedging)
+        .account_type(AccountType::Cash)
+        .default_leverage(Decimal::new(10, 0))
+        .book_type(BookType::L2_MBP)
+        .frozen_account(true)
+        .bar_execution(false)
+        .trade_execution(true)
+        .build();
 
     assert_eq!(config.base_currency, Some(usd));
     assert_eq!(config.oms_type, OmsType::Hedging);
@@ -480,4 +496,116 @@ fn test_config_accessor(execution_client: SandboxExecutionClient, venue: Venue) 
 fn test_get_account_when_none(execution_client: SandboxExecutionClient) {
     // No account in cache yet
     assert!(execution_client.get_account().is_none());
+}
+
+// Regression test for https://github.com/nautechsystems/nautilus_trader/issues/3732
+//
+// The exec_engine_execute handler holds an immutable borrow on the ExecutionEngine.
+// Without the fix, the sandbox client and matching engine synchronously dispatch order
+// events back through msgbus to exec_engine_process, which tries borrow_mut() on the
+// same RefCell and panics with "RefCell already borrowed".
+//
+// The fix routes sandbox events through the async runner channel so they are processed
+// in the next iteration, after the borrow is released.
+#[rstest]
+fn test_submit_order_through_exec_engine_no_reentrant_panic(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    let venue = Venue::new("BINANCE");
+    let account_id = AccountId::from("BINANCE-001");
+    let client_id = ClientId::new("SANDBOX");
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let instrument_id = instrument.id();
+    let quote = create_quote_tick(instrument_id, 1000.0, 1001.0);
+    cache.borrow_mut().add_quote(quote).unwrap();
+
+    // Wire up exec engine with registered msgbus handlers
+    let engine = Rc::new(RefCell::new(ExecutionEngine::new(
+        clock.clone(),
+        cache.clone(),
+        None,
+    )));
+    ExecutionEngine::register_msgbus_handlers(&engine);
+
+    // Initialize the exec event sender (simulates the async runner)
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+
+    // Create and register the sandbox client (venue must match the instrument)
+    let usd = Currency::USD();
+    let config = SandboxExecutionClientConfig {
+        trader_id,
+        account_id,
+        venue,
+        starting_balances: vec![Money::new(100_000.0, usd)],
+        base_currency: Some(usd),
+        oms_type: OmsType::Netting,
+        account_type: AccountType::Margin,
+        default_leverage: Decimal::ONE,
+        leverages: ahash::AHashMap::new(),
+        book_type: BookType::L1_MBP,
+        frozen_account: false,
+        bar_execution: false,
+        trade_execution: false,
+        reject_stop_orders: true,
+        support_gtd_orders: true,
+        support_contingent_orders: true,
+        use_position_ids: true,
+        use_random_ids: false,
+        use_reduce_only: true,
+    };
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+    let mut sandbox_client =
+        SandboxExecutionClient::new(core, config, clock.clone(), cache.clone());
+    sandbox_client.start().unwrap();
+    engine
+        .borrow_mut()
+        .register_client(Box::new(sandbox_client))
+        .unwrap();
+
+    // Build and cache the order
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.001"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id), false)
+        .unwrap();
+
+    // Submit through the exec engine endpoint (this panicked before the fix)
+    let ts = clock.borrow().timestamp_ns();
+    let submit =
+        SubmitOrder::from_order(&order, trader_id, Some(client_id), None, UUID4::new(), ts);
+    let endpoint = MessagingSwitchboard::exec_engine_execute();
+    msgbus::send_trading_command(endpoint, TradingCommand::SubmitOrder(submit));
+
+    // Verify events arrived through the channel instead of re-entering the engine
+    let mut events = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        events.push(event);
+    }
+    assert!(
+        !events.is_empty(),
+        "Expected order events through the exec event channel"
+    );
 }

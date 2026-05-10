@@ -41,6 +41,7 @@ use crate::defi::pool_analysis::snapshot::PoolSnapshot;
 /// # Returns
 ///
 /// Returns `true` if all compared values match, `false` if any mismatches are detected.
+#[must_use]
 pub fn compare_pool_profiler(profiler: &PoolProfiler, snapshot: &PoolSnapshot) -> bool {
     assert!(profiler.is_initialized, "Profiler is not initialized");
 
@@ -99,6 +100,7 @@ pub fn compare_pool_profiler(profiler: &PoolProfiler, snapshot: &PoolSnapshot) -
 
     // Check ticks
     let mut tick_mismatches = 0;
+
     for tick in &snapshot.ticks {
         if let Some(profiler_tick) = profiler.get_tick(tick.value) {
             let mut all_tick_fields_matching = true;
@@ -143,6 +145,7 @@ pub fn compare_pool_profiler(profiler: &PoolProfiler, snapshot: &PoolSnapshot) -
 
     // Check positions
     let mut position_mismatches = 0;
+
     for position in &snapshot.positions {
         if let Some(profiler_position) =
             profiler.get_position(&position.owner, position.tick_lower, position.tick_upper)

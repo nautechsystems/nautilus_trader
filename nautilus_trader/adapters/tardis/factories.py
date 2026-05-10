@@ -32,6 +32,7 @@ def get_tardis_http_client(
     api_key: str | None = None,
     base_url: str | None = None,
     timeout_secs: int = 60,
+    proxy_url: str | None = None,
 ) -> TardisHttpClient:
     """
     Cache and return a Tardis HTTP client with the given key and secret.
@@ -47,6 +48,8 @@ def get_tardis_http_client(
         The base URL for the API endpoints.
     timeout_secs : int, default 60
         The timeout (seconds) for HTTP requests to Tardis.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
 
     Returns
     -------
@@ -57,6 +60,7 @@ def get_tardis_http_client(
         api_key=api_key,
         base_url=base_url,
         timeout_secs=timeout_secs,
+        proxy_url=proxy_url,
     )
 
 
@@ -128,6 +132,7 @@ class TardisLiveDataClientFactory(LiveDataClientFactory):
         client: TardisHttpClient = get_tardis_http_client(
             api_key=config.api_key,
             base_url=config.base_url_http,
+            proxy_url=config.proxy_url,
         )
         provider = get_tardis_instrument_provider(
             client=client,

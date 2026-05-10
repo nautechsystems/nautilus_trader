@@ -20,7 +20,11 @@
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use nautilus_bitmex::{http::client::BitmexHttpClient, websocket::client::BitmexWebSocketClient};
+use nautilus_bitmex::{
+    common::enums::BitmexEnvironment, http::client::BitmexHttpClient,
+    websocket::client::BitmexWebSocketClient,
+};
+use nautilus_network::websocket::TransportBackend;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,18 +32,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("Fetching instruments from HTTP API...");
     let http_client = BitmexHttpClient::new(
-        None,     // base_url: defaults to production
-        None,     // api_key
-        None,     // api_secret
-        false,    // testnet
-        Some(60), // timeout_secs
-        None,     // max_retries
-        None,     // retry_delay_ms
-        None,     // retry_delay_max_ms
-        None,     // recv_window_ms
-        None,     // max_requests_per_second
-        None,     // max_requests_per_minute
-        None,     // proxy_url
+        None,                       // base_url: defaults to production
+        None,                       // api_key
+        None,                       // api_secret
+        BitmexEnvironment::Mainnet, // environment
+        60,                         // timeout_secs
+        3,                          // max_retries
+        1_000,                      // retry_delay_ms
+        10_000,                     // retry_delay_max_ms
+        10_000,                     // recv_window_ms
+        10,                         // max_requests_per_second
+        120,                        // max_requests_per_minute
+        None,                       // proxy_url
     )
     .expect("Failed to create HTTP client");
 
@@ -54,10 +58,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
         None,
         None,
-        Some(5), // 5 second heartbeat
+        5, // 5 second heartbeat
+        TransportBackend::default(),
+        None,
     )
     .unwrap();
-    ws_client.cache_instruments(instruments);
     ws_client.connect().await?;
 
     // Give the connection a moment to stabilize

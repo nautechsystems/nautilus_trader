@@ -23,6 +23,10 @@ How to implement trading strategies using the `Strategy` component.
 
 Instrument definitions for tradable assets and contracts.
 
+## Synthetics
+
+User-defined instruments whose prices are computed by evaluating a numeric expression over component instrument prices.
+
 ## Value Types
 
 The immutable numeric types (`Price`, `Quantity`, `Money`) used throughout the platform,
@@ -31,6 +35,28 @@ including their arithmetic behavior, precision handling, and type-specific const
 ## Data
 
 Built-in data types for the trading domain, and how to work with custom data.
+
+## Events
+
+The event types that drive the system: order events, position events, account
+events, and time events. Covers handler dispatch, the causal chain from order
+fills to position events, and tracing orders to positions.
+
+## Options
+
+Option instrument types, venue-provided Greeks streaming, option chain subscriptions
+with strike range filtering, and snapshot aggregation.
+
+## Greeks
+
+Option Greeks (delta, gamma, vega, theta) from two paths: venue-provided real-time
+Greeks via the Rust/PyO3 `OptionGreeks` type, and the local `GreeksCalculator` for
+Black-Scholes computation with shock scenarios, beta weighting, and portfolio aggregation.
+
+## Custom Data
+
+How the custom data system works across Python and Rust: registration, persistence,
+Arrow encoding, and runtime routing through actors and strategies.
 
 ## Order Book
 
@@ -60,6 +86,12 @@ Covers capabilities and best practices.
 The `MessageBus` enables decoupled messaging between components, supporting point-to-point,
 publish/subscribe, and request/response patterns.
 
+## Accounting
+
+Account types (cash, margin, betting), the `AccountBalance` and `MarginBalance`
+data model, the per-instrument vs account-wide margin scopes, the strategy query
+API, built-in margin models, and the adapter convention across live venues.
+
 ## Portfolio
 
 The `Portfolio` tracks all positions across strategies and instruments, providing a unified view
@@ -82,6 +114,11 @@ Running simulated trading on historical data using a specific system implementat
 Interactive tearsheets for analyzing backtest results, including charts, themes,
 customization options, and custom visualizations via the extensible chart registry.
 
+## Configuration
+
+How config structs work across Python and Rust: default resolution, the `T` vs `Option<T>`
+convention, builder patterns, and common fields shared across adapters and engines.
+
 ## Live Trading
 
 Deploying backtested strategies in real-time without code changes, and the key differences
@@ -91,7 +128,16 @@ between backtesting and live trading.
 
 Requirements and best practices for developing integration adapters for data providers and trading venues.
 
+## Rust
+
+Writing actors, strategies, and running backtests and live trading in pure Rust
+using the `crates/` implementation directly.
+
+## Deterministic Simulation Testing (DST)
+
+The determinism contract for seed-replayable execution, the source-level seams that implement
+it, the pre-commit hook that enforces it, and the known scope boundaries.
+
 :::note
-The [API Reference](../api_reference/index.md) is the source of truth for the platform.
-If there are discrepancies between these guides and the API Reference, the API Reference is correct.
+If there are discrepancies between these guides and the API reference, the API reference is correct.
 :::

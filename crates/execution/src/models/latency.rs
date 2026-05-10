@@ -35,6 +35,45 @@ pub trait LatencyModel: Debug {
     fn get_base_latency(&self) -> UnixNanos;
 }
 
+#[derive(Debug, Clone)]
+pub enum LatencyModelAny {
+    Static(StaticLatencyModel),
+}
+
+impl LatencyModel for LatencyModelAny {
+    fn get_insert_latency(&self) -> UnixNanos {
+        match self {
+            Self::Static(model) => model.get_insert_latency(),
+        }
+    }
+
+    fn get_update_latency(&self) -> UnixNanos {
+        match self {
+            Self::Static(model) => model.get_update_latency(),
+        }
+    }
+
+    fn get_delete_latency(&self) -> UnixNanos {
+        match self {
+            Self::Static(model) => model.get_delete_latency(),
+        }
+    }
+
+    fn get_base_latency(&self) -> UnixNanos {
+        match self {
+            Self::Static(model) => model.get_base_latency(),
+        }
+    }
+}
+
+impl From<LatencyModelAny> for Box<dyn LatencyModel> {
+    fn from(value: LatencyModelAny) -> Self {
+        match value {
+            LatencyModelAny::Static(model) => Box::new(model),
+        }
+    }
+}
+
 /// Static latency model with fixed latency values.
 ///
 /// Models the latency for different order operations including base network latency
@@ -44,6 +83,18 @@ pub trait LatencyModel: Debug {
 /// Python's behavior. For example, if `base_latency_nanos = 100ms` and
 /// `insert_latency_nanos = 200ms`, the effective insert latency will be 300ms.
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.execution",
+        unsendable,
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.execution")
+)]
 pub struct StaticLatencyModel {
     base_latency_nanos: UnixNanos,
     insert_latency_nanos: UnixNanos,

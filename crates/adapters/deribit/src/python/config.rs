@@ -19,20 +19,24 @@ use nautilus_model::identifiers::{AccountId, TraderId};
 use pyo3::prelude::*;
 
 use crate::{
+    common::enums::DeribitEnvironment,
     config::{DeribitDataClientConfig, DeribitExecClientConfig},
     http::models::DeribitProductType,
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DeribitDataClientConfig {
+    /// Configuration for the Deribit data client.
     #[new]
     #[pyo3(signature = (
         product_types = None,
-        use_testnet = None,
+        environment = None,
         api_key = None,
         api_secret = None,
         base_url_http = None,
         base_url_ws = None,
+        proxy_url = None,
         http_timeout_secs = None,
         max_retries = None,
         retry_delay_initial_ms = None,
@@ -40,14 +44,15 @@ impl DeribitDataClientConfig {
         heartbeat_interval_secs = None,
         update_instruments_interval_mins = None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         product_types: Option<Vec<DeribitProductType>>,
-        use_testnet: Option<bool>,
+        environment: Option<DeribitEnvironment>,
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url_http: Option<String>,
         base_url_ws: Option<String>,
+        proxy_url: Option<String>,
         http_timeout_secs: Option<u64>,
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
@@ -62,14 +67,18 @@ impl DeribitDataClientConfig {
             product_types: product_types.unwrap_or(defaults.product_types),
             base_url_http,
             base_url_ws,
-            use_testnet: use_testnet.unwrap_or(defaults.use_testnet),
-            http_timeout_secs: http_timeout_secs.or(defaults.http_timeout_secs),
-            max_retries: max_retries.or(defaults.max_retries),
-            retry_delay_initial_ms: retry_delay_initial_ms.or(defaults.retry_delay_initial_ms),
-            retry_delay_max_ms: retry_delay_max_ms.or(defaults.retry_delay_max_ms),
-            heartbeat_interval_secs: heartbeat_interval_secs.or(defaults.heartbeat_interval_secs),
+            proxy_url,
+            environment: environment.unwrap_or(defaults.environment),
+            http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
+            max_retries: max_retries.unwrap_or(defaults.max_retries),
+            retry_delay_initial_ms: retry_delay_initial_ms
+                .unwrap_or(defaults.retry_delay_initial_ms),
+            retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
+            heartbeat_interval_secs: heartbeat_interval_secs
+                .unwrap_or(defaults.heartbeat_interval_secs),
             update_instruments_interval_mins: update_instruments_interval_mins
-                .or(defaults.update_instruments_interval_mins),
+                .unwrap_or(defaults.update_instruments_interval_mins),
+            transport_backend: defaults.transport_backend,
         }
     }
 
@@ -79,32 +88,36 @@ impl DeribitDataClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DeribitExecClientConfig {
+    /// Configuration for the Deribit execution client.
     #[new]
     #[pyo3(signature = (
         trader_id,
         account_id,
         product_types = None,
-        use_testnet = None,
+        environment = None,
         api_key = None,
         api_secret = None,
         base_url_http = None,
         base_url_ws = None,
+        proxy_url = None,
         http_timeout_secs = None,
         max_retries = None,
         retry_delay_initial_ms = None,
         retry_delay_max_ms = None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         trader_id: TraderId,
         account_id: AccountId,
         product_types: Option<Vec<DeribitProductType>>,
-        use_testnet: Option<bool>,
+        environment: Option<DeribitEnvironment>,
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url_http: Option<String>,
         base_url_ws: Option<String>,
+        proxy_url: Option<String>,
         http_timeout_secs: Option<u64>,
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
@@ -119,11 +132,14 @@ impl DeribitExecClientConfig {
             product_types: product_types.unwrap_or(defaults.product_types),
             base_url_http,
             base_url_ws,
-            use_testnet: use_testnet.unwrap_or(defaults.use_testnet),
-            http_timeout_secs: http_timeout_secs.or(defaults.http_timeout_secs),
-            max_retries: max_retries.or(defaults.max_retries),
-            retry_delay_initial_ms: retry_delay_initial_ms.or(defaults.retry_delay_initial_ms),
-            retry_delay_max_ms: retry_delay_max_ms.or(defaults.retry_delay_max_ms),
+            proxy_url,
+            environment: environment.unwrap_or(defaults.environment),
+            http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
+            max_retries: max_retries.unwrap_or(defaults.max_retries),
+            retry_delay_initial_ms: retry_delay_initial_ms
+                .unwrap_or(defaults.retry_delay_initial_ms),
+            retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
+            transport_backend: defaults.transport_backend,
         }
     }
 

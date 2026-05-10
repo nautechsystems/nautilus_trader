@@ -317,6 +317,8 @@ cdef class OrderUpdated(OrderEvent):
     """The orders current price.\n\n:returns: `Price`"""
     cdef readonly Price trigger_price
     """The orders current trigger price.\n\n:returns: `Price` or ``None``"""
+    cdef readonly bint is_quote_quantity
+    """If the order quantity is denominated in the quote currency.\n\n:returns: `bool`"""
 
     @staticmethod
     cdef OrderUpdated from_dict_c(dict values)

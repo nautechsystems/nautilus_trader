@@ -128,8 +128,11 @@ class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, froze
     convert_exchange_to_mic_venue: bool (default: False)
         Whether to convert IB exchanges to MIC venues when converting an IB contract to an instrument id.
     symbol_to_mic_venue: dict, optional
-        A dictionary to override the default MIC venue conversion.
-        A key is a symbol prefix (for example ES for all futures and options on it), the value is the MIC venue to use.
+        Symbol-prefix to MIC venue overrides. Applied first in venue resolution, independent
+        of ``convert_exchange_to_mic_venue``. Key is a symbol prefix (e.g. "ES" for futures
+        and options on it), value is the MIC venue (e.g. "XCME"). When the contract symbol
+        matches a prefix, that venue is used; otherwise resolution falls through to exchange
+        and optional MIC conversion.
     cache_validity_days: int (default: None)
         Default None, will request fresh pull upon starting of TradingNode [only once].
         Setting value will pull the instruments at specified interval, useful when TradingNode runs for many days.

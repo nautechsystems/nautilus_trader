@@ -81,6 +81,7 @@ if IS_LINUX:
     os.environ["LDSHARED"] = "clang -shared"
 
 if IS_MACOS and IS_ARM64:
+    os.environ["ARCHFLAGS"] = "-arch arm64"
     os.environ["CFLAGS"] = f"{os.environ.get('CFLAGS', '')} -arch arm64"
     os.environ["LDFLAGS"] = f"{os.environ.get('LDFLAGS', '')} -arch arm64 -w"
 
@@ -173,7 +174,6 @@ def _build_rust_libs() -> None:
             "nautilus-backtest",
             "nautilus-common",
             "nautilus-core",
-            "nautilus-infrastructure",
             "nautilus-model",
             "nautilus-persistence",
             "nautilus-pyo3",
@@ -254,6 +254,7 @@ def _build_extensions() -> list[Extension]:
     define_macros: list[tuple[str, str | None]] = [
         ("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION"),
     ]
+
     if PROFILE_MODE or ANNOTATION_MODE:
         # Profiling requires special macro directives
         define_macros.append(("CYTHON_TRACE", "1"))
@@ -264,6 +265,7 @@ def _build_extensions() -> list[Extension]:
     if not IS_WINDOWS:
         # Suppress warnings produced by Cython boilerplate
         extra_compile_args.append("-Wno-unreachable-code")
+
         if BUILD_MODE == "release":
             extra_compile_args.append("-O2")
             extra_compile_args.append("-pipe")
@@ -325,6 +327,7 @@ def _build_extensions() -> list[Extension]:
 
 def _build_distribution(extensions: list[Extension]) -> Distribution:
     nthreads = os.cpu_count() or 1
+
     if IS_WINDOWS:
         nthreads = min(nthreads, 60)
     print(f"nthreads={nthreads}")
@@ -514,6 +517,7 @@ def show_rustanalyzer_settings() -> None:
 
     # Set environment variables
     settings: dict[str, object] = {}
+
     for key in [
         "rust-analyzer.check.extraEnv",
         "rust-analyzer.runnables.extraEnv",
@@ -556,6 +560,7 @@ def build() -> None:
         # Build and run the command
         print("Compiling C extension modules...")
         cmd: build_ext = build_ext(distribution)
+
         if PARALLEL_BUILD:
             cmd.parallel = os.cpu_count()
         cmd.ensure_finalized()

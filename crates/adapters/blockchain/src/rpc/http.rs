@@ -17,6 +17,7 @@ use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
 
 use alloy::primitives::{Address, U256};
 use bytes::Bytes;
+use nautilus_core::hex;
 use nautilus_model::defi::rpc::{RpcLog, RpcNodeHttpResponse};
 use nautilus_network::{
     http::{HttpClient, Method},
@@ -47,7 +48,11 @@ impl BlockchainHttpRpcClient {
     ///
     /// Panics if the internal HTTP client cannot be created.
     #[must_use]
-    pub fn new(http_rpc_url: String, rpc_request_per_second: Option<u32>) -> Self {
+    pub fn new(
+        http_rpc_url: String,
+        rpc_request_per_second: Option<u32>,
+        proxy_url: Option<String>,
+    ) -> Self {
         let default_quota =
             rpc_request_per_second.and_then(|rps| Quota::per_second(NonZeroU32::new(rps)?));
         let http_client = HttpClient::new(
@@ -56,7 +61,7 @@ impl BlockchainHttpRpcClient {
             Vec::new(),
             default_quota,
             None, // timeout_secs
-            None, // proxy_url
+            proxy_url,
         )
         .expect("Failed to create HTTP client");
         Self {
@@ -161,7 +166,7 @@ impl BlockchainHttpRpcClient {
         call_data: &[u8],
         block: Option<u64>,
     ) -> serde_json::Value {
-        let encoded_data = format!("0x{}", hex::encode(call_data));
+        let encoded_data = hex::encode_prefixed(call_data);
         let call = serde_json::json!({
             "to": to,
             "data": encoded_data

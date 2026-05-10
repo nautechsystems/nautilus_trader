@@ -13,9 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    str::FromStr,
+};
 
-use nautilus_core::python::{parsing::get_required_string, to_pyvalue_err};
+use nautilus_core::python::{
+    parsing::{get_optional_parsed, get_required_string},
+    to_pyvalue_err,
+};
 use pyo3::{prelude::*, types::PyDict};
 
 use crate::{
@@ -24,7 +31,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl AccountBalance {
+    /// Represents an account balance denominated in a particular currency.
     #[new]
     fn py_new(total: Money, locked: Money, free: Money) -> PyResult<Self> {
         Self::new_checked(total, locked, free).map_err(to_pyvalue_err)
@@ -36,6 +45,21 @@ impl AccountBalance {
 
     fn __str__(&self) -> String {
         self.to_string()
+    }
+
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.total.raw.hash(&mut h);
+        self.locked.raw.hash(&mut h);
+        self.free.raw.hash(&mut h);
+        self.currency.code.hash(&mut h);
+        h.finish() as isize
+    }
+
+    /// Returns a copy of this balance.
+    #[pyo3(name = "copy")]
+    fn py_copy(&self) -> Self {
+        *self
     }
 
     /// Constructs an [`AccountBalance`] from a Python dict.
@@ -105,10 +129,26 @@ impl AccountBalance {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MarginBalance {
+    /// Represents a margin balance.
+    ///
+    /// Margin entries have two mutually exclusive scopes:
+    ///
+    /// - Per-instrument: `instrument_id = Some(id)`. Used for isolated margin and
+    ///   for calculated margin in backtest mode where each instrument carries its
+    ///   own reserve.
+    /// - Account-wide (cross margin): `instrument_id = None`. Used for venues that
+    ///   report a single aggregate margin per collateral currency (most derivatives
+    ///   venues in cross-margin mode).
     #[new]
-    fn py_new(initial: Money, maintenance: Money, instrument: InstrumentId) -> Self {
-        Self::new(initial, maintenance, instrument)
+    #[pyo3(signature = (initial, maintenance, instrument_id=None))]
+    fn py_new(
+        initial: Money,
+        maintenance: Money,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Self> {
+        Self::new_checked(initial, maintenance, instrument_id).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -117,6 +157,21 @@ impl MarginBalance {
 
     fn __str__(&self) -> String {
         self.to_string()
+    }
+
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.initial.raw.hash(&mut h);
+        self.maintenance.raw.hash(&mut h);
+        self.currency.code.hash(&mut h);
+        self.instrument_id.hash(&mut h);
+        h.finish() as isize
+    }
+
+    /// Returns a copy of this margin balance.
+    #[pyo3(name = "copy")]
+    fn py_copy(&self) -> Self {
+        *self
     }
 
     /// Constructs a [`MarginBalance`] from a Python dict.
@@ -136,14 +191,16 @@ impl MarginBalance {
         let initial: f64 = initial_str.parse::<f64>().unwrap();
         let maintenance_str = get_required_string(values, "maintenance")?;
         let maintenance: f64 = maintenance_str.parse::<f64>().unwrap();
-        let instrument_id_str = get_required_string(values, "instrument_id")?;
+        let instrument_id = get_optional_parsed(values, "instrument_id", |s| {
+            Ok::<InstrumentId, String>(InstrumentId::from(s))
+        })?;
         let currency = Currency::from_str(currency_str.as_str()).map_err(to_pyvalue_err)?;
-        let account_balance = Self::new(
+        Self::new_checked(
             Money::new(initial, currency),
             Money::new(maintenance, currency),
-            InstrumentId::from(instrument_id_str),
-        );
-        Ok(account_balance)
+            instrument_id,
+        )
+        .map_err(to_pyvalue_err)
     }
 
     /// Converts this [`MarginBalance`] into a Python dict.
@@ -173,7 +230,10 @@ impl MarginBalance {
             ),
         )?;
         dict.set_item("currency", self.currency.code.to_string())?;
-        dict.set_item("instrument_id", self.instrument_id.to_string())?;
+        match self.instrument_id {
+            Some(id) => dict.set_item("instrument_id", id.to_string())?,
+            None => dict.set_item("instrument_id", py.None())?,
+        }
         Ok(dict.into())
     }
 }

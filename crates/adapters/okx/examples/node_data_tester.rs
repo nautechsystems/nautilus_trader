@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the OKX adapter.
 //!
-//! Run with: `cargo run --example okx-data-tester --package nautilus-okx`
+//! Run with: `cargo run --example okx-data-tester --package nautilus-okx --features examples`
 
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;
@@ -24,7 +24,9 @@ use nautilus_model::{
     stubs::TestDefault,
 };
 use nautilus_okx::{
-    common::enums::OKXInstrumentType, config::OKXDataClientConfig, factories::OKXDataClientFactory,
+    common::enums::{OKXEnvironment, OKXInstrumentType},
+    config::OKXDataClientConfig,
+    factories::OKXDataClientFactory,
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
@@ -45,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_secret: None,     // Will use 'OKX_API_SECRET' env var
         api_passphrase: None, // Will use 'OKX_API_PASSPHRASE' env var
         instrument_types: vec![OKXInstrumentType::Swap],
-        is_demo: false,
+        environment: OKXEnvironment::Live,
         ..Default::default()
     };
 
@@ -58,15 +60,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_data_client(None, Box::new(client_factory), Box::new(okx_config))?
         .build()?;
 
-    let tester_config = DataTesterConfig::new(client_id, instrument_ids)
-        .with_subscribe_quotes(true)
-        .with_subscribe_trades(true)
-        .with_subscribe_mark_prices(true)
-        .with_subscribe_index_prices(true)
-        .with_subscribe_funding_rates(true)
-        .with_subscribe_instrument_status(true)
-        .with_request_book_snapshot(true)
-        .with_request_funding_rates(true);
+    let tester_config = DataTesterConfig::builder()
+        .client_id(client_id)
+        .instrument_ids(instrument_ids)
+        .subscribe_quotes(true)
+        .subscribe_trades(true)
+        .subscribe_mark_prices(true)
+        .subscribe_index_prices(true)
+        .subscribe_funding_rates(true)
+        .subscribe_instrument_status(true)
+        .request_book_snapshot(true)
+        .request_funding_rates(true)
+        .manage_book(true)
+        .build();
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

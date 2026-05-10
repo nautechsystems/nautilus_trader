@@ -19,41 +19,16 @@ use std::{
 };
 
 use derive_builder::Builder;
-use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
 use nautilus_core::{UnixNanos, correctness::FAILED};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    expressions::{Bindings, CompiledExpression, compile_numeric},
     identifiers::{InstrumentId, Symbol, Venue},
     types::Price,
 };
 
-/// Given a formula and component instrument IDs, produce:
-///   * a "safe" formula string (with any hyphenated instrument IDs replaced by underscore variants)
-///   * the corresponding list of safe variable names (one per component, in order)
-///   * a mapping from safe variable names to original instrument ID strings
-fn make_safe_formula_with_variables_and_mapping(
-    formula: &str,
-    components: &[InstrumentId],
-) -> (String, Vec<String>, HashMap<String, String>) {
-    let mut safe_formula = formula.to_string();
-    let mut variables = Vec::with_capacity(components.len());
-    let mut safe_to_original = HashMap::new();
-
-    for component in components {
-        let original = component.to_string();
-        let safe = original.replace('-', "_");
-        safe_to_original.insert(safe.clone(), original.clone());
-        if original != safe {
-            // Replace all occurrences of the instrument ID token with its safe variant.
-            safe_formula = safe_formula.replace(&original, &safe);
-        }
-
-        variables.push(safe);
-    }
-
-    (safe_formula, variables, safe_to_original)
-}
+const MAX_INLINE_COMPONENTS: usize = 8;
 
 /// Represents a synthetic instrument with prices derived from component instruments using a
 /// formula.
@@ -63,6 +38,10 @@ fn make_safe_formula_with_variables_and_mapping(
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct SyntheticInstrument {
     /// The unique identifier for the synthetic instrument.
@@ -74,19 +53,15 @@ pub struct SyntheticInstrument {
     /// The component instruments for the synthetic instrument.
     pub components: Vec<InstrumentId>,
     /// The derivation formula for the synthetic instrument.
-    ///
-    /// NOTE: internally this is always stored in its *safe* form, i.e.
-    /// any component `InstrumentId` which contains `-` in its string
-    /// representation will appear here with `_` instead.
     pub formula: String,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
-    context: HashMapContext,
-    variables: Vec<String>,
-    safe_to_original: HashMap<String, String>,
-    operator_tree: Node,
+    #[builder(setter(skip), default)]
+    component_names: Vec<String>,
+    #[builder(setter(skip), default)]
+    compiled_formula: CompiledExpression,
 }
 
 impl Serialize for SyntheticInstrument {
@@ -124,25 +99,20 @@ impl<'de> Deserialize<'de> for SyntheticInstrument {
         }
 
         let fields = Fields::deserialize(deserializer)?;
-
-        let (safe_formula, variables, safe_to_original) =
-            make_safe_formula_with_variables_and_mapping(&fields.formula, &fields.components);
-
-        let operator_tree =
-            evalexpr::build_operator_tree(&safe_formula).map_err(serde::de::Error::custom)?;
+        let component_names = component_names_from_components(&fields.components);
+        let compiled_formula =
+            compile_formula(&fields.formula, &component_names).map_err(serde::de::Error::custom)?;
 
         Ok(Self {
             id: fields.id,
             price_precision: fields.price_precision,
             price_increment: fields.price_increment,
             components: fields.components,
-            formula: safe_formula,
+            formula: fields.formula,
             ts_event: fields.ts_event,
             ts_init: fields.ts_init,
-            context: HashMapContext::new(),
-            variables,
-            safe_to_original,
-            operator_tree,
+            component_names,
+            compiled_formula,
         })
     }
 }
@@ -160,36 +130,33 @@ impl SyntheticInstrument {
         symbol: Symbol,
         price_precision: u8,
         components: Vec<InstrumentId>,
-        formula: String,
+        formula: &str,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
-        let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision);
-
-        // Build a safe version of the formula and the corresponding safe variable names.
-        let (safe_formula, variables, safe_to_original) =
-            make_safe_formula_with_variables_and_mapping(&formula, &components);
-        let operator_tree = evalexpr::build_operator_tree(&safe_formula)?;
+        let price_increment =
+            Price::new_checked(10f64.powi(-i32::from(price_precision)), price_precision)?;
+        let component_names = component_names_from_components(&components);
+        let compiled_formula = compile_formula(formula, &component_names)?;
 
         Ok(Self {
             id: InstrumentId::new(symbol, Venue::synthetic()),
             price_precision,
             price_increment,
             components,
-            formula: safe_formula,
-            context: HashMapContext::new(),
-            variables,
-            safe_to_original,
-            operator_tree,
+            formula: formula.to_string(),
+            component_names,
+            compiled_formula,
             ts_event,
             ts_init,
         })
     }
 
+    /// Returns whether the given formula compiles against the provided components.
+    #[must_use]
     pub fn is_valid_formula_for_components(formula: &str, components: &[InstrumentId]) -> bool {
-        let (safe_formula, _, _) =
-            make_safe_formula_with_variables_and_mapping(formula, components);
-        evalexpr::build_operator_tree(&safe_formula).is_ok()
+        let component_names = component_names_from_components(components);
+        compile_formula(formula, &component_names).is_ok()
     }
 
     /// Creates a new [`SyntheticInstrument`] instance, parsing the given formula.
@@ -197,11 +164,12 @@ impl SyntheticInstrument {
     /// # Panics
     ///
     /// Panics if the provided formula is invalid and cannot be parsed.
+    #[must_use]
     pub fn new(
         symbol: Symbol,
         price_precision: u8,
         components: Vec<InstrumentId>,
-        formula: String,
+        formula: &str,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
@@ -216,20 +184,21 @@ impl SyntheticInstrument {
         .expect(FAILED)
     }
 
+    /// Returns whether the given formula compiles against this instrument's components.
     #[must_use]
     pub fn is_valid_formula(&self, formula: &str) -> bool {
         Self::is_valid_formula_for_components(formula, &self.components)
     }
 
+    /// Replaces the derivation formula, recompiling it against the existing components.
+    ///
     /// # Errors
     ///
     /// Returns an error if parsing the new formula fails.
-    pub fn change_formula(&mut self, formula: String) -> anyhow::Result<()> {
-        let (safe_formula, _, _) =
-            make_safe_formula_with_variables_and_mapping(&formula, &self.components);
-        let operator_tree = evalexpr::build_operator_tree(&safe_formula)?;
-        self.formula = safe_formula;
-        self.operator_tree = operator_tree;
+    pub fn change_formula(&mut self, formula: &str) -> anyhow::Result<()> {
+        let compiled_formula = compile_formula(formula, &self.component_names)?;
+        self.formula = formula.to_string();
+        self.compiled_formula = compiled_formula;
         Ok(())
     }
 
@@ -237,54 +206,102 @@ impl SyntheticInstrument {
     ///
     /// # Errors
     ///
-    /// Returns an error if formula evaluation fails, a required component price is missing
-    /// from the input map, or if setting the value in the evaluation context fails.
-    pub fn calculate_from_map(&mut self, inputs: &HashMap<String, f64>) -> anyhow::Result<Price> {
-        let mut input_values = Vec::new();
+    /// Returns an error if formula evaluation fails or a required component price is missing from
+    /// the input map.
+    pub fn calculate_from_map(&self, inputs: &HashMap<String, f64>) -> anyhow::Result<Price> {
+        let n = self.component_names.len();
+        let mut buf = [0.0_f64; MAX_INLINE_COMPONENTS];
+        let input_values: &[f64] = if n <= MAX_INLINE_COMPONENTS {
+            for (i, component_name) in self.component_names.iter().enumerate() {
+                buf[i] = *inputs.get(component_name).ok_or_else(|| {
+                    anyhow::anyhow!("Missing price for component: {component_name}")
+                })?;
+            }
+            &buf[..n]
+        } else {
+            // Fallback for large component sets
+            let v: std::result::Result<Vec<f64>, _> = self
+                .component_names
+                .iter()
+                .map(|name| {
+                    inputs
+                        .get(name)
+                        .copied()
+                        .ok_or_else(|| anyhow::anyhow!("Missing price for component: {name}"))
+                })
+                .collect();
+            return self.calculate(&v?);
+        };
 
-        for variable in &self.variables {
-            let original = self
-                .safe_to_original
-                .get(variable)
-                .ok_or_else(|| anyhow::anyhow!("Variable not found in mapping: {variable}"))?;
-
-            let value = inputs
-                .get(original)
-                .copied()
-                .ok_or_else(|| anyhow::anyhow!("Missing price for component: {original}"))?;
-
-            input_values.push(value);
-
-            self.context
-                .set_value(variable.clone(), Value::Float(value))
-                .map_err(|e| anyhow::anyhow!("Failed to set value for variable {variable}: {e}"))?;
-        }
-
-        self.calculate(&input_values)
+        self.calculate(input_values)
     }
 
     /// Calculates the price of the synthetic instrument based on the given component input prices
     /// provided as an array of `f64` values.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the input length does not match or formula evaluation fails.
-    pub fn calculate(&mut self, inputs: &[f64]) -> anyhow::Result<Price> {
-        if inputs.len() != self.variables.len() {
-            anyhow::bail!("Invalid number of input values");
+    /// Returns an error if the input length does not match, any input is non-finite, or formula
+    /// evaluation fails.
+    pub fn calculate(&self, inputs: &[f64]) -> anyhow::Result<Price> {
+        if inputs.len() != self.component_names.len() {
+            anyhow::bail!(
+                "Expected {} input values, received {}",
+                self.component_names.len(),
+                inputs.len(),
+            );
         }
 
-        for (variable, input) in self.variables.iter().zip(inputs) {
-            self.context
-                .set_value(variable.clone(), Value::Float(*input))?;
+        for (i, value) in inputs.iter().enumerate() {
+            if !value.is_finite() {
+                anyhow::bail!(
+                    "Non-finite input price for component {}: {value}",
+                    self.component_names[i],
+                );
+            }
         }
 
-        let result: Value = self.operator_tree.eval_with_context(&self.context)?;
+        let price = self.compiled_formula.eval_number(inputs)?;
+        Price::new_checked(price, self.price_precision)
+            .map_err(|e| anyhow::anyhow!("Formula result produced invalid price: {e}"))
+    }
+}
 
-        match result {
-            Value::Float(price) => Ok(Price::new(price, self.price_precision)),
-            _ => anyhow::bail!("Failed to evaluate formula to a floating point number"),
+fn component_names_from_components(components: &[InstrumentId]) -> Vec<String> {
+    components.iter().map(ToString::to_string).collect()
+}
+
+/// # Errors
+///
+/// Returns an error if primary component names collide.
+fn build_bindings(component_names: &[String]) -> anyhow::Result<Bindings> {
+    let mut bindings = Bindings::new();
+
+    for (slot, component_name) in component_names.iter().enumerate() {
+        bindings.add(slot, component_name)?;
+    }
+
+    for (slot, component_name) in component_names.iter().enumerate() {
+        let legacy_name = component_name.replace('-', "_");
+
+        if legacy_name != *component_name {
+            // Best-effort: skip if alias collides with a primary binding
+            let _ = bindings.add_alias(slot, &legacy_name);
         }
     }
+
+    Ok(bindings)
+}
+
+/// # Errors
+///
+/// Returns an error if parsing or semantic validation fails.
+fn compile_formula(
+    formula: &str,
+    component_names: &[String],
+) -> anyhow::Result<CompiledExpression> {
+    let bindings = build_bindings(component_names)?;
+    Ok(compile_numeric(formula, &bindings)?)
 }
 
 impl PartialEq<Self> for SyntheticInstrument {
@@ -311,7 +328,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_from_map() {
-        let mut synth = SyntheticInstrument::default();
+        let synth = SyntheticInstrument::default();
         let mut inputs = HashMap::new();
         inputs.insert("BTC.BINANCE".to_string(), 100.0);
         inputs.insert("LTC.BINANCE".to_string(), 200.0);
@@ -326,7 +343,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate() {
-        let mut synth = SyntheticInstrument::default();
+        let synth = SyntheticInstrument::default();
         let inputs = vec![100.0, 200.0];
         let price = synth.calculate(&inputs).unwrap();
         assert_eq!(price, Price::from("150.0"));
@@ -335,8 +352,8 @@ mod tests {
     #[rstest]
     fn test_change_formula() {
         let mut synth = SyntheticInstrument::default();
-        let new_formula = "(BTC.BINANCE + LTC.BINANCE) / 4".to_string();
-        synth.change_formula(new_formula.clone()).unwrap();
+        let new_formula = "(BTC.BINANCE + LTC.BINANCE) / 4";
+        synth.change_formula(new_formula).unwrap();
 
         let mut inputs = HashMap::new();
         inputs.insert("BTC.BINANCE".to_string(), 100.0);
@@ -348,100 +365,202 @@ mod tests {
     }
 
     #[rstest]
-    fn test_hyphenated_instrument_ids_are_sanitized_and_backward_compatible_calculate() {
+    fn test_hyphenated_instrument_ids_preserve_raw_formula() {
         let comp1 = InstrumentId::from_str("ETHUSDC-PERP.BINANCE_FUTURES").unwrap();
         let comp2 = InstrumentId::from_str("ETH_USDC-PERP.HYPERLIQUID").unwrap();
-
         let components = vec![comp1, comp2];
-
-        // External formula uses the *raw* InstrumentId strings with '-'
         let raw_formula = format!("({comp1} + {comp2}) / 2.0");
-
         let symbol = Symbol::from("ETH-USDC");
+        let synth =
+            SyntheticInstrument::new(symbol, 2, components, &raw_formula, 0.into(), 0.into());
+        let price = synth.calculate(&[100.0, 200.0]).unwrap();
 
-        let mut synth = SyntheticInstrument::new(
+        assert_eq!(price, Price::from("150.0"));
+        assert_eq!(synth.formula, raw_formula);
+    }
+
+    #[rstest]
+    fn test_hyphenated_instrument_ids_support_legacy_sanitized_formula() {
+        let comp1 = InstrumentId::from_str("ETH-USDT-SWAP.OKX").unwrap();
+        let comp2 = InstrumentId::from_str("ETH-USDC-PERP.HYPERLIQUID").unwrap();
+        let components = vec![comp1, comp2];
+        let legacy_formula = format!(
+            "({} + {}) / 2.0",
+            components[0].to_string().replace('-', "_"),
+            components[1].to_string().replace('-', "_"),
+        );
+        let symbol = Symbol::from("ETH-USD");
+        let synth = SyntheticInstrument::new(
             symbol,
             2,
             components.clone(),
-            raw_formula,
+            &legacy_formula,
+            0.into(),
+            0.into(),
+        );
+        let mut inputs = HashMap::new();
+        inputs.insert(components[0].to_string(), 100.0);
+        inputs.insert(components[1].to_string(), 200.0);
+        let price = synth.calculate_from_map(&inputs).unwrap();
+
+        assert_eq!(price, Price::from("150.0"));
+        assert_eq!(synth.formula, legacy_formula);
+    }
+
+    #[rstest]
+    fn test_slashed_instrument_ids_calculate_from_map() {
+        let comp1 = InstrumentId::from_str("AUD/USD.SIM").unwrap();
+        let comp2 = InstrumentId::from_str("NZD/USD.SIM").unwrap();
+        let components = vec![comp1, comp2];
+        let raw_formula = format!("({} + {}) / 2.0", components[0], components[1]);
+
+        let synth = SyntheticInstrument::new(
+            Symbol::from("FX-BASKET"),
+            5,
+            components.clone(),
+            &raw_formula,
+            0.into(),
+            0.into(),
+        );
+        let mut inputs = HashMap::new();
+        inputs.insert(components[0].to_string(), 0.65001);
+        inputs.insert(components[1].to_string(), 0.59001);
+
+        let price = synth.calculate_from_map(&inputs).unwrap();
+
+        assert_eq!(price, Price::from("0.62001"));
+        assert_eq!(synth.formula, raw_formula);
+    }
+
+    #[rstest]
+    fn test_deserialize_rejects_unknown_formula_symbol() {
+        let synth = SyntheticInstrument::default();
+        let payload = serde_json::to_string(&synth).unwrap().replace(
+            "\"(BTC.BINANCE + LTC.BINANCE) / 2.0\"",
+            "\"BTC.BINANCE + missing\"",
+        );
+
+        let error = serde_json::from_str::<SyntheticInstrument>(&payload).unwrap_err();
+
+        assert!(
+            error.to_string().contains("Unknown symbol `missing`"),
+            "{error}",
+        );
+    }
+
+    #[rstest]
+    fn test_calculate_rejects_wrong_input_count() {
+        let synth = SyntheticInstrument::default();
+        let error = synth.calculate(&[100.0]).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Expected 2 input values, received 1"),
+            "{error}",
+        );
+    }
+
+    #[rstest]
+    fn test_calculate_from_map_rejects_missing_component() {
+        let synth = SyntheticInstrument::default();
+        let mut inputs = HashMap::new();
+        inputs.insert("BTC.BINANCE".to_string(), 100.0);
+
+        let error = synth.calculate_from_map(&inputs).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Missing price for component: LTC.BINANCE"),
+            "{error}",
+        );
+    }
+
+    #[rstest]
+    fn test_calculate_rejects_invalid_price_result() {
+        let mut synth = SyntheticInstrument::default();
+        synth
+            .change_formula("BTC.BINANCE / (LTC.BINANCE - LTC.BINANCE)")
+            .unwrap();
+
+        let error = synth.calculate(&[100.0, 100.0]).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Formula result produced invalid price"),
+            "{error}",
+        );
+    }
+
+    #[rstest]
+    fn test_is_valid_formula() {
+        let synth = SyntheticInstrument::default();
+
+        assert!(synth.is_valid_formula("(BTC.BINANCE + LTC.BINANCE) / 3"));
+        assert!(!synth.is_valid_formula("UNKNOWN.VENUE + 1"));
+        assert!(!synth.is_valid_formula(""));
+    }
+
+    #[rstest]
+    #[case(f64::NAN, 100.0, "Non-finite input price")]
+    #[case(100.0, f64::INFINITY, "Non-finite input price")]
+    #[case(f64::NEG_INFINITY, 100.0, "Non-finite input price")]
+    fn test_calculate_rejects_non_finite_inputs(
+        #[case] a: f64,
+        #[case] b: f64,
+        #[case] expected_msg: &str,
+    ) {
+        let synth = SyntheticInstrument::default();
+        let error = synth.calculate(&[a, b]).unwrap_err();
+
+        assert!(error.to_string().contains(expected_msg), "{error}");
+    }
+
+    #[rstest]
+    fn test_components_with_colliding_legacy_aliases_coexist() {
+        let comp1 = InstrumentId::from_str("FOO-BAR.VENUE").unwrap();
+        let comp2 = InstrumentId::from_str("FOO_BAR.VENUE").unwrap();
+        let formula = format!("{comp1} + {comp2}");
+        let synth = SyntheticInstrument::new(
+            Symbol::from("TEST"),
+            2,
+            vec![comp1, comp2],
+            &formula,
+            0.into(),
+            0.into(),
+        );
+        let price = synth.calculate(&[100.0, 200.0]).unwrap();
+
+        assert_eq!(price, Price::from("300.0"));
+    }
+
+    #[rstest]
+    fn test_calculate_from_map_fallback_for_many_components() {
+        let count = MAX_INLINE_COMPONENTS + 2;
+        let components: Vec<InstrumentId> = (0..count)
+            .map(|i| InstrumentId::from(format!("C{i}.VENUE").as_str()))
+            .collect();
+        let terms: Vec<String> = components.iter().map(|c| c.to_string()).collect();
+        let formula = terms.join(" + ");
+
+        let synth = SyntheticInstrument::new(
+            Symbol::from("BIG"),
+            2,
+            components.clone(),
+            &formula,
             0.into(),
             0.into(),
         );
 
         let mut inputs = HashMap::new();
-        inputs.insert(components[0].to_string(), 100.0);
-        inputs.insert(components[1].to_string(), 200.0);
-
-        let price = synth.calculate_from_map(&inputs).unwrap();
-
-        assert_eq!(price, Price::from("150.0"));
-    }
-
-    #[rstest]
-    fn test_hyphenated_instrument_ids_are_sanitized_calculate() {
-        let comp1 = InstrumentId::from_str("ETH-USDT-SWAP.OKX").unwrap();
-        let comp2 = InstrumentId::from_str("ETH-USDC-PERP.HYPERLIQUID").unwrap();
-
-        let components = vec![comp1, comp2];
-
-        // External formula uses the *raw* InstrumentId strings with '-'
-        let raw_formula = format!("({comp1} + {comp2}) / 2.0");
-
-        let symbol = Symbol::from("ETH-USD");
-
-        let mut synth =
-            SyntheticInstrument::new(symbol, 2, components, raw_formula, 0.into(), 0.into());
-
-        let inputs = vec![100.0, 200.0];
-        let price = synth.calculate(&inputs).unwrap();
-        assert_eq!(price, Price::from("150.0"));
-    }
-
-    #[rstest]
-    fn test_hyphenated_instrument_ids_are_sanitized_calculate_from_map() {
-        let comp1 = InstrumentId::from_str("ETH-USDT-SWAP.OKX").unwrap();
-        let comp2 = InstrumentId::from_str("ETH-USDC-PERP.HYPERLIQUID").unwrap();
-
-        let components = vec![comp1, comp2];
-
-        // External formula uses the *raw* InstrumentId strings with '-'
-        let raw_formula = format!("({comp1} + {comp2}) / 2.0");
-
-        let symbol = Symbol::from("ETH-USD");
-
-        let mut synth = SyntheticInstrument::new(
-            symbol,
-            2,
-            components.clone(),
-            raw_formula,
-            0.into(),
-            0.into(),
-        );
-
-        // Internally, the stored formula should NOT contain the hyphenated IDs anymore,
-        // but instead the underscore-safe variants.
-        for c in &components {
-            let original = c.to_string();
-            let safe = original.replace('-', "_");
-
-            assert!(
-                !synth.formula.contains(&original),
-                "internal formula should not contain hyphenated identifier {original}"
-            );
-            assert!(
-                synth.formula.contains(&safe),
-                "internal formula should contain safe identifier {safe}"
-            );
+        for component in &components {
+            inputs.insert(component.to_string(), 10.0);
         }
 
-        // When calling `calculate_from_map`, we should still be able to use
-        // the external/original InstrumentId strings as keys.
-        let mut inputs = HashMap::new();
-        inputs.insert(components[0].to_string(), 100.0);
-        inputs.insert(components[1].to_string(), 200.0);
-
         let price = synth.calculate_from_map(&inputs).unwrap();
 
-        assert_eq!(price, Price::from("150.0"));
+        assert_eq!(price, Price::from("100.0"));
     }
 }

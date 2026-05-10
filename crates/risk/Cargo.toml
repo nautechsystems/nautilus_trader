@@ -18,10 +18,21 @@ workspace = true
 
 [lib]
 name = "nautilus_risk"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = []
+extension-module = [
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+  "pyo3/extension-module",
+]
+python = [
+  "nautilus-core/python",
+  "nautilus-model/python",
+  "pyo3",
+  "pyo3-stub-gen",
+]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -35,10 +46,16 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-portfolio = { workspace = true }
 
 ahash = { workspace = true }
+bon = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
+serde = { workspace = true }
 ustr = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

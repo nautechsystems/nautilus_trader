@@ -25,10 +25,9 @@ use nautilus_common::{
     logging::log_task_awaiting,
     msgbus::database::{DatabaseConfig, MessageBusConfig},
 };
-use nautilus_core::UUID4;
+use nautilus_core::{UUID4, string::semver::SemVer};
 use nautilus_model::identifiers::TraderId;
 use redis::RedisError;
-use semver::Version;
 
 const REDIS_MIN_VERSION: &str = "6.2.0";
 const REDIS_DELIMITER: char = ':';
@@ -178,7 +177,7 @@ pub async fn create_redis_connection(
         .await?;
 
     let version = get_redis_version(&mut con).await?;
-    let min_version = Version::parse(REDIS_MIN_VERSION)?;
+    let min_version = SemVer::parse(REDIS_MIN_VERSION)?;
     let con_msg = format!("Connected to redis v{version}");
 
     if version >= min_version {
@@ -228,14 +227,7 @@ pub fn get_stream_key(
     stream_key
 }
 
-/// Retrieves and parses the Redis server version via the INFO command.
-///
-/// # Errors
-///
-/// Returns an error if the INFO command fails or version parsing fails.
-pub async fn get_redis_version(
-    conn: &mut redis::aio::ConnectionManager,
-) -> anyhow::Result<Version> {
+async fn get_redis_version(conn: &mut redis::aio::ConnectionManager) -> anyhow::Result<SemVer> {
     let info: String = redis::cmd("INFO").query_async(conn).await?;
     let version_str = match info.lines().find_map(|line| {
         if line.starts_with("redis_version:") {
@@ -250,17 +242,7 @@ pub async fn get_redis_version(
         }
     };
 
-    parse_redis_version(&version_str)
-}
-
-fn parse_redis_version(version_str: &str) -> anyhow::Result<Version> {
-    let mut components = version_str.split('.').map(str::parse::<u64>);
-
-    let major = components.next().unwrap_or(Ok(0))?;
-    let minor = components.next().unwrap_or(Ok(0))?;
-    let patch = components.next().unwrap_or(Ok(0))?;
-
-    Ok(Version::new(major, minor, patch))
+    SemVer::parse(&version_str)
 }
 
 #[cfg(test)]

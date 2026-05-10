@@ -13,30 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Database and messaging infrastructure for [NautilusTrader](http://nautilustrader.io).
+//! Database and messaging infrastructure for [NautilusTrader](https://nautilustrader.io).
 //!
 //! The `nautilus-infrastructure` crate provides backend database implementations and message bus adapters
 //! that enable NautilusTrader to scale from development to production deployments. This includes
 //! enterprise-grade data persistence and messaging capabilities:
 //!
 //! - **Redis integration**: Cache database and message bus implementations using Redis.
-//! - **PostgreSQL integration**: SQL-based cache database with comprehensive data models.
-//! - **Connection management**: Robust connection handling with retry logic and health monitoring.
+//! - **PostgreSQL integration**: SQL-based cache database with full data models.
+//! - **Connection management**: Connection handling with retry logic and health monitoring.
 //! - **Serialization options**: Support for JSON and MessagePack encoding formats.
-//! - **Python bindings**: PyO3 integration for seamless Python interoperability.
+//! - **Python bindings**: PyO3 integration for Python interoperability.
 //!
 //! The crate supports multiple database backends through feature flags, allowing users to choose
 //! the appropriate infrastructure components for their specific deployment requirements and scale.
 //!
-//! # Platform
+//! # NautilusTrader
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-//! algorithmic trading platform, providing quantitative traders with the ability to backtest
-//! portfolios of automated trading strategies on historical data with an event-driven engine,
-//! and also deploy those same strategies live, with no code changes.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
+//! engine for multi-asset, multi-venue trading systems.
 //!
-//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
-//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+//! The system spans research, deterministic simulation, and live execution within a single
+//! event-driven architecture, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!

@@ -408,6 +408,7 @@ class DatabentoDataLoader:
                     filepath=str(path),
                     instrument_id=pyo3_instrument_id,
                 )
+
                 if as_legacy_cython:
                     return InstrumentStatus.from_pyo3_list(data)
 

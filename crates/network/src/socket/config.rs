@@ -32,9 +32,14 @@ use tokio_tungstenite::tungstenite::stream::Mode;
 use super::types::TcpMessageHandler;
 
 /// Configuration for TCP socket connection.
+#[derive(bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")
 )]
 pub struct SocketConfig {
     /// The URL to connect to.

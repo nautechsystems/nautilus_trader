@@ -30,6 +30,10 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators", unsendable)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
+)]
 pub struct RelativeVolatilityIndex {
     pub period: usize,
     pub scalar: f64,
@@ -135,6 +139,7 @@ impl RelativeVolatilityIndex {
         } else {
             let mean = self.ma.value();
             let mut var_sum = 0.0;
+
             for &price in &self.prices {
                 let diff = price - mean;
                 var_sum += diff * diff;

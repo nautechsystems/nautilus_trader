@@ -60,6 +60,12 @@ pub extern "C" fn time_event_accumulator_drop(accumulator: TimeEventAccumulator_
     drop(accumulator);
 }
 
+/// Clears all events from the accumulator heap without deallocating the accumulator itself.
+#[unsafe(no_mangle)]
+pub extern "C" fn time_event_accumulator_clear(accumulator: &mut TimeEventAccumulator_API) {
+    accumulator.clear();
+}
+
 /// Advance the clock and push events to the heap.
 #[unsafe(no_mangle)]
 pub extern "C" fn time_event_accumulator_advance_clock(

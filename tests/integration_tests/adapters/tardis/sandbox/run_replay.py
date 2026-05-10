@@ -51,6 +51,7 @@ def _resolve_config_filepath() -> str:
         "bin",
         "example_config.json",
     )
+
     if not os.path.isfile(config_filepath):
         raise FileNotFoundError(f"Unable to locate example_config.json at {config_filepath}")
     return config_filepath

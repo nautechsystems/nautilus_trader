@@ -180,13 +180,12 @@ impl<T: 'static> TopicRouter<T> {
 
         log::debug!("Subscribing {sub:?}");
 
-        // Invalidate cache entries that match this pattern
-        self.invalidate_cache_for_pattern(pattern);
-
         self.subscriptions.push(sub);
 
-        // Re-sort by priority (descending)
+        // Re-sort by priority (descending), then clear index cache
+        // since sort can rearrange all indices
         self.subscriptions.sort();
+        self.topic_cache.clear();
     }
 
     /// Unsubscribes a handler from a topic pattern.
@@ -204,7 +203,10 @@ impl<T: 'static> TopicRouter<T> {
             .position(|s| s.pattern == pattern && s.handler_id == handler_id)
         {
             self.subscriptions.remove(idx);
-            self.invalidate_cache_for_pattern(pattern);
+
+            // Must clear entire cache since remove() shifts indices
+            self.topic_cache.clear();
+
             log::debug!("Handler for pattern '{pattern}' was removed");
         } else {
             log::debug!("No matching handler for pattern '{pattern}' was found");
@@ -363,13 +365,6 @@ impl<T: 'static> TopicRouter<T> {
                 }
             })
             .collect()
-    }
-
-    /// Invalidates cache entries that could be affected by a pattern change.
-    fn invalidate_cache_for_pattern(&mut self, pattern: MStr<Pattern>) {
-        // Remove cached entries where the pattern might match the topic
-        self.topic_cache
-            .retain(|topic, _| !is_matching_backtracking(*topic, pattern));
     }
 
     /// Clears all subscriptions and cache.
@@ -746,5 +741,30 @@ mod tests {
         router.publish(topic, &2);
         assert_eq!(*count_own.borrow(), 1);
         assert_eq!(*count_other.borrow(), 2);
+    }
+
+    #[rstest]
+    fn test_unsubscribe_one_pattern_does_not_break_other_patterns() {
+        let mut router = TopicRouter::<i32>::new();
+        let received = Rc::new(RefCell::new(0));
+
+        let alpha = TypedHandler::from_with_id("alpha", |_: &i32| {});
+
+        let received_beta = received.clone();
+        let beta = TypedHandler::from_with_id("beta", move |_: &i32| {
+            *received_beta.borrow_mut() += 1;
+        });
+
+        router.subscribe("alpha.*".into(), alpha.clone(), 0);
+        router.subscribe("beta.*".into(), beta, 0);
+
+        let beta_topic: MStr<Topic> = "beta.topic".into();
+        router.publish(beta_topic, &1);
+        assert_eq!(*received.borrow(), 1);
+
+        router.unsubscribe("alpha.*".into(), &alpha);
+
+        router.publish(beta_topic, &2);
+        assert_eq!(*received.borrow(), 2);
     }
 }

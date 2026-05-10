@@ -20,14 +20,14 @@
 use std::{collections::HashMap, fmt::Debug};
 
 use aws_lc_rs::hmac;
-use hex;
 use nautilus_core::{
-    UUID4, env::resolve_env_var_pair, string::REDACTED, time::get_atomic_clock_realtime,
+    UUID4, env::resolve_env_var_pair, hex, string::secret::REDACTED,
+    time::get_atomic_clock_realtime,
 };
 use thiserror::Error;
 use zeroize::ZeroizeOnDrop;
 
-use crate::http::error::DeribitHttpError;
+use crate::{common::enums::DeribitEnvironment, http::error::DeribitHttpError};
 
 /// Errors that can occur when resolving credentials.
 #[derive(Debug, Error)]
@@ -43,11 +43,10 @@ pub enum CredentialError {
 /// Returns the environment variable names for API credentials,
 /// based on the network.
 #[must_use]
-pub fn credential_env_vars(is_testnet: bool) -> (&'static str, &'static str) {
-    if is_testnet {
-        ("DERIBIT_TESTNET_API_KEY", "DERIBIT_TESTNET_API_SECRET")
-    } else {
-        ("DERIBIT_API_KEY", "DERIBIT_API_SECRET")
+pub fn credential_env_vars(environment: DeribitEnvironment) -> (&'static str, &'static str) {
+    match environment {
+        DeribitEnvironment::Testnet => ("DERIBIT_TESTNET_API_KEY", "DERIBIT_TESTNET_API_SECRET"),
+        DeribitEnvironment::Mainnet => ("DERIBIT_API_KEY", "DERIBIT_API_SECRET"),
     }
 }
 
@@ -87,8 +86,8 @@ impl Credential {
     ///
     /// Returns `None` if either key or secret is not set.
     #[must_use]
-    pub fn from_env(is_testnet: bool) -> Option<Self> {
-        let (key_var, secret_var) = credential_env_vars(is_testnet);
+    pub fn from_env(environment: DeribitEnvironment) -> Option<Self> {
+        let (key_var, secret_var) = credential_env_vars(environment);
         let (k, s) = resolve_env_var_pair(None, None, key_var, secret_var)?;
         Some(Self::new(k, s))
     }
@@ -104,9 +103,9 @@ impl Credential {
     pub fn resolve(
         api_key: Option<String>,
         api_secret: Option<String>,
-        is_testnet: bool,
+        environment: DeribitEnvironment,
     ) -> Result<Option<Self>, CredentialError> {
-        Self::resolve_with_env_fallback(api_key, api_secret, is_testnet, true)
+        Self::resolve_with_env_fallback(api_key, api_secret, environment, true)
     }
 
     /// Resolves credentials with optional environment fallback.
@@ -122,12 +121,12 @@ impl Credential {
     pub fn resolve_with_env_fallback(
         api_key: Option<String>,
         api_secret: Option<String>,
-        is_testnet: bool,
+        environment: DeribitEnvironment,
         env_fallback: bool,
     ) -> Result<Option<Self>, CredentialError> {
         match (api_key, api_secret) {
             (Some(k), Some(s)) => Ok(Some(Self::new(k, s))),
-            (None, None) if env_fallback => Ok(Self::from_env(is_testnet)),
+            (None, None) if env_fallback => Ok(Self::from_env(environment)),
             (None, None) => Ok(None),
             (Some(_), None) => Err(CredentialError::MissingSecret),
             (None, Some(_)) => Err(CredentialError::MissingKey),
@@ -146,7 +145,7 @@ impl Credential {
     /// For keys shorter than 8 characters, shows asterisks only.
     #[must_use]
     pub fn api_key_masked(&self) -> String {
-        nautilus_core::string::mask_api_key(&self.api_key)
+        nautilus_core::string::secret::mask_api_key(&self.api_key)
     }
 
     /// Signs a WebSocket authentication request according to Deribit specification.
@@ -557,7 +556,7 @@ mod tests {
         let result = Credential::resolve_with_env_fallback(
             Some("key".to_string()),
             Some("secret".to_string()),
-            false,
+            DeribitEnvironment::Mainnet,
             false,
         );
 
@@ -569,7 +568,8 @@ mod tests {
 
     #[rstest]
     fn test_resolve_with_no_credentials_no_fallback() {
-        let result = Credential::resolve_with_env_fallback(None, None, false, false);
+        let result =
+            Credential::resolve_with_env_fallback(None, None, DeribitEnvironment::Mainnet, false);
 
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
@@ -577,8 +577,12 @@ mod tests {
 
     #[rstest]
     fn test_resolve_partial_key_only_returns_error() {
-        let result =
-            Credential::resolve_with_env_fallback(Some("key".to_string()), None, false, false);
+        let result = Credential::resolve_with_env_fallback(
+            Some("key".to_string()),
+            None,
+            DeribitEnvironment::Mainnet,
+            false,
+        );
 
         assert!(result.is_err());
         assert!(matches!(
@@ -589,8 +593,12 @@ mod tests {
 
     #[rstest]
     fn test_resolve_partial_secret_only_returns_error() {
-        let result =
-            Credential::resolve_with_env_fallback(None, Some("secret".to_string()), false, false);
+        let result = Credential::resolve_with_env_fallback(
+            None,
+            Some("secret".to_string()),
+            DeribitEnvironment::Mainnet,
+            false,
+        );
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CredentialError::MissingKey));

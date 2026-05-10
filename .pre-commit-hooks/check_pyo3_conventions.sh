@@ -53,35 +53,30 @@ fi
 
 echo "✓ All PyO3 naming conventions are valid"
 
-# Check adapter module naming
-echo "Checking adapter pyclass module names..."
+# Check adapter module naming: module paths must not nest under "adapters"
+echo "Checking adapter module paths..."
 ADAPTER_VIOLATIONS=0
 
-# Find pyclass declarations in adapters/ that use generic ".adapters" module instead of specific adapter name
-while IFS=: read -r file line_num _; do
+while IFS=: read -r file line_num match; do
   [[ -z "$file" ]] && continue
 
-  # Extract expected adapter name from path (e.g., crates/adapters/okx/... -> okx)
-  if [[ "$file" =~ crates/adapters/([^/]+)/ ]]; then
-    expected="${BASH_REMATCH[1]}"
-    # Convert underscores to match crate naming (e.g., coinbase_intx)
-    echo -e "${RED}Error:${NC} pyclass uses generic '.adapters' module in $file:$line_num"
-    echo "  Expected module ending: .$expected\""
-    echo
-    ADAPTER_VIOLATIONS=$((ADAPTER_VIOLATIONS + 1))
-  fi
-done < <(rg -n 'pyo3::pyclass\(.*module\s*=\s*"[^"]*\.adapters"' crates/adapters --type rust 2> /dev/null || true)
+  echo -e "${RED}Error:${NC} Module path nests under 'adapters' in $file:$line_num"
+  echo "  Found: $(echo "$match" | xargs)"
+  echo "  Use: nautilus_trader.<adapter_name> (not nautilus_trader.adapters.<adapter_name>)"
+  echo
+  ADAPTER_VIOLATIONS=$((ADAPTER_VIOLATIONS + 1))
+done < <(rg -n 'module\s*=\s*"nautilus_trader\.adapters\.' crates/adapters --type rust 2> /dev/null || true)
 
 if [ $ADAPTER_VIOLATIONS -gt 0 ]; then
-  echo -e "${RED}Found $ADAPTER_VIOLATIONS adapter module naming violation(s)${NC}"
+  echo -e "${RED}Found $ADAPTER_VIOLATIONS adapter module path violation(s)${NC}"
   echo
   echo "Convention:"
-  echo "  - Adapter pyclasses must use the specific adapter module, not '.adapters'"
-  echo "  - Example: module = \"nautilus_trader.core.nautilus_pyo3.okx\" (not .adapters)"
+  echo "  - Adapter module paths are flat: nautilus_trader.<adapter_name>"
+  echo "  - The 'adapters' directory is organizational only, not part of the module path"
   exit 1
 fi
 
-echo "✓ All adapter pyclass module names are valid"
+echo "✓ All adapter module paths are valid"
 
 # Check for raw PyErr construction that should use error helpers
 echo "Checking PyO3 error helper usage..."

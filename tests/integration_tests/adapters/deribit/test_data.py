@@ -245,6 +245,130 @@ class TestDeribitDataClient:
             await client._disconnect()
 
     @pytest.mark.asyncio
+    async def test_subscribe_mark_prices(
+        self,
+        data_client_builder,
+        instrument,
+    ) -> None:
+        # Arrange
+        client = data_client_builder()
+        client._instrument_provider.get_all.return_value = {
+            instrument.id: instrument,
+        }
+
+        await client._connect()
+
+        try:
+            client._ws_client.subscribe_mark_prices.reset_mock()
+
+            command = SimpleNamespace(
+                instrument_id=InstrumentId(Symbol("BTC-PERPETUAL"), DERIBIT_VENUE),
+                params=None,
+            )
+
+            # Act
+            await client._subscribe_mark_prices(command)
+
+            # Assert
+            expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
+            client._ws_client.subscribe_mark_prices.assert_called_once_with(expected_id, None)
+        finally:
+            await client._disconnect()
+
+    @pytest.mark.asyncio
+    async def test_subscribe_index_prices(
+        self,
+        data_client_builder,
+        instrument,
+    ) -> None:
+        # Arrange
+        client = data_client_builder()
+        client._instrument_provider.get_all.return_value = {
+            instrument.id: instrument,
+        }
+
+        await client._connect()
+
+        try:
+            client._ws_client.subscribe_index_prices.reset_mock()
+
+            command = SimpleNamespace(
+                instrument_id=InstrumentId(Symbol("BTC-PERPETUAL"), DERIBIT_VENUE),
+                params=None,
+            )
+
+            # Act
+            await client._subscribe_index_prices(command)
+
+            # Assert
+            expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
+            client._ws_client.subscribe_index_prices.assert_called_once_with(expected_id, None)
+        finally:
+            await client._disconnect()
+
+    @pytest.mark.asyncio
+    async def test_unsubscribe_mark_prices(
+        self,
+        data_client_builder,
+        instrument,
+    ) -> None:
+        # Arrange
+        client = data_client_builder()
+        client._instrument_provider.get_all.return_value = {
+            instrument.id: instrument,
+        }
+
+        await client._connect()
+
+        try:
+            client._ws_client.unsubscribe_mark_prices.reset_mock()
+
+            command = SimpleNamespace(
+                instrument_id=InstrumentId(Symbol("BTC-PERPETUAL"), DERIBIT_VENUE),
+                params=None,
+            )
+
+            # Act
+            await client._unsubscribe_mark_prices(command)
+
+            # Assert
+            expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
+            client._ws_client.unsubscribe_mark_prices.assert_called_once_with(expected_id, None)
+        finally:
+            await client._disconnect()
+
+    @pytest.mark.asyncio
+    async def test_unsubscribe_index_prices(
+        self,
+        data_client_builder,
+        instrument,
+    ) -> None:
+        # Arrange
+        client = data_client_builder()
+        client._instrument_provider.get_all.return_value = {
+            instrument.id: instrument,
+        }
+
+        await client._connect()
+
+        try:
+            client._ws_client.unsubscribe_index_prices.reset_mock()
+
+            command = SimpleNamespace(
+                instrument_id=InstrumentId(Symbol("BTC-PERPETUAL"), DERIBIT_VENUE),
+                params=None,
+            )
+
+            # Act
+            await client._unsubscribe_index_prices(command)
+
+            # Assert
+            expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
+            client._ws_client.unsubscribe_index_prices.assert_called_once_with(expected_id, None)
+        finally:
+            await client._disconnect()
+
+    @pytest.mark.asyncio
     async def test_subscribe_multiple_product_types(
         self,
         data_client_builder,

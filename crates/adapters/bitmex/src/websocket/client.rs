@@ -18,7 +18,7 @@
 //! This module defines and implements a [`BitmexWebSocketClient`] for
 //! connecting to BitMEX WebSocket streams. It handles authentication (when credentials
 //! are provided), manages subscriptions to market data and account update channels,
-//! and parses incoming messages into structured Nautilus domain objects.
+//! and emits venue-specific message types for consumers to parse.
 
 use std::{
     sync::{
@@ -38,16 +38,15 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::bar::BarType,
-    enums::OrderType,
-    identifiers::{AccountId, ClientOrderId, InstrumentId},
+    identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
     http::USER_AGENT,
     mode::ConnectionMode,
     websocket::{
-        AUTHENTICATION_TIMEOUT_SECS, AuthTracker, PingHandler, SubscriptionState, WebSocketClient,
-        WebSocketConfig, channel_message_handler,
+        AUTHENTICATION_TIMEOUT_SECS, AuthTracker, PingHandler, SubscriptionState, TransportBackend,
+        WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
 use tokio_tungstenite::tungstenite::Message;
@@ -56,13 +55,14 @@ use ustr::Ustr;
 use super::{
     enums::{BitmexWsAuthAction, BitmexWsAuthChannel, BitmexWsOperation, BitmexWsTopic},
     error::BitmexWsError,
-    handler::{FeedHandler, HandlerCommand},
-    messages::{BitmexAuthentication, BitmexSubscription, NautilusWsMessage},
+    handler::{BitmexWsFeedHandler, HandlerCommand},
+    messages::{BitmexAuthentication, BitmexSubscription, BitmexWsMessage},
     parse::{is_index_symbol, topic_from_bar_spec},
 };
 use crate::common::{
     consts::{BITMEX_WS_TOPIC_DELIMITER, BITMEX_WS_URL},
     credential::{Credential, credential_env_vars},
+    enums::BitmexEnvironment,
 };
 
 /// Provides a WebSocket client for connecting to the [BitMEX](https://bitmex.com) real-time API.
@@ -73,10 +73,6 @@ use crate::common::{
 /// - The subscription state maintains pending and confirmed topics so reconnection replay is
 ///   deterministic and per-topic errors are surfaced.
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
-)]
 pub struct BitmexWebSocketClient {
     url: String,
     credential: Option<Credential>,
@@ -86,13 +82,13 @@ pub struct BitmexWebSocketClient {
     signal: Arc<AtomicBool>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
-    out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>>,
+    out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<BitmexWsMessage>>>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions: SubscriptionState,
     tracked_subscriptions: Arc<DashMap<String, ()>>,
-    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
-    order_type_cache: Arc<DashMap<ClientOrderId, OrderType>>,
-    order_symbol_cache: Arc<DashMap<ClientOrderId, Ustr>>,
+    instruments: Arc<DashMap<Ustr, InstrumentAny>>,
+    transport_backend: TransportBackend,
+    proxy_url: Option<String>,
 }
 
 impl BitmexWebSocketClient {
@@ -106,7 +102,9 @@ impl BitmexWebSocketClient {
         api_key: Option<String>,
         api_secret: Option<String>,
         account_id: Option<AccountId>,
-        heartbeat: Option<u64>,
+        heartbeat: u64,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let credential = match (api_key, api_secret) {
             (Some(key), Some(secret)) => Some(Credential::new(key, secret)),
@@ -119,15 +117,13 @@ impl BitmexWebSocketClient {
         let initial_mode = AtomicU8::new(ConnectionMode::Closed.as_u8());
         let connection_mode = Arc::new(ArcSwap::from_pointee(initial_mode));
 
-        // We don't have a handler yet; this placeholder keeps cache_instrument() working,
-        // connect() swaps in the real channel and replays any queued instruments so the
-        // handler sees them once it starts.
+        // Placeholder channel until connect() creates the real one
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
 
         Ok(Self {
             url: url.unwrap_or(BITMEX_WS_URL.to_string()),
             credential,
-            heartbeat,
+            heartbeat: Some(heartbeat),
             account_id,
             auth_tracker: AuthTracker::new(),
             signal: Arc::new(AtomicBool::new(false)),
@@ -137,36 +133,47 @@ impl BitmexWebSocketClient {
             task_handle: None,
             subscriptions: SubscriptionState::new(BITMEX_WS_TOPIC_DELIMITER),
             tracked_subscriptions: Arc::new(DashMap::new()),
-            instruments_cache: Arc::new(DashMap::new()),
-            order_type_cache: Arc::new(DashMap::new()),
-            order_symbol_cache: Arc::new(DashMap::new()),
+            instruments: Arc::new(DashMap::new()),
+            transport_backend,
+            proxy_url,
         })
     }
 
     /// Creates a new [`BitmexWebSocketClient`] with environment variable credential resolution.
     ///
     /// If `api_key` or `api_secret` are not provided, they will be loaded from
-    /// environment variables based on the `testnet` flag:
+    /// environment variables based on the `environment`:
     /// - Testnet: `BITMEX_TESTNET_API_KEY`, `BITMEX_TESTNET_API_SECRET`
     /// - Mainnet: `BITMEX_API_KEY`, `BITMEX_API_SECRET`
     ///
     /// # Errors
     ///
     /// Returns an error if only one of `api_key` or `api_secret` is provided.
+    #[expect(clippy::too_many_arguments)]
     pub fn new_with_env(
         url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
         account_id: Option<AccountId>,
-        heartbeat: Option<u64>,
-        testnet: bool,
+        heartbeat: u64,
+        environment: BitmexEnvironment,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
-        let (api_key_env, api_secret_env) = credential_env_vars(testnet);
+        let (api_key_env, api_secret_env) = credential_env_vars(environment);
 
         let key = get_or_env_var_opt(api_key, api_key_env);
         let secret = get_or_env_var_opt(api_secret, api_secret_env);
 
-        Self::new(url, key, secret, account_id, heartbeat)
+        Self::new(
+            url,
+            key,
+            secret,
+            account_id,
+            heartbeat,
+            transport_backend,
+            proxy_url,
+        )
     }
 
     /// Creates a new authenticated [`BitmexWebSocketClient`] using environment variables.
@@ -176,11 +183,19 @@ impl BitmexWebSocketClient {
     /// Returns an error if environment variables are not set or credentials are invalid.
     pub fn from_env() -> anyhow::Result<Self> {
         let url = get_env_var("BITMEX_WS_URL")?;
-        let (key_var, secret_var) = credential_env_vars(false);
+        let (key_var, secret_var) = credential_env_vars(BitmexEnvironment::Mainnet);
         let api_key = get_env_var(key_var)?;
         let api_secret = get_env_var(secret_var)?;
 
-        Self::new(Some(url), Some(api_key), Some(api_secret), None, None)
+        Self::new(
+            Some(url),
+            Some(api_key),
+            Some(api_secret),
+            None,
+            5,
+            TransportBackend::default(),
+            None,
+        )
     }
 
     /// Returns the websocket url being used by the client.
@@ -217,44 +232,38 @@ impl BitmexWebSocketClient {
             || self.signal.load(Ordering::Relaxed)
     }
 
+    /// Returns the account ID.
+    #[must_use]
+    pub fn account_id(&self) -> AccountId {
+        self.account_id
+    }
+
     /// Sets the account ID.
     pub fn set_account_id(&mut self, account_id: AccountId) {
         self.account_id = account_id;
     }
 
-    /// Caches multiple instruments.
-    ///
-    /// Clears the existing cache first, then adds all provided instruments.
-    pub fn cache_instruments(&mut self, instruments: Vec<InstrumentAny>) {
-        self.instruments_cache.clear();
-        let mut count = 0;
-
-        log::debug!("Initializing BitMEX instrument cache");
-
+    /// Bulk-replaces the instrument cache with the given instruments.
+    pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
+        self.instruments.clear();
         for inst in instruments {
-            let symbol = inst.symbol().inner();
-            self.instruments_cache.insert(symbol, inst.clone());
-            log::debug!("Cached instrument: {symbol}");
-            count += 1;
+            self.instruments
+                .insert(inst.raw_symbol().inner(), inst.clone());
         }
-
-        log::info!("BitMEX instrument cache initialized with {count} instruments");
     }
 
-    /// Caches a single instrument.
-    ///
-    /// Any existing instrument with the same symbol will be replaced.
+    /// Upserts a single instrument into the cache.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
-        self.instruments_cache
-            .insert(instrument.symbol().inner(), instrument.clone());
+        self.instruments
+            .insert(instrument.raw_symbol().inner(), instrument);
+    }
 
-        // Before connect() the handler isn't running; this send will fail and that's expected
-        // because connect() replays the instruments via InitializeInstruments
-        if let Ok(cmd_tx) = self.cmd_tx.try_read()
-            && let Err(e) = cmd_tx.send(HandlerCommand::UpdateInstrument(instrument))
-        {
-            log::debug!("Failed to send instrument update to handler: {e}");
-        }
+    /// Retrieves an instrument from the cache by symbol.
+    #[must_use]
+    pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
+        self.instruments
+            .get(symbol)
+            .map(|entry| entry.value().clone())
     }
 
     /// Connect to the BitMEX WebSocket server.
@@ -272,7 +281,7 @@ impl BitmexWebSocketClient {
         // Replace connection state so all clones see the underlying WebSocketClient's state
         self.connection_mode.store(client.connection_mode_atomic());
 
-        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<BitmexWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -285,39 +294,20 @@ impl BitmexWebSocketClient {
             )));
         }
 
-        // Replay cached instruments to the new handler via the new channel
-        if !self.instruments_cache.is_empty() {
-            let cached_instruments: Vec<InstrumentAny> = self
-                .instruments_cache
-                .iter()
-                .map(|entry| entry.value().clone())
-                .collect();
-
-            if let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(cached_instruments)) {
-                log::error!("Failed to replay instruments to handler: {e}");
-            }
-        }
-
         let signal = self.signal.clone();
-        let account_id = self.account_id;
         let credential = self.credential.clone();
         let auth_tracker = self.auth_tracker.clone();
         let subscriptions = self.subscriptions.clone();
-        let order_type_cache = self.order_type_cache.clone();
-        let order_symbol_cache = self.order_symbol_cache.clone();
         let cmd_tx_for_reconnect = cmd_tx.clone();
 
         let stream_handle = get_runtime().spawn(async move {
-            let mut handler = FeedHandler::new(
+            let mut handler = BitmexWsFeedHandler::new(
                 signal.clone(),
                 cmd_rx,
                 raw_rx,
                 out_tx,
-                account_id,
                 auth_tracker.clone(),
                 subscriptions.clone(),
-                order_type_cache,
-                order_symbol_cache,
             );
 
             // Helper closure to resubscribe all tracked subscriptions after reconnection
@@ -361,7 +351,7 @@ impl BitmexWebSocketClient {
             // Run message processing with reconnection handling
             loop {
                 match handler.next().await {
-                    Some(NautilusWsMessage::Reconnected) => {
+                    Some(BitmexWsMessage::Reconnected) => {
                         if signal.load(Ordering::Relaxed) {
                             continue;
                         }
@@ -397,6 +387,7 @@ impl BitmexWebSocketClient {
                                 "Marking confirmed subscriptions as pending for replay: count={}",
                                 confirmed_topics.len()
                             );
+
                             for topic in confirmed_topics {
                                 subscriptions.mark_failure(&topic);
                             }
@@ -432,12 +423,12 @@ impl BitmexWebSocketClient {
                             resubscribe_all();
                         }
 
-                        if handler.send(NautilusWsMessage::Reconnected).is_err() {
+                        if handler.send(BitmexWsMessage::Reconnected).is_err() {
                             log::error!("Failed to forward reconnect event (receiver dropped)");
                             break;
                         }
                     }
-                    Some(NautilusWsMessage::Authenticated) => {
+                    Some(BitmexWsMessage::Authenticated) => {
                         log::debug!("Authenticated after reconnection, resubscribing");
                         resubscribe_all();
                     }
@@ -509,7 +500,7 @@ impl BitmexWebSocketClient {
     ///
     /// Returns an error if the WebSocket connection fails or if authentication fails (when credentials are provided).
     async fn connect_inner(
-        &mut self,
+        &self,
     ) -> Result<
         (
             WebSocketClient,
@@ -537,6 +528,8 @@ impl BitmexWebSocketClient {
             reconnect_jitter_ms: None,        // Use default
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
 
         let keyed_quotas = vec![];
@@ -635,7 +628,7 @@ impl BitmexWebSocketClient {
     /// This function panics:
     /// - If the websocket is not connected.
     /// - If `stream` has already been called somewhere else (stream receiver is then taken).
-    pub fn stream(&mut self) -> impl Stream<Item = NautilusWsMessage> + use<> {
+    pub fn stream(&mut self) -> impl Stream<Item = BitmexWsMessage> + use<> {
         let rx = self
             .out_rx
             .take()
@@ -1266,6 +1259,8 @@ mod tests {
             Some("test_key".to_string()),
             Some("test_secret".to_string()),
             Some(AccountId::new("BITMEX-TEST")),
+            5,
+            TransportBackend::default(),
             None,
         )
         .unwrap();
@@ -1299,6 +1294,7 @@ mod tests {
 
         // Test the actual reconnection topic building logic
         let mut topics_to_restore = Vec::new();
+
         for entry in subs.iter() {
             let (channel, symbols) = entry.pair();
             for symbol in symbols {
@@ -1329,6 +1325,8 @@ mod tests {
             Some("test_key".to_string()),
             Some("test_secret".to_string()),
             Some(AccountId::new("BITMEX-TEST")),
+            5,
+            TransportBackend::default(),
             None,
         )
         .unwrap();
@@ -1358,6 +1356,8 @@ mod tests {
             None,
             None,
             Some(AccountId::new("BITMEX-TEST")),
+            5,
+            TransportBackend::default(),
             None,
         )
         .unwrap();
@@ -1372,6 +1372,8 @@ mod tests {
             Some("test_key".to_string()),
             Some("test_secret".to_string()),
             Some(AccountId::new("BITMEX-TEST")),
+            5,
+            TransportBackend::default(),
             None,
         )
         .unwrap();
@@ -1405,6 +1407,7 @@ mod tests {
 
         // Build restoration topics after unsubscribe
         let mut topics_to_restore = Vec::new();
+
         for entry in subs.iter() {
             let (channel, symbols) = entry.pair();
             for symbol in symbols {
@@ -1439,6 +1442,8 @@ mod tests {
             None,
             None,
             Some(AccountId::new("BITMEX-TEST")),
+            5,
+            TransportBackend::default(),
             None,
         )
         .unwrap();
@@ -1485,6 +1490,8 @@ mod tests {
             None,
             None,
             Some(AccountId::new("BITMEX-TEST")),
+            5,
+            TransportBackend::default(),
             None,
         )
         .unwrap();
@@ -1538,6 +1545,8 @@ mod tests {
             Some("test_key".to_string()),
             Some("test_secret".to_string()),
             Some(AccountId::new("BITMEX-TEST")),
+            5,
+            TransportBackend::default(),
             None,
         )
         .unwrap();

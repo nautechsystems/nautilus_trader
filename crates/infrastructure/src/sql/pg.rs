@@ -256,6 +256,7 @@ pub async fn init_postgres(
     let sql_files = vec!["types.sql", "functions.sql", "partitions.sql", "tables.sql"];
     let plpgsql_regex =
         Regex::new(r"\$\$ LANGUAGE plpgsql(?:[ \t\r\n]+SECURITY[ \t\r\n]+DEFINER)?;")?;
+
     for file_name in &sql_files {
         log::info!("Executing schema file: {file_name:?}");
         let file_path = format!("{schema_dir}/{file_name}");

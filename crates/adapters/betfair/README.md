@@ -6,7 +6,7 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-[NautilusTrader](http://nautilustrader.io) adapter for the [Betfair](https://www.betfair.com/) betting exchange.
+[NautilusTrader](https://nautilustrader.io) adapter for the [Betfair](https://www.betfair.com/) betting exchange.
 
 The `nautilus-betfair` crate provides data and execution clients, streaming
 and REST API models, and full NautilusTrader integration for the
@@ -14,15 +14,13 @@ and REST API models, and full NautilusTrader integration for the
 
 The official API reference can be found at <https://docs.developer.betfair.com/>.
 
-## Platform
+## NautilusTrader
 
-[NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-algorithmic trading platform, providing quantitative traders with the ability to backtest
-portfolios of automated trading strategies on historical data with an event-driven engine,
-and also deploy those same strategies live, with no code changes.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
+engine for multi-asset, multi-venue trading systems.
 
-NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
-highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+The system spans research, deterministic simulation, and live execution within a single
+event-driven architecture, providing research-to-live semantic parity.
 
 ## Feature flags
 

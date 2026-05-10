@@ -35,9 +35,10 @@ use futures_util::StreamExt;
 use nautilus_architect_ax::{
     common::{credential::Credential, enums::AxEnvironment},
     http::client::AxRawHttpClient,
-    websocket::{AxOrdersWsMessage, NautilusExecWsMessage, orders::AxOrdersWebSocketClient},
+    websocket::{AxOrdersWsMessage, orders::AxOrdersWebSocketClient},
 };
 use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -61,10 +62,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_client = AxRawHttpClient::new(
         Some(environment.http_url().to_string()),
         Some(environment.orders_url().to_string()),
-        Some(30),
-        None,
-        None,
-        None,
+        30,
+        3,
+        1000,
+        10_000,
         None,
     )?;
 
@@ -91,7 +92,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         environment.ws_orders_url().to_string(),
         account_id,
         trader_id,
-        Some(30),
+        30,
+        TransportBackend::default(),
+        None,
     );
 
     client.connect(&auth_response.token).await?;
@@ -116,41 +119,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 AxOrdersWsMessage::Authenticated => {
                     log::info!("WebSocket authenticated");
                 }
-                AxOrdersWsMessage::Nautilus(event) => match event {
-                    NautilusExecWsMessage::OrderAccepted(event) => {
-                        log::info!(
-                            "Order accepted: {} {}",
-                            event.client_order_id,
-                            event.venue_order_id
-                        );
-                    }
-                    NautilusExecWsMessage::OrderFilled(event) => {
-                        log::info!(
-                            "Order filled: {} {} @ {}",
-                            event.client_order_id,
-                            event.last_qty,
-                            event.last_px
-                        );
-                    }
-                    NautilusExecWsMessage::OrderCanceled(event) => {
-                        log::info!("Order canceled: {}", event.client_order_id);
-                    }
-                    NautilusExecWsMessage::OrderExpired(event) => {
-                        log::info!("Order expired: {}", event.client_order_id);
-                    }
-                    NautilusExecWsMessage::OrderRejected(reject) => {
-                        log::warn!("Order rejected: {}", reject.client_order_id);
-                    }
-                    NautilusExecWsMessage::OrderCancelRejected(reject) => {
-                        log::warn!("Cancel rejected: {}", reject.client_order_id);
-                    }
-                    NautilusExecWsMessage::OrderStatusReports(reports) => {
-                        log::info!("Order status reports: {} items", reports.len());
-                    }
-                    NautilusExecWsMessage::FillReports(reports) => {
-                        log::info!("Fill reports: {} items", reports.len());
-                    }
-                },
+                AxOrdersWsMessage::Event(event) => {
+                    log::info!("Order event: {event:?}");
+                }
                 AxOrdersWsMessage::PlaceOrderResponse(resp) => {
                     log::info!(
                         "Place order response: rid={} oid={}",

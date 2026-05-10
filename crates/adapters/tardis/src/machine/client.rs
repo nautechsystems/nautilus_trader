@@ -13,15 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::HashMap,
-    env,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
+use ahash::AHashMap;
 use futures_util::{Stream, StreamExt, pin_mut};
 use nautilus_model::data::Data;
 use ustr::Ustr;
@@ -36,7 +33,7 @@ use super::{
     },
 };
 use crate::{
-    common::consts::TARDIS_MACHINE_WS_URL, config::BookSnapshotOutput,
+    common::urls::resolve_ws_base_url, config::BookSnapshotOutput,
     machine::parse::parse_tardis_ws_message,
 };
 
@@ -45,12 +42,16 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.tardis")
+)]
 #[derive(Debug, Clone)]
 pub struct TardisMachineClient {
     pub base_url: String,
     pub replay_signal: Arc<AtomicBool>,
     pub stream_signal: Arc<AtomicBool>,
-    pub instruments: HashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>,
+    pub instruments: AHashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>,
     pub normalize_symbols: bool,
     pub book_snapshot_output: BookSnapshotOutput,
 }
@@ -66,21 +67,13 @@ impl TardisMachineClient {
         normalize_symbols: bool,
         book_snapshot_output: BookSnapshotOutput,
     ) -> anyhow::Result<Self> {
-        let base_url = base_url
-            .map(ToString::to_string)
-            .or_else(|| env::var(TARDIS_MACHINE_WS_URL).ok())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Tardis Machine `base_url` must be provided or \
-                     set in the '{TARDIS_MACHINE_WS_URL}' environment variable"
-                )
-            })?;
+        let base_url = resolve_ws_base_url(base_url)?;
 
         Ok(Self {
             base_url,
             replay_signal: Arc::new(AtomicBool::new(false)),
             stream_signal: Arc::new(AtomicBool::new(false)),
-            instruments: HashMap::new(),
+            instruments: AHashMap::new(),
             normalize_symbols,
             book_snapshot_output,
         })
@@ -158,7 +151,7 @@ impl TardisMachineClient {
 fn handle_ws_stream<S>(
     stream: S,
     instrument: Option<Arc<TardisInstrumentMiniInfo>>,
-    instrument_map: Option<HashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>>,
+    instrument_map: Option<AHashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>>,
     book_snapshot_output: BookSnapshotOutput,
 ) -> impl Stream<Item = Result<Data, Error>>
 where
@@ -187,7 +180,7 @@ where
                     });
 
                     if let Some(info) = info {
-                        if let Some(data) = parse_tardis_ws_message(msg, info, &book_snapshot_output) {
+                        if let Some(data) = parse_tardis_ws_message(msg, &info, &book_snapshot_output) {
                             yield Ok(data);
                         }
                     } else {
@@ -210,7 +203,7 @@ where
 
 pub fn determine_instrument_info(
     msg: &WsMessage,
-    instrument_map: &HashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>,
+    instrument_map: &AHashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>,
 ) -> Option<Arc<TardisInstrumentMiniInfo>> {
     let key = match msg {
         WsMessage::BookChange(msg) => {

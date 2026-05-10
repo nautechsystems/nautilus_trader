@@ -17,6 +17,7 @@ import copy
 import sys
 from typing import Any
 
+import pyarrow as pa
 import pytest
 
 from nautilus_trader.common.component import TestClock
@@ -24,9 +25,11 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import ShutdownSystem
 from nautilus_trader.common.messages import TradingStateChanged
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.enums import AccountType
@@ -58,6 +61,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -73,6 +77,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
+from nautilus_trader.serialization.arrow.serializer import make_dict_serializer
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
@@ -541,6 +546,28 @@ class TestArrowSerializer:
                     instrument_id=None,
                 ),
             ],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=1_000_000_000,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(AccountState, serialized)
+
+        # Assert
+        assert deserialized == [event]
+
+    def test_serialize_and_deserialize_account_state_with_empty_balances_and_margins(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("BINANCE-001"),
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -1174,6 +1201,45 @@ class TestArrowSerializer:
         df = self.catalog.instruments()
         assert len(df) == 1
 
+    def test_serialize_and_deserialize_pyo3_instrument_status(self):
+        from nautilus_trader.core import nautilus_pyo3
+
+        instrument_id = nautilus_pyo3.InstrumentId.from_str("AAPL.XNAS")
+        status = nautilus_pyo3.InstrumentStatus(
+            instrument_id=instrument_id,
+            action=nautilus_pyo3.MarketStatusAction.TRADING,
+            ts_event=1_000_000_000,
+            ts_init=1_000_000_001,
+            reason="Normal trading",
+            trading_event="MARKET_OPEN",
+            is_trading=True,
+            is_quoting=True,
+            is_short_sell_restricted=False,
+        )
+
+        batch = ArrowSerializer.serialize_batch(
+            [status],
+            data_cls=nautilus_pyo3.InstrumentStatus,
+        )
+        assert isinstance(batch, pa.Table)
+        assert batch.num_rows == 1
+
+        deserialized = ArrowSerializer.deserialize(
+            data_cls=nautilus_pyo3.InstrumentStatus,
+            batch=batch,
+        )
+        assert len(deserialized) == 1
+        roundtripped = deserialized[0]
+        assert roundtripped.instrument_id == instrument_id
+        assert roundtripped.action == nautilus_pyo3.MarketStatusAction.TRADING
+        assert roundtripped.ts_event == 1_000_000_000
+        assert roundtripped.ts_init == 1_000_000_001
+        assert roundtripped.reason == "Normal trading"
+        assert roundtripped.trading_event == "MARKET_OPEN"
+        assert roundtripped.is_trading is True
+        assert roundtripped.is_quoting is True
+        assert roundtripped.is_short_sell_restricted is False
+
     @pytest.mark.parametrize("obj", nautilus_objects())
     def test_serialize_and_deserialize_all(self, obj):
         # Arrange, Act, Assert
@@ -1181,3 +1247,36 @@ class TestArrowSerializer:
             assert self._test_serialization(obj)
         except NotImplementedError as e:
             print(e)
+
+    def test_make_dict_serializer_with_instance_method_to_dict(self):
+        # Arrange
+        @customdataclass
+        class _InstanceMethodData(Data):
+            instrument_id: InstrumentId
+            value: float
+
+        schema = pa.schema(
+            [
+                pa.field("instrument_id", pa.string()),
+                pa.field("value", pa.float64()),
+                pa.field("type", pa.string()),
+                pa.field("ts_event", pa.uint64()),
+                pa.field("ts_init", pa.uint64()),
+            ],
+        )
+        encoder = make_dict_serializer(schema)
+        obj = _InstanceMethodData(
+            instrument_id=InstrumentId.from_str("TEST.VENUE"),
+            value=1.5,
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        batch = encoder([obj])
+
+        # Assert
+        assert isinstance(batch, pa.RecordBatch)
+        assert batch.num_rows == 1
+        assert batch.column("value")[0].as_py() == 1.5
+        assert batch.column("instrument_id")[0].as_py() == "TEST.VENUE"

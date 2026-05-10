@@ -13,13 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(clippy::doc_markdown, reason = "Python docstrings")]
+#![expect(clippy::doc_markdown, reason = "Python docstrings")]
 
 //! Python bindings and interoperability built using [`PyO3`](https://pyo3.rs).
 
 #![allow(
     deprecated,
     reason = "pyo3-stub-gen currently relies on PyO3 initialization helpers marked as deprecated"
+)]
+#![expect(
+    clippy::missing_errors_doc,
+    reason = "errors documented on underlying Rust methods"
 )]
 //!
 //! This sub-module groups together the Rust code that is *only* required when compiling the
@@ -166,12 +170,12 @@ pub fn to_pynotimplemented_err(e: impl Display) -> PyErr {
 /// obj : Any
 ///     The object to check.
 ///
-/// Returns
-/// -------
+/// # Returns
+///
 /// bool
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "is_pycapsule")]
-#[allow(
+#[gen_stub_pyfunction(module = "nautilus_trader.core")]
+#[expect(
     clippy::needless_pass_by_value,
     reason = "Python FFI requires owned types"
 )]

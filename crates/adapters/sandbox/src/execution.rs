@@ -24,10 +24,14 @@ use nautilus_common::{
     clients::ExecutionClient,
     clock::Clock,
     factories::OrderEventFactory,
-    messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-        GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-        ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+    live::try_get_exec_event_sender,
+    messages::{
+        ExecutionEvent,
+        execution::{
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
+            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+        },
     },
     msgbus::{self, MStr, MessagingSwitchboard, Pattern, TypedHandler},
 };
@@ -44,6 +48,7 @@ use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, OrderBookDeltas, QuoteTick, TradeTick},
     enums::OmsType,
+    events::OrderEventAny,
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
@@ -69,6 +74,7 @@ struct SandboxInner {
     next_engine_raw_id: u32,
     /// Current account balances.
     balances: AHashMap<String, Money>,
+    event_handler: Option<Rc<dyn Fn(OrderEventAny)>>,
 }
 
 impl SandboxInner {
@@ -95,6 +101,10 @@ impl SandboxInner {
                 self.cache.clone(),
                 engine_config,
             );
+
+            if let Some(handler) = &self.event_handler {
+                engine.get_engine_mut().set_event_handler(handler.clone());
+            }
 
             self.matching_engines.insert(instrument_id, engine);
         }
@@ -236,6 +246,7 @@ impl SandboxExecutionClient {
             matching_engines: AHashMap::new(),
             next_engine_raw_id: 0,
             balances,
+            event_handler: None,
         }));
 
         let factory = OrderEventFactory::new(
@@ -266,6 +277,15 @@ impl SandboxExecutionClient {
     #[must_use]
     pub fn matching_engine_count(&self) -> usize {
         self.inner.borrow().matching_engines.len()
+    }
+
+    fn dispatch_order_event(&self, event: OrderEventAny) {
+        if let Some(handler) = &self.inner.borrow().event_handler {
+            handler(event);
+        } else {
+            let endpoint = MessagingSwitchboard::exec_engine_process();
+            msgbus::send_order_event(endpoint, event);
+        }
     }
 
     /// Registers message handlers for market data subscriptions.
@@ -570,6 +590,19 @@ impl ExecutionClient for SandboxExecutionClient {
             return Ok(());
         }
 
+        if let Some(sender) = try_get_exec_event_sender() {
+            let handler: Rc<dyn Fn(OrderEventAny)> = Rc::new(move |event: OrderEventAny| {
+                if let Err(e) = sender.send(ExecutionEvent::Order(event)) {
+                    log::warn!("Failed to send order event: {e}");
+                }
+            });
+            let mut inner = self.inner.borrow_mut();
+            inner.event_handler = Some(handler.clone());
+            for engine in inner.matching_engines.values_mut() {
+                engine.get_engine_mut().set_event_handler(handler.clone());
+            }
+        }
+
         // Register message handlers to receive market data
         self.register_message_handlers();
 
@@ -632,7 +665,7 @@ impl ExecutionClient for SandboxExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         let mut order = self.get_order(&cmd.client_order_id)?;
 
         if order.is_closed() {
@@ -642,8 +675,7 @@ impl ExecutionClient for SandboxExecutionClient {
 
         let ts_init = self.clock.borrow().timestamp_ns();
         let event = self.factory.generate_order_submitted(&order, ts_init);
-        let endpoint = MessagingSwitchboard::exec_engine_process();
-        msgbus::send_order_event(endpoint, event);
+        self.dispatch_order_event(event);
 
         let instrument_id = order.instrument_id();
         let instrument = self
@@ -683,14 +715,13 @@ impl ExecutionClient for SandboxExecutionClient {
         Ok(())
     }
 
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         let ts_init = self.clock.borrow().timestamp_ns();
-        let endpoint = MessagingSwitchboard::exec_engine_process();
 
         let orders: Vec<OrderAny> = self
             .cache
             .borrow()
-            .orders_for_ids(&cmd.order_list.client_order_ids, cmd);
+            .orders_for_ids(&cmd.order_list.client_order_ids, &cmd);
 
         for order in &orders {
             if order.is_closed() {
@@ -699,10 +730,11 @@ impl ExecutionClient for SandboxExecutionClient {
             }
 
             let event = self.factory.generate_order_submitted(order, ts_init);
-            msgbus::send_order_event(endpoint, event);
+            self.dispatch_order_event(event);
         }
 
         let account_id = self.core.borrow().account_id;
+
         for order in &orders {
             if order.is_closed() {
                 continue;
@@ -743,40 +775,40 @@ impl ExecutionClient for SandboxExecutionClient {
         Ok(())
     }
 
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let account_id = self.core.borrow().account_id;
 
         let mut inner = self.inner.borrow_mut();
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
-            engine.get_engine_mut().process_modify(cmd, account_id);
+            engine.get_engine_mut().process_modify(&cmd, account_id);
         }
         Ok(())
     }
 
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let account_id = self.core.borrow().account_id;
 
         let mut inner = self.inner.borrow_mut();
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
-            engine.get_engine_mut().process_cancel(cmd, account_id);
+            engine.get_engine_mut().process_cancel(&cmd, account_id);
         }
         Ok(())
     }
 
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let account_id = self.core.borrow().account_id;
 
         let mut inner = self.inner.borrow_mut();
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
-            engine.get_engine_mut().process_cancel_all(cmd, account_id);
+            engine.get_engine_mut().process_cancel_all(&cmd, account_id);
         }
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let account_id = self.core.borrow().account_id;
 
@@ -784,19 +816,19 @@ impl ExecutionClient for SandboxExecutionClient {
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
             engine
                 .get_engine_mut()
-                .process_batch_cancel(cmd, account_id);
+                .process_batch_cancel(&cmd, account_id);
         }
         Ok(())
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         let balances = self.get_current_account_balances();
         let ts_event = self.clock.borrow().timestamp_ns();
         self.generate_account_state(balances, vec![], false, ts_event)?;
         Ok(())
     }
 
-    fn query_order(&self, _cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
         // Orders are tracked in the cache, no external query needed for sandbox
         Ok(())
     }

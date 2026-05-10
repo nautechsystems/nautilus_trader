@@ -328,7 +328,7 @@ pub fn get_message_saving_handler<T: Clone + 'static>(id: Option<Ustr>) -> Share
 
 /// Retrieves saved messages from a handler created by `get_message_saving_handler`.
 #[must_use]
-pub fn get_saved_messages<T: Clone + 'static>(handler: ShareableMessageHandler) -> Vec<T> {
+pub fn get_saved_messages<T: Clone + 'static>(handler: &ShareableMessageHandler) -> Vec<T> {
     let handler_id = handler.0.id();
     SAVING_HANDLERS.with(|handlers| {
         let handlers = handlers.borrow();

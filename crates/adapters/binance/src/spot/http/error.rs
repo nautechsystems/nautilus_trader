@@ -20,7 +20,7 @@ use std::fmt::Display;
 use nautilus_network::http::error::HttpClientError;
 
 // Re-export unified SBE decode error
-pub use crate::common::sbe::SbeDecodeError;
+pub use crate::spot::sbe::SbeDecodeError;
 
 /// Binance Spot HTTP client error type.
 #[derive(Debug)]

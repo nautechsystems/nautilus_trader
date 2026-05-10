@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::primitives::Address;
+use nautilus_core::hex;
 
 use super::HypersyncLog;
 use crate::exchanges::parsing::core;

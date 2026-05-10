@@ -21,7 +21,7 @@ use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
     identifiers::{InstrumentId, Symbol},
-    types::{Price, Quantity},
+    types::{Price, Quantity, fixed::FIXED_PRECISION},
 };
 use rust_decimal::Decimal;
 
@@ -110,22 +110,40 @@ pub fn parse_instrument_id<S: AsRef<str>>(ticker: S) -> InstrumentId {
 
 /// Parses a decimal string into a [`Price`].
 ///
+/// Normalizes the decimal to strip trailing zeros and clamps precision to
+/// [`FIXED_PRECISION`] to prevent panics from venue values with excessive
+/// decimal places.
+///
 /// # Errors
 ///
 /// Returns an error if the string cannot be parsed into a valid price.
 pub fn parse_price(value: &str, field_name: &str) -> anyhow::Result<Price> {
-    Price::from_str(value).map_err(|e| {
+    let decimal = Decimal::from_str(value).map_err(|e| {
+        anyhow::anyhow!("Failed to parse '{field_name}' value '{value}' into Decimal: {e}")
+    })?;
+    let normalized = decimal.normalize();
+    let precision = (normalized.scale() as u8).min(FIXED_PRECISION);
+    Price::from_decimal_dp(normalized, precision).map_err(|e| {
         anyhow::anyhow!("Failed to parse '{field_name}' value '{value}' into Price: {e}")
     })
 }
 
 /// Parses a decimal string into a [`Quantity`].
 ///
+/// Normalizes the decimal to strip trailing zeros and clamps precision to
+/// [`FIXED_PRECISION`] to prevent panics from venue values with excessive
+/// decimal places.
+///
 /// # Errors
 ///
 /// Returns an error if the string cannot be parsed into a valid quantity.
 pub fn parse_quantity(value: &str, field_name: &str) -> anyhow::Result<Quantity> {
-    Quantity::from_str(value).map_err(|e| {
+    let decimal = Decimal::from_str(value).map_err(|e| {
+        anyhow::anyhow!("Failed to parse '{field_name}' value '{value}' into Decimal: {e}")
+    })?;
+    let normalized = decimal.normalize();
+    let precision = (normalized.scale() as u8).min(FIXED_PRECISION);
+    Quantity::from_decimal_dp(normalized, precision).map_err(|e| {
         anyhow::anyhow!("Failed to parse '{field_name}' value '{value}' into Quantity: {e}")
     })
 }
@@ -229,9 +247,37 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_price_normalizes_trailing_zeros() {
+        let price = parse_price("0.0100", "test_price").unwrap();
+        assert_eq!(price.precision, 2);
+        assert_eq!(price.to_string(), "0.01");
+    }
+
+    #[rstest]
+    fn test_parse_price_clamps_precision_to_fixed_max() {
+        // 18 decimal places exceeds FIXED_PRECISION (16 with high-precision)
+        let price = parse_price("0.000000000000000001", "test_price").unwrap();
+        assert!(price.precision <= FIXED_PRECISION);
+    }
+
+    #[rstest]
+    fn test_parse_price_high_precision_no_panic() {
+        // 20 decimal places should not panic, just clamp
+        let result = parse_price("0.00000000000000000001", "test_price");
+        assert!(result.is_ok());
+        assert!(result.unwrap().precision <= FIXED_PRECISION);
+    }
+
+    #[rstest]
     fn test_parse_quantity() {
         let qty = parse_quantity("1.5", "test_qty").unwrap();
         assert_eq!(qty.to_string(), "1.5");
+    }
+
+    #[rstest]
+    fn test_parse_quantity_clamps_precision_to_fixed_max() {
+        let qty = parse_quantity("0.000000000000000001", "test_qty").unwrap();
+        assert!(qty.precision <= FIXED_PRECISION);
     }
 
     #[rstest]

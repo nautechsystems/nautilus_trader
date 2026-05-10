@@ -37,7 +37,7 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class Position:
     cdef list _events
     cdef list _adjustments
-    cdef list _trade_ids
+    cdef set _trade_ids
     cdef Quantity _buy_qty
     cdef Quantity _sell_qty
     cdef dict _commissions

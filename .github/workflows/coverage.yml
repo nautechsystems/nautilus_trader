@@ -4,13 +4,19 @@ permissions: # Principle of least privilege
   contents: read
   actions: read
 
+# Paused: coverage runs were consuming runner resources without producing useful output
+# (test step commented due to OOM/shutdown signal on the runner). Re-enable the `push`
+# trigger once scripts/test-coverage.sh is stable.
 on:
-  push:
-    branches: [nightly]
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, self-hosted-linux-x86]
+    env:
+      # Outside the workspace so it survives actions/checkout's git clean -ffdx,
+      # giving us persistent on-disk Rust artifact reuse between runs.
+      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/coverage
     # yamllint disable rule:line-length
     services:
       redis:
@@ -30,13 +36,16 @@ jobs:
           POSTGRES_DB: nautilus
         ports:
           - 5432:5432
-        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries 5
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -48,6 +57,10 @@ jobs:
         uses: ./.github/actions/common-setup
         with:
           python-version: "3.12"
+          # free-disk-space auto-skips on the nautilus-ci-runner-* pool.
+          free-disk-space: "true"
+          # Persistent CARGO_TARGET_DIR replaces Swatinem/rust-cache here.
+          rust-cache-enabled: "false"
 
       - name: Install Nautilus CLI
         env:

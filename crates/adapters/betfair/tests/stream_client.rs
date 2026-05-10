@@ -141,7 +141,6 @@ async fn test_subscribe_markets_sends_subscription() {
         .await;
 
         read_line(&mut reader).await; // auth (from connect)
-        read_line(&mut reader).await; // auth (from subscribe combined write)
         read_line(&mut reader).await // market subscription
     });
 
@@ -182,7 +181,6 @@ async fn test_subscribe_orders_sends_subscription() {
         .await;
 
         read_line(&mut reader).await; // auth (from connect)
-        read_line(&mut reader).await; // auth (from subscribe combined write)
         read_line(&mut reader).await // order subscription
     });
 
@@ -284,7 +282,6 @@ async fn test_reconnect_resends_auth_and_subscription_with_clk() {
         .await;
 
         read_line(&mut reader).await; // auth (from connect)
-        read_line(&mut reader).await; // auth (from subscribe combined write)
         read_line(&mut reader).await; // market subscription
 
         write_line(
@@ -442,6 +439,7 @@ async fn test_subscribe_after_close_returns_error() {
                     r#"{"op":"connection","connectionId":"sc-err"}"#,
                 )
                 .await;
+
                 loop {
                     let line = read_line(&mut reader).await;
                     if line.is_empty() {
@@ -501,9 +499,7 @@ async fn test_reconnect_replays_both_subscriptions() {
 
         write_line(&mut write_half, r#"{"op":"connection","connectionId":"f"}"#).await;
         read_line(&mut reader).await; // auth (from connect)
-        read_line(&mut reader).await; // auth (from subscribe_markets combined)
         read_line(&mut reader).await; // market sub
-        read_line(&mut reader).await; // auth (from subscribe_orders combined)
         read_line(&mut reader).await; // order sub
 
         write_line(&mut write_half, r#"{"op":"mcm","pt":1000,"clk":"ckX"}"#).await;
@@ -518,15 +514,14 @@ async fn test_reconnect_replays_both_subscriptions() {
         drop(write_half);
         drop(reader);
 
-        // Second connection — post_reconnection sends auth+market_sub and auth+order_sub
-        // (2 combined writes = 4 lines total)
+        // Second connection, post_reconnection sends auth, then each subscription
         let (socket, _) = listener.accept().await.unwrap();
         let (read_half, mut write_half) = socket.into_split();
         let mut reader = BufReader::new(read_half);
 
         write_line(&mut write_half, r#"{"op":"connection","connectionId":"s"}"#).await;
 
-        for _ in 0..4 {
+        for _ in 0..3 {
             let msg = read_line(&mut reader).await;
             if msg.is_empty() {
                 break;
@@ -577,6 +572,230 @@ async fn test_reconnect_replays_both_subscriptions() {
     assert!(ops.contains(&"authentication".to_string()));
     assert!(ops.contains(&"marketSubscription".to_string()));
     assert!(ops.contains(&"orderSubscription".to_string()));
+
+    client.close().await;
+}
+
+/// After calling `update_auth`, the next reconnection uses the refreshed session token.
+#[rstest]
+#[tokio::test]
+async fn test_reconnect_uses_updated_auth_token() {
+    let (port, listener) = bind().await;
+
+    let reconnected = Arc::new(AtomicBool::new(false));
+    let reconnect_session = Arc::new(tokio::sync::Mutex::new(String::new()));
+    let mcm_received = Arc::new(AtomicBool::new(false));
+
+    let reconnected2 = Arc::clone(&reconnected);
+    let reconnect_session2 = Arc::clone(&reconnect_session);
+    let mcm_received_server = Arc::clone(&mcm_received);
+    let mcm_received_handler = Arc::clone(&mcm_received);
+
+    let server = tokio::spawn(async move {
+        // First connection
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"first"}"#,
+        )
+        .await;
+
+        let auth_msg = read_line(&mut reader).await;
+        let auth_json: serde_json::Value = serde_json::from_str(&auth_msg).unwrap();
+        assert_eq!(auth_json["session"], "old-token");
+
+        // Send MCM so clk is stored
+        write_line(
+            &mut write_half,
+            r#"{"op":"mcm","pt":1000,"clk":"clk1","mc":[{"id":"1.111"}]}"#,
+        )
+        .await;
+
+        wait_until_async(
+            || {
+                let r = Arc::clone(&mcm_received_server);
+                async move { r.load(Ordering::Relaxed) }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        // Drop to trigger reconnect
+        drop(write_half);
+        drop(reader);
+
+        // Second connection, should use refreshed token
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"second"}"#,
+        )
+        .await;
+
+        let auth_msg = read_line(&mut reader).await;
+        let auth_json: serde_json::Value = serde_json::from_str(&auth_msg).unwrap();
+        *reconnect_session2.lock().await = auth_json["session"].as_str().unwrap_or("").to_string();
+
+        reconnected2.store(true, Ordering::Relaxed);
+        drop(write_half);
+    });
+
+    let cred = test_credential();
+    let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
+        if data.windows(b"clk1".len()).any(|w| w == b"clk1") {
+            mcm_received_handler.store(true, Ordering::Relaxed);
+        }
+    });
+    let config = BetfairStreamConfig {
+        reconnect_delay_initial_ms: 100,
+        reconnect_delay_max_ms: 500,
+        ..plain_config(port)
+    };
+
+    let client = BetfairStreamClient::connect(&cred, "old-token".to_string(), handler, config)
+        .await
+        .unwrap();
+
+    client
+        .subscribe_markets(Default::default(), Default::default(), None, None)
+        .await
+        .unwrap();
+
+    // Push a refreshed token before the reconnect happens
+    wait_until_async(
+        || {
+            let r = Arc::clone(&mcm_received);
+            async move { r.load(Ordering::Relaxed) }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    client.update_auth("test-app-key", "refreshed-token".to_string());
+
+    server.await.unwrap();
+
+    wait_until_async(
+        || {
+            let r = Arc::clone(&reconnected);
+            async move { r.load(Ordering::Relaxed) }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let session = reconnect_session.lock().await;
+    assert_eq!(
+        *session, "refreshed-token",
+        "reconnect should use the token pushed via update_auth"
+    );
+
+    client.close().await;
+}
+
+/// After calling `update_auth` on the race stream client, reconnection uses the
+/// refreshed session token.
+#[rstest]
+#[tokio::test]
+async fn test_race_stream_reconnect_uses_updated_auth_token() {
+    use nautilus_betfair::stream::client::BetfairRaceStreamClient;
+
+    let (port, listener) = bind().await;
+
+    let reconnected = Arc::new(AtomicBool::new(false));
+    let reconnect_session = Arc::new(tokio::sync::Mutex::new(String::new()));
+
+    let reconnected2 = Arc::clone(&reconnected);
+    let reconnect_session2 = Arc::clone(&reconnect_session);
+
+    let (race_fatal_tx, _race_fatal_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    let server = tokio::spawn(async move {
+        // First connection
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"race-1"}"#,
+        )
+        .await;
+
+        // Read auth + raceSubscription (may arrive as one or two lines)
+        let _first = read_line(&mut reader).await;
+
+        // Brief pause then drop to trigger reconnect
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        drop(write_half);
+        drop(reader);
+
+        // Second connection
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"race-2"}"#,
+        )
+        .await;
+
+        // Read reconnect auth
+        let msg = read_line(&mut reader).await;
+        // post_reconnection sends auth + sub in one combined write; parse the auth portion
+        if let Ok(auth_json) = serde_json::from_str::<serde_json::Value>(&msg) {
+            *reconnect_session2.lock().await =
+                auth_json["session"].as_str().unwrap_or("").to_string();
+        }
+
+        reconnected2.store(true, Ordering::Relaxed);
+        drop(write_half);
+    });
+
+    let cred = test_credential();
+    let handler: TcpMessageHandler = Arc::new(|_| {});
+    let config = BetfairStreamConfig {
+        reconnect_delay_initial_ms: 100,
+        reconnect_delay_max_ms: 500,
+        ..plain_config(port)
+    };
+
+    let client = BetfairRaceStreamClient::connect(
+        &cred,
+        "old-race-token".to_string(),
+        handler,
+        config,
+        race_fatal_tx,
+    )
+    .await
+    .unwrap();
+
+    // Push refreshed token
+    client.update_auth("test-app-key", "new-race-token".to_string());
+
+    server.await.unwrap();
+
+    wait_until_async(
+        || {
+            let r = Arc::clone(&reconnected);
+            async move { r.load(Ordering::Relaxed) }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let session = reconnect_session.lock().await;
+    assert_eq!(
+        *session, "new-race-token",
+        "race stream reconnect should use the token pushed via update_auth"
+    );
 
     client.close().await;
 }

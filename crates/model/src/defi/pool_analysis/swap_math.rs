@@ -31,7 +31,7 @@ pub struct SwapStepResult {
     pub fee_amount: U256,
 }
 
-pub const MAX_FEE: U256 = U256::from_limbs([1000000, 0, 0, 0]);
+pub const MAX_FEE: U256 = U256::from_limbs([1_000_000, 0, 0, 0]);
 
 /// Computes the result of swapping some amount in, or amount out, given the parameters of the swap.
 ///
@@ -333,7 +333,7 @@ mod tests {
         let result = compute_swap_step(
             U160::from_str("417332158212080721273783715441582").unwrap(),
             U160::from_str("1452870262520218020823638996").unwrap(),
-            159344665391607089467575320103,
+            159_344_665_391_607_089_467_575_320_103,
             I256::from_str("-1").unwrap(),
             1,
         )
@@ -353,7 +353,7 @@ mod tests {
         let result = compute_swap_step(
             U160::from_str("2413").unwrap(),
             U160::from_str("79887613182836312").unwrap(),
-            1985041575832132834610021537970,
+            1_985_041_575_832_132_834_610_021_537_970,
             I256::from_str("10").unwrap(),
             1872,
         )

@@ -1,7 +1,7 @@
 # Roadmap
 
 This document outlines the key priorities and upcoming goals for **NautilusTrader**,
-charting its path as a cutting-edge platform for high-performance algorithmic trading.
+charting its path as a production-grade, Rust-native trading engine.
 
 Given the dynamic nature of the project, priorities may evolve to keep pace with the fast-moving development cycle.
 For real-time updates and detailed task tracking, refer to the [NautilusTrader Kanban board](https://github.com/orgs/nautechsystems/projects/3).
@@ -12,8 +12,9 @@ For more details, see the [CONTRIBUTING.md](/CONTRIBUTING.md).
 
 ## Vision
 
-To establish NautilusTrader as the standard platform for quantitative algorithmic trading, combining
-performance, reliability, usability, and comprehensive documentation for traders and developers alike.
+To establish NautilusTrader as the default open trading engine for quantitative algorithmic
+trading, combining production-grade architecture, reliability, and documentation for traders
+and developers alike.
 
 ## Priorities
 
@@ -93,12 +94,16 @@ If the RFC is approved, a contributor may proceed with a PR.
 Integrations must adhere closely to existing Rust-based adapter implementation patterns to ensure consistency and maintainability.
 Even then, inclusion in the official distribution depends on long-term sustainability and available resources.
 
+For adapter classification, community listings, and support boundaries, see
+[ADAPTERS.md](ADAPTERS.md). For naming rules and disclaimer requirements for
+independent projects, see [TRADEMARK.md](TRADEMARK.md).
+
 ## Long-term commitment
 
 NautilusTrader is an open-core project. All core trading engine
 features land in the public repository first, and we are committed to
 continually widening the feature set and improving documentation so that the
-community can rely on a modern, high-performance, battle-tested platform.
+community can rely on a modern, production-grade, battle-tested trading engine.
 
 Feedback and contributions from users directly influence the roadmap; as
 real-world requirements evolve, we will steadily raise the ceiling of what can

@@ -1,0 +1,20 @@
+{
+  "fixture": {
+    "name": "outbound_account_position_event_2",
+    "category": "user_data",
+    "docs_url": "https://developers.binance.com/docs/binance-spot-api-docs/user-data-stream",
+    "parser_functions": [
+      "nautilus_binance::spot::websocket::trading::decode_sbe::decode_account_position"
+    ],
+    "payload_path": "outbound_account_position_event_2.sbe",
+    "metadata_path": "outbound_account_position_event_2.metadata.json",
+    "bytes": 96,
+    "sbe_header": {
+      "block_length": 18,
+      "template_id": 607,
+      "schema_id": 3,
+      "version": 2
+    }
+  },
+  "captured_at": "2026-01-01T00:00:00+00:00"
+}

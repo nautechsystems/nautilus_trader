@@ -248,6 +248,8 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     sizeIncrement: Decimal = UNSET_DECIMAL
     suggestedSizeIncrement: Decimal = UNSET_DECIMAL
     minAlgoSize: Decimal = UNSET_DECIMAL
+    lastPricePrecision: Decimal = UNSET_DECIMAL
+    lastSizePrecision: Decimal = UNSET_DECIMAL
 
     # BOND values
     cusip: str = ""
@@ -294,8 +296,8 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     @classmethod
     def from_contract_details(cls, contract_details) -> "IBContractDetails":
         """
-        Create from a raw ibapi ContractDetails, normalizing ibapi 10.43 protobuf
-        issues.
+        Create from a raw ibapi ContractDetails, normalizing known ibapi quirks and
+        tolerating additive upstream fields.
 
         ibapi 10.43's protobuf decoder (decoder.py:decodeContractDetails) has a typo:
         it writes ``contractDetails.underConid`` (lowercase 'i') instead of the
@@ -309,7 +311,8 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
 
         """
         if not isinstance(contract_details.contract, IBContract):
-            contract_details.contract = IBContract(**contract_details.contract.__dict__)
+            contract_dict = contract_details.contract.__dict__.copy()
+            contract_details.contract = IBContract(**contract_dict)
 
         d = contract_details.__dict__.copy()
         if "underConid" in d:
@@ -317,6 +320,8 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
                 d["underConId"] = d.pop("underConid")
             else:
                 d.pop("underConid")
+        valid_fields = {field.name for field in msgspec.structs.fields(cls)}
+        d = {key: value for key, value in d.items() if key in valid_fields}
         return cls(**d)
 
 
@@ -334,7 +339,15 @@ def dict_to_contract_details(dict_details: dict) -> IBContractDetails:
 
     # Deserialize Decimal fields from strings back to Decimal objects
     # These fields are known to be Decimal type in IBContractDetails
-    decimal_fields = ["minSize", "sizeIncrement", "suggestedSizeIncrement", "minAlgoSize"]
+    decimal_fields = [
+        "minSize",
+        "sizeIncrement",
+        "suggestedSizeIncrement",
+        "minAlgoSize",
+        "lastPricePrecision",
+        "lastSizePrecision",
+    ]
+
     for field in decimal_fields:
         if field in details_copy and isinstance(details_copy[field], str):
             try:
@@ -362,6 +375,9 @@ def dict_to_contract_details(dict_details: dict) -> IBContractDetails:
             FundAssetType,
             details_copy["fundAssetType"],
         )
+
+    valid_fields = {field.name for field in msgspec.structs.fields(IBContractDetails)}
+    details_copy = {key: value for key, value in details_copy.items() if key in valid_fields}
 
     return IBContractDetails(**details_copy)
 

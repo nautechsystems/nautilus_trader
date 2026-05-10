@@ -44,6 +44,10 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct TrailingStopLimitOrder {
     core: OrderCore,
     pub activation_price: Option<Price>,
@@ -71,7 +75,7 @@ impl TrailingStopLimitOrder {
     /// - The `quantity` is not positive.
     /// - The `display_qty` (when provided) exceeds `quantity`.
     /// - The `time_in_force` is `GTD` **and** `expire_time` is `None` or zero.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new_checked(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -103,7 +107,7 @@ impl TrailingStopLimitOrder {
         tags: Option<Vec<Ustr>>,
         init_id: UUID4,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, OrderError> {
         check_positive_quantity(quantity, stringify!(quantity))?;
         check_display_qty(display_qty, quantity)?;
         check_time_in_force(time_in_force, expire_time)?;
@@ -168,7 +172,8 @@ impl TrailingStopLimitOrder {
     /// # Panics
     ///
     /// Panics if any order validation fails (see [`TrailingStopLimitOrder::new_checked`]).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -233,9 +238,10 @@ impl TrailingStopLimitOrder {
             init_id,
             ts_init,
         )
-        .expect(FAILED)
+        .unwrap_or_else(|e| panic!("{FAILED}: {e}"))
     }
 
+    #[must_use]
     pub fn has_activation_price(&self) -> bool {
         self.activation_price.is_some()
     }
@@ -243,6 +249,12 @@ impl TrailingStopLimitOrder {
     pub fn set_activated(&mut self) {
         debug_assert!(!self.is_activated, "double activation");
         self.is_activated = true;
+    }
+}
+
+impl PartialEq for TrailingStopLimitOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.client_order_id == other.client_order_id
     }
 }
 
@@ -480,10 +492,6 @@ impl Order for TrailingStopLimitOrder {
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
-        if let OrderEventAny::Updated(ref event) = event {
-            self.update(event);
-        }
-
         let is_order_filled = matches!(event, OrderEventAny::Filled(_));
         let is_order_triggered = matches!(event, OrderEventAny::Triggered(_));
         let ts_event = if is_order_triggered {
@@ -492,7 +500,11 @@ impl Order for TrailingStopLimitOrder {
             None
         };
 
-        self.core.apply(event)?;
+        self.core.apply(event.clone())?;
+
+        if let OrderEventAny::Updated(ref event) = event {
+            self.update(event);
+        }
 
         if is_order_triggered {
             self.is_triggered = true;
@@ -633,7 +645,7 @@ mod tests {
     use super::*;
     use crate::{
         enums::{TimeInForce, TrailingOffsetType, TriggerType},
-        events::order::initialized::OrderInitializedBuilder,
+        events::order::spec::OrderInitializedSpec,
         identifiers::InstrumentId,
         instruments::{CurrencyPair, stubs::*},
         orders::{OrderTestBuilder, stubs::TestOrderStubs},
@@ -641,10 +653,10 @@ mod tests {
     };
 
     #[rstest]
-    fn test_initialize(_audusd_sim: CurrencyPair) {
+    fn test_initialize(audusd_sim: CurrencyPair) {
         // Create and accept a basic trailing stop limit order
         let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
-            .instrument_id(_audusd_sim.id)
+            .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
             .price(Price::from("0.67500"))
             .limit_offset(dec!(5))
@@ -665,9 +677,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_display(_audusd_sim: CurrencyPair) {
+    fn test_display(audusd_sim: CurrencyPair) {
         let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
-            .instrument_id(_audusd_sim.id)
+            .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
             .price(Price::from("0.67500"))
             .trigger_price(Price::from("0.68000"))
@@ -687,7 +699,7 @@ mod tests {
     #[rstest]
     #[should_panic(expected = "Condition failed: `display_qty` may not exceed `quantity`")]
     fn test_display_qty_gt_quantity_err(audusd_sim: CurrencyPair) {
-        OrderTestBuilder::new(OrderType::TrailingStopLimit)
+        let _ = OrderTestBuilder::new(OrderType::TrailingStopLimit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
             .price(Price::from("0.67500"))
@@ -706,7 +718,7 @@ mod tests {
         expected = "Condition failed: invalid `Quantity` for 'quantity' not positive, was 0"
     )]
     fn test_quantity_zero_err(audusd_sim: CurrencyPair) {
-        OrderTestBuilder::new(OrderType::TrailingStopLimit)
+        let _ = OrderTestBuilder::new(OrderType::TrailingStopLimit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
             .price(Price::from("0.67500"))
@@ -722,7 +734,7 @@ mod tests {
     #[rstest]
     #[should_panic(expected = "Condition failed: `expire_time` is required for `GTD` order")]
     fn test_gtd_without_expire_err(audusd_sim: CurrencyPair) {
-        OrderTestBuilder::new(OrderType::TrailingStopLimit)
+        let _ = OrderTestBuilder::new(OrderType::TrailingStopLimit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
             .price(Price::from("0.67500"))
@@ -786,16 +798,15 @@ mod tests {
 
     #[rstest]
     fn test_trailing_stop_limit_order_from_order_initialized() {
-        let order_initialized = OrderInitializedBuilder::default()
+        let order_initialized = OrderInitializedSpec::builder()
             .order_type(OrderType::TrailingStopLimit)
-            .price(Some(Price::new(100.0, 2)))
-            .trigger_price(Some(Price::new(95.0, 2)))
-            .trigger_type(Some(TriggerType::Default))
-            .limit_offset(Some(dec!(2.0)))
-            .trailing_offset(Some(dec!(1.0)))
-            .trailing_offset_type(Some(TrailingOffsetType::Price))
-            .build()
-            .unwrap();
+            .price(Price::new(100.0, 2))
+            .trigger_price(Price::new(95.0, 2))
+            .trigger_type(TriggerType::Default)
+            .limit_offset(dec!(2.0))
+            .trailing_offset(dec!(1.0))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .build();
 
         let order: TrailingStopLimitOrder = order_initialized.clone().into();
 

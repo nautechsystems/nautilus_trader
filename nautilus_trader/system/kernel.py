@@ -46,7 +46,7 @@ from nautilus_trader.common.component import register_component_clock
 from nautilus_trader.common.component import set_backtest_force_stop
 from nautilus_trader.common.component import set_logging_pyo3
 from nautilus_trader.common.config import InvalidConfiguration
-from nautilus_trader.common.config import msgspec_encoding_hook
+from nautilus_trader.common.config import pyo3_config_json
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
@@ -76,7 +76,7 @@ from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog import BaseDataCatalog
 from nautilus_trader.persistence.writer import StreamingFeatherWriter
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -291,7 +291,7 @@ class NautilusKernel:
             self._msgbus_db = nautilus_pyo3.RedisMessageBusDatabase(
                 trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
                 instance_id=nautilus_pyo3.UUID4.from_str(self._instance_id.value),
-                config_json=msgspec.json.encode(config.message_bus, enc_hook=msgspec_encoding_hook),
+                config_json=pyo3_config_json(config.message_bus),
             )
         else:
             raise ValueError(
@@ -505,17 +505,13 @@ class NautilusKernel:
             self._setup_streaming(config=config.streaming)
 
         # Set up data catalog
-        self._catalogs: dict[str, ParquetDataCatalog] = {}
+        self._catalogs: dict[str, BaseDataCatalog] = {}
 
         if config.catalogs:
             catalog_name_index = 0
+
             for catalog_config in config.catalogs:
-                catalog = ParquetDataCatalog(
-                    path=catalog_config.path,
-                    fs_protocol=catalog_config.fs_protocol,
-                    fs_storage_options=catalog_config.fs_storage_options,
-                    fs_rust_storage_options=catalog_config.fs_rust_storage_options,
-                )
+                catalog = catalog_config.as_catalog()
                 used_catalog_name = catalog_config.name
 
                 if used_catalog_name is None:
@@ -627,14 +623,16 @@ class NautilusKernel:
 
         self._log.info(f"Received {command!r}, shutting down...", LogColor.BLUE)
 
+        # Set FORCE_STOP before teardown so the backtest loop bails out even
+        # if stop() / stop_async() raises partway through
+        if self._environment == Environment.BACKTEST:
+            set_backtest_force_stop(True)
+            self._log.debug("Set backtest FORCE_STOP")
+
         if self._loop:
             self._loop.create_task(self.stop_async())
         else:
             self.stop()
-
-        if self._environment == Environment.BACKTEST:
-            set_backtest_force_stop(True)
-            self._log.debug("Set backtest FORCE_STOP")
 
     @property
     def environment(self) -> Environment:
@@ -949,13 +947,13 @@ class NautilusKernel:
         return self._writer
 
     @property
-    def catalogs(self) -> dict[str, ParquetDataCatalog]:
+    def catalogs(self) -> dict[str, BaseDataCatalog]:
         """
         Return the kernel's list of data catalogs.
 
         Returns
         -------
-        dict[str, ParquetDataCatalog]
+        dict[str, BaseDataCatalog]
 
         """
         return self._catalogs
@@ -1129,14 +1127,14 @@ class NautilusKernel:
         if not self.exec_engine.is_disposed:
             self.exec_engine.dispose()
 
-        self._cache.dispose()
-        self._msgbus.dispose()
-
         if not self.trader.is_disposed:
             self.trader.dispose()
 
         if self._writer:
             self._writer.close()
+
+        self._cache.dispose()
+        self._msgbus.dispose()
 
     def cancel_all_tasks(self) -> None:  # noqa: C901 (too complex)
         """
@@ -1398,6 +1396,7 @@ class NautilusKernel:
     async def _check_engines_disconnected(self) -> bool:
         seconds = self._config.timeout_disconnection
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
+
         while True:
             await asyncio.sleep(0)
 
@@ -1420,6 +1419,7 @@ class NautilusKernel:
         # Thus any delay here will be due to blocking network I/O.
         seconds = self._config.timeout_portfolio
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
+
         while True:
             await asyncio.sleep(0)
 

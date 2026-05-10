@@ -74,7 +74,6 @@ config_node = TradingNodeConfig(
         use_pyo3=True,
     ),
     exec_engine=LiveExecEngineConfig(
-        convert_quote_qty_to_base=False,  # Required for submitting market BUY orders
         reconciliation=True,
         reconciliation_instrument_ids=[instrument_id],  # Only reconcile these instruments
         open_check_interval_secs=5.0,
@@ -115,21 +114,13 @@ config_node = TradingNodeConfig(
     # ),
     data_clients={
         POLYMARKET: PolymarketDataClientConfig(
-            api_key=None,  # 'POLYMARKET_API_KEY' env var
-            api_secret=None,  # 'POLYMARKET_API_SECRET' env var
-            passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
-            # signature_type=2,  # Use if trading via Polymarket Proxy (enables UI verification, requires funder address)
-            base_url_http=None,  # Override with custom endpoint
+            signature_type=2,  # Browser wallet proxy (Polymarket UI); requires funder address
             instrument_config=instrument_provider_config,
         ),
     },
     exec_clients={
         POLYMARKET: PolymarketExecClientConfig(
-            api_key=None,  # 'POLYMARKET_API_KEY' env var
-            api_secret=None,  # 'POLYMARKET_API_SECRET' env var
-            passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
-            # signature_type=2,  # Use if trading via Polymarket Proxy (enables UI verification, requires funder address)
-            base_url_http=None,  # Override with custom endpoint
+            signature_type=2,  # Browser wallet proxy (Polymarket UI); requires funder address
             instrument_config=instrument_provider_config,
             generate_order_history_from_trades=False,
         ),
@@ -157,7 +148,7 @@ config_tester = ExecTesterConfig(
     order_qty=order_qty,
     # open_position_on_start_qty=order_qty,
     # use_quote_quantity=True,  # Required for submitting market BUY orders
-    use_post_only=False,  # Polymarket does not support post-only orders
+    use_post_only=True,
     # test_reject_post_only=True,
     reduce_only_on_stop=False,  # Polymarket does not support reduce-only orders
     cancel_orders_on_stop=True,

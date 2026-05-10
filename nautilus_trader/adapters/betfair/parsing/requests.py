@@ -345,6 +345,7 @@ def order_list_to_place_order_params(
     Convert a SubmitOrderList command into a batch PlaceOrders request.
     """
     instructions = []
+
     for order in command.order_list.orders:
         submit = SubmitOrder(
             trader_id=command.trader_id,
@@ -516,6 +517,7 @@ def bet_to_order_status_report(
         use_cached = False
 
     order_status = determine_order_status(order)
+
     if (
         use_cached
         and fill_qty > Quantity.zero(BETFAIR_QUANTITY_PRECISION)

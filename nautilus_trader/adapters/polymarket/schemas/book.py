@@ -13,13 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import uuid
-
 import msgspec
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
+from nautilus_trader.adapters.polymarket.common.parsing import determine_trade_id
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
@@ -30,7 +29,6 @@ from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import RecordFlag
-from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments import BinaryOption
 
 
@@ -60,11 +58,17 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
         if bids_len == 0 and asks_len == 0:
             return None
 
+        # Downstream consumers (data engine, wranglers) rely on F_SNAPSHOT to
+        # distinguish the opening CLEAR + ADDs of a snapshot rebuild from an
+        # incremental book reset. Flag every snapshot delta; the last also
+        # gets F_LAST to close the batch.
         deltas: list[OrderBookDelta] = []
 
-        # Add initial clear
-        clear = OrderBookDelta.clear(
+        clear = OrderBookDelta(
             instrument_id=instrument.id,
+            action=BookAction.CLEAR,
+            order=None,
+            flags=RecordFlag.F_SNAPSHOT,
             sequence=0,  # N/A
             ts_event=ts_event,
             ts_init=ts_init,
@@ -72,11 +76,9 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
         deltas.append(clear)
 
         for idx, bid in enumerate(self.bids):
-            flags = 0
+            flags = RecordFlag.F_SNAPSHOT
             if idx == bids_len - 1 and asks_len == 0:
-                # F_LAST, 1 << 7
-                # Last message in the book event or packet from the venue for a given `instrument_id`
-                flags = RecordFlag.F_LAST
+                flags |= RecordFlag.F_LAST
 
             order = BookOrder(
                 side=OrderSide.BUY,
@@ -96,11 +98,9 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
             deltas.append(delta)
 
         for idx, ask in enumerate(self.asks):
-            flags = 0
+            flags = RecordFlag.F_SNAPSHOT
             if idx == asks_len - 1:
-                # F_LAST, 1 << 7
-                # Last message in the book event or packet from the venue for a given `instrument_id`
-                flags = RecordFlag.F_LAST
+                flags |= RecordFlag.F_LAST
 
             order = BookOrder(
                 side=OrderSide.SELL,
@@ -175,8 +175,8 @@ class PolymarketQuote(msgspec.Struct, frozen=True):
     side: PolymarketOrderSide
     size: str
     hash: str
-    best_bid: str
-    best_ask: str
+    best_bid: str | None = None
+    best_ask: str | None = None
 
 
 class PolymarketQuotes(msgspec.Struct, tag="price_change", tag_field="event_type", frozen=True):
@@ -189,21 +189,25 @@ class PolymarketQuotes(msgspec.Struct, tag="price_change", tag_field="event_type
         instrument: BinaryOption,
         ts_init: int,
     ) -> OrderBookDeltas:
+        ts_event = millis_to_nanos(float(self.timestamp))
+        count = len(self.price_changes)
         deltas: list[OrderBookDelta] = []
-        for change in self.price_changes:
+
+        for idx, change in enumerate(self.price_changes):
             order = BookOrder(
                 side=OrderSide.BUY if change.side == PolymarketOrderSide.BUY else OrderSide.SELL,
                 price=instrument.make_price(float(change.price)),
                 size=instrument.make_qty(float(change.size)),
                 order_id=0,  # N/A for L2 books
             )
+            flags = RecordFlag.F_LAST if idx == count - 1 else 0
             delta = OrderBookDelta(
                 instrument_id=instrument.id,
                 action=BookAction.UPDATE if order.size > 0 else BookAction.DELETE,
                 order=order,
-                flags=RecordFlag.F_LAST,
+                flags=flags,
                 sequence=0,  # N/A
-                ts_event=millis_to_nanos(float(self.timestamp)),
+                ts_event=ts_event,
                 ts_init=ts_init,
             )
             deltas.append(delta)
@@ -216,25 +220,44 @@ class PolymarketQuotes(msgspec.Struct, tag="price_change", tag_field="event_type
         last_quote: QuoteTick,
         ts_init: int,
     ) -> list[QuoteTick]:
+        # `change.price` is the level that changed, not the new top. The payload
+        # carries the authoritative post-change top in `best_bid`/`best_ask` and
+        # only reports size at the changed level, so carry the top size from
+        # `last_quote` unless the changed level is itself the new top.
+        ts_event = millis_to_nanos(float(self.timestamp))
         quotes: list[QuoteTick] = []
+
         for change in self.price_changes:
+            if change.best_bid is None or change.best_ask is None:
+                continue
+            try:
+                bid_price_f = float(change.best_bid)
+                ask_price_f = float(change.best_ask)
+            except ValueError:
+                continue
+
+            if bid_price_f <= 0.0 or ask_price_f <= 0.0 or bid_price_f >= ask_price_f:
+                continue
+
+            bid_price = instrument.make_price(bid_price_f)
+            ask_price = instrument.make_price(ask_price_f)
+            changed_price = instrument.make_price(float(change.price))
+            changed_size = instrument.make_qty(float(change.size))
+
             if change.side == PolymarketOrderSide.BUY:
-                ask_price = last_quote.ask_price
+                bid_size = changed_size if changed_price == bid_price else last_quote.bid_size
                 ask_size = last_quote.ask_size
-                bid_price = instrument.make_price(float(change.price))
-                bid_size = instrument.make_qty(float(change.size))
-            else:  # SELL
-                ask_price = instrument.make_price(float(change.price))
-                ask_size = instrument.make_qty(float(change.size))
-                bid_price = last_quote.bid_price
+            else:
+                ask_size = changed_size if changed_price == ask_price else last_quote.ask_size
                 bid_size = last_quote.bid_size
+
             quote = QuoteTick(
                 instrument_id=instrument.id,
                 bid_price=bid_price,
                 ask_price=ask_price,
                 bid_size=bid_size,
                 ask_size=ask_size,
-                ts_event=millis_to_nanos(float(self.timestamp)),
+                ts_event=ts_event,
                 ts_init=ts_init,
             )
             quotes.append(quote)
@@ -260,12 +283,20 @@ class PolymarketTrade(msgspec.Struct, tag="last_trade_price", tag_field="event_t
         aggressor_side = (
             AggressorSide.BUYER if self.side == PolymarketOrderSide.BUY else AggressorSide.SELLER
         )
+        trade_id = determine_trade_id(
+            asset_id=self.asset_id,
+            side=self.side,
+            price=self.price,
+            size=self.size,
+            timestamp=self.timestamp,
+        )
+
         return TradeTick(
             instrument_id=instrument.id,
             price=instrument.make_price(float(self.price)),
             size=instrument.make_qty(float(self.size)),
             aggressor_side=aggressor_side,
-            trade_id=TradeId(str(uuid.uuid4())),
+            trade_id=trade_id,
             ts_event=millis_to_nanos(float(self.timestamp)),
             ts_init=ts_init,
         )

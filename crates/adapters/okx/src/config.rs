@@ -16,10 +16,11 @@
 //! Configuration structures for the OKX adapter.
 
 use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 
 use crate::common::{
     credential::credential_env_vars,
-    enums::{OKXContractType, OKXInstrumentType, OKXMarginMode, OKXVipLevel},
+    enums::{OKXContractType, OKXEnvironment, OKXInstrumentType, OKXMarginMode, OKXVipLevel},
     urls::{
         get_http_base_url, get_ws_base_url_business, get_ws_base_url_private,
         get_ws_base_url_public,
@@ -27,10 +28,14 @@ use crate::common::{
 };
 
 /// Configuration for the OKX data client.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.okx", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.okx")
 )]
 pub struct OKXDataClientConfig {
     /// Optional API key for authenticated endpoints.
@@ -40,6 +45,7 @@ pub struct OKXDataClientConfig {
     /// Optional API passphrase for authenticated endpoints.
     pub api_passphrase: Option<String>,
     /// Instrument types to load and subscribe to.
+    #[builder(default = vec![OKXInstrumentType::Spot])]
     pub instrument_types: Vec<OKXInstrumentType>,
     /// Contract type filter applied to loaded instruments.
     pub contract_types: Option<Vec<OKXContractType>>,
@@ -52,51 +58,36 @@ pub struct OKXDataClientConfig {
     pub base_url_ws_public: Option<String>,
     /// Optional override for the business WebSocket URL.
     pub base_url_ws_business: Option<String>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
-    /// When true the client will use OKX demo endpoints.
-    pub is_demo: bool,
-    /// Optional HTTP timeout in seconds.
-    pub http_timeout_secs: Option<u64>,
-    /// Optional maximum retry attempts for requests.
-    pub max_retries: Option<u32>,
-    /// Optional initial retry delay in milliseconds.
-    pub retry_delay_initial_ms: Option<u64>,
-    /// Optional maximum retry delay in milliseconds.
-    pub retry_delay_max_ms: Option<u64>,
-    /// Optional interval for refreshing instruments.
-    pub update_instruments_interval_mins: Option<u64>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
+    /// The API environment (live or demo).
+    #[builder(default)]
+    pub environment: OKXEnvironment,
+    /// HTTP timeout in seconds.
+    #[builder(default = 60)]
+    pub http_timeout_secs: u64,
+    /// Maximum retry attempts for requests.
+    #[builder(default = 3)]
+    pub max_retries: u32,
+    /// Initial retry delay in milliseconds.
+    #[builder(default = 1_000)]
+    pub retry_delay_initial_ms: u64,
+    /// Maximum retry delay in milliseconds.
+    #[builder(default = 10_000)]
+    pub retry_delay_max_ms: u64,
+    /// Interval for refreshing instruments in minutes.
+    #[builder(default = 60)]
+    pub update_instruments_interval_mins: u64,
     /// Optional VIP level that unlocks additional subscriptions.
     pub vip_level: Option<OKXVipLevel>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for OKXDataClientConfig {
     fn default() -> Self {
-        Self {
-            api_key: None,
-            api_secret: None,
-            api_passphrase: None,
-            instrument_types: vec![OKXInstrumentType::Spot],
-            contract_types: None,
-            instrument_families: None,
-            base_url_http: None,
-            base_url_ws_public: None,
-            base_url_ws_business: None,
-            http_proxy_url: None,
-            ws_proxy_url: None,
-            is_demo: false,
-            http_timeout_secs: Some(60),
-            max_retries: Some(3),
-            retry_delay_initial_ms: Some(1_000),
-            retry_delay_max_ms: Some(10_000),
-            update_instruments_interval_mins: Some(60),
-            vip_level: None,
-        }
+        Self::builder().build()
     }
 }
 
@@ -125,39 +116,48 @@ impl OKXDataClientConfig {
             .unwrap_or_else(|| get_http_base_url().to_string())
     }
 
-    /// Returns the public WebSocket URL, respecting the demo flag and overrides.
+    /// Returns the public WebSocket URL, respecting the environment and overrides.
     #[must_use]
     pub fn ws_public_url(&self) -> String {
         self.base_url_ws_public
             .clone()
-            .unwrap_or_else(|| get_ws_base_url_public(self.is_demo).to_string())
+            .unwrap_or_else(|| get_ws_base_url_public(self.environment).to_string())
     }
 
-    /// Returns the business WebSocket URL, respecting the demo flag and overrides.
+    /// Returns the business WebSocket URL, respecting the environment and overrides.
     #[must_use]
     pub fn ws_business_url(&self) -> String {
         self.base_url_ws_business
             .clone()
-            .unwrap_or_else(|| get_ws_base_url_business(self.is_demo).to_string())
+            .unwrap_or_else(|| get_ws_base_url_business(self.environment).to_string())
     }
 
     /// Returns `true` when the business WebSocket should be instantiated.
+    ///
+    /// The business WebSocket carries public candle data and does not
+    /// require authentication, so it is always needed.
     #[must_use]
     pub fn requires_business_ws(&self) -> bool {
-        self.has_api_credentials()
+        true
     }
 }
 
 /// Configuration for the OKX execution client.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.okx", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.okx")
+)]
 pub struct OKXExecClientConfig {
     /// The trader ID for the client.
+    #[builder(default = TraderId::from("TRADER-001"))]
     pub trader_id: TraderId,
     /// The account ID for the client.
+    #[builder(default = AccountId::from("OKX-001"))]
     pub account_id: AccountId,
     /// Optional API key for authenticated endpoints.
     pub api_key: Option<String>,
@@ -166,6 +166,7 @@ pub struct OKXExecClientConfig {
     /// Optional API passphrase for authenticated endpoints.
     pub api_passphrase: Option<String>,
     /// Instrument types the execution client should support.
+    #[builder(default = vec![OKXInstrumentType::Spot])]
     pub instrument_types: Vec<OKXInstrumentType>,
     /// Contract type filter applied to operations.
     pub contract_types: Option<Vec<OKXContractType>>,
@@ -178,59 +179,42 @@ pub struct OKXExecClientConfig {
     pub base_url_ws_private: Option<String>,
     /// Optional override for the business WebSocket URL.
     pub base_url_ws_business: Option<String>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
-    /// When true the client will use OKX demo endpoints.
-    pub is_demo: bool,
-    /// Optional HTTP timeout in seconds.
-    pub http_timeout_secs: Option<u64>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
+    /// The API environment (live or demo).
+    #[builder(default)]
+    pub environment: OKXEnvironment,
+    /// HTTP timeout in seconds.
+    #[builder(default = 60)]
+    pub http_timeout_secs: u64,
     /// Enables consumption of the fills WebSocket channel when true.
+    #[builder(default)]
     pub use_fills_channel: bool,
     /// Enables mass-cancel support when true.
+    #[builder(default)]
     pub use_mm_mass_cancel: bool,
-    /// Optional maximum retry attempts for requests.
-    pub max_retries: Option<u32>,
-    /// Optional initial retry delay in milliseconds.
-    pub retry_delay_initial_ms: Option<u64>,
-    /// Optional maximum retry delay in milliseconds.
-    pub retry_delay_max_ms: Option<u64>,
+    /// Maximum retry attempts for requests.
+    #[builder(default = 3)]
+    pub max_retries: u32,
+    /// Initial retry delay in milliseconds.
+    #[builder(default = 1_000)]
+    pub retry_delay_initial_ms: u64,
+    /// Maximum retry delay in milliseconds.
+    #[builder(default = 10_000)]
+    pub retry_delay_max_ms: u64,
     /// Optional margin mode (CROSS or ISOLATED) for margin/derivative accounts.
     pub margin_mode: Option<OKXMarginMode>,
     /// Enables margin/leverage for SPOT trading when true.
+    #[builder(default)]
     pub use_spot_margin: bool,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for OKXExecClientConfig {
     fn default() -> Self {
-        Self {
-            trader_id: TraderId::from("TRADER-001"),
-            account_id: AccountId::from("OKX-001"),
-            api_key: None,
-            api_secret: None,
-            api_passphrase: None,
-            instrument_types: vec![OKXInstrumentType::Spot],
-            contract_types: None,
-            instrument_families: None,
-            base_url_http: None,
-            base_url_ws_private: None,
-            base_url_ws_business: None,
-            http_proxy_url: None,
-            ws_proxy_url: None,
-            is_demo: false,
-            http_timeout_secs: Some(60),
-            use_fills_channel: false,
-            use_mm_mass_cancel: false,
-            max_retries: Some(3),
-            retry_delay_initial_ms: Some(1_000),
-            retry_delay_max_ms: Some(10_000),
-            margin_mode: None,
-            use_spot_margin: false,
-        }
+        Self::builder().build()
     }
 }
 
@@ -259,19 +243,19 @@ impl OKXExecClientConfig {
             .unwrap_or_else(|| get_http_base_url().to_string())
     }
 
-    /// Returns the private WebSocket URL, respecting the demo flag and overrides.
+    /// Returns the private WebSocket URL, respecting the environment and overrides.
     #[must_use]
     pub fn ws_private_url(&self) -> String {
         self.base_url_ws_private
             .clone()
-            .unwrap_or_else(|| get_ws_base_url_private(self.is_demo).to_string())
+            .unwrap_or_else(|| get_ws_base_url_private(self.environment).to_string())
     }
 
-    /// Returns the business WebSocket URL, respecting the demo flag and overrides.
+    /// Returns the business WebSocket URL, respecting the environment and overrides.
     #[must_use]
     pub fn ws_business_url(&self) -> String {
         self.base_url_ws_business
             .clone()
-            .unwrap_or_else(|| get_ws_base_url_business(self.is_demo).to_string())
+            .unwrap_or_else(|| get_ws_base_url_business(self.environment).to_string())
     }
 }

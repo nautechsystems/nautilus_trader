@@ -185,6 +185,7 @@ class TardisDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
         await asyncio.sleep(delay_secs)
+
         if self._ws_pending_streams:
             future = asyncio.ensure_future(
                 self._ws_client.stream(
@@ -345,6 +346,7 @@ class TardisDataClient(LiveMarketDataClient):
 
         all_instruments = self._instrument_provider.get_all()
         target_instruments = []
+
         for instrument in all_instruments.values():
             if instrument.venue == request.venue:
                 target_instruments.append(instrument)

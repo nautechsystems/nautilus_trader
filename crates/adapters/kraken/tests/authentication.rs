@@ -72,12 +72,12 @@ async fn test_http_client_get_websockets_token() {
         "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(), // Base64 encoded "test_api_secret_base64"
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -113,7 +113,7 @@ async fn test_websocket_client_authenticate() {
     };
 
     let token = CancellationToken::new();
-    let client = KrakenSpotWebSocketClient::new(config, token);
+    let client = KrakenSpotWebSocketClient::new(config, token, None);
 
     // Authenticate
     let result = client.authenticate().await;
@@ -125,7 +125,7 @@ async fn test_websocket_client_authenticate() {
 async fn test_websocket_client_authenticate_without_credentials() {
     let config = KrakenDataClientConfig::default();
     let token = CancellationToken::new();
-    let client = KrakenSpotWebSocketClient::new(config, token);
+    let client = KrakenSpotWebSocketClient::new(config, token, None);
 
     // Try to authenticate without credentials
     let result = client.authenticate().await;

@@ -20,7 +20,9 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{FAILED, check_valid_string_ascii};
+use nautilus_core::correctness::{
+    CorrectnessResult, CorrectnessResultExt, FAILED, check_valid_string_ascii,
+};
 use ustr::Ustr;
 
 /// Represents a valid venue order ID (assigned by a trading venue).
@@ -30,6 +32,10 @@ use ustr::Ustr;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct VenueOrderId(Ustr);
 
 impl VenueOrderId {
@@ -38,7 +44,7 @@ impl VenueOrderId {
     /// # Errors
     ///
     /// Returns an error if `value` is not a valid string.
-    pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+    pub fn new_checked<T: AsRef<str>>(value: T) -> CorrectnessResult<Self> {
         let value = value.as_ref();
         check_valid_string_ascii(value, stringify!(value))?;
         Ok(Self(Ustr::from(value)))
@@ -50,7 +56,7 @@ impl VenueOrderId {
     ///
     /// Panics if `value` is not a valid string.
     pub fn new<T: AsRef<str>>(value: T) -> Self {
-        Self::new_checked(value).expect(FAILED)
+        Self::new_checked(value).expect_display(FAILED)
     }
 
     /// Sets the inner identifier value.
@@ -94,5 +100,11 @@ mod tests {
     fn test_string_reprs(venue_order_id: VenueOrderId) {
         assert_eq!(venue_order_id.as_str(), "001");
         assert_eq!(format!("{venue_order_id}"), "001");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Condition failed: invalid string for 'value', was empty")]
+    fn test_new_with_empty_string_panics_with_display_format() {
+        let _ = VenueOrderId::new("");
     }
 }

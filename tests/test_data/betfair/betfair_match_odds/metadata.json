@@ -1,0 +1,14 @@
+{
+  "distribution": "user-fetch",
+  "licence": "Self-recorded Betfair Exchange stream data, free to redistribute",
+  "added_at": "2026-03-17T00:00:00Z",
+  "instrument": "MATCH_ODDS 1.253378068",
+  "date": "2026-02-17",
+  "format": "Betfair ESA MCM newline-delimited JSON (gzip)",
+  "original_file": "1.253378068.gz",
+  "sha256": "0240f9cef9315f1ced5396be46f4d5f583141c6b5750572fafade1fe69e94bf6",
+  "size_bytes": 2594436,
+  "fetch_method": "Recorded via Betfair Exchange Streaming API",
+  "redistribution": "Owned by NautilusTrader, redistributable",
+  "public_mirror": false
+}

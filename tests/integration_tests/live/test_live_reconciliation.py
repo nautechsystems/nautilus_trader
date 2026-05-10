@@ -661,6 +661,7 @@ async def test_concurrent_order_reconciliation(
     """
     # Arrange - Create multiple orders
     orders = []
+
     for i in range(5):
         order = order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
@@ -795,6 +796,7 @@ async def test_targeted_query_limiting(
 
     # Create 10 orders and add them to cache as ACCEPTED
     orders = []
+
     for _ in range(10):
         order = order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
@@ -889,6 +891,7 @@ async def test_targeted_query_limiting_with_retry_accumulation(
 
     # Create 10 orders, all ACCEPTED (missing at venue)
     orders = []
+
     for _ in range(10):
         order = order_factory.limit(
             instrument_id=AUDUSD_SIM.id,

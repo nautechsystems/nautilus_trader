@@ -84,6 +84,10 @@ def serialize(state: AccountState) -> RecordBatch:
             },
         )
 
+    # Preserve events with no balance and no margin rows so they round-trip
+    if not result:
+        result[(None, None)] = base.copy()
+
     return pa.RecordBatch.from_pylist(result.values(), schema=SCHEMA)
 
 
@@ -132,6 +136,7 @@ def _deserialize(values: list[Any]) -> AccountState:
 
 def deserialize(data: pa.RecordBatch) -> list[AccountState]:
     account_states = []
+
     for event_id in data.column("event_id").unique().to_pylist():
         event = data.filter(pa.compute.equal(data["event_id"], event_id))
         account = _deserialize(values=event.to_pylist())

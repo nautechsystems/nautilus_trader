@@ -433,6 +433,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             use_rth=self._use_regular_trading_hours,
             timeout=self._client._request_timeout_secs,
         )
+
         if not ticks:
             self._log.warning(f"No quote tick data received for {request.instrument_id}")
             return
@@ -471,6 +472,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             use_rth=self._use_regular_trading_hours,
             timeout=self._client._request_timeout_secs,
         )
+
         if not ticks:
             self._log.warning(f"No trades received for {request.instrument_id}")
             return
@@ -644,7 +646,17 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             status_msg = {"id": request.id, "status": "Success"}
         else:
             self._log.warning(f"No bar data received for {request.bar_type}")
-            status_msg = {"id": request.id, "status": "Failed"}
+            # Still send empty DataResponse so DataEngine can finalize aggregators
+            # (needed when secondary strategies share the same underlying request)
+            self._handle_bars(
+                request.bar_type,
+                [],
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )
+            status_msg = {"id": request.id, "status": "Success"}
 
         # Publish Status event
         self._msgbus.publish(
@@ -722,6 +734,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 segment_duration,
                 timeout=timeout,
             )
+
             if bars:
                 self._log.info(
                     f"{bar_type.instrument_id}: Number of bars retrieved in batch: {len(bars)}",

@@ -20,12 +20,13 @@
 //! A condition is a predicate which must be true just prior to the execution of
 //! some section of code - for correct behavior as per the design specification.
 //!
-//! An [`anyhow::Result`] is returned with a descriptive message when the
-//! condition check fails.
+//! A typed [`Result`] is returned with a descriptive message when the condition
+//! check fails.
 
 use std::fmt::{Debug, Display};
 
 use rust_decimal::Decimal;
+use thiserror::Error;
 
 use crate::collections::{MapLike, SetLike};
 
@@ -36,15 +37,213 @@ use crate::collections::{MapLike, SetLike};
 /// functions like `expect` to provide a consistent error message.
 pub const FAILED: &str = "Condition failed";
 
+/// Error type for correctness checks.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum CorrectnessError {
+    /// A predicate or invariant check failed.
+    #[error("{message}")]
+    PredicateViolation {
+        /// The failure message.
+        message: String,
+    },
+    /// A string was empty.
+    #[error("invalid string for '{param}', was empty")]
+    EmptyString {
+        /// The parameter name.
+        param: String,
+    },
+    /// A string was all whitespace.
+    #[error("invalid string for '{param}', was all whitespace")]
+    WhitespaceString {
+        /// The parameter name.
+        param: String,
+    },
+    /// A string contained a non-ASCII character.
+    #[error("invalid string for '{param}' contained a non-ASCII char, was '{value}'")]
+    NonAsciiString {
+        /// The parameter name.
+        param: String,
+        /// The provided value.
+        value: String,
+    },
+    /// A string did not contain an expected pattern.
+    #[error("invalid string for '{param}' did not contain '{pattern}', was '{value}'")]
+    MissingSubstring {
+        /// The parameter name.
+        param: String,
+        /// The expected substring.
+        pattern: String,
+        /// The provided value.
+        value: String,
+    },
+    /// Two values were not equal.
+    #[error(
+        "'{lhs_param}' {type_name} of {lhs} was not equal to '{rhs_param}' {type_name} of {rhs}"
+    )]
+    EqualityMismatch {
+        /// The left parameter name.
+        lhs_param: String,
+        /// The right parameter name.
+        rhs_param: String,
+        /// The left value.
+        lhs: String,
+        /// The right value.
+        rhs: String,
+        /// The displayed type name.
+        type_name: &'static str,
+    },
+    /// A value that must be positive was not positive.
+    #[error("invalid {type_name} for '{param}' not positive, was {value}")]
+    NotPositive {
+        /// The parameter name.
+        param: String,
+        /// The provided value.
+        value: String,
+        /// The displayed type name.
+        type_name: &'static str,
+    },
+    /// A value that must not be negative was negative.
+    #[error("invalid {type_name} for '{param}' negative, was {value}")]
+    NegativeValue {
+        /// The parameter name.
+        param: String,
+        /// The provided value.
+        value: String,
+        /// The displayed type name.
+        type_name: &'static str,
+    },
+    /// A value was invalid for its type.
+    #[error("invalid {type_name} for '{param}', was {value}")]
+    InvalidValue {
+        /// The parameter name.
+        param: String,
+        /// The provided value.
+        value: String,
+        /// The displayed type name.
+        type_name: &'static str,
+    },
+    /// A value was outside an inclusive range.
+    #[error("invalid {type_name} for '{param}' not in range [{min}, {max}], was {value}")]
+    OutOfRange {
+        /// The parameter name.
+        param: String,
+        /// The lower bound.
+        min: String,
+        /// The upper bound.
+        max: String,
+        /// The provided value.
+        value: String,
+        /// The displayed type name.
+        type_name: &'static str,
+    },
+    /// A collection that must be empty was not empty.
+    #[error("the '{param}' {collection_kind} `{type_repr}` was not empty")]
+    CollectionNotEmpty {
+        /// The parameter name.
+        param: String,
+        /// The collection kind.
+        collection_kind: &'static str,
+        /// The collection type representation.
+        type_repr: String,
+    },
+    /// A collection that must not be empty was empty.
+    #[error("the '{param}' {collection_kind} `{type_repr}` was empty")]
+    CollectionEmpty {
+        /// The parameter name.
+        param: String,
+        /// The collection kind.
+        collection_kind: &'static str,
+        /// The collection type representation.
+        type_repr: String,
+    },
+    /// A map key was already present.
+    #[error("the '{key_name}' key {key} was already in the '{map_name}' map `{map_type_repr}`")]
+    KeyPresent {
+        /// The key parameter name.
+        key_name: String,
+        /// The map parameter name.
+        map_name: String,
+        /// The key value.
+        key: String,
+        /// The map type representation.
+        map_type_repr: String,
+    },
+    /// A map key was missing.
+    #[error("the '{key_name}' key {key} was not in the '{map_name}' map `{map_type_repr}`")]
+    KeyMissing {
+        /// The key parameter name.
+        key_name: String,
+        /// The map parameter name.
+        map_name: String,
+        /// The key value.
+        key: String,
+        /// The map type representation.
+        map_type_repr: String,
+    },
+    /// A set member was already present.
+    #[error("the '{member_name}' member was already in the '{set_name}' set `{set_type_repr}`")]
+    MemberPresent {
+        /// The member parameter name.
+        member_name: String,
+        /// The set parameter name.
+        set_name: String,
+        /// The set type representation.
+        set_type_repr: String,
+    },
+    /// A set member was missing.
+    #[error("the '{member_name}' member was not in the '{set_name}' set `{set_type_repr}`")]
+    MemberMissing {
+        /// The member parameter name.
+        member_name: String,
+        /// The set parameter name.
+        set_name: String,
+        /// The set type representation.
+        set_type_repr: String,
+    },
+}
+
+/// Result type for correctness checks.
+pub type Result<T> = std::result::Result<T, CorrectnessError>;
+
+/// Result type alias for APIs that want to name the correctness error domain explicitly.
+pub type CorrectnessResult<T> = Result<T>;
+
+/// Extension trait for [`CorrectnessResult`] that panics with the error's
+/// [`Display`] form rather than its `Debug` form.
+///
+/// Use this instead of [`std::result::Result::expect`] when unwrapping a
+/// correctness result: `expect` formats the error with `{:?}`, which exposes
+/// the internal [`CorrectnessError`] struct layout in panic output, while
+/// [`CorrectnessResultExt::expect_display`] preserves the human-readable
+/// message defined on each variant.
+pub trait CorrectnessResultExt<T> {
+    /// Returns the contained [`Ok`] value, panicking with `msg: <error display>`
+    /// on [`Err`].
+    fn expect_display(self, msg: &str) -> T;
+}
+
+impl<T> CorrectnessResultExt<T> for CorrectnessResult<T> {
+    #[inline]
+    #[track_caller]
+    fn expect_display(self, msg: &str) -> T {
+        match self {
+            Ok(value) => value,
+            Err(e) => panic!("{msg}: {e}"),
+        }
+    }
+}
+
 /// Checks the `predicate` is true.
 ///
 /// # Errors
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_predicate_true(predicate: bool, fail_msg: &str) -> anyhow::Result<()> {
+pub fn check_predicate_true(predicate: bool, fail_msg: &str) -> Result<()> {
     if !predicate {
-        anyhow::bail!("{fail_msg}")
+        return Err(CorrectnessError::PredicateViolation {
+            message: fail_msg.to_string(),
+        });
     }
     Ok(())
 }
@@ -55,9 +254,11 @@ pub fn check_predicate_true(predicate: bool, fail_msg: &str) -> anyhow::Result<(
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> anyhow::Result<()> {
+pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> Result<()> {
     if predicate {
-        anyhow::bail!("{fail_msg}")
+        return Err(CorrectnessError::PredicateViolation {
+            message: fail_msg.to_string(),
+        });
     }
     Ok(())
 }
@@ -71,9 +272,11 @@ pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> anyhow::Result<
 ///
 /// Returns an error if `s` is empty.
 #[inline(always)]
-pub fn check_nonempty_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()> {
+pub fn check_nonempty_string<T: AsRef<str>>(s: T, param: &str) -> Result<()> {
     if s.as_ref().is_empty() {
-        anyhow::bail!("invalid string for '{param}', was empty");
+        return Err(CorrectnessError::EmptyString {
+            param: param.to_string(),
+        });
     }
     Ok(())
 }
@@ -87,27 +290,35 @@ pub fn check_nonempty_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result
 /// - `s` consists solely of whitespace characters.
 /// - `s` contains one or more non-ASCII characters.
 #[inline(always)]
-pub fn check_valid_string_ascii<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()> {
+pub fn check_valid_string_ascii<T: AsRef<str>>(s: T, param: &str) -> Result<()> {
     let s = s.as_ref();
 
     if s.is_empty() {
-        anyhow::bail!("invalid string for '{param}', was empty");
+        return Err(CorrectnessError::EmptyString {
+            param: param.to_string(),
+        });
     }
 
     // Ensure string is only traversed once
     let mut has_non_whitespace = false;
+
     for c in s.chars() {
         if !c.is_whitespace() {
             has_non_whitespace = true;
         }
 
         if !c.is_ascii() {
-            anyhow::bail!("invalid string for '{param}' contained a non-ASCII char, was '{s}'");
+            return Err(CorrectnessError::NonAsciiString {
+                param: param.to_string(),
+                value: s.to_string(),
+            });
         }
     }
 
     if !has_non_whitespace {
-        anyhow::bail!("invalid string for '{param}', was all whitespace");
+        return Err(CorrectnessError::WhitespaceString {
+            param: param.to_string(),
+        });
     }
 
     Ok(())
@@ -124,17 +335,21 @@ pub fn check_valid_string_ascii<T: AsRef<str>>(s: T, param: &str) -> anyhow::Res
 /// - `s` is an empty string.
 /// - `s` consists solely of whitespace characters.
 #[inline(always)]
-pub fn check_valid_string_utf8<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()> {
+pub fn check_valid_string_utf8<T: AsRef<str>>(s: T, param: &str) -> Result<()> {
     let s = s.as_ref();
 
     if s.is_empty() {
-        anyhow::bail!("invalid string for '{param}', was empty");
+        return Err(CorrectnessError::EmptyString {
+            param: param.to_string(),
+        });
     }
 
     let has_non_whitespace = s.chars().any(|c| !c.is_whitespace());
 
     if !has_non_whitespace {
-        anyhow::bail!("invalid string for '{param}', was all whitespace");
+        return Err(CorrectnessError::WhitespaceString {
+            param: param.to_string(),
+        });
     }
 
     Ok(())
@@ -149,10 +364,7 @@ pub fn check_valid_string_utf8<T: AsRef<str>>(s: T, param: &str) -> anyhow::Resu
 /// - `s` consists solely of whitespace characters.
 /// - `s` contains one or more non-ASCII characters.
 #[inline(always)]
-pub fn check_valid_string_ascii_optional<T: AsRef<str>>(
-    s: Option<T>,
-    param: &str,
-) -> anyhow::Result<()> {
+pub fn check_valid_string_ascii_optional<T: AsRef<str>>(s: Option<T>, param: &str) -> Result<()> {
     if let Some(s) = s {
         check_valid_string_ascii(s, param)?;
     }
@@ -165,10 +377,14 @@ pub fn check_valid_string_ascii_optional<T: AsRef<str>>(
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_string_contains<T: AsRef<str>>(s: T, pat: &str, param: &str) -> anyhow::Result<()> {
+pub fn check_string_contains<T: AsRef<str>>(s: T, pat: &str, param: &str) -> Result<()> {
     let s = s.as_ref();
     if !s.contains(pat) {
-        anyhow::bail!("invalid string for '{param}' did not contain '{pat}', was '{s}'")
+        return Err(CorrectnessError::MissingSubstring {
+            param: param.to_string(),
+            pattern: pat.to_string(),
+            value: s.to_string(),
+        });
     }
     Ok(())
 }
@@ -184,9 +400,15 @@ pub fn check_equal<T: PartialEq + Debug + Display>(
     rhs: &T,
     lhs_param: &str,
     rhs_param: &str,
-) -> anyhow::Result<()> {
+) -> Result<()> {
     if lhs != rhs {
-        anyhow::bail!("'{lhs_param}' value of {lhs} was not equal to '{rhs_param}' value of {rhs}");
+        return Err(CorrectnessError::EqualityMismatch {
+            lhs_param: lhs_param.to_string(),
+            rhs_param: rhs_param.to_string(),
+            lhs: lhs.to_string(),
+            rhs: rhs.to_string(),
+            type_name: "value",
+        });
     }
     Ok(())
 }
@@ -197,9 +419,15 @@ pub fn check_equal<T: PartialEq + Debug + Display>(
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_equal_u8(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> anyhow::Result<()> {
+pub fn check_equal_u8(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> Result<()> {
     if lhs != rhs {
-        anyhow::bail!("'{lhs_param}' u8 of {lhs} was not equal to '{rhs_param}' u8 of {rhs}")
+        return Err(CorrectnessError::EqualityMismatch {
+            lhs_param: lhs_param.to_string(),
+            rhs_param: rhs_param.to_string(),
+            lhs: lhs.to_string(),
+            rhs: rhs.to_string(),
+            type_name: "u8",
+        });
     }
     Ok(())
 }
@@ -210,14 +438,15 @@ pub fn check_equal_u8(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> any
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_equal_usize(
-    lhs: usize,
-    rhs: usize,
-    lhs_param: &str,
-    rhs_param: &str,
-) -> anyhow::Result<()> {
+pub fn check_equal_usize(lhs: usize, rhs: usize, lhs_param: &str, rhs_param: &str) -> Result<()> {
     if lhs != rhs {
-        anyhow::bail!("'{lhs_param}' usize of {lhs} was not equal to '{rhs_param}' usize of {rhs}")
+        return Err(CorrectnessError::EqualityMismatch {
+            lhs_param: lhs_param.to_string(),
+            rhs_param: rhs_param.to_string(),
+            lhs: lhs.to_string(),
+            rhs: rhs.to_string(),
+            type_name: "usize",
+        });
     }
     Ok(())
 }
@@ -228,9 +457,13 @@ pub fn check_equal_usize(
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_positive_u64(value: u64, param: &str) -> anyhow::Result<()> {
+pub fn check_positive_u64(value: u64, param: &str) -> Result<()> {
     if value == 0 {
-        anyhow::bail!("invalid u64 for '{param}' not positive, was {value}")
+        return Err(CorrectnessError::NotPositive {
+            param: param.to_string(),
+            value: value.to_string(),
+            type_name: "u64",
+        });
     }
     Ok(())
 }
@@ -241,9 +474,13 @@ pub fn check_positive_u64(value: u64, param: &str) -> anyhow::Result<()> {
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_positive_u128(value: u128, param: &str) -> anyhow::Result<()> {
+pub fn check_positive_u128(value: u128, param: &str) -> Result<()> {
     if value == 0 {
-        anyhow::bail!("invalid u128 for '{param}' not positive, was {value}")
+        return Err(CorrectnessError::NotPositive {
+            param: param.to_string(),
+            value: value.to_string(),
+            type_name: "u128",
+        });
     }
     Ok(())
 }
@@ -254,9 +491,13 @@ pub fn check_positive_u128(value: u128, param: &str) -> anyhow::Result<()> {
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_positive_i64(value: i64, param: &str) -> anyhow::Result<()> {
+pub fn check_positive_i64(value: i64, param: &str) -> Result<()> {
     if value <= 0 {
-        anyhow::bail!("invalid i64 for '{param}' not positive, was {value}")
+        return Err(CorrectnessError::NotPositive {
+            param: param.to_string(),
+            value: value.to_string(),
+            type_name: "i64",
+        });
     }
     Ok(())
 }
@@ -267,9 +508,13 @@ pub fn check_positive_i64(value: i64, param: &str) -> anyhow::Result<()> {
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_positive_i128(value: i128, param: &str) -> anyhow::Result<()> {
+pub fn check_positive_i128(value: i128, param: &str) -> Result<()> {
     if value <= 0 {
-        anyhow::bail!("invalid i128 for '{param}' not positive, was {value}")
+        return Err(CorrectnessError::NotPositive {
+            param: param.to_string(),
+            value: value.to_string(),
+            type_name: "i128",
+        });
     }
     Ok(())
 }
@@ -280,13 +525,21 @@ pub fn check_positive_i128(value: i128, param: &str) -> anyhow::Result<()> {
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_non_negative_f64(value: f64, param: &str) -> anyhow::Result<()> {
+pub fn check_non_negative_f64(value: f64, param: &str) -> Result<()> {
     if value.is_nan() || value.is_infinite() {
-        anyhow::bail!("invalid f64 for '{param}', was {value}")
+        return Err(CorrectnessError::InvalidValue {
+            param: param.to_string(),
+            value: value.to_string(),
+            type_name: "f64",
+        });
     }
 
     if value < 0.0 {
-        anyhow::bail!("invalid f64 for '{param}' negative, was {value}")
+        return Err(CorrectnessError::NegativeValue {
+            param: param.to_string(),
+            value: value.to_string(),
+            type_name: "f64",
+        });
     }
     Ok(())
 }
@@ -297,9 +550,15 @@ pub fn check_non_negative_f64(value: f64, param: &str) -> anyhow::Result<()> {
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_in_range_inclusive_u8(value: u8, l: u8, r: u8, param: &str) -> anyhow::Result<()> {
+pub fn check_in_range_inclusive_u8(value: u8, l: u8, r: u8, param: &str) -> Result<()> {
     if value < l || value > r {
-        anyhow::bail!("invalid u8 for '{param}' not in range [{l}, {r}], was {value}")
+        return Err(CorrectnessError::OutOfRange {
+            param: param.to_string(),
+            min: l.to_string(),
+            max: r.to_string(),
+            value: value.to_string(),
+            type_name: "u8",
+        });
     }
     Ok(())
 }
@@ -310,9 +569,15 @@ pub fn check_in_range_inclusive_u8(value: u8, l: u8, r: u8, param: &str) -> anyh
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_in_range_inclusive_u64(value: u64, l: u64, r: u64, param: &str) -> anyhow::Result<()> {
+pub fn check_in_range_inclusive_u64(value: u64, l: u64, r: u64, param: &str) -> Result<()> {
     if value < l || value > r {
-        anyhow::bail!("invalid u64 for '{param}' not in range [{l}, {r}], was {value}")
+        return Err(CorrectnessError::OutOfRange {
+            param: param.to_string(),
+            min: l.to_string(),
+            max: r.to_string(),
+            value: value.to_string(),
+            type_name: "u64",
+        });
     }
     Ok(())
 }
@@ -323,9 +588,15 @@ pub fn check_in_range_inclusive_u64(value: u64, l: u64, r: u64, param: &str) -> 
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_in_range_inclusive_i64(value: i64, l: i64, r: i64, param: &str) -> anyhow::Result<()> {
+pub fn check_in_range_inclusive_i64(value: i64, l: i64, r: i64, param: &str) -> Result<()> {
     if value < l || value > r {
-        anyhow::bail!("invalid i64 for '{param}' not in range [{l}, {r}], was {value}")
+        return Err(CorrectnessError::OutOfRange {
+            param: param.to_string(),
+            min: l.to_string(),
+            max: r.to_string(),
+            value: value.to_string(),
+            type_name: "i64",
+        });
     }
     Ok(())
 }
@@ -336,7 +607,7 @@ pub fn check_in_range_inclusive_i64(value: i64, l: i64, r: i64, param: &str) -> 
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) -> anyhow::Result<()> {
+pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) -> Result<()> {
     // Hardcoded epsilon is intentional and appropriate here because:
     // - 1e-15 is conservative for IEEE 754 double precision (machine epsilon ~2.22e-16)
     // - This function is used for validation, not high-precision calculations
@@ -345,11 +616,21 @@ pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) -> 
     const EPSILON: f64 = 1e-15;
 
     if value.is_nan() || value.is_infinite() {
-        anyhow::bail!("invalid f64 for '{param}', was {value}")
+        return Err(CorrectnessError::InvalidValue {
+            param: param.to_string(),
+            value: value.to_string(),
+            type_name: "f64",
+        });
     }
 
     if value < l - EPSILON || value > r + EPSILON {
-        anyhow::bail!("invalid f64 for '{param}' not in range [{l}, {r}], was {value}")
+        return Err(CorrectnessError::OutOfRange {
+            param: param.to_string(),
+            min: l.to_string(),
+            max: r.to_string(),
+            value: value.to_string(),
+            type_name: "f64",
+        });
     }
     Ok(())
 }
@@ -360,14 +641,15 @@ pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) -> 
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_in_range_inclusive_usize(
-    value: usize,
-    l: usize,
-    r: usize,
-    param: &str,
-) -> anyhow::Result<()> {
+pub fn check_in_range_inclusive_usize(value: usize, l: usize, r: usize, param: &str) -> Result<()> {
     if value < l || value > r {
-        anyhow::bail!("invalid usize for '{param}' not in range [{l}, {r}], was {value}")
+        return Err(CorrectnessError::OutOfRange {
+            param: param.to_string(),
+            min: l.to_string(),
+            max: r.to_string(),
+            value: value.to_string(),
+            type_name: "usize",
+        });
     }
     Ok(())
 }
@@ -378,12 +660,13 @@ pub fn check_in_range_inclusive_usize(
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_slice_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> {
+pub fn check_slice_empty<T>(slice: &[T], param: &str) -> Result<()> {
     if !slice.is_empty() {
-        anyhow::bail!(
-            "the '{param}' slice `&[{}]` was not empty",
-            std::any::type_name::<T>()
-        )
+        return Err(CorrectnessError::CollectionNotEmpty {
+            param: param.to_string(),
+            collection_kind: "slice",
+            type_repr: slice_type_repr::<T>(),
+        });
     }
     Ok(())
 }
@@ -394,12 +677,13 @@ pub fn check_slice_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> {
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_slice_not_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> {
+pub fn check_slice_not_empty<T>(slice: &[T], param: &str) -> Result<()> {
     if slice.is_empty() {
-        anyhow::bail!(
-            "the '{param}' slice `&[{}]` was empty",
-            std::any::type_name::<T>()
-        )
+        return Err(CorrectnessError::CollectionEmpty {
+            param: param.to_string(),
+            collection_kind: "slice",
+            type_repr: slice_type_repr::<T>(),
+        });
     }
     Ok(())
 }
@@ -410,16 +694,16 @@ pub fn check_slice_not_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> 
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_map_empty<M>(map: &M, param: &str) -> anyhow::Result<()>
+pub fn check_map_empty<M>(map: &M, param: &str) -> Result<()>
 where
     M: MapLike,
 {
     if !map.is_empty() {
-        anyhow::bail!(
-            "the '{param}' map `&<{}, {}>` was not empty",
-            std::any::type_name::<M::Key>(),
-            std::any::type_name::<M::Value>(),
-        );
+        return Err(CorrectnessError::CollectionNotEmpty {
+            param: param.to_string(),
+            collection_kind: "map",
+            type_repr: map_type_repr::<M>(),
+        });
     }
     Ok(())
 }
@@ -430,16 +714,16 @@ where
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_map_not_empty<M>(map: &M, param: &str) -> anyhow::Result<()>
+pub fn check_map_not_empty<M>(map: &M, param: &str) -> Result<()>
 where
     M: MapLike,
 {
     if map.is_empty() {
-        anyhow::bail!(
-            "the '{param}' map `&<{}, {}>` was empty",
-            std::any::type_name::<M::Key>(),
-            std::any::type_name::<M::Value>(),
-        );
+        return Err(CorrectnessError::CollectionEmpty {
+            param: param.to_string(),
+            collection_kind: "map",
+            type_repr: map_type_repr::<M>(),
+        });
     }
     Ok(())
 }
@@ -450,21 +734,17 @@ where
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_key_not_in_map<M>(
-    key: &M::Key,
-    map: &M,
-    key_name: &str,
-    map_name: &str,
-) -> anyhow::Result<()>
+pub fn check_key_not_in_map<M>(key: &M::Key, map: &M, key_name: &str, map_name: &str) -> Result<()>
 where
     M: MapLike,
 {
     if map.contains_key(key) {
-        anyhow::bail!(
-            "the '{key_name}' key {key} was already in the '{map_name}' map `&<{}, {}>`",
-            std::any::type_name::<M::Key>(),
-            std::any::type_name::<M::Value>(),
-        );
+        return Err(CorrectnessError::KeyPresent {
+            key_name: key_name.to_string(),
+            map_name: map_name.to_string(),
+            key: key.to_string(),
+            map_type_repr: map_type_repr::<M>(),
+        });
     }
     Ok(())
 }
@@ -475,21 +755,17 @@ where
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_key_in_map<M>(
-    key: &M::Key,
-    map: &M,
-    key_name: &str,
-    map_name: &str,
-) -> anyhow::Result<()>
+pub fn check_key_in_map<M>(key: &M::Key, map: &M, key_name: &str, map_name: &str) -> Result<()>
 where
     M: MapLike,
 {
     if !map.contains_key(key) {
-        anyhow::bail!(
-            "the '{key_name}' key {key} was not in the '{map_name}' map `&<{}, {}>`",
-            std::any::type_name::<M::Key>(),
-            std::any::type_name::<M::Value>(),
-        );
+        return Err(CorrectnessError::KeyMissing {
+            key_name: key_name.to_string(),
+            map_name: map_name.to_string(),
+            key: key.to_string(),
+            map_type_repr: map_type_repr::<M>(),
+        });
     }
     Ok(())
 }
@@ -505,15 +781,16 @@ pub fn check_member_not_in_set<S>(
     set: &S,
     member_name: &str,
     set_name: &str,
-) -> anyhow::Result<()>
+) -> Result<()>
 where
     S: SetLike,
 {
     if set.contains(member) {
-        anyhow::bail!(
-            "the '{member_name}' member was already in the '{set_name}' set `&<{}>`",
-            std::any::type_name::<S::Item>(),
-        );
+        return Err(CorrectnessError::MemberPresent {
+            member_name: member_name.to_string(),
+            set_name: set_name.to_string(),
+            set_type_repr: set_type_repr::<S>(),
+        });
     }
     Ok(())
 }
@@ -529,15 +806,16 @@ pub fn check_member_in_set<S>(
     set: &S,
     member_name: &str,
     set_name: &str,
-) -> anyhow::Result<()>
+) -> Result<()>
 where
     S: SetLike,
 {
     if !set.contains(member) {
-        anyhow::bail!(
-            "the '{member_name}' member was not in the '{set_name}' set `&<{}>`",
-            std::any::type_name::<S::Item>(),
-        );
+        return Err(CorrectnessError::MemberMissing {
+            member_name: member_name.to_string(),
+            set_name: set_name.to_string(),
+            set_type_repr: set_type_repr::<S>(),
+        });
     }
     Ok(())
 }
@@ -548,11 +826,37 @@ where
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_positive_decimal(value: Decimal, param: &str) -> anyhow::Result<()> {
+pub fn check_positive_decimal(value: Decimal, param: &str) -> Result<()> {
     if value <= Decimal::ZERO {
-        anyhow::bail!("invalid Decimal for '{param}' not positive, was {value}")
+        return Err(CorrectnessError::NotPositive {
+            param: param.to_string(),
+            value: value.to_string(),
+            type_name: "Decimal",
+        });
     }
     Ok(())
+}
+
+fn slice_type_repr<T>() -> String {
+    format!("&[{}]", std::any::type_name::<T>())
+}
+
+fn map_type_repr<M>() -> String
+where
+    M: MapLike,
+{
+    format!(
+        "&<{}, {}>",
+        std::any::type_name::<M::Key>(),
+        std::any::type_name::<M::Value>(),
+    )
+}
+
+fn set_type_repr<S>() -> String
+where
+    S: SetLike,
+{
+    format!("&<{}>", std::any::type_name::<S::Item>())
 }
 
 #[cfg(test)]
@@ -567,6 +871,43 @@ mod tests {
     use rust_decimal::Decimal;
 
     use super::*;
+
+    #[rstest]
+    fn test_check_predicate_true_returns_typed_error_with_stable_display() {
+        let error = check_predicate_true(false, "the predicate was false").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: "the predicate was false".to_string(),
+            }
+        );
+        assert_eq!(error.to_string(), "the predicate was false");
+    }
+
+    #[rstest]
+    fn test_expect_display_returns_ok_value() {
+        let result: CorrectnessResult<i32> = Ok(42);
+        assert_eq!(result.expect_display(FAILED), 42);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Condition failed: invalid string for 'value', was empty")]
+    fn test_expect_display_panics_with_display_form_on_err() {
+        let result: CorrectnessResult<()> = Err(CorrectnessError::EmptyString {
+            param: "value".to_string(),
+        });
+        result.expect_display(FAILED);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "custom prefix: the predicate was false")]
+    fn test_expect_display_uses_provided_prefix() {
+        let result: CorrectnessResult<()> = Err(CorrectnessError::PredicateViolation {
+            message: "the predicate was false".to_string(),
+        });
+        result.expect_display("custom prefix");
+    }
 
     #[rstest]
     #[case(false, false)]
@@ -619,6 +960,52 @@ mod tests {
     #[case("🦀")] // <-- contains non-ASCII char
     fn test_check_valid_string_ascii_with_invalid_values(#[case] s: &str) {
         assert!(check_valid_string_ascii(s, "value").is_err());
+    }
+
+    #[rstest]
+    fn test_check_valid_string_ascii_returns_empty_string_error_with_stable_display() {
+        let error = check_valid_string_ascii("", "value").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::EmptyString {
+                param: "value".to_string(),
+            }
+        );
+        assert_eq!(error.to_string(), "invalid string for 'value', was empty");
+    }
+
+    #[rstest]
+    fn test_check_valid_string_ascii_returns_non_ascii_error_with_stable_display() {
+        let error = check_valid_string_ascii("🦀", "value").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::NonAsciiString {
+                param: "value".to_string(),
+                value: "🦀".to_string(),
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "invalid string for 'value' contained a non-ASCII char, was '🦀'"
+        );
+    }
+
+    #[rstest]
+    fn test_check_valid_string_ascii_returns_whitespace_string_error_with_stable_display() {
+        let error = check_valid_string_ascii("   ", "value").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::WhitespaceString {
+                param: "value".to_string(),
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "invalid string for 'value', was all whitespace"
+        );
     }
 
     #[rstest]
@@ -695,6 +1082,26 @@ mod tests {
     ) {
         let result = check_equal_u8(lhs, rhs, lhs_param, rhs_param).is_ok();
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_check_equal_u8_returns_equality_mismatch_with_stable_display() {
+        let error = check_equal_u8(1, 2, "left", "right").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::EqualityMismatch {
+                lhs_param: "left".to_string(),
+                rhs_param: "right".to_string(),
+                lhs: "1".to_string(),
+                rhs: "2".to_string(),
+                type_name: "u8",
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "'left' u8 of 1 was not equal to 'right' u8 of 2"
+        );
     }
 
     #[rstest]
@@ -880,6 +1287,26 @@ mod tests {
     }
 
     #[rstest]
+    fn test_check_in_range_inclusive_usize_returns_out_of_range_error_with_stable_display() {
+        let error = check_in_range_inclusive_usize(3, 1, 2, "value").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::OutOfRange {
+                param: "value".to_string(),
+                min: "1".to_string(),
+                max: "2".to_string(),
+                value: "3".to_string(),
+                type_name: "usize",
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "invalid usize for 'value' not in range [1, 2], was 3"
+        );
+    }
+
+    #[rstest]
     #[case(vec![], true)]
     #[case(vec![1_u8], false)]
     fn test_check_slice_empty(#[case] collection: Vec<u8>, #[case] expected: bool) {
@@ -893,6 +1320,21 @@ mod tests {
     fn test_check_slice_not_empty(#[case] collection: Vec<u8>, #[case] expected: bool) {
         let result = check_slice_not_empty(collection.as_slice(), "param").is_ok();
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_check_slice_not_empty_returns_collection_empty_error_with_stable_display() {
+        let error = check_slice_not_empty::<u8>(&[], "param").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::CollectionEmpty {
+                param: "param".to_string(),
+                collection_kind: "slice",
+                type_repr: "&[u8]".to_string(),
+            }
+        );
+        assert_eq!(error.to_string(), "the 'param' slice `&[u8]` was empty");
     }
 
     #[rstest]
@@ -942,6 +1384,26 @@ mod tests {
     }
 
     #[rstest]
+    fn test_check_key_in_map_returns_key_missing_error_with_stable_display() {
+        let map = HashMap::<u32, u32>::new();
+        let error = check_key_in_map(&5, &map, "key", "map").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::KeyMissing {
+                key_name: "key".to_string(),
+                map_name: "map".to_string(),
+                key: "5".to_string(),
+                map_type_repr: "&<u32, u32>".to_string(),
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "the 'key' key 5 was not in the 'map' map `&<u32, u32>`"
+        );
+    }
+
+    #[rstest]
     #[case(&HashSet::<u32>::new(), 5, "member", "set", true)] // Empty set
     #[case(&HashSet::from([1, 2]), 1, "member", "set", false)] // Member exists
     #[case(&HashSet::from([1, 2]), 5, "member", "set", true)] // Member doesn't exist
@@ -982,5 +1444,41 @@ mod tests {
         let value = Decimal::from_str(raw).expect("valid decimal literal");
         let result = super::check_positive_decimal(value, "param").is_ok();
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(1, true)]
+    #[case(u128::MAX, true)]
+    #[case(0, false)]
+    fn test_check_positive_u128(#[case] value: u128, #[case] expected: bool) {
+        assert_eq!(check_positive_u128(value, "value").is_ok(), expected);
+    }
+
+    #[rstest]
+    #[case(1, true)]
+    #[case(i128::MAX, true)]
+    #[case(0, false)]
+    #[case(-1, false)]
+    #[case(i128::MIN, false)]
+    fn test_check_positive_i128(#[case] value: i128, #[case] expected: bool) {
+        assert_eq!(check_positive_i128(value, "value").is_ok(), expected);
+    }
+
+    #[rstest]
+    fn test_check_positive_decimal_returns_not_positive_error_with_stable_display() {
+        let error = check_positive_decimal(Decimal::ZERO, "param").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::NotPositive {
+                param: "param".to_string(),
+                value: "0".to_string(),
+                type_name: "Decimal",
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "invalid Decimal for 'param' not positive, was 0"
+        );
     }
 }

@@ -20,7 +20,7 @@ from nautilus_trader.cache.transformers import transform_account_from_pyo3
 from nautilus_trader.cache.transformers import transform_currency_from_pyo3
 from nautilus_trader.cache.transformers import transform_instrument_from_pyo3
 from nautilus_trader.cache.transformers import transform_order_from_pyo3
-from nautilus_trader.common.config import msgspec_encoding_hook
+from nautilus_trader.common.config import pyo3_config_json
 from nautilus_trader.core import nautilus_pyo3
 
 from cpython.datetime cimport datetime
@@ -162,7 +162,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         self._backing = nautilus_pyo3.RedisCacheDatabase(
             trader_id=nautilus_pyo3.TraderId(trader_id.value),
             instance_id=nautilus_pyo3.UUID4.from_str(instance_id.value),
-            config_json=msgspec.json.encode(config, enc_hook=msgspec_encoding_hook),
+            config_json=pyo3_config_json(config),
         )
 
 # -- COMMANDS -------------------------------------------------------------------------------------
@@ -1209,12 +1209,17 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         cdef list payload = [self._serializer.serialize(position.last_event_c())]
         self._backing.update(key, payload)
 
+        # Use position_id bytes for SET index operations (not the serialized blob).
+        # This matches the pattern in add_position() and update_order().
+        cdef bytes position_id_bytes = position_id_str.encode()
+        cdef list index_payload = [position_id_bytes]
+
         if position.is_open_c():
-            self._backing.insert(_INDEX_POSITIONS_OPEN, payload)
-            self._backing.delete(_INDEX_POSITIONS_CLOSED, payload)
+            self._backing.insert(_INDEX_POSITIONS_OPEN, index_payload)
+            self._backing.delete(_INDEX_POSITIONS_CLOSED, index_payload)
         elif position.is_closed_c():
-            self._backing.insert(_INDEX_POSITIONS_CLOSED, payload)
-            self._backing.delete(_INDEX_POSITIONS_OPEN, payload)
+            self._backing.insert(_INDEX_POSITIONS_CLOSED, index_payload)
+            self._backing.delete(_INDEX_POSITIONS_OPEN, index_payload)
 
         self._log.debug(f"Updated {position}")
 

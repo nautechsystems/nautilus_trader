@@ -40,6 +40,7 @@ use nautilus_dydx::{
     common::{
         consts::DYDX_TESTNET_HTTP_URL,
         credential::{credential_env_vars, resolve_wallet_address},
+        enums::DydxNetwork,
     },
     execution::wallet::Wallet,
     http::client::DydxHttpClient,
@@ -66,13 +67,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str());
 
-    let is_testnet = !is_mainnet;
-    let (pk_var, _) = credential_env_vars(is_testnet);
+    let network = if is_mainnet {
+        DydxNetwork::Mainnet
+    } else {
+        DydxNetwork::Testnet
+    };
+    let (pk_var, _) = credential_env_vars(network);
     let private_key =
         env::var(pk_var).map_err(|_| format!("{pk_var} environment variable not set"))?;
 
     // Allow overriding wallet address (for permissioned key setups)
-    let wallet_address_override = resolve_wallet_address(None, is_testnet);
+    let wallet_address_override = resolve_wallet_address(None, network);
 
     let http_url = if is_mainnet {
         env::var("DYDX_HTTP_URL").unwrap_or_else(|_| "https://indexer.dydx.trade".to_string())
@@ -107,7 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     log::info!("");
 
-    let client = DydxHttpClient::new(Some(http_url), Some(30), None, !is_mainnet, None)?;
+    let client = DydxHttpClient::new(Some(http_url), 30, None, network, None)?;
 
     log::info!("Fetching subaccount info...");
     let start = std::time::Instant::now();
@@ -139,6 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "   Open positions: {}",
             subaccount.subaccount.open_perpetual_positions.len()
         );
+
         for pos in subaccount
             .subaccount
             .open_perpetual_positions

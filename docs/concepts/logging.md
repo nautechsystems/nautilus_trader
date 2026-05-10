@@ -91,7 +91,7 @@ The following log levels are supported:
 You can set `TRACE` as a filter level to capture trace logs from Rust components, even though Python code cannot emit them directly.
 :::
 
-See the `LoggingConfig` [API Reference](../api_reference/config.md#class-loggingconfig) for further details.
+See the `LoggingConfig` [API Reference](/docs/python-api-latest/config.html#nautilus_trader.common.config.LoggingConfig) for further details.
 
 Logging can be configured in the following ways:
 
@@ -218,8 +218,8 @@ export NAUTILUS_LOG="stdout=Info;fileout=Debug;RiskEngine=Error;is_colored"
 | `is_colored`          | Flag      | Enable ANSI colors (default: true).              |
 | `print_config`        | Flag      | Print config to stdout at startup.               |
 | `log_components_only` | Flag      | Only log components with explicit filters.       |
-| `<Component>`         | Log level | Component-specific level (exact match).          |
-| `<module::path>`      | Log level | Module-specific level (prefix match, Rust only). |
+| `<Component>`         | Log level | Component‑specific level (exact match).          |
+| `<module::path>`      | Log level | Module‑specific level (prefix match, Rust only). |
 
 Flags are enabled by their presence in the spec string (no value needed). Log levels are case-insensitive: `Off`, `Trace`, `Debug`, `Info`, `Warning` (or `Warn`), `Error`.
 
@@ -273,16 +273,15 @@ Module path filtering is only available via the `NAUTILUS_LOG` environment varia
 If `log_components_only=True` (or `log_components_only` is present in the spec string) and `log_component_levels` is empty, no log messages will be emitted to stdout/stderr or files. Add at least one component filter or disable components-only logging.
 :::
 
-### Log Colors
+### Log colors
 
-ANSI color codes are used to enhance the readability of logs when viewed in a terminal.
-These color codes can make it easier to distinguish different parts of log messages.
+ANSI color codes improve log readability in terminals.
 In environments that do not support ANSI color rendering (such as some cloud environments or text editors),
 these color codes may not be appropriate as they can appear as raw text.
 
 To accommodate for such scenarios, the `LoggingConfig.log_colors` option can be set to `false`.
-Disabling `log_colors` will prevent the addition of ANSI color codes to the log messages, ensuring
-compatibility across different environments where color rendering is not supported.
+Disabling `log_colors` will prevent the addition of ANSI color codes to the log messages,
+which avoids raw escape codes in environments without color support.
 
 ## Using a logger directly
 
@@ -299,7 +298,7 @@ log_guard = init_logging()
 logger = Logger("MyLogger")
 ```
 
-See the [`init_logging` API Reference](../api_reference/common.md) for further details.
+See the [`init_logging` API Reference](/docs/python-api-latest/common.html) for further details.
 
 :::warning
 Only one logging subsystem can be initialized per process with an `init_logging` call. Multiple `LogGuard` instances (up to 255) can exist concurrently, and the logging thread will remain active until all guards are dropped.
@@ -310,7 +309,7 @@ Only one logging subsystem can be initialized per process with an `init_logging`
 The `LogGuard` ensures that the logging subsystem remains active and operational throughout the lifecycle of a process.
 It prevents premature shutdown of the logging subsystem when running multiple engines in the same process.
 
-### Reference Counting Implementation
+### Reference counting implementation
 
 The logging system uses reference counting to track active `LogGuard` instances:
 

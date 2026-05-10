@@ -67,7 +67,7 @@ cdef class Position:
 
         self._events: list[OrderFilled] = []
         self._adjustments: list = []
-        self._trade_ids: list[TradeId] = []
+        self._trade_ids: set[TradeId] = set()
         self._buy_qty = Quantity.zero_c(precision=instrument.size_precision)
         self._sell_qty = Quantity.zero_c(precision=instrument.size_precision)
         self._commissions = {}
@@ -571,7 +571,7 @@ cdef class Position:
             self.realized_pnl = None
 
         self._events.append(fill)
-        self._trade_ids.append(fill.trade_id)
+        self._trade_ids.add(fill.trade_id)
 
         # Accumulate commission in its currency
         cdef Currency currency = fill.commission.currency
@@ -873,7 +873,11 @@ cdef class Position:
         return list(self._commissions.values())
 
     cdef void _check_duplicate_trade_id(self, OrderFilled fill):
-        # Check all previous fills for matching trade ID and composite key
+        # Fast path: trade_id not seen before, no need to scan events
+        if fill.trade_id not in self._trade_ids:
+            return
+
+        # Trade ID collision: scan events for composite key match
         cdef:
             OrderFilled p_fill
         for p_fill in self._events:

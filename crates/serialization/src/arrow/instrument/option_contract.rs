@@ -28,7 +28,7 @@ use nautilus_model::{
     enums::{AssetClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
     instruments::option_contract::OptionContract,
-    types::{currency::Currency, price::Price, quantity::Quantity},
+    types::{price::Price, quantity::Quantity},
 };
 #[allow(unused)]
 use rust_decimal::Decimal;
@@ -263,7 +263,7 @@ impl EncodeToRecordBatch for OptionContract {
 /// Returns an `EncodingError` if the RecordBatch cannot be decoded.
 pub fn decode_option_contract_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
-    record_batch: RecordBatch,
+    record_batch: &RecordBatch,
 ) -> Result<Vec<OptionContract>, EncodingError> {
     let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();
@@ -330,8 +330,12 @@ pub fn decode_option_contract_batch(
         let option_kind = option_kind_from_str(option_kind_values.value(i))?;
         let strike_price = Price::from_str(strike_price_values.value(i))
             .map_err(|e| EncodingError::ParseError("strike_price", format!("row {i}: {e}")))?;
-        let currency = Currency::from_str(currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("currency", format!("row {i}: {e}")))?;
+        let currency = super::decode_currency(
+            currency_values.value(i),
+            "currency",
+            "option_contract.currency",
+            i,
+        )?;
         let activation_ns = nautilus_core::UnixNanos::from(activation_ns_values.value(i));
         let expiration_ns = nautilus_core::UnixNanos::from(expiration_ns_values.value(i));
         let price_prec = price_precision_values.value(i);
@@ -364,6 +368,7 @@ pub fn decode_option_contract_batch(
                 .downcast_ref::<BinaryArray>()
                 .ok_or_else(|| EncodingError::ParseError("info", format!("row {i}: invalid type")))?
                 .value(i);
+
             match serde_json::from_slice::<Params>(info_bytes) {
                 Ok(info_dict) => Some(info_dict),
                 Err(e) => {

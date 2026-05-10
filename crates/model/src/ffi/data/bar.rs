@@ -126,12 +126,12 @@ pub extern "C" fn bar_type_new_composite(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bar_type_is_standard(bar_type: &BarType) -> u8 {
-    bar_type.is_standard() as u8
+    u8::from(bar_type.is_standard())
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn bar_type_is_composite(bar_type: &BarType) -> u8 {
-    bar_type.is_composite() as u8
+    u8::from(bar_type.is_composite())
 }
 
 #[unsafe(no_mangle)]

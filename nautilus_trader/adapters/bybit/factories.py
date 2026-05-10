@@ -18,6 +18,7 @@ from functools import lru_cache
 
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
+from nautilus_trader.adapters.bybit.config import _resolve_environment
 from nautilus_trader.adapters.bybit.constants import BYBIT_ALL_PRODUCTS
 from nautilus_trader.adapters.bybit.data import BybitDataClient
 from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
@@ -27,6 +28,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.nautilus_pyo3 import BybitEnvironment
 from nautilus_trader.core.nautilus_pyo3 import BybitProductType
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
@@ -34,11 +36,10 @@ from nautilus_trader.live.factories import LiveExecClientFactory
 
 @lru_cache(1)
 def get_cached_bybit_http_client(
+    environment: BybitEnvironment = BybitEnvironment.MAINNET,
     api_key: str | None = None,
     api_secret: str | None = None,
     base_url: str | None = None,
-    demo: bool = False,
-    testnet: bool = False,
     timeout_secs: int | None = None,
     max_retries: int | None = None,
     retry_delay_ms: int | None = None,
@@ -49,25 +50,21 @@ def get_cached_bybit_http_client(
     """
     Cache and return a Bybit HTTP client with the given key and secret.
 
-    If ``api_key`` and ``api_secret`` are ``None``, then they will be sourced from the
-    environment variables ``BYBIT_API_KEY`` and ``BYBIT_API_SECRET`` for production,
-    ``BYBIT_DEMO_API_KEY`` and ``BYBIT_DEMO_API_SECRET`` when ``demo=True``,
-    or ``BYBIT_TESTNET_API_KEY`` and ``BYBIT_TESTNET_API_SECRET`` when ``testnet=True``.
+    If ``api_key`` and ``api_secret`` are ``None``, then they will be sourced from
+    environment variables based on the ``environment`` setting.
 
     If a cached client with matching parameters already exists, the cached client will be returned.
 
     Parameters
     ----------
+    environment : BybitEnvironment, default BybitEnvironment.MAINNET
+        The Bybit environment (MAINNET, DEMO, or TESTNET).
     api_key : str, optional
         The API key for the client.
     api_secret : str, optional
         The API secret for the client.
     base_url : str, optional
         The base URL for the API endpoints.
-    demo : bool, default False
-        If the client is connecting to the demo API.
-    testnet : bool, default False
-        If the client is connecting to the testnet API.
     timeout_secs : int, optional
         The timeout for HTTP requests in seconds.
     max_retries : int, optional
@@ -87,28 +84,32 @@ def get_cached_bybit_http_client(
 
     """
     if base_url is None:
-        # Priority: demo > testnet > mainnet
-        if demo:
-            environment = nautilus_pyo3.BybitEnvironment.DEMO
-        elif testnet:
-            environment = nautilus_pyo3.BybitEnvironment.TESTNET
-        else:
-            environment = nautilus_pyo3.BybitEnvironment.MAINNET
         base_url = nautilus_pyo3.get_bybit_http_base_url(environment)
 
-    return nautilus_pyo3.BybitHttpClient(
-        api_key=api_key,
-        api_secret=api_secret,
-        base_url=base_url,
-        demo=demo,
-        testnet=testnet,
-        timeout_secs=timeout_secs,
-        max_retries=max_retries,
-        retry_delay_ms=retry_delay_ms,
-        retry_delay_max_ms=retry_delay_max_ms,
-        recv_window_ms=recv_window_ms,
-        proxy_url=proxy_url,
-    )
+    is_demo = environment == BybitEnvironment.DEMO
+    is_testnet = environment == BybitEnvironment.TESTNET
+
+    kwargs: dict = {
+        "api_key": api_key,
+        "api_secret": api_secret,
+        "base_url": base_url,
+        "demo": is_demo,
+        "testnet": is_testnet,
+        "proxy_url": proxy_url,
+    }
+
+    if timeout_secs is not None:
+        kwargs["timeout_secs"] = timeout_secs
+    if max_retries is not None:
+        kwargs["max_retries"] = max_retries
+    if retry_delay_ms is not None:
+        kwargs["retry_delay_ms"] = retry_delay_ms
+    if retry_delay_max_ms is not None:
+        kwargs["retry_delay_max_ms"] = retry_delay_max_ms
+    if recv_window_ms is not None:
+        kwargs["recv_window_ms"] = recv_window_ms
+
+    return nautilus_pyo3.BybitHttpClient(**kwargs)
 
 
 @lru_cache(1)
@@ -181,18 +182,18 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
 
         """
         product_types = config.product_types or BYBIT_ALL_PRODUCTS
+        env = _resolve_environment(config.environment, config.demo, config.testnet)
         client: nautilus_pyo3.BybitHttpClient = get_cached_bybit_http_client(
+            environment=env,
             api_key=config.api_key,
             api_secret=config.api_secret,
             base_url=config.base_url_http,
-            demo=config.demo,
-            testnet=config.testnet,
             timeout_secs=None,  # Use Rust default (60s)
             max_retries=config.max_retries,
             retry_delay_ms=config.retry_delay_initial_ms,
             retry_delay_max_ms=config.retry_delay_max_ms,
             recv_window_ms=config.recv_window_ms,
-            proxy_url=config.http_proxy_url,
+            proxy_url=config.proxy_url,
         )
         provider = get_cached_bybit_instrument_provider(
             client=client,
@@ -249,19 +250,18 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
 
         """
         product_types = config.product_types or BYBIT_ALL_PRODUCTS
-        # Use Rust HTTP client
+        env = _resolve_environment(config.environment, config.demo, config.testnet)
         client: nautilus_pyo3.BybitHttpClient = get_cached_bybit_http_client(
+            environment=env,
             api_key=config.api_key,
             api_secret=config.api_secret,
             base_url=config.base_url_http,
-            demo=config.demo,
-            testnet=config.testnet,
             timeout_secs=None,  # Use Rust default (60s)
             max_retries=config.max_retries,
             retry_delay_ms=config.retry_delay_initial_ms,
             retry_delay_max_ms=config.retry_delay_max_ms,
             recv_window_ms=config.recv_window_ms,
-            proxy_url=config.http_proxy_url,
+            proxy_url=config.proxy_url,
         )
         provider = get_cached_bybit_instrument_provider(
             client=client,

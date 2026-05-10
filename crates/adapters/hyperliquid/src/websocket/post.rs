@@ -340,14 +340,14 @@ impl OrderBuilder {
     }
 
     /// Create a limit order with individual parameters (legacy method)
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn push_limit(
         self,
         asset: u32,
         is_buy: bool,
-        px: impl ToString,
-        sz: impl ToString,
+        px: &(impl ToString + ?Sized),
+        sz: &(impl ToString + ?Sized),
         reduce_only: bool,
         tif: TimeInForceRequest,
         cloid: Option<String>,
@@ -380,17 +380,17 @@ impl OrderBuilder {
     }
 
     /// Create a trigger order with individual parameters (legacy method)
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn push_trigger(
         self,
         asset: u32,
         is_buy: bool,
-        px: impl ToString,
-        sz: impl ToString,
+        px: &(impl ToString + ?Sized),
+        sz: &(impl ToString + ?Sized),
         reduce_only: bool,
         is_market: bool,
-        trigger_px: impl ToString,
+        trigger_px: &(impl ToString + ?Sized),
         tpsl: TpSlRequest,
         cloid: Option<String>,
     ) -> Self {
@@ -1017,7 +1017,7 @@ mod tests {
         )
         .await;
 
-        let got = sent.lock().await.clone();
-        assert_eq!(got, vec![1, 2, 3, 4, 5]);
+        let actual = sent.lock().await.clone();
+        assert_eq!(actual, vec![1, 2, 3, 4, 5]);
     }
 }

@@ -27,12 +27,13 @@ workspace = true
 
 [lib]
 name = "nautilus_serialization"
-crate-type = ["rlib", "staticlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = []
 arrow = ["dep:arrow"]
 capnp = ["dep:capnp"]
+display = ["arrow"]
 sbe = []
 extension-module = [
   "nautilus-core/extension-module",
@@ -40,7 +41,12 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-python = ["nautilus-core/python", "nautilus-model/python", "pyo3"]
+python = [
+  "nautilus-core/python",
+  "nautilus-model/python",
+  "pyo3",
+  "pyo3-stub-gen",
+]
 high-precision = ["nautilus-model/high-precision"]
 
 [package.metadata.docs.rs]
@@ -51,6 +57,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
+anyhow = { workspace = true }
 indexmap = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
@@ -63,6 +70,7 @@ uuid = { workspace = true }
 arrow = { workspace = true, optional = true }
 capnp = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -91,7 +99,7 @@ harness = false
 required-features = ["sbe"]
 
 [[bench]]
-name = "quote_tick_capnp_vs_sbe"
-path = "benches/quote_tick_capnp_vs_sbe.rs"
+name = "market_data_capnp_vs_sbe"
+path = "benches/market_data_capnp_vs_sbe.rs"
 harness = false
 required-features = ["capnp", "sbe"]

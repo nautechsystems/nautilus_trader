@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod builder_fee;
 pub mod consts;
 pub mod converters;
 pub mod credential;
@@ -21,6 +20,9 @@ pub mod enums;
 pub mod models;
 pub mod parse;
 pub mod types;
+
+#[cfg(test)]
+pub mod testing;
 
 pub use converters::{
     determine_tpsl_type, hyperliquid_conditional_to_nautilus, hyperliquid_order_type_to_nautilus,

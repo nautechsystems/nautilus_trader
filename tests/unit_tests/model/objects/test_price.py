@@ -116,49 +116,52 @@ class TestPrice:
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Price(-0, precision=0), Decimal(0)],
-            [Price(0, precision=0), Decimal(0)],
-            [Price(1, precision=0), Decimal(1)],
-            [Price(-1, precision=0), Decimal(1)],
-            [Price(-1.1, precision=1), Decimal("1.1")],
+            [Price(-0, precision=0), Price(0, precision=0)],
+            [Price(0, precision=0), Price(0, precision=0)],
+            [Price(1, precision=0), Price(1, precision=0)],
+            [Price(-1, precision=0), Price(1, precision=0)],
+            [Price(-1.1, precision=1), Price(1.1, precision=1)],
         ],
     )
-    def test_abs_with_various_values_returns_expected_decimal(self, value, expected):
+    def test_abs_with_various_values_returns_expected_price(self, value, expected):
         # Arrange, Act
         result = abs(value)
 
         # Assert
+        assert isinstance(result, Price)
         assert result == expected
 
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [
-                Price(-1, precision=0),
-                Decimal(-1),
-            ],  # Matches built-in decimal.Decimal behavior
-            [Price(0, 0), Decimal(0)],
+            [Price(-1, precision=0), Price(-1, precision=0)],
+            [Price(0, precision=0), Price(0, precision=0)],
+            [Price(1.5, precision=1), Price(1.5, precision=1)],
         ],
     )
-    def test_pos_with_various_values_returns_expected_decimal(self, value, expected):
+    def test_pos_with_various_values_returns_expected_price(self, value, expected):
         # Arrange, Act
         result = +value
 
         # Assert
+        assert isinstance(result, Price)
         assert result == expected
 
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Price(1, precision=0), Decimal(-1)],
-            [Price(0, precision=0), Decimal(0)],
+            [Price(1, precision=0), Price(-1, precision=0)],
+            [Price(-1, precision=0), Price(1, precision=0)],
+            [Price(0, precision=0), Price(0, precision=0)],
+            [Price(-1.5, precision=1), Price(1.5, precision=1)],
         ],
     )
-    def test_neg_with_various_values_returns_expected_decimal(self, value, expected):
+    def test_neg_with_various_values_returns_expected_price(self, value, expected):
         # Arrange, Act
         result = -value
 
         # Assert
+        assert isinstance(result, Price)
         assert result == expected
 
     @pytest.mark.parametrize(

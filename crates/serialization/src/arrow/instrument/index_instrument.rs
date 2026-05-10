@@ -27,7 +27,7 @@ use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
     instruments::index_instrument::IndexInstrument,
-    types::{currency::Currency, price::Price, quantity::Quantity},
+    types::{price::Price, quantity::Quantity},
 };
 #[allow(unused)]
 use rust_decimal::Decimal;
@@ -149,7 +149,7 @@ impl EncodeToRecordBatch for IndexInstrument {
 /// Returns an `EncodingError` if the RecordBatch cannot be decoded.
 pub fn decode_index_instrument_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
-    record_batch: RecordBatch,
+    record_batch: &RecordBatch,
 ) -> Result<Vec<IndexInstrument>, EncodingError> {
     let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();
@@ -177,8 +177,12 @@ pub fn decode_index_instrument_batch(
         let id = InstrumentId::from_str(id_values.value(i))
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
-        let currency = Currency::from_str(currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("currency", format!("row {i}: {e}")))?;
+        let currency = super::decode_currency(
+            currency_values.value(i),
+            "currency",
+            "index_instrument.currency",
+            i,
+        )?;
         let price_prec = price_precision_values.value(i);
         let size_prec = size_precision_values.value(i);
 
@@ -196,6 +200,7 @@ pub fn decode_index_instrument_batch(
                 .downcast_ref::<BinaryArray>()
                 .ok_or_else(|| EncodingError::ParseError("info", format!("row {i}: invalid type")))?
                 .value(i);
+
             match serde_json::from_slice::<Params>(info_bytes) {
                 Ok(info_dict) => Some(info_dict),
                 Err(e) => {

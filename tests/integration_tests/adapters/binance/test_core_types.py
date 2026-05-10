@@ -25,6 +25,7 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.test_kit.mocks.data import setup_catalog
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -338,15 +339,11 @@ def catalog(tmp_path) -> ParquetDataCatalog:
     return setup_catalog(protocol="memory", path=tmp_path / "catalog")
 
 
-def test_binance_bar_data_catalog_serialization(catalog: ParquetDataCatalog):
-    """
-    Test that BinanceBar can be serialized to and deserialized from a data catalog.
-
-    Regression test for the BinanceBar serialization issue where Arrow registration was
-    incomplete (missing encoder/decoder).
-
-    """
+def test_binance_bar_data_catalog_serialization(tmp_path):
+    # Uses file protocol because the Rust DataFusion backend cannot read
+    # from Python's in-memory filesystem.
     # Arrange
+    catalog = setup_catalog(protocol="file", path=tmp_path / "catalog")
     bar = BinanceBar(
         bar_type=BarType(
             instrument_id=TestIdStubs.btcusdt_binance_id(),
@@ -399,3 +396,66 @@ def test_binance_bar_data_catalog_serialization(catalog: ParquetDataCatalog):
 
     # Verify object equality
     assert retrieved_bar == bar
+
+
+def test_binance_mark_price_arrow_serialization():
+    # Arrange
+    update = BinanceFuturesMarkPriceUpdate(
+        instrument_id=TestIdStubs.ethusdt_perp_binance_id(),
+        mark=Price.from_str("1642.28584467"),
+        index=Price.from_str("1642.28316456"),
+        estimated_settle=Price.from_str("1639.27811452"),
+        funding_rate=Decimal("0.00081453"),
+        next_funding_ns=1650000000000000002,
+        ts_event=1650000000000000001,
+        ts_init=1650000000000000000,
+    )
+
+    # Act
+    serialized = ArrowSerializer.serialize(update)
+    deserialized = ArrowSerializer.deserialize(
+        data_cls=BinanceFuturesMarkPriceUpdate,
+        batch=serialized,
+    )
+
+    # Assert
+    assert len(deserialized) == 1
+    result = deserialized[0]
+    assert result.instrument_id == update.instrument_id
+    assert result.mark == update.mark
+    assert result.index == update.index
+    assert result.estimated_settle == update.estimated_settle
+    assert result.funding_rate == update.funding_rate
+    assert result.next_funding_ns == update.next_funding_ns
+    assert result.ts_event == update.ts_event
+    assert result.ts_init == update.ts_init
+
+
+def test_binance_mark_price_data_catalog_serialization(catalog: ParquetDataCatalog):
+    # Arrange
+    update = BinanceFuturesMarkPriceUpdate(
+        instrument_id=TestIdStubs.ethusdt_perp_binance_id(),
+        mark=Price.from_str("1642.28584467"),
+        index=Price.from_str("1642.28316456"),
+        estimated_settle=Price.from_str("1639.27811452"),
+        funding_rate=Decimal("0.00081453"),
+        next_funding_ns=1650000000000000002,
+        ts_event=1650000000000000001,
+        ts_init=1650000000000000000,
+    )
+
+    # Act
+    catalog.write_data([update])
+    results = catalog.custom_data(cls=BinanceFuturesMarkPriceUpdate)
+
+    # Assert
+    assert len(results) == 1
+    result = results[0].data
+    assert result.instrument_id == update.instrument_id
+    assert result.mark == update.mark
+    assert result.index == update.index
+    assert result.estimated_settle == update.estimated_settle
+    assert result.funding_rate == update.funding_rate
+    assert result.next_funding_ns == update.next_funding_ns
+    assert result.ts_event == update.ts_event
+    assert result.ts_init == update.ts_init

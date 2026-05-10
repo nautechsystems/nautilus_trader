@@ -32,5 +32,5 @@ pub fn stub_margin_balance() -> MarginBalance {
     let initial = Money::from("5000 USD");
     let maintenance = Money::from("20000 USD");
     let instrument = instrument_id_btc_usdt();
-    MarginBalance::new(initial, maintenance, instrument)
+    MarginBalance::new(initial, maintenance, Some(instrument))
 }

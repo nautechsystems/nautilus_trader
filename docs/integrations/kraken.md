@@ -1,10 +1,8 @@
 # Kraken
 
-Founded in 2011, Kraken is one of the most established cryptocurrency exchanges
-globally and the largest exchange in Europe by euro trading volume. The platform
-offers spot and derivatives trading across a wide range of digital assets. This
-integration connects to Kraken Pro and supports live market data ingest and order
-execution for both Kraken Spot and Kraken Derivatives (Futures) markets.
+Kraken offers spot and derivatives trading across a wide range of digital
+assets. This integration connects to Kraken Pro and supports live market data
+ingest and order execution for Kraken Spot and Kraken Derivatives (Futures).
 
 ## Overview
 
@@ -17,8 +15,10 @@ This guide assumes a trader is setting up for both live market data feeds and
 trade execution. The Kraken adapter includes multiple components, which can be
 used together or separately depending on the use case.
 
-- `KrakenRawHttpClient`: Low-level HTTP API connectivity for Spot and Futures.
-- `KrakenHttpClient`: Higher-level HTTP client with instrument caching and reconciliation support.
+- `KrakenSpotRawHttpClient` and `KrakenFuturesRawHttpClient`: Low-level HTTP
+  API connectivity.
+- `KrakenSpotHttpClient` and `KrakenFuturesHttpClient`: Higher-level HTTP
+  clients with instrument caching and reconciliation support.
 - `KrakenInstrumentProvider`: Instrument parsing and loading functionality.
 - `KrakenDataClient`: Market data feed manager.
 - `KrakenExecutionClient`: Account management and trade execution gateway.
@@ -38,7 +38,7 @@ You can find live example scripts [here](https://github.com/nautechsystems/nauti
 
 ## Kraken documentation
 
-Kraken provides extensive documentation for users:
+Kraken provides detailed documentation for users:
 
 - [Kraken API Documentation](https://docs.kraken.com/api/)
 - [Kraken Spot REST API](https://docs.kraken.com/api/docs/guides/spot-rest-intro)
@@ -54,13 +54,13 @@ Kraken supports two primary product categories:
 | Product Type             | Supported | Notes                                                     |
 |--------------------------|-----------|-----------------------------------------------------------|
 | Spot                     | ✓         | Standard cryptocurrency pairs with margin support.        |
-| Futures (Perpetual)      | ✓         | Inverse (`PI_`) and USD-margined (`PF_`) perpetual swaps. |
+| Futures (Perpetual)      | ✓         | Inverse (`PI_`) and USD‑margined (`PF_`) perpetual swaps. |
 | Futures (Dated/Flex)     | ✓         | Fixed maturity (`FI_`) and flex (`FF_`) contracts.        |
 
 :::note
 **Dual-product deployments**: When both `SPOT` and `FUTURES` product types are
 configured, the adapter queries both APIs and merges the account states. This
-ensures the execution engine has visibility into collateral across both markets.
+gives the execution engine visibility into collateral across both markets.
 :::
 
 ## Bar streaming
@@ -105,7 +105,7 @@ We chose this approach over timer-based emission because:
 
 - Timer-based emission could miss the final update before the bar closes.
 - Kraken's updates are not guaranteed to arrive at exact interval boundaries.
-- Buffering ensures data integrity at the cost of latency.
+- Buffering preserves data integrity at the cost of latency.
 
 :::warning
 If bar latency matters for your strategy, consider using trade tick data
@@ -173,18 +173,45 @@ InstrumentId.from_str("PI_ETHUSD.KRAKEN")  # Perpetual inverse ETH
 InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 ```
 
+## Data capability
+
+### Subscriptions (real-time)
+
+| Data Type              | Spot | Futures | Notes                                  |
+|------------------------|------|---------|----------------------------------------|
+| `QuoteTick`            | ✓    | ✓       | Derived from ticker channel.           |
+| `TradeTick`            | ✓    | ✓       |                                        |
+| `OrderBookDeltas`      | ✓    | ✓       | L2 order book updates.                 |
+| `OrderBookDepth10`     | -    | -       | Use `OrderBookDeltas` with depth `10`. |
+| `Bar`                  | ✓    | -       | Spot WS OHLC channel. See bar section. |
+| `MarkPriceUpdate`      | -    | ✓       | From futures ticker feed.              |
+| `IndexPriceUpdate`     | -    | ✓       | From futures ticker feed.              |
+| `FundingRateUpdate`    | -    | ✓       | Perpetuals only.                       |
+| `InstrumentStatus`     | ✓    | ✓       | Python adapter polls instrument refreshes. |
+
+### Requests (historical)
+
+| Data Type              | Spot | Futures | Notes                                  |
+|------------------------|------|---------|----------------------------------------|
+| `TradeTick`            | ✓    | ✓       |                                        |
+| `Bar`                  | ✓    | ✓       |                                        |
+| `OrderBook` (snapshot) | ✓    | ✓       | Via HTTP depth endpoint.               |
+| `FundingRateUpdate`    | -    | ✓       | Client‑side start/end/limit filtering. |
+
 ## Orders capability
 
 ### Order types
 
-| Order Type             | Spot | Futures | Notes                                      |
-|------------------------|------|---------|--------------------------------------------|
-| `MARKET`               | ✓    | ✓       | Immediate execution at market price.       |
-| `LIMIT`                | ✓    | ✓       | Execution at specified price or better.    |
-| `STOP_MARKET`          | ✓    | ✓       | Conditional market order (stop-loss).      |
-| `MARKET_IF_TOUCHED`    | ✓    | ✓       | Conditional market order (take-profit).    |
-| `STOP_LIMIT`           | ✓    | ✓       | Conditional limit order (stop-loss-limit). |
-| `LIMIT_IF_TOUCHED`     | ✓    | -       | *Futures: not yet implemented*.            |
+| Order Type             | Spot | Futures | Notes                                         |
+|------------------------|------|---------|-----------------------------------------------|
+| `MARKET`               | ✓    | ✓       | Immediate execution at market price.          |
+| `LIMIT`                | ✓    | ✓       | Execution at specified price or better.       |
+| `STOP_MARKET`          | ✓    | ✓       | Conditional market order (stop‑loss).         |
+| `MARKET_IF_TOUCHED`    | ✓    | ✓       | Conditional market order (take‑profit).       |
+| `STOP_LIMIT`           | ✓    | ✓       | Conditional limit order (stop‑loss‑limit).    |
+| `LIMIT_IF_TOUCHED`     | ✓    | ✓       | Maps to `take_profit` with `limit_price`.     |
+| `TRAILING_STOP_MARKET` | ✓    | -       | Trailing stop with `trailing_offset`.         |
+| `TRAILING_STOP_LIMIT`  | ✓    | -       | Trailing stop‑limit with `limit_offset`.      |
 
 ### Time in force
 
@@ -193,7 +220,7 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 | `GTC`         | ✓    | ✓       | Good Till Canceled.                                 |
 | `GTD`         | ✓    | -       | Good Till Date (Spot only, requires `expire_time`). |
 | `IOC`         | ✓    | ✓       | Immediate or Cancel.                                |
-| `FOK`         | -    | -       | *Not supported by Kraken*.                          |
+| `FOK`         | ✓    | -       | Spot limit orders only.                             |
 
 :::note
 **Market orders** are inherently immediate and do not support time-in-force.
@@ -202,18 +229,36 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 
 ### Execution instructions
 
-| Instruction   | Spot | Futures | Notes                                       |
-|---------------|------|---------|---------------------------------------------|
-| `post_only`   | ✓    | ✓       | Available for limit orders.                 |
-| `reduce_only` | -    | ✓       | Futures only. Reduces position, no reversal.|
+| Instruction      | Spot | Futures | Notes                                         |
+|------------------|------|---------|-----------------------------------------------|
+| `post_only`      | ✓    | ✓       | Available for limit orders.                   |
+| `reduce_only`    | -    | ✓       | Futures only. Reduces position, no reversal.  |
+| `quote_quantity` | ✓    | -       | Spot only. Volume in quote currency (`viqc`). |
+| `display_qty`    | ✓    | -       | Spot only. Iceberg orders (`displayvol`).     |
+
+### Trigger types
+
+Conditional orders (stop, take-profit, trailing stop) support a trigger price
+reference on Spot:
+
+| Trigger Type  | Spot | Futures | Notes                                      |
+|---------------|------|---------|--------------------------------------------|
+| `LAST_PRICE`  | ✓    | ✓       | Default. Last traded price.                |
+| `INDEX_PRICE` | ✓    | ✓       | Broader market index price.                |
+| `MARK_PRICE`  | -    | ✓       | Futures only.                              |
+
+:::note
+The adapter rejects unsupported trigger types (e.g., `BID_ASK`) at submission
+time rather than silently coercing them.
+:::
 
 ### Batch operations
 
 | Operation          | Spot | Futures | Notes                                        |
 |--------------------|------|---------|----------------------------------------------|
-| Batch Submit       | -    | -       | *Not yet implemented*.                       |
-| Batch Modify       | -    | -       | *Not yet implemented* (Futures only).        |
-| Batch Cancel       | ✓    | ✓       | Auto-chunks into batches of 50.              |
+| Batch Submit       | ✓    | ✓       | Spot chunks at 15 orders. Futures chunks at 10. |
+| Batch Modify       | -    | ✓       | Futures HTTP helper only. Execution uses single modify commands. |
+| Batch Cancel       | ✓    | ✓       | Auto‑chunks into batches of 50.              |
 
 :::note
 **Cancel all orders**:
@@ -228,7 +273,7 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 
 | Feature           | Spot | Futures | Notes                                                     |
 |-------------------|------|---------|-----------------------------------------------------------|
-| Query positions   | ✓*   | ✓       | *Spot: opt-in via `use_spot_position_reports`. See below. |
+| Query positions   | ✓*   | ✓       | *Spot: opt‑in via `use_spot_position_reports`. See below. |
 | Position mode     | -    | -       | Single position per instrument.                           |
 | Leverage control  | -    | ✓       | Configured per account tier.                              |
 | Margin mode       | -    | ✓       | Cross margin for Futures.                                 |
@@ -239,7 +284,7 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 |----------------------|------|---------|----------------------------------------------|
 | Query open orders    | ✓    | ✓       | List all active orders.                      |
 | Query order history  | ✓    | ✓       | Historical order data with pagination.       |
-| Order status updates | ✓    | ✓       | Real-time order state changes via WebSocket. |
+| Order status updates | ✓    | ✓       | Real‑time order state changes via WebSocket. |
 | Trade history        | ✓    | ✓       | Execution and fill reports.                  |
 
 ### Contingent orders
@@ -249,7 +294,7 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 | Order lists         | -    | -       | *Not supported*.                         |
 | OCO orders          | -    | -       | *Not supported*.                         |
 | Bracket orders      | -    | -       | *Not supported*.                         |
-| Conditional orders  | ✓    | ✓       | Stop and take-profit orders.             |
+| Conditional orders  | ✓    | ✓       | Stop and take‑profit orders.             |
 
 ## Reconciliation
 
@@ -330,6 +375,17 @@ a strategy that expects to close positions may attempt to sell your wallet
 holdings.
 :::
 
+## Funding rates
+
+The adapter receives funding rate data from the
+[Ticker](https://docs.kraken.com/api/docs/futures-api/websocket/ticker)
+WebSocket feed, which provides `relative_funding_rate` and `next_funding_rate_time` for
+perpetual futures.
+
+The `interval` field on `FundingRateUpdate` is `None` for Kraken because the ticker feed
+does not include a funding interval field and the Kraken API documentation does not
+specify a fixed funding period.
+
 ## Rate limiting
 
 The adapter implements automatic rate limiting to comply with Kraken's API requirements.
@@ -354,6 +410,29 @@ Kraken may temporarily block IP addresses that exceed rate limits. The adapter
 automatically queues requests when limits are approached.
 :::
 
+### Reconciliation interval guidance
+
+The execution engine's `open_check_interval_secs` and
+`position_check_interval_secs` settings create sustained REST API load that
+can exhaust Kraken's counter-based rate limit, especially on the Starter tier
+where the counter decays at only 0.33/sec. Each open-order check generates
+1-3 REST calls (+1 or +2 counter each), and at short intervals the counter
+overflows before it can decay, causing `EAPI:Rate limit exceeded` errors.
+
+Recommended settings for Kraken:
+
+```python
+exec_engine=LiveExecEngineConfig(
+    reconciliation=True,
+    open_check_interval_secs=30.0,    # 30s minimum for Starter tier
+    position_check_interval_secs=120.0,  # 2 minutes
+)
+```
+
+Higher-tier accounts with faster counter decay can use shorter intervals.
+If you see `EAPI:Rate limit exceeded` errors in the logs, increase these
+intervals or reduce `max_requests_per_second` in the adapter config.
+
 ## Configuration
 
 The product types for each client must be specified in the configurations.
@@ -370,8 +449,7 @@ The product types for each client must be specified in the configurations.
 | `base_url_http_futures`         | `None`    | Override for Kraken Futures REST base URL.                              |
 | `base_url_ws_spot`              | `None`    | Override for Kraken Spot WebSocket URL.                                 |
 | `base_url_ws_futures`           | `None`    | Override for Kraken Futures WebSocket URL.                              |
-| `http_proxy_url`                | `None`    | Optional HTTP proxy URL.                                                |
-| `ws_proxy_url`                  | `None`    | WebSocket proxy URL (*not yet implemented*).                            |
+| `proxy_url`                     | `None`    | Optional proxy URL for HTTP and WebSocket transports.                   |
 | `update_instruments_interval_mins` | `60`   | Interval (minutes) to reload instruments; `None` to disable.            |
 | `max_retries`                   | `None`    | Maximum retry attempts for REST requests.                               |
 | `retry_delay_initial_ms`        | `None`    | Initial delay (milliseconds) between retries.                           |
@@ -392,8 +470,7 @@ The product types for each client must be specified in the configurations.
 | `base_url_http_futures`         | `None`    | Override for Kraken Futures REST base URL.                              |
 | `base_url_ws_spot`              | `None`    | Override for Kraken Spot WebSocket URL.                                 |
 | `base_url_ws_futures`           | `None`    | Override for Kraken Futures WebSocket URL.                              |
-| `http_proxy_url`                | `None`    | Optional HTTP proxy URL.                                                |
-| `ws_proxy_url`                  | `None`    | WebSocket proxy URL (*not yet implemented*).                            |
+| `proxy_url`                     | `None`    | Optional proxy URL for HTTP and WebSocket transports.                   |
 | `max_retries`                   | `None`    | Maximum retry attempts for order submission/cancel calls.               |
 | `retry_delay_initial_ms`        | `None`    | Initial delay (milliseconds) between retries.                           |
 | `retry_delay_max_ms`            | `None`    | Maximum delay (milliseconds) between retries.                           |

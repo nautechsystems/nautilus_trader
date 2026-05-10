@@ -29,6 +29,10 @@ use crate::indicator::Indicator;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
+)]
 pub struct SpreadAnalyzer {
     pub capacity: usize,
     pub instrument_id: InstrumentId,
@@ -177,6 +181,7 @@ mod tests {
             "100.55", "100.50", "100.60", "100.65", "100.57", "100.53", "100.58", "100.62",
             "100.54", "100.56",
         ];
+
         for i in 1..10 {
             spread_analyzer_10.handle_quote(&stub_quote(bid_price[i], ask_price[i]));
         }
@@ -202,6 +207,7 @@ mod tests {
             "100.55", "100.50", "100.60", "100.65", "100.57", "100.53", "100.58", "100.62",
             "100.54", "100.56", "100.59", "100.61", "100.63", "100.55", "100.57",
         ];
+
         for i in 0..10 {
             spread_analyzer_10.handle_quote(&stub_quote(bid_price[i], ask_price[i]));
         }

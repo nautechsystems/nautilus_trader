@@ -21,7 +21,7 @@ use std::fmt::Debug;
 
 use aws_lc_rs::hmac;
 use base64::prelude::*;
-use nautilus_core::{env::get_or_env_var_opt, string::REDACTED};
+use nautilus_core::{env::get_or_env_var_opt, string::secret::REDACTED};
 use zeroize::ZeroizeOnDrop;
 
 /// Returns the environment variable names for API credentials.
@@ -132,7 +132,7 @@ impl Credential {
     /// For keys shorter than 8 characters, shows asterisks only.
     #[must_use]
     pub fn api_key_masked(&self) -> String {
-        nautilus_core::string::mask_api_key(&self.api_key)
+        nautilus_core::string::secret::mask_api_key(&self.api_key)
     }
 }
 

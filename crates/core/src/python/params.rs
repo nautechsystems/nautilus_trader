@@ -59,6 +59,12 @@ pub fn pydict_to_params(py: Python<'_>, dict: Py<PyDict>) -> PyResult<Option<Par
 /// # Errors
 ///
 /// Returns a `PyErr` if the value type is unsupported or conversion fails.
+///
+/// # Panics
+///
+/// Panics if a numeric value claims to be `i64`/`u64`/`f64` via the predicate
+/// methods but the corresponding accessor returns `None` (should not happen for
+/// well-formed [`serde_json::Number`] values).
 pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
     match val {
         Value::Null => Ok(py.None()),

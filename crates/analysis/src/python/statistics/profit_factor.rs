@@ -21,7 +21,25 @@ use super::transform_returns;
 use crate::{statistic::PortfolioStatistic, statistics::profit_factor::ProfitFactor};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ProfitFactor {
+    /// Calculates the profit factor based on portfolio returns.
+    ///
+    /// Profit factor is defined as the ratio of gross profits to gross losses:
+    /// `Sum(Positive Returns) / Abs(Sum(Negative Returns))`
+    ///
+    /// A profit factor greater than 1.0 indicates a profitable strategy, while
+    /// a factor less than 1.0 indicates losses exceed gains.
+    ///
+    /// Generally:
+    /// - 1.0-1.5: Modest profitability
+    /// - 1.5-2.0: Good profitability
+    /// - > 2.0: Excellent profitability
+    ///
+    /// # References
+    ///
+    /// - Tharp, V. K. (1998). *Trade Your Way to Financial Freedom*. McGraw-Hill.
+    /// - Kaufman, P. J. (2013). *Trading Systems and Methods* (5th ed.). Wiley.
     #[new]
     fn py_new() -> Self {
         Self {}
@@ -38,8 +56,9 @@ impl ProfitFactor {
     }
 
     #[pyo3(name = "calculate_from_returns")]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_calculate_from_returns(&mut self, raw_returns: BTreeMap<u64, f64>) -> Option<f64> {
-        self.calculate_from_returns(&transform_returns(raw_returns))
+        self.calculate_from_returns(&transform_returns(&raw_returns))
     }
 
     #[pyo3(name = "calculate_from_realized_pnls")]

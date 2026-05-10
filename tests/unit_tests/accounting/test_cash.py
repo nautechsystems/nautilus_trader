@@ -185,6 +185,77 @@ class TestCashAccount:
             ETH: Money(0.00000000, ETH),
         }
 
+    def test_instantiate_multi_asset_cash_account_with_empty_balances(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM-000"),
+            account_type=AccountType.CASH,
+            base_currency=None,
+            reported=True,
+            balances=[],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        account = CashAccount(event)
+
+        # Assert
+        assert account.base_currency is None
+        assert account.last_event == event
+        assert account.events == [event]
+        assert account.event_count == 1
+        assert account.currencies() == []
+        assert account.balances_total() == {}
+
+    def test_apply_empty_balance_update_to_single_asset_cash_account_is_noop(self):
+        # Arrange
+        event1 = AccountState(
+            account_id=AccountId("SIM-001"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000.00, USD),
+                    Money(0.00, USD),
+                    Money(1_000_000.00, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        account = CashAccount(event1)
+        account.update_balance_locked(AUDUSD_SIM.id, Money(500.00, USD))
+        event2 = AccountState(
+            account_id=AccountId("SIM-001"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act
+        account.apply(event=event2)
+
+        # Assert
+        assert account.last_event == event2
+        assert account.event_count == 2
+        assert account.balance_total() == Money(1_000_000.00, USD)
+        assert account.balance_locked() == Money(500.00, USD)
+        assert account.balance_free() == Money(999_500.00, USD)
+
     def test_apply_given_new_state_event_updates_correctly(self):
         # Arrange
         event1 = AccountState(
@@ -251,6 +322,50 @@ class TestCashAccount:
         assert account.balance_total(ETH) == Money(20.00000000, ETH)
         assert account.balance_free(ETH) == Money(20.00000000, ETH)
         assert account.balance_locked(ETH) == Money(0.00000000, ETH)
+
+    def test_apply_empty_balance_update_to_multi_asset_cash_account_is_noop(self):
+        # Arrange
+        event1 = AccountState(
+            account_id=AccountId("SIM-001"),
+            account_type=AccountType.CASH,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(10.00000000, BTC),
+                    Money(0.00000000, BTC),
+                    Money(10.00000000, BTC),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        account = CashAccount(event1)
+        account.update_balance_locked(BTCUSDT_BINANCE.id, Money(1.00000000, BTC))
+        event2 = AccountState(
+            account_id=AccountId("SIM-001"),
+            account_type=AccountType.CASH,
+            base_currency=None,
+            reported=True,
+            balances=[],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act
+        account.apply(event=event2)
+
+        # Assert
+        assert account.last_event == event2
+        assert account.event_count == 2
+        assert account.balance_total(BTC) == Money(10.00000000, BTC)
+        assert account.balance_locked(BTC) == Money(1.00000000, BTC)
 
     def test_calculate_balance_locked_buy(self):
         # Arrange

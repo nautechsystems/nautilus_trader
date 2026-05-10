@@ -144,7 +144,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
 
         # Configuration
-        self._live_api_key: str = config.api_key or http_client.key
+        self._live_api_key: str = config.api_key or http_client.api_key
         self._live_gateway: str | None = config.live_gateway
         self._use_exchange_as_venue: bool = config.use_exchange_as_venue
         self._timeout_initial_load: float | None = config.timeout_initial_load
@@ -421,6 +421,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         instrument_ids_param: list[InstrumentId] | None = command.params.get(
             "instrument_ids",
         )
+
         if instrument_ids_param:
             instrument_ids = instrument_ids_param
         else:
@@ -430,6 +431,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._loader.get_dataset_for_venue(instrument_id.venue)
             for instrument_id in instrument_ids
         }
+
         if len(datasets) > 1:
             self._log.error(
                 f"Cannot subscribe to instruments from multiple datasets: {datasets}. "
@@ -791,8 +793,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             instrument_ids, dataset = result
 
             # Allowed schema values: mbp-1, bbo-1s, bbo-1m, cmbp-1, cbbo-1s, cbbo-1m, tbbo, tcbbo
-            schema: str | None = command.params.get("schema")
-            if schema is None or schema not in [
+            supported_schemas = {
                 DatabentoSchema.MBP_1.value,
                 DatabentoSchema.BBO_1S.value,
                 DatabentoSchema.BBO_1M.value,
@@ -801,10 +802,14 @@ class DatabentoDataClient(LiveMarketDataClient):
                 DatabentoSchema.CBBO_1M.value,
                 DatabentoSchema.TBBO.value,
                 DatabentoSchema.TCBBO.value,
-            ]:
+            }
+            schema: str | None = command.params.get("schema")
+            if schema is not None and schema not in supported_schemas:
                 self._log.warning(
-                    f"Schema {schema} not supported for quotes. Defaulting to {DatabentoSchema.MBP_1}",
+                    f"Schema '{schema}' not supported for quotes, defaulting to {DatabentoSchema.MBP_1}",
                 )
+                schema = DatabentoSchema.MBP_1.value
+            elif schema is None:
                 schema = DatabentoSchema.MBP_1.value
 
             start: int | None = command.params.get("start_ns")
@@ -815,6 +820,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 f"Subscribing to quotes (schema: {schema}) from dataset {dataset} for {len(instrument_ids)} instrument ids:",
                 LogColor.BLUE,
             )
+
             for i, instrument_id in enumerate(instrument_ids):
                 self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
@@ -850,6 +856,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 for inst_id in instrument_ids
                 if inst_id not in self._trade_tick_subscriptions
             ]
+
             if not instrument_ids:
                 return
 
@@ -897,6 +904,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
                 for bar_type in bar_types
             }
+
             if len(datasets) > 1:
                 self._log.error(
                     f"Cannot subscribe to bar types from multiple datasets: {datasets}. "
@@ -909,6 +917,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             # Determine schema for all bar_types (must be the same)
             schemas = set()
             instrument_ids = []
+
             for bar_type in bar_types:
                 try:
                     schema = databento_schema_from_nautilus_bar_type(bar_type)
@@ -1119,6 +1128,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, inst_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {inst_id}", LogColor.BLUE)
 
@@ -1167,6 +1177,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, inst_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {inst_id}", LogColor.BLUE)
 
@@ -1214,6 +1225,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, inst_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {inst_id}", LogColor.BLUE)
 
@@ -1245,6 +1257,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._loader.get_dataset_for_venue(instrument_id.venue)
             for instrument_id in instrument_ids
         }
+
         if len(datasets) > 1:
             self._log.error(
                 f"Cannot request instruments from multiple datasets: {datasets}. "
@@ -1260,6 +1273,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, instrument_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
@@ -1333,6 +1347,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._loader.get_dataset_for_venue(instrument_id.venue)
             for instrument_id in instrument_ids
         }
+
         if len(datasets) > 1:
             self._log.error(
                 f"Cannot request quotes for instruments from multiple datasets: {datasets}. "
@@ -1352,6 +1367,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"Requesting quotes for {len(instrument_ids)} instruments: dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, instrument_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
@@ -1401,6 +1417,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._loader.get_dataset_for_venue(instrument_id.venue)
             for instrument_id in instrument_ids
         }
+
         if len(datasets) > 1:
             self._log.error(
                 f"Cannot request trades for instruments from multiple datasets: {datasets}. "
@@ -1420,6 +1437,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"Requesting trades for {len(instrument_ids)} instruments: dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, instrument_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
@@ -1456,6 +1474,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
             for bar_type in bar_types
         }
+
         if len(datasets) > 1:
             self._log.error(
                 f"Cannot request bars for instruments from multiple datasets: {datasets}. "
@@ -1486,6 +1505,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, instrument_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
@@ -1523,6 +1543,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._loader.get_dataset_for_venue(instrument_id.venue)
             for instrument_id in instrument_ids
         }
+
         if len(datasets) > 1:
             self._log.error(
                 f"Cannot request order book depths for instruments from multiple datasets: {datasets}. "
@@ -1544,6 +1565,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"depth={request.depth}, start={start}, end={end}",
             LogColor.BLUE,
         )
+
         for i, instrument_id in enumerate(instrument_ids):
             self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
@@ -1646,7 +1668,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._handle_data(data)
 
     def _handle_subscription_ack(self, ack: DatabentoSubscriptionAck) -> None:
-        self._log.info(f"Subscription acknowledged: {ack.message}", LogColor.BLUE)
+        pass  # Already logged by the Rust feed handler
 
     def _handle_msg(
         self,

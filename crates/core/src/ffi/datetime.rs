@@ -50,6 +50,12 @@ pub extern "C" fn secs_to_nanos(secs: f64) -> u64 {
 }
 
 /// Converts seconds to milliseconds (ms).
+///
+/// # Panics
+///
+/// Panics if [`crate::datetime::secs_to_millis`] returns an error for `secs`.
+/// The panic is caught by [`abort_on_panic`] and converted into a process abort
+/// across the FFI boundary.
 #[cfg(feature = "ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn secs_to_millis(secs: f64) -> u64 {

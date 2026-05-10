@@ -35,9 +35,10 @@ use futures_util::StreamExt;
 use nautilus_architect_ax::{
     common::{credential::Credential, enums::AxEnvironment},
     http::{client::AxRawHttpClient, parse::parse_perp_instrument},
-    websocket::{NautilusDataWsMessage, data::AxMdWebSocketClient},
+    websocket::{AxDataWsMessage, data::AxMdWebSocketClient},
 };
 use nautilus_core::time::get_atomic_clock_realtime;
+use nautilus_network::websocket::TransportBackend;
 use rust_decimal::Decimal;
 
 #[tokio::main]
@@ -67,10 +68,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_client = AxRawHttpClient::new(
         Some(environment.http_url().to_string()),
         Some(environment.orders_url().to_string()),
-        Some(30),
-        None,
-        None,
-        None,
+        30,
+        3,
+        1000,
+        10_000,
         None,
     )?;
 
@@ -110,7 +111,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = AxMdWebSocketClient::new(
         environment.ws_md_url().to_string(),
         auth_response.token,
-        Some(30),
+        30,
+        TransportBackend::default(),
+        None,
     );
 
     let test_symbol = "EURUSD-PERP";
@@ -121,7 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .find(|inst| inst.symbol.as_str() == test_symbol)
         .ok_or_else(|| format!("Instrument {test_symbol} not found in /instruments response"))?;
 
-    let instrument = parse_perp_instrument(
+    let _instrument = parse_perp_instrument(
         maybe_instrument,
         Decimal::ZERO,
         Decimal::ZERO,
@@ -129,8 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ts_init,
     )
     .map_err(|e| format!("Failed to parse instrument {test_symbol}: {e}"))?;
-    client.cache_instrument(instrument);
-    log::info!("Cached instrument {test_symbol} for WebSocket parsing");
+    log::info!("Parsed instrument {test_symbol}");
 
     log::info!("Establishing WebSocket connection...");
     client.connect().await?;
@@ -154,25 +156,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             message_count += 1;
 
             match &msg {
-                NautilusDataWsMessage::Heartbeat => {
-                    log::debug!("Heartbeat");
+                AxDataWsMessage::MdMessage(md_msg) => {
+                    log::info!("MdMessage: {md_msg:?}");
                 }
-                NautilusDataWsMessage::Data(data) => {
-                    for item in data {
-                        log::info!("Data: {item:?}");
-                    }
-                }
-                NautilusDataWsMessage::Deltas(deltas) => {
-                    log::info!("Deltas: {}", deltas.instrument_id);
-                }
-                NautilusDataWsMessage::Bar(bar) => {
-                    log::info!("Bar: {}", bar.bar_type);
-                }
-                NautilusDataWsMessage::Error(err) => {
-                    log::error!("Error: {}", err.message);
-                }
-                NautilusDataWsMessage::Reconnected => {
+                AxDataWsMessage::Reconnected => {
                     log::warn!("Reconnected");
+                }
+                AxDataWsMessage::CandleUnsubscribed { symbol, width } => {
+                    log::info!("CandleUnsubscribed: symbol={symbol}, width={width:?}");
                 }
             }
 

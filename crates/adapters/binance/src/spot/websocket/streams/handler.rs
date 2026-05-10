@@ -15,15 +15,9 @@
 
 //! Binance Spot WebSocket message handler.
 //!
-//! The handler runs in a dedicated Tokio task as the I/O boundary between the client
-//! orchestrator and the network layer. It exclusively owns the `WebSocketClient` and
-//! processes commands from the client via an unbounded channel.
-//!
-//! Key responsibilities:
-//! - Command processing: Receives `HandlerCommand` from client, executes WebSocket operations.
-//! - SBE binary decoding: Routes binary frames to appropriate SBE decoders.
-//! - Message transformation: Parses raw venue messages into Nautilus domain events.
-//! - Subscription tracking: Manages pending subscription state.
+//! The handler is a stateless I/O boundary: it decodes raw SBE binary frames
+//! into venue-specific event types and emits them on the output channel.
+//! Domain conversion happens in the data client layer.
 
 use std::{
     collections::VecDeque,
@@ -34,10 +28,6 @@ use std::{
 };
 
 use ahash::AHashMap;
-use nautilus_model::{
-    data::Data,
-    instruments::{Instrument, InstrumentAny},
-};
 use nautilus_network::{
     RECONNECTED,
     websocket::{SubscriptionState, WebSocketClient},
@@ -45,34 +35,30 @@ use nautilus_network::{
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
-// Re-export for backwards compatibility
 pub use super::parse::{MarketDataMessage, decode_market_data};
 use super::{
     messages::{
-        BinanceSpotWsMessage, BinanceWsErrorMsg, BinanceWsErrorResponse, BinanceWsResponse,
-        BinanceWsSubscription, HandlerCommand, NautilusSpotDataWsMessage,
+        BinanceSpotWsMessage, BinanceSpotWsStreamsCommand, BinanceWsErrorMsg,
+        BinanceWsErrorResponse, BinanceWsResponse, BinanceWsSubscription,
     },
-    parse::{
-        decode_market_data as decode_sbe, parse_bbo_event, parse_depth_diff, parse_depth_snapshot,
-        parse_trades_event,
-    },
+    parse::decode_market_data as decode_sbe,
 };
 use crate::common::consts::BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION;
 
 /// Binance Spot WebSocket feed handler.
 ///
-/// Runs in a dedicated Tokio task, processing commands from the client
-/// and transforming raw WebSocket messages into Nautilus domain events.
+/// Decodes raw SBE binary frames into venue-specific event types without
+/// performing domain conversion. The data client layer owns instrument
+/// lookups and Nautilus type construction.
 pub(super) struct BinanceSpotWsFeedHandler {
-    #[allow(dead_code)] // Reserved for shutdown signal handling
+    #[allow(dead_code)]
     signal: Arc<AtomicBool>,
     inner: Option<WebSocketClient>,
-    cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+    cmd_rx: tokio::sync::mpsc::UnboundedReceiver<BinanceSpotWsStreamsCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
-    #[allow(dead_code)] // Reserved for async message emission
+    #[allow(dead_code)]
     out_tx: tokio::sync::mpsc::UnboundedSender<BinanceSpotWsMessage>,
     subscriptions: SubscriptionState,
-    instruments_cache: AHashMap<Ustr, InstrumentAny>,
     request_id_counter: Arc<AtomicU64>,
     pending_messages: VecDeque<BinanceSpotWsMessage>,
     pending_requests: AHashMap<u64, Vec<String>>,
@@ -82,7 +68,7 @@ impl BinanceSpotWsFeedHandler {
     /// Creates a new handler instance.
     pub(super) fn new(
         signal: Arc<AtomicBool>,
-        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<BinanceSpotWsStreamsCommand>,
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
         out_tx: tokio::sync::mpsc::UnboundedSender<BinanceSpotWsMessage>,
         subscriptions: SubscriptionState,
@@ -95,18 +81,16 @@ impl BinanceSpotWsFeedHandler {
             raw_rx,
             out_tx,
             subscriptions,
-            instruments_cache: AHashMap::new(),
             request_id_counter,
             pending_messages: VecDeque::new(),
             pending_requests: AHashMap::new(),
         }
     }
 
-    /// Main event loop - processes commands and raw messages.
+    /// Returns the next message from the handler.
     ///
-    /// Returns `Some(message)` when there's output to emit, `None` when disconnected.
+    /// Processes both commands and raw WebSocket messages.
     pub(super) async fn next(&mut self) -> Option<BinanceSpotWsMessage> {
-        // Return any pending messages first
         if let Some(message) = self.pending_messages.pop_front() {
             return Some(message);
         }
@@ -115,29 +99,21 @@ impl BinanceSpotWsFeedHandler {
             tokio::select! {
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
-                        HandlerCommand::SetClient(client) => {
+                        BinanceSpotWsStreamsCommand::SetClient(client) => {
                             log::debug!("Handler received WebSocket client");
                             self.inner = Some(client);
                         }
-                        HandlerCommand::Disconnect => {
+                        BinanceSpotWsStreamsCommand::Disconnect => {
                             log::debug!("Handler disconnecting WebSocket client");
                             self.inner = None;
                             return None;
                         }
-                        HandlerCommand::InitializeInstruments(instruments) => {
-                            for inst in instruments {
-                                self.instruments_cache.insert(inst.symbol().inner(), inst);
-                            }
-                        }
-                        HandlerCommand::UpdateInstrument(inst) => {
-                            self.instruments_cache.insert(inst.symbol().inner(), inst);
-                        }
-                        HandlerCommand::Subscribe { streams } => {
+                        BinanceSpotWsStreamsCommand::Subscribe { streams } => {
                             if let Err(e) = self.handle_subscribe(streams).await {
                                 log::error!("Failed to handle subscribe command: {e}");
                             }
                         }
-                        HandlerCommand::Unsubscribe { streams } => {
+                        BinanceSpotWsStreamsCommand::Unsubscribe { streams } => {
                             if let Err(e) = self.handle_unsubscribe(streams).await {
                                 log::error!("Failed to handle unsubscribe command: {e}");
                             }
@@ -170,7 +146,6 @@ impl BinanceSpotWsFeedHandler {
         }
     }
 
-    /// Handle incoming WebSocket message.
     fn handle_message(&mut self, msg: Message) -> Vec<BinanceSpotWsMessage> {
         match msg {
             Message::Binary(data) => self.handle_binary_frame(&data),
@@ -183,30 +158,33 @@ impl BinanceSpotWsFeedHandler {
         }
     }
 
-    /// Handle binary SBE frame.
-    fn handle_binary_frame(&mut self, data: &[u8]) -> Vec<BinanceSpotWsMessage> {
+    fn handle_binary_frame(&self, data: &[u8]) -> Vec<BinanceSpotWsMessage> {
         match decode_sbe(data) {
-            Ok(MarketDataMessage::Trades(event)) => self.handle_trades_event(&event),
-            Ok(MarketDataMessage::BestBidAsk(event)) => self.handle_bbo_event(&event),
-            Ok(MarketDataMessage::DepthSnapshot(event)) => self.handle_depth_snapshot(&event),
-            Ok(MarketDataMessage::DepthDiff(event)) => self.handle_depth_diff(&event),
+            Ok(MarketDataMessage::Trades(event)) => {
+                vec![BinanceSpotWsMessage::Trades(event)]
+            }
+            Ok(MarketDataMessage::BestBidAsk(event)) => {
+                vec![BinanceSpotWsMessage::BestBidAsk(event)]
+            }
+            Ok(MarketDataMessage::DepthSnapshot(event)) => {
+                vec![BinanceSpotWsMessage::DepthSnapshot(event)]
+            }
+            Ok(MarketDataMessage::DepthDiff(event)) => {
+                vec![BinanceSpotWsMessage::DepthDiff(event)]
+            }
             Err(e) => {
                 log::error!("SBE decode error: {e}");
-                vec![BinanceSpotWsMessage::Data(
-                    NautilusSpotDataWsMessage::RawBinary(data.to_vec()),
-                )]
+                vec![BinanceSpotWsMessage::RawBinary(data.to_vec())]
             }
         }
     }
 
-    /// Handle text JSON frame.
     fn handle_text_frame(&mut self, text: &str) -> Vec<BinanceSpotWsMessage> {
         if let Ok(response) = serde_json::from_str::<BinanceWsResponse>(text) {
-            self.handle_subscription_response(response);
+            self.handle_subscription_response(&response);
             return vec![];
         }
 
-        // Error response includes id for request correlation
         if let Ok(error) = serde_json::from_str::<BinanceWsErrorResponse>(text) {
             if let Some(id) = error.id
                 && let Some(streams) = self.pending_requests.remove(&id)
@@ -227,26 +205,21 @@ impl BinanceSpotWsFeedHandler {
         }
 
         if let Ok(value) = serde_json::from_str(text) {
-            vec![BinanceSpotWsMessage::Data(
-                NautilusSpotDataWsMessage::RawJson(value),
-            )]
+            vec![BinanceSpotWsMessage::RawJson(value)]
         } else {
             log::warn!("Failed to parse JSON message: {text}");
             vec![]
         }
     }
 
-    /// Handle subscription response.
-    fn handle_subscription_response(&mut self, response: BinanceWsResponse) {
+    fn handle_subscription_response(&mut self, response: &BinanceWsResponse) {
         if let Some(streams) = self.pending_requests.remove(&response.id) {
             if response.result.is_none() {
-                // Success - confirm subscriptions
                 for stream in &streams {
                     self.subscriptions.confirm_subscribe(stream);
                 }
                 log::debug!("Subscription confirmed: streams={streams:?}");
             } else {
-                // Failure - mark streams as failed
                 for stream in &streams {
                     self.subscriptions.mark_failure(stream);
                 }
@@ -260,102 +233,13 @@ impl BinanceSpotWsFeedHandler {
         }
     }
 
-    /// Handle trades stream event.
-    fn handle_trades_event(
-        &self,
-        event: &crate::common::sbe::stream::TradesStreamEvent,
-    ) -> Vec<BinanceSpotWsMessage> {
-        let symbol = Ustr::from(&event.symbol);
-
-        let Some(instrument) = self.instruments_cache.get(&symbol) else {
-            log::warn!("No instrument in cache for trades: symbol={}", event.symbol);
-            return vec![];
-        };
-
-        let trades = parse_trades_event(event, instrument);
-        if trades.is_empty() {
-            vec![]
-        } else {
-            vec![BinanceSpotWsMessage::Data(NautilusSpotDataWsMessage::Data(
-                trades,
-            ))]
-        }
-    }
-
-    /// Handle best bid/ask event.
-    fn handle_bbo_event(
-        &self,
-        event: &crate::common::sbe::stream::BestBidAskStreamEvent,
-    ) -> Vec<BinanceSpotWsMessage> {
-        let symbol = Ustr::from(&event.symbol);
-
-        let Some(instrument) = self.instruments_cache.get(&symbol) else {
-            log::warn!("No instrument in cache for BBO: symbol={}", event.symbol);
-            return vec![];
-        };
-
-        let quote = parse_bbo_event(event, instrument);
-        vec![BinanceSpotWsMessage::Data(NautilusSpotDataWsMessage::Data(
-            vec![Data::from(quote)],
-        ))]
-    }
-
-    /// Handle depth snapshot event.
-    fn handle_depth_snapshot(
-        &self,
-        event: &crate::common::sbe::stream::DepthSnapshotStreamEvent,
-    ) -> Vec<BinanceSpotWsMessage> {
-        let symbol = Ustr::from(&event.symbol);
-
-        let Some(instrument) = self.instruments_cache.get(&symbol) else {
-            log::warn!(
-                "No instrument in cache for depth snapshot: symbol={}",
-                event.symbol
-            );
-            return vec![];
-        };
-
-        match parse_depth_snapshot(event, instrument) {
-            Some(deltas) => vec![BinanceSpotWsMessage::Data(
-                NautilusSpotDataWsMessage::Deltas(deltas),
-            )],
-            None => vec![],
-        }
-    }
-
-    /// Handle depth diff event.
-    fn handle_depth_diff(
-        &self,
-        event: &crate::common::sbe::stream::DepthDiffStreamEvent,
-    ) -> Vec<BinanceSpotWsMessage> {
-        let symbol = Ustr::from(&event.symbol);
-
-        let Some(instrument) = self.instruments_cache.get(&symbol) else {
-            log::warn!(
-                "No instrument in cache for depth diff: symbol={}",
-                event.symbol
-            );
-            return vec![];
-        };
-
-        match parse_depth_diff(event, instrument) {
-            Some(deltas) => vec![BinanceSpotWsMessage::Data(
-                NautilusSpotDataWsMessage::Deltas(deltas),
-            )],
-            None => vec![],
-        }
-    }
-
-    /// Handle subscribe command.
     async fn handle_subscribe(&mut self, streams: Vec<String>) -> anyhow::Result<()> {
         let request_id = self.request_id_counter.fetch_add(1, Ordering::SeqCst);
         let request = BinanceWsSubscription::subscribe(streams.clone(), request_id);
         let payload = serde_json::to_string(&request)?;
 
-        // Track pending request for confirmation
         self.pending_requests.insert(request_id, streams.clone());
 
-        // Mark streams as pending
         for stream in &streams {
             self.subscriptions.mark_subscribe(stream);
         }
@@ -368,8 +252,7 @@ impl BinanceSpotWsFeedHandler {
         Ok(())
     }
 
-    /// Handle unsubscribe command.
-    async fn handle_unsubscribe(&mut self, streams: Vec<String>) -> anyhow::Result<()> {
+    async fn handle_unsubscribe(&self, streams: Vec<String>) -> anyhow::Result<()> {
         let request_id = self.request_id_counter.fetch_add(1, Ordering::SeqCst);
         let request = BinanceWsSubscription::unsubscribe(streams.clone(), request_id);
         let payload = serde_json::to_string(&request)?;
@@ -380,8 +263,6 @@ impl BinanceSpotWsFeedHandler {
         )
         .await?;
 
-        // Immediately confirm unsubscribe (don't wait for response)
-        // We don't track unsubscribe failures - the stream will simply stop
         for stream in &streams {
             self.subscriptions.mark_unsubscribe(stream);
             self.subscriptions.confirm_unsubscribe(stream);
@@ -390,7 +271,6 @@ impl BinanceSpotWsFeedHandler {
         Ok(())
     }
 
-    /// Send text message via WebSocket.
     async fn send_text(
         &self,
         payload: String,

@@ -26,7 +26,7 @@ use cosmrs::{
     crypto::{PublicKey, secp256k1::SigningKey},
     tx,
 };
-use nautilus_core::string::REDACTED;
+use nautilus_core::{hex, string::secret::REDACTED};
 
 /// Account prefix for dYdX addresses.
 ///

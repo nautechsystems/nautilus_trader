@@ -16,9 +16,11 @@ if [ "${NAUTILUS_CLI_FORCE_SOURCE:-0}" = "1" ]; then
   cargo install -q --path crates/cli --bin nautilus --locked --force --root "$HOME/.local"
 else
   echo "Installing Nautilus CLI to $BIN_DIR..."
-  if ! curl -fL --connect-timeout 10 --retry 5 --retry-delay 2 --retry-max-time 60 --retry-all-errors "$INSTALL_URL" | bash -s -- -b "$BIN_DIR"; then
+  # Filter the known upstream cleanup trap noise from the installer
+  if ! curl -fL --connect-timeout 10 --retry 5 --retry-delay 2 --retry-max-time 60 --retry-all-errors "$INSTALL_URL" |
+    bash -s -- -b "$BIN_DIR" 2> >(sed '/^bash: line 1: tmp: unbound variable$/d' >&2); then
     if command -v nautilus > /dev/null 2>&1; then
-      echo "Installer exit ignored (known cleanup trap bug)"
+      echo "Installer exit ignored after successful install (known upstream cleanup trap bug)"
     else
       echo "Prebuilt install failed; building CLI from source..."
       cargo install -q --path crates/cli --bin nautilus --locked --force --root "$HOME/.local"

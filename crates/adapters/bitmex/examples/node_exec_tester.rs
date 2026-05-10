@@ -20,9 +20,10 @@
 //! - Testnet: `BITMEX_TESTNET_API_KEY` / `BITMEX_TESTNET_API_SECRET`
 //! - Mainnet: `BITMEX_API_KEY` / `BITMEX_API_SECRET`
 //!
-//! Run with: `cargo run --example bitmex-exec-tester --package nautilus-bitmex`
+//! Run with: `cargo run --example bitmex-exec-tester --package nautilus-bitmex --features examples`
 
 use nautilus_bitmex::{
+    common::enums::BitmexEnvironment,
     config::{BitmexDataClientConfig, BitmexExecClientConfig},
     factories::{BitmexDataClientFactory, BitmexExecFactoryConfig, BitmexExecutionClientFactory},
 };
@@ -32,27 +33,29 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
+use nautilus_trading::strategy::StrategyConfig;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
-
-    let use_testnet = true;
 
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");
     let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
 
     let data_config = BitmexDataClientConfig {
-        use_testnet,
+        environment: BitmexEnvironment::Testnet,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
     let exec_config = BitmexExecFactoryConfig::new(
         trader_id,
         BitmexExecClientConfig {
-            use_testnet,
+            environment: BitmexEnvironment::Testnet,
+            transport_backend: TransportBackend::Sockudo,
             ..Default::default()
         },
     );
@@ -68,21 +71,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let mut tester_config = ExecTesterConfig::new(
-        StrategyId::from("EXEC-TESTER-001"),
-        instrument_id,
-        ClientId::new("BITMEX"),
-        Quantity::from("100"),
-    )
-    .with_subscribe_trades(true)
-    .with_subscribe_quotes(true)
-    .with_use_post_only(true)
-    .with_log_data(false)
-    .with_cancel_orders_on_stop(true)
-    .with_close_positions_on_stop(true);
-
-    tester_config.base.external_order_claims = Some(vec![instrument_id]);
-    tester_config.base.use_uuid_client_order_ids = true;
+    let tester_config = ExecTesterConfig::builder()
+        .base(StrategyConfig {
+            strategy_id: Some(StrategyId::from("EXEC-TESTER-001")),
+            external_order_claims: Some(vec![instrument_id]),
+            ..Default::default()
+        })
+        .instrument_id(instrument_id)
+        .client_id(ClientId::new("BITMEX"))
+        .order_qty(Quantity::from("100"))
+        .use_post_only(true)
+        .log_data(false)
+        .build();
 
     let tester = ExecTester::new(tester_config);
 

@@ -86,7 +86,7 @@ impl DeribitHttpError {
     pub fn from_jsonrpc_error(
         error_code: i64,
         message: String,
-        data: Option<serde_json::Value>,
+        data: Option<&serde_json::Value>,
     ) -> Self {
         match error_code {
             // JSON-RPC 2.0 standard error codes
@@ -96,7 +96,6 @@ impl DeribitHttpError {
             -32602 => {
                 // Try to extract parameter details from data field
                 let detail = data
-                    .as_ref()
                     .and_then(|d| d.as_object())
                     .and_then(|obj| {
                         let param = obj.get("param")?.as_str()?;

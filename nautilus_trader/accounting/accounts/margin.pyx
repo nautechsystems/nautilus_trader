@@ -82,7 +82,12 @@ cdef class MarginAccount(Account):
         self._margin_model = LeveragedMarginModel()
         self.default_leverage = Decimal(1)
         self._leverages: dict[InstrumentId, Decimal] = {}
-        self._margins: dict[InstrumentId, MarginBalance] = {m.instrument_id: m for m in event.margins}
+        # Per-instrument margins (isolated margin, or calculated margin in backtest mode).
+        self._margins: dict[InstrumentId, MarginBalance] = {}
+        # Account-wide (cross-margin) margins keyed by collateral currency.
+        # Populated from AccountState.margins entries with instrument_id is None.
+        self._account_margins: dict[Currency, MarginBalance] = {}
+        self._route_margins_from_event(event)
 
     @staticmethod
     cdef dict to_dict_c(MarginAccount obj):
@@ -139,18 +144,18 @@ cdef class MarginAccount(Account):
 
     cpdef dict margins(self):
         """
-        Return the initial (order) margins for the account.
+        Return the per-instrument margin balances for the account.
 
         Returns
         -------
-        dict[InstrumentId, Money]
+        dict[InstrumentId, MarginBalance]
 
         """
         return self._margins.copy()
 
     cpdef dict margins_init(self):
         """
-        Return the initial (order) margins for the account.
+        Return the per-instrument initial (order) margins for the account.
 
         Returns
         -------
@@ -161,7 +166,7 @@ cdef class MarginAccount(Account):
 
     cpdef dict margins_maint(self):
         """
-        Return the maintenance (position) margins for the account.
+        Return the per-instrument maintenance (position) margins for the account.
 
         Returns
         -------
@@ -169,6 +174,39 @@ cdef class MarginAccount(Account):
 
         """
         return {k: v.maintenance for k, v in self._margins.items()}
+
+    cpdef dict account_margins(self):
+        """
+        Return the account-wide (cross-margin) margin balances keyed by collateral currency.
+
+        Returns
+        -------
+        dict[Currency, MarginBalance]
+
+        """
+        return self._account_margins.copy()
+
+    cpdef dict account_margins_init(self):
+        """
+        Return the account-wide initial (order) margins keyed by collateral currency.
+
+        Returns
+        -------
+        dict[Currency, Money]
+
+        """
+        return {k: v.initial for k, v in self._account_margins.items()}
+
+    cpdef dict account_margins_maint(self):
+        """
+        Return the account-wide maintenance (position) margins keyed by collateral currency.
+
+        Returns
+        -------
+        dict[Currency, Money]
+
+        """
+        return {k: v.maintenance for k, v in self._account_margins.items()}
 
     cpdef dict leverages(self):
         """
@@ -270,6 +308,118 @@ cdef class MarginAccount(Account):
 
         return self._margins.get(instrument_id)
 
+    cpdef MarginBalance margin_for_currency(self, Currency currency):
+        """
+        Return the account-wide (cross-margin) balance for the given collateral currency.
+
+        Parameters
+        ----------
+        currency : Currency
+            The collateral currency for the query.
+
+        Returns
+        -------
+        MarginBalance or ``None``
+
+        """
+        Condition.not_none(currency, "currency")
+
+        return self._account_margins.get(currency)
+
+    cpdef Money margin_init_for_currency(self, Currency currency):
+        """
+        Return the account-wide initial (order) margin for the given collateral currency.
+
+        Parameters
+        ----------
+        currency : Currency
+            The collateral currency for the query.
+
+        Returns
+        -------
+        Money or ``None``
+
+        """
+        Condition.not_none(currency, "currency")
+
+        cdef MarginBalance margin = self._account_margins.get(currency)
+        return None if margin is None else margin.initial
+
+    cpdef Money margin_maint_for_currency(self, Currency currency):
+        """
+        Return the account-wide maintenance (position) margin for the given collateral currency.
+
+        Parameters
+        ----------
+        currency : Currency
+            The collateral currency for the query.
+
+        Returns
+        -------
+        Money or ``None``
+
+        """
+        Condition.not_none(currency, "currency")
+
+        cdef MarginBalance margin = self._account_margins.get(currency)
+        return None if margin is None else margin.maintenance
+
+    cpdef Money total_margin_init(self, Currency currency):
+        """
+        Return the total initial margin reserved in the given currency.
+
+        Sums per-instrument and account-wide entries whose currency matches.
+
+        Parameters
+        ----------
+        currency : Currency
+            The currency to total.
+
+        Returns
+        -------
+        Money
+
+        """
+        Condition.not_none(currency, "currency")
+
+        cdef MoneyRaw raw = 0
+        cdef MarginBalance margin
+        for margin in self._margins.values():
+            if margin.currency == currency:
+                raw += margin.initial._mem.raw
+        for margin in self._account_margins.values():
+            if margin.currency == currency:
+                raw += margin.initial._mem.raw
+        return Money.from_raw_c(raw, currency)
+
+    cpdef Money total_margin_maint(self, Currency currency):
+        """
+        Return the total maintenance margin reserved in the given currency.
+
+        Sums per-instrument and account-wide entries whose currency matches.
+
+        Parameters
+        ----------
+        currency : Currency
+            The currency to total.
+
+        Returns
+        -------
+        Money
+
+        """
+        Condition.not_none(currency, "currency")
+
+        cdef MoneyRaw raw = 0
+        cdef MarginBalance margin
+        for margin in self._margins.values():
+            if margin.currency == currency:
+                raw += margin.maintenance._mem.raw
+        for margin in self._account_margins.values():
+            if margin.currency == currency:
+                raw += margin.maintenance._mem.raw
+        return Money.from_raw_c(raw, currency)
+
 # -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void set_default_leverage(self, leverage: Decimal):
@@ -332,6 +482,43 @@ cdef class MarginAccount(Account):
         Condition.not_none(margin_model, "margin_model")
 
         self._margin_model = margin_model
+
+    cpdef void apply(self, AccountState event):
+        """
+        Apply the given account event to the account.
+
+        Replaces the stored margin balances with the event margins, routing
+        per-instrument entries (``instrument_id`` set) and account-wide entries
+        (``instrument_id`` is ``None``, keyed by currency) into their respective
+        buckets.
+
+        Parameters
+        ----------
+        event : AccountState
+            The account event to apply.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Account.apply(self, event)
+        if len(event.balances) == 0 and len(event.margins) == 0:
+            return
+
+        self._route_margins_from_event(event)
+
+    cdef void _route_margins_from_event(self, AccountState event):
+        cdef dict per_instrument = {}
+        cdef dict per_currency = {}
+        cdef MarginBalance m
+        for m in event.margins:
+            if m.instrument_id is None:
+                per_currency[m.currency] = m
+            else:
+                per_instrument[m.instrument_id] = m
+        self._margins = per_instrument
+        self._account_margins = per_currency
 
     cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init):
         """
@@ -409,6 +596,10 @@ cdef class MarginAccount(Account):
         """
         Update the margin balance.
 
+        When `margin.instrument_id` is set, the entry is stored as a per-instrument
+        margin. When `None`, the entry is stored as an account-wide margin keyed
+        by `margin.currency`.
+
         Parameters
         ----------
         margin : MarginBalance
@@ -420,7 +611,10 @@ cdef class MarginAccount(Account):
         """
         Condition.not_none(margin, "margin")
 
-        self._margins[margin.instrument_id] = margin
+        if margin.instrument_id is None:
+            self._account_margins[margin.currency] = margin
+        else:
+            self._margins[margin.instrument_id] = margin
         self._recalculate_balance(margin.currency)
 
     cpdef void clear_margin_init(self, InstrumentId instrument_id):
@@ -493,6 +687,25 @@ cdef class MarginAccount(Account):
         if margin is not None:
             self._recalculate_balance(margin.currency)
 
+    cpdef void clear_account_margin(self, Currency currency):
+        """
+        Clear the account-wide (cross-margin) margin for the given collateral currency.
+
+        Parameters
+        ----------
+        currency : Currency
+            The collateral currency to clear.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(currency, "currency")
+
+        if self._account_margins.pop(currency, None) is not None:
+            self._recalculate_balance(currency)
+
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 
     cpdef bint is_unleveraged(self, InstrumentId instrument_id):
@@ -516,6 +729,11 @@ cdef class MarginAccount(Account):
 
         cdef MarginBalance margin
         for margin in self._margins.values():
+            if margin.currency != currency:
+                continue
+            margin_raw += margin.initial.raw_int_c()
+            margin_raw += margin.maintenance.raw_int_c()
+        for margin in self._account_margins.values():
             if margin.currency != currency:
                 continue
             margin_raw += margin.initial.raw_int_c()

@@ -14,10 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::Error};
 use ustr::Ustr;
 
-use crate::{enums::TardisExchange, parse::deserialize_uppercase};
+use crate::common::{enums::TardisExchange, parse::deserialize_uppercase};
 
 /// Represents a single level in the order book (bid or ask).
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -40,8 +40,10 @@ pub struct BookChangeMsg {
     /// Indicates whether this is an initial order book snapshot.
     pub is_snapshot: bool,
     /// Updated bids, with price and amount levels.
+    #[serde(deserialize_with = "deserialize_book_levels")]
     pub bids: Vec<BookLevel>,
     /// Updated asks, with price and amount levels.
+    #[serde(deserialize_with = "deserialize_book_levels")]
     pub asks: Vec<BookLevel>,
     /// The order book update timestamp provided by the exchange (ISO 8601 format).
     pub timestamp: DateTime<Utc>,
@@ -65,8 +67,10 @@ pub struct BookSnapshotMsg {
     /// The requested snapshot interval in milliseconds.
     pub interval: u32,
     /// The top bids price-amount levels.
+    #[serde(deserialize_with = "deserialize_book_levels")]
     pub bids: Vec<BookLevel>,
     /// The top asks price-amount levels.
+    #[serde(deserialize_with = "deserialize_book_levels")]
     pub asks: Vec<BookLevel>,
     /// The snapshot timestamp based on the last book change message processed timestamp.
     pub timestamp: DateTime<Utc>,
@@ -190,6 +194,27 @@ pub enum WsMessage {
     Disconnect(DisconnectMsg),
 }
 
+#[derive(Debug, Deserialize)]
+struct RawBookLevel {
+    price: Option<f64>,
+    amount: Option<f64>,
+}
+
+fn deserialize_book_levels<'de, D>(deserializer: D) -> Result<Vec<BookLevel>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Vec::<RawBookLevel>::deserialize(deserializer)?
+        .into_iter()
+        .filter_map(|level| match (level.price, level.amount) {
+            (Some(price), Some(amount)) => Some(Ok(BookLevel { price, amount })),
+            (None, None) => None,
+            (None, Some(_)) => Some(Err(D::Error::custom("book level missing price"))),
+            (Some(_), None) => Some(Err(D::Error::custom("book level missing amount"))),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -220,6 +245,52 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_book_change_message_skips_empty_book_levels() {
+        let json_data = r#"{
+            "type": "book_change",
+            "symbol": "XBTUSD",
+            "exchange": "bitmex",
+            "isSnapshot": false,
+            "bids": [{"price": 7984, "amount": 100}, {}],
+            "asks": [{}],
+            "timestamp": "2019-10-23T11:29:53.469Z",
+            "localTimestamp": "2019-10-23T11:29:53.469Z"
+        }"#;
+
+        let message: BookChangeMsg = serde_json::from_str(json_data).unwrap();
+
+        assert_eq!(message.bids.len(), 1);
+        assert!(message.asks.is_empty());
+        assert_eq!(message.bids[0].price, 7_984.0);
+        assert_eq!(message.bids[0].amount, 100.0);
+    }
+
+    #[rstest]
+    #[case(r#"[{"price": 7984}]"#, "book level missing amount")]
+    #[case(r#"[{"amount": 100}]"#, "book level missing price")]
+    fn test_parse_book_change_message_rejects_partial_book_level(
+        #[case] bids: &str,
+        #[case] error_message: &str,
+    ) {
+        let json_data = format!(
+            r#"{{
+                "type": "book_change",
+                "symbol": "XBTUSD",
+                "exchange": "bitmex",
+                "isSnapshot": false,
+                "bids": {bids},
+                "asks": [],
+                "timestamp": "2019-10-23T11:29:53.469Z",
+                "localTimestamp": "2019-10-23T11:29:53.469Z"
+            }}"#
+        );
+
+        let error = serde_json::from_str::<BookChangeMsg>(&json_data).unwrap_err();
+
+        assert!(error.to_string().contains(error_message));
+    }
+
+    #[rstest]
     fn test_parse_book_snapshot_message() {
         let json_data = load_test_json("book_snapshot.json");
         let message: BookSnapshotMsg = serde_json::from_str(&json_data).unwrap();
@@ -243,6 +314,51 @@ mod tests {
             message.local_timestamp,
             DateTime::parse_from_rfc3339("2019-10-25T13:39:46.961Z").unwrap()
         );
+    }
+
+    #[rstest]
+    fn test_parse_book_snapshot_message_skips_empty_book_levels() {
+        let json_data = r#"{
+            "type": "book_snapshot",
+            "symbol": "ETC",
+            "exchange": "hyperliquid",
+            "name": "book_snapshot_20_10s",
+            "depth": 20,
+            "interval": 10000,
+            "bids": [{"price": 20.002, "amount": 5.81}],
+            "asks": [{"price": 20.003, "amount": 162.45}, {}],
+            "timestamp": "2025-03-03T10:48:10.000Z",
+            "localTimestamp": "2025-03-03T10:48:10.596818Z"
+        }"#;
+
+        let message: BookSnapshotMsg = serde_json::from_str(json_data).unwrap();
+
+        assert_eq!(message.symbol, "ETC");
+        assert_eq!(message.exchange, TardisExchange::Hyperliquid);
+        assert_eq!(message.bids.len(), 1);
+        assert_eq!(message.asks.len(), 1);
+        assert_eq!(message.asks[0].price, 20.003);
+        assert_eq!(message.asks[0].amount, 162.45);
+    }
+
+    #[rstest]
+    fn test_parse_book_snapshot_message_rejects_partial_book_level() {
+        let json_data = r#"{
+            "type": "book_snapshot",
+            "symbol": "ETC",
+            "exchange": "hyperliquid",
+            "name": "book_snapshot_20_10s",
+            "depth": 20,
+            "interval": 10000,
+            "bids": [{"price": 20.002}],
+            "asks": [],
+            "timestamp": "2025-03-03T10:48:10.000Z",
+            "localTimestamp": "2025-03-03T10:48:10.596818Z"
+        }"#;
+
+        let error = serde_json::from_str::<BookSnapshotMsg>(json_data).unwrap_err();
+
+        assert!(error.to_string().contains("book level missing amount"));
     }
 
     #[rstest]

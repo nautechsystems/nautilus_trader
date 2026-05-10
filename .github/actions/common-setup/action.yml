@@ -13,14 +13,56 @@ inputs:
     description: Type of build (pre-commit, test, release)
     required: false
     default: "release"
+  rust-cache-key:
+    description: Extra rust-cache key material to partition cache entries
+    required: false
+    default: ""
+  rust-cache-workspaces:
+    description: Optional rust-cache workspace mapping, e.g. ". -> target-v2/py3.13"
+    required: false
+    default: ""
+  rust-cache-on-failure:
+    description: Whether to save the Rust cache when the job fails
+    required: false
+    default: "true"
+  rust-cache-save-if:
+    description: Whether to save the Rust cache (set to false for read-only cache on PR builds)
+    required: false
+    default: "true"
+  rust-cache-enabled:
+    description: >-
+      Whether to invoke Swatinem/rust-cache at all (set to false on self-hosted
+      runners using a persistent on-disk CARGO_TARGET_DIR).
+    required: false
+    default: "true"
+  uv-cache-enabled:
+    description: >-
+      Whether to persist the uv cache with GitHub Actions cache: true, false, or
+      auto (enabled on GitHub-hosted runners, disabled on self-hosted runners).
+    required: false
+    default: "auto"
+  prek-cache-enabled:
+    description: >-
+      Whether to persist the prek cache with GitHub Actions cache: true, false, or
+      auto (enabled on GitHub-hosted runners, disabled on self-hosted runners).
+    required: false
+    default: "auto"
 
 runs:
   using: "composite"
   steps:
     # > --------------------------------------------------
     # > OS
+    # Auto-skip on the nautilus-ci-runner-* self-hosted pool: those machines
+    # have ample disk and the action's tool-cache/docker-images cleanup
+    # actively erases the pre-installed Python toolcache and cached Docker
+    # layers we want to keep across runs. Depot runners and GitHub-hosted
+    # runners still need the cleanup, so they remain unaffected.
     - name: Free disk space (Ubuntu)
-      if: inputs.free-disk-space == 'true' && runner.os == 'Linux'
+      if: >-
+        inputs.free-disk-space == 'true'
+        && runner.os == 'Linux'
+        && !startsWith(runner.name, 'nautilus-ci-runner-')
       # https://github.com/jlumbroso/free-disk-space
       uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
       with:
@@ -30,7 +72,7 @@ runs:
         haskell: ${{ inputs.build-type != 'pre-commit' }}
         large-packages: ${{ inputs.build-type != 'pre-commit' }}
         docker-images: true
-        swap-storage: ${{ inputs.build-type != 'pre-commit' }}
+        swap-storage: true
 
     - name: Free disk space (macOS)
       if: inputs.free-disk-space == 'true' && runner.os == 'macOS'
@@ -62,12 +104,27 @@ runs:
           rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
         fi
 
+    - name: Add swap space (Linux ARM)
+      if: >-
+        inputs.build-type != 'pre-commit' &&
+        inputs.free-disk-space == 'true' &&
+        runner.os == 'Linux' &&
+        (runner.arch == 'ARM64' || runner.arch == 'aarch64')
+      shell: bash
+      run: |
+        sudo swapoff -a || true
+        sudo rm -f /swapfile || true
+        sudo fallocate -l 8G /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+
     - name: Install runner dependencies
       if: runner.os == 'Linux'
       shell: bash
       run: |
         sudo apt-get update -o Acquire::Retries=5
-        sudo apt-get install -y curl clang git make pkg-config ripgrep -o Acquire::Retries=5
+        sudo apt-get install -y curl clang lld git make pkg-config ripgrep -o Acquire::Retries=5
         sudo apt-get install -y python3-dev libpython3-dev -o Acquire::Retries=5
         sudo apt-get clean
         sudo rm -rf /var/lib/apt/lists/*
@@ -92,56 +149,50 @@ runs:
 
     # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1.15.2
+      uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
       with:
         toolchain: ${{ env.TOOLCHAIN }}
         components: clippy,rustfmt
+        cache: false
         override: true
 
-    - name: Install cargo-nextest
-      if: inputs.build-type != 'pre-commit'
-      # https://github.com/taiki-e/install-action # v2.53.2
-      uses: taiki-e/install-action@f176c07a0a40cbfdd08ee9aa8bf1655701d11e69 # v2.67.25
+    # https://github.com/Swatinem/rust-cache
+    - name: Rust cache
+      if: inputs.rust-cache-enabled == 'true'
+      uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       with:
-        tool: nextest
+        workspaces: ${{ inputs.rust-cache-workspaces || '. -> target' }}
+        cache-on-failure: ${{ inputs.rust-cache-on-failure }}
+        key: ${{ inputs.rust-cache-key }}
+        save-if: ${{ inputs.rust-cache-save-if }}
 
-    # > --------------------------------------------------
-    # > sccache
-    - name: Set sccache env vars (common)
+    - name: Get cargo-nextest version
       if: inputs.build-type != 'pre-commit'
       shell: bash
       run: |
-        echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+        version="$(bash scripts/cargo-tool-version.sh cargo-nextest)"
+        if [ -z "$version" ]; then
+          echo "::error::Failed to extract cargo-nextest version"
+          exit 1
+        fi
+        echo "CARGO_NEXTEST_VERSION=$version" >> "$GITHUB_ENV"
 
-        # Respect pre-existing settings from the workflow env; otherwise set sane defaults
-        if [ -z "${SCCACHE_CACHE_SIZE:-}" ]; then echo "SCCACHE_CACHE_SIZE=4G" >> $GITHUB_ENV; fi
-        if [ -z "${SCCACHE_IDLE_TIMEOUT:-}" ]; then echo "SCCACHE_IDLE_TIMEOUT=0" >> $GITHUB_ENV; fi
-        if [ -z "${SCCACHE_DIRECT:-}" ]; then echo "SCCACHE_DIRECT=true" >> $GITHUB_ENV; fi
-        if [ -z "${SCCACHE_CACHE_MULTIARCH:-}" ]; then echo "SCCACHE_CACHE_MULTIARCH=1" >> $GITHUB_ENV; fi
+    - name: Install cargo-nextest
+      if: inputs.build-type != 'pre-commit' && runner.os != 'macOS'
+      # https://github.com/taiki-e/install-action
+      uses: taiki-e/install-action@0d865d5cc6d507df4765f1f866bfae8bab4e2a73 # v2.69.7
+      with:
+        tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
 
-        echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
-
-    - name: Set sccache env vars (non-Windows)
-      if: runner.os != 'Windows' && inputs.build-type != 'pre-commit'
+    - name: Install cargo-nextest (macOS)
+      if: inputs.build-type != 'pre-commit' && runner.os == 'macOS'
       shell: bash
-      run: |
-        echo "SCCACHE_DIR=$GITHUB_WORKSPACE/.cache/sccache" >> $GITHUB_ENV
-        echo "CC=sccache clang" >> $GITHUB_ENV
-        echo "CXX=sccache clang++" >> $GITHUB_ENV
+      run: bash scripts/ci/install-cargo-nextest.sh "${CARGO_NEXTEST_VERSION}"
 
-    - name: Set sccache env vars (Windows)
-      if: runner.os == 'Windows' && inputs.build-type != 'pre-commit'
-      shell: bash
-      run: |
-        echo SCCACHE_DIR="C:\.cache\sccache" >> $GITHUB_ENV
-        echo CMAKE_C_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
-        echo CMAKE_CXX_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
-
-    - name: Run sccache
+    - name: Set CARGO_INCREMENTAL=0 for CI
       if: inputs.build-type != 'pre-commit'
-      # https://github.com/Mozilla-Actions/sccache-action
-      uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
-      continue-on-error: true # Build continues without cache if sccache setup fails
+      shell: bash
+      run: echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
 
     # > --------------------------------------------------
     # > Python
@@ -156,68 +207,98 @@ runs:
       run: |
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-    - name: Get Python version
+    - name: Get cache scope
+      shell: bash
+      env:
+        CACHE_SCOPE: ${{ runner.os }}-${{ runner.arch }}-py${{ inputs.python-version }}
+      run: |
+        echo "CACHE_SCOPE=$CACHE_SCOPE" >> "$GITHUB_ENV"
+
+    - name: Get pre-commit config hash
+      if: inputs.build-type == 'pre-commit'
       shell: bash
       run: |
-        echo "PYTHON_VERSION=$(bash scripts/python-version.sh)" >> $GITHUB_ENV
+        python - <<'PY' >> "$GITHUB_ENV"
+        import hashlib
+        from pathlib import Path
 
-    - name: Get pre-commit version
+        print(
+            f"PRE_COMMIT_CONFIG_HASH={hashlib.sha256(Path('.pre-commit-config.yaml').read_bytes()).hexdigest()}"
+        )
+        PY
+
+    - name: Install prek
+      if: inputs.build-type == 'pre-commit'
       shell: bash
       run: |
-        echo "PRE_COMMIT_VERSION=$(bash scripts/pre-commit-version.sh)" >> $GITHUB_ENV
-
-    - name: Cache Python site-packages
-      id: cached-site-packages
-      # https://github.com/actions/cache
-      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
-      with:
-        path: ~/.local/lib/python${{ inputs.python-version }}/site-packages
-        key: ${{ runner.os }}-${{ inputs.python-version }}-site-packages
-        restore-keys: |
-          ${{ runner.os }}-site-packages-
-
-    - name: Install pre-commit
-      shell: bash
-      run: pip install pre-commit==${{ env.PRE_COMMIT_VERSION }}
+        PREK_VERSION="$(bash scripts/tool-version.sh prek)"
+        curl --proto '=https' --tlsv1.2 -LsSf \
+          "https://github.com/j178/prek/releases/download/v${PREK_VERSION}/prek-installer.sh" | sh
 
     # > --------------------------------------------------
     # > UV
-    - name: Get uv version from uv-version
+    - name: Get uv version from pyproject.toml
       shell: bash
       run: |
-        echo "UV_VERSION=$(cat uv-version)" >> $GITHUB_ENV
+        echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> $GITHUB_ENV
 
     - name: Install uv
       # https://github.com/astral-sh/setup-uv
-      uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b # v7.3.0
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       with:
         version: ${{ env.UV_VERSION }}
+        enable-cache: ${{ inputs.uv-cache-enabled }}
+        cache-suffix: ${{ env.CACHE_SCOPE }}-uv-${{ env.UV_VERSION }}
+        prune-cache: true
 
     - name: Set uv cache-dir
       shell: bash
       run: |
         echo "UV_CACHE_DIR=$(uv cache dir)" >> $GITHUB_ENV
 
-    - name: Cached uv
-      # Skip on macOS: hashFiles() broken in composite actions after Nov 20 runner update
-      # See: https://github.com/actions/runner/issues/3765
-      if: runner.os != 'macOS'
-      id: cached-uv
-      # https://github.com/actions/cache
-      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
-      with:
-        path: ${{ env.UV_CACHE_DIR }}
-        key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-uv-${{ hashFiles('**/uv.lock') }}
+    # Self-hosted runners skip setup-uv's save-cache (and its built-in prune) under auto.
+    - name: Prune uv cache
+      shell: bash
+      run: uv cache prune --ci
 
     # > --------------------------------------------------
-    # > pre-commit
-    - name: Cached pre-commit
-      # Skip on macOS: hashFiles() broken in composite actions after Nov 20 runner update
-      # See: https://github.com/actions/runner/issues/3765
-      if: runner.os != 'macOS'
-      id: cached-pre-commit
+    # > prek (pre-commit hook environments)
+    - name: Cached pre-commit environments
+      # Skip on macOS: hashFiles() broken in composite actions, see actions/runner#3765
+      if: >-
+        inputs.build-type == 'pre-commit'
+        && runner.os != 'macOS'
+        && (inputs.prek-cache-enabled == 'true'
+            || (inputs.prek-cache-enabled == 'auto'
+                && runner.environment != 'self-hosted'))
+      id: cached-prek
       # https://github.com/actions/cache
-      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
-        path: ~/.cache/pre-commit
-        key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+        path: ~/.cache/prek
+        key: ${{ env.CACHE_SCOPE }}-prek-${{ env.PRE_COMMIT_CONFIG_HASH }}
+        restore-keys: |
+          ${{ env.CACHE_SCOPE }}-prek-
+
+    # > --------------------------------------------------
+    # > Cache footprint
+    - name: Report cache footprint
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        {
+          echo "## Cache footprint"
+          echo
+          echo '```'
+          df -h "$HOME" 2>/dev/null || df -h /
+          echo
+          for path in \
+            "$HOME/.cache/uv" \
+            "$HOME/.cache/prek" \
+            "$HOME/.cache/cargo-target" \
+            "$HOME/.cargo/registry" \
+            "$HOME/.cargo/git"; do
+            [ -d "$path" ] && du -sh "$path" 2>/dev/null || true
+          done
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"

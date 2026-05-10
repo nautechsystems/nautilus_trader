@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     Params, UnixNanos,
-    correctness::{FAILED, check_equal_u8},
+    correctness::{CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -41,6 +41,10 @@ use crate::{
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct Commodity {
     /// The instrument ID.
@@ -98,7 +102,7 @@ impl Commodity {
     /// # Errors
     ///
     /// Returns an error if any input validation fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new_checked(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -122,7 +126,7 @@ impl Commodity {
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> CorrectnessResult<Self> {
         check_equal_u8(
             price_precision,
             price_increment.precision,
@@ -169,7 +173,8 @@ impl Commodity {
     /// # Panics
     ///
     /// Panics if any parameter is invalid (see `new_checked`).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -218,7 +223,7 @@ impl Commodity {
             ts_event,
             ts_init,
         )
-        .expect(FAILED)
+        .expect_display(FAILED)
     }
 }
 
@@ -378,11 +383,57 @@ impl Instrument for Commodity {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{Commodity, stubs::*};
+    use crate::{
+        enums::{AssetClass, InstrumentClass},
+        identifiers::{InstrumentId, Symbol},
+        instruments::{Commodity, Instrument, stubs::*},
+        types::{Currency, Price, Quantity},
+    };
 
     #[rstest]
-    fn test_equality(commodity_gold: Commodity) {
-        let cloned = commodity_gold.clone();
-        assert_eq!(commodity_gold, cloned);
+    fn test_trait_accessors(commodity_gold: Commodity) {
+        assert_eq!(commodity_gold.id(), InstrumentId::from("GOLD.COMEX"));
+        assert_eq!(commodity_gold.asset_class(), AssetClass::Commodity);
+        assert_eq!(commodity_gold.instrument_class(), InstrumentClass::Spot);
+        assert_eq!(commodity_gold.quote_currency(), Currency::USD());
+        assert!(!commodity_gold.is_inverse());
+        assert_eq!(commodity_gold.price_precision(), 2);
+        assert_eq!(commodity_gold.size_precision(), 0);
+    }
+
+    #[rstest]
+    fn test_new_checked_price_precision_mismatch() {
+        let result = Commodity::new_checked(
+            InstrumentId::from("TEST.COMEX"),
+            Symbol::from("TEST"),
+            AssetClass::Commodity,
+            Currency::USD(),
+            4, // mismatch
+            0,
+            Price::from("0.01"),
+            Quantity::from("1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip(commodity_gold: Commodity) {
+        let json = serde_json::to_string(&commodity_gold).unwrap();
+        let deserialized: Commodity = serde_json::from_str(&json).unwrap();
+        assert_eq!(commodity_gold, deserialized);
     }
 }

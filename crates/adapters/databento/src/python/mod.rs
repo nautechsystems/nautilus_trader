@@ -15,6 +15,12 @@
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 
+#![expect(
+    clippy::missing_errors_doc,
+    reason = "errors documented on underlying Rust methods"
+)]
+
+pub mod arrow;
 pub mod enums;
 pub mod historical;
 pub mod loader;
@@ -25,18 +31,17 @@ pub mod factories;
 #[cfg(feature = "live")]
 pub mod live;
 
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 #[cfg(feature = "live")]
-use nautilus_system::{
-    factories::{ClientConfig, DataClientFactory},
-    get_global_pyo3_registry,
-};
+use nautilus_common::factories::{ClientConfig, DataClientFactory};
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 #[cfg(feature = "live")]
 use crate::factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig};
 
 #[cfg(feature = "live")]
+#[expect(clippy::needless_pass_by_value)]
 fn extract_databento_data_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -50,6 +55,7 @@ fn extract_databento_data_factory(
 }
 
 #[cfg(feature = "live")]
+#[expect(clippy::needless_pass_by_value)]
 fn extract_databento_data_config(
     py: Python<'_>,
     config: Py<PyAny>,
@@ -80,6 +86,23 @@ pub fn databento(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<super::types::DatabentoImbalance>()?;
     m.add_class::<super::loader::DatabentoDataLoader>()?;
     m.add_class::<historical::DatabentoHistoricalClient>()?;
+    m.add_function(wrap_pyfunction!(arrow::get_databento_arrow_schema_map, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        arrow::py_databento_imbalance_to_arrow_record_batch_bytes,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        arrow::py_databento_imbalance_from_arrow_record_batch_bytes,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        arrow::py_databento_statistics_to_arrow_record_batch_bytes,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        arrow::py_databento_statistics_from_arrow_record_batch_bytes,
+        m
+    )?)?;
 
     #[cfg(feature = "live")]
     m.add_class::<live::DatabentoLiveClient>()?;

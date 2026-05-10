@@ -29,7 +29,10 @@ use rust_decimal::{Decimal, prelude::ToPrimitive};
 use ustr::Ustr;
 
 use super::{
-    consts::{BETFAIR_PRICE_PRECISION, BETFAIR_QUANTITY_PRECISION, BETFAIR_VENUE},
+    consts::{
+        BETFAIR_CUSTOMER_ORDER_REF_MAX_LEN, BETFAIR_PRICE_PRECISION, BETFAIR_QUANTITY_PRECISION,
+        BETFAIR_VENUE, DEFAULT_BETTING_TYPE, DEFAULT_MARKET_TYPE,
+    },
     types::SelectionId,
 };
 use crate::{
@@ -86,6 +89,34 @@ pub fn parse_betfair_timestamp(s: &str) -> anyhow::Result<UnixNanos> {
 #[must_use]
 pub fn parse_millis_timestamp(timestamp_ms: u64) -> UnixNanos {
     UnixNanos::from(timestamp_ms * NANOSECONDS_IN_MILLISECOND)
+}
+
+/// Truncates a client order ID to a Betfair `customer_order_ref`.
+///
+/// Takes the last 32 characters to preserve the high-entropy UUID suffix.
+/// Returns the full string if it is already 32 characters or shorter.
+#[must_use]
+pub fn make_customer_order_ref(client_order_id: &str) -> String {
+    let len = client_order_id.len();
+    if len <= BETFAIR_CUSTOMER_ORDER_REF_MAX_LEN {
+        client_order_id.to_string()
+    } else {
+        client_order_id[len - BETFAIR_CUSTOMER_ORDER_REF_MAX_LEN..].to_string()
+    }
+}
+
+/// Legacy truncation that takes the first 32 characters.
+///
+/// Pre-existing orders may use this format. Register both truncations
+/// on reconnect to match orders regardless of which convention was used.
+#[must_use]
+pub fn make_customer_order_ref_legacy(client_order_id: &str) -> String {
+    let len = client_order_id.len();
+    if len <= BETFAIR_CUSTOMER_ORDER_REF_MAX_LEN {
+        client_order_id.to_string()
+    } else {
+        client_order_id[..BETFAIR_CUSTOMER_ORDER_REF_MAX_LEN].to_string()
+    }
 }
 
 /// Parses a Betfair [`MarketCatalogue`] into a vec of [`InstrumentAny`].
@@ -153,7 +184,11 @@ pub fn parse_market_catalogue(
             desc.market_type,
             desc.market_base_rate,
         ),
-        None => (Ustr::from("ODDS"), Ustr::from("WIN"), Decimal::ZERO),
+        None => (
+            Ustr::from(DEFAULT_BETTING_TYPE),
+            Ustr::from(DEFAULT_MARKET_TYPE),
+            Decimal::ZERO,
+        ),
     };
 
     let market_name = Ustr::from(&catalogue.market_name);
@@ -278,10 +313,12 @@ pub fn parse_market_definition(
 
     let betting_type = match &def.betting_type {
         Some(bt) => Ustr::from(&format!("{bt}")),
-        None => Ustr::from("ODDS"),
+        None => Ustr::from(DEFAULT_BETTING_TYPE),
     };
     let market_name = Ustr::from(def.market_name.as_deref().unwrap_or(""));
-    let market_type = def.market_type.unwrap_or_else(|| Ustr::from("WIN"));
+    let market_type = def
+        .market_type
+        .unwrap_or_else(|| Ustr::from(DEFAULT_MARKET_TYPE));
     let market_start_time = def
         .market_time
         .as_deref()
@@ -375,11 +412,7 @@ pub fn parse_account_state(
     let exposure = funds.exposure.unwrap_or_default().abs();
     let total = available + exposure;
 
-    let total_money = Money::from_decimal(total, currency)?;
-    let locked_money = Money::from_decimal(exposure, currency)?;
-    let free_money = Money::from_decimal(available, currency)?;
-
-    let balance = AccountBalance::new(total_money, locked_money, free_money);
+    let balance = AccountBalance::from_total_and_locked(total, exposure, currency)?;
 
     Ok(AccountState::new(
         account_id,
@@ -530,6 +563,7 @@ mod tests {
         let catalogues: Vec<MarketCatalogue> = serde_json::from_str(&data).unwrap();
 
         let mut total = 0;
+
         for cat in &catalogues {
             let instruments =
                 parse_market_catalogue(cat, Currency::GBP(), UnixNanos::default(), None).unwrap();
@@ -621,5 +655,61 @@ mod tests {
         let (selection_id, handicap) = extract_selection_id(&instrument_id).unwrap();
         assert_eq!(selection_id, 19248890);
         assert_eq!(handicap, Decimal::new(15, 1));
+    }
+
+    #[rstest]
+    fn test_make_customer_order_ref_short_id() {
+        let result = make_customer_order_ref("O-20240101-001");
+        assert_eq!(result, "O-20240101-001");
+    }
+
+    #[rstest]
+    fn test_make_customer_order_ref_exactly_32_chars() {
+        let id = "12345678901234567890123456789012";
+        assert_eq!(id.len(), 32);
+        let result = make_customer_order_ref(id);
+        assert_eq!(result, id);
+    }
+
+    #[rstest]
+    fn test_make_customer_order_ref_truncates_to_last_32() {
+        // UUID-style ID longer than 32 chars
+        let id = "O-20240101-550e8400-e29b-41d4-a716-446655440000";
+        assert!(id.len() > 32);
+        let result = make_customer_order_ref(id);
+        assert_eq!(result.len(), 32);
+        // Should keep the last 32 characters (high-entropy UUID tail)
+        assert_eq!(result, &id[id.len() - 32..]);
+    }
+
+    #[rstest]
+    fn test_make_customer_order_ref_legacy_short_id() {
+        let result = make_customer_order_ref_legacy("O-20240101-001");
+        assert_eq!(result, "O-20240101-001");
+    }
+
+    #[rstest]
+    fn test_make_customer_order_ref_legacy_truncates_to_first_32() {
+        let id = "O-20240101-550e8400-e29b-41d4-a716-446655440000";
+        assert!(id.len() > 32);
+        let result = make_customer_order_ref_legacy(id);
+        assert_eq!(result.len(), 32);
+        assert_eq!(result, &id[..32]);
+    }
+
+    #[rstest]
+    fn test_legacy_and_current_differ_for_long_ids() {
+        let id = "O-20240101-550e8400-e29b-41d4-a716-446655440000";
+        let current = make_customer_order_ref(id);
+        let legacy = make_customer_order_ref_legacy(id);
+        assert_ne!(current, legacy);
+    }
+
+    #[rstest]
+    fn test_legacy_and_current_same_for_short_ids() {
+        let id = "O-20240101-001";
+        let current = make_customer_order_ref(id);
+        let legacy = make_customer_order_ref_legacy(id);
+        assert_eq!(current, legacy);
     }
 }

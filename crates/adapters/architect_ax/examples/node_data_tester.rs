@@ -15,14 +15,16 @@
 
 //! Example demonstrating live data testing with the AX Exchange adapter.
 //!
-//! Run with: `cargo run --example ax-data-tester --package nautilus-architect-ax`
+//! Run with: `cargo run --example ax-data-tester --package nautilus-architect-ax --features examples`
 //!
 //! Environment variables:
 //! - `AX_API_KEY`: Your API key
 //! - `AX_API_SECRET`: Your API secret
 //! - `AX_IS_SANDBOX`: Set to "true" for sandbox (default), "false" for production
 
-use nautilus_architect_ax::{config::AxDataClientConfig, factories::AxDataClientFactory};
+use nautilus_architect_ax::{
+    common::enums::AxEnvironment, config::AxDataClientConfig, factories::AxDataClientFactory,
+};
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
@@ -30,6 +32,7 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId},
     stubs::TestDefault,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 #[tokio::main]
@@ -47,15 +50,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // InstrumentId::from("BTCUSD-PERP.AX"),
     ];
 
-    let is_sandbox = std::env::var("AX_IS_SANDBOX")
+    let ax_environment = if std::env::var("AX_IS_SANDBOX")
         .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(true);
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(true)
+    {
+        AxEnvironment::Sandbox
+    } else {
+        AxEnvironment::Production
+    };
 
     let ax_config = AxDataClientConfig {
         api_key: std::env::var("AX_API_KEY").ok(),
         api_secret: std::env::var("AX_API_SECRET").ok(),
-        is_sandbox,
+        environment: ax_environment,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -72,16 +81,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "{symbol}-PERP.AX-1-MINUTE-LAST-EXTERNAL"
     ))];
 
-    let tester_config = DataTesterConfig::new(client_id, instrument_ids)
-        .with_bar_types(bar_types)
-        .with_subscribe_quotes(true)
-        .with_subscribe_trades(true)
-        .with_subscribe_funding_rates(true)
-        // .with_subscribe_book_deltas(true)
-        .with_subscribe_bars(true)
-        // .with_request_instruments(true)
-        // .with_request_bars(true)
-        .with_request_funding_rates(true);
+    let tester_config = DataTesterConfig::builder()
+        .client_id(client_id)
+        .instrument_ids(instrument_ids)
+        .bar_types(bar_types)
+        .subscribe_quotes(true)
+        .subscribe_trades(true)
+        .subscribe_mark_prices(true)
+        .subscribe_index_prices(true)
+        .subscribe_funding_rates(true)
+        // .subscribe_book_deltas(true)
+        .subscribe_bars(true)
+        // .request_instruments(true)
+        // .request_bars(true)
+        .request_funding_rates(true)
+        .manage_book(true)
+        .build();
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

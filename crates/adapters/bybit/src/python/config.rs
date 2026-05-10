@@ -24,7 +24,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BybitDataClientConfig {
+    /// Configuration for the Bybit live data client.
     #[new]
     #[pyo3(signature = (
         product_types = None,
@@ -34,7 +36,7 @@ impl BybitDataClientConfig {
         base_url_http = None,
         base_url_ws_public = None,
         base_url_ws_private = None,
-        http_proxy_url = None,
+        proxy_url = None,
         http_timeout_secs = None,
         max_retries = None,
         retry_delay_initial_ms = None,
@@ -42,8 +44,9 @@ impl BybitDataClientConfig {
         heartbeat_interval_secs = None,
         recv_window_ms = None,
         update_instruments_interval_mins = None,
+        instrument_status_poll_secs = None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         product_types: Option<Vec<BybitProductType>>,
         environment: Option<BybitEnvironment>,
@@ -52,7 +55,7 @@ impl BybitDataClientConfig {
         base_url_http: Option<String>,
         base_url_ws_public: Option<String>,
         base_url_ws_private: Option<String>,
-        http_proxy_url: Option<String>,
+        proxy_url: Option<String>,
         http_timeout_secs: Option<u64>,
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
@@ -60,6 +63,7 @@ impl BybitDataClientConfig {
         heartbeat_interval_secs: Option<u64>,
         recv_window_ms: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
+        instrument_status_poll_secs: Option<u64>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -70,16 +74,20 @@ impl BybitDataClientConfig {
             base_url_http,
             base_url_ws_public,
             base_url_ws_private,
-            http_proxy_url,
-            ws_proxy_url: None,
-            http_timeout_secs: http_timeout_secs.or(defaults.http_timeout_secs),
-            max_retries: max_retries.or(defaults.max_retries),
-            retry_delay_initial_ms: retry_delay_initial_ms.or(defaults.retry_delay_initial_ms),
-            retry_delay_max_ms: retry_delay_max_ms.or(defaults.retry_delay_max_ms),
-            heartbeat_interval_secs: heartbeat_interval_secs.or(defaults.heartbeat_interval_secs),
-            recv_window_ms: recv_window_ms.or(defaults.recv_window_ms),
+            proxy_url,
+            http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
+            max_retries: max_retries.unwrap_or(defaults.max_retries),
+            retry_delay_initial_ms: retry_delay_initial_ms
+                .unwrap_or(defaults.retry_delay_initial_ms),
+            retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
+            heartbeat_interval_secs: heartbeat_interval_secs
+                .unwrap_or(defaults.heartbeat_interval_secs),
+            recv_window_ms: recv_window_ms.unwrap_or(defaults.recv_window_ms),
             update_instruments_interval_mins: update_instruments_interval_mins
                 .or(defaults.update_instruments_interval_mins),
+            instrument_status_poll_secs: instrument_status_poll_secs
+                .or(defaults.instrument_status_poll_secs),
+            transport_backend: defaults.transport_backend,
         }
     }
 
@@ -89,7 +97,9 @@ impl BybitDataClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BybitExecClientConfig {
+    /// Configuration for the Bybit live execution client.
     #[new]
     #[pyo3(signature = (
         product_types = None,
@@ -99,7 +109,7 @@ impl BybitExecClientConfig {
         base_url_http = None,
         base_url_ws_private = None,
         base_url_ws_trade = None,
-        http_proxy_url = None,
+        proxy_url = None,
         http_timeout_secs = None,
         max_retries = None,
         retry_delay_initial_ms = None,
@@ -110,7 +120,7 @@ impl BybitExecClientConfig {
         use_spot_position_reports = None,
         margin_mode = None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         product_types: Option<Vec<BybitProductType>>,
         environment: Option<BybitEnvironment>,
@@ -119,7 +129,7 @@ impl BybitExecClientConfig {
         base_url_http: Option<String>,
         base_url_ws_private: Option<String>,
         base_url_ws_trade: Option<String>,
-        http_proxy_url: Option<String>,
+        proxy_url: Option<String>,
         http_timeout_secs: Option<u64>,
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
@@ -139,20 +149,22 @@ impl BybitExecClientConfig {
             base_url_http,
             base_url_ws_private,
             base_url_ws_trade,
-            http_proxy_url,
-            ws_proxy_url: None,
-            http_timeout_secs: http_timeout_secs.or(defaults.http_timeout_secs),
-            max_retries: max_retries.or(defaults.max_retries),
-            retry_delay_initial_ms: retry_delay_initial_ms.or(defaults.retry_delay_initial_ms),
-            retry_delay_max_ms: retry_delay_max_ms.or(defaults.retry_delay_max_ms),
-            heartbeat_interval_secs: heartbeat_interval_secs.or(defaults.heartbeat_interval_secs),
-            recv_window_ms: recv_window_ms.or(defaults.recv_window_ms),
+            proxy_url,
+            http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
+            max_retries: max_retries.unwrap_or(defaults.max_retries),
+            retry_delay_initial_ms: retry_delay_initial_ms
+                .unwrap_or(defaults.retry_delay_initial_ms),
+            retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
+            heartbeat_interval_secs: heartbeat_interval_secs
+                .unwrap_or(defaults.heartbeat_interval_secs),
+            recv_window_ms: recv_window_ms.unwrap_or(defaults.recv_window_ms),
             account_id,
             use_spot_position_reports: use_spot_position_reports
                 .unwrap_or(defaults.use_spot_position_reports),
             futures_leverages: None,
             position_mode: None,
             margin_mode,
+            transport_backend: defaults.transport_backend,
         }
     }
 

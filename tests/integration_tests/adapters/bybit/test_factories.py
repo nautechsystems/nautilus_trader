@@ -18,6 +18,7 @@ import pytest
 
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
+from nautilus_trader.adapters.bybit.config import _resolve_environment
 from nautilus_trader.adapters.bybit.data import BybitDataClient
 from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
 from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
@@ -26,8 +27,25 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.nautilus_pyo3 import BybitEnvironment
 from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+
+
+@pytest.mark.parametrize(
+    ("environment", "demo", "testnet", "expected"),
+    [
+        (None, False, False, BybitEnvironment.MAINNET),
+        (None, True, False, BybitEnvironment.DEMO),
+        (None, False, True, BybitEnvironment.TESTNET),
+        (BybitEnvironment.DEMO, False, False, BybitEnvironment.DEMO),
+        (BybitEnvironment.TESTNET, False, False, BybitEnvironment.TESTNET),
+        (BybitEnvironment.TESTNET, True, False, BybitEnvironment.TESTNET),
+        (BybitEnvironment.MAINNET, False, True, BybitEnvironment.MAINNET),
+    ],
+)
+def test_resolve_environment(environment, demo, testnet, expected):
+    assert _resolve_environment(environment, demo, testnet) == expected
 
 
 class TestBybitFactories:
@@ -78,7 +96,7 @@ class TestBybitFactories:
             [
                 nautilus_pyo3.BybitProductType.SPOT,
                 nautilus_pyo3.BybitEnvironment.DEMO,
-                "wss://stream-demo.bybit.com/v5/public/spot",
+                "wss://stream.bybit.com/v5/public/spot",
             ],
             [
                 nautilus_pyo3.BybitProductType.LINEAR,
@@ -93,7 +111,7 @@ class TestBybitFactories:
             [
                 nautilus_pyo3.BybitProductType.LINEAR,
                 nautilus_pyo3.BybitEnvironment.DEMO,
-                "wss://stream-demo.bybit.com/v5/public/linear",
+                "wss://stream.bybit.com/v5/public/linear",
             ],
             [
                 nautilus_pyo3.BybitProductType.INVERSE,
@@ -108,7 +126,7 @@ class TestBybitFactories:
             [
                 nautilus_pyo3.BybitProductType.INVERSE,
                 nautilus_pyo3.BybitEnvironment.DEMO,
-                "wss://stream-demo.bybit.com/v5/public/inverse",
+                "wss://stream.bybit.com/v5/public/inverse",
             ],
         ],
     )

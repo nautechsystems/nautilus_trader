@@ -27,7 +27,9 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DatabentoLiveClientConfig {
+    /// Configuration for Databento data clients used with `LiveNode`.
     #[new]
     #[pyo3(signature = (api_key, publishers_filepath, use_exchange_as_venue=false, bars_timestamp_on_close=true))]
     fn py_new(
@@ -50,22 +52,20 @@ impl DatabentoLiveClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DatabentoDataClientFactory {
+    /// Factory for creating Databento data clients.
     #[new]
     fn py_new() -> Self {
         Self
     }
 
     #[pyo3(name = "name")]
-    fn py_name(&self) -> &str {
+    fn py_name(&self) -> &'static str {
         "DATABENTO"
     }
 
-    /// Creates a live data client.
-    ///
-    /// # Errors
-    ///
-    /// Returns a `PyErr` if client creation fails.
+    /// Creates a new `DatabentoDataClient` instance.
     #[staticmethod]
     #[pyo3(signature = (client_id, api_key, publishers_filepath, use_exchange_as_venue = true, bars_timestamp_on_close = true))]
     pub fn py_create_live_data_client(

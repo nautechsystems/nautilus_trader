@@ -1,0 +1,14 @@
+body[data-theme="dark"] h1,
+body[data-theme="dark"] h2,
+body[data-theme="dark"] h3,
+body[data-theme="dark"] h4,
+body[data-theme="dark"] h5,
+body[data-theme="dark"] h6,
+body[data-theme="dark"] .sidebar-title,
+body[data-theme="dark"] .toctree-l1 > a {
+  color: #e6edf3;
+}
+
+.bottom-of-page .related-information {
+  display: none;
+}

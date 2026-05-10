@@ -17,7 +17,7 @@ use std::{cmp::max, sync::Arc};
 
 use futures_util::StreamExt;
 use nautilus_common::messages::DataEvent;
-use nautilus_core::formatting::Separable;
+use nautilus_core::{hex, string::formatting::Separable};
 use nautilus_model::defi::{
     Block, Blockchain, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolProfiler, PoolSwap,
     SharedChain, SharedDex, SharedPool,
@@ -25,6 +25,7 @@ use nautilus_model::defi::{
     pool_analysis::{compare::compare_pool_profiler, snapshot::PoolSnapshot},
     reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
 };
+use nautilus_network::websocket::TransportBackend;
 
 use crate::{
     cache::BlockchainCache,
@@ -107,7 +108,12 @@ impl BlockchainDataClientCore {
         let rpc_client = if !config.use_hypersync_for_live_data && config.wss_rpc_url.is_some() {
             let wss_rpc_url = config.wss_rpc_url.clone().expect("wss_rpc_url is required");
             log::info!("WebSocket RPC URL: {wss_rpc_url}");
-            Some(Self::initialize_rpc_client(chain.name, wss_rpc_url))
+            Some(Self::initialize_rpc_client(
+                chain.name,
+                wss_rpc_url,
+                config.transport_backend,
+                config.proxy_url.clone(),
+            ))
         } else {
             log::info!("Using HyperSync for live data (no WebSocket RPC)");
             None
@@ -115,6 +121,7 @@ impl BlockchainDataClientCore {
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
             config.http_rpc_url.clone(),
             config.rpc_requests_per_second,
+            config.proxy_url.clone(),
         ));
         let erc20_contract = Erc20Contract::new(
             http_rpc_client.clone(),
@@ -154,20 +161,26 @@ impl BlockchainDataClientCore {
     fn initialize_rpc_client(
         blockchain: Blockchain,
         wss_rpc_url: String,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> BlockchainRpcClientAny {
-        match blockchain {
+        let mut client = match blockchain {
             Blockchain::Ethereum => {
-                BlockchainRpcClientAny::Ethereum(EthereumRpcClient::new(wss_rpc_url))
+                BlockchainRpcClientAny::Ethereum(EthereumRpcClient::new(wss_rpc_url, proxy_url))
             }
             Blockchain::Polygon => {
-                BlockchainRpcClientAny::Polygon(PolygonRpcClient::new(wss_rpc_url))
+                BlockchainRpcClientAny::Polygon(PolygonRpcClient::new(wss_rpc_url, proxy_url))
             }
-            Blockchain::Base => BlockchainRpcClientAny::Base(BaseRpcClient::new(wss_rpc_url)),
+            Blockchain::Base => {
+                BlockchainRpcClientAny::Base(BaseRpcClient::new(wss_rpc_url, proxy_url))
+            }
             Blockchain::Arbitrum => {
-                BlockchainRpcClientAny::Arbitrum(ArbitrumRpcClient::new(wss_rpc_url))
+                BlockchainRpcClientAny::Arbitrum(ArbitrumRpcClient::new(wss_rpc_url, proxy_url))
             }
             _ => panic!("Unsupported blockchain {blockchain} for RPC connection"),
-        }
+        };
+        client.set_transport_backend(transport_backend);
+        client
     }
 
     /// Establishes connections to all configured data sources and initializes the cache.
@@ -532,37 +545,37 @@ impl BlockchainDataClientCore {
 
                     let event_sig_bytes = extract_event_signature_bytes(&log)?;
             if event_sig_bytes == swap_sig_bytes.as_slice() {
-                let swap_event = dex_extended.parse_swap_event_hypersync(log)?;
+                let swap_event = dex_extended.parse_swap_event_hypersync(&log)?;
                 match self.process_pool_swap_event(&swap_event, &pool) {
                     Ok(swap) => swap_batch.push(swap),
                     Err(e) => log::error!("Failed to process swap event: {e}"),
                 }
             } else if event_sig_bytes == mint_sig_bytes.as_slice() {
-                let mint_event = dex_extended.parse_mint_event_hypersync(log)?;
+                let mint_event = dex_extended.parse_mint_event_hypersync(&log)?;
                 match self.process_pool_mint_event(&mint_event, &pool, &dex_extended) {
                     Ok(liquidity_update) => liquidity_batch.push(liquidity_update),
                     Err(e) => log::error!("Failed to process mint event: {e}"),
                 }
             } else if event_sig_bytes == burn_sig_bytes.as_slice() {
-                let burn_event = dex_extended.parse_burn_event_hypersync(log)?;
+                let burn_event = dex_extended.parse_burn_event_hypersync(&log)?;
                 match self.process_pool_burn_event(&burn_event, &pool, &dex_extended) {
                     Ok(liquidity_update) => liquidity_batch.push(liquidity_update),
                     Err(e) => log::error!("Failed to process burn event: {e}"),
                 }
             } else if event_sig_bytes == collect_sig_bytes.as_slice() {
-                let collect_event = dex_extended.parse_collect_event_hypersync(log)?;
+                let collect_event = dex_extended.parse_collect_event_hypersync(&log)?;
                 match self.process_pool_collect_event(&collect_event, &pool, &dex_extended) {
                     Ok(fee_collect) => collect_batch.push(fee_collect),
                     Err(e) => log::error!("Failed to process collect event: {e}"),
                 }
             } else if initialize_sig_bytes.as_ref().is_some_and(|sig| sig.as_slice() == event_sig_bytes) {
-                let initialize_event = dex_extended.parse_initialize_event_hypersync(log)?;
+                let initialize_event = dex_extended.parse_initialize_event_hypersync(&log)?;
                 self.cache
                     .update_pool_initialize_price_tick(&initialize_event)
                     .await?;
             } else if flash_sig_bytes.as_ref().is_some_and(|sig| sig.as_slice() == event_sig_bytes) {
                 if let Some(parse_fn) = dex_extended.parse_flash_event_hypersync_fn {
-                    match parse_fn(dex_extended.dex.clone(), log) {
+                    match parse_fn(dex_extended.dex.clone(), &log) {
                         Ok(flash_event) => {
                             match self.process_pool_flash_event(&flash_event, &pool) {
                                 Ok(flash) => flash_batch.push(flash),
@@ -657,9 +670,9 @@ impl BlockchainDataClientCore {
         sync_result
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     async fn flush_event_batches(
-        &mut self,
+        &self,
         event_batch_size: usize,
         swap_batch: &mut Vec<PoolSwap>,
         liquidity_batch: &mut Vec<PoolLiquidityUpdate>,
@@ -830,7 +843,7 @@ impl BlockchainDataClientCore {
 
     /// Synchronizes all pools and their tokens for a specific DEX within the given block range.
     ///
-    /// This method performs a comprehensive sync of:
+    /// This method performs a full sync of:
     /// 1. Pool creation events from the DEX factory
     /// 2. Token metadata for all tokens in discovered pools
     /// 3. Pool entities with proper token associations
@@ -1115,7 +1128,7 @@ impl BlockchainDataClientCore {
             let event_sig_bytes = extract_event_signature_bytes(&log)?;
 
             if event_sig_bytes == initialize_sig_bytes {
-                let initialize_event = dex_extended.parse_initialize_event_hypersync(log)?;
+                let initialize_event = dex_extended.parse_initialize_event_hypersync(&log)?;
                 profiler.initialize(initialize_event.sqrt_price_x96);
                 self.cache
                     .database
@@ -1124,7 +1137,7 @@ impl BlockchainDataClientCore {
                     .update_pool_initial_price_tick(self.chain.chain_id, &initialize_event)
                     .await?;
             } else if event_sig_bytes == mint_sig_bytes {
-                let mint_event = dex_extended.parse_mint_event_hypersync(log)?;
+                let mint_event = dex_extended.parse_mint_event_hypersync(&log)?;
                 match self.process_pool_mint_event(&mint_event, &profiler.pool, &dex_extended) {
                     Ok(liquidity_update) => {
                         profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;
@@ -1132,7 +1145,7 @@ impl BlockchainDataClientCore {
                     Err(e) => log::error!("Failed to process mint event: {e}"),
                 }
             } else if event_sig_bytes == burn_sig_bytes {
-                let burn_event = dex_extended.parse_burn_event_hypersync(log)?;
+                let burn_event = dex_extended.parse_burn_event_hypersync(&log)?;
                 match self.process_pool_burn_event(&burn_event, &profiler.pool, &dex_extended) {
                     Ok(liquidity_update) => {
                         profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;

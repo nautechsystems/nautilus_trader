@@ -30,11 +30,11 @@ from dotenv import load_dotenv
 from nautilus_trader.adapters.blockchain import BlockchainDataClientConfig
 from nautilus_trader.adapters.blockchain import BlockchainDataClientFactory
 from nautilus_trader.common import Environment
-from nautilus_trader.common import ImportableActorConfig  # type: ignore[attr-defined]
+from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.infrastructure import PostgresConnectOptions
-from nautilus_trader.live import LiveNode  # type: ignore[attr-defined]
-from nautilus_trader.model import Chain  # type: ignore[attr-defined]
-from nautilus_trader.model import DexType  # type: ignore[attr-defined]
+from nautilus_trader.live import LiveNode
+from nautilus_trader.model import Chain
+from nautilus_trader.model import DexType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import TraderId
 
@@ -67,6 +67,7 @@ def main() -> None:
 
     # PostgreSQL configuration (optional, for caching blockchain data)
     postgres_config = None
+
     if os.getenv("USE_POSTGRES_CACHE"):
         postgres_config = PostgresConnectOptions(
             host=os.getenv("POSTGRES_HOST", "localhost"),
@@ -92,7 +93,7 @@ def main() -> None:
     )
 
     builder = LiveNode.builder(node_name, trader_id, environment)
-    builder.add_data_client(None, client_factory, client_config)
+    builder.add_data_client("BLOCKCHAIN-Arbitrum", client_factory, client_config)
     node = builder.build()
 
     actor_config = ImportableActorConfig(

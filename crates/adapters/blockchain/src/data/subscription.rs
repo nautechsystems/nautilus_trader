@@ -15,6 +15,7 @@
 
 use ahash::{AHashMap, AHashSet};
 use alloy::primitives::{Address, keccak256};
+use nautilus_core::hex;
 use nautilus_model::defi::DexType;
 
 /// Manages subscriptions to DeFi protocol events (swaps, mints, burns, collects) across different DEXs.
@@ -163,7 +164,7 @@ impl DefiDataSubscriptionManager {
         }
 
         // Otherwise, it's a raw signature that needs hashing
-        format!("0x{}", hex::encode(keccak256(s.as_bytes())))
+        hex::encode_prefixed(keccak256(s.as_bytes()))
     }
 
     /// Registers a DEX with its event signatures for subscription management.

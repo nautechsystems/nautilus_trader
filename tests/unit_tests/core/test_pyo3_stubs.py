@@ -15,6 +15,9 @@
 """
 Tests to verify that nautilus_pyo3.pyi type stubs match the actual runtime bindings.
 
+This file validates the default legacy ``nautilus_pyo3`` extension surface. It does not validate
+feature-gated v2-only APIs that are unavailable from legacy Python at runtime.
+
 This catches misalignments between stubs and the actual PyO3 bindings, such as:
 - Enum variants declared in stubs but not exposed at runtime
 - Methods/properties declared in stubs but missing from bindings
@@ -101,6 +104,7 @@ def parse_stub_file() -> dict:
                     isinstance(dec, ast.Name) and dec.id == "property"
                     for dec in item.decorator_list
                 )
+
                 if is_property:
                     members["properties"].append(name)
                 else:
@@ -166,6 +170,7 @@ class TestEnumVariants:
         cls = getattr(nautilus_pyo3, class_name)
 
         missing = []
+
         for variant in info["variants"]:
             if not hasattr(cls, variant):
                 missing.append(variant)
@@ -193,6 +198,7 @@ class TestClassMethods:
         cls = getattr(nautilus_pyo3, class_name)
 
         missing = []
+
         for method in info["methods"]:
             if method == "__init__":
                 continue
@@ -216,6 +222,7 @@ class TestClassMethods:
         instance_only = INSTANCE_ONLY_PROPERTIES.get(class_name, set())
 
         missing = []
+
         for prop in info["properties"]:
             if prop in instance_only:
                 continue

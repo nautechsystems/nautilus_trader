@@ -25,8 +25,12 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OrderAccepted {
-    #[allow(clippy::too_many_arguments)]
+    /// Represents an event where an order has been accepted by the trading venue.
+    ///
+    /// This event often corresponds to a `NEW` `OrdStatus` <39> field in FIX execution reports.
+    #[expect(clippy::too_many_arguments)]
     #[new]
     fn py_new(
         trader_id: TraderId,

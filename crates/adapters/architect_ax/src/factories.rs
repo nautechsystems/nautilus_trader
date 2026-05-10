@@ -21,19 +21,16 @@ use nautilus_common::{
     cache::Cache,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::ClientId,
 };
-use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
 use crate::{
-    common::{
-        consts::{AX_VENUE, AX_WS_PUBLIC_URL, AX_WS_SANDBOX_PUBLIC_URL},
-        credential::Credential,
-    },
+    common::{consts::AX_VENUE, credential::Credential},
     config::{AxDataClientConfig, AxExecClientConfig},
     data::AxDataClient,
     execution::AxExecutionClient,
@@ -105,7 +102,7 @@ impl DataClientFactory for AxDataClientFactory {
                 ax_config.max_retries,
                 ax_config.retry_delay_initial_ms,
                 ax_config.retry_delay_max_ms,
-                ax_config.http_proxy_url.clone(),
+                ax_config.proxy_url.clone(),
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?
         } else {
@@ -116,22 +113,20 @@ impl DataClientFactory for AxDataClientFactory {
                 ax_config.max_retries,
                 ax_config.retry_delay_initial_ms,
                 ax_config.retry_delay_max_ms,
-                ax_config.http_proxy_url.clone(),
+                ax_config.proxy_url.clone(),
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?
         };
 
-        let ws_url = ax_config.base_url_ws_public.clone().unwrap_or_else(|| {
-            if ax_config.is_sandbox {
-                AX_WS_SANDBOX_PUBLIC_URL.to_string()
-            } else {
-                AX_WS_PUBLIC_URL.to_string()
-            }
-        });
+        let ws_url = ax_config.ws_public_url();
 
         // Token set during connect
-        let ws_client =
-            AxMdWebSocketClient::without_auth(ws_url, ax_config.heartbeat_interval_secs);
+        let ws_client = AxMdWebSocketClient::without_auth(
+            ws_url,
+            ax_config.heartbeat_interval_secs,
+            ax_config.transport_backend,
+            ax_config.proxy_url.clone(),
+        );
 
         let client = AxDataClient::new(client_id, ax_config, http_client, ws_client)?;
         Ok(Box::new(client))
@@ -212,7 +207,7 @@ impl ExecutionClientFactory for AxExecutionClientFactory {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_system::factories::ClientConfig;
+    use nautilus_common::factories::ClientConfig;
     use rstest::rstest;
 
     use super::*;

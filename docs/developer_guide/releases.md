@@ -20,7 +20,7 @@ The project maintains two version numbers:
 | File                     | Scope          | Example   |
 |--------------------------|----------------|-----------|
 | `pyproject.toml`         | Python package | `1.223.0` |
-| `Cargo.toml` (workspace) | Rust crates    | `0.53.0`  |
+| `Cargo.toml` (workspace) | Rust crates    | `0.55.0`  |
 
 These are bumped independently. The Python version drives the release tag (`v1.223.0`).
 
@@ -50,6 +50,9 @@ These are bumped independently. The Python version drives the release tag (`v1.2
 - [ ] Add horizontal separator `---` below the completed release
 - [ ] Add the next version template at the top of `RELEASES.md` (see below)
 - [ ] Bump `pyproject.toml` version to the next release number
+- [ ] Bump crate versions in tutorial and how-to `Cargo.toml` snippets
+  (`docs/concepts/rust.md`, `docs/how_to/run_rust_backtest.md`,
+  `docs/how_to/run_rust_live_trading.md`)
 
 ## Release notes
 
@@ -177,7 +180,7 @@ Features marked for removal.
 **Format**:
 
 ```markdown
-- Deprecated `convert_quote_qty_to_base`; disable (`False`) to maintain consistent behaviour. Will be removed in future version
+- Deprecated `some_config_option`; disable (`False`) to maintain consistent behaviour. Will be removed in future version
 ```
 
 **Guidelines**:

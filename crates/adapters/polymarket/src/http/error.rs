@@ -118,6 +118,7 @@ impl Error {
     }
 
     /// Classifies a reqwest error into the appropriate error variant.
+    #[expect(clippy::needless_pass_by_value)]
     pub fn from_reqwest(error: ReqwestError) -> Self {
         if error.is_timeout() {
             Self::Timeout
@@ -136,6 +137,7 @@ impl Error {
         }
     }
 
+    #[expect(clippy::needless_pass_by_value)]
     pub fn from_http_client(error: HttpClientError) -> Self {
         Self::transport(format!("HTTP client error: {error}"))
     }
@@ -154,6 +156,15 @@ impl Error {
 
     pub fn is_auth_error(&self) -> bool {
         matches!(self, Self::Auth(_))
+    }
+
+    /// Returns `true` if this error originated from an HTTP status code response
+    /// (as opposed to transport, timeout, or local errors).
+    pub fn is_http_status_error(&self) -> bool {
+        matches!(
+            self,
+            Self::Auth(_) | Self::BadRequest(_) | Self::RateLimit { .. } | Self::Http { .. }
+        )
     }
 }
 

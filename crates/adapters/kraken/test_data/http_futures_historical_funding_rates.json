@@ -1,0 +1,20 @@
+{
+    "result": "success",
+    "rates": [
+        {
+            "timestamp": "2025-07-11T08:00:00.000Z",
+            "relativeFundingRate": 0.0001,
+            "fundingRate": 0.00005
+        },
+        {
+            "timestamp": "2025-07-11T00:00:00.000Z",
+            "relativeFundingRate": -0.00005,
+            "fundingRate": -0.000025
+        },
+        {
+            "timestamp": "2025-07-10T16:00:00.000Z",
+            "relativeFundingRate": 0.00015,
+            "fundingRate": 0.000075
+        }
+    ]
+}

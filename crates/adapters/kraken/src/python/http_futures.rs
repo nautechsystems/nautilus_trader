@@ -19,12 +19,16 @@ use chrono::{DateTime, Utc};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
-    enums::{OrderSide, OrderType, TimeInForce},
+    enums::{OrderSide, OrderType, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
-use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
+use pyo3::{
+    conversion::IntoPyObjectExt,
+    prelude::*,
+    types::{PyDict, PyList},
+};
 
 use crate::{
     common::{credential::KrakenCredential, enums::KrakenEnvironment},
@@ -32,24 +36,28 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl KrakenFuturesHttpClient {
+    /// High-level HTTP client for the Kraken Futures REST API.
+    ///
+    /// This client wraps the raw client and provides Nautilus domain types.
+    /// It maintains an instrument cache and uses it to parse venue responses
+    /// into Nautilus domain objects.
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, proxy_url=None, max_requests_per_second=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, timeout_secs=60, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, proxy_url=None, max_requests_per_second=5))]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url: Option<String>,
         demo: bool,
-        timeout_secs: Option<u64>,
+        timeout_secs: u64,
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         proxy_url: Option<String>,
-        max_requests_per_second: Option<u32>,
+        max_requests_per_second: u32,
     ) -> PyResult<Self> {
-        let timeout = timeout_secs.or(Some(60));
-
         let environment = if demo {
             KrakenEnvironment::Demo
         } else {
@@ -63,7 +71,7 @@ impl KrakenFuturesHttpClient {
                 s,
                 environment,
                 base_url,
-                timeout,
+                timeout_secs,
                 max_retries,
                 retry_delay_ms,
                 retry_delay_max_ms,
@@ -75,7 +83,7 @@ impl KrakenFuturesHttpClient {
             Self::new(
                 environment,
                 base_url,
-                timeout,
+                timeout_secs,
                 max_retries,
                 retry_delay_ms,
                 retry_delay_max_ms,
@@ -107,6 +115,7 @@ impl KrakenFuturesHttpClient {
         self.inner.credential().map(|c| c.api_key_masked())
     }
 
+    /// Caches an instrument for symbol lookup.
     #[pyo3(name = "cache_instrument")]
     fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
@@ -114,11 +123,13 @@ impl KrakenFuturesHttpClient {
         Ok(())
     }
 
+    /// Cancels all pending HTTP requests.
     #[pyo3(name = "cancel_all_requests")]
     fn py_cancel_all_requests(&self) {
         self.cancel_all_requests();
     }
 
+    /// Requests tradable instruments from Kraken Futures.
     #[pyo3(name = "request_instruments")]
     fn py_request_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -136,6 +147,30 @@ impl KrakenFuturesHttpClient {
                     .collect();
                 let pylist = PyList::new(py, py_instruments?).unwrap();
                 Ok(pylist.unbind())
+            })
+        })
+    }
+
+    /// Requests the current market status for Kraken Futures instruments.
+    #[pyo3(name = "request_instrument_statuses")]
+    fn py_request_instrument_statuses<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let statuses = client
+                .request_instrument_statuses()
+                .await
+                .map_err(to_pyruntime_err)?;
+
+            Python::attach(|py| {
+                let dict = PyDict::new(py);
+                for (instrument_id, action) in statuses {
+                    dict.set_item(
+                        instrument_id.into_bound_py_any(py)?,
+                        action.into_bound_py_any(py)?,
+                    )?;
+                }
+                Ok(dict.into_any().unbind())
             })
         })
     }
@@ -169,6 +204,7 @@ impl KrakenFuturesHttpClient {
         })
     }
 
+    /// Requests the mark price for an instrument.
     #[pyo3(name = "request_mark_price")]
     fn py_request_mark_price<'py>(
         &self,
@@ -205,6 +241,27 @@ impl KrakenFuturesHttpClient {
         })
     }
 
+    /// Requests an order book snapshot for a futures instrument.
+    #[pyo3(name = "request_book_snapshot")]
+    #[pyo3(signature = (instrument_id, depth=None))]
+    fn py_request_book_snapshot<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        depth: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let book = client
+                .request_book_snapshot(instrument_id, depth)
+                .await
+                .map_err(to_pyruntime_err)?;
+
+            Python::attach(|py| book.into_py_any(py))
+        })
+    }
+
     #[pyo3(name = "request_bars")]
     #[pyo3(signature = (bar_type, start=None, end=None, limit=None))]
     fn py_request_bars<'py>(
@@ -232,6 +289,10 @@ impl KrakenFuturesHttpClient {
         })
     }
 
+    /// Requests account state from the Kraken Futures exchange.
+    ///
+    /// This queries the accounts endpoint and converts the response into a
+    /// Nautilus `AccountState` event containing balances and margin info.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -336,9 +397,10 @@ impl KrakenFuturesHttpClient {
         })
     }
 
+    /// Submits a new order to the Kraken Futures exchange.
     #[pyo3(name = "submit_order")]
-    #[pyo3(signature = (account_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, price=None, trigger_price=None, reduce_only=false, post_only=false))]
-    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (account_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, price=None, trigger_price=None, trigger_type=None, reduce_only=false, post_only=false))]
+    #[expect(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
         &self,
         py: Python<'py>,
@@ -351,6 +413,7 @@ impl KrakenFuturesHttpClient {
         time_in_force: TimeInForce,
         price: Option<Price>,
         trigger_price: Option<Price>,
+        trigger_type: Option<TriggerType>,
         reduce_only: bool,
         post_only: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -368,6 +431,7 @@ impl KrakenFuturesHttpClient {
                     time_in_force,
                     price,
                     trigger_price,
+                    trigger_type,
                     reduce_only,
                     post_only,
                 )
@@ -378,9 +442,12 @@ impl KrakenFuturesHttpClient {
         })
     }
 
+    /// Modifies an existing order on the Kraken Futures exchange.
+    ///
+    /// Returns the new venue order ID assigned to the modified order.
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (instrument_id, client_order_id=None, venue_order_id=None, quantity=None, price=None, trigger_price=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
         &self,
         py: Python<'py>,
@@ -410,6 +477,7 @@ impl KrakenFuturesHttpClient {
         })
     }
 
+    /// Cancels an order on the Kraken Futures exchange.
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (account_id, instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_cancel_order<'py>(
@@ -451,6 +519,15 @@ impl KrakenFuturesHttpClient {
         })
     }
 
+    /// Cancels multiple orders on the Kraken Futures exchange.
+    ///
+    /// Automatically chunks requests into batches of 50 orders.
+    ///
+    /// # Parameters
+    /// - `venue_order_ids` - List of venue order IDs to cancel.
+    ///
+    /// # Returns
+    /// The total number of successfully cancelled orders.
     #[pyo3(name = "cancel_orders_batch")]
     fn py_cancel_orders_batch<'py>(
         &self,
@@ -462,6 +539,72 @@ impl KrakenFuturesHttpClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .cancel_orders_batch(venue_order_ids)
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+}
+
+// Separate block to avoid pyo3_stub_gen trait bound issues with batch-order tuples.
+// Stub is maintained manually in nautilus_pyo3.pyi.
+#[pymethods]
+impl KrakenFuturesHttpClient {
+    /// Submits multiple orders in a single batch request.
+    ///
+    /// Builds batch send items from order parameters, chunks at the batch limit,
+    /// and returns per-item send statuses.
+    #[pyo3(name = "submit_orders_batch")]
+    #[expect(clippy::type_complexity)]
+    fn py_submit_orders_batch<'py>(
+        &self,
+        py: Python<'py>,
+        orders: Vec<(
+            InstrumentId,
+            ClientOrderId,
+            OrderSide,
+            OrderType,
+            Quantity,
+            TimeInForce,
+            Option<Price>,
+            Option<Price>,
+            Option<TriggerType>,
+            bool,
+            bool,
+        )>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let statuses = client
+                .submit_orders_batch(orders)
+                .await
+                .map_err(to_pyruntime_err)?;
+
+            let result: Vec<String> = statuses.into_iter().map(|s| s.status).collect();
+            Ok(result)
+        })
+    }
+
+    /// Modifies multiple orders in a single batch request.
+    #[expect(clippy::type_complexity)]
+    #[pyo3(name = "edit_orders_batch")]
+    fn py_edit_orders_batch<'py>(
+        &self,
+        py: Python<'py>,
+        orders: Vec<(
+            InstrumentId,
+            Option<ClientOrderId>,
+            Option<VenueOrderId>,
+            Option<Quantity>,
+            Option<Price>,
+            Option<Price>,
+        )>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .edit_orders_batch(orders)
                 .await
                 .map_err(to_pyruntime_err)
         })

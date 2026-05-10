@@ -41,6 +41,7 @@ from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport MarkPriceUpdate
+from nautilus_trader.model.data cimport OptionGreeks
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
@@ -110,6 +111,8 @@ cdef class Actor(Component):
     cpdef void on_mark_price(self, MarkPriceUpdate mark_price)
     cpdef void on_index_price(self, IndexPriceUpdate index_price)
     cpdef void on_funding_rate(self, FundingRateUpdate funding_rate)
+    cpdef void on_option_greeks(self, OptionGreeks option_greeks)
+    cpdef void on_option_chain(self, option_chain_slice)
     cpdef void on_bar(self, Bar bar)
     cpdef void on_data(self, data)
     cpdef void on_signal(self, signal)
@@ -194,6 +197,8 @@ cdef class Actor(Component):
     cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id=*, bint update_catalog=*, dict[str, object] params=*)
     cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
+    cpdef void subscribe_option_greeks(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
+    cpdef void subscribe_option_chain(self, object series_id, object strike_range=*, object snapshot_interval_ms=*, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_order_fills(self, InstrumentId instrument_id)
     cpdef void subscribe_order_cancels(self, InstrumentId instrument_id)
     cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=*, InstrumentId instrument_id=*, dict[str, object] params=*)
@@ -210,6 +215,8 @@ cdef class Actor(Component):
     cpdef void unsubscribe_bars(self, BarType bar_type, ClientId client_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
+    cpdef void unsubscribe_option_greeks(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
+    cpdef void unsubscribe_option_chain(self, object series_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_order_fills(self, InstrumentId instrument_id)
     cpdef void unsubscribe_order_cancels(self, InstrumentId instrument_id)
     cpdef void publish_data(self, DataType data_type, Data data)
@@ -396,6 +403,8 @@ cdef class Actor(Component):
     cpdef void handle_bar(self, Bar bar, bint historical=*)
     cpdef void handle_data(self, Data data)
     cpdef void handle_signal(self, Data signal)
+    cpdef void handle_option_greeks(self, OptionGreeks option_greeks)
+    cpdef void handle_option_chain(self, option_chain_slice)
     cpdef void handle_instrument_status(self, InstrumentStatus data)
     cpdef void handle_instrument_close(self, InstrumentClose data)
     cpdef void handle_historical_data(self, data)

@@ -101,16 +101,33 @@ class TestQuantity:
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Quantity(-0, precision=0), Decimal(0)],
-            [Quantity(0, precision=0), Decimal(0)],
-            [Quantity(1, precision=0), Decimal(1)],
+            [Quantity(-0, precision=0), Quantity(0, precision=0)],
+            [Quantity(0, precision=0), Quantity(0, precision=0)],
+            [Quantity(1, precision=0), Quantity(1, precision=0)],
         ],
     )
-    def test_abs_with_various_values_returns_expected_decimal(self, value, expected):
+    def test_abs_with_various_values_returns_expected_quantity(self, value, expected):
         # Arrange, Act
         result = abs(value)
 
         # Assert
+        assert isinstance(result, Quantity)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            [Quantity(0, precision=0), Quantity(0, precision=0)],
+            [Quantity(1, precision=0), Quantity(1, precision=0)],
+            [Quantity(1.5, precision=1), Quantity(1.5, precision=1)],
+        ],
+    )
+    def test_pos_with_various_values_returns_expected_quantity(self, value, expected):
+        # Arrange, Act
+        result = +value
+
+        # Assert
+        assert isinstance(result, Quantity)
         assert result == expected
 
     @pytest.mark.parametrize(
@@ -394,6 +411,50 @@ class TestQuantity:
 
         # Assert
         assert result == Quantity(3.0, 1)
+
+    def test_checked_add_within_bounds(self) -> None:
+        # Arrange
+        a = Quantity(10.0, 2)
+        b = Quantity(5.0, 2)
+
+        # Act
+        result = a.checked_add(b)
+
+        # Assert
+        assert result == Quantity(15.0, 2)
+
+    def test_checked_add_above_max_returns_none(self) -> None:
+        # Arrange
+        near_max = Quantity(QUANTITY_MAX, 0)
+        one = Quantity(1.0, 0)
+
+        # Act
+        result = near_max.checked_add(one)
+
+        # Assert
+        assert result is None
+
+    def test_checked_sub_within_bounds(self) -> None:
+        # Arrange
+        a = Quantity(10.0, 2)
+        b = Quantity(3.0, 2)
+
+        # Act
+        result = a.checked_sub(b)
+
+        # Assert
+        assert result == Quantity(7.0, 2)
+
+    def test_checked_sub_underflow_returns_none(self) -> None:
+        # Arrange
+        a = Quantity(3.0, 2)
+        b = Quantity(10.0, 2)
+
+        # Act
+        result = a.checked_sub(b)
+
+        # Assert
+        assert result is None
 
     @pytest.mark.parametrize(
         ("value1", "value2", "expected_type", "expected_value"),

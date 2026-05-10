@@ -16,7 +16,7 @@
 use aws_lc_rs::{hmac, rand as lc_rand, rsa::KeyPair, signature as lc_signature};
 use base64::prelude::*;
 use ed25519_dalek::{Signature as Ed25519Signature, Signer, SigningKey};
-use hex;
+use nautilus_core::hex;
 
 /// Generates an HMAC-SHA256 signature for the given data using the provided secret.
 ///

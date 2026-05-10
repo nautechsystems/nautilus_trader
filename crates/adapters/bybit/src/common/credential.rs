@@ -20,8 +20,7 @@
 use std::fmt::Debug;
 
 use aws_lc_rs::hmac;
-use hex;
-use nautilus_core::{env::resolve_env_var_pair, string::REDACTED};
+use nautilus_core::{env::resolve_env_var_pair, hex, string::secret::REDACTED};
 use zeroize::ZeroizeOnDrop;
 
 use crate::common::enums::BybitEnvironment;
@@ -90,7 +89,7 @@ impl Credential {
     /// For keys shorter than 8 characters, shows asterisks only.
     #[must_use]
     pub fn api_key_masked(&self) -> String {
-        nautilus_core::string::mask_api_key(&self.api_key)
+        nautilus_core::string::secret::mask_api_key(&self.api_key)
     }
 
     /// Produces the Bybit WebSocket authentication signature for the provided expiry timestamp.

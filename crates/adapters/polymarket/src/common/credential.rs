@@ -20,10 +20,13 @@ use std::{
     str::FromStr,
 };
 
-use alloy_signer_local::PrivateKeySigner;
+use alloy::signers::local::PrivateKeySigner;
 use aws_lc_rs::hmac;
 use base64::{Engine, engine::general_purpose::URL_SAFE};
-use nautilus_core::env::{get_or_env_var, get_or_env_var_opt};
+use nautilus_core::{
+    env::{get_or_env_var, get_or_env_var_opt},
+    hex,
+};
 use ustr::Ustr;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -62,7 +65,7 @@ pub struct EvmPrivateKey {
 
 impl EvmPrivateKey {
     /// Creates a new [`EvmPrivateKey`] from a hex string (with or without `0x` prefix).
-    pub fn new(key: String) -> Result<Self> {
+    pub fn new(key: &str) -> Result<Self> {
         let key = key.trim().to_string();
         let hex_key = key.strip_prefix("0x").unwrap_or(&key);
 
@@ -129,7 +132,7 @@ pub struct Credential {
 
 impl Credential {
     /// Creates a new credential. The `api_secret` must be base64-encoded.
-    pub fn new(api_key: String, api_secret: &str, passphrase: String) -> Result<Self> {
+    pub fn new(api_key: &str, api_secret: &str, passphrase: String) -> Result<Self> {
         // Polymarket API secrets are URL-safe base64 encoded
         let secret_bytes = URL_SAFE
             .decode(api_secret)
@@ -137,7 +140,7 @@ impl Credential {
             .into_boxed_slice();
 
         Ok(Self {
-            api_key: Ustr::from(&api_key),
+            api_key: Ustr::from(api_key),
             secret_bytes,
             passphrase,
         })
@@ -149,6 +152,14 @@ impl Credential {
 
     pub fn passphrase(&self) -> &str {
         &self.passphrase
+    }
+
+    /// Returns the raw API secret as a base64-encoded string.
+    ///
+    /// Used for WebSocket user channel authentication which expects the raw
+    /// secret (not an HMAC signature).
+    pub fn api_secret(&self) -> String {
+        URL_SAFE.encode(&*self.secret_bytes)
     }
 
     /// Signs a request with HMAC-SHA256 and returns the base64-encoded signature.
@@ -181,7 +192,7 @@ impl Credential {
                 Error::bad_request(format!("{PASSPHRASE_VAR} environment variable is not set"))
             })?;
 
-        Self::new(key, &secret, pass)
+        Self::new(&key, &secret, pass)
     }
 
     pub fn from_env() -> Result<Self> {
@@ -259,7 +270,7 @@ impl Secrets {
             Error::bad_request(format!("{PRIVATE_KEY_VAR} environment variable is not set"))
         })?;
 
-        let private_key = EvmPrivateKey::new(pk_str)?;
+        let private_key = EvmPrivateKey::new(&pk_str)?;
         let credential = Credential::resolve(api_key, api_secret, passphrase)?;
 
         let funder = get_or_env_var_opt(funder.filter(|s| !s.trim().is_empty()), FUNDER_VAR)
@@ -272,6 +283,13 @@ impl Secrets {
         let signer = PrivateKeySigner::from_str(key_hex)
             .map_err(|e| Error::bad_request(format!("Failed to derive address: {e}")))?;
         let address = format!("{:#x}", signer.address());
+
+        log::info!(
+            "Polymarket credentials resolved: address={}, funder={:?}, api_key={}...)",
+            address,
+            funder.as_deref().map(|s| &s[..10.min(s.len())]),
+            &credential.api_key()[..8]
+        );
 
         Ok(Self {
             private_key,
@@ -301,31 +319,31 @@ mod tests {
 
     #[rstest]
     fn test_evm_private_key_with_0x_prefix() {
-        let key = EvmPrivateKey::new(TEST_PRIVATE_KEY.to_string()).unwrap();
+        let key = EvmPrivateKey::new(TEST_PRIVATE_KEY).unwrap();
         assert_eq!(key.as_hex(), TEST_PRIVATE_KEY);
         assert_eq!(key.as_bytes().len(), 32);
     }
 
     #[rstest]
     fn test_evm_private_key_without_0x_prefix() {
-        let key = EvmPrivateKey::new(TEST_PRIVATE_KEY[2..].to_string()).unwrap();
+        let key = EvmPrivateKey::new(&TEST_PRIVATE_KEY[2..]).unwrap();
         assert_eq!(key.as_hex(), TEST_PRIVATE_KEY);
     }
 
     #[rstest]
     fn test_evm_private_key_invalid_length() {
-        assert!(EvmPrivateKey::new("0x123".to_string()).is_err());
+        assert!(EvmPrivateKey::new("0x123").is_err());
     }
 
     #[rstest]
     fn test_evm_private_key_invalid_hex() {
         let bad = "0x123g567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-        assert!(EvmPrivateKey::new(bad.to_string()).is_err());
+        assert!(EvmPrivateKey::new(bad).is_err());
     }
 
     #[rstest]
     fn test_evm_private_key_debug_redacts() {
-        let key = EvmPrivateKey::new(TEST_PRIVATE_KEY.to_string()).unwrap();
+        let key = EvmPrivateKey::new(TEST_PRIVATE_KEY).unwrap();
         let debug = format!("{key:?}");
         assert_eq!(debug, "EvmPrivateKey(***)");
         assert!(!debug.contains("1234"));
@@ -333,30 +351,22 @@ mod tests {
 
     #[rstest]
     fn test_credential_creation() {
-        let cred = Credential::new(
-            "test_api_key".to_string(),
-            &test_secret_b64(),
-            "test_pass".to_string(),
-        )
-        .unwrap();
+        let cred =
+            Credential::new("test_api_key", &test_secret_b64(), "test_pass".to_string()).unwrap();
         assert_eq!(cred.api_key().as_str(), "test_api_key");
         assert_eq!(cred.passphrase(), "test_pass");
     }
 
     #[rstest]
     fn test_credential_invalid_base64_secret() {
-        let result = Credential::new("key".to_string(), "not-valid-base64!!!", "pass".to_string());
+        let result = Credential::new("key", "not-valid-base64!!!", "pass".to_string());
         assert!(result.is_err());
     }
 
     #[rstest]
     fn test_credential_sign_produces_base64() {
-        let cred = Credential::new(
-            "key".to_string(),
-            &URL_SAFE.encode(b"test_secret"),
-            "pass".to_string(),
-        )
-        .unwrap();
+        let cred =
+            Credential::new("key", &URL_SAFE.encode(b"test_secret"), "pass".to_string()).unwrap();
 
         let sig = cred.sign("1234567890", "GET", "/order", "");
         assert!(URL_SAFE.decode(&sig).is_ok());
@@ -365,7 +375,7 @@ mod tests {
     #[rstest]
     fn test_credential_sign_deterministic() {
         let cred = Credential::new(
-            "key".to_string(),
+            "key",
             &URL_SAFE.encode(b"deterministic_test"),
             "pass".to_string(),
         )
@@ -378,12 +388,8 @@ mod tests {
 
     #[rstest]
     fn test_credential_sign_different_timestamps() {
-        let cred = Credential::new(
-            "key".to_string(),
-            &URL_SAFE.encode(b"test_key"),
-            "pass".to_string(),
-        )
-        .unwrap();
+        let cred =
+            Credential::new("key", &URL_SAFE.encode(b"test_key"), "pass".to_string()).unwrap();
 
         let sig1 = cred.sign("1000", "GET", "/order", "");
         let sig2 = cred.sign("1001", "GET", "/order", "");
@@ -392,12 +398,8 @@ mod tests {
 
     #[rstest]
     fn test_credential_sign_different_methods() {
-        let cred = Credential::new(
-            "key".to_string(),
-            &URL_SAFE.encode(b"test_key"),
-            "pass".to_string(),
-        )
-        .unwrap();
+        let cred =
+            Credential::new("key", &URL_SAFE.encode(b"test_key"), "pass".to_string()).unwrap();
 
         let sig1 = cred.sign("1000", "GET", "/order", "");
         let sig2 = cred.sign("1000", "POST", "/order", "");
@@ -406,12 +408,8 @@ mod tests {
 
     #[rstest]
     fn test_credential_sign_different_paths() {
-        let cred = Credential::new(
-            "key".to_string(),
-            &URL_SAFE.encode(b"test_key"),
-            "pass".to_string(),
-        )
-        .unwrap();
+        let cred =
+            Credential::new("key", &URL_SAFE.encode(b"test_key"), "pass".to_string()).unwrap();
 
         let sig1 = cred.sign("1000", "GET", "/order", "");
         let sig2 = cred.sign("1000", "GET", "/trades", "");
@@ -420,12 +418,8 @@ mod tests {
 
     #[rstest]
     fn test_credential_sign_different_bodies() {
-        let cred = Credential::new(
-            "key".to_string(),
-            &URL_SAFE.encode(b"test_key"),
-            "pass".to_string(),
-        )
-        .unwrap();
+        let cred =
+            Credential::new("key", &URL_SAFE.encode(b"test_key"), "pass".to_string()).unwrap();
 
         let sig1 = cred.sign("1000", "POST", "/order", r#"{"a":1}"#);
         let sig2 = cred.sign("1000", "POST", "/order", r#"{"a":2}"#);
@@ -434,12 +428,8 @@ mod tests {
 
     #[rstest]
     fn test_credential_sign_empty_body() {
-        let cred = Credential::new(
-            "key".to_string(),
-            &URL_SAFE.encode(b"test_key"),
-            "pass".to_string(),
-        )
-        .unwrap();
+        let cred =
+            Credential::new("key", &URL_SAFE.encode(b"test_key"), "pass".to_string()).unwrap();
 
         let sig1 = cred.sign("1000", "GET", "/order", "");
         let sig2 = cred.sign("1000", "GET", "/order", "{}");
@@ -453,7 +443,7 @@ mod tests {
     #[rstest]
     fn test_credential_sign_matches_sdk_l2_vector() {
         let cred = Credential::new(
-            "00000000-0000-0000-0000-000000000000".to_string(),
+            "00000000-0000-0000-0000-000000000000",
             SDK_SECRET,
             SDK_PASSPHRASE.to_string(),
         )
@@ -466,7 +456,7 @@ mod tests {
 
     #[rstest]
     fn test_credential_sign_matches_sdk_hmac_vector() {
-        let cred = Credential::new("key".to_string(), SDK_SECRET, "pass".to_string()).unwrap();
+        let cred = Credential::new("key", SDK_SECRET, "pass".to_string()).unwrap();
 
         // SDK test: raw message "1000000test-sign/orders{"hash":"0x123"}"
         let sig = cred.sign("1000000", "test-sign", "/orders", r#"{"hash":"0x123"}"#);
@@ -476,7 +466,7 @@ mod tests {
     #[rstest]
     fn test_credential_debug_redacts_secret() {
         let cred = Credential::new(
-            "my_api_key_12345678".to_string(),
+            "my_api_key_12345678",
             &test_secret_b64(),
             "my_passphrase".to_string(),
         )

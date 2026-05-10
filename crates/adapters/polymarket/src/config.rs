@@ -15,32 +15,69 @@
 
 //! Configuration structures for the Polymarket adapter.
 
-use crate::common::{enums::SignatureType, urls};
+use std::{fmt::Debug, sync::Arc};
+
+use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_network::websocket::TransportBackend;
+
+use crate::{
+    common::{enums::SignatureType, urls},
+    filters::InstrumentFilter,
+};
 
 /// Configuration for the Polymarket data client.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, bon::Builder)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.polymarket",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.polymarket")
+)]
 pub struct PolymarketDataClientConfig {
     pub base_url_http: Option<String>,
     pub base_url_ws: Option<String>,
     pub base_url_gamma: Option<String>,
-    pub http_timeout_secs: Option<u64>,
-    pub ws_timeout_secs: Option<u64>,
+    pub base_url_data_api: Option<String>,
+    /// HTTP timeout in seconds.
+    #[builder(default = 60)]
+    pub http_timeout_secs: u64,
+    /// WebSocket timeout in seconds.
+    #[builder(default = 30)]
+    pub ws_timeout_secs: u64,
+    #[builder(default = crate::common::consts::WS_DEFAULT_SUBSCRIPTIONS)]
     pub ws_max_subscriptions: usize,
     /// Instrument reload interval in minutes.
-    pub update_instruments_interval_mins: Option<u64>,
+    #[builder(default = 60)]
+    pub update_instruments_interval_mins: u64,
+    /// Whether to subscribe to new market discovery events via WebSocket.
+    #[builder(default)]
+    pub subscribe_new_markets: bool,
+    /// Whether subscribe and request commands referencing an unknown instrument should
+    /// trigger an ad-hoc load via the instrument provider. Concurrent misses within
+    /// `auto_load_debounce_ms` are coalesced into a single batched request.
+    #[builder(default = true)]
+    pub auto_load_missing_instruments: bool,
+    /// The window (milliseconds) over which concurrent auto-load requests are batched.
+    #[builder(default = 100)]
+    pub auto_load_debounce_ms: u64,
+    /// Instrument filters applied to all instruments during loading and discovery.
+    #[builder(default)]
+    pub filters: Vec<Arc<dyn InstrumentFilter>>,
+    /// Optional filter applied to newly discovered markets before instrument emission.
+    pub new_market_filter: Option<Arc<dyn InstrumentFilter>>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for PolymarketDataClientConfig {
     fn default() -> Self {
-        Self {
-            base_url_http: None,
-            base_url_ws: None,
-            base_url_gamma: None,
-            http_timeout_secs: Some(60),
-            ws_timeout_secs: Some(30),
-            ws_max_subscriptions: crate::common::consts::WS_DEFAULT_SUBSCRIPTIONS,
-            update_instruments_interval_mins: Some(60),
-        }
+        Self::builder().build()
     }
 }
 
@@ -70,11 +107,33 @@ impl PolymarketDataClientConfig {
             .clone()
             .unwrap_or_else(|| urls::gamma_api_url().to_string())
     }
+
+    #[must_use]
+    pub fn data_api_url(&self) -> String {
+        self.base_url_data_api
+            .clone()
+            .unwrap_or_else(|| "https://data-api.polymarket.com".to_string())
+    }
 }
 
 /// Configuration for the Polymarket execution client.
-#[derive(Clone, Debug)]
+#[derive(Clone, bon::Builder)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.polymarket",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.polymarket")
+)]
 pub struct PolymarketExecClientConfig {
+    #[builder(default)]
+    pub trader_id: TraderId,
+    #[builder(default = AccountId::from("POLYMARKET-001"))]
+    pub account_id: AccountId,
     /// Falls back to `POLYMARKET_PK` env var.
     pub private_key: Option<String>,
     /// Falls back to `POLYMARKET_API_KEY` env var.
@@ -85,36 +144,53 @@ pub struct PolymarketExecClientConfig {
     pub passphrase: Option<String>,
     /// Falls back to `POLYMARKET_FUNDER` env var.
     pub funder: Option<String>,
+    #[builder(default = SignatureType::Eoa)]
     pub signature_type: SignatureType,
     pub base_url_http: Option<String>,
     pub base_url_ws: Option<String>,
-    pub base_url_gamma: Option<String>,
+    pub base_url_data_api: Option<String>,
+    #[builder(default = 60)]
     pub http_timeout_secs: u64,
+    #[builder(default = 3)]
     pub max_retries: u32,
+    #[builder(default = 1000)]
     pub retry_delay_initial_ms: u64,
+    #[builder(default = 10000)]
     pub retry_delay_max_ms: u64,
     /// Timeout waiting for WS order acknowledgment (seconds).
+    #[builder(default = 5)]
     pub ack_timeout_secs: u64,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
+}
+
+impl Debug for PolymarketExecClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(PolymarketExecClientConfig))
+            .field("trader_id", &self.trader_id)
+            .field("account_id", &self.account_id)
+            .field("private_key", &"***")
+            .field("api_key", &"***")
+            .field("api_secret", &"***")
+            .field("passphrase", &"***")
+            .field("funder", &self.funder)
+            .field("signature_type", &self.signature_type)
+            .field("base_url_http", &self.base_url_http)
+            .field("base_url_ws", &self.base_url_ws)
+            .field("base_url_data_api", &self.base_url_data_api)
+            .field("http_timeout_secs", &self.http_timeout_secs)
+            .field("max_retries", &self.max_retries)
+            .field("retry_delay_initial_ms", &self.retry_delay_initial_ms)
+            .field("retry_delay_max_ms", &self.retry_delay_max_ms)
+            .field("ack_timeout_secs", &self.ack_timeout_secs)
+            .finish()
+    }
 }
 
 impl Default for PolymarketExecClientConfig {
     fn default() -> Self {
-        Self {
-            private_key: None,
-            api_key: None,
-            api_secret: None,
-            passphrase: None,
-            funder: None,
-            signature_type: SignatureType::Eoa,
-            base_url_http: None,
-            base_url_ws: None,
-            base_url_gamma: None,
-            http_timeout_secs: 60,
-            max_retries: 3,
-            retry_delay_initial_ms: 1000,
-            retry_delay_max_ms: 10000,
-            ack_timeout_secs: 5,
-        }
+        Self::builder().build()
     }
 }
 
@@ -150,9 +226,9 @@ impl PolymarketExecClientConfig {
     }
 
     #[must_use]
-    pub fn gamma_url(&self) -> String {
-        self.base_url_gamma
+    pub fn data_api_url(&self) -> String {
+        self.base_url_data_api
             .clone()
-            .unwrap_or_else(|| urls::gamma_api_url().to_string())
+            .unwrap_or_else(|| "https://data-api.polymarket.com".to_string())
     }
 }

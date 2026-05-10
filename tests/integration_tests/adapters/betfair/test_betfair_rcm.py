@@ -155,6 +155,7 @@ def test_rcm_decode_runner_gps_coordinates(rcm_multi_runner_raw: bytes):
     assert runner1.spd == 16.33
     assert runner1.prg == 1076.5
     assert runner1.sfq == 2.5
+
     for rrc in rc.rrc:
         assert rrc.lat is not None
         assert rrc.long_ is not None

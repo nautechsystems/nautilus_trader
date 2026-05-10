@@ -67,6 +67,7 @@ class BetfairParser:
         updates = []
         ts_event = millis_to_nanos(mcm.pt)
         ts_init = ts_init or ts_event
+
         for mc in mcm.mc:
             if mc.market_definition is not None:
                 market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)

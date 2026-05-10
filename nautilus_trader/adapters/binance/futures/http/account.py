@@ -125,7 +125,7 @@ class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
         return self._get_resp_decoder.decode(raw)
 
     async def post(self, params: PostParameters) -> BinanceStatusCode:
-        method_type = HttpMethod.GET
+        method_type = HttpMethod.POST
         raw = await self._method(method_type, params)
         return self._post_resp_decoder.decode(raw)
 
@@ -623,7 +623,7 @@ class BinanceFuturesAlgoOrderHttp(BinanceHttpEndpoint):
             Price protection. Default is false.
         reduceOnly : str, optional
             Reduce only flag. Cannot be used in Hedge Mode.
-        activationPrice : str, optional
+        activatePrice : str, optional
             Activation price for TRAILING_STOP_MARKET orders.
         callbackRate : str, optional
             Callback rate for TRAILING_STOP_MARKET (0.1-10, where 1 = 1%).
@@ -651,7 +651,7 @@ class BinanceFuturesAlgoOrderHttp(BinanceHttpEndpoint):
         closePosition: str | None = None
         priceProtect: str | None = None
         reduceOnly: str | None = None
-        activationPrice: str | None = None
+        activatePrice: str | None = None
         callbackRate: str | None = None
         clientAlgoId: str | None = None
         goodTillDate: int | None = None
@@ -880,12 +880,14 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
             clock=clock,
             account_type=account_type,
         )
+
         if not account_type.is_futures:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"`BinanceAccountType` not USDT_FUTURES or COIN_FUTURES, was {account_type}",  # pragma: no cover
             )
         v2_endpoint_base = self.base_endpoint
         v3_endpoint_base = self.base_endpoint
+
         if account_type == BinanceAccountType.USDT_FUTURES:
             v2_endpoint_base = "/fapi/v2/"
             v3_endpoint_base = "/fapi/v3/"
@@ -1140,7 +1142,7 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
                 closePosition=close_position,
                 priceProtect=price_protect,
                 reduceOnly=reduce_only,
-                activationPrice=activation_price,
+                activatePrice=activation_price,
                 callbackRate=callback_rate,
                 clientAlgoId=client_algo_id,
                 goodTillDate=good_till_date,

@@ -46,8 +46,8 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_deribit::{
-    config::DeribitExecClientConfig, execution::DeribitExecutionClient,
-    http::models::DeribitProductType,
+    common::enums::DeribitEnvironment, config::DeribitExecClientConfig,
+    execution::DeribitExecutionClient, http::models::DeribitProductType,
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
@@ -221,6 +221,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 params.get("channels").and_then(|c| c.as_array())
                         {
                             let mut subscribed_channels = Vec::new();
+
                             for channel in channels {
                                 if let Some(channel_str) = channel.as_str() {
                                     state
@@ -262,6 +263,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 params.get("channels").and_then(|c| c.as_array())
                         {
                             let mut unsubscribed = Vec::new();
+
                             for channel in channels {
                                 if let Some(channel_str) = channel.as_str() {
                                     unsubscribed.push(channel_str.to_string());
@@ -321,10 +323,8 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     _ => {}
                 }
             }
-            Message::Ping(_) => {
-                if socket.send(Message::Pong(vec![].into())).await.is_err() {
-                    break;
-                }
+            Message::Ping(_) if socket.send(Message::Pong(vec![].into())).await.is_err() => {
+                break;
             }
             Message::Close(_) => break,
             _ => {}
@@ -379,11 +379,13 @@ fn create_test_exec_config(addr: SocketAddr) -> DeribitExecClientConfig {
         product_types: vec![DeribitProductType::Future],
         base_url_http: Some(format!("http://{addr}/api/v2")),
         base_url_ws: Some(format!("ws://{addr}/ws/api/v2")),
-        use_testnet: true,
-        http_timeout_secs: Some(10),
-        max_retries: Some(1),
-        retry_delay_initial_ms: Some(100),
-        retry_delay_max_ms: Some(1000),
+        environment: DeribitEnvironment::Testnet,
+        http_timeout_secs: 10,
+        max_retries: 1,
+        retry_delay_initial_ms: 100,
+        retry_delay_max_ms: 1000,
+        proxy_url: None,
+        transport_backend: Default::default(),
     }
 }
 
@@ -508,6 +510,7 @@ async fn test_exec_client_connect_emits_account_state() {
     .await;
 
     let mut found_account_state = false;
+
     while let Ok(event) = rx.try_recv() {
         if matches!(event, ExecutionEvent::Account(_)) {
             found_account_state = true;

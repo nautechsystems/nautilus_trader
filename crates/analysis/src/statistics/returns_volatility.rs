@@ -39,6 +39,10 @@ use crate::{Returns, statistic::PortfolioStatistic};
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.analysis")
+)]
 pub struct ReturnsVolatility {
     /// The annualization period (default: 252 for daily data).
     period: usize,
@@ -95,7 +99,7 @@ mod tests {
 
     use super::*;
 
-    fn create_returns(values: Vec<f64>) -> BTreeMap<UnixNanos, f64> {
+    fn create_returns(values: &[f64]) -> BTreeMap<UnixNanos, f64> {
         let mut new_return = BTreeMap::new();
         let one_day_in_nanos = 86_400_000_000_000;
         let start_time = 1_600_000_000_000_000_000;
@@ -111,7 +115,7 @@ mod tests {
     #[rstest]
     fn test_empty_returns() {
         let volatility = ReturnsVolatility::new(None);
-        let returns = create_returns(vec![]);
+        let returns = create_returns(&[]);
         let result = volatility.calculate_from_returns(&returns);
         assert!(result.is_some());
         assert!(result.unwrap().is_nan());
@@ -133,7 +137,7 @@ mod tests {
     fn test_volatility_calculation() {
         let volatility = ReturnsVolatility::new(None);
 
-        let returns = create_returns(vec![
+        let returns = create_returns(&[
             0.01, -0.02, 0.03, -0.01, 0.02, 0.04, -0.03, 0.05, -0.04, 0.02,
         ]);
         let result = volatility.calculate_from_returns(&returns);

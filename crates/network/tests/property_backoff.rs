@@ -13,6 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "test arithmetic with known-safe values"
+)]
+
 //! Property-based tests for exponential backoff mechanism.
 //!
 //! These tests verify mathematical properties and invariants that should hold

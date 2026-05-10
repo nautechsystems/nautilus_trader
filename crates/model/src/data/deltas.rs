@@ -38,6 +38,10 @@ use crate::identifiers::InstrumentId;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct OrderBookDeltas {
     /// The instrument ID for the book.
     pub instrument_id: InstrumentId,
@@ -60,7 +64,6 @@ impl OrderBookDeltas {
     ///
     /// Panics if `deltas` is empty and correctness check fails.
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
     pub fn new(instrument_id: InstrumentId, deltas: Vec<OrderBookDelta>) -> Self {
         Self::new_checked(instrument_id, deltas).expect(FAILED)
     }
@@ -70,13 +73,12 @@ impl OrderBookDeltas {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    #[allow(clippy::too_many_arguments)]
     /// Creates a new [`OrderBookDeltas`] instance with correctness checking.
     ///
     /// # Errors
     ///
     /// Returns an error if `deltas` is empty.
-    #[allow(clippy::missing_panics_doc)] // Guarded by predicate check above
+    #[expect(clippy::missing_panics_doc)] // Guarded by predicate check above
     pub fn new_checked(
         instrument_id: InstrumentId,
         deltas: Vec<OrderBookDelta>,

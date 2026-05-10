@@ -170,6 +170,7 @@ def test_comprehensive_exchange_venue_coverage():
 
     # Every exchange should map to a venue
     venue_count = 0
+
     for exchange in exchanges:
         venue_str = tardis_exchange_to_venue_str(exchange)
         assert venue_str != "", f"Exchange '{exchange}' maps to empty venue"

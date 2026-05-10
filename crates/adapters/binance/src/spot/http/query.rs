@@ -15,8 +15,6 @@
 
 //! Query parameter builders for Binance Spot HTTP requests.
 
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
 use serde::Serialize;
 
 use crate::{
@@ -808,15 +806,6 @@ impl TradeFeeParams {
 /// Single order in a batch order request (JSON format for batchOrders param).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(
-    feature = "python",
-    pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.binance",
-        name = "SpotBatchOrderItem",
-        get_all,
-        from_py_object,
-    )
-)]
 pub struct BatchOrderItem {
     /// Trading pair symbol.
     pub symbol: String,
@@ -861,47 +850,9 @@ impl BatchOrderItem {
     }
 }
 
-#[cfg(feature = "python")]
-#[pymethods]
-impl BatchOrderItem {
-    #[new]
-    #[pyo3(signature = (symbol, side, order_type, time_in_force=None, quantity=None, price=None, new_client_order_id=None, stop_price=None))]
-    #[allow(clippy::too_many_arguments)]
-    fn py_new(
-        symbol: String,
-        side: String,
-        order_type: String,
-        time_in_force: Option<String>,
-        quantity: Option<String>,
-        price: Option<String>,
-        new_client_order_id: Option<String>,
-        stop_price: Option<String>,
-    ) -> Self {
-        Self {
-            symbol,
-            side,
-            order_type,
-            time_in_force,
-            quantity,
-            price,
-            new_client_order_id,
-            stop_price,
-        }
-    }
-}
-
 /// Single cancel in a batch cancel request.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(
-    feature = "python",
-    pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.binance",
-        name = "SpotBatchCancelItem",
-        get_all,
-        from_py_object,
-    )
-)]
 pub struct BatchCancelItem {
     /// Trading pair symbol.
     pub symbol: String,
@@ -935,33 +886,5 @@ impl BatchCancelItem {
             order_id: None,
             orig_client_order_id: Some(client_order_id.into()),
         }
-    }
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl BatchCancelItem {
-    #[new]
-    #[pyo3(signature = (symbol, order_id=None, orig_client_order_id=None))]
-    fn py_new(symbol: String, order_id: Option<i64>, orig_client_order_id: Option<String>) -> Self {
-        Self {
-            symbol,
-            order_id,
-            orig_client_order_id,
-        }
-    }
-
-    /// Creates a batch cancel item by order ID.
-    #[staticmethod]
-    #[pyo3(name = "by_order_id")]
-    fn py_by_order_id(symbol: String, order_id: i64) -> Self {
-        Self::by_order_id(symbol, order_id)
-    }
-
-    /// Creates a batch cancel item by client order ID.
-    #[staticmethod]
-    #[pyo3(name = "by_client_order_id")]
-    fn py_by_client_order_id(symbol: String, client_order_id: String) -> Self {
-        Self::by_client_order_id(symbol, client_order_id)
     }
 }

@@ -20,7 +20,9 @@ from typing import Any
 import msgspec
 
 from nautilus_trader.common.config import NautilusConfig
+from nautilus_trader.common.config import NonNegativeInt
 from nautilus_trader.common.config import PositiveFloat
+from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.common.config import resolve_config_path
 from nautilus_trader.common.config import resolve_path
@@ -53,10 +55,6 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
         If ``None`` then no additional snapshots will be taken.
         To include unrealized PnL in these snapshots, quotes for the position's instrument must be
         available in the cache.
-    convert_quote_qty_to_base : bool, default True
-        If quote-denominated order quantities should be converted to base units before submission.
-        Deprecated: future releases will remove this automatic conversion. Set ``False`` to keep
-        behaviour consistent with venues which expect quote-denominated quantities.
     external_clients : list[ClientId], optional
         Client IDs representing external execution streams.
         Commands with these client IDs will be published on the message bus only;
@@ -65,6 +63,27 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
         If True, allows order fills that exceed the original order quantity.
         When an overfill is detected, the order's ``overfill_qty`` is set and a warning is logged.
         When False (default), a ValueError is raised for backward compatibility.
+    purge_closed_orders_interval_mins : PositiveInt, optional
+        The interval (minutes) between purging closed orders from the in-memory cache.
+        If ``None``, closed orders will not be automatically purged.
+    purge_closed_orders_buffer_mins : NonNegativeInt, optional
+        The time buffer (minutes) from when an order was closed before it can be purged.
+        Only orders closed for at least this amount of time will be purged.
+    purge_closed_positions_interval_mins : PositiveInt, optional
+        The interval (minutes) between purging closed positions from the in-memory cache.
+        If ``None``, closed positions will not be automatically purged.
+    purge_closed_positions_buffer_mins : NonNegativeInt, optional
+        The time buffer (minutes) from when a position was closed before it can be purged.
+        Only positions closed for at least this amount of time will be purged.
+    purge_account_events_interval_mins : PositiveInt, optional
+        The interval (minutes) between purging account events from the in-memory cache.
+        If ``None``, account events will not be automatically purged.
+    purge_account_events_lookback_mins : NonNegativeInt, optional
+        The lookback window (minutes) for account events. Only events outside this window
+        will be purged.
+    purge_from_database : bool, default False
+        If purging operations will also delete from the backing database, in addition to the
+        in-memory cache.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
 
@@ -72,12 +91,18 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
 
     load_cache: bool = True
     manage_own_order_books: bool = False
-    convert_quote_qty_to_base: bool = True
     snapshot_orders: bool = False
     snapshot_positions: bool = False
     snapshot_positions_interval_secs: PositiveFloat | None = None
     external_clients: list[ClientId] | None = None
     allow_overfills: bool = False
+    purge_closed_orders_interval_mins: PositiveInt | None = None
+    purge_closed_orders_buffer_mins: NonNegativeInt | None = None
+    purge_closed_positions_interval_mins: PositiveInt | None = None
+    purge_closed_positions_buffer_mins: NonNegativeInt | None = None
+    purge_account_events_interval_mins: PositiveInt | None = None
+    purge_account_events_lookback_mins: NonNegativeInt | None = None
+    purge_from_database: bool = False
     debug: bool = False
 
 

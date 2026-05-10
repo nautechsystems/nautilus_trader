@@ -79,6 +79,7 @@ async def cancel_tasks_with_timeout(
             asyncio.gather(*pending_tasks, return_exceptions=True),
             timeout=timeout_secs,
         )
+
         if logger:
             logger.debug(f"Successfully canceled {len(pending_tasks)} tasks")
     except TimeoutError:

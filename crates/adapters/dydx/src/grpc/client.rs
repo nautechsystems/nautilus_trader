@@ -92,7 +92,9 @@ impl DydxGrpcClient {
     /// Returns an error if the gRPC connection cannot be established.
     pub async fn new(grpc_url: String) -> Result<Self, DydxError> {
         let mut endpoint = Channel::from_shared(grpc_url.clone())
-            .map_err(|e| DydxError::Config(format!("Invalid gRPC URL: {e}")))?;
+            .map_err(|e| DydxError::Config(format!("Invalid gRPC URL: {e}")))?
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(30));
 
         // Enable TLS for HTTPS URLs (required for public gRPC nodes)
         if grpc_url.starts_with("https://") {
@@ -202,7 +204,9 @@ impl DydxGrpcClient {
             let mut endpoint = match Channel::from_shared(url_str.to_string())
                 .map_err(|e| DydxError::Config(format!("Invalid gRPC URL: {e}")))
             {
-                Ok(ep) => ep,
+                Ok(ep) => ep
+                    .connect_timeout(std::time::Duration::from_secs(10))
+                    .timeout(std::time::Duration::from_secs(30)),
                 Err(e) => {
                     last_error = Some(e);
                     continue;

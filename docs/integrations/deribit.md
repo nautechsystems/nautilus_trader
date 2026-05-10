@@ -249,7 +249,7 @@ Deribit offers two post-only modes:
    Deribit automatically adjusts the price to one tick inside the spread.
 2. **Reject mode**: Order is immediately rejected if it would cross the spread.
 
-The Nautilus adapter uses **reject mode** (`reject_post_only=true`) to ensure deterministic behavior.
+The Nautilus adapter uses **reject mode** (`reject_post_only=true`) for deterministic behavior.
 If a post-only order would take liquidity, it is rejected with error code `11054`, and an `OrderRejected`
 event is emitted with the `due_post_only` flag set to `true`.
 
@@ -279,7 +279,7 @@ This provides several advantages:
 
 | Feature           | Supported | Notes                                     |
 |-------------------|-----------|-------------------------------------------|
-| Query positions   | ✓         | Real-time position updates.               |
+| Query positions   | ✓         | Real‑time position updates.               |
 | Position mode     | -         | Deribit uses net position mode only.      |
 | Leverage control  | -         | Leverage set at account level via UI.     |
 | Margin mode       | -         | Portfolio margin via Deribit UI settings. |
@@ -290,7 +290,7 @@ This provides several advantages:
 |----------------------|-----------|------------------------------------|
 | Query open orders    | ✓         | List all active orders.            |
 | Query order history  | ✓         | Historical order data.             |
-| Order status updates | ✓         | Real-time order state changes.     |
+| Order status updates | ✓         | Real‑time order state changes.     |
 | Trade history        | ✓         | Execution and fill reports.        |
 
 ### Contingent orders
@@ -301,6 +301,36 @@ This provides several advantages:
 | OCO orders          | -         | *Not supported*.                   |
 | Bracket orders      | -         | *Not supported*.                   |
 | Conditional orders  | ✓         | Stop market and stop limit orders. |
+
+### Liquidation handling
+
+Deribit tags any trade that was triggered by a liquidation. On the
+`user.trades` stream and `private/get_user_trades_*` endpoints, the optional
+`liquidation` field indicates which side was being liquidated:
+
+| Value  | Meaning                                   |
+|--------|-------------------------------------------|
+| `"M"`  | Maker side was liquidated.                |
+| `"T"`  | Taker side was liquidated.                |
+| `"MT"` | Both sides were liquidated.               |
+| absent | Normal (non‑liquidation) trade.           |
+
+The adapter logs a warning for each liquidation-tagged fill with the
+instrument, trade ID, order ID, and liquidation side, and then emits the
+`FillReport` through the normal pipeline. Deribit does not operate an ADL
+mechanism distinct from the liquidation + insurance-fund / portfolio margin
+process, so there is no separate ADL signal to surface.
+
+Upstream references:
+
+- [`user.trades.{instrument_name}.{interval}` channel](https://docs.deribit.com/#user-trades-instrument_name-interval)
+- [Liquidation documentation](https://support.deribit.com/hc/en-us/articles/25944769313309-Liquidations)
+
+## Funding rates
+
+Deribit exchanges funding continuously (every few seconds) rather than at fixed intervals
+like most other exchanges. The `interval` field on `FundingRateUpdate` is `None` for
+Deribit because this continuous model does not map to a discrete period.
 
 ## Rate limiting
 
@@ -504,6 +534,7 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 | `product_types`                    | `None`     | Product types to load (Future, Option, Spot, etc.). If `None`, defaults to Future. |
 | `base_url_http`                    | `None`     | Override for the HTTP REST base URL. |
 | `base_url_ws`                      | `None`     | Override for the WebSocket base URL. |
+| `proxy_url`                        | `None`     | Optional proxy URL for HTTP and WebSocket transports. |
 | `is_testnet`                       | `False`    | Use Deribit testnet endpoints when `True`. |
 | `http_timeout_secs`                | `60`       | Request timeout (seconds) for REST calls. |
 | `max_retries`                      | `3`        | Maximum retry attempts for recoverable errors. |
@@ -520,6 +551,7 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 | `product_types`          | `None`     | Product types to load (Future, Option, Spot, etc.). If `None`, defaults to Future. |
 | `base_url_http`          | `None`     | Override for the HTTP REST base URL. |
 | `base_url_ws`            | `None`     | Override for the WebSocket base URL. |
+| `proxy_url`              | `None`     | Optional proxy URL for HTTP and WebSocket transports. |
 | `is_testnet`             | `False`    | Use Deribit testnet endpoints when `True`. |
 | `http_timeout_secs`      | `60`       | Request timeout (seconds) for REST calls. |
 | `max_retries`            | `3`        | Maximum retry attempts for recoverable errors. |

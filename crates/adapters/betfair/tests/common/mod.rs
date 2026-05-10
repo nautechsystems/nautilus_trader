@@ -16,10 +16,11 @@
 //! Shared test infrastructure for Betfair integration tests.
 
 use std::{
+    collections::HashMap,
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
@@ -33,7 +34,14 @@ use axum::{
     routing::{get, post},
 };
 use nautilus_betfair::{
-    common::credential::BetfairCredential, http::client::BetfairHttpClient,
+    common::{
+        consts::{
+            METHOD_CANCEL_ORDERS, METHOD_LIST_MARKET_CATALOGUE, METHOD_PLACE_ORDERS,
+            METHOD_REPLACE_ORDERS,
+        },
+        credential::BetfairCredential,
+    },
+    http::client::BetfairHttpClient,
     stream::config::BetfairStreamConfig,
 };
 use nautilus_common::testing::wait_until_async;
@@ -76,11 +84,37 @@ pub fn plain_stream_config(port: u16) -> BetfairStreamConfig {
 #[derive(Clone, Default)]
 pub struct MockState {
     pub login_count: Arc<AtomicUsize>,
+    pub keep_alive_count: Arc<AtomicUsize>,
+    pub betting_request_count: Arc<AtomicUsize>,
+    pub betting_overrides: Arc<Mutex<HashMap<String, Value>>>,
+    pub betting_methods: Arc<Mutex<Vec<String>>>,
+    pub accounts_overrides: Arc<Mutex<HashMap<String, Value>>>,
+    pub login_response_override: Arc<Mutex<Option<String>>>,
+    pub keep_alive_response_override: Arc<Mutex<Option<String>>>,
 }
 
 async fn handle_login(State(state): State<MockState>) -> impl IntoResponse {
     state.login_count.fetch_add(1, Ordering::Relaxed);
-    let body = load_fixture("rest/login_success.json");
+    let body = state
+        .login_response_override
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap_or_else(|| load_fixture("rest/login_success.json"));
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        body,
+    )
+}
+
+async fn handle_keep_alive(State(state): State<MockState>) -> impl IntoResponse {
+    state.keep_alive_count.fetch_add(1, Ordering::Relaxed);
+    let body = state
+        .keep_alive_response_override
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap_or_else(|| load_fixture("rest/login_success.json"));
     (
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         body,
@@ -95,22 +129,47 @@ async fn handle_navigation() -> impl IntoResponse {
     )
 }
 
-async fn handle_betting(body: Bytes) -> impl IntoResponse {
+async fn handle_betting(State(state): State<MockState>, body: Bytes) -> impl IntoResponse {
+    state.betting_request_count.fetch_add(1, Ordering::Relaxed);
     let request: Value = serde_json::from_slice(&body).unwrap_or_default();
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
     let id = request.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
 
-    let result = match method {
-        "SportsAPING/v1.0/listMarketCatalogue" => {
-            let fixture = load_fixture("rest/betting_list_market_catalogue.json");
-            serde_json::from_str::<Value>(&fixture).unwrap()
+    if !method.is_empty() {
+        state
+            .betting_methods
+            .lock()
+            .unwrap()
+            .push(method.to_string());
+    }
+
+    let override_result = state.betting_overrides.lock().unwrap().get(method).cloned();
+
+    let result = if let Some(value) = override_result {
+        value
+    } else {
+        match method {
+            METHOD_LIST_MARKET_CATALOGUE => {
+                let fixture = load_fixture("rest/betting_list_market_catalogue.json");
+                serde_json::from_str::<Value>(&fixture).unwrap()
+            }
+            METHOD_PLACE_ORDERS => {
+                let fixture = load_fixture("rest/betting_place_order_success.json");
+                let v: Value = serde_json::from_str(&fixture).unwrap();
+                v["result"].clone()
+            }
+            METHOD_CANCEL_ORDERS => {
+                let fixture = load_fixture("rest/betting_cancel_orders_success.json");
+                let v: Value = serde_json::from_str(&fixture).unwrap();
+                v["result"].clone()
+            }
+            METHOD_REPLACE_ORDERS => {
+                let fixture = load_fixture("rest/betting_replace_orders_success.json");
+                let v: Value = serde_json::from_str(&fixture).unwrap();
+                v["result"].clone()
+            }
+            _ => serde_json::json!(null),
         }
-        "SportsAPING/v1.0/placeOrders" => {
-            let fixture = load_fixture("rest/betting_place_order_success.json");
-            let v: Value = serde_json::from_str(&fixture).unwrap();
-            v["result"].clone()
-        }
-        _ => serde_json::json!(null),
     };
 
     let response = serde_json::json!({
@@ -121,13 +180,25 @@ async fn handle_betting(body: Bytes) -> impl IntoResponse {
     axum::Json(response)
 }
 
-async fn handle_accounts(body: Bytes) -> impl IntoResponse {
+async fn handle_accounts(State(state): State<MockState>, body: Bytes) -> impl IntoResponse {
     let request: Value = serde_json::from_slice(&body).unwrap_or_default();
+    let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
     let id = request.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
 
-    let fixture = load_fixture("rest/account_funds_no_exposure.json");
-    let v: Value = serde_json::from_str(&fixture).unwrap();
-    let result = v["result"].clone();
+    let override_result = state
+        .accounts_overrides
+        .lock()
+        .unwrap()
+        .get(method)
+        .cloned();
+
+    let result = if let Some(value) = override_result {
+        value
+    } else {
+        let fixture = load_fixture("rest/account_funds_no_exposure.json");
+        let v: Value = serde_json::from_str(&fixture).unwrap();
+        v["result"].clone()
+    };
 
     let response = serde_json::json!({
         "jsonrpc": "2.0",
@@ -142,6 +213,7 @@ pub async fn start_mock_http() -> (SocketAddr, MockState) {
 
     let router = Router::new()
         .route("/login", post(handle_login))
+        .route("/keepAlive", post(handle_keep_alive))
         .route("/betting", post(handle_betting))
         .route("/accounts", post(handle_accounts))
         .route("/navigation", get(handle_navigation))
@@ -206,12 +278,20 @@ pub async fn accept_and_auth(
 }
 
 pub fn create_test_http_client(addr: SocketAddr) -> BetfairHttpClient {
-    BetfairHttpClient::new(test_credential(), Some(10), Some(1), Some(100), None)
-        .unwrap()
-        .with_urls(
-            format!("http://{addr}/login"),
-            format!("http://{addr}/betting"),
-            format!("http://{addr}/accounts"),
-            format!("http://{addr}/navigation"),
-        )
+    BetfairHttpClient::new(
+        test_credential(),
+        Some(10),
+        Some(1),
+        Some(100),
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+    .with_urls(
+        format!("http://{addr}/login"),
+        format!("http://{addr}/betting"),
+        format!("http://{addr}/accounts"),
+        format!("http://{addr}/navigation"),
+    )
 }

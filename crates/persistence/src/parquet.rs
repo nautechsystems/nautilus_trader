@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use arrow::record_batch::RecordBatch;
-use object_store::{ObjectStore, path::Path as ObjectPath};
+use object_store::{ObjectStore, ObjectStoreExt, path::Path as ObjectPath};
 use parquet::{
     arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder},
     file::{
@@ -27,6 +27,55 @@ use parquet::{
         statistics::Statistics,
     },
 };
+use url::Url;
+
+pub(crate) fn is_remote_uri_scheme(scheme: &str) -> bool {
+    matches!(
+        scheme,
+        "s3" | "gs" | "gcs" | "az" | "abfs" | "http" | "https"
+    )
+}
+
+pub(crate) fn remote_store_root_url(uri: &str) -> anyhow::Result<Url> {
+    let mut url = Url::parse(uri)?;
+    url.set_path("");
+    url.set_query(None);
+    url.set_fragment(None);
+    Ok(url)
+}
+
+pub(crate) fn remote_full_uri(uri: &str, object_path: &str) -> anyhow::Result<String> {
+    let root = remote_store_root_url(uri)?;
+    let root = root.as_str().trim_end_matches('/');
+    let object_path = object_path.trim_start_matches('/');
+
+    if object_path.is_empty() {
+        Ok(root.to_string())
+    } else {
+        Ok(format!("{root}/{object_path}"))
+    }
+}
+
+pub(crate) enum ObjectStoreLocationKind {
+    Local,
+    Remote { store_root_url: Url },
+}
+
+pub(crate) struct ObjectStoreLocation {
+    pub object_store: Arc<dyn ObjectStore>,
+    pub base_path: String,
+    pub original_uri: String,
+    pub kind: ObjectStoreLocationKind,
+}
+
+impl ObjectStoreLocation {
+    pub(crate) fn store_root_url(&self) -> Option<&Url> {
+        match &self.kind {
+            ObjectStoreLocationKind::Local => None,
+            ObjectStoreLocationKind::Remote { store_root_url } => Some(store_root_url),
+        }
+    }
+}
 
 /// Writes a `RecordBatch` to a Parquet file using object store, with optional compression.
 ///
@@ -92,7 +141,8 @@ pub async fn read_parquet_from_object_store(
     object_store: Arc<dyn ObjectStore>,
     path: &ObjectPath,
 ) -> anyhow::Result<(Vec<RecordBatch>, Arc<arrow::datatypes::Schema>)> {
-    let data = object_store.get(path).await?.bytes().await?;
+    let result: object_store::GetResult = object_store.get(path).await?;
+    let data = result.bytes().await?;
     if data.is_empty() {
         return Ok((
             Vec::new(),
@@ -130,7 +180,7 @@ pub async fn write_batches_to_object_store(
 
     let mut props_builder = WriterProperties::builder()
         .set_compression(compression.unwrap_or(parquet::basic::Compression::SNAPPY))
-        .set_max_row_group_size(max_row_group_size.unwrap_or(5000));
+        .set_max_row_group_row_count(Some(max_row_group_size.unwrap_or(5000)));
 
     if let Some(kv) = key_value_metadata {
         props_builder = props_builder.set_key_value_metadata(Some(kv));
@@ -271,7 +321,8 @@ pub async fn combine_parquet_files_from_object_store(
 
     // Read all files from object store
     for path in &file_paths {
-        let data = object_store.get(path).await?.bytes().await?;
+        let result: object_store::GetResult = object_store.get(path).await?;
+        let data = result.bytes().await?;
         let builder = ParquetRecordBatchReaderBuilder::try_new(data)?;
 
         // Capture the schema from the first file's builder; it includes the Arrow
@@ -362,7 +413,8 @@ pub async fn min_max_from_parquet_metadata_object_store(
     column_name: &str,
 ) -> anyhow::Result<(u64, u64)> {
     // Download the parquet file from object store
-    let data = object_store.get(file_path).await?.bytes().await?;
+    let result: object_store::GetResult = object_store.get(file_path).await?;
+    let data = result.bytes().await?;
     let reader = SerializedFileReader::new(data)?;
 
     let metadata = reader.metadata();
@@ -436,14 +488,31 @@ pub async fn min_max_from_parquet_metadata_object_store(
 ///   - For Azure: `account_name`, `account_key`, `sas_token`, etc.
 ///
 /// Returns a tuple of (`ObjectStore`, `base_path`, `normalized_uri`)
-#[allow(unused_variables)]
 pub fn create_object_store_from_path(
     path: &str,
     storage_options: Option<AHashMap<String, String>>,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
+    let location = create_object_store_location_from_path(path, storage_options)?;
+    Ok((
+        location.object_store,
+        location.base_path,
+        location.original_uri,
+    ))
+}
+
+// `storage_options` is only consumed by the cloud-feature arms,
+// so keep the allow scoped to the no-cloud build.
+#[cfg_attr(
+    not(feature = "cloud"),
+    allow(unused_variables, clippy::needless_pass_by_value)
+)]
+pub(crate) fn create_object_store_location_from_path(
+    path: &str,
+    storage_options: Option<AHashMap<String, String>>,
+) -> anyhow::Result<ObjectStoreLocation> {
     let uri = normalize_path_to_uri(path);
 
-    match uri.as_str() {
+    let (object_store, base_path, original_uri) = match uri.as_str() {
         #[cfg(feature = "cloud")]
         s if s.starts_with("s3://") => create_s3_store(&uri, storage_options),
         #[cfg(feature = "cloud")]
@@ -471,7 +540,24 @@ pub fn create_object_store_from_path(
         }
         s if s.starts_with("file://") => create_local_store(&uri, true),
         _ => create_local_store(&uri, false), // Fallback: assume local path
-    }
+    }?;
+
+    let kind = Url::parse(&original_uri)
+        .ok()
+        .filter(|url| is_remote_uri_scheme(url.scheme()))
+        .map(|_| {
+            remote_store_root_url(&original_uri)
+                .map(|store_root_url| ObjectStoreLocationKind::Remote { store_root_url })
+        })
+        .transpose()?
+        .unwrap_or(ObjectStoreLocationKind::Local);
+
+    Ok(ObjectStoreLocation {
+        object_store,
+        base_path,
+        original_uri,
+        kind,
+    })
 }
 
 /// Normalizes a path to URI format for consistent object store usage.
@@ -555,18 +641,37 @@ fn path_to_file_uri(path: &str) -> String {
     }
 }
 
+/// Converts a file:// URI to a native path for the current platform.
+/// On Windows, "file:///C:/x/y" becomes "C:\x\y" so LocalFileSystem and std::fs work correctly.
+#[cfg(windows)]
+pub(crate) fn file_uri_to_native_path(uri: &str) -> String {
+    let without_scheme = uri
+        .strip_prefix("file://")
+        .or_else(|| uri.strip_prefix("file:"))
+        .unwrap_or(uri);
+    // Strip leading slash so "/C:/x/y" -> "C:/x/y", then use native separators
+    let without_leading = without_scheme.trim_start_matches('/');
+    without_leading.replace('/', "\\")
+}
+
+/// Converts a file:// URI to a path string for Unix (no-op; object_store accepts slash paths).
+#[cfg(not(windows))]
+pub(crate) fn file_uri_to_native_path(uri: &str) -> String {
+    uri.strip_prefix("file://").unwrap_or(uri).to_string()
+}
+
 /// Helper function to create local file system object store
 fn create_local_store(
     uri: &str,
     is_file_uri: bool,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
     let path = if is_file_uri {
-        uri.strip_prefix("file://").unwrap_or(uri)
+        file_uri_to_native_path(uri)
     } else {
-        uri
+        uri.to_string()
     };
 
-    let local_store = object_store::local::LocalFileSystem::new_with_prefix(path)?;
+    let local_store = object_store::local::LocalFileSystem::new_with_prefix(&path)?;
     Ok((Arc::new(local_store), String::new(), uri.to_string()))
 }
 
@@ -801,8 +906,11 @@ fn create_http_store(
     uri: &str,
     storage_options: Option<AHashMap<String, String>>,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
-    let (url, path) = parse_url_and_path(uri)?;
-    let base_url = format!("{}://{}", url.scheme(), url.host_str().unwrap_or(""));
+    let (_, path) = parse_url_and_path(uri)?;
+    let base_url = remote_store_root_url(uri)?
+        .as_str()
+        .trim_end_matches('/')
+        .to_string();
 
     let builder = object_store::http::HttpBuilder::new().with_url(base_url);
 
@@ -943,6 +1051,46 @@ mod tests {
         assert_eq!(url.scheme(), "s3");
         assert_eq!(url.host_str().unwrap(), "bucket");
         assert_eq!(path, "path/to/file");
+    }
+
+    #[rstest]
+    #[cfg(feature = "cloud")]
+    fn test_remote_store_root_url_preserves_authority() {
+        let https_root = remote_store_root_url("https://example.com:9000/base/path").unwrap();
+        assert_eq!(
+            https_root.as_str().trim_end_matches('/'),
+            "https://example.com:9000"
+        );
+
+        let abfs_root =
+            remote_store_root_url("abfs://container@account.dfs.core.windows.net/base/path")
+                .unwrap();
+        assert_eq!(
+            abfs_root.as_str().trim_end_matches('/'),
+            "abfs://container@account.dfs.core.windows.net"
+        );
+
+        let full_uri = remote_full_uri(
+            "https://example.com:9000/base/path",
+            "base/path/data/%5E/file.parquet",
+        )
+        .unwrap();
+        assert_eq!(
+            full_uri,
+            "https://example.com:9000/base/path/data/%5E/file.parquet"
+        );
+
+        let location = create_object_store_location_from_path("s3://test-bucket/path", None)
+            .expect("S3 location should be created");
+        assert_eq!(location.base_path, "path");
+        assert_eq!(
+            location
+                .store_root_url()
+                .expect("S3 should be remote")
+                .as_str()
+                .trim_end_matches('/'),
+            "s3://test-bucket"
+        );
     }
 
     #[rstest]

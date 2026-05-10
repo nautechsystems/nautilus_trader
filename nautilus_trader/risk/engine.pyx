@@ -871,20 +871,25 @@ cdef class RiskEngine(Component):
             else:
                 effective_quantity = order.quantity
 
-            # Check min/max quantity against effective quantity
-            if instrument.max_quantity and effective_quantity > instrument.max_quantity:
-                self._deny_order(
-                    order=order,
-                    reason=f"QUANTITY_EXCEEDS_MAXIMUM: effective_quantity={effective_quantity}, max_quantity={instrument.max_quantity}",
-                )
-                return False  # Denied
+            # Base-quantity bounds (`min_quantity`/`max_quantity`) do not apply to
+            # quote-denominated orders: the client-side conversion uses an estimated
+            # price and may differ from the venue fill, and some venues enforce
+            # distinct per-order-type minimums. The venue is authoritative for
+            # quote-denominated sizing; rely on `min_notional`/`max_notional` below.
+            if not order.is_quote_quantity:
+                if instrument.max_quantity and effective_quantity > instrument.max_quantity:
+                    self._deny_order(
+                        order=order,
+                        reason=f"QUANTITY_EXCEEDS_MAXIMUM: effective_quantity={effective_quantity}, max_quantity={instrument.max_quantity}",
+                    )
+                    return False  # Denied
 
-            if instrument.min_quantity and effective_quantity < instrument.min_quantity:
-                self._deny_order(
-                    order=order,
-                    reason=f"QUANTITY_BELOW_MINIMUM: effective_quantity={effective_quantity}, min_quantity={instrument.min_quantity}",
-                )
-                return False  # Denied
+                if instrument.min_quantity and effective_quantity < instrument.min_quantity:
+                    self._deny_order(
+                        order=order,
+                        reason=f"QUANTITY_BELOW_MINIMUM: effective_quantity={effective_quantity}, min_quantity={instrument.min_quantity}",
+                    )
+                    return False  # Denied
 
             notional = instrument.notional_value(effective_quantity, last_px, use_quote_for_inverse=True)
 

@@ -6,7 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Databento data integration adapter for the Nautilus trading engine"
+description = "Databento integration adapter for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
@@ -18,27 +18,37 @@ workspace = true
 
 [lib]
 name = "nautilus_databento"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = ["live", "high-precision"]
+arrow = ["dep:arrow", "nautilus-serialization"]
 extension-module = [
   "nautilus-core/extension-module",
+  "nautilus-live?/extension-module",
   "nautilus-model/extension-module",
   "python",
   "pyo3/extension-module",
 ]
-live = ["nautilus-live", "nautilus-system", "dotenvy"]
+live = ["nautilus-live", "nautilus-live/node", "nautilus-system", "dotenvy"]
 python = [
+  "arrow",
   "live",
-  "nautilus-core/ffi", # Temporary as python currently relies on the ffi CVec
+  "nautilus-core/ffi",
   "nautilus-core/python",
+  "nautilus-live/python",
+  "nautilus-model/ffi",
   "nautilus-model/python",
+  "nautilus-serialization/python",
   "nautilus-system/python",
   "pyo3",
   "pyo3-async-runtimes",
+  "pyo3-stub-gen",
 ]
-high-precision = ["nautilus-model/high-precision"]
+high-precision = [
+  "nautilus-model/high-precision",
+  "nautilus-serialization?/high-precision",
+]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -50,6 +60,9 @@ nautilus-core = { workspace = true }
 nautilus-live = { workspace = true, optional = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
+nautilus-serialization = { workspace = true, features = [
+  "arrow",
+], optional = true }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
@@ -69,22 +82,31 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
+arrow = { workspace = true, optional = true }
 dotenvy = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
-nautilus-testkit = { workspace = true }
+proptest = { workspace = true }
 rstest = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [[bin]]
 name = "databento-sandbox"
 path = "bin/sandbox.rs"
 required-features = ["python"]
 doc = false
+test = false
 
 [[example]]
 name = "databento-data-tester"
 path = "examples/node_data_tester.rs"
 required-features = ["live"]
 doc = false
+
+[[test]]
+name = "feed_handler"
+path = "tests/feed_handler.rs"
+required-features = ["live"]

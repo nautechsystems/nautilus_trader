@@ -25,7 +25,11 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl HullMovingAverage {
+    /// An indicator which calculates a Hull Moving Average (HMA) across a rolling
+    /// window. The HMA, developed by Alan Hull, is an extremely fast and smooth
+    /// moving average.
     #[new]
     #[pyo3(signature = (period, price_type=None))]
     fn py_new(period: usize, price_type: Option<PriceType>) -> Self {

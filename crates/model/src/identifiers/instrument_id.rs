@@ -37,6 +37,10 @@ use crate::identifiers::{Symbol, Venue};
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct InstrumentId {
     /// The instruments ticker symbol.
     pub symbol: Symbol,
@@ -91,7 +95,7 @@ impl FromStr for InstrumentId {
                     #[cfg(feature = "defi")]
                     if venue.is_dex() {
                         let validated_address = validate_address(symbol_part)
-                            .map_err(|e| anyhow::anyhow!(err_message(s, e.to_string())))?;
+                            .map_err(|e| anyhow::anyhow!(err_message(s, &e.to_string())))?;
                         Symbol::new(validated_address.to_string())
                     } else {
                         Symbol::new(symbol_part)
@@ -106,7 +110,7 @@ impl FromStr for InstrumentId {
             None => {
                 anyhow::bail!(err_message(
                     s,
-                    "missing '.' separator between symbol and venue components".to_string()
+                    "missing '.' separator between symbol and venue components"
                 ))
             }
         }
@@ -145,12 +149,12 @@ impl<'de> Deserialize<'de> for InstrumentId {
     where
         D: Deserializer<'de>,
     {
-        let instrument_id_str: &str = Deserialize::deserialize(deserializer)?;
-        Self::from_str(instrument_id_str).map_err(serde::de::Error::custom)
+        let instrument_id_str: String = Deserialize::deserialize(deserializer)?;
+        Self::from_str(&instrument_id_str).map_err(serde::de::Error::custom)
     }
 }
 
-fn err_message(s: &str, e: String) -> String {
+fn err_message(s: &str, e: &str) -> String {
     format!("Error parsing `InstrumentId` from '{s}': {e}")
 }
 

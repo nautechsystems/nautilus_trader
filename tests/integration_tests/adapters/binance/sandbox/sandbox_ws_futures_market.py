@@ -30,7 +30,7 @@ async def test_binance_websocket_client():
     client = BinanceWebSocketClient(
         clock=clock,
         handler=print,
-        base_url="wss://fstream.binance.com",
+        base_url="wss://fstream.binance.com/market",
         loop=loop,
     )
 

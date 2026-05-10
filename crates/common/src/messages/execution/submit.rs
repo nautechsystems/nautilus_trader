@@ -43,7 +43,7 @@ pub struct SubmitOrder {
 
 impl SubmitOrder {
     /// Creates a new [`SubmitOrder`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub const fn new(
         trader_id: TraderId,
@@ -74,7 +74,6 @@ impl SubmitOrder {
     }
 
     /// Creates a new [`SubmitOrder`] from an existing order.
-    #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn from_order(
         order: &OrderAny,
@@ -136,7 +135,7 @@ impl SubmitOrderList {
     ///
     /// Panics if `order_inits` length doesn't match `order_list.client_order_ids`, or if
     /// the client order IDs don't match in order.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         trader_id: TraderId,

@@ -24,6 +24,7 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_MIN_CALLBA
 from nautilus_trader.adapters.binance.common.constants import BINANCE_PRICE_MATCH_ORDER_TYPES
 from nautilus_trader.adapters.binance.common.constants import BINANCE_PRICE_MATCH_VALUES
 from nautilus_trader.adapters.binance.common.constants import BINANCE_RETRY_WARNINGS
+from nautilus_trader.adapters.binance.common.constants import BINANCE_SPOT_POST_ONLY_REJECT_MSG
 from nautilus_trader.adapters.binance.common.credentials import is_ed25519_private_key
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
@@ -35,8 +36,9 @@ from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceUserTrade
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.urls import get_usdm_ws_route_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_api_base_url
-from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
+from nautilus_trader.adapters.binance.common.urls import get_ws_private_base_url
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.http.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
@@ -218,12 +220,22 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # Futures events arrive on a separate stream (different endpoint)
         stream_base_url: str | None = None
+
         if account_type.is_futures:
-            stream_base_url = config.base_url_ws_stream or get_ws_base_url(
+            stream_base_url = config.base_url_ws_stream or get_ws_private_base_url(
                 account_type=account_type,
                 environment=environment,
                 is_us=config.us,
             )
+
+            if (
+                environment == BinanceEnvironment.LIVE
+                and account_type == BinanceAccountType.USDT_FUTURES
+            ):
+                stream_base_url = get_usdm_ws_route_base_url(
+                    stream_base_url,
+                    "private",
+                )
 
         # Force Ed25519 when explicitly configured, otherwise auto-detect
         if config.key_type == BinanceKeyType.ED25519:
@@ -235,6 +247,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # (Binance Futures WS API session.logon only accepts Ed25519)
         http_client_for_ws: BinanceHttpClient | None = None
         account_type_for_ws: BinanceAccountType | None = None
+
         if account_type.is_futures and not is_ed25519:
             http_client_for_ws = client
             account_type_for_ws = account_type
@@ -251,11 +264,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             is_ed25519=is_ed25519,
             http_client=http_client_for_ws,
             account_type=account_type_for_ws,
+            on_resubscribe=self._reconcile_after_resubscribe,
+            proxy_url=config.proxy_url,
         )
 
         self._submit_order_method: dict[
             OrderType,
-            Callable[[Order, BinanceFuturesPositionSide | None, str | None], Awaitable[None]],
+            Callable[[Order, BinanceFuturesPositionSide | None, str | None, bool], Awaitable[None]],
         ] = {
             OrderType.MARKET: self._submit_market_order,
             OrderType.LIMIT: self._submit_limit_order,
@@ -317,16 +332,14 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     def _log_retry_error(self, message: str, exception: BaseException | None) -> None:
         error_code = get_binance_error_code(exception) if exception else None
+        is_post_only = isinstance(exception, BinanceError) and _is_post_only_rejection(exception)
 
-        match error_code:
-            case BinanceErrorCode.GTX_ORDER_REJECT if (
-                not self._log_rejected_due_post_only_as_warning
-            ):
-                self._log.info(message)
-            case code if code in BINANCE_RETRY_WARNINGS:
-                self._log.warning(message)
-            case _:
-                self._log.error(message)
+        if is_post_only and not self._log_rejected_due_post_only_as_warning:
+            self._log.info(message)
+        elif is_post_only or error_code in BINANCE_RETRY_WARNINGS:
+            self._log.warning(message)
+        else:
+            self._log.error(message)
 
     async def _connect(self) -> None:
         await self._instrument_provider.initialize()
@@ -569,6 +582,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         end_ms: int | None,
     ) -> list[OrderStatusReport]:
         reports: list[OrderStatusReport] = []
+
         for order in binance_orders:
             if start_ms is not None and order.time < start_ms:
                 continue  # Filter start on the Nautilus side
@@ -622,6 +636,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # Parse all Binance trades
         reports: list[FillReport] = []
+
         for trade in binance_trades:
             if trade.symbol is None:
                 self._log.warning(f"No symbol for trade {trade}")
@@ -712,6 +727,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             return None
 
         good_till_date = nanos_to_millis(order.expire_time_ns) if order.expire_time_ns else None
+
         if self._binance_account_type.is_spot_or_margin:
             good_till_date = None
             self._log.warning("Cannot set GTD time in force with `expiry_time` for Binance Spot")
@@ -779,6 +795,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         try:
             price_match = self._extract_price_match(order, params)
+            close_position = self._extract_close_position(order, params)
         except ValueError as e:
             self._deny_order_pre_submit(order, str(e))
             return
@@ -807,7 +824,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 order,
                 position_side,
                 price_match,
+                close_position,
             )
+
             if not retry_manager.result:
                 # Determine if the rejection was specifically due to a POST-ONLY order
                 # that would have executed immediately as a taker (GTX_ORDER_REJECT -5022).
@@ -876,6 +895,40 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         return value
 
+    def _extract_close_position(
+        self,
+        order: Order,
+        params: dict[str, object] | None,
+    ) -> bool:
+        if params is None:
+            return False
+
+        raw_value = params.get("close_position")
+        if raw_value is None:
+            return False
+
+        if not self._binance_account_type.is_futures:
+            raise ValueError(
+                "UNSUPPORTED: `close_position` is only supported for Binance futures accounts",
+            )
+
+        if not isinstance(raw_value, bool):
+            raise ValueError(
+                "INVALID_ARG: `close_position` must be provided as a bool value",
+            )
+
+        if order.order_type not in (OrderType.STOP_MARKET, OrderType.MARKET_IF_TOUCHED):
+            raise ValueError(
+                f"UNSUPPORTED: `close_position` is not supported for order type {order.type_string()} on Binance",
+            )
+
+        if order.is_reduce_only:
+            raise ValueError(
+                "INVALID_ARG: `close_position` cannot be combined with `reduce_only` on Binance",
+            )
+
+        return raw_value
+
     def _deny_order_pre_submit(self, order: Order, reason: str) -> None:
         self.generate_order_denied(
             strategy_id=order.strategy_id,
@@ -917,8 +970,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             if order.trailing_offset_type != TrailingOffsetType.BASIS_POINTS:
                 return f"INVALID_TRAILING_OFFSET_TYPE: {trailing_offset_type_to_str(order.trailing_offset_type)}"
 
-            callback_rate = Decimal(order.trailing_offset) / Decimal(100)
-            callback_rate = callback_rate.quantize(Decimal("0.1"))
+            callback_rate = self._trailing_offset_to_callback_rate(order)
 
             if (
                 callback_rate < BINANCE_MIN_CALLBACK_RATE
@@ -936,6 +988,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         order: MarketOrder,
         position_side: BinanceFuturesPositionSide | None,
         price_match: str | None,
+        close_position: bool,
     ) -> None:
         assert price_match is None  # type checking
 
@@ -963,6 +1016,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         order: LimitOrder,
         position_side: BinanceFuturesPositionSide | None,
         price_match: str | None,
+        close_position: bool,
     ) -> None:
         time_in_force = self._determine_time_in_force(order)
         if order.is_post_only and self._binance_account_type.is_spot_or_margin:
@@ -991,6 +1045,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         order: StopLimitOrder,
         position_side: BinanceFuturesPositionSide | None,
         price_match: str | None,
+        close_position: bool,
     ) -> None:
         if self._binance_account_type.is_spot_or_margin:
             working_type = None
@@ -1065,6 +1120,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         order: StopMarketOrder,
         position_side: BinanceFuturesPositionSide | None,
         price_match: str | None,
+        close_position: bool,
     ) -> None:
         assert price_match is None  # type checking
 
@@ -1083,20 +1139,36 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         time_in_force = self._determine_time_in_force(order)
 
         if self._binance_account_type.is_futures:
-            await self._http_account.new_algo_order(  # type: ignore [attr-defined]
-                symbol=order.instrument_id.symbol.value,
-                side=self._enum_parser.parse_internal_order_side(order.side),
-                order_type=self._enum_parser.parse_internal_order_type(order),
-                position_side=position_side,
-                quantity=str(order.quantity),
-                trigger_price=str(order.trigger_price),
-                time_in_force=time_in_force,
-                working_type=working_type,
-                reduce_only=self._determine_reduce_only_str(order),
-                client_algo_id=order.client_order_id.value,
-                good_till_date=self._determine_good_till_date(order, time_in_force),
-                recv_window=str(self._recv_window),
-            )
+            if close_position:
+                # closePosition is mutually exclusive with quantity and reduceOnly
+                await self._http_account.new_algo_order(  # type: ignore [attr-defined]
+                    symbol=order.instrument_id.symbol.value,
+                    side=self._enum_parser.parse_internal_order_side(order.side),
+                    order_type=self._enum_parser.parse_internal_order_type(order),
+                    position_side=position_side,
+                    close_position="true",
+                    trigger_price=str(order.trigger_price),
+                    time_in_force=time_in_force,
+                    working_type=working_type,
+                    client_algo_id=order.client_order_id.value,
+                    good_till_date=self._determine_good_till_date(order, time_in_force),
+                    recv_window=str(self._recv_window),
+                )
+            else:
+                await self._http_account.new_algo_order(  # type: ignore [attr-defined]
+                    symbol=order.instrument_id.symbol.value,
+                    side=self._enum_parser.parse_internal_order_side(order.side),
+                    order_type=self._enum_parser.parse_internal_order_type(order),
+                    position_side=position_side,
+                    quantity=str(order.quantity),
+                    trigger_price=str(order.trigger_price),
+                    time_in_force=time_in_force,
+                    working_type=working_type,
+                    reduce_only=self._determine_reduce_only_str(order),
+                    client_algo_id=order.client_order_id.value,
+                    good_till_date=self._determine_good_till_date(order, time_in_force),
+                    recv_window=str(self._recv_window),
+                )
         else:
             await self._http_account.new_order(
                 symbol=order.instrument_id.symbol.value,
@@ -1118,6 +1190,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         order: TrailingStopMarketOrder,
         position_side: BinanceFuturesPositionSide | None,
         price_match: str | None,
+        close_position: bool,
     ) -> None:
         assert price_match is None  # type checking
 
@@ -1133,11 +1206,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         time_in_force = self._determine_time_in_force(order)
 
-        # Convert basis points to percentage, preserving precision
-        # Binance supports up to 1 decimal place precision for callback rates
-        callback_rate = Decimal(order.trailing_offset) / Decimal(100)
-        # Round to 1 decimal place only if necessary to meet Binance requirements
-        callback_rate = callback_rate.quantize(Decimal("0.1"))
+        callback_rate = self._trailing_offset_to_callback_rate(order)
+        callback_rate_str = self._format_callback_rate(callback_rate)
 
         activation_price: Price | None = order.activation_price
 
@@ -1149,7 +1219,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             position_side=position_side,
             quantity=str(order.quantity),
             activation_price=str(activation_price) if activation_price is not None else None,
-            callback_rate=str(callback_rate),
+            callback_rate=callback_rate_str,
             time_in_force=time_in_force,
             working_type=working_type,
             reduce_only=self._determine_reduce_only_str(order),
@@ -1157,6 +1227,17 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             good_till_date=self._determine_good_till_date(order, time_in_force),
             recv_window=str(self._recv_window),
         )
+
+    @staticmethod
+    def _trailing_offset_to_callback_rate(order: TrailingStopMarketOrder) -> Decimal:
+        return Decimal(order.trailing_offset) / Decimal(100)
+
+    @staticmethod
+    def _format_callback_rate(callback_rate: Decimal) -> str:
+        if callback_rate == callback_rate.to_integral():
+            return format(callback_rate.quantize(Decimal("0.1")), "f")
+
+        return format(callback_rate.normalize(), "f")
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         nautilus_symbol: str = BinanceSymbol(symbol).parse_as_nautilus(
@@ -1221,6 +1302,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 quantity=str(command.quantity) if command.quantity else str(order.quantity),
                 price=str(command.price) if command.price else str(order.price),
             )
+
             if not retry_manager.result:
                 self.generate_order_modify_rejected(
                     command.strategy_id,
@@ -1244,6 +1326,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 client_order_id=command.client_order_id,
                 venue_order_id=command.venue_order_id,
             )
+
             if not retry_manager.result:
                 self.generate_order_cancel_rejected(
                     command.strategy_id,
@@ -1269,6 +1352,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 self._http_account.cancel_all_open_orders,
                 symbol=instrument_id.symbol.value,
             )
+
             if not retry_manager.result:
                 if (
                     retry_manager.message is not None
@@ -1306,6 +1390,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 self._http_account.cancel_all_open_algo_orders,  # type: ignore [attr-defined]
                 symbol=instrument_id.symbol.value,
             )
+
             if not retry_manager.result:
                 if (
                     retry_manager.message is not None
@@ -1460,6 +1545,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     client_order_id=order.client_order_id,
                     venue_order_id=order.venue_order_id,
                 )
+
                 if not retry_manager.result:
                     self.generate_order_cancel_rejected(
                         order.strategy_id,
@@ -1472,6 +1558,15 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             finally:
                 await self._retry_manager_pool.release(retry_manager)
 
+    async def _reconcile_after_resubscribe(self) -> None:
+        # Listen key rotation leaves a brief window where Binance may have sent
+        # events into a stream with no active subscriber. Request a full mass
+        # status (no lookback cap) so resting GTC orders older than any cap
+        # still reconcile if they were canceled or filled during the gap.
+        mass_status = await self.generate_mass_status(lookback_mins=None)
+        if mass_status is not None:
+            self._send_mass_status_report(mass_status)
+
     def _handle_user_ws_message(self, raw: bytes) -> None:
         # Implement in child class
         raise NotImplementedError
@@ -1479,4 +1574,24 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
 def _is_post_only_rejection(error: BinanceError) -> bool:
     error_code = get_binance_error_code(error)
-    return error_code == BinanceErrorCode.GTX_ORDER_REJECT
+    if error_code == BinanceErrorCode.GTX_ORDER_REJECT:
+        return True
+    if error_code == BinanceErrorCode.NEW_ORDER_REJECTED:
+        msg = _get_error_msg(error)
+        return msg == BINANCE_SPOT_POST_ONLY_REJECT_MSG
+    return False
+
+
+def _get_error_msg(error: BinanceError) -> str:
+    if isinstance(error.message, dict):
+        return error.message.get("msg", "")
+    if isinstance(error.message, str):
+        import json
+
+        try:
+            parsed = json.loads(error.message)
+            if isinstance(parsed, dict):
+                return parsed.get("msg", "")
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return ""

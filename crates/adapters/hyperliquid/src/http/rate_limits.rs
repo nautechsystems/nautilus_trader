@@ -21,7 +21,10 @@ use std::{
 
 use serde_json::Value;
 
-use crate::{common::enums::HyperliquidInfoRequestType, http::query::ExchangeActionParams};
+use crate::{
+    common::enums::HyperliquidInfoRequestType,
+    http::query::{ExchangeAction, ExchangeActionParams, InfoRequest},
+};
 
 #[derive(Debug)]
 pub struct WeightedLimiter {
@@ -52,6 +55,7 @@ impl WeightedLimiter {
     /// Acquire `weight` tokens, sleeping until available.
     pub async fn acquire(&self, weight: u32) {
         let need = weight as f64;
+
         loop {
             let mut st = self.state.lock().await;
             Self::refill_locked(&mut st, self.refill_per_sec, self.capacity);
@@ -121,7 +125,7 @@ pub fn backoff_full_jitter(attempt: u32, base: Duration, cap: Duration) -> Durat
 }
 
 /// Classify Info requests into weight classes based on request type.
-pub fn info_base_weight(req: &crate::http::query::InfoRequest) -> u32 {
+pub fn info_base_weight(req: &InfoRequest) -> u32 {
     match req.request_type {
         HyperliquidInfoRequestType::L2Book
         | HyperliquidInfoRequestType::AllMids
@@ -137,7 +141,7 @@ pub fn info_base_weight(req: &crate::http::query::InfoRequest) -> u32 {
 
 /// Extra weight for heavy Info endpoints: +1 per 20 (most), +1 per 60 for candleSnapshot.
 /// We count the largest array in the response (robust to schema variants).
-pub fn info_extra_weight(req: &crate::http::query::InfoRequest, json: &Value) -> u32 {
+pub fn info_extra_weight(req: &InfoRequest, json: &Value) -> u32 {
     let items = match json {
         Value::Array(a) => a.len(),
         Value::Object(m) => m
@@ -150,8 +154,7 @@ pub fn info_extra_weight(req: &crate::http::query::InfoRequest, json: &Value) ->
 
     let unit = match req.request_type {
         HyperliquidInfoRequestType::CandleSnapshot => 60usize,
-        HyperliquidInfoRequestType::RecentTrades
-        | HyperliquidInfoRequestType::HistoricalOrders
+        HyperliquidInfoRequestType::HistoricalOrders
         | HyperliquidInfoRequestType::UserFills
         | HyperliquidInfoRequestType::UserFillsByTime
         | HyperliquidInfoRequestType::FundingHistory
@@ -169,7 +172,7 @@ pub fn info_extra_weight(req: &crate::http::query::InfoRequest, json: &Value) ->
 }
 
 /// Exchange: 1 + floor(batch_len / 40)
-pub fn exchange_weight(action: &crate::http::query::ExchangeAction) -> u32 {
+pub fn exchange_weight(action: &ExchangeAction) -> u32 {
     // Extract batch size from typed params
     let batch_size = match &action.params {
         ExchangeActionParams::Order(params) => params.orders.len(),

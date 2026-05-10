@@ -10,10 +10,13 @@ on:
 
 jobs:
   performance-benchmarks:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, self-hosted-linux-x86]
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
+      # Outside the workspace so it survives actions/checkout's git clean -ffdx,
+      # giving us persistent on-disk Rust artifact reuse between runs.
+      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/performance-py3.12
       SCCACHE_CACHE_SIZE: 1G
     # yamllint disable rule:line-length
     services:
@@ -34,13 +37,19 @@ jobs:
           POSTGRES_DB: nautilus
         ports:
           - 5432:5432
-        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries 5
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
-          egress-policy: audit
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          # Required for CodSpeed results upload
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            api.codspeed.io:443
+            *.s3.eu-west-1.amazonaws.com:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -49,8 +58,12 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
+      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
+      - name: Verify immutable CI inputs (post-checkout)
+        run: bash scripts/ci/verify-ci-inputs.sh post-checkout
+
       - name: Aggressive disk cleanup (pre-setup)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && !startsWith(runner.name, 'nautilus-ci-runner-')
         run: |
           set -euxo pipefail
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost || true
@@ -78,10 +91,13 @@ jobs:
         uses: ./.github/actions/common-setup
         with:
           python-version: "3.12"
+          # free-disk-space auto-skips on the nautilus-ci-runner-* pool.
           free-disk-space: "true"
+          # Persistent CARGO_TARGET_DIR replaces Swatinem/rust-cache here.
+          rust-cache-enabled: "false"
 
       - name: Prune unused Docker images
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && !startsWith(runner.name, 'nautilus-ci-runner-')
         run: |
           docker image prune -a -f || true
 
@@ -99,8 +115,11 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
+      - name: Set compile jobs from cache state
+        run: bash scripts/ci/set-cargo-build-jobs.sh
+
       - name: Run Rust tests
-        run: make cargo-test
+        run: make cargo-test NEXTEST_PROFILE=ci
 
       # TODO: Add nautilus-persistence once required test data available
       - name: Run Rust benchmarks crate-by-crate
@@ -111,17 +130,23 @@ jobs:
           CARGO_PROFILE_BENCH_INCREMENTAL: false
         run: make cargo-ci-benches
 
+      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
+      - name: Verify immutable CI inputs (pre-wheel build)
+        run: bash scripts/ci/verify-ci-inputs.sh pre-wheel-build
+
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
         with:
           python-version: "3.12"
           github_ref: ${{ github.ref }}
 
+      # Skip on the nautilus-ci-runner-* pool: those machines keep CARGO_TARGET_DIR
+      # and ~/.cargo persistent across runs as the primary cache strategy.
       - name: Cleanup build artifacts and caches
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && !startsWith(runner.name, 'nautilus-ci-runner-')
         run: |
           set -euxo pipefail
-          rm -rf target || true
+          rm -rf "$CARGO_TARGET_DIR" target || true
           rm -rf ~/.cargo/registry ~/.cargo/git || true
           uv cache prune || true
           rm -rf dist build || true
@@ -129,7 +154,7 @@ jobs:
       # Run codspeed once only
       - name: Run benchmarks
         # https://github.com/CodSpeedHQ/action
-        uses: CodSpeedHQ/action@9a74b6ba663684052277e8f342b5eb99c7442a03 # v4.10.5
+        uses: CodSpeedHQ/action@1c8ae4843586d3ba879736b7f6b7b0c990757fab # v4.12.1
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
           mode: instrumentation

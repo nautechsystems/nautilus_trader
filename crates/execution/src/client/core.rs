@@ -76,7 +76,7 @@ impl Clone for ExecutionClientCore {
 
 impl ExecutionClientCore {
     /// Creates a new [`ExecutionClientCore`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         trader_id: TraderId,
@@ -106,6 +106,11 @@ impl ExecutionClientCore {
     /// Returns a read-only borrow of the cache.
     pub fn cache(&self) -> std::cell::Ref<'_, Cache> {
         self.cache.borrow()
+    }
+
+    /// Returns a mutable borrow of the cache.
+    pub fn cache_mut(&self) -> std::cell::RefMut<'_, Cache> {
+        self.cache.borrow_mut()
     }
 
     /// Returns the order for the given `client_order_id` from the cache.

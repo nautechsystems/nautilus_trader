@@ -33,12 +33,12 @@ async fn main() -> anyhow::Result<()> {
 
     log::info!("Fetching asset pairs for BTC/USD...");
     let pairs = client
-        .get_asset_pairs(Some(vec!["XBTUSDT".to_string()]))
+        .get_asset_pairs(Some(vec!["XBTUSDT".to_string()]), None)
         .await?;
     log::info!("Asset pairs count: {}", pairs.len());
 
     log::info!("Fetching ticker for BTC/USD...");
-    let ticker = client.get_ticker(vec!["XBTUSDT".to_string()]).await?;
+    let ticker = client.get_ticker(vec!["XBTUSDT".to_string()], None).await?;
     log::info!("Ticker count: {}", ticker.len());
 
     log::info!("HTTP client example completed successfully");

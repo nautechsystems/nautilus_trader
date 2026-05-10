@@ -17,7 +17,7 @@ use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::{prelude::*, types::PyDict};
 
 use crate::{
-    accounts::{Account, CashAccount, MarginAccount},
+    accounts::{Account, BettingAccount, CashAccount, MarginAccount},
     events::AccountState,
 };
 
@@ -31,6 +31,7 @@ use crate::{
 ///
 /// Panics if event conversion (`py_from_dict`) unwrap fails.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(signature = (events, calculate_account_state, allow_borrowing = false))]
 pub fn cash_account_from_account_events(
     events: Vec<Bound<'_, PyDict>>,
@@ -56,6 +57,35 @@ pub fn cash_account_from_account_events(
     Ok(cash_account)
 }
 
+/// Constructs a `BettingAccount` from a list of Python dict events.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the input `events` list is empty.
+#[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
+pub fn betting_account_from_account_events(
+    events: Vec<Bound<'_, PyDict>>,
+    calculate_account_state: bool,
+) -> PyResult<BettingAccount> {
+    let account_events = events
+        .into_iter()
+        .map(|obj| AccountState::py_from_dict(&obj))
+        .collect::<PyResult<Vec<AccountState>>>()?;
+
+    if account_events.is_empty() {
+        return Err(to_pyvalue_err("No account events"));
+    }
+    let init_event = account_events[0].clone();
+    let mut betting_account = BettingAccount::new(init_event, calculate_account_state);
+    for event in account_events.iter().skip(1) {
+        betting_account
+            .apply(event.clone())
+            .map_err(to_pyruntime_err)?;
+    }
+    Ok(betting_account)
+}
+
 /// Constructs a `MarginAccount` from a list of Python dict events.
 ///
 /// # Errors
@@ -66,6 +96,7 @@ pub fn cash_account_from_account_events(
 ///
 /// Panics if event conversion (`py_from_dict`) unwrap fails.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 pub fn margin_account_from_account_events(
     events: Vec<Bound<'_, PyDict>>,
     calculate_account_state: bool,

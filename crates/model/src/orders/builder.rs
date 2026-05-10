@@ -84,6 +84,7 @@ pub struct OrderTestBuilder {
 
 impl OrderTestBuilder {
     /// Creates a new [`OrderTestBuilder`] instance.
+    #[must_use]
     pub fn new(kind: OrderType) -> Self {
         Self {
             kind,
@@ -135,7 +136,6 @@ impl OrderTestBuilder {
         self
     }
 
-    /// ----------- TraderId ----------
     pub fn trader_id(&mut self, trader_id: TraderId) -> &mut Self {
         self.trader_id = Some(trader_id);
         self
@@ -476,11 +476,9 @@ impl OrderTestBuilder {
         self
     }
 
-    fn get_contingency_type(&self) -> Option<ContingencyType> {
-        Some(
-            self.contingency_type
-                .unwrap_or(ContingencyType::NoContingency),
-        )
+    fn get_contingency_type(&self) -> ContingencyType {
+        self.contingency_type
+            .unwrap_or(ContingencyType::NoContingency)
     }
 
     /// Builds the order, consuming the provided parameters.
@@ -489,6 +487,7 @@ impl OrderTestBuilder {
     ///
     /// Panics if required fields (instrument ID, quantity, price, offsets, etc.) are not set,
     /// or if internal calls to `.expect(...)` or `.unwrap()` fail during order construction.
+    #[must_use]
     pub fn build(&self) -> OrderAny {
         let mut order = match self.kind {
             OrderType::Market => OrderAny::Market(MarketOrder::new(
@@ -503,7 +502,7 @@ impl OrderTestBuilder {
                 self.get_ts_init(),
                 self.get_reduce_only(),
                 self.get_quote_quantity(),
-                self.get_contingency_type(),
+                Some(self.get_contingency_type()),
                 self.get_order_list_id(),
                 self.get_linked_order_ids(),
                 self.get_parent_order_id(),
@@ -528,7 +527,7 @@ impl OrderTestBuilder {
                 self.get_display_qty(),
                 self.get_emulation_trigger(),
                 self.get_trigger_instrument_id(),
-                self.get_contingency_type(),
+                Some(self.get_contingency_type()),
                 self.get_order_list_id(),
                 self.get_linked_order_ids(),
                 self.get_parent_order_id(),
@@ -555,7 +554,7 @@ impl OrderTestBuilder {
                 self.get_display_qty(),
                 self.get_emulation_trigger(),
                 self.get_trigger_instrument_id(),
-                self.get_contingency_type(),
+                Some(self.get_contingency_type()),
                 self.get_order_list_id(),
                 self.get_linked_order_ids(),
                 self.get_parent_order_id(),
@@ -584,7 +583,7 @@ impl OrderTestBuilder {
                 self.get_display_qty(),
                 self.get_emulation_trigger(),
                 self.get_trigger_instrument_id(),
-                self.get_contingency_type(),
+                Some(self.get_contingency_type()),
                 self.get_order_list_id(),
                 self.get_linked_order_ids(),
                 self.get_parent_order_id(),
@@ -608,7 +607,7 @@ impl OrderTestBuilder {
                 self.get_reduce_only(),
                 self.get_quote_quantity(),
                 self.get_display_qty(),
-                self.get_contingency_type(),
+                Some(self.get_contingency_type()),
                 self.get_order_list_id(),
                 self.get_linked_order_ids(),
                 self.get_parent_order_id(),
@@ -634,7 +633,7 @@ impl OrderTestBuilder {
                 self.get_quote_quantity(),
                 self.get_emulation_trigger(),
                 self.get_trigger_instrument_id(),
-                self.get_contingency_type(),
+                Some(self.get_contingency_type()),
                 self.get_order_list_id(),
                 self.get_linked_order_ids(),
                 self.get_parent_order_id(),
@@ -663,7 +662,7 @@ impl OrderTestBuilder {
                 self.get_display_qty(),
                 self.get_emulation_trigger(),
                 self.get_trigger_instrument_id(),
-                self.get_contingency_type(),
+                Some(self.get_contingency_type()),
                 self.get_order_list_id(),
                 self.get_linked_order_ids(),
                 self.get_parent_order_id(),
@@ -693,7 +692,7 @@ impl OrderTestBuilder {
                     self.get_display_qty(),
                     self.get_emulation_trigger(),
                     self.get_trigger_instrument_id(),
-                    self.get_contingency_type(),
+                    Some(self.get_contingency_type()),
                     self.get_order_list_id(),
                     self.get_linked_order_ids(),
                     self.get_parent_order_id(),
@@ -727,7 +726,7 @@ impl OrderTestBuilder {
                     self.get_display_qty(),
                     self.get_emulation_trigger(),
                     self.get_trigger_instrument_id(),
-                    self.get_contingency_type(),
+                    Some(self.get_contingency_type()),
                     self.get_order_list_id(),
                     self.get_linked_order_ids(),
                     self.get_parent_order_id(),

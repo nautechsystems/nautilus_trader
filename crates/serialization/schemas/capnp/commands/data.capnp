@@ -1,5 +1,8 @@
 @0xe5e2d65c5e3adf20;
 # Cap'n Proto schema for Nautilus data commands
+#
+# WARNING: This schema is not yet stable and may change without notice
+# between releases. Do not depend on wire compatibility across versions.
 
 using Identifiers = import "../common/identifiers.capnp";
 using Types = import "../common/types.capnp";

@@ -15,7 +15,6 @@
 
 use std::fmt::{Debug, Display};
 
-use derive_builder::Builder;
 use nautilus_core::{UUID4, UnixNanos, serialization::from_bool_as_u8};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -35,12 +34,15 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[cfg_attr(any(test, feature = "stubs"), builder(default))]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct OrderUpdated {
     /// The trader ID associated with the event.
@@ -63,6 +65,9 @@ pub struct OrderUpdated {
     pub trigger_price: Option<Price>,
     /// The order calculated protection price.
     pub protection_price: Option<Price>,
+    /// If the order quantity is denominated in the quote currency.
+    #[serde(default)]
+    pub is_quote_quantity: bool,
     /// The unique identifier for the event.
     pub event_id: UUID4,
     /// UNIX timestamp (nanoseconds) when the event occurred.
@@ -76,7 +81,8 @@ pub struct OrderUpdated {
 
 impl OrderUpdated {
     /// Creates a new [`OrderUpdated`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -92,6 +98,7 @@ impl OrderUpdated {
         price: Option<Price>,
         trigger_price: Option<Price>,
         protection_price: Option<Price>,
+        is_quote_quantity: bool,
     ) -> Self {
         Self {
             trader_id,
@@ -108,6 +115,7 @@ impl OrderUpdated {
             price,
             trigger_price,
             protection_price,
+            is_quote_quantity,
         }
     }
 }
@@ -178,7 +186,7 @@ impl OrderEvent for OrderUpdated {
         self.event_id
     }
 
-    fn kind(&self) -> &str {
+    fn type_name(&self) -> &'static str {
         stringify!(OrderUpdated)
     }
 
@@ -239,7 +247,7 @@ impl OrderEvent for OrderUpdated {
     }
 
     fn quote_quantity(&self) -> Option<bool> {
-        None
+        Some(self.is_quote_quantity)
     }
 
     fn reconciliation(&self) -> bool {
@@ -356,5 +364,13 @@ mod tests {
             display,
             "OrderUpdated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, venue_order_id=001, account_id=SIM-001, quantity=100, price=22_000, trigger_price=None, protection_price=None, ts_event=0)"
         );
+    }
+
+    #[rstest]
+    fn test_order_updated_serialization() {
+        let original = OrderUpdated::default();
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderUpdated = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
     }
 }

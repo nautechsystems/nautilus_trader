@@ -1,0 +1,32 @@
+{
+  "e": "ALGO_UPDATE",
+  "T": 1750515742297,
+  "E": 1750515742303,
+  "o": {
+    "caid": "Q5xaq5EGKgXXa0fD7fs0Ip",
+    "aid": 2148719,
+    "at": "CONDITIONAL",
+    "o": "TAKE_PROFIT",
+    "s": "BNBUSDT",
+    "S": "SELL",
+    "ps": "BOTH",
+    "f": "GTC",
+    "q": "0.01",
+    "X": "CANCELED",
+    "ai": "",
+    "ap": "0.00000",
+    "aq": "0.00000",
+    "act": "0",
+    "tp": "750",
+    "p": "750",
+    "V": "EXPIRE_MAKER",
+    "wt": "CONTRACT_PRICE",
+    "pm": "NONE",
+    "cp": false,
+    "pP": false,
+    "R": false,
+    "tt": 0,
+    "gtd": 0,
+    "rm": "Reduce Only reject"
+  }
+}

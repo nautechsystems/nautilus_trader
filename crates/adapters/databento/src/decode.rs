@@ -47,7 +47,7 @@
 use std::{ffi::c_char, num::NonZeroUsize};
 
 use databento::dbn;
-use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND, uuid::UUID4};
+use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, DEPTH10_LEN, Data, InstrumentStatus,
@@ -101,6 +101,10 @@ const BAR_CLOSE_ADJUSTMENT_1M: u64 = NANOSECONDS_IN_SECOND * 60;
 const BAR_CLOSE_ADJUSTMENT_1H: u64 = NANOSECONDS_IN_SECOND * 60 * 60;
 const BAR_CLOSE_ADJUSTMENT_1D: u64 = NANOSECONDS_IN_SECOND * 60 * 60 * 24;
 
+// FNV-1a 64-bit constants (see http://www.isthe.com/chongo/tech/comp/fnv/).
+const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0100_0000_01b3;
+
 #[must_use]
 pub const fn parse_optional_bool(c: c_char) -> Option<bool> {
     match c as u8 as char {
@@ -126,6 +130,38 @@ pub const fn parse_aggressor_side(c: c_char) -> AggressorSide {
         'B' => AggressorSide::Buyer,
         _ => AggressorSide::NoAggressor,
     }
+}
+
+fn fnv1a_mix(hash: &mut u64, bytes: &[u8]) {
+    for &byte in bytes {
+        *hash ^= u64::from(byte);
+        *hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    *hash ^= 0xff;
+    *hash = hash.wrapping_mul(FNV_PRIME);
+}
+
+/// Derives a deterministic [`TradeId`] for Databento schemas that do not
+/// publish a native trade identifier (e.g. CMBP1, TCBBO).
+///
+/// The hash combines the instrument, timestamps, price, size and aggressor
+/// side so that replayed data yields the same identifier across runs.
+fn derive_cmbp_trade_id(
+    instrument_id: InstrumentId,
+    ts_event: u64,
+    ts_recv: u64,
+    price: i64,
+    size: u32,
+    side: c_char,
+) -> TradeId {
+    let mut hash: u64 = FNV_OFFSET_BASIS;
+    fnv1a_mix(&mut hash, instrument_id.to_string().as_bytes());
+    fnv1a_mix(&mut hash, &ts_event.to_le_bytes());
+    fnv1a_mix(&mut hash, &ts_recv.to_le_bytes());
+    fnv1a_mix(&mut hash, &price.to_le_bytes());
+    fnv1a_mix(&mut hash, &size.to_le_bytes());
+    fnv1a_mix(&mut hash, &[side as u8]);
+    TradeId::new(format!("{hash:016x}"))
 }
 
 /// Parses a Databento book action character into a `BookAction` enum.
@@ -333,13 +369,40 @@ pub fn decode_price_or_undef(value: i64, precision: u8) -> Price {
     }
 }
 
+/// Computes the minimum decimal precision needed to represent a raw price value
+/// expressed in units of 1e-9, by counting trailing decimal zeros.
+///
+/// For example, a raw value of `3_906_250` (representing 0.00390625) has 1 trailing
+/// zero, so the precision is `9 - 1 = 8`.
+#[inline(always)]
+#[must_use]
+pub fn precision_from_raw(value: i64) -> u8 {
+    let mut v = value.unsigned_abs();
+    if v == 0 {
+        return 0;
+    }
+    let mut trailing = 0u8;
+    while trailing < 9 && v.is_multiple_of(10) {
+        v /= 10;
+        trailing += 1;
+    }
+    9 - trailing
+}
+
 /// Decodes a minimum price increment from the given value, expressed in units of 1e-9.
+///
+/// The precision is derived from the actual tick value to avoid truncation of
+/// fractional tick sizes (e.g., treasury futures with 1/256 or 1/32 ticks).
+/// The derived precision is floored at `precision` (typically the currency precision).
 #[inline(always)]
 #[must_use]
 pub fn decode_price_increment(value: i64, precision: u8) -> Price {
     match value {
         0 | i64::MAX => Price::new(10f64.powi(-i32::from(precision)), precision),
-        _ => Price::from_raw(decode_raw_price_i64(value), precision),
+        _ => {
+            let derived = precision_from_raw(value).max(precision);
+            Price::from_raw(decode_raw_price_i64(value), derived)
+        }
     }
 }
 
@@ -784,13 +847,21 @@ pub fn decode_cmbp1_msg(
     };
 
     let maybe_trade = if include_trades && is_trade_msg(msg.action) {
-        // Use UUID4 for trade ID as CMBP1 doesn't have a sequence field
+        // CMBP1 does not publish a native trade ID; derive a deterministic one
+        let trade_id = derive_cmbp_trade_id(
+            instrument_id,
+            msg.hd.ts_event,
+            msg.ts_recv,
+            msg.price,
+            msg.size,
+            msg.side,
+        );
         Some(TradeTick::new(
             instrument_id,
             decode_price_or_undef(msg.price, price_precision),
             decode_quantity(msg.size as u64),
             parse_aggressor_side(msg.side),
-            TradeId::new(UUID4::new().as_str()),
+            trade_id,
             ts_event,
             ts_init,
         ))
@@ -867,13 +938,21 @@ pub fn decode_tcbbo_msg(
         None
     };
 
-    // Use UUID4 for trade ID as TCBBO doesn't have a sequence field
+    // TCBBO does not publish a native trade ID; derive a deterministic one
+    let trade_id = derive_cmbp_trade_id(
+        instrument_id,
+        msg.hd.ts_event,
+        msg.ts_recv,
+        msg.price,
+        msg.size,
+        msg.side,
+    );
     let trade = TradeTick::new(
         instrument_id,
         decode_price_or_undef(msg.price, price_precision),
         decode_quantity(msg.size as u64),
         parse_aggressor_side(msg.side),
-        TradeId::new(UUID4::new().as_str()),
+        trade_id,
         ts_event,
         ts_init,
     );
@@ -1039,6 +1118,7 @@ pub fn decode_record(
             Some(ts_init),
             include_trades,
         )?;
+
         match result {
             (Some(delta), None) => (Some(Data::Delta(delta)), None),
             (None, Some(trade)) => (Some(Data::Trade(trade)), None),
@@ -1227,7 +1307,7 @@ pub fn decode_futures_contract(
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    FuturesContract::new_checked(
+    Ok(FuturesContract::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
@@ -1251,7 +1331,7 @@ pub fn decode_futures_contract(
         None, // info
         ts_event,
         ts_init,
-    )
+    )?)
 }
 
 /// Decodes a Databento instrument definition message into a `FuturesSpread` instrument.
@@ -1275,7 +1355,7 @@ pub fn decode_futures_spread(
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    FuturesSpread::new_checked(
+    Ok(FuturesSpread::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
@@ -1300,7 +1380,7 @@ pub fn decode_futures_spread(
         None, // info
         ts_event,
         ts_init,
-    )
+    )?)
 }
 
 /// Decodes a Databento instrument definition message into an `OptionContract` instrument.
@@ -1335,7 +1415,7 @@ pub fn decode_option_contract(
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    OptionContract::new_checked(
+    Ok(OptionContract::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
@@ -1361,7 +1441,7 @@ pub fn decode_option_contract(
         None, // info
         ts_event,
         ts_init,
-    )
+    )?)
 }
 
 /// Decodes a Databento instrument definition message into an `OptionSpread` instrument.
@@ -1390,7 +1470,7 @@ pub fn decode_option_spread(
     let ts_event = msg.ts_recv.into(); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    OptionSpread::new_checked(
+    Ok(OptionSpread::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
@@ -1415,7 +1495,7 @@ pub fn decode_option_spread(
         None, // info
         ts_event,
         ts_init,
-    )
+    )?)
 }
 
 /// Decodes a Databento imbalance message into a `DatabentoImbalance` event.
@@ -1536,6 +1616,115 @@ mod tests {
     }
 
     #[rstest]
+    fn test_derive_cmbp_trade_id_is_deterministic() {
+        let instrument_id = InstrumentId::from("ES.c.0.GLBX");
+        let first = derive_cmbp_trade_id(instrument_id, 1, 2, 100, 5, 'B' as c_char);
+        let second = derive_cmbp_trade_id(instrument_id, 1, 2, 100, 5, 'B' as c_char);
+        assert_eq!(first, second);
+    }
+
+    #[rstest]
+    fn test_derive_cmbp_trade_id_format_is_16_hex_chars() {
+        let instrument_id = InstrumentId::from("ES.c.0.GLBX");
+        let trade_id = derive_cmbp_trade_id(instrument_id, 0, 0, 0, 0, 'B' as c_char);
+        let value = trade_id.as_str();
+        assert_eq!(value.len(), 16);
+        assert!(
+            value
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
+        );
+    }
+
+    #[rstest]
+    #[case::ts_event_changed(
+        derive_cmbp_trade_id(InstrumentId::from("ES.c.0.GLBX"), 2, 2, 100, 5, 'B' as c_char),
+    )]
+    #[case::ts_recv_changed(
+        derive_cmbp_trade_id(InstrumentId::from("ES.c.0.GLBX"), 1, 3, 100, 5, 'B' as c_char),
+    )]
+    #[case::price_changed(
+        derive_cmbp_trade_id(InstrumentId::from("ES.c.0.GLBX"), 1, 2, 101, 5, 'B' as c_char),
+    )]
+    #[case::size_changed(
+        derive_cmbp_trade_id(InstrumentId::from("ES.c.0.GLBX"), 1, 2, 100, 6, 'B' as c_char),
+    )]
+    #[case::side_changed(
+        derive_cmbp_trade_id(InstrumentId::from("ES.c.0.GLBX"), 1, 2, 100, 5, 'A' as c_char),
+    )]
+    #[case::instrument_changed(
+        derive_cmbp_trade_id(InstrumentId::from("NQ.c.0.GLBX"), 1, 2, 100, 5, 'B' as c_char),
+    )]
+    fn test_derive_cmbp_trade_id_each_field_affects_output(#[case] altered: TradeId) {
+        let baseline = derive_cmbp_trade_id(
+            InstrumentId::from("ES.c.0.GLBX"),
+            1,
+            2,
+            100,
+            5,
+            'B' as c_char,
+        );
+        assert_ne!(baseline, altered);
+    }
+
+    #[rstest]
+    fn test_derive_cmbp_trade_id_field_delimiter_prevents_collision() {
+        let instrument_id = InstrumentId::from("ES.c.0.GLBX");
+        // If fields were concatenated without delimiters, these two triples
+        // would produce the same input stream.
+        let a = derive_cmbp_trade_id(instrument_id, 0x100, 0, 0, 0, 'B' as c_char);
+        let b = derive_cmbp_trade_id(instrument_id, 0, 0x100, 0, 0, 'B' as c_char);
+        assert_ne!(a, b);
+    }
+
+    mod cmbp_trade_id_property_tests {
+        use proptest::prelude::*;
+        use rstest::rstest;
+
+        use super::*;
+
+        proptest! {
+            #[rstest]
+            fn prop_derive_cmbp_trade_id_is_stable_for_same_inputs(
+                ts_event in any::<u64>(),
+                ts_recv in any::<u64>(),
+                price in any::<i64>(),
+                size in any::<u32>(),
+                side_byte in 0u8..128,
+            ) {
+                let instrument_id = InstrumentId::from("ES.c.0.GLBX");
+                let side = side_byte as c_char;
+
+                let first = derive_cmbp_trade_id(
+                    instrument_id, ts_event, ts_recv, price, size, side,
+                );
+                let second = derive_cmbp_trade_id(
+                    instrument_id, ts_event, ts_recv, price, size, side,
+                );
+                prop_assert_eq!(first, second);
+            }
+
+            #[rstest]
+            fn prop_derive_cmbp_trade_id_output_is_16_hex_chars(
+                ts_event in any::<u64>(),
+                ts_recv in any::<u64>(),
+                price in any::<i64>(),
+                size in any::<u32>(),
+                side_byte in 0u8..128,
+            ) {
+                let instrument_id = InstrumentId::from("ES.c.0.GLBX");
+                let side = side_byte as c_char;
+                let id = derive_cmbp_trade_id(
+                    instrument_id, ts_event, ts_recv, price, size, side,
+                );
+                let value = id.as_str();
+                prop_assert_eq!(value.len(), 16);
+                prop_assert!(value.chars().all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()));
+            }
+        }
+    }
+
+    #[rstest]
     #[case('A' as c_char, Ok(BookAction::Add))]
     #[case('C' as c_char, Ok(BookAction::Delete))]
     #[case('F' as c_char, Ok(BookAction::Update))]
@@ -1608,13 +1797,33 @@ mod tests {
     }
 
     #[rstest]
+    #[case(0, 0)]
+    #[case(1, 9)] // 0.000000001 needs 9 decimal places
+    #[case(10, 8)] // 0.00000001 needs 8
+    #[case(3_906_250, 8)] // ZT: 1/256 = 0.00390625
+    #[case(7_812_500, 7)] // ZF: 1/128 = 0.0078125
+    #[case(15_625_000, 6)] // ZN: 1/64 = 0.015625
+    #[case(31_250_000, 5)] // ZB: 1/32 = 0.03125
+    #[case(250_000_000, 2)] // ES: 0.25
+    #[case(1_000_000_000, 0)] // 1.0
+    #[case(10_000_000_000, 0)] // 10.0
+    fn test_precision_from_raw(#[case] value: i64, #[case] expected: u8) {
+        assert_eq!(precision_from_raw(value), expected);
+    }
+
+    #[rstest]
     #[case(0, 2, Price::new(0.01, 2))] // Default for 0
     #[case(i64::MAX, 2, Price::new(0.01, 2))] // Default for i64::MAX
     #[case(
         10_000_000_000,
         2,
         Price::from_raw(decode_raw_price_i64(10_000_000_000), 2)
-    )]
+    )] // 10.0: derived=0, max(0,2)=2
+    #[case(3_906_250, 2, Price::from_raw(decode_raw_price_i64(3_906_250), 8))] // ZT 1/256: derived=8, max(8,2)=8
+    #[case(7_812_500, 2, Price::from_raw(decode_raw_price_i64(7_812_500), 7))] // ZF 1/128: derived=7, max(7,2)=7
+    #[case(15_625_000, 2, Price::from_raw(decode_raw_price_i64(15_625_000), 6))] // ZN 1/64: derived=6, max(6,2)=6
+    #[case(31_250_000, 2, Price::from_raw(decode_raw_price_i64(31_250_000), 5))] // ZB 1/32: derived=5, max(5,2)=5
+    #[case(250_000_000, 2, Price::from_raw(decode_raw_price_i64(250_000_000), 2))] // ES 0.25: derived=2, max(2,2)=2
     fn test_decode_price_increment(
         #[case] value: i64,
         #[case] precision: u8,

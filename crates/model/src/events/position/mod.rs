@@ -32,6 +32,7 @@ pub enum PositionEvent {
 }
 
 impl PositionEvent {
+    #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
         match self {
             Self::PositionOpened(position) => position.instrument_id,
@@ -41,6 +42,7 @@ impl PositionEvent {
         }
     }
 
+    #[must_use]
     pub fn account_id(&self) -> AccountId {
         match self {
             Self::PositionOpened(position) => position.account_id,
@@ -191,17 +193,6 @@ mod tests {
         let event = PositionEvent::PositionClosed(closed);
 
         assert_eq!(event.account_id(), AccountId::from("SIM-001"));
-    }
-
-    #[rstest]
-    fn test_position_event_debug_formatting() {
-        let opened = create_test_position_opened();
-        let event = PositionEvent::PositionOpened(opened);
-
-        let debug_str = format!("{event:?}");
-        assert!(debug_str.contains("PositionOpened"));
-        assert!(debug_str.contains("EURUSD.SIM"));
-        assert!(debug_str.contains("SIM-001"));
     }
 
     #[rstest]

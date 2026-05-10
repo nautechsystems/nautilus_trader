@@ -109,6 +109,7 @@ class BinanceFuturesPositionUpdateReason(Enum):
     AUTO_EXCHANGE = "AUTO_EXCHANGE"
     COIN_SWAP_DEPOSIT = "COIN_SWAP_DEPOSIT"
     COIN_SWAP_WITHDRAW = "COIN_SWAP_WITHDRAW"
+    ADL = "ADL"
 
 
 @unique

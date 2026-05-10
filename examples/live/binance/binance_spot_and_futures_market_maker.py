@@ -78,15 +78,11 @@ config_node = TradingNodeConfig(
     data_clients={
         "BINANCE_SPOT": BinanceDataClientConfig(
             venue=Venue("BINANCE_SPOT"),
-            api_key=None,  # 'BINANCE_API_KEY' env var
-            api_secret=None,  # 'BINANCE_API_SECRET' env var
             account_type=BinanceAccountType.SPOT,
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
         "BINANCE_FUTURES": BinanceDataClientConfig(
             venue=Venue("BINANCE_FUTURES"),
-            api_key=None,  # 'BINANCE_TESTNET_API_KEY' env var
-            api_secret=None,  # 'BINANCE_TESTNET_API_SECRET' env var
             account_type=BinanceAccountType.USDT_FUTURES,
             environment=BinanceEnvironment.TESTNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),
@@ -95,16 +91,12 @@ config_node = TradingNodeConfig(
     exec_clients={
         "BINANCE_SPOT": BinanceExecClientConfig(
             venue=Venue("BINANCE_SPOT"),
-            api_key=None,  # 'BINANCE_API_KEY' env var
-            api_secret=None,  # 'BINANCE_API_SECRET' env var
             account_type=BinanceAccountType.SPOT,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             max_retries=3,
         ),
         "BINANCE_FUTURES": BinanceExecClientConfig(
             venue=Venue("BINANCE_FUTURES"),
-            api_key=None,  # 'BINANCE_TESTNET_API_KEY' env var
-            api_secret=None,  # 'BINANCE_TESTNET_API_SECRET' env var
             account_type=BinanceAccountType.USDT_FUTURES,
             environment=BinanceEnvironment.TESTNET,
             instrument_provider=InstrumentProviderConfig(load_all=True),

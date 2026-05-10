@@ -41,6 +41,10 @@ pub const DEPTH10_LEN: usize = 10;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct OrderBookDepth10 {
     /// The instrument ID for the book.
     pub instrument_id: InstrumentId,
@@ -64,7 +68,7 @@ pub struct OrderBookDepth10 {
 
 impl OrderBookDepth10 {
     /// Creates a new [`OrderBookDepth10`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
@@ -731,7 +735,7 @@ mod tests {
             [5; DEPTH10_LEN], // Realistic order count
             [3; DEPTH10_LEN],
             16,                                         // Realistic flags
-            123456,                                     // Realistic sequence
+            123_456,                                    // Realistic sequence
             UnixNanos::from(1_672_531_200_000_000_000), // Jan 1, 2023 timestamp
             UnixNanos::from(1_672_531_200_000_100_000),
         );

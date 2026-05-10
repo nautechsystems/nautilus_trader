@@ -25,6 +25,7 @@
 //! - Channel subscription management.
 
 pub mod client;
+pub mod dispatch;
 pub mod enums;
 pub mod error;
 pub mod handler;

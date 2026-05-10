@@ -83,7 +83,6 @@ config_node = TradingNodeConfig(
     # heartbeat_interval=1.0,
     data_clients={
         TARDIS: TardisDataClientConfig(
-            api_key=None,  # 'TARDIS_API_KEY' env var
             instrument_provider=instrument_provider_config,
         ),
     },

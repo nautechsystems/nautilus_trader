@@ -176,6 +176,98 @@ def test_backend_session_register_object_store_from_uri_local_file() -> None:
     assert is_ascending
 
 
+def test_backend_session_mixed_builtin_and_custom_types(tmp_path) -> None:
+    """
+    Test streaming a session containing both built-in Rust types and custom Python
+    types. The Rust backend returns PyCapsules for built-in-only chunks and Python lists
+    for chunks containing custom data. Callers must handle both.
+
+    Regression test for
+    https://github.com/nautechsystems/nautilus_trader/issues/3853
+
+    """
+    from nautilus_trader.core.data import Data
+    from nautilus_trader.core.nautilus_pyo3.model import register_custom_data_class
+    from nautilus_trader.model.custom import customdataclass_pyo3
+    from nautilus_trader.model.data import TradeTick
+    from nautilus_trader.model.enums import AggressorSide
+    from nautilus_trader.model.identifiers import TradeId
+    from nautilus_trader.model.objects import Price
+    from nautilus_trader.model.objects import Quantity
+    from nautilus_trader.persistence.catalog import ParquetDataCatalog
+    from nautilus_trader.test_kit.providers import TestInstrumentProvider
+
+    @customdataclass_pyo3()
+    class MixedTestSignal(Data):
+        value: float = 0.0
+
+    register_custom_data_class(MixedTestSignal)
+
+    catalog = ParquetDataCatalog(str(tmp_path / "mixed_catalog"))
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+    catalog.write_data([instrument])
+
+    trades = [
+        TradeTick(
+            instrument_id=instrument.id,
+            price=Price.from_str("0.67000"),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId(f"mixed_{i}"),
+            ts_event=i * 1_000_000_000,
+            ts_init=i * 1_000_000_000,
+        )
+        for i in range(1, 6)
+    ]
+    catalog.write_data(trades)
+
+    signals = [
+        MixedTestSignal(
+            ts_event=i * 1_000_000_000 + 500_000_000,
+            ts_init=i * 1_000_000_000 + 500_000_000,
+            value=float(i),
+        )
+        for i in range(1, 6)
+    ]
+    catalog.write_data(signals)
+
+    # Build a session containing both built-in and custom types
+    session = DataBackendSession()
+    session = catalog.backend_session(data_cls=TradeTick, session=session)
+    session = catalog.backend_session(data_cls=MixedTestSignal, session=session)
+
+    # Stream chunks: mixed chunks are Python lists, pure built-in are PyCapsules
+    all_data = []
+
+    for chunk in session.to_query_result():
+        if isinstance(chunk, list):
+            all_data.extend(chunk)
+        else:
+            all_data.extend(capsule_to_list(chunk))
+
+    assert len(all_data) == 10
+    is_ascending = all(
+        all_data[i].ts_init <= all_data[i + 1].ts_init for i in range(len(all_data) - 1)
+    )
+    assert is_ascending
+
+    # Verify both types are present in the merged stream
+    type_names = {type(item).__name__ for item in all_data}
+    assert "TradeTick" in type_names
+    assert "CustomData" in type_names
+
+
+def test_pyo3_list_to_data_list_unknown_type_raises() -> None:
+    """
+    Passing an unrecognized object type to pyo3_list_to_data_list raises RuntimeError so
+    callers get a clear error instead of silent data loss.
+    """
+    from nautilus_trader.model.data import pyo3_list_to_data_list
+
+    with pytest.raises(RuntimeError, match="Cannot convert PyO3 data type"):
+        pyo3_list_to_data_list(["not a data object"])
+
+
 def test_backend_session_register_object_store_from_uri_invalid_uri() -> None:
     """
     Test registering object store from invalid URI raises appropriate error.

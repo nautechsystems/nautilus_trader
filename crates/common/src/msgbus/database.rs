@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Debug;
+
 use bytes::Bytes;
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
@@ -26,8 +28,16 @@ use crate::enums::SerializationEncoding;
 /// # Notes
 ///
 /// If `database_type` is `"redis"`, it requires Redis version 6.2 or higher for correct operation.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
+)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct DatabaseConfig {
     /// The database type.
     #[serde(alias = "type")]
@@ -56,6 +66,26 @@ pub struct DatabaseConfig {
     pub factor: u64,
 }
 
+impl Debug for DatabaseConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let redacted = self.password.as_ref().map(|_| "***");
+        f.debug_struct(stringify!(DatabaseConfig))
+            .field("database_type", &self.database_type)
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &redacted)
+            .field("ssl", &self.ssl)
+            .field("connection_timeout", &self.connection_timeout)
+            .field("response_timeout", &self.response_timeout)
+            .field("number_of_retries", &self.number_of_retries)
+            .field("exponent_base", &self.exponent_base)
+            .field("max_delay", &self.max_delay)
+            .field("factor", &self.factor)
+            .finish()
+    }
+}
+
 impl Default for DatabaseConfig {
     /// Creates a new default [`DatabaseConfig`] instance.
     fn default() -> Self {
@@ -77,15 +107,25 @@ impl Default for DatabaseConfig {
 }
 
 /// Configuration for `MessageBus` instances.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
+)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[serde(default, deny_unknown_fields)]
 pub struct MessageBusConfig {
     /// The configuration for the message bus backing database.
     pub database: Option<DatabaseConfig>,
     /// The encoding for database operations, controls the type of serializer used.
+    #[builder(default = SerializationEncoding::MsgPack)]
     pub encoding: SerializationEncoding,
     /// If timestamps should be persisted as ISO 8601 strings.
     /// If `false`, then timestamps will be persisted as UNIX nanoseconds.
+    #[builder(default)]
     pub timestamps_as_iso8601: bool,
     /// The buffer interval (milliseconds) between pipelined/batched transactions.
     /// The recommended range if using buffered pipelining is [10, 1000] milliseconds,
@@ -96,15 +136,20 @@ pub struct MessageBusConfig {
     /// This feature requires Redis version 6.2 or higher; otherwise, it will result in a command syntax error.
     pub autotrim_mins: Option<u32>,
     /// If a 'trader-' prefix is used for stream names.
+    #[builder(default = true)]
     pub use_trader_prefix: bool,
     /// If the trader's ID is used for stream names.
+    #[builder(default = true)]
     pub use_trader_id: bool,
     /// If the trader's instance ID is used for stream names. Default is `false`.
+    #[builder(default)]
     pub use_instance_id: bool,
     /// The prefix for externally published stream names. Must have a `database` config.
+    #[builder(default = "stream".to_string())]
     pub streams_prefix: String,
     /// If `true`, messages will be written to separate streams per topic.
     /// If `false`, all messages will be written to the same stream.
+    #[builder(default = true)]
     pub stream_per_topic: bool,
     /// The external stream keys the message bus will listen to for publishing deserialized message payloads internally.
     pub external_streams: Option<Vec<String>>,
@@ -115,23 +160,8 @@ pub struct MessageBusConfig {
 }
 
 impl Default for MessageBusConfig {
-    /// Creates a new default [`MessageBusConfig`] instance.
     fn default() -> Self {
-        Self {
-            database: None,
-            encoding: SerializationEncoding::MsgPack,
-            timestamps_as_iso8601: false,
-            buffer_interval_ms: None,
-            autotrim_mins: None,
-            use_trader_prefix: true,
-            use_trader_id: true,
-            use_instance_id: false,
-            streams_prefix: "stream".to_string(),
-            stream_per_topic: true,
-            external_streams: None,
-            types_filter: None,
-            heartbeat_interval_secs: None,
-        }
+        Self::builder().build()
     }
 }
 
@@ -210,6 +240,17 @@ mod tests {
         assert_eq!(config.exponent_base, 2);
         assert_eq!(config.max_delay, 10);
         assert_eq!(config.factor, 2);
+    }
+
+    #[rstest]
+    fn test_deserialize_database_config_rejects_unknown_field() {
+        let config_json = json!({
+            "type": "redis",
+            "unexpected": true,
+        });
+
+        let error = serde_json::from_value::<DatabaseConfig>(config_json).unwrap_err();
+        assert!(error.to_string().contains("unknown field `unexpected`"));
     }
 
     #[rstest]

@@ -105,7 +105,7 @@ pub struct GenerateOrderStatusReports {
 }
 
 impl GenerateOrderStatusReports {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         command_id: UUID4,
@@ -168,7 +168,7 @@ pub struct GenerateFillReports {
 }
 
 impl GenerateFillReports {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         command_id: UUID4,

@@ -1,17 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Read version from capnp-version file (single source of truth)
+# Read version from tools.toml (single source of truth)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CAPNP_VERSION_FILE="$REPO_ROOT/capnp-version"
-
-if [[ -f "$CAPNP_VERSION_FILE" ]]; then
-  CAPNP_VERSION=$(cat "$CAPNP_VERSION_FILE" | tr -d '[:space:]')
-else
-  echo "Error: capnp-version file not found at $CAPNP_VERSION_FILE"
-  exit 1
-fi
+CAPNP_VERSION="$(bash "$SCRIPT_DIR/tool-version.sh" capnp)"
 
 # Helper to parse capnp version consistently
 get_capnp_version() {

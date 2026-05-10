@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Bybit adapter.
 //!
-//! Run with: `cargo run --example bybit-data-tester --package nautilus-bybit`
+//! Run with: `cargo run --example bybit-data-tester --package nautilus-bybit --features examples`
 
 use nautilus_bybit::{
     common::enums::BybitProductType, config::BybitDataClientConfig,
@@ -27,6 +27,7 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId},
     stubs::TestDefault,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 #[tokio::main]
@@ -45,6 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: None,    // Will use 'BYBIT_API_KEY' env var
         api_secret: None, // Will use 'BYBIT_API_SECRET' env var
         product_types: vec![BybitProductType::Linear],
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -57,12 +59,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_data_client(None, Box::new(client_factory), Box::new(bybit_config))?
         .build()?;
 
-    let tester_config = DataTesterConfig::new(client_id, instrument_ids)
-        .with_subscribe_quotes(true)
-        .with_subscribe_trades(true)
-        .with_subscribe_mark_prices(true)
-        .with_subscribe_index_prices(true)
-        .with_subscribe_funding_rates(true);
+    let tester_config = DataTesterConfig::builder()
+        .client_id(client_id)
+        .instrument_ids(instrument_ids)
+        .subscribe_quotes(true)
+        .subscribe_trades(true)
+        .subscribe_mark_prices(true)
+        .subscribe_index_prices(true)
+        .subscribe_funding_rates(true)
+        .manage_book(true)
+        .build();
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

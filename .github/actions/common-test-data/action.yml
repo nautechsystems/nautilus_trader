@@ -10,7 +10,7 @@ runs:
       if: runner.os != 'macOS'
       id: cached-testdata-large
       # https://github.com/actions/cache/tree/main/restore
-      uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: tests/test_data/large
         key: large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
@@ -22,7 +22,7 @@ runs:
       # See: https://github.com/actions/runner/issues/3765
       if: ${{ runner.os != 'macOS' && always() && steps.cached-testdata-large.outputs.cache-hit != 'true' }}
       # https://github.com/actions/cache/tree/main/save
-      uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: tests/test_data/large
         key: large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}

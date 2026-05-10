@@ -1,0 +1,11 @@
+{
+  "op": "order.create",
+  "retCode": 0,
+  "retMsg": "OK",
+  "connId": "cejreaspqfm9se7usbrg-4cd",
+  "reqId": "order-req-001",
+  "data": {
+    "orderId": "1726025498520715008",
+    "orderLinkId": "client-order-1"
+  }
+}

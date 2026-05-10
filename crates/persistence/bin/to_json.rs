@@ -95,7 +95,7 @@ where
     let rows_per_group = row_group_metadata.num_rows();
 
     // Read data
-    session.add_file::<T>("data", file_path, None)?;
+    session.add_file::<T>("data", file_path, None, None)?;
     let query_result = session.get_query_result();
     let data = query_result.collect::<Vec<_>>();
     let data: Vec<T> = to_variant(data);

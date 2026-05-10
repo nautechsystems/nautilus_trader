@@ -21,7 +21,16 @@ use super::transform_returns;
 use crate::{statistic::PortfolioStatistic, statistics::cagr::CAGR};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CAGR {
+    /// Calculates the Compound Annual Growth Rate (CAGR) for returns.
+    ///
+    /// CAGR represents the mean annual growth rate of an investment over a specified period,
+    /// assuming the profits were reinvested at the end of each period.
+    ///
+    /// Formula: CAGR = (Ending Value / Beginning Value)^(Period/Days) - 1
+    ///
+    /// For returns: CAGR = ((1 + Total Return)^(Period/Days)) - 1
     #[new]
     #[pyo3(signature = (period=None))]
     fn py_new(period: Option<usize>) -> Self {
@@ -35,8 +44,19 @@ impl CAGR {
     }
 
     #[pyo3(name = "calculate_from_returns")]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_calculate_from_returns(&self, raw_returns: BTreeMap<u64, f64>) -> Option<f64> {
-        self.calculate_from_returns(&transform_returns(raw_returns))
+        self.calculate_from_returns(&transform_returns(&raw_returns))
+    }
+
+    #[pyo3(name = "calculate_from_realized_pnls")]
+    fn py_calculate_from_realized_pnls(&self, _realized_pnls: Vec<f64>) -> Option<f64> {
+        None
+    }
+
+    #[pyo3(name = "calculate_from_positions")]
+    fn py_calculate_from_positions(&self, _positions: Vec<Py<PyAny>>) -> Option<f64> {
+        None
     }
 
     fn __repr__(&self) -> String {

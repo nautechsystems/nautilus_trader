@@ -16,7 +16,7 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use nautilus_bybit::websocket::{classify_bybit_message, messages::BybitWsMessage};
+use nautilus_bybit::websocket::{messages::BybitWsFrame, parse_bybit_ws_frame};
 use serde_json::Value;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -56,7 +56,7 @@ fn bench_classification(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("classify", name), &value, |b, value| {
             b.iter(|| {
-                black_box(classify_bybit_message(black_box(value.clone())));
+                black_box(parse_bybit_ws_frame(black_box(value.clone())));
             });
         });
     }
@@ -84,7 +84,7 @@ fn bench_full_flow(c: &mut Criterion) {
             |b, msg| {
                 b.iter(|| {
                     let value: Value = serde_json::from_str(black_box(msg)).unwrap();
-                    let msg_type = classify_bybit_message(value.clone());
+                    let msg_type = parse_bybit_ws_frame(value.clone());
                     black_box((value, msg_type));
                 });
             },
@@ -142,7 +142,7 @@ fn bench_batch(c: &mut Criterion) {
                     for i in 0..size {
                         let msg = messages[i % messages.len()];
                         let value: Value = serde_json::from_str(msg).unwrap();
-                        let msg_type = classify_bybit_message(value.clone());
+                        let msg_type = parse_bybit_ws_frame(value.clone());
                         black_box((value, msg_type));
                     }
                 });
@@ -212,43 +212,47 @@ fn bench_tungstenite_message_access(c: &mut Criterion) {
 fn bench_message_type_match(c: &mut Criterion) {
     let mut group = c.benchmark_group("Message Type");
 
-    let messages: Vec<(_, BybitWsMessage)> = vec![
+    let frames: Vec<(_, BybitWsFrame)> = vec![
         (
             "trade",
-            classify_bybit_message(serde_json::from_str(TRADE).unwrap()),
+            parse_bybit_ws_frame(serde_json::from_str(TRADE).unwrap()),
         ),
         (
             "orderbook",
-            classify_bybit_message(serde_json::from_str(ORDERBOOK_DELTA).unwrap()),
+            parse_bybit_ws_frame(serde_json::from_str(ORDERBOOK_DELTA).unwrap()),
         ),
         (
             "ticker",
-            classify_bybit_message(serde_json::from_str(TICKER_LINEAR).unwrap()),
+            parse_bybit_ws_frame(serde_json::from_str(TICKER_LINEAR).unwrap()),
         ),
         (
             "kline",
-            classify_bybit_message(serde_json::from_str(KLINE).unwrap()),
+            parse_bybit_ws_frame(serde_json::from_str(KLINE).unwrap()),
         ),
         (
             "account_order",
-            classify_bybit_message(serde_json::from_str(ACCOUNT_ORDER).unwrap()),
+            parse_bybit_ws_frame(serde_json::from_str(ACCOUNT_ORDER).unwrap()),
         ),
     ];
 
-    for (name, msg) in messages {
-        group.bench_with_input(BenchmarkId::new("is_data_message", name), &msg, |b, msg| {
-            b.iter(|| {
-                let is_data = matches!(
-                    black_box(msg),
-                    BybitWsMessage::Trade(_)
-                        | BybitWsMessage::Orderbook(_)
-                        | BybitWsMessage::Kline(_)
-                        | BybitWsMessage::TickerLinear(_)
-                        | BybitWsMessage::TickerOption(_)
-                );
-                black_box(is_data);
-            });
-        });
+    for (name, frame) in frames {
+        group.bench_with_input(
+            BenchmarkId::new("is_data_frame", name),
+            &frame,
+            |b, frame| {
+                b.iter(|| {
+                    let is_data = matches!(
+                        black_box(frame),
+                        BybitWsFrame::Trade(_)
+                            | BybitWsFrame::Orderbook(_)
+                            | BybitWsFrame::Kline(_)
+                            | BybitWsFrame::TickerLinear(_)
+                            | BybitWsFrame::TickerOption(_)
+                    );
+                    black_box(is_data);
+                });
+            },
+        );
     }
 
     group.finish();

@@ -39,8 +39,8 @@ class AxDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws : str, optional
         The base URL for the AX Exchange WebSocket API.
         If ``None`` then will use the URL for the configured environment.
-    http_proxy_url : str, optional
-        Optional HTTP proxy URL.
+    proxy_url : str, optional
+        The proxy URL for HTTP and WebSocket transports.
     http_timeout_secs : PositiveInt, optional
         HTTP request timeout in seconds.
     max_retries : PositiveInt, optional
@@ -61,7 +61,7 @@ class AxDataClientConfig(LiveDataClientConfig, frozen=True):
     environment: AxEnvironment = AxEnvironment.SANDBOX
     base_url_http: str | None = None
     base_url_ws: str | None = None
-    http_proxy_url: str | None = None
+    proxy_url: str | None = None
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000
@@ -90,8 +90,8 @@ class AxExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws : str, optional
         The base URL for the AX Exchange WebSocket API.
         If ``None`` then will use the URL for the configured environment.
-    http_proxy_url : str, optional
-        Optional HTTP proxy URL.
+    proxy_url : str, optional
+        The proxy URL for HTTP and WebSocket transports.
     http_timeout_secs : PositiveInt, optional
         HTTP request timeout in seconds.
     max_retries : PositiveInt, optional
@@ -108,7 +108,7 @@ class AxExecClientConfig(LiveExecClientConfig, frozen=True):
     environment: AxEnvironment = AxEnvironment.SANDBOX
     base_url_http: str | None = None
     base_url_ws: str | None = None
-    http_proxy_url: str | None = None
+    proxy_url: str | None = None
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000

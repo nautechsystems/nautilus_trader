@@ -15,6 +15,8 @@
 
 //! Parsing functions for Bybit HTTP API responses.
 
+use serde::de::DeserializeOwned;
+
 use super::models::{
     BybitInstrumentInverseResponse, BybitInstrumentLinearResponse, BybitInstrumentOptionResponse,
     BybitInstrumentSpotResponse, BybitKlinesResponse, BybitServerTimeResponse,
@@ -23,128 +25,8 @@ use super::models::{
 };
 use crate::common::models::BybitResponse;
 
-/// Parses a Bybit server time response from raw JSON bytes.
-///
-/// # Errors
-///
-/// Returns an error if deserialization fails.
-pub fn parse_server_time_response(data: &[u8]) -> anyhow::Result<BybitServerTimeResponse> {
-    let response = serde_json::from_slice::<BybitServerTimeResponse>(data)?;
-    validate_response(&response)?;
-    Ok(response)
-}
-
-/// Parses a Bybit spot instruments response from raw JSON bytes.
-///
-/// # Errors
-///
-/// Returns an error if deserialization fails.
-pub fn parse_instruments_spot_response(data: &[u8]) -> anyhow::Result<BybitInstrumentSpotResponse> {
-    let response = serde_json::from_slice::<BybitInstrumentSpotResponse>(data)?;
-    validate_response(&response)?;
-    Ok(response)
-}
-
-/// Parses a Bybit linear instruments response from raw JSON bytes.
-///
-/// # Errors
-///
-/// Returns an error if deserialization fails.
-pub fn parse_instruments_linear_response(
-    data: &[u8],
-) -> anyhow::Result<BybitInstrumentLinearResponse> {
-    let response = serde_json::from_slice::<BybitInstrumentLinearResponse>(data)?;
-    validate_response(&response)?;
-    Ok(response)
-}
-
-/// Parses a Bybit inverse instruments response from raw JSON bytes.
-///
-/// # Errors
-///
-/// Returns an error if deserialization fails.
-pub fn parse_instruments_inverse_response(
-    data: &[u8],
-) -> anyhow::Result<BybitInstrumentInverseResponse> {
-    let response = serde_json::from_slice::<BybitInstrumentInverseResponse>(data)?;
-    validate_response(&response)?;
-    Ok(response)
-}
-
-/// Parses a Bybit option instruments response from raw JSON bytes.
-///
-/// # Errors
-///
-/// Returns an error if deserialization fails.
-pub fn parse_instruments_option_response(
-    data: &[u8],
-) -> anyhow::Result<BybitInstrumentOptionResponse> {
-    let response = serde_json::from_slice::<BybitInstrumentOptionResponse>(data)?;
-    validate_response(&response)?;
-    Ok(response)
-}
-
-/// Parses a Bybit spot tickers response from raw JSON bytes.
-///
-/// # Errors
-///
-/// Returns an error if deserialization fails.
-pub fn parse_tickers_spot_response(data: &[u8]) -> anyhow::Result<BybitTickersSpotResponse> {
-    let response = serde_json::from_slice::<BybitTickersSpotResponse>(data)?;
-    validate_response(&response)?;
-    Ok(response)
-}
-
-/// Parses a Bybit linear tickers response from raw JSON bytes.
-///
-/// # Errors
-///
-/// Returns an error if deserialization fails.
-pub fn parse_tickers_linear_response(data: &[u8]) -> anyhow::Result<BybitTickersLinearResponse> {
-    let response = serde_json::from_slice::<BybitTickersLinearResponse>(data)?;
-    validate_response(&response)?;
-    Ok(response)
-}
-
-/// Parses a Bybit option tickers response from raw JSON bytes.
-///
-/// # Errors
-///
-/// Returns an error if deserialization fails.
-pub fn parse_tickers_option_response(data: &[u8]) -> anyhow::Result<BybitTickersOptionResponse> {
-    let response = serde_json::from_slice::<BybitTickersOptionResponse>(data)?;
-    validate_response(&response)?;
-    Ok(response)
-}
-
-/// Parses a Bybit klines response from raw JSON bytes.
-///
-/// # Errors
-///
-/// Returns an error if deserialization fails.
-pub fn parse_klines_response(data: &[u8]) -> anyhow::Result<BybitKlinesResponse> {
-    let response = serde_json::from_slice::<BybitKlinesResponse>(data)?;
-    validate_response(&response)?;
-    Ok(response)
-}
-
-/// Parses a Bybit trades response from raw JSON bytes.
-///
-/// # Errors
-///
-/// Returns an error if deserialization fails.
-pub fn parse_trades_response(data: &[u8]) -> anyhow::Result<BybitTradesResponse> {
-    let response = serde_json::from_slice::<BybitTradesResponse>(data)?;
-    validate_response(&response)?;
-    Ok(response)
-}
-
-/// Validates that a Bybit response has a successful return code.
-///
-/// # Errors
-///
-/// Returns an error if the response indicates a failure.
-fn validate_response<T>(response: &BybitResponse<T>) -> anyhow::Result<()> {
+fn parse_response<T: DeserializeOwned>(data: &[u8]) -> anyhow::Result<BybitResponse<T>> {
+    let response = serde_json::from_slice::<BybitResponse<T>>(data)?;
     if response.ret_code != 0 {
         anyhow::bail!(
             "Bybit API error {}: {}",
@@ -152,7 +34,103 @@ fn validate_response<T>(response: &BybitResponse<T>) -> anyhow::Result<()> {
             response.ret_msg
         );
     }
-    Ok(())
+    Ok(response)
+}
+
+/// Parses a Bybit server time response from raw JSON bytes.
+///
+/// # Errors
+///
+/// Returns an error if deserialization or validation fails.
+pub fn parse_server_time_response(data: &[u8]) -> anyhow::Result<BybitServerTimeResponse> {
+    parse_response(data)
+}
+
+/// Parses a Bybit spot instruments response from raw JSON bytes.
+///
+/// # Errors
+///
+/// Returns an error if deserialization or validation fails.
+pub fn parse_instruments_spot_response(data: &[u8]) -> anyhow::Result<BybitInstrumentSpotResponse> {
+    parse_response(data)
+}
+
+/// Parses a Bybit linear instruments response from raw JSON bytes.
+///
+/// # Errors
+///
+/// Returns an error if deserialization or validation fails.
+pub fn parse_instruments_linear_response(
+    data: &[u8],
+) -> anyhow::Result<BybitInstrumentLinearResponse> {
+    parse_response(data)
+}
+
+/// Parses a Bybit inverse instruments response from raw JSON bytes.
+///
+/// # Errors
+///
+/// Returns an error if deserialization or validation fails.
+pub fn parse_instruments_inverse_response(
+    data: &[u8],
+) -> anyhow::Result<BybitInstrumentInverseResponse> {
+    parse_response(data)
+}
+
+/// Parses a Bybit option instruments response from raw JSON bytes.
+///
+/// # Errors
+///
+/// Returns an error if deserialization or validation fails.
+pub fn parse_instruments_option_response(
+    data: &[u8],
+) -> anyhow::Result<BybitInstrumentOptionResponse> {
+    parse_response(data)
+}
+
+/// Parses a Bybit spot tickers response from raw JSON bytes.
+///
+/// # Errors
+///
+/// Returns an error if deserialization or validation fails.
+pub fn parse_tickers_spot_response(data: &[u8]) -> anyhow::Result<BybitTickersSpotResponse> {
+    parse_response(data)
+}
+
+/// Parses a Bybit linear tickers response from raw JSON bytes.
+///
+/// # Errors
+///
+/// Returns an error if deserialization or validation fails.
+pub fn parse_tickers_linear_response(data: &[u8]) -> anyhow::Result<BybitTickersLinearResponse> {
+    parse_response(data)
+}
+
+/// Parses a Bybit option tickers response from raw JSON bytes.
+///
+/// # Errors
+///
+/// Returns an error if deserialization or validation fails.
+pub fn parse_tickers_option_response(data: &[u8]) -> anyhow::Result<BybitTickersOptionResponse> {
+    parse_response(data)
+}
+
+/// Parses a Bybit klines response from raw JSON bytes.
+///
+/// # Errors
+///
+/// Returns an error if deserialization or validation fails.
+pub fn parse_klines_response(data: &[u8]) -> anyhow::Result<BybitKlinesResponse> {
+    parse_response(data)
+}
+
+/// Parses a Bybit trades response from raw JSON bytes.
+///
+/// # Errors
+///
+/// Returns an error if deserialization or validation fails.
+pub fn parse_trades_response(data: &[u8]) -> anyhow::Result<BybitTradesResponse> {
+    parse_response(data)
 }
 
 #[cfg(test)]

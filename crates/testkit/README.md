@@ -6,10 +6,10 @@
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-Test utilities and data management for [NautilusTrader](http://nautilustrader.io).
+Test utilities and data management for [NautilusTrader](https://nautilustrader.io).
 
-The `nautilus-testkit` crate provides comprehensive testing utilities including test data management,
-file handling, and common testing patterns. This crate supports robust testing workflows
+The `nautilus-testkit` crate provides testing utilities including test data management,
+file handling, and common testing patterns. This crate supports testing workflows
 across the entire NautilusTrader ecosystem with automated data downloads and validation:
 
 - **Test data management**: Automated downloading and caching of test datasets.
@@ -18,15 +18,13 @@ across the entire NautilusTrader ecosystem with automated data downloads and val
 - **Precision handling**: Support for both 64-bit and 128-bit precision test data.
 - **Common patterns**: Reusable test utilities and helper functions.
 
-## Platform
+## NautilusTrader
 
-[NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-algorithmic trading platform, providing quantitative traders with the ability to backtest
-portfolios of automated trading strategies on historical data with an event-driven engine,
-and also deploy those same strategies live, with no code changes.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
+engine for multi-asset, multi-venue trading systems.
 
-NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
-highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+The system spans research, deterministic simulation, and live execution within a single
+event-driven architecture, providing research-to-live semantic parity.
 
 ## Feature flags
 

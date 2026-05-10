@@ -84,7 +84,7 @@ config_node = TradingNodeConfig(
             dockerized_gateway=dockerized_gateway,
         ),
     },
-    exec_clients=exec_clients,  # type: ignore
+    exec_clients=exec_clients,
     data_engine=LiveDataEngineConfig(
         time_bars_timestamp_on_close=False,
         validate_data_sequence=True,
@@ -105,6 +105,7 @@ for instrument in SANDBOX_INSTRUMENTS:
 
 # Instantiate strategies
 strategies = {}
+
 for instrument in SANDBOX_INSTRUMENTS:
     # Configure your strategy
     strategy_config = EMACrossConfig(

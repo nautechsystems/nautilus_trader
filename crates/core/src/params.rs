@@ -37,11 +37,13 @@ pub struct Params(IndexMap<String, Value>);
 
 impl Params {
     /// Creates an empty `Params` map.
+    #[must_use]
     pub fn new() -> Self {
         Self(IndexMap::new())
     }
 
     /// Creates `Params` from an `IndexMap`.
+    #[must_use]
     pub fn from_index_map(map: IndexMap<String, Value>) -> Self {
         Self(map)
     }
@@ -49,6 +51,7 @@ impl Params {
     /// Extracts a `u64` value from the params map.
     ///
     /// Returns `None` if the key is missing or the value cannot be converted to `u64`.
+    #[must_use]
     pub fn get_u64(&self, key: &str) -> Option<u64> {
         self.get(key).and_then(|v| v.as_u64())
     }
@@ -56,6 +59,7 @@ impl Params {
     /// Extracts an `i64` value from the params map.
     ///
     /// Returns `None` if the key is missing or the value cannot be converted to `i64`.
+    #[must_use]
     pub fn get_i64(&self, key: &str) -> Option<i64> {
         self.get(key).and_then(|v| v.as_i64())
     }
@@ -63,6 +67,11 @@ impl Params {
     /// Extracts a `usize` value from the params map.
     ///
     /// Returns `None` if the key is missing or the value cannot be converted to `usize`.
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "usize is 64-bit on all supported targets"
+    )]
     pub fn get_usize(&self, key: &str) -> Option<usize> {
         self.get(key).and_then(|v| v.as_u64()).map(|n| n as usize)
     }
@@ -70,6 +79,7 @@ impl Params {
     /// Extracts a string value from the params map.
     ///
     /// Returns `None` if the key is missing or the value is not a string.
+    #[must_use]
     pub fn get_str(&self, key: &str) -> Option<&str> {
         self.get(key).and_then(|v| v.as_str())
     }
@@ -77,6 +87,7 @@ impl Params {
     /// Extracts a boolean value from the params map.
     ///
     /// Returns `None` if the key is missing or the value is not a boolean.
+    #[must_use]
     pub fn get_bool(&self, key: &str) -> Option<bool> {
         self.get(key).and_then(|v| v.as_bool())
     }
@@ -84,6 +95,7 @@ impl Params {
     /// Extracts a `f64` value from the params map.
     ///
     /// Returns `None` if the key is missing or the value cannot be converted to `f64`.
+    #[must_use]
     pub fn get_f64(&self, key: &str) -> Option<f64> {
         self.get(key).and_then(|v| v.as_f64())
     }

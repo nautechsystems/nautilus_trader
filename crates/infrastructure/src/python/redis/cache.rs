@@ -20,6 +20,7 @@ use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::{
+    data::{CustomData, DataType},
     identifiers::{AccountId, ClientOrderId, PositionId, TraderId},
     python::{
         account::account_any_to_pyobject, instruments::instrument_any_to_pyobject,
@@ -36,9 +37,17 @@ use crate::redis::{cache::RedisCacheDatabase, queries::DatabaseQueries};
 
 #[pymethods]
 impl RedisCacheDatabase {
+    /// Creates a new `RedisCacheDatabase` instance for the given `trader_id`, `instance_id`, and `config`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The database configuration is missing in `config`.
+    /// - Establishing the Redis connection fails.
+    /// - The command processing task cannot be spawned.
     #[new]
-    fn py_new(trader_id: TraderId, instance_id: UUID4, config_json: Vec<u8>) -> PyResult<Self> {
-        let config = serde_json::from_slice(&config_json).map_err(to_pyvalue_err)?;
+    fn py_new(trader_id: TraderId, instance_id: UUID4, config_json: &[u8]) -> PyResult<Self> {
+        let config = serde_json::from_slice(config_json).map_err(to_pyvalue_err)?;
         let result =
             get_runtime().block_on(async { Self::new(trader_id, instance_id, config).await });
         result.map_err(to_pyruntime_err)
@@ -54,6 +63,11 @@ impl RedisCacheDatabase {
         get_runtime().block_on(async { self.flushdb().await });
     }
 
+    /// Retrieves all keys matching the given `pattern` from Redis for this trader.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying Redis scan operation fails.
     #[pyo3(name = "keys")]
     fn py_keys(&mut self, pattern: &str) -> PyResult<Vec<String>> {
         let result = get_runtime().block_on(async { self.keys(pattern).await });
@@ -65,6 +79,7 @@ impl RedisCacheDatabase {
         let result = get_runtime().block_on(async {
             DatabaseQueries::load_all(&self.con, self.get_encoding(), self.get_trader_key()).await
         });
+
         match result {
             Ok(cache_map) => Python::attach(|py| {
                 let dict = PyDict::new(py);
@@ -138,6 +153,11 @@ impl RedisCacheDatabase {
         }
     }
 
+    /// Reads the value(s) associated with `key` for this trader from Redis.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying Redis read operation fails.
     #[pyo3(name = "read")]
     fn py_read(&mut self, py: Python, key: &str) -> PyResult<Vec<Py<PyAny>>> {
         let result = get_runtime().block_on(async { self.read(key).await });
@@ -153,7 +173,13 @@ impl RedisCacheDatabase {
         }
     }
 
+    /// Reads multiple values using bulk operations for efficiency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying Redis read operation fails.
     #[pyo3(name = "read_bulk")]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_read_bulk(&mut self, py: Python, keys: Vec<String>) -> PyResult<Vec<Option<Py<PyAny>>>> {
         let result = get_runtime().block_on(async { self.read_bulk(&keys).await });
         match result {
@@ -168,18 +194,33 @@ impl RedisCacheDatabase {
         }
     }
 
+    /// Sends an insert command for `key` with optional `payload` to Redis via the background task.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command cannot be sent to the background task channel.
     #[pyo3(name = "insert")]
     fn py_insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
         let payload: Vec<Bytes> = payload.into_iter().map(Bytes::from).collect();
         self.insert(key, Some(payload)).map_err(to_pyvalue_err)
     }
 
+    /// Sends an update command for `key` with optional `payload` to Redis via the background task.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command cannot be sent to the background task channel.
     #[pyo3(name = "update")]
     fn py_update(&mut self, key: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
         let payload: Vec<Bytes> = payload.into_iter().map(Bytes::from).collect();
         self.update(key, Some(payload)).map_err(to_pyvalue_err)
     }
 
+    /// Sends a delete command for `key` with optional `payload` to Redis via the background task.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command cannot be sent to the background task channel.
     #[pyo3(name = "delete")]
     #[pyo3(signature = (key, payload=None))]
     fn py_delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> PyResult<()> {
@@ -188,22 +229,63 @@ impl RedisCacheDatabase {
         self.delete(key, payload).map_err(to_pyvalue_err)
     }
 
+    /// Delete the given order from the database with full index cleanup.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command cannot be sent to the background task channel.
     #[pyo3(name = "delete_order")]
     fn py_delete_order(&mut self, client_order_id: &str) -> PyResult<()> {
         let client_order_id = ClientOrderId::new(client_order_id);
         self.delete_order(&client_order_id).map_err(to_pyvalue_err)
     }
 
+    /// Delete the given position from the database with full index cleanup.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command cannot be sent to the background task channel.
     #[pyo3(name = "delete_position")]
     fn py_delete_position(&mut self, position_id: &str) -> PyResult<()> {
         let position_id = PositionId::new(position_id);
         self.delete_position(&position_id).map_err(to_pyvalue_err)
     }
 
+    /// Delete the given account event from the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command cannot be sent to the background task channel.
     #[pyo3(name = "delete_account_event")]
     fn py_delete_account_event(&mut self, account_id: &str, event_id: &str) -> PyResult<()> {
         let account_id = AccountId::new(account_id);
         self.delete_account_event(&account_id, event_id)
             .map_err(to_pyvalue_err)
+    }
+
+    /// Stores custom data in Redis (key format: `custom:<ts_init_020>:<uuid>`, value: full JSON).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization fails or the insert command cannot be sent.
+    #[pyo3(name = "add_custom_data")]
+    #[expect(clippy::needless_pass_by_value)]
+    fn py_add_custom_data(&mut self, data: CustomData) -> PyResult<()> {
+        self.add_custom_data(&data).map_err(to_pyvalue_err)
+    }
+
+    /// Loads custom data from Redis matching the given `data_type` (blocking).
+    ///
+    /// Spawns the async query on the global Nautilus runtime and blocks until
+    /// the result arrives via a channel. Safe from any thread context (Python,
+    /// test runtimes, plain threads).
+    #[pyo3(name = "load_custom_data")]
+    #[expect(clippy::needless_pass_by_value)]
+    fn py_load_custom_data(
+        &mut self,
+        py: Python<'_>,
+        data_type: DataType,
+    ) -> PyResult<Vec<CustomData>> {
+        py.detach(|| self.load_custom_data(&data_type).map_err(to_pyvalue_err))
     }
 }

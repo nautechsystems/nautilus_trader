@@ -28,6 +28,10 @@ const MAX_PERIOD: usize = 1_024;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
+)]
 pub struct OnBalanceVolume {
     pub period: usize,
     pub value: f64,
@@ -160,6 +164,7 @@ mod tests {
             1000.0, 1200.0, 1500.0, 1800.0, 2000.0, 2200.0, 2500.0, 2800.0, 3000.0, 3200.0, 3500.0,
             3800.0, 4000.0, 4200.0, 4500.0,
         ];
+
         for i in 0..15 {
             obv_10.update_raw(open_values[i], close_values[i], volume_values[i]);
         }

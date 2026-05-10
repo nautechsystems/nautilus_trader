@@ -22,12 +22,12 @@ use chrono::{DateTime, Utc};
 use nautilus_core::{
     AtomicTime, UnixNanos,
     correctness::{check_positive_u64, check_predicate_true, check_valid_string_utf8},
-    formatting::Separable,
+    string::formatting::Separable,
 };
 use ustr::Ustr;
 
 use crate::timer::{
-    TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler, create_valid_interval,
+    TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler, Timer, create_valid_interval,
 };
 
 /// Represents a type of clock.
@@ -84,7 +84,6 @@ pub trait Clock: Debug + Any {
     ///
     /// Returns an error if `name` is invalid, `alert_time` is in the past when not allowed,
     /// or any predicate check fails.
-    #[allow(clippy::too_many_arguments)]
     fn set_time_alert(
         &mut self,
         name: &str,
@@ -115,7 +114,6 @@ pub trait Clock: Debug + Any {
     ///
     /// Returns an error if `name` is invalid, `alert_time_ns` is earlier than now when not allowed,
     /// or any predicate check fails.
-    #[allow(clippy::too_many_arguments)]
     fn set_time_alert_ns(
         &mut self,
         name: &str,
@@ -139,7 +137,7 @@ pub trait Clock: Debug + Any {
     ///
     /// Returns an error if `name` is invalid, `interval` is not positive,
     /// or if any predicate check fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn set_timer(
         &mut self,
         name: &str,
@@ -188,7 +186,7 @@ pub trait Clock: Debug + Any {
     ///
     /// Returns an error if `name` is invalid, `interval_ns` is not positive,
     /// or if any predicate check fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn set_timer_ns(
         &mut self,
         name: &str,
@@ -452,7 +450,7 @@ impl TestClock {
 
         assert!(
             to_time_ns >= from_time_ns,
-            "Invariant violated: time must be non-decreasing, `to_time_ns` {to_time_ns} < `from_time_ns` {from_time_ns}"
+            "Invariant: time must be non-decreasing, `to_time_ns` {to_time_ns} < `from_time_ns` {from_time_ns}"
         );
 
         if set_time {
@@ -501,10 +499,7 @@ impl TestClock {
     }
 
     fn replace_existing_timer_if_needed(&mut self, name: &Ustr) {
-        if self.timer_exists(name) {
-            self.cancel_timer(name.as_str());
-            log::warn!("Timer '{name}' replaced");
-        }
+        replace_existing_timer(&mut self.timers, name);
     }
 }
 
@@ -682,6 +677,22 @@ impl Clock for TestClock {
         self.time = AtomicTime::new(false, UnixNanos::default());
         self.timers = BTreeMap::new();
         self.callbacks.clear();
+    }
+}
+
+pub(crate) fn replace_existing_timer<T: Timer>(timers: &mut BTreeMap<Ustr, T>, name: &Ustr) {
+    let is_expired = timers.get(name).map(|t| t.is_expired());
+    match is_expired {
+        Some(true) => {
+            timers.remove(name);
+        }
+        Some(false) => {
+            if let Some(mut timer) = timers.remove(name) {
+                timer.cancel();
+            }
+            log::warn!("Timer '{name}' replaced");
+        }
+        None => {}
     }
 }
 

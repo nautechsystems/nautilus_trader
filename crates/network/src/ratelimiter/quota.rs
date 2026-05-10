@@ -44,6 +44,10 @@ use super::nanos::Nanos;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")
+)]
 pub struct Quota {
     pub(crate) max_burst: NonZeroU32,
     pub(crate) replenish_1_per: Duration,
@@ -72,7 +76,7 @@ impl Quota {
     /// also assumed to be the maximum burst size.
     #[must_use]
     pub const fn per_minute(max_burst: NonZeroU32) -> Self {
-        let replenish_interval_ns = Duration::from_secs(60).as_nanos() / (max_burst.get() as u128);
+        let replenish_interval_ns = Duration::from_mins(1).as_nanos() / (max_burst.get() as u128);
         Self {
             max_burst,
             replenish_1_per: Duration::from_nanos(replenish_interval_ns as u64),
@@ -103,7 +107,7 @@ impl Quota {
         if replenish_1_per.as_nanos() == 0 {
             None
         } else {
-            #[allow(clippy::missing_panics_doc)]
+            #[expect(clippy::missing_panics_doc)]
             Some(Self {
                 max_burst: NonZeroU32::new(1).unwrap(),
                 replenish_1_per,

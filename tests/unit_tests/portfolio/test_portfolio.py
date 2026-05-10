@@ -44,6 +44,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -3173,6 +3174,65 @@ class TestPortfolio:
         assert margins is not None
         # For margin accounts, margins_maint should return a dict (may be empty if no positions)
 
+    def test_update_account_applies_reported_margin_balances(self):
+        # Arrange
+        account_id = AccountId("DERIBIT-001")
+        initial_state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_000, USDT),
+                    Money(0, USDT),
+                    Money(100_000, USDT),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        updated_state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_000, USDT),
+                    Money(0, USDT),
+                    Money(100_000, USDT),
+                ),
+            ],
+            margins=[
+                MarginBalance(
+                    Money(12.5, USDT),
+                    Money(7.5, USDT),
+                    BTCUSDT_PERP_BINANCE.id,
+                ),
+            ],
+            info={},
+            event_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        self.portfolio.update_account(initial_state)
+
+        # Act
+        self.portfolio.update_account(updated_state)
+
+        # Assert
+        assert self.portfolio.margins_init(account_id=account_id) == {
+            BTCUSDT_PERP_BINANCE.id: Money(12.5, USDT),
+        }
+        assert self.portfolio.margins_maint(account_id=account_id) == {
+            BTCUSDT_PERP_BINANCE.id: Money(7.5, USDT),
+        }
+
     def test_account_method_raises_when_both_none(self):
         # Arrange & Act & Assert
         # The Condition.not_none check raises TypeError with a specific message
@@ -3339,3 +3399,199 @@ class TestPortfolio:
         assert usdt_balance.total == Money(100_000.00000000, USDT)
         assert usdt_balance.locked == Money(0.00000000, USDT)
         assert usdt_balance.free == Money(100_000.00000000, USDT)
+
+    def test_equity_when_no_account_returns_empty_dict(self):
+        # Arrange, Act, Assert
+        assert self.portfolio.equity(SIM) == {}
+
+    def test_equity_cash_account_long_position(self):
+        # Arrange
+        AccountFactory.register_calculated_account("SIM")
+
+        account_id = AccountId("SIM-001")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_000.00, USD),
+                    Money(0.00, USD),
+                    Money(100_000.00, USD),
+                ),
+                AccountBalance(
+                    Money(0.00, AUDUSD_SIM.base_currency),
+                    Money(0.00, AUDUSD_SIM.base_currency),
+                    Money(0.00, AUDUSD_SIM.base_currency),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(state)
+
+        quote = TestDataStubs.quote_tick(
+            instrument=AUDUSD_SIM,
+            bid_price=0.80000,
+            ask_price=0.80010,
+        )
+        self.cache.add_quote_tick(quote)
+        self.portfolio.update_quote_tick(quote)
+
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        self.cache.add_order(order, position_id=None)
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
+        self.exec_engine.process(TestEventStubs.order_accepted(order, account_id=account_id))
+
+        fill = TestEventStubs.order_filled(
+            order=order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-LONG"),
+            last_px=Price.from_str("0.80000"),
+        )
+        self.exec_engine.process(fill)
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.portfolio.update_position(TestEventStubs.position_opened(position))
+
+        # Act
+        account = self.portfolio.account(SIM)
+        mark_values = self.portfolio.mark_values(SIM)
+        equity = self.portfolio.equity(SIM)
+
+        # Assert: long notional = qty (100k) * bid (0.80) = 80,000 USD
+        assert mark_values[USD] == Money(80_000.00, USD)
+        # equity[USD] = balances_total[USD] + mark_values[USD]
+        expected = account.balances_total()[USD].as_decimal() + mark_values[USD].as_decimal()
+        assert equity[USD].as_decimal() == expected
+
+    def test_mark_values_short_position_contributes_negatively(self):
+        # Arrange
+        AccountFactory.register_calculated_account("SIM")
+
+        account_id = AccountId("SIM-001")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_000.00, USD),
+                    Money(0.00, USD),
+                    Money(100_000.00, USD),
+                ),
+                AccountBalance(
+                    Money(100_000.00, AUDUSD_SIM.base_currency),
+                    Money(0.00, AUDUSD_SIM.base_currency),
+                    Money(100_000.00, AUDUSD_SIM.base_currency),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(state)
+
+        quote = TestDataStubs.quote_tick(
+            instrument=AUDUSD_SIM,
+            bid_price=0.80000,
+            ask_price=0.80010,
+        )
+        self.cache.add_quote_tick(quote)
+        self.portfolio.update_quote_tick(quote)
+
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+        self.cache.add_order(order, position_id=None)
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
+        self.exec_engine.process(TestEventStubs.order_accepted(order, account_id=account_id))
+
+        fill = TestEventStubs.order_filled(
+            order=order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-SHORT"),
+            last_px=Price.from_str("0.80010"),
+        )
+        self.exec_engine.process(fill)
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.portfolio.update_position(TestEventStubs.position_opened(position))
+
+        # Act
+        mark_values = self.portfolio.mark_values(SIM)
+
+        # Assert: short uses ask for mark, notional = 100k * 0.8001 = 80,010 USD, signed -80,010
+        assert mark_values[USD] == Money(-80_010.00, USD)
+
+    def test_missing_price_instruments_tracks_unpriced_position(self):
+        # Arrange
+        AccountFactory.register_calculated_account("SIM")
+
+        account_id = AccountId("SIM-001")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_000.00, USD),
+                    Money(0.00, USD),
+                    Money(100_000.00, USD),
+                ),
+                AccountBalance(
+                    Money(0.00, AUDUSD_SIM.base_currency),
+                    Money(0.00, AUDUSD_SIM.base_currency),
+                    Money(0.00, AUDUSD_SIM.base_currency),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(state)
+
+        # No quote added, so the position cannot be priced
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        self.cache.add_order(order, position_id=None)
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
+        self.exec_engine.process(TestEventStubs.order_accepted(order, account_id=account_id))
+
+        fill = TestEventStubs.order_filled(
+            order=order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-UNP"),
+            last_px=Price.from_str("0.80000"),
+        )
+        self.exec_engine.process(fill)
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.portfolio.update_position(TestEventStubs.position_opened(position))
+
+        # Act
+        mark_values = self.portfolio.mark_values(SIM)
+        tracked = self.portfolio.missing_price_instruments(SIM)
+
+        # Assert
+        assert mark_values == {}
+        assert tracked == [AUDUSD_SIM.id]

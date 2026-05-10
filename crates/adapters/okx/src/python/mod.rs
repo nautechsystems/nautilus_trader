@@ -15,6 +15,11 @@
 
 //! Python bindings from `pyo3`.
 
+#![expect(
+    clippy::missing_errors_doc,
+    reason = "errors documented on underlying Rust methods"
+)]
+
 pub mod config;
 pub mod enums;
 pub mod factories;
@@ -23,18 +28,42 @@ pub mod models;
 pub mod urls;
 pub mod websocket;
 
+use std::str::FromStr;
+
+use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use nautilus_system::{
-    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
-    get_global_pyo3_registry,
-};
-use pyo3::prelude::*;
+use nautilus_system::get_global_pyo3_registry;
+use pyo3::{prelude::*, types::PyDict};
 
 use crate::{
+    common::enums::OKXTriggerType,
     config::{OKXDataClientConfig, OKXExecClientConfig},
     factories::{OKXDataClientFactory, OKXExecutionClientFactory},
 };
 
+pub(super) fn extract_optional_string(
+    dict: &Bound<'_, PyDict>,
+    key: &str,
+) -> PyResult<Option<String>> {
+    dict.get_item(key)?
+        .map(|value| value.extract::<String>())
+        .transpose()
+}
+
+pub(super) fn extract_optional_trigger_type(
+    dict: &Bound<'_, PyDict>,
+    key: &str,
+) -> PyResult<Option<OKXTriggerType>> {
+    extract_optional_string(dict, key)?
+        .map(|value| {
+            OKXTriggerType::from_str(&value).map_err(|_| {
+                to_pyvalue_err(format!("Invalid OKX trigger type {value:?} for {key}"))
+            })
+        })
+        .transpose()
+}
+
+#[expect(clippy::needless_pass_by_value)]
 fn extract_okx_data_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -47,6 +76,7 @@ fn extract_okx_data_factory(
     }
 }
 
+#[expect(clippy::needless_pass_by_value)]
 fn extract_okx_exec_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -59,6 +89,7 @@ fn extract_okx_exec_factory(
     }
 }
 
+#[expect(clippy::needless_pass_by_value)]
 fn extract_okx_data_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
     match config.extract::<OKXDataClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
@@ -68,6 +99,7 @@ fn extract_okx_data_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dy
     }
 }
 
+#[expect(clippy::needless_pass_by_value)]
 fn extract_okx_exec_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
     match config.extract::<OKXExecClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
@@ -90,11 +122,13 @@ pub fn okx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::http::models::OKXBalanceDetail>()?;
     m.add_class::<crate::common::enums::OKXInstrumentType>()?;
     m.add_class::<crate::common::enums::OKXContractType>()?;
+    m.add_class::<crate::common::enums::OKXGreeksType>()?;
     m.add_class::<crate::common::enums::OKXMarginMode>()?;
     m.add_class::<crate::common::enums::OKXTradeMode>()?;
     m.add_class::<crate::common::enums::OKXOrderStatus>()?;
     m.add_class::<crate::common::enums::OKXPositionMode>()?;
     m.add_class::<crate::common::enums::OKXVipLevel>()?;
+    m.add_class::<crate::common::enums::OKXEnvironment>()?;
     m.add_class::<crate::common::urls::OKXEndpointType>()?;
     m.add_class::<OKXDataClientConfig>()?;
     m.add_class::<OKXExecClientConfig>()?;
@@ -104,6 +138,7 @@ pub fn okx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(urls::get_okx_ws_url_public, m)?)?;
     m.add_function(wrap_pyfunction!(urls::get_okx_ws_url_private, m)?)?;
     m.add_function(wrap_pyfunction!(urls::get_okx_ws_url_business, m)?)?;
+    m.add_function(wrap_pyfunction!(urls::derive_okx_ws_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::okx_requires_authentication, m)?)?;
 
     let registry = get_global_pyo3_registry();

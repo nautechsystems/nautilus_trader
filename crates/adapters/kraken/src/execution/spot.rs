@@ -17,7 +17,7 @@
 
 use std::{
     future::Future,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -35,15 +35,15 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    UnixNanos,
+    AtomicMap, MUTEX_POISONED, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderSide},
-    events::OrderEventAny,
-    identifiers::{AccountId, ClientId, Venue},
+    enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce, TrailingOffsetType},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
@@ -52,13 +52,17 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::{consts::KRAKEN_VENUE, parse::truncate_cl_ord_id},
+    common::{
+        consts::{KRAKEN_SPOT_POST_ONLY_ERROR, KRAKEN_VENUE},
+        parse::truncate_cl_ord_id,
+    },
     config::KrakenExecClientConfig,
-    http::KrakenSpotHttpClient,
-    websocket::spot_v2::{client::KrakenSpotWebSocketClient, messages::NautilusWsMessage},
+    http::{KrakenSpotHttpClient, spot::client::KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND},
+    websocket::{
+        dispatch::{self, OrderIdentity, WsDispatchState},
+        spot_v2::{client::KrakenSpotWebSocketClient, messages::KrakenSpotWsMessage},
+    },
 };
-
-const MUTEX_POISONED: &str = "mutex poisoned";
 
 /// Kraken Spot execution client.
 ///
@@ -75,6 +79,10 @@ pub struct KrakenSpotExecutionClient {
     cancellation_token: CancellationToken,
     ws_stream_handle: Option<JoinHandle<()>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    order_qty_cache: Arc<AtomicMap<String, f64>>,
+    truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
+    ws_dispatch_state: Arc<WsDispatchState>,
 }
 
 impl KrakenSpotExecutionClient {
@@ -85,7 +93,7 @@ impl KrakenSpotExecutionClient {
             clock,
             core.trader_id,
             core.account_id,
-            AccountType::Margin,
+            AccountType::Cash,
             None,
         );
 
@@ -100,8 +108,10 @@ impl KrakenSpotExecutionClient {
             None,
             None,
             None,
-            config.http_proxy.clone(),
-            config.max_requests_per_second,
+            config.proxy_url.clone(),
+            config
+                .max_requests_per_second
+                .unwrap_or(KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND),
         )?;
 
         let data_config = crate::config::KrakenDataClientConfig {
@@ -112,13 +122,17 @@ impl KrakenSpotExecutionClient {
             base_url: config.base_url.clone(),
             ws_public_url: None,
             ws_private_url: Some(config.ws_url()),
-            http_proxy: config.http_proxy.clone(),
-            ws_proxy: config.ws_proxy.clone(),
+            proxy_url: config.proxy_url.clone(),
             timeout_secs: config.timeout_secs,
             heartbeat_interval_secs: config.heartbeat_interval_secs,
             max_requests_per_second: config.max_requests_per_second,
+            transport_backend: config.transport_backend,
         };
-        let ws = KrakenSpotWebSocketClient::new(data_config, cancellation_token.clone());
+        let ws = KrakenSpotWebSocketClient::new(
+            data_config,
+            cancellation_token.clone(),
+            config.proxy_url.clone(),
+        );
 
         Ok(Self {
             core,
@@ -130,7 +144,33 @@ impl KrakenSpotExecutionClient {
             cancellation_token,
             ws_stream_handle: None,
             pending_tasks: Mutex::new(Vec::new()),
+            instruments: Arc::new(AtomicMap::new()),
+            order_qty_cache: Arc::new(AtomicMap::new()),
+            truncated_id_map: Arc::new(AtomicMap::new()),
+            ws_dispatch_state: Arc::new(WsDispatchState::new()),
         })
+    }
+
+    fn register_order_identity(&self, order: &OrderAny) {
+        // Quote-quantity orders submit a quote amount (e.g. 100 USD), but the
+        // venue reports fills in base units (e.g. 0.001 BTC). Registering the
+        // raw `order.quantity()` would make the cumulative-fill comparison in
+        // the fill-side dispatch mismatch base against quote, leaving the
+        // order "open" forever. These orders instead flow through the
+        // untracked path and the engine reconciles them from status reports.
+        if order.is_quote_quantity() {
+            return;
+        }
+        self.ws_dispatch_state.register_identity(
+            order.client_order_id(),
+            OrderIdentity {
+                strategy_id: order.strategy_id(),
+                instrument_id: order.instrument_id(),
+                order_side: order.order_side(),
+                order_type: order.order_type(),
+                quantity: order.quantity(),
+            },
+        );
     }
 
     /// Returns a reference to the clock.
@@ -161,45 +201,82 @@ impl KrakenSpotExecutionClient {
         tasks.push(handle);
     }
 
-    fn submit_single_order(&self, order: &OrderAny, task_name: &'static str) -> anyhow::Result<()> {
+    fn submit_single_order(&self, order: &OrderAny, task_name: &'static str) {
         if order.is_closed() {
             log::warn!(
                 "Cannot submit closed order: client_order_id={}",
                 order.client_order_id()
             );
-            return Ok(());
+            return;
+        }
+
+        let order_type = order.order_type();
+        let time_in_force = order.time_in_force();
+
+        // FOK only supported for plain limit orders on Kraken Spot
+        if time_in_force == TimeInForce::Fok && order_type != OrderType::Limit {
+            self.emitter.emit_order_denied(
+                order,
+                "FOK time in force only supported for LIMIT orders on Kraken Spot",
+            );
+            return;
+        }
+
+        // Kraken only supports price-based trailing offsets
+        if matches!(
+            order_type,
+            OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+        ) && let Some(offset_type) = order.trailing_offset_type()
+            && offset_type != TrailingOffsetType::Price
+        {
+            self.emitter.emit_order_denied(
+                order,
+                &format!(
+                    "Kraken Spot only supports Price trailing offset type: received {offset_type:?}"
+                ),
+            );
+            return;
         }
 
         let account_id = self.core.account_id;
         let client_order_id = order.client_order_id();
-        let trader_id = order.trader_id();
         let strategy_id = order.strategy_id();
         let instrument_id = order.instrument_id();
         let order_side = order.order_side();
-        let order_type = order.order_type();
         let quantity = order.quantity();
-        let time_in_force = order.time_in_force();
         let expire_time = order.expire_time();
         let price = order.price();
         let trigger_price = order.trigger_price();
+        let trigger_type = order.trigger_type();
+        let trailing_offset = order.trailing_offset();
+        let limit_offset = order.limit_offset();
         let is_reduce_only = order.is_reduce_only();
         let is_post_only = order.is_post_only();
+        let is_quote_quantity = order.is_quote_quantity();
+        let display_qty = order.display_qty();
 
         log::debug!("OrderSubmitted: client_order_id={client_order_id}");
+        self.register_order_identity(order);
         self.emitter.emit_order_submitted(order);
 
-        self.ws
-            .cache_client_order(client_order_id, instrument_id, trader_id, strategy_id);
-
         let kraken_cl_ord_id = truncate_cl_ord_id(&client_order_id);
+
+        // Only cache base-denominated quantities; quote quantities
+        // are not valid for the WS order report fallback path
+        if !is_quote_quantity {
+            self.order_qty_cache
+                .insert(kraken_cl_ord_id.clone(), quantity.as_f64());
+        }
+
         if kraken_cl_ord_id != client_order_id.as_str() {
-            self.ws
-                .cache_truncated_id(kraken_cl_ord_id, client_order_id);
+            self.truncated_id_map
+                .insert(kraken_cl_ord_id, client_order_id);
         }
 
         let http = self.http.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
+        let dispatch_state = self.ws_dispatch_state.clone();
 
         self.spawn_task(task_name, async move {
             let result = http
@@ -214,31 +291,40 @@ impl KrakenSpotExecutionClient {
                     expire_time,
                     price,
                     trigger_price,
+                    trigger_type,
+                    trailing_offset,
+                    limit_offset,
                     is_reduce_only,
                     is_post_only,
+                    is_quote_quantity,
+                    display_qty,
                 )
                 .await;
 
             if let Err(e) = result {
                 let ts_event = clock.get_time_ns();
+                let error_msg = format!("{task_name} error: {e}");
+                let due_post_only = error_msg.contains("POST_ONLY_REJECTED")
+                    || error_msg.contains(KRAKEN_SPOT_POST_ONLY_ERROR);
+                // The order will never appear on the wire, so its dispatch
+                // identity has to be cleaned up here.
+                dispatch_state.cleanup_terminal(&client_order_id);
                 emitter.emit_order_rejected_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
-                    &format!("{task_name} error: {e}"),
+                    &error_msg,
                     ts_event,
-                    false,
+                    due_post_only,
                 );
-                return Err(e);
+                return Ok(());
             }
 
             Ok(())
         });
-
-        Ok(())
     }
 
-    fn cancel_single_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_single_order(&self, cmd: &CancelOrder) {
         let account_id = self.core.account_id;
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
@@ -263,7 +349,6 @@ impl KrakenSpotExecutionClient {
                 )
                 .await
             {
-                log::error!("Cancel order failed: {e}");
                 let ts_event = clock.get_time_ns();
                 emitter.emit_order_cancel_rejected_event(
                     strategy_id,
@@ -277,13 +362,17 @@ impl KrakenSpotExecutionClient {
             }
             Ok(())
         });
-
-        Ok(())
     }
 
     fn spawn_message_handler(&mut self) -> anyhow::Result<()> {
         let stream = self.ws.stream().map_err(|e| anyhow::anyhow!("{e}"))?;
         let emitter = self.emitter.clone();
+        let instruments = self.instruments.clone();
+        let order_qty_cache = self.order_qty_cache.clone();
+        let truncated_id_map = self.truncated_id_map.clone();
+        let dispatch_state = self.ws_dispatch_state.clone();
+        let account_id = self.core.account_id;
+        let clock = self.clock;
         let cancellation_token = self.cancellation_token.clone();
 
         let handle = get_runtime().spawn(async move {
@@ -298,7 +387,16 @@ impl KrakenSpotExecutionClient {
                     msg = stream.next() => {
                         match msg {
                             Some(ws_msg) => {
-                                Self::handle_ws_message(ws_msg, &emitter);
+                                Self::handle_ws_message(
+                                    ws_msg,
+                                    &emitter,
+                                    &dispatch_state,
+                                    &instruments,
+                                    &order_qty_cache,
+                                    &truncated_id_map,
+                                    account_id,
+                                    clock,
+                                );
                             }
                             None => {
                                 log::debug!("Spot execution WebSocket stream ended");
@@ -314,7 +412,7 @@ impl KrakenSpotExecutionClient {
         Ok(())
     }
 
-    fn modify_single_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_single_order(&self, cmd: &ModifyOrder) {
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
         let strategy_id = cmd.strategy_id;
@@ -342,7 +440,6 @@ impl KrakenSpotExecutionClient {
                 )
                 .await
             {
-                log::error!("Modify order failed: {e}");
                 let ts_event = clock.get_time_ns();
                 emitter.emit_order_modify_rejected_event(
                     strategy_id,
@@ -356,8 +453,6 @@ impl KrakenSpotExecutionClient {
             }
             Ok(())
         });
-
-        Ok(())
     }
 
     /// Polls the cache until the account is registered or timeout is reached.
@@ -389,34 +484,41 @@ impl KrakenSpotExecutionClient {
         }
     }
 
-    fn handle_ws_message(msg: NautilusWsMessage, emitter: &ExecutionEventEmitter) {
+    #[expect(clippy::too_many_arguments)]
+    fn handle_ws_message(
+        msg: KrakenSpotWsMessage,
+        emitter: &ExecutionEventEmitter,
+        dispatch_state: &Arc<WsDispatchState>,
+        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+        order_qty_cache: &Arc<AtomicMap<String, f64>>,
+        truncated_id_map: &Arc<AtomicMap<String, ClientOrderId>>,
+        account_id: AccountId,
+        clock: &'static AtomicTime,
+    ) {
         match msg {
-            NautilusWsMessage::OrderRejected(event) => {
-                emitter.send_order_event(OrderEventAny::Rejected(event));
+            KrakenSpotWsMessage::Execution(executions) => {
+                let ts_init = clock.get_time_ns();
+
+                for exec in &executions {
+                    dispatch::spot::execution(
+                        exec,
+                        dispatch_state,
+                        emitter,
+                        instruments,
+                        truncated_id_map,
+                        order_qty_cache,
+                        account_id,
+                        ts_init,
+                    );
+                }
             }
-            NautilusWsMessage::OrderAccepted(event) => {
-                emitter.send_order_event(OrderEventAny::Accepted(event));
-            }
-            NautilusWsMessage::OrderCanceled(event) => {
-                emitter.send_order_event(OrderEventAny::Canceled(event));
-            }
-            NautilusWsMessage::OrderExpired(event) => {
-                emitter.send_order_event(OrderEventAny::Expired(event));
-            }
-            NautilusWsMessage::OrderUpdated(event) => {
-                emitter.send_order_event(OrderEventAny::Updated(event));
-            }
-            NautilusWsMessage::OrderStatusReport(report) => {
-                emitter.send_order_status_report(*report);
-            }
-            NautilusWsMessage::FillReport(report) => {
-                emitter.send_fill_report(*report);
-            }
-            NautilusWsMessage::Reconnected => {
+            KrakenSpotWsMessage::Reconnected => {
                 log::info!("Spot execution WebSocket reconnected");
             }
-            // Data messages are handled by the data client
-            NautilusWsMessage::Data(_) | NautilusWsMessage::Deltas(_) => {}
+            KrakenSpotWsMessage::Ticker(_)
+            | KrakenSpotWsMessage::Trade(_)
+            | KrakenSpotWsMessage::Book { .. }
+            | KrakenSpotWsMessage::Ohlc(_) => {}
         }
     }
 }
@@ -500,7 +602,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                 .await
                 .context("Failed to load Kraken spot instruments")?;
             log::info!("Loaded {} Spot instruments", instruments.len());
-            self.http.cache_instruments(instruments);
+            self.http.cache_instruments(&instruments);
             self.core.set_instruments_initialized();
         }
 
@@ -517,8 +619,6 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             .authenticate()
             .await
             .context("Failed to authenticate spot WebSocket")?;
-
-        self.ws.set_account_id(self.core.account_id);
 
         // Request initial account state and await registration before spawning
         // the message handler. Report events from execution snapshots conflict
@@ -542,14 +642,11 @@ impl ExecutionClient for KrakenSpotExecutionClient {
 
         self.spawn_message_handler()?;
 
-        // Always cache to WS handler (reconnect spawns a fresh handler)
-        let instruments: Vec<_> = self
-            .http
-            .instruments_cache
-            .iter()
-            .map(|entry| entry.value().clone())
-            .collect();
-        self.ws.cache_instruments(instruments);
+        self.instruments.rcu(|m| {
+            for instrument in self.http.instruments_cache.load().values() {
+                m.insert(instrument.id(), instrument.clone());
+            }
+        });
 
         self.ws
             .subscribe_executions(false, false)
@@ -697,7 +794,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         Ok(Some(mass_status))
     }
 
-    fn query_account(&self, cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, cmd: QueryAccount) -> anyhow::Result<()> {
         log::debug!("Querying account: {cmd:?}");
 
         let account_id = self.core.account_id;
@@ -718,7 +815,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         Ok(())
     }
 
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
         log::debug!("Querying order: {cmd:?}");
 
         let venue_order_id = cmd
@@ -746,17 +843,18 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         let order = self
             .core
             .cache()
             .order(&cmd.client_order_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("Order not found in cache: {}", cmd.client_order_id))?;
-        self.submit_single_order(&order, "submit_order")
+        self.submit_single_order(&order, "submit_order");
+        Ok(())
     }
 
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         let orders = self.core.get_orders_for_list(&cmd.order_list)?;
 
         log::info!(
@@ -765,22 +863,147 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             orders.len()
         );
 
+        let mut order_tuples = Vec::with_capacity(orders.len());
+        let mut order_meta = Vec::with_capacity(orders.len());
+
         for order in &orders {
-            self.submit_single_order(order, "submit_order_list")?;
+            if order.is_closed() {
+                log::warn!(
+                    "Cannot submit closed order: client_order_id={}",
+                    order.client_order_id()
+                );
+                continue;
+            }
+
+            if order.time_in_force() == TimeInForce::Fok && order.order_type() != OrderType::Limit {
+                self.emitter.emit_order_denied(
+                    order,
+                    "FOK time in force only supported for LIMIT orders on Kraken Spot",
+                );
+                continue;
+            }
+
+            if matches!(
+                order.order_type(),
+                OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+            ) && let Some(offset_type) = order.trailing_offset_type()
+                && offset_type != TrailingOffsetType::Price
+            {
+                self.emitter.emit_order_denied(
+                    order,
+                    &format!(
+                        "Kraken Spot only supports Price trailing offset type: received {offset_type:?}"
+                    ),
+                );
+                continue;
+            }
+
+            let client_order_id = order.client_order_id();
+            let kraken_cl_ord_id = truncate_cl_ord_id(&client_order_id);
+
+            self.register_order_identity(order);
+            self.emitter.emit_order_submitted(order);
+
+            if !order.is_quote_quantity() {
+                self.order_qty_cache
+                    .insert(kraken_cl_ord_id.clone(), order.quantity().as_f64());
+            }
+
+            if kraken_cl_ord_id != client_order_id.as_str() {
+                self.truncated_id_map
+                    .insert(kraken_cl_ord_id, client_order_id);
+            }
+
+            order_tuples.push((
+                order.instrument_id(),
+                client_order_id,
+                order.order_side(),
+                order.order_type(),
+                order.quantity(),
+                order.time_in_force(),
+                order.expire_time(),
+                order.price(),
+                order.trigger_price(),
+                order.trigger_type(),
+                order.trailing_offset(),
+                order.limit_offset(),
+                order.is_reduce_only(),
+                order.is_post_only(),
+                order.is_quote_quantity(),
+                order.display_qty(),
+            ));
+
+            order_meta.push((order.strategy_id(), order.instrument_id(), client_order_id));
         }
+
+        if order_tuples.is_empty() {
+            return Ok(());
+        }
+
+        let http = self.http.clone();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+        let dispatch_state = self.ws_dispatch_state.clone();
+
+        self.spawn_task("submit_order_list", async move {
+            match http.submit_orders_batch(order_tuples).await {
+                Ok(statuses) => {
+                    // The HTTP helper returns one status per input tuple, including validation failures
+                    for (i, status) in statuses.iter().enumerate() {
+                        if status != "placed"
+                            && let Some((strategy_id, instrument_id, client_order_id)) =
+                                order_meta.get(i)
+                        {
+                            let ts_event = clock.get_time_ns();
+                            let due_post_only = status.contains("POST_ONLY_REJECTED")
+                                || status.contains(KRAKEN_SPOT_POST_ONLY_ERROR);
+                            dispatch_state.cleanup_terminal(client_order_id);
+                            emitter.emit_order_rejected_event(
+                                *strategy_id,
+                                *instrument_id,
+                                *client_order_id,
+                                &format!("submit_order_list batch item rejected: {status}"),
+                                ts_event,
+                                due_post_only,
+                            );
+                        }
+                    }
+                    Ok(())
+                }
+                Err(e) => {
+                    let ts_event = clock.get_time_ns();
+                    let error_msg = format!("submit_order_list batch error: {e}");
+
+                    for (strategy_id, instrument_id, client_order_id) in &order_meta {
+                        dispatch_state.cleanup_terminal(client_order_id);
+                        emitter.emit_order_rejected_event(
+                            *strategy_id,
+                            *instrument_id,
+                            *client_order_id,
+                            &error_msg,
+                            ts_event,
+                            false,
+                        );
+                    }
+                    Ok(())
+                }
+            }
+        });
 
         Ok(())
     }
 
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
-        self.modify_single_order(cmd)
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
+        self.modify_single_order(&cmd);
+        Ok(())
     }
 
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
-        self.cancel_single_order(cmd)
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
+        self.cancel_single_order(&cmd);
+        Ok(())
     }
 
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
         if cmd.order_side == OrderSide::NoOrderSide {
@@ -790,7 +1013,6 @@ impl ExecutionClient for KrakenSpotExecutionClient {
 
             self.spawn_task("cancel_all_orders", async move {
                 if let Err(e) = http.inner.cancel_all_orders().await {
-                    log::error!("Cancel all orders failed: {e}");
                     anyhow::bail!("Cancel all orders failed: {e}");
                 }
                 Ok(())
@@ -858,7 +1080,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
         log::info!(
             "Batch canceling orders: instrument_id={}, count={}",
             cmd.instrument_id,
@@ -866,76 +1088,9 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         );
 
         for cancel in &cmd.cancels {
-            self.cancel_single_order(cancel)?;
+            self.cancel_single_order(cancel);
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{cell::RefCell, rc::Rc};
-
-    use nautilus_common::cache::Cache;
-    use nautilus_model::{
-        enums::AccountType,
-        identifiers::{AccountId, ClientId, TraderId},
-    };
-    use rstest::rstest;
-
-    use super::*;
-    use crate::{common::enums::KrakenProductType, config::KrakenExecClientConfig};
-
-    fn create_test_core() -> ExecutionClientCore {
-        let cache = Rc::new(RefCell::new(Cache::default()));
-        ExecutionClientCore::new(
-            TraderId::from("TESTER-001"),
-            ClientId::from("KRAKEN"),
-            *KRAKEN_VENUE,
-            OmsType::Hedging,
-            AccountId::from("KRAKEN-001"),
-            AccountType::Margin,
-            None,
-            cache,
-        )
-    }
-
-    #[rstest]
-    fn test_spot_exec_client_new() {
-        let config = KrakenExecClientConfig {
-            product_type: KrakenProductType::Spot,
-            api_key: "test_key".to_string(),
-            api_secret: "test_secret".to_string(),
-            ..Default::default()
-        };
-
-        let client = KrakenSpotExecutionClient::new(create_test_core(), config);
-        assert!(client.is_ok());
-
-        let client = client.unwrap();
-        assert_eq!(client.client_id(), ClientId::from("KRAKEN"));
-        assert_eq!(client.account_id(), AccountId::from("KRAKEN-001"));
-        assert_eq!(client.venue(), *KRAKEN_VENUE);
-        assert!(!client.is_connected());
-    }
-
-    #[rstest]
-    fn test_spot_exec_client_start_stop() {
-        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
-        nautilus_common::live::runner::set_exec_event_sender(sender);
-
-        let config = KrakenExecClientConfig {
-            product_type: KrakenProductType::Spot,
-            api_key: "test_key".to_string(),
-            api_secret: "test_secret".to_string(),
-            ..Default::default()
-        };
-
-        let mut client = KrakenSpotExecutionClient::new(create_test_core(), config).unwrap();
-
-        assert!(client.start().is_ok());
-        assert!(client.stop().is_ok());
-        assert!(!client.is_connected());
     }
 }

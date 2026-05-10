@@ -159,7 +159,7 @@ pub extern "C" fn orderbook_apply_delta(book: &mut OrderBook_API, delta: &OrderB
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_apply_deltas(book: &mut OrderBook_API, deltas: &OrderBookDeltas_API) {
     // Clone will actually copy the contents of the `deltas` vec
-    if let Err(e) = book.apply_deltas_unchecked(deltas.deref()) {
+    if let Err(e) = book.apply_deltas_unchecked(deltas) {
         log::error!("Failed to apply order book deltas: {e}");
     }
 }

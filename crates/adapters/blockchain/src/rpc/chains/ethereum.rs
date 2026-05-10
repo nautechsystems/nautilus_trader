@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_model::defi::chain::chains;
+use nautilus_network::websocket::TransportBackend;
 
 use crate::rpc::{
     BlockchainRpcClient, core::CoreBlockchainRpcClient, error::BlockchainRpcClientError,
@@ -26,8 +27,9 @@ pub struct EthereumRpcClient {
 }
 
 impl EthereumRpcClient {
-    pub fn new(wss_rpc_url: String) -> Self {
-        let base_client = CoreBlockchainRpcClient::new(chains::ETHEREUM.clone(), wss_rpc_url);
+    pub fn new(wss_rpc_url: String, proxy_url: Option<String>) -> Self {
+        let base_client =
+            CoreBlockchainRpcClient::new(chains::ETHEREUM.clone(), wss_rpc_url, proxy_url);
 
         Self { base_client }
     }
@@ -49,5 +51,9 @@ impl BlockchainRpcClient for EthereumRpcClient {
 
     async fn next_rpc_message(&mut self) -> Result<BlockchainMessage, BlockchainRpcClientError> {
         self.base_client.next_rpc_message().await
+    }
+
+    fn set_transport_backend(&mut self, backend: TransportBackend) {
+        self.base_client.set_transport_backend(backend);
     }
 }

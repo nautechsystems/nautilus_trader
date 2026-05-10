@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Order execution system for [NautilusTrader](http://nautilustrader.io).
+//! Order execution system for [NautilusTrader](https://nautilustrader.io).
 //!
-//! The `nautilus-execution` crate provides a comprehensive order execution system that handles the complete
+//! The `nautilus-execution` crate provides an order execution system that handles the complete
 //! order lifecycle from submission to fill processing. This includes sophisticated order matching,
 //! execution venue integration, and advanced order type emulation:
 //!
@@ -29,17 +29,15 @@
 //!
 //! The crate supports both live trading environments (with real execution clients) and simulated
 //! environments (with matching engines), making it suitable for production trading, strategy
-//! development, and comprehensive backtesting.
+//! development, and backtesting.
 //!
-//! # Platform
+//! # NautilusTrader
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-//! algorithmic trading platform, providing quantitative traders with the ability to backtest
-//! portfolios of automated trading strategies on historical data with an event-driven engine,
-//! and also deploy those same strategies live, with no code changes.
+//! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
+//! engine for multi-asset, multi-venue trading systems.
 //!
-//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
-//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+//! The system spans research, deterministic simulation, and live execution within a single
+//! event-driven architecture, providing research-to-live semantic parity.
 //!
 //! # Feature Flags
 //!

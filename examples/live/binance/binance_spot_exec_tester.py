@@ -22,6 +22,7 @@ from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceExecClientConfig
 from nautilus_trader.adapters.binance import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance import BinanceLiveExecClientFactory
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -39,7 +40,7 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # Strategy config params
 symbol = "ETHUSDT"
 instrument_id = InstrumentId.from_str(f"{symbol}.{BINANCE}")
-order_qty = Decimal("0.02")
+order_qty = Decimal("0.01")
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -78,16 +79,14 @@ config_node = TradingNodeConfig(
     # streaming=StreamingConfig(catalog_path="catalog"),
     data_clients={
         BINANCE: BinanceDataClientConfig(
-            api_key=None,  # 'BINANCE_API_KEY' env var
-            api_secret=None,  # 'BINANCE_API_SECRET' env var
+            environment=BinanceEnvironment.LIVE,
             account_type=BinanceAccountType.SPOT,
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
     exec_clients={
         BINANCE: BinanceExecClientConfig(
-            api_key=None,  # 'BINANCE_API_KEY' env var
-            api_secret=None,  # 'BINANCE_API_SECRET' env var
+            environment=BinanceEnvironment.LIVE,
             account_type=BinanceAccountType.SPOT,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             max_retries=3,
@@ -111,9 +110,11 @@ config_strat = ExecTesterConfig(
     # open_position_on_start_qty=order_qty,
     enable_limit_buys=True,
     enable_limit_sells=False,
+    use_post_only=True,
     # enable_stop_buys=True,
     # enable_stop_sells=True,
     # tob_offset_ticks=0,
+    # test_reject_post_only=True,
     log_data=False,
 )
 

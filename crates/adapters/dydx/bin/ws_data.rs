@@ -40,9 +40,12 @@
 use std::{env, time::Duration};
 
 use nautilus_dydx::{
-    common::consts::{DYDX_TESTNET_HTTP_URL, DYDX_TESTNET_WS_URL},
+    common::{
+        consts::{DYDX_TESTNET_HTTP_URL, DYDX_TESTNET_WS_URL},
+        enums::DydxNetwork,
+    },
     http::client::DydxHttpClient,
-    websocket::{client::DydxWebSocketClient, handler::HandlerCommand},
+    websocket::client::DydxWebSocketClient,
 };
 use nautilus_model::{
     data::{BarSpecification, BarType},
@@ -78,17 +81,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
     };
 
-    let is_testnet = http_url.contains("testnet") || ws_url.contains("testnet");
+    let network = if http_url.contains("testnet") || ws_url.contains("testnet") {
+        DydxNetwork::Testnet
+    } else {
+        DydxNetwork::Mainnet
+    };
 
     log::info!("Connecting to dYdX HTTP API: {http_url}");
     log::info!("Connecting to dYdX WebSocket: {ws_url}");
-    log::info!(
-        "Environment: {}",
-        if is_testnet { "TESTNET" } else { "MAINNET" }
-    );
+    log::info!("Environment: {network}");
     log::info!("");
 
-    let http_client = DydxHttpClient::new(Some(http_url), Some(30), None, is_testnet, None)?;
+    let http_client = DydxHttpClient::new(Some(http_url), 30, None, network, None)?;
     let instruments = http_client.request_instruments(None, None, None).await?;
 
     log::info!("Fetched {} instruments from HTTP", instruments.len());
@@ -98,7 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Using instrument: {instrument_id}");
     log::info!("");
 
-    let mut ws_client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut ws_client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     ws_client.cache_instruments(instruments);
 
     ws_client.connect().await?;
@@ -126,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ticker = instrument_id.symbol.as_str().trim_end_matches("-PERP");
             let topic = format!("{ticker}/1MIN");
 
-            ws_client.send_command(HandlerCommand::RegisterBarType { topic, bar_type })?;
+            ws_client.bar_types().insert(topic, bar_type);
 
             log::info!("Subscribing to 1-minute candles for {instrument_id}");
             ws_client.subscribe_candles(instrument_id, "1MIN").await?;
@@ -164,7 +168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ticker = instrument_id.symbol.as_str().trim_end_matches("-PERP");
             let topic = format!("{ticker}/1MIN");
 
-            ws_client.send_command(HandlerCommand::RegisterBarType { topic, bar_type })?;
+            ws_client.bar_types().insert(topic, bar_type);
 
             log::info!("- Subscribing to 1-minute candles");
 

@@ -25,14 +25,19 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl SyntheticInstrument {
+    /// Represents a synthetic instrument with prices derived from component instruments using a
+    /// formula.
+    ///
+    /// The `id` for the synthetic will become `{symbol}.{SYNTH}`.
     #[new]
     #[pyo3(signature = (symbol, price_precision, components, formula, ts_event, ts_init))]
     fn py_new(
         symbol: Symbol,
         price_precision: u8,
         components: Vec<InstrumentId>,
-        formula: String,
+        formula: &str,
         ts_event: u64,
         ts_init: u64,
     ) -> PyResult<Self> {
@@ -97,21 +102,36 @@ impl SyntheticInstrument {
         self.ts_init.as_u64()
     }
 
+    /// Returns whether the given formula compiles against this instrument's components.
     #[pyo3(name = "is_valid_formula")]
     fn py_is_valid_formula(&self, formula: &str) -> bool {
         self.is_valid_formula(formula)
     }
 
+    /// Replaces the derivation formula, recompiling it against the existing components.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parsing the new formula fails.
     #[pyo3(name = "change_formula")]
-    fn py_change_formula(&mut self, formula: String) -> PyResult<()> {
+    fn py_change_formula(&mut self, formula: &str) -> PyResult<()> {
         self.change_formula(formula).map_err(to_pyvalue_err)
     }
 
+    /// Calculates the price of the synthetic instrument based on the given component input prices
+    /// provided as an array of `f64` values.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input length does not match, any input is non-finite, or formula
+    /// evaluation fails.
     #[pyo3(name = "calculate")]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_calculate(&mut self, inputs: Vec<f64>) -> PyResult<Price> {
         self.calculate(&inputs).map_err(to_pyvalue_err)
     }
 
+    /// Calculates the price of the synthetic instrument based on component input prices provided as a map.
     #[pyo3(name = "calculate_from_map")]
     fn py_calculate_from_map(
         &mut self,

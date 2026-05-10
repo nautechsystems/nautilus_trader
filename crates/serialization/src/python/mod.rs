@@ -15,6 +15,11 @@
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "errors documented on underlying Rust methods"
+)]
+
 #[cfg(feature = "arrow")]
 pub mod arrow;
 
@@ -65,6 +70,14 @@ pub fn serialization(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         )?)?;
         m.add_function(wrap_pyfunction!(
             crate::python::arrow::py_index_prices_to_arrow_record_batch_bytes,
+            m
+        )?)?;
+        m.add_function(wrap_pyfunction!(
+            crate::python::arrow::py_instrument_status_to_arrow_record_batch_bytes,
+            m
+        )?)?;
+        m.add_function(wrap_pyfunction!(
+            crate::python::arrow::py_instrument_status_from_arrow_record_batch_bytes,
             m
         )?)?;
         m.add_function(wrap_pyfunction!(

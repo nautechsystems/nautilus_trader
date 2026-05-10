@@ -13,6 +13,7 @@ This approach combines Python's simplicity and ecosystem with Rust's performance
 ## Contents
 
 - [Environment Setup](environment_setup.md)
+- [Design Principles](design_principles.md)
 - [Coding Standards](coding_standards.md)
 - [Rust](rust.md)
 - [Python](python.md)

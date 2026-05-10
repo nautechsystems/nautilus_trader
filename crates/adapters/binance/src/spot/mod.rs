@@ -45,6 +45,7 @@ pub mod data;
 pub mod enums;
 pub mod execution;
 pub mod http;
+pub mod sbe;
 pub mod websocket;
 
 // Re-export main client types

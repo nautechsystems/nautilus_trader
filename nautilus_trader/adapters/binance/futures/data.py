@@ -25,7 +25,6 @@ from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesM
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceAllMsg
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceData
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceMsg
-from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesTradeMsg
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.cache.cache import Cache
@@ -38,7 +37,6 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 
 
@@ -83,6 +81,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         config: BinanceDataClientConfig,
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURES,
         name: str | None = None,
+        base_url_ws_public: str | None = None,
     ) -> None:
         PyCondition.is_true(
             account_type.is_futures,
@@ -109,6 +108,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
             base_url_ws=base_url_ws,
             name=name,
             config=config,
+            base_url_ws_public=base_url_ws_public,
         )
 
         # Register additional futures websocket handlers
@@ -116,7 +116,6 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         self._ws_handlers["!markPrice@arr"] = self._handle_mark_price_all
 
         # Websocket msgspec decoders
-        self._decoder_futures_trade_msg = msgspec.json.Decoder(BinanceFuturesTradeMsg)
         self._decoder_futures_mark_price_msg = msgspec.json.Decoder(BinanceFuturesMarkPriceMsg)
         self._decoder_futures_mark_price_all_msg = msgspec.json.Decoder(
             BinanceFuturesMarkPriceAllMsg,
@@ -136,24 +135,11 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         book_buffer: list[OrderBookDelta | OrderBookDeltas] | None = self._book_buffer.get(
             instrument_id,
         )
+
         if book_buffer is not None:
             book_buffer.append(book_snapshot)
         else:
             self._handle_data(book_snapshot)
-
-    def _handle_trade(self, raw: bytes) -> None:
-        # NOTE @trade is an undocumented endpoint for Futures exchanges
-        msg = self._decoder_futures_trade_msg.decode(raw)
-        instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        try:
-            trade_tick: TradeTick = msg.data.parse_to_trade_tick(
-                instrument_id=instrument_id,
-                ts_init=self._clock.timestamp_ns(),
-            )
-        except ValueError as e:
-            self._log.debug(f"Error handling trade tick message {raw!r}, {e}")
-        else:
-            self._handle_data(trade_tick)
 
     def _handle_mark_price_data(self, data: BinanceFuturesMarkPriceData) -> None:
         instrument_id: InstrumentId = self._get_cached_instrument_id(data.s)

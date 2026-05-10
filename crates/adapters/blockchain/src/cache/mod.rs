@@ -334,6 +334,7 @@ impl BlockchainCache {
                 block_timestamps.len(),
                 block_timestamps.last().unwrap().number,
             );
+
             for block in block_timestamps {
                 self.block_timestamps.insert(block.number, block.timestamp);
             }

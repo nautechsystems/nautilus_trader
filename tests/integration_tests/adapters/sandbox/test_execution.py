@@ -87,6 +87,22 @@ async def test_connect(exec_client):
 
 
 @pytest.mark.asyncio
+async def test_generate_mass_status_has_account_id(exec_client):
+    # Arrange
+    exec_client.connect()
+    await asyncio.sleep(0)
+
+    # Act
+    mass_status = await exec_client.generate_mass_status()
+
+    # Assert
+    assert mass_status is not None
+    assert mass_status.account_id is not None
+    assert mass_status.account_id.value == "SANDBOX-001"
+    mass_status.to_pyo3()  # Would raise AttributeError if account_id was None
+
+
+@pytest.mark.asyncio
 async def test_submit_order_success(exec_client, instrument, strategy, events):
     # Arrange
     exec_client.connect()

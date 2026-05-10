@@ -58,8 +58,31 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     def from_uri(
         cls,
         uri: str,
-        storage_options: dict[str, str] | None = None,
+        fs_storage_options: dict[str, str] | None = None,
+        fs_rust_storage_options: dict[str, str] | None = None,
     ) -> BaseDataCatalog:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_missing_intervals_for_request(
+        self,
+        start: int,
+        end: int,
+        data_cls: type,
+        identifier: str | None = None,
+    ) -> list[tuple[int, int]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def write_data(
+        self,
+        data: list,
+        start: int | None = None,
+        end: int | None = None,
+        data_cls: type | None = None,
+        identifier: str | None = None,
+        **kwargs: Any,
+    ) -> None:
         raise NotImplementedError
 
     # -- QUERIES -----------------------------------------------------------------------------------

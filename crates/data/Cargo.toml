@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_data"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = []
@@ -31,6 +31,18 @@ ffi = [
   "streaming",
 ]
 high-precision = ["nautilus-model/high-precision"]
+extension-module = [
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+  "pyo3/extension-module",
+]
+python = [
+  "nautilus-core/python",
+  "nautilus-model/python",
+  "nautilus-persistence?/python",
+  "pyo3",
+  "pyo3-stub-gen",
+]
 defi = ["nautilus-common/defi", "nautilus-model/defi", "alloy-primitives"]
 
 [package.metadata.docs.rs]
@@ -46,14 +58,19 @@ nautilus-persistence = { workspace = true, optional = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+bon = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
+serde = { workspace = true }
 ustr = { workspace = true }
 
 alloy-primitives = { workspace = true, optional = true }
+pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+proptest = { workspace = true }
 rstest = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt"] }

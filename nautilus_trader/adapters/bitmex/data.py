@@ -28,6 +28,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
+from nautilus_trader.core.nautilus_pyo3 import BitmexEnvironment
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
@@ -111,8 +112,13 @@ class BitmexDataClient(LiveMarketDataClient):
         # Configuration
         self._config = config
         self._active_only = True  # Always use active instruments for live clients
+        self._env = (
+            config.environment
+            if config.environment is not None
+            else (BitmexEnvironment.TESTNET if config.testnet else BitmexEnvironment.MAINNET)
+        )
 
-        self._log.info(f"{config.testnet=}", LogColor.BLUE)
+        self._log.info(f"environment={self._env}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
@@ -121,8 +127,7 @@ class BitmexDataClient(LiveMarketDataClient):
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.max_requests_per_second=}", LogColor.BLUE)
         self._log.info(f"{config.max_requests_per_minute=}", LogColor.BLUE)
-        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = client
@@ -138,7 +143,8 @@ class BitmexDataClient(LiveMarketDataClient):
             api_secret=config.api_secret,
             account_id=None,  # Not required for data
             heartbeat=30,
-            testnet=config.testnet,
+            environment=self._env,
+            proxy_url=config.proxy_url,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
         self._log.info(f"WebSocket URL {ws_url}", LogColor.BLUE)
@@ -192,7 +198,7 @@ class BitmexDataClient(LiveMarketDataClient):
     def _determine_ws_url(self, config: BitmexDataClientConfig) -> str:
         if config.base_url_ws:
             return config.base_url_ws
-        elif config.testnet:
+        elif self._env == BitmexEnvironment.TESTNET:
             return "wss://testnet.bitmex.com/realtime"
         else:
             return "wss://ws.bitmex.com/realtime"
@@ -318,22 +324,29 @@ class BitmexDataClient(LiveMarketDataClient):
         await self._ws_client.unsubscribe_instrument(pyo3_instrument_id)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
-        instruments = await self._http_client.request_instruments(self._active_only)
-        for instrument in instruments:
-            self._handle_instrument(instrument)
-        self._send_response(
-            msg_type=type(request),
-            correlation_id=request.id,
+        pyo3_instruments = await self._http_client.request_instruments(self._active_only)
+        instruments = [transform_instrument_from_pyo3(i) for i in pyo3_instruments]
+        self._handle_instruments(
+            request.venue,
+            instruments,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
         )
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
-        instruments = await self._http_client.request_instruments(self._active_only)
-        for instrument in instruments:
-            if instrument.id == request.instrument_id:
-                self._handle_instrument(instrument)
-                self._send_response(
-                    msg_type=type(request),
-                    correlation_id=request.id,
+        pyo3_instruments = await self._http_client.request_instruments(self._active_only)
+        pyo3_target_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
+        for pyo3_instrument in pyo3_instruments:
+            if pyo3_instrument.id == pyo3_target_id:
+                instrument = transform_instrument_from_pyo3(pyo3_instrument)
+                self._handle_instrument(
+                    instrument,
+                    request.id,
+                    request.start,
+                    request.end,
+                    request.params,
                 )
                 return
 
@@ -395,6 +408,7 @@ class BitmexDataClient(LiveMarketDataClient):
             or (spec.aggregation == BarAggregation.HOUR and spec.step == 1)
             or (spec.aggregation == BarAggregation.DAY and spec.step == 1)
         )
+
         if not supported:
             self._log.error(
                 f"Cannot request {bar_type} bars: unsupported BitMEX specification",

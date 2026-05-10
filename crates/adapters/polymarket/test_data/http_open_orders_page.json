@@ -15,7 +15,7 @@
       "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
       "expiration": null,
       "order_type": "GTC",
-      "created_at": 1703875200001
+      "created_at": 1703875200
     },
     {
       "associate_trades": null,
@@ -32,7 +32,7 @@
       "asset_id": "52114319501245915516055106046884209969926127482827954674443846427813813222426",
       "expiration": null,
       "order_type": "GTD",
-      "created_at": 1703875200002
+      "created_at": 1703875201
     }
   ],
   "next_cursor": "LTE="

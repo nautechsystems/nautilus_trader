@@ -1,0 +1,14 @@
+# Zizmor configuration for GitHub Actions security auditing
+#
+# github-env: flags all writes to $GITHUB_ENV as potentially dangerous.
+# Our usage is safe because all values come from trusted sources (system
+# commands, file reads), not user-controlled or external input.
+#
+# secrets-outside-env: flags secrets used outside env blocks. Our usage
+# patterns are intentional and reviewed.
+
+rules:
+  secrets-outside-env:
+    disable: true
+  github-env:
+    disable: true

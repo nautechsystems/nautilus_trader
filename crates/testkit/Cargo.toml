@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_testkit"
-crate-type = ["rlib", "staticlib"]
+crate-type = ["rlib"]
 
 [features]
 default = []
@@ -36,6 +36,7 @@ python = [
   "nautilus-model/python",
   "nautilus-trading/python",
   "pyo3",
+  "pyo3-stub-gen",
 ]
 high-precision = ["nautilus-model/high-precision"]
 
@@ -51,19 +52,21 @@ nautilus-trading = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 aws-lc-rs = { workspace = true }
+bon = { workspace = true }
 chrono = { workspace = true }
-hex = { workspace = true }
 indexmap = { workspace = true }
 itchy = { workspace = true }
 log = { workspace = true }
 parquet = { workspace = true, features = ["zstd"] }
 rand = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
 rust_decimal = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 arrow = { workspace = true }

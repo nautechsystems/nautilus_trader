@@ -24,6 +24,7 @@ use hypersync_client::{
     simple_types::Log,
 };
 use nautilus_common::live::get_runtime;
+use nautilus_core::hex;
 use nautilus_model::{
     defi::{Block, DexType, SharedChain},
     identifiers::InstrumentId,
@@ -114,7 +115,7 @@ impl HyperSyncClient {
         &mut self,
         dex: &DexType,
         block: u64,
-        contract_addresses: Vec<Address>,
+        contract_addresses: &[Address],
         swap_event_encoded_signature: String,
         mint_event_encoded_signature: String,
         burn_event_encoded_signature: String,
@@ -128,7 +129,7 @@ impl HyperSyncClient {
             block,
             Some(block + 1),
             contract_addresses,
-            topics,
+            &topics,
         );
         let tx = if let Some(tx) = &self.tx {
             tx.clone()
@@ -173,13 +174,13 @@ impl HyperSyncClient {
                             for log in batch {
                                 let event_signature = match log.topics.first().and_then(|t| t.as_ref()) {
                                     Some(log_argument) => {
-                                        format!("0x{}", hex::encode(log_argument.as_ref()))
+                                        hex::encode_prefixed(log_argument.as_ref())
                                     }
                                     None => continue,
                                 };
 
                                 if event_signature == swap_event_encoded_signature {
-                                    match dex_extended.parse_swap_event_hypersync(log.clone()) {
+                                    match dex_extended.parse_swap_event_hypersync(&log) {
                                         Ok(swap_event) => {
                                             if let Err(e) =
                                                 tx.send(BlockchainMessage::SwapEvent(swap_event))
@@ -194,7 +195,7 @@ impl HyperSyncClient {
                                         }
                                     }
                                 } else if event_signature == mint_event_encoded_signature {
-                                    match dex_extended.parse_mint_event_hypersync(log.clone()) {
+                                    match dex_extended.parse_mint_event_hypersync(&log) {
                                         Ok(swap_event) => {
                                             if let Err(e) =
                                                 tx.send(BlockchainMessage::MintEvent(swap_event))
@@ -209,7 +210,7 @@ impl HyperSyncClient {
                                         }
                                     }
                                 } else if event_signature == burn_event_encoded_signature {
-                                    match dex_extended.parse_burn_event_hypersync(log.clone()) {
+                                    match dex_extended.parse_burn_event_hypersync(&log) {
                                         Ok(swap_event) => {
                                             if let Err(e) =
                                                 tx.send(BlockchainMessage::BurnEvent(swap_event))
@@ -252,8 +253,8 @@ impl HyperSyncClient {
         let query = Self::construct_contract_events_query(
             from_block,
             to_block,
-            vec![*contract_address],
-            topics,
+            &[*contract_address],
+            &topics,
         );
 
         let mut rx = self
@@ -457,8 +458,8 @@ impl HyperSyncClient {
     fn construct_contract_events_query(
         from_block: u64,
         to_block: Option<u64>,
-        contract_addresses: Vec<Address>,
-        topics: Vec<&str>,
+        contract_addresses: &[Address],
+        topics: &[&str],
     ) -> Query {
         let mut query_value = serde_json::json!({
             "from_block": from_block,

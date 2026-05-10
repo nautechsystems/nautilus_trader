@@ -30,7 +30,11 @@ use pyo3::{
 use crate::identifiers::{InstrumentId, Symbol, Venue};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl InstrumentId {
+    /// Represents a valid instrument ID.
+    ///
+    /// The symbol and venue combination should uniquely identify the instrument.
     #[new]
     fn py_new(symbol: Symbol, venue: Venue) -> Self {
         Self::new(symbol, venue)
@@ -66,10 +70,11 @@ impl InstrumentId {
     }
 
     #[staticmethod]
-    fn _safe_constructor() -> PyResult<Self> {
-        Ok(Self::from_str("NULL.NULL").unwrap()) // Safe default
+    fn _safe_constructor() -> Self {
+        Self::from_str("NULL.NULL").unwrap() // Safe default
     }
 
+    #[expect(clippy::needless_pass_by_value)]
     fn __richcmp__(&self, other: Py<PyAny>, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         if let Ok(other) = other.extract::<Self>(py) {
             match op {

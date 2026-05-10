@@ -33,6 +33,10 @@ use crate::{enums::MarketStatusAction, identifiers::InstrumentId};
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct InstrumentStatus {
     /// The instrument ID for the status change.
     pub instrument_id: InstrumentId,
@@ -56,7 +60,8 @@ pub struct InstrumentStatus {
 
 impl InstrumentStatus {
     /// Creates a new [`InstrumentStatus`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         action: MarketStatusAction,
@@ -639,5 +644,64 @@ mod tests {
     #[rstest]
     fn test_to_string(stub_instrument_status: InstrumentStatus) {
         assert_eq!(stub_instrument_status.to_string(), "MSFT.XNAS,TRADING,1,2");
+    }
+
+    #[rstest]
+    fn test_data_from_instrument_status(stub_instrument_status: InstrumentStatus) {
+        let data: crate::data::Data = stub_instrument_status.into();
+        assert!(matches!(data, crate::data::Data::InstrumentStatus(_)));
+        assert_eq!(data.instrument_id(), stub_instrument_status.instrument_id);
+    }
+
+    #[rstest]
+    fn test_data_has_ts_init_for_instrument_status(stub_instrument_status: InstrumentStatus) {
+        let data: crate::data::Data = stub_instrument_status.into();
+        assert_eq!(data.ts_init(), stub_instrument_status.ts_init);
+    }
+
+    #[rstest]
+    fn test_try_from_data_instrument_status(stub_instrument_status: InstrumentStatus) {
+        let data: crate::data::Data = stub_instrument_status.into();
+        let extracted: InstrumentStatus = InstrumentStatus::try_from(data).unwrap();
+        assert_eq!(extracted, stub_instrument_status);
+    }
+
+    #[rstest]
+    fn test_try_from_data_instrument_status_wrong_variant(
+        stub_instrument_status: InstrumentStatus,
+    ) {
+        let data = crate::data::Data::InstrumentClose(crate::data::close::InstrumentClose::new(
+            stub_instrument_status.instrument_id,
+            crate::types::Price::new(100.0, 2),
+            crate::enums::InstrumentCloseType::EndOfSession,
+            stub_instrument_status.ts_event,
+            stub_instrument_status.ts_init,
+        ));
+        assert!(InstrumentStatus::try_from(data).is_err());
+    }
+
+    #[rstest]
+    fn test_data_serde_roundtrip_instrument_status(stub_instrument_status: InstrumentStatus) {
+        let data: crate::data::Data = stub_instrument_status.into();
+        let json = serde_json::to_string(&data).unwrap();
+        let roundtrip: crate::data::Data = serde_json::from_str(&json).unwrap();
+        match roundtrip {
+            crate::data::Data::InstrumentStatus(s) => assert_eq!(s, stub_instrument_status),
+            _ => panic!("unexpected variant"),
+        }
+    }
+
+    #[rstest]
+    fn test_data_clone_instrument_status(stub_instrument_status: InstrumentStatus) {
+        let data: crate::data::Data = stub_instrument_status.into();
+        let cloned = data.clone();
+        assert_eq!(data, cloned);
+    }
+
+    #[cfg(feature = "ffi")]
+    #[rstest]
+    fn test_data_ffi_try_from_instrument_status_errors(stub_instrument_status: InstrumentStatus) {
+        let data: crate::data::Data = stub_instrument_status.into();
+        assert!(crate::data::DataFFI::try_from(data).is_err());
     }
 }

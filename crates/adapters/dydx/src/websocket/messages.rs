@@ -123,18 +123,6 @@ pub struct DydxWsChannelBatchDataMsg {
     pub version: Option<String>,
 }
 
-/// General WebSocket message structure for routing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DydxWsMessageGeneral {
-    #[serde(rename = "type")]
-    pub msg_type: Option<DydxWsMessageType>,
-    pub connection_id: Option<String>,
-    pub message_id: Option<u64>,
-    pub channel: Option<DydxWsChannel>,
-    pub id: Option<String>,
-    pub message: Option<String>,
-}
-
 /// Two-level WebSocket message envelope matching dYdX protocol.
 ///
 /// First level: Routes by channel field (v4_subaccounts, v4_orderbook, etc.)
@@ -378,19 +366,6 @@ pub struct DydxWsBlockHeightChannelData {
     pub contents: DydxBlockHeightChannelContents,
 }
 
-/// Oracle price data for a market (full format from subscribed message).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DydxOraclePriceMarketFull {
-    #[serde(rename = "oraclePrice")]
-    pub oracle_price: String,
-    #[serde(rename = "effectiveAt")]
-    pub effective_at: String,
-    #[serde(rename = "effectiveAtHeight")]
-    pub effective_at_height: String,
-    #[serde(rename = "marketId")]
-    pub market_id: u32,
-}
-
 /// Oracle price data for a market (simple format from channel_data).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -466,38 +441,6 @@ pub struct DydxMarketTradingUpdate {
     /// Oracle price (present in initial subscription snapshot).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oracle_price: Option<String>,
-}
-
-/// Market message contents.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DydxMarketMessageContents {
-    #[serde(rename = "oraclePrices")]
-    pub oracle_prices: Option<HashMap<String, DydxOraclePriceMarketFull>>,
-    pub trading: Option<Value>,
-}
-
-/// Markets channel data message.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DydxWsMarketChannelData {
-    #[serde(rename = "type")]
-    pub msg_type: DydxWsMessageType,
-    pub channel: DydxWsChannel,
-    pub contents: DydxMarketMessageContents,
-    pub version: String,
-    pub message_id: u64,
-    pub connection_id: Option<String>,
-    pub id: Option<String>,
-}
-
-/// Markets subscription confirmed message.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DydxWsMarketSubscribed {
-    #[serde(rename = "type")]
-    pub msg_type: DydxWsMessageType,
-    pub connection_id: String,
-    pub message_id: u64,
-    pub channel: DydxWsChannel,
-    pub contents: Value,
 }
 
 /// Contents of v4_markets messages (both subscription snapshots and channel_data updates).

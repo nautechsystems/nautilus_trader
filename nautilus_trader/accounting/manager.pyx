@@ -82,13 +82,18 @@ cdef class AccountsManager:
         AccountState
 
         """
+        cdef list margins = []
+        if account.is_margin_account:
+            margins = list(account.margins().values())
+            margins.extend(account.account_margins().values())
+
         return AccountState(
             account_id=account.id,
             account_type=account.type,
             base_currency=account.base_currency,
             reported=False,
             balances=list(account.balances().values()),
-            margins=list(account.margins().values()) if account.is_margin_account else [],
+            margins=margins,
             info={},
             event_id=UUID4(),
             ts_event=ts_event,

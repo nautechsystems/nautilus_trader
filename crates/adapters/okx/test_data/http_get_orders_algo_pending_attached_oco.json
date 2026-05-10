@@ -1,0 +1,33 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "algoId": "oco-attached-algo",
+      "algoClOrdId": "O-attached-oco",
+      "clOrdId": "",
+      "ordId": "",
+      "instId": "ETH-USDT-SWAP",
+      "instType": "SWAP",
+      "ordType": "oco",
+      "state": "live",
+      "side": "sell",
+      "posSide": "net",
+      "sz": "0.01",
+      "slTriggerPx": "39000",
+      "slOrdPx": "-1",
+      "slTriggerPxType": "last",
+      "tpTriggerPx": "41000",
+      "tpOrdPx": "-1",
+      "tpTriggerPxType": "last",
+      "tdMode": "cross",
+      "reduceOnly": "true",
+      "actualSz": "0",
+      "actualPx": "",
+      "triggerTime": "",
+      "cTime": "1622559930237",
+      "uTime": "1622559930237",
+      "tag": ""
+    }
+  ]
+}

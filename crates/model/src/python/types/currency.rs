@@ -21,7 +21,11 @@ use pyo3::{IntoPyObjectExt, prelude::*};
 use crate::{enums::CurrencyType, types::Currency};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Currency {
+    /// Represents a medium of exchange in a specified denomination with a fixed decimal precision.
+    ///
+    /// Handles up to `FIXED_PRECISION` decimals of precision.
     #[new]
     fn py_new(
         code: &str,
@@ -96,12 +100,26 @@ impl Currency {
         self.currency_type
     }
 
+    /// Checks if the currency identified by the given `code` is a fiat currency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - A currency with the given `code` does not exist.
+    /// - There is a failure acquiring the lock on the currency map.
     #[staticmethod]
     #[pyo3(name = "is_fiat")]
     fn py_is_fiat(code: &str) -> PyResult<bool> {
         Self::is_fiat(code).map_err(to_pyvalue_err)
     }
 
+    /// Checks if the currency identified by the given `code` is a cryptocurrency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - If a currency with the given `code` does not exist.
+    /// - If there is a failure acquiring the lock on the currency map.
     #[staticmethod]
     #[pyo3(name = "is_crypto")]
     fn py_is_crypto(code: &str) -> PyResult<bool> {
@@ -131,6 +149,14 @@ impl Currency {
         }
     }
 
+    /// Register the given `currency` in the internal currency map.
+    ///
+    /// - If `overwrite` is `true`, any existing currency will be replaced.
+    /// - If `overwrite` is `false` and the currency already exists, the operation is a no-op.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there is a failure acquiring the lock on the currency map.
     #[staticmethod]
     #[pyo3(name = "register")]
     #[pyo3(signature = (currency, overwrite = false))]

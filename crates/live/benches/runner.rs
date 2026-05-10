@@ -165,8 +165,10 @@ fn bench_concurrent_channels(c: &mut Criterion) {
 
                     // Simulate concurrent sends
                     let mut handles = vec![];
+
                     for _ in 0..num_senders {
                         let tx_clone = tx.clone();
+
                         handles.push(std::thread::spawn(move || {
                             let quote = create_test_quote();
                             for _ in 0..events_per_sender {

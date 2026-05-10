@@ -183,6 +183,7 @@ def mock_http_client():
     mock.request_account_state = AsyncMock(return_value=mock_account_state)
 
     mock.request_order_status_reports = AsyncMock(return_value=[])
+    mock.request_order_status_report = AsyncMock(return_value=None)
     mock.request_fill_reports = AsyncMock(return_value=[])
     mock.request_position_status_reports = AsyncMock(return_value=[])
 

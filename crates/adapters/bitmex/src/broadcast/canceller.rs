@@ -51,7 +51,14 @@ use nautilus_model::{
 };
 use tokio::{sync::RwLock, task::JoinHandle, time::interval};
 
-use crate::{common::consts::BITMEX_HTTP_TESTNET_URL, http::client::BitmexHttpClient};
+use crate::{
+    common::{consts::BITMEX_HTTP_TESTNET_URL, enums::BitmexEnvironment},
+    http::client::BitmexHttpClient,
+};
+
+const IDEMPOTENT_ALREADY_CANCELED: &str = "AlreadyCanceled";
+const IDEMPOTENT_ORDER_NOT_FOUND: &str = "orderID not found";
+const IDEMPOTENT_UNABLE_DUE_TO_STATE: &str = "Unable to cancel order due to existing state";
 
 /// Trait for order cancellation operations.
 ///
@@ -161,22 +168,22 @@ pub struct CancelBroadcasterConfig {
     pub api_secret: Option<String>,
     /// Base URL for BitMEX HTTP API.
     pub base_url: Option<String>,
-    /// If connecting to BitMEX testnet.
-    pub testnet: bool,
+    /// BitMEX environment (mainnet or testnet).
+    pub environment: BitmexEnvironment,
     /// Timeout in seconds for HTTP requests.
-    pub timeout_secs: Option<u64>,
+    pub timeout_secs: u64,
     /// Maximum number of retry attempts for failed requests.
-    pub max_retries: Option<u32>,
+    pub max_retries: u32,
     /// Initial delay in milliseconds between retry attempts.
-    pub retry_delay_ms: Option<u64>,
+    pub retry_delay_ms: u64,
     /// Maximum delay in milliseconds between retry attempts.
-    pub retry_delay_max_ms: Option<u64>,
+    pub retry_delay_max_ms: u64,
     /// Expiration window in milliseconds for signed requests.
-    pub recv_window_ms: Option<u64>,
+    pub recv_window_ms: u64,
     /// Maximum REST burst rate (requests per second).
-    pub max_requests_per_second: Option<u32>,
+    pub max_requests_per_second: u32,
     /// Maximum REST rolling rate (requests per minute).
-    pub max_requests_per_minute: Option<u32>,
+    pub max_requests_per_minute: u32,
     /// Interval in seconds between health check pings.
     pub health_check_interval_secs: u64,
     /// Timeout in seconds for health check requests.
@@ -200,23 +207,23 @@ impl Default for CancelBroadcasterConfig {
             api_key: None,
             api_secret: None,
             base_url: None,
-            testnet: false,
-            timeout_secs: Some(60),
-            max_retries: None,
-            retry_delay_ms: Some(1_000),
-            retry_delay_max_ms: Some(5_000),
-            recv_window_ms: Some(10_000),
-            max_requests_per_second: Some(10),
-            max_requests_per_minute: Some(120),
+            environment: BitmexEnvironment::Mainnet,
+            timeout_secs: 60,
+            max_retries: 3,
+            retry_delay_ms: 1_000,
+            retry_delay_max_ms: 5_000,
+            recv_window_ms: 10_000,
+            max_requests_per_second: 10,
+            max_requests_per_minute: 120,
             health_check_interval_secs: 30,
             health_check_timeout_secs: 5,
             expected_reject_patterns: vec![
                 "Order had execInst of ParticipateDoNotInitiate".to_string(),
             ],
             idempotent_success_patterns: vec![
-                "AlreadyCanceled".to_string(),
-                "orderID not found".to_string(),
-                "Unable to cancel order due to existing state".to_string(),
+                IDEMPOTENT_ALREADY_CANCELED.to_string(),
+                IDEMPOTENT_ORDER_NOT_FOUND.to_string(),
+                IDEMPOTENT_UNABLE_DUE_TO_STATE.to_string(),
             ],
             proxy_urls: vec![],
         }
@@ -334,6 +341,10 @@ impl TransportClient {
 /// in parallel, short-circuits when the first successful acknowledgement is received,
 /// and handles expected rejection patterns with appropriate log levels.
 #[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bitmex")
+)]
 #[derive(Debug)]
 pub struct CancelBroadcaster {
     config: CancelBroadcasterConfig,
@@ -356,11 +367,11 @@ impl CancelBroadcaster {
     pub fn new(config: CancelBroadcasterConfig) -> anyhow::Result<Self> {
         let mut transports = Vec::with_capacity(config.pool_size);
 
-        // Synthesize base_url when testnet is true but base_url is None
-        let base_url = if config.testnet && config.base_url.is_none() {
-            Some(BITMEX_HTTP_TESTNET_URL.to_string())
-        } else {
-            config.base_url.clone()
+        let base_url = match config.environment {
+            BitmexEnvironment::Testnet if config.base_url.is_none() => {
+                Some(BITMEX_HTTP_TESTNET_URL.to_string())
+            }
+            _ => config.base_url.clone(),
         };
 
         for i in 0..config.pool_size {
@@ -620,6 +631,7 @@ impl CancelBroadcaster {
         }
 
         let mut handles = Vec::new();
+
         for transport in healthy_transports {
             let handle = get_runtime().spawn(async move {
                 let client_id = transport.client_id.clone();
@@ -718,6 +730,7 @@ impl CancelBroadcaster {
         }
 
         let mut handles = Vec::new();
+
         for transport in healthy_transports {
             let handle = get_runtime().spawn(async move {
                 let client_id = transport.client_id.clone();
@@ -780,7 +793,7 @@ impl CancelBroadcaster {
     }
 
     /// Caches an instrument in all HTTP clients in the pool.
-    pub fn cache_instrument(&self, instrument: InstrumentAny) {
+    pub fn cache_instrument(&self, instrument: &InstrumentAny) {
         for transport in self.transports.iter() {
             transport.executor.add_instrument(instrument.clone());
         }
@@ -859,7 +872,7 @@ mod tests {
 
     /// Mock executor for testing.
     #[derive(Clone)]
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     struct MockExecutor {
         handler: Arc<
             dyn Fn(
@@ -1200,30 +1213,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_broadcaster_creation_with_pool() {
-        let config = CancelBroadcasterConfig {
-            pool_size: 3,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            testnet: false,
-            timeout_secs: Some(5),
-            max_retries: Some(2),
-            retry_delay_ms: Some(100),
-            retry_delay_max_ms: Some(1000),
-            recv_window_ms: Some(5000),
-            max_requests_per_second: Some(10),
-            max_requests_per_minute: Some(100),
-            health_check_interval_secs: 30,
-            health_check_timeout_secs: 5,
-            expected_reject_patterns: vec!["test_pattern".to_string()],
-            idempotent_success_patterns: vec!["AlreadyCanceled".to_string()],
-            proxy_urls: vec![],
-        };
+        let transports = vec![
+            create_stub_transport("client-0", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+            create_stub_transport("client-1", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+            create_stub_transport("client-2", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+        ];
 
-        let broadcaster = CancelBroadcaster::new(config.clone());
-        assert!(broadcaster.is_ok());
-
-        let broadcaster = broadcaster.unwrap();
+        let config = CancelBroadcasterConfig::default();
+        let broadcaster = CancelBroadcaster::new_with_transports(config, transports);
         let metrics = broadcaster.get_metrics_async().await;
 
         assert_eq!(metrics.total_clients, 3);
@@ -1234,27 +1237,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_broadcaster_lifecycle() {
-        let config = CancelBroadcasterConfig {
-            pool_size: 2,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            testnet: false,
-            timeout_secs: Some(5),
-            max_retries: None,
-            retry_delay_ms: None,
-            retry_delay_max_ms: None,
-            recv_window_ms: None,
-            max_requests_per_second: None,
-            max_requests_per_minute: None,
-            health_check_interval_secs: 60, // Long interval so it won't tick during test
-            health_check_timeout_secs: 1,
-            expected_reject_patterns: vec![],
-            idempotent_success_patterns: vec![],
-            proxy_urls: vec![],
-        };
+        let transports = vec![
+            create_stub_transport("client-0", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+            create_stub_transport("client-1", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+        ];
 
-        let broadcaster = CancelBroadcaster::new(config).unwrap();
+        let config = CancelBroadcasterConfig::default();
+        let broadcaster = CancelBroadcaster::new_with_transports(config, transports);
 
         // Should not be running initially
         assert!(!broadcaster.running.load(Ordering::Relaxed));
@@ -1279,32 +1272,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_stats_collection() {
-        let config = CancelBroadcasterConfig {
-            pool_size: 2,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            testnet: false,
-            timeout_secs: Some(5),
-            max_retries: None,
-            retry_delay_ms: None,
-            retry_delay_max_ms: None,
-            recv_window_ms: None,
-            max_requests_per_second: None,
-            max_requests_per_minute: None,
-            health_check_interval_secs: 60,
-            health_check_timeout_secs: 5,
-            expected_reject_patterns: vec![],
-            idempotent_success_patterns: vec![],
-            proxy_urls: vec![],
-        };
+        let transports = vec![
+            create_stub_transport("client-0", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+            create_stub_transport("client-1", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+        ];
 
-        let broadcaster = CancelBroadcaster::new(config).unwrap();
+        let config = CancelBroadcasterConfig::default();
+        let broadcaster = CancelBroadcaster::new_with_transports(config, transports);
         let stats = broadcaster.get_client_stats_async().await;
 
         assert_eq!(stats.len(), 2);
-        assert_eq!(stats[0].client_id, "bitmex-cancel-0");
-        assert_eq!(stats[1].client_id, "bitmex-cancel-1");
+        assert_eq!(stats[0].client_id, "client-0");
+        assert_eq!(stats[1].client_id, "client-1");
         assert!(stats[0].healthy); // Should be healthy initially
         assert!(stats[1].healthy);
         assert_eq!(stats[0].cancel_count, 0);
@@ -1319,15 +1302,15 @@ mod tests {
             pool_size: 1,
             api_key: Some("test_key".to_string()),
             api_secret: Some("test_secret".to_string()),
-            base_url: None, // Not specified
-            testnet: true,  // But testnet is true
-            timeout_secs: Some(5),
-            max_retries: None,
-            retry_delay_ms: None,
-            retry_delay_max_ms: None,
-            recv_window_ms: None,
-            max_requests_per_second: None,
-            max_requests_per_minute: None,
+            base_url: None,
+            environment: BitmexEnvironment::Testnet,
+            timeout_secs: 5,
+            max_retries: 3,
+            retry_delay_ms: 1_000,
+            retry_delay_max_ms: 5_000,
+            recv_window_ms: 10_000,
+            max_requests_per_second: 10,
+            max_requests_per_minute: 120,
             health_check_interval_secs: 60,
             health_check_timeout_secs: 5,
             expected_reject_patterns: vec![],
@@ -1340,18 +1323,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_default_config() {
+    async fn test_constructor_honors_default_pool_size() {
         let config = CancelBroadcasterConfig {
             api_key: Some("test_key".to_string()),
             api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
+            base_url: Some("http://127.0.0.1:19999".to_string()),
             ..Default::default()
         };
 
-        let broadcaster = CancelBroadcaster::new(config);
-        assert!(broadcaster.is_ok());
+        let expected_pool = config.pool_size;
+        let broadcaster = CancelBroadcaster::new(config).unwrap();
+        let metrics = broadcaster.get_metrics_async().await;
 
-        let broadcaster = broadcaster.unwrap();
+        assert_eq!(metrics.total_clients, expected_pool);
+    }
+
+    #[tokio::test]
+    async fn test_default_config() {
+        let transports = vec![
+            create_stub_transport("client-0", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+            create_stub_transport("client-1", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+        ];
+
+        let config = CancelBroadcasterConfig::default();
+        let broadcaster = CancelBroadcaster::new_with_transports(config, transports);
         let metrics = broadcaster.get_metrics_async().await;
 
         // Default pool_size is 2
@@ -1360,27 +1359,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_clone_for_async() {
-        let config = CancelBroadcasterConfig {
-            pool_size: 1,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            testnet: false,
-            timeout_secs: Some(5),
-            max_retries: None,
-            retry_delay_ms: None,
-            retry_delay_max_ms: None,
-            recv_window_ms: None,
-            max_requests_per_second: None,
-            max_requests_per_minute: None,
-            health_check_interval_secs: 60,
-            health_check_timeout_secs: 5,
-            expected_reject_patterns: vec![],
-            idempotent_success_patterns: vec![],
-            proxy_urls: vec![],
-        };
+        let transports = vec![create_stub_transport("client-0", |_, _, _| async {
+            Ok(create_test_report("ORDER-1"))
+        })];
 
-        let broadcaster1 = CancelBroadcaster::new(config).unwrap();
+        let config = CancelBroadcasterConfig::default();
+        let broadcaster1 = CancelBroadcaster::new_with_transports(config, transports);
 
         // Increment a metric on original
         broadcaster1.total_cancels.fetch_add(1, Ordering::Relaxed);
@@ -1404,21 +1388,11 @@ mod tests {
     #[tokio::test]
     async fn test_pattern_matching() {
         // Test that pattern matching works for expected rejects and idempotent successes
+        let transports = vec![create_stub_transport("client-0", |_, _, _| async {
+            Ok(create_test_report("ORDER-1"))
+        })];
+
         let config = CancelBroadcasterConfig {
-            pool_size: 1,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            testnet: false,
-            timeout_secs: Some(5),
-            max_retries: None,
-            retry_delay_ms: None,
-            retry_delay_max_ms: None,
-            recv_window_ms: None,
-            max_requests_per_second: None,
-            max_requests_per_minute: None,
-            health_check_interval_secs: 60,
-            health_check_timeout_secs: 5,
             expected_reject_patterns: vec![
                 "ParticipateDoNotInitiate".to_string(),
                 "Close-only".to_string(),
@@ -1428,10 +1402,10 @@ mod tests {
                 "orderID not found".to_string(),
                 "Unable to cancel".to_string(),
             ],
-            proxy_urls: vec![],
+            ..Default::default()
         };
 
-        let broadcaster = CancelBroadcaster::new(config).unwrap();
+        let broadcaster = CancelBroadcaster::new_with_transports(config, transports);
 
         // Test expected reject patterns
         assert!(broadcaster.is_expected_reject("Order had execInst of ParticipateDoNotInitiate"));
@@ -1451,27 +1425,21 @@ mod tests {
     #[tokio::test]
     async fn test_broadcast_batch_cancel_structure() {
         // Validates broadcaster structure and metric initialization
+        let transports = vec![
+            create_stub_transport("client-0", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+            create_stub_transport("client-1", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+        ];
+
         let config = CancelBroadcasterConfig {
-            pool_size: 2,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            testnet: false,
-            timeout_secs: Some(5),
-            max_retries: None,
-            retry_delay_ms: None,
-            retry_delay_max_ms: None,
-            recv_window_ms: None,
-            max_requests_per_second: None,
-            max_requests_per_minute: None,
-            health_check_interval_secs: 60,
-            health_check_timeout_secs: 5,
-            expected_reject_patterns: vec![],
             idempotent_success_patterns: vec!["AlreadyCanceled".to_string()],
-            proxy_urls: vec![],
+            ..Default::default()
         };
 
-        let broadcaster = CancelBroadcaster::new(config).unwrap();
+        let broadcaster = CancelBroadcaster::new_with_transports(config, transports);
         let metrics = broadcaster.get_metrics_async().await;
 
         // Verify initial state
@@ -1484,27 +1452,24 @@ mod tests {
     #[tokio::test]
     async fn test_broadcast_cancel_all_structure() {
         // Validates broadcaster structure for cancel_all operations
+        let transports = vec![
+            create_stub_transport("client-0", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+            create_stub_transport("client-1", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+            create_stub_transport("client-2", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+        ];
+
         let config = CancelBroadcasterConfig {
-            pool_size: 3,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            testnet: false,
-            timeout_secs: Some(5),
-            max_retries: None,
-            retry_delay_ms: None,
-            retry_delay_max_ms: None,
-            recv_window_ms: None,
-            max_requests_per_second: None,
-            max_requests_per_minute: None,
-            health_check_interval_secs: 60,
-            health_check_timeout_secs: 5,
-            expected_reject_patterns: vec![],
             idempotent_success_patterns: vec!["orderID not found".to_string()],
-            proxy_urls: vec![],
+            ..Default::default()
         };
 
-        let broadcaster = CancelBroadcaster::new(config).unwrap();
+        let broadcaster = CancelBroadcaster::new_with_transports(config, transports);
         let metrics = broadcaster.get_metrics_async().await;
 
         // Verify pool size and initial metrics
@@ -1552,27 +1517,23 @@ mod tests {
     #[tokio::test]
     async fn test_metrics_initialization_and_health() {
         // Validates that metrics start at zero and clients start healthy
-        let config = CancelBroadcasterConfig {
-            pool_size: 4,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            testnet: false,
-            timeout_secs: Some(5),
-            max_retries: None,
-            retry_delay_ms: None,
-            retry_delay_max_ms: None,
-            recv_window_ms: None,
-            max_requests_per_second: None,
-            max_requests_per_minute: None,
-            health_check_interval_secs: 60,
-            health_check_timeout_secs: 5,
-            expected_reject_patterns: vec![],
-            idempotent_success_patterns: vec![],
-            proxy_urls: vec![],
-        };
+        let transports = vec![
+            create_stub_transport("client-0", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+            create_stub_transport("client-1", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+            create_stub_transport("client-2", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+            create_stub_transport("client-3", |_, _, _| async {
+                Ok(create_test_report("ORDER-1"))
+            }),
+        ];
 
-        let broadcaster = CancelBroadcaster::new(config).unwrap();
+        let config = CancelBroadcasterConfig::default();
+        let broadcaster = CancelBroadcaster::new_with_transports(config, transports);
         let metrics = broadcaster.get_metrics_async().await;
 
         // All metrics should start at zero
@@ -1590,27 +1551,17 @@ mod tests {
     // Health-check task lifecycle test
     #[tokio::test]
     async fn test_health_check_task_lifecycle() {
+        let transports = vec![create_stub_transport("client-0", |_, _, _| async {
+            Ok(create_test_report("ORDER-1"))
+        })];
+
         let config = CancelBroadcasterConfig {
-            pool_size: 1,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            base_url: Some("https://test.example.com".to_string()),
-            testnet: false,
-            timeout_secs: Some(5),
-            max_retries: None,
-            retry_delay_ms: None,
-            retry_delay_max_ms: None,
-            recv_window_ms: None,
-            max_requests_per_second: None,
-            max_requests_per_minute: None,
             health_check_interval_secs: 1, // Very short interval
             health_check_timeout_secs: 1,
-            expected_reject_patterns: vec![],
-            idempotent_success_patterns: vec![],
-            proxy_urls: vec![],
+            ..Default::default()
         };
 
-        let broadcaster = CancelBroadcaster::new(config).unwrap();
+        let broadcaster = CancelBroadcaster::new_with_transports(config, transports);
 
         // Start the broadcaster
         broadcaster.start().await.unwrap();

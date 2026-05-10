@@ -13,15 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{env, fmt::Debug, time::Duration};
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
-use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT, string::REDACTED};
-use nautilus_cryptography::providers::install_cryptographic_provider;
+use ahash::{AHashMap, AHashSet};
+use nautilus_core::{
+    UnixNanos,
+    consts::NAUTILUS_USER_AGENT,
+    string::{parsing::precision_from_str, secret::REDACTED, urlencoding},
+};
 use nautilus_model::instruments::InstrumentAny;
-use reqwest::Response;
+use nautilus_network::http::HttpClient;
+use ustr::Ustr;
 
 use super::{
-    TARDIS_BASE_URL,
     error::{Error, TardisErrorResponse},
     instruments::is_available,
     models::TardisInstrumentInfo,
@@ -29,8 +33,14 @@ use super::{
     query::InstrumentFilter,
 };
 use crate::{
-    common::{consts::TARDIS_API_KEY, credential::Credential},
-    enums::TardisExchange,
+    common::{
+        consts::{TARDIS_REST_QUOTA, TARDIS_REST_RATE_KEY},
+        credential::Credential,
+        enums::TardisExchange,
+        parse::{normalize_instrument_id, parse_instrument_id},
+        urls::TARDIS_HTTP_BASE_URL,
+    },
+    machine::types::{TardisInstrumentKey, TardisInstrumentMiniInfo},
 };
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -41,11 +51,15 @@ pub type Result<T> = std::result::Result<T, Error>;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.tardis")
+)]
 #[derive(Clone)]
 pub struct TardisHttpClient {
     base_url: String,
     credential: Option<Credential>,
-    client: reqwest::Client,
+    client: HttpClient,
     normalize_symbols: bool,
 }
 
@@ -71,26 +85,38 @@ impl TardisHttpClient {
         base_url: Option<&str>,
         timeout_secs: Option<u64>,
         normalize_symbols: bool,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
-        let credential = match api_key {
-            Some(key) => Some(Credential::new(key)),
-            None => env::var(TARDIS_API_KEY).ok().map(Credential::new),
-        };
+        let credential = Credential::resolve(api_key.map(ToString::to_string));
 
         if credential.is_none() {
             anyhow::bail!(
-                "API key must be provided or set in the '{TARDIS_API_KEY}' environment variable"
+                "API key must be provided or set in the 'TARDIS_API_KEY' environment variable"
             );
         }
 
-        let base_url = base_url.map_or_else(|| TARDIS_BASE_URL.to_string(), ToString::to_string);
-        let timeout = timeout_secs.map_or_else(|| Duration::from_secs(60), Duration::from_secs);
+        let base_url =
+            base_url.map_or_else(|| TARDIS_HTTP_BASE_URL.to_string(), ToString::to_string);
 
-        install_cryptographic_provider();
-        let client = reqwest::Client::builder()
-            .user_agent(NAUTILUS_USER_AGENT)
-            .timeout(timeout)
-            .build()?;
+        let mut headers = HashMap::new();
+        headers.insert("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string());
+
+        if let Some(ref cred) = credential {
+            headers.insert(
+                "Authorization".to_string(),
+                format!("Bearer {}", cred.api_key()),
+            );
+        }
+
+        let keyed_quotas = vec![(TARDIS_REST_RATE_KEY.to_string(), *TARDIS_REST_QUOTA)];
+        let client = HttpClient::new(
+            headers,
+            vec![],
+            keyed_quotas,
+            Some(*TARDIS_REST_QUOTA),
+            timeout_secs.or(Some(60)),
+            proxy_url,
+        )?;
 
         Ok(Self {
             base_url,
@@ -104,31 +130,6 @@ impl TardisHttpClient {
     #[must_use]
     pub const fn credential(&self) -> Option<&Credential> {
         self.credential.as_ref()
-    }
-
-    async fn handle_error_response<T>(resp: Response) -> Result<T> {
-        let status = resp.status().as_u16();
-        let error_text = match resp.text().await {
-            Ok(text) => text,
-            Err(e) => {
-                log::warn!("Failed to extract error response body: {e}");
-                String::from("Failed to extract error response")
-            }
-        };
-
-        if let Ok(error) = serde_json::from_str::<TardisErrorResponse>(&error_text) {
-            Err(Error::ApiError {
-                status,
-                code: error.code,
-                message: error.message,
-            })
-        } else {
-            Err(Error::ApiError {
-                status,
-                code: 0,
-                message: error_text,
-            })
-        }
     }
 
     /// Returns all Tardis instrument definitions for the given `exchange`.
@@ -157,19 +158,34 @@ impl TardisHttpClient {
         }
         log::debug!("Requesting: {url}");
 
-        let resp = self
+        let rate_keys = Some(vec![TARDIS_REST_RATE_KEY.to_string()]);
+        let response = self
             .client
-            .get(url)
-            .bearer_auth(self.credential.as_ref().map_or("", |c| c.api_key()))
-            .send()
-            .await?;
-        log::debug!("Response status: {}", resp.status());
+            .get(url, None, None, None, rate_keys)
+            .await
+            .map_err(|e| Error::Request(e.to_string()))?;
 
-        if !resp.status().is_success() {
-            return Self::handle_error_response(resp).await;
+        let status = response.status.as_u16();
+        log::debug!("Response status: {status}");
+
+        if !response.status.is_success() {
+            let body = String::from_utf8_lossy(&response.body).to_string();
+            return if let Ok(error) = serde_json::from_str::<TardisErrorResponse>(&body) {
+                Err(Error::ApiError {
+                    status,
+                    code: error.code,
+                    message: error.message,
+                })
+            } else {
+                Err(Error::ApiError {
+                    status,
+                    code: 0,
+                    message: body,
+                })
+            };
         }
 
-        let body = resp.text().await?;
+        let body = String::from_utf8_lossy(&response.body);
         log::trace!("{body}");
 
         if let Ok(instrument) = serde_json::from_str::<TardisInstrumentInfo>(&body) {
@@ -193,7 +209,7 @@ impl TardisHttpClient {
     /// Returns an error if fetching instrument info or parsing into domain types fails.
     ///
     /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn instruments(
         &self,
         exchange: TardisExchange,
@@ -210,7 +226,81 @@ impl TardisHttpClient {
         Ok(response
             .into_iter()
             .filter(|info| is_available(info, start, end, available_offset, effective))
-            .flat_map(|info| parse_instrument_any(info, effective, ts_init, self.normalize_symbols))
+            .flat_map(|info| {
+                parse_instrument_any(&info, effective, ts_init, self.normalize_symbols)
+            })
             .collect())
+    }
+
+    /// Fetches instruments for the given exchanges, builds the mini-info map
+    /// for WS message parsing, and parses Nautilus instrument definitions.
+    ///
+    /// Returns a tuple of `(instrument_map, nautilus_instruments)`. The caller
+    /// decides how to use each half: `data.rs` emits instruments via the data
+    /// sender; `replay.rs` only needs the map.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching instrument info for any exchange fails.
+    pub async fn bootstrap_instruments(
+        &self,
+        exchanges: &AHashSet<TardisExchange>,
+    ) -> Result<(
+        AHashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>,
+        Vec<InstrumentAny>,
+    )> {
+        let mut instrument_map: AHashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>> =
+            AHashMap::new();
+        let mut nautilus_instruments: Vec<InstrumentAny> = Vec::new();
+
+        for exchange in exchanges {
+            log::info!("Fetching instruments for {exchange}");
+
+            let instruments_info = match self.instruments_info(*exchange, None, None).await {
+                Ok(info) => info,
+                Err(e) => {
+                    log::error!("Failed to fetch instruments for {exchange}: {e}");
+                    continue;
+                }
+            };
+
+            log::info!(
+                "Received {} instruments for {exchange}",
+                instruments_info.len()
+            );
+
+            for inst in &instruments_info {
+                let instrument_type = inst.instrument_type;
+                let price_precision = precision_from_str(&inst.price_increment.to_string());
+                let size_precision = precision_from_str(&inst.amount_increment.to_string());
+
+                let instrument_id = if self.normalize_symbols {
+                    normalize_instrument_id(exchange, inst.id, &instrument_type, inst.inverse)
+                } else {
+                    parse_instrument_id(exchange, inst.id)
+                };
+
+                let info = TardisInstrumentMiniInfo::new(
+                    instrument_id,
+                    Some(Ustr::from(&inst.id)),
+                    *exchange,
+                    price_precision,
+                    size_precision,
+                );
+                let key = info.as_tardis_instrument_key();
+                instrument_map.insert(key, Arc::new(info));
+            }
+
+            for inst in instruments_info {
+                nautilus_instruments.extend(parse_instrument_any(
+                    &inst,
+                    None,
+                    None,
+                    self.normalize_symbols,
+                ));
+            }
+        }
+
+        Ok((instrument_map, nautilus_instruments))
     }
 }

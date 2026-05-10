@@ -53,8 +53,6 @@ config_node = TradingNodeConfig(
     risk_engine=LiveRiskEngineConfig(bypass=True),
     data_clients={
         AX: AxDataClientConfig(
-            api_key=None,  # 'AX_API_KEY' env var
-            api_secret=None,  # 'AX_API_SECRET' env var
             environment=AxEnvironment.SANDBOX,
             instrument_provider=InstrumentProviderConfig(
                 load_all=False,
@@ -64,8 +62,6 @@ config_node = TradingNodeConfig(
     },
     exec_clients={
         AX: AxExecClientConfig(
-            api_key=None,  # 'AX_API_KEY' env var
-            api_secret=None,  # 'AX_API_SECRET' env var
             environment=AxEnvironment.SANDBOX,
             instrument_provider=InstrumentProviderConfig(
                 load_all=False,

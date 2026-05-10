@@ -388,6 +388,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             max_quantity = Quantity(float(lot_size_filter.maxQty), precision=size_precision)
             min_quantity = Quantity(float(lot_size_filter.minQty), precision=size_precision)
             min_notional = None
+
             if filters.get(BinanceSymbolFilterType.MIN_NOTIONAL):
                 min_notional = Money(min_notional_filter.notional, currency=quote_currency)
             max_notional = (
@@ -401,6 +402,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             # Futures commissions
             maker_fee = Decimal(0)
             taker_fee = Decimal(0)
+
             if fee:
                 assert fee.symbol == symbol_info.symbol
                 maker_fee = Decimal(fee.makerCommissionRate)

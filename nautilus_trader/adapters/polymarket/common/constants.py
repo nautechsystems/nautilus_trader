@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from typing import Final
-from py_clob_client.clob_types import TickSize
 
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
 from nautilus_trader.model.enums import TimeInForce
@@ -28,15 +27,6 @@ POLYMARKET_CLIENT_ID: Final[ClientId] = ClientId(POLYMARKET)
 
 POLYMARKET_MAX_PRICE: Final[float] = 0.999
 POLYMARKET_MIN_PRICE: Final[float] = 0.001
-
-POLYMARKET_MIN_MAX_PRICES: dict[TickSize | None, Final[float]] = {
-    None: (0.001, 0.999),
-    "0.1": (0.1, 0.9),
-    "0.01": (0.01, 0.99),
-    "0.001": (0.001, 0.999),
-    "0.0001": (0.0001, 0.9999),
-}
-
 POLYMARKET_MAX_PRECISION_TAKER: Final[int] = 2
 POLYMARKET_MAX_PRECISION_MAKER: Final[int] = 5
 
@@ -49,6 +39,9 @@ VALID_POLYMARKET_TIME_IN_FORCE: Final[set[TimeInForce]] = {
 
 POLYMARKET_INVALID_API_KEY: Final[str] = "Unauthorized/Invalid api key"
 POLYMARKET_CANCEL_ALREADY_DONE: Final[str] = "already canceled or matched"
+POLYMARKET_NAUTILUS_BUILDER_CODE: Final[str] = (
+    "0x4f2c0bba608033563f74b82300e2ed59f54f8d0de08281031f03fb2c62819e63"
+)
 
 POLYMARKET_FINALIZED_TRADE_STATUSES: Final[tuple[PolymarketTradeStatus, ...]] = (
     PolymarketTradeStatus.MINED,
@@ -56,4 +49,17 @@ POLYMARKET_FINALIZED_TRADE_STATUSES: Final[tuple[PolymarketTradeStatus, ...]] = 
 )
 
 POLYMARKET_HTTP_RATE_LIMIT: Final[int] = 100  # requests per minute
-POLYMARKET_BATCH_MAX_SIZE: Final[int] = 15  # max orders per post_orders call
+
+# Minimum position size (in shares) reported in position status reports.
+# Smaller positions are filtered as dust during reconciliation.
+DUST_POSITION_THRESHOLD: Final[float] = 0.01
+
+# Underfill tolerance for OrderFillTracker, in ulps of the instrument
+# size precision (resolves to 0.01 at size_precision=6).
+# See ``docs/integrations/polymarket.md`` (Fill quantity normalization).
+SNAP_UNDERFILL_ULPS: Final[float] = 10_000.0
+
+# Overfill tolerance for OrderFillTracker, in ulps of the instrument
+# size precision (resolves to 0.0001 at size_precision=6).
+# See ``docs/integrations/polymarket.md`` (Fill quantity normalization).
+SNAP_OVERFILL_ULPS: Final[float] = 100.0

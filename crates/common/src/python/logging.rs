@@ -33,21 +33,31 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl LoggerConfig {
-    /// Creates a [`LoggerConfig`] from a spec string.
+    /// Parses a configuration from a spec string.
+    ///
+    /// # Format
+    ///
+    /// Semicolon-separated key-value pairs or bare flags:
+    /// ```text
+    /// stdout=Info;fileout=Debug;RiskEngine=Error;my_crate::module=Debug;is_colored
+    /// ```
     ///
     /// # Errors
     ///
-    /// Returns a Python exception if the spec string is invalid.
+    /// Returns an error if the spec string contains invalid syntax or log levels.
     #[staticmethod]
     #[pyo3(name = "from_spec")]
-    pub fn py_from_spec(spec: String) -> PyResult<Self> {
-        Self::from_spec(&spec).map_err(to_pyvalue_err)
+    pub fn py_from_spec(spec: &str) -> PyResult<Self> {
+        Self::from_spec(spec).map_err(to_pyvalue_err)
     }
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl FileWriterConfig {
+    /// Creates a new `FileWriterConfig` instance.
     #[new]
     #[pyo3(signature = (directory=None, file_name=None, file_format=None, file_rotate=None))]
     #[must_use]
@@ -70,13 +80,10 @@ impl FileWriterConfig {
 ///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
-///
-/// # Errors
-///
-/// Returns a Python exception if logger initialization fails.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "init_logging")]
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 #[pyo3(signature = (trader_id, instance_id, level_stdout, level_file=None, component_levels=None, directory=None, file_name=None, file_format=None, file_rotate=None, is_colored=None, is_bypassed=None, print_config=None, log_components_only=None))]
 pub fn py_init_logging(
     trader_id: TraderId,
@@ -97,6 +104,8 @@ pub fn py_init_logging(
 
     let component_levels = parse_component_levels(component_levels).map_err(to_pyvalue_err)?;
 
+    let file_config = FileWriterConfig::new(directory, file_name, file_format, file_rotate);
+
     let config = LoggerConfig::new(
         map_log_level_to_filter(level_stdout),
         level_file,
@@ -105,12 +114,13 @@ pub fn py_init_logging(
         log_components_only.unwrap_or(false),
         is_colored.unwrap_or(true),
         print_config.unwrap_or(false),
-        false, // use_tracing - Python handles this separately in kernel
+        false,                        // use_tracing - Python handles this separately in kernel
+        is_bypassed.unwrap_or(false), // bypass_logging
+        None,                         // file_config - passed separately to init_logging
+        false,                        // clear_log_file
     );
 
-    let file_config = FileWriterConfig::new(directory, file_name, file_format, file_rotate);
-
-    if is_bypassed.unwrap_or(false) {
+    if config.bypass_logging {
         logging_set_bypass();
     }
 
@@ -118,6 +128,7 @@ pub fn py_init_logging(
 }
 
 #[pyfunction()]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "logger_flush")]
 pub fn py_logger_flush() {
     log::logger().flush();
@@ -129,6 +140,7 @@ fn parse_component_levels(
     match original_map {
         Some(map) => {
             let mut new_map = AHashMap::new();
+
             for (key, value) in map {
                 let ustr_key = Ustr::from(&key);
                 let level = parse_level_filter_str(&value)?;
@@ -142,6 +154,7 @@ fn parse_component_levels(
 
 /// Create a new log event.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "logger_log")]
 pub fn py_logger_log(level: LogLevel, color: LogColor, component: &str, message: &str) {
     logger::log(level, color, Ustr::from(component), message);
@@ -149,6 +162,7 @@ pub fn py_logger_log(level: LogLevel, color: LogColor, component: &str, message:
 
 /// Logs the standard Nautilus system header.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "log_header")]
 pub fn py_log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, component: &str) {
     headers::log_header(trader_id, machine_id, instance_id, Ustr::from(component));
@@ -156,24 +170,31 @@ pub fn py_log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, 
 
 /// Logs system information.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "log_sysinfo")]
 pub fn py_log_sysinfo(component: &str) {
     headers::log_sysinfo(Ustr::from(component));
 }
 
+/// Sets the global logging clock to static mode.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "logging_clock_set_static_mode")]
 pub fn py_logging_clock_set_static_mode() {
     logging_clock_set_static_mode();
 }
 
+/// Sets the global logging clock to real-time mode.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "logging_clock_set_realtime_mode")]
 pub fn py_logging_clock_set_realtime_mode() {
     logging_clock_set_realtime_mode();
 }
 
+/// Sets the global logging clock static time with the given UNIX timestamp (nanoseconds).
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "logging_clock_set_static_time")]
 pub fn py_logging_clock_set_static_time(time_ns: u64) {
     logging_clock_set_static_time(time_ns);
@@ -182,27 +203,31 @@ pub fn py_logging_clock_set_static_time(time_ns: u64) {
 /// Returns whether the tracing subscriber has been initialized.
 #[cfg(feature = "tracing-bridge")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "tracing_is_initialized")]
 #[must_use]
 pub fn py_tracing_is_initialized() -> bool {
     crate::logging::bridge::tracing_is_initialized()
 }
 
-/// Initialize a tracing subscriber for external Rust crate logging.
+/// Initializes a tracing subscriber for external Rust crate logging.
 ///
-/// This sets up a tracing subscriber that outputs directly to stdout, allowing
-/// external Rust libraries that use the `tracing` crate to display their logs.
-/// Output is separate from Nautilus logging and uses real-time timestamps.
+/// This sets up a standard tracing subscriber that outputs to stdout with
+/// the format controlled by `RUST_LOG` environment variable. The output
+/// format uses nanosecond timestamps to align with Nautilus logging.
 ///
-/// The `RUST_LOG` environment variable controls filtering:
-/// - Example: `RUST_LOG=hyper_util=debug,tokio=warn`.
-/// - Default: `warn` (if not set).
+/// # Environment Variables
+///
+/// - `RUST_LOG`: Controls which modules emit tracing events and at what level.
+///   - Example: `RUST_LOG=hyper=debug,tokio=warn`.
+///   - Default: `warn` (if not set).
 ///
 /// # Errors
 ///
-/// Returns a Python exception if initialization fails or if already initialized.
+/// Returns an error if the tracing subscriber has already been initialized.
 #[cfg(feature = "tracing-bridge")]
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "init_tracing")]
 pub fn py_init_tracing() -> PyResult<()> {
     crate::logging::bridge::init_tracing().map_err(to_pyvalue_err)
@@ -220,6 +245,7 @@ pub fn py_init_tracing() -> PyResult<()> {
     unsendable,
     from_py_object
 )]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")]
 #[derive(Debug, Clone)]
 pub struct PyLogger {
     name: Ustr,
@@ -234,6 +260,7 @@ impl PyLogger {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyLogger {
     /// Create a new `Logger` instance.
     #[new]

@@ -17,7 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::common::enums::BinanceFilterType;
+use crate::common::enums::{BinanceFilterType, BinanceRateLimitInterval, BinanceRateLimitType};
 
 /// Binance API error response structure.
 ///
@@ -234,11 +234,55 @@ pub struct MaxNumAlgoOrdersFilter {
 #[serde(rename_all = "camelCase")]
 pub struct BinanceRateLimit {
     /// Type of rate limit (REQUEST_WEIGHT, ORDERS, RAW_REQUESTS).
-    pub rate_limit_type: String,
+    pub rate_limit_type: BinanceRateLimitType,
     /// Time interval (SECOND, MINUTE, DAY).
-    pub interval: String,
+    pub interval: BinanceRateLimitInterval,
     /// Interval number.
     pub interval_num: i64,
     /// Request limit.
     pub limit: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_binance_rate_limit_deserializes_known_values() {
+        let json = r#"{
+            "rateLimitType": "REQUEST_WEIGHT",
+            "interval": "MINUTE",
+            "intervalNum": 1,
+            "limit": 2400
+        }"#;
+
+        let rate_limit: BinanceRateLimit = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            rate_limit.rate_limit_type,
+            BinanceRateLimitType::RequestWeight
+        );
+        assert_eq!(rate_limit.interval, BinanceRateLimitInterval::Minute);
+        assert_eq!(rate_limit.interval_num, 1);
+        assert_eq!(rate_limit.limit, 2400);
+    }
+
+    #[rstest]
+    fn test_binance_rate_limit_deserializes_unknown_values() {
+        let json = r#"{
+            "rateLimitType": "UNKNOWN_LIMIT",
+            "interval": "WEEK",
+            "intervalNum": 7,
+            "limit": 99
+        }"#;
+
+        let rate_limit: BinanceRateLimit = serde_json::from_str(json).unwrap();
+
+        assert_eq!(rate_limit.rate_limit_type, BinanceRateLimitType::Unknown);
+        assert_eq!(rate_limit.interval, BinanceRateLimitInterval::Unknown);
+        assert_eq!(rate_limit.interval_num, 7);
+        assert_eq!(rate_limit.limit, 99);
+    }
 }

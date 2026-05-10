@@ -523,6 +523,43 @@ pub struct DeribitOrderBook {
     pub interest_rate: Option<Decimal>,
 }
 
+/// Book summary data from `/public/get_book_summary_by_currency` endpoint.
+///
+/// Each entry represents a single instrument's book summary including the
+/// forward/underlying price used for ATM determination.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeribitBookSummary {
+    /// Unique instrument identifier (e.g. "BTC-28MAR25-90000-C")
+    pub instrument_name: String,
+    /// The forward/underlying price for implied volatility calculations
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub underlying_price: Option<Decimal>,
+    /// Name of the underlying future or index (e.g. "BTC-28MAR25" or "SYN.BTC-28MAR25")
+    #[serde(default)]
+    pub underlying_index: Option<String>,
+    /// Mark price for the instrument
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub mark_price: Option<Decimal>,
+    /// The time when the instrument was created (milliseconds since UNIX epoch)
+    pub creation_timestamp: i64,
+}
+
+/// Ticker data from `/public/ticker` endpoint.
+///
+/// Only the fields needed for forward price extraction are included;
+/// serde will ignore the many additional fields returned by the API.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeribitTicker {
+    /// Unique instrument identifier (e.g., "BTC-28FEB26-65000-C")
+    pub instrument_name: String,
+    /// Underlying price for implied volatility calculations (options only)
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub underlying_price: Option<Decimal>,
+    /// Name of the underlying future or index (e.g., "BTC-28MAR25" or "SYN.BTC-28MAR25")
+    #[serde(default)]
+    pub underlying_index: Option<String>,
+}
+
 /// Position data from `/private/get_positions` endpoint.
 ///
 /// Contains information about a single position in a specific instrument.

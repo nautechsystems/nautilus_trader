@@ -26,25 +26,48 @@ use nautilus_trading::{
 };
 use pyo3::{prelude::*, types::PyDict};
 
-use crate::{config::BacktestRunConfig, engine::BacktestResult, node::BacktestNode};
+use crate::{config::BacktestRunConfig, node::BacktestNode, result::BacktestResult};
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl BacktestNode {
+    /// Orchestrates catalog-driven backtests from run configurations.
+    ///
+    /// `BacktestNode` connects the `ParquetDataCatalog` with `BacktestEngine` to load
+    /// historical data and run backtests. Supports both oneshot and streaming modes.
     #[new]
     fn py_new(configs: Vec<BacktestRunConfig>) -> PyResult<Self> {
         Self::new(configs).map_err(to_pyruntime_err)
     }
 
+    /// Builds backtest engines from the run configurations.
+    ///
+    /// For each config, creates a `BacktestEngine`, adds venues, and loads
+    /// instruments from the catalog.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if engine creation, venue setup, or instrument loading fails.
     #[pyo3(name = "build")]
     fn py_build(&mut self) -> PyResult<()> {
         self.build().map_err(to_pyruntime_err)
     }
 
+    /// Runs all configured backtests and returns results.
+    ///
+    /// Automatically calls `build()` if engines have not been created yet.
+    /// For each run config, loads data from the catalog and runs the engine.
+    /// Supports both oneshot (`chunk_size = None`) and streaming modes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if building, data loading, or engine execution fails.
     #[pyo3(name = "run")]
     fn py_run(&mut self) -> PyResult<Vec<BacktestResult>> {
         self.run().map_err(to_pyruntime_err)
     }
 
+    /// Disposes all engines and releases resources.
     #[pyo3(name = "dispose")]
     fn py_dispose(&mut self) {
         self.dispose();
@@ -55,6 +78,7 @@ impl BacktestNode {
         reason = "Required for Python actor component registration"
     )]
     #[pyo3(name = "add_actor_from_config")]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_add_actor_from_config(
         &mut self,
         _py: Python,
@@ -140,7 +164,13 @@ impl BacktestNode {
             .map_err(to_pyruntime_err)?;
 
         // Validate no duplicate before any mutations
-        if engine.kernel().trader.actor_ids().contains(&actor_id) {
+        if engine
+            .kernel()
+            .trader
+            .borrow()
+            .actor_ids()
+            .contains(&actor_id)
+        {
             return Err(to_pyruntime_err(format!(
                 "Actor '{actor_id}' is already registered"
             )));
@@ -154,6 +184,7 @@ impl BacktestNode {
         let clock = engine
             .kernel_mut()
             .trader
+            .borrow_mut()
             .create_component_clock(component_id);
 
         // Phase 3: Register the actor with its dedicated clock
@@ -192,6 +223,7 @@ impl BacktestNode {
         engine
             .kernel_mut()
             .trader
+            .borrow_mut()
             .add_actor_id_for_lifecycle(actor_id)
             .map_err(to_pyruntime_err)?;
 
@@ -204,6 +236,7 @@ impl BacktestNode {
         reason = "Required for Python strategy component registration"
     )]
     #[pyo3(name = "add_strategy_from_config")]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_add_strategy_from_config(
         &mut self,
         _py: Python,
@@ -289,7 +322,13 @@ impl BacktestNode {
             .map_err(to_pyruntime_err)?;
 
         // Validate no duplicate before any mutations
-        if engine.kernel().trader.strategy_ids().contains(&strategy_id) {
+        if engine
+            .kernel()
+            .trader
+            .borrow()
+            .strategy_ids()
+            .contains(&strategy_id)
+        {
             return Err(to_pyruntime_err(format!(
                 "Strategy '{strategy_id}' is already registered"
             )));
@@ -304,6 +343,7 @@ impl BacktestNode {
         let clock = engine
             .kernel_mut()
             .trader
+            .borrow_mut()
             .create_component_clock(component_id);
 
         // Phase 3: Register the strategy with its dedicated clock
@@ -341,6 +381,7 @@ impl BacktestNode {
         engine
             .kernel_mut()
             .trader
+            .borrow_mut()
             .add_strategy_id_with_subscriptions::<PyStrategyInner>(strategy_id)
             .map_err(to_pyruntime_err)?;
 
@@ -353,7 +394,7 @@ impl BacktestNode {
     }
 }
 
-fn create_config_instance<'py>(
+pub(crate) fn create_config_instance<'py>(
     py: Python<'py>,
     config_path: &str,
     config: &HashMap<String, serde_json::Value>,
@@ -382,6 +423,7 @@ fn create_config_instance<'py>(
 
     // Convert config dict to Python dict
     let py_dict = PyDict::new(py);
+
     for (key, value) in config {
         let json_str = serde_json::to_string(value)
             .map_err(|e| anyhow::anyhow!("Failed to serialize config value: {e}"))?;

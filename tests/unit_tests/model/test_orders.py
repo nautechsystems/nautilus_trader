@@ -2340,6 +2340,79 @@ class TestOrders:
         assert order.venue_order_id == VenueOrderId("2")
         assert order.venue_order_ids == [TestIdStubs.venue_order_id()]
 
+    def test_order_updated_clears_quote_quantity_flag(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_str("10.000000"),
+            quote_quantity=True,
+        )
+
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        assert order.is_quote_quantity
+
+        updated = OrderUpdated(
+            order.trader_id,
+            order.strategy_id,
+            order.instrument_id,
+            order.client_order_id,
+            order.venue_order_id,
+            order.account_id,
+            Quantity.from_str("47.393365"),
+            None,
+            None,
+            UUID4(),
+            0,
+            0,
+            False,
+            False,  # is_quote_quantity
+        )
+
+        # Act
+        order.apply(updated)
+
+        # Assert
+        assert not order.is_quote_quantity
+        assert order.quantity == Quantity.from_str("47.393365")
+        assert order.leaves_qty == Quantity.from_str("47.393365")
+
+    def test_order_updated_dict_roundtrip_preserves_is_quote_quantity(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_str("10.000000"),
+        )
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        event = OrderUpdated(
+            order.trader_id,
+            order.strategy_id,
+            order.instrument_id,
+            order.client_order_id,
+            order.venue_order_id,
+            order.account_id,
+            Quantity.from_str("47.393365"),
+            None,
+            None,
+            UUID4(),
+            0,
+            0,
+            False,
+            False,  # is_quote_quantity
+        )
+
+        # Act
+        result = OrderUpdated.from_dict(OrderUpdated.to_dict(event))
+
+        # Assert
+        assert result == event
+        assert not result.is_quote_quantity
+
     def test_apply_order_filled_event_to_order_without_accepted(self):
         # Arrange
         order = self.order_factory.market(

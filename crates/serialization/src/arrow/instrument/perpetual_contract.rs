@@ -31,7 +31,7 @@ use nautilus_model::{
     enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
     instruments::perpetual_contract::PerpetualContract,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{money::Money, price::Price, quantity::Quantity},
 };
 #[allow(unused)]
 use rust_decimal::Decimal;
@@ -259,7 +259,7 @@ impl EncodeToRecordBatch for PerpetualContract {
 /// Returns an `EncodingError` if the RecordBatch cannot be decoded.
 pub fn decode_perpetual_contract_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
-    record_batch: RecordBatch,
+    record_batch: &RecordBatch,
 ) -> Result<Vec<PerpetualContract>, EncodingError> {
     let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();
@@ -327,28 +327,36 @@ pub fn decode_perpetual_contract_batch(
         let asset_class = AssetClass::from_str(asset_class_values.value(i))
             .map_err(|e| EncodingError::ParseError("asset_class", format!("row {i}: {e}")))?;
 
-        let base_currency =
-            if base_currency_values.is_null(i) {
-                None
-            } else {
-                let base_cur_str = base_currency_values
-                    .as_any()
-                    .downcast_ref::<StringArray>()
-                    .ok_or_else(|| {
-                        EncodingError::ParseError("base_currency", format!("row {i}: invalid type"))
-                    })?
-                    .value(i);
-                Some(Currency::from_str(base_cur_str).map_err(|e| {
-                    EncodingError::ParseError("base_currency", format!("row {i}: {e}"))
-                })?)
-            };
+        let base_currency = if base_currency_values.is_null(i) {
+            None
+        } else {
+            let base_cur_str = base_currency_values
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or_else(|| {
+                    EncodingError::ParseError("base_currency", format!("row {i}: invalid type"))
+                })?
+                .value(i);
+            Some(super::decode_currency(
+                base_cur_str,
+                "base_currency",
+                "perpetual_contract.base_currency",
+                i,
+            )?)
+        };
 
-        let quote_currency = Currency::from_str(quote_currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("quote_currency", format!("row {i}: {e}")))?;
-        let settlement_currency =
-            Currency::from_str(settlement_currency_values.value(i)).map_err(|e| {
-                EncodingError::ParseError("settlement_currency", format!("row {i}: {e}"))
-            })?;
+        let quote_currency = super::decode_currency(
+            quote_currency_values.value(i),
+            "quote_currency",
+            "perpetual_contract.quote_currency",
+            i,
+        )?;
+        let settlement_currency = super::decode_currency(
+            settlement_currency_values.value(i),
+            "settlement_currency",
+            "perpetual_contract.settlement_currency",
+            i,
+        )?;
         let is_inverse = is_inverse_values.value(i);
         let price_prec = price_precision_values.value(i);
         let size_prec = size_precision_values.value(i);
@@ -477,6 +485,7 @@ pub fn decode_perpetual_contract_batch(
                 .downcast_ref::<BinaryArray>()
                 .ok_or_else(|| EncodingError::ParseError("info", format!("row {i}: invalid type")))?
                 .value(i);
+
             match serde_json::from_slice::<Params>(info_bytes) {
                 Ok(info_dict) => Some(info_dict),
                 Err(e) => {

@@ -16,14 +16,6 @@
 //! Enums for dYdX WebSocket operations, channels, and message types.
 
 use chrono::{DateTime, Utc};
-use nautilus_model::{
-    data::{
-        Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
-        OrderBookDeltas,
-    },
-    events::AccountState,
-    reports::{FillReport, OrderStatusReport, PositionStatusReport},
-};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use strum::{AsRefStr, Display, EnumString, FromRepr};
@@ -31,8 +23,9 @@ use strum::{AsRefStr, Display, EnumString, FromRepr};
 use super::{
     error::DydxWebSocketError,
     messages::{
-        DydxWsConnectedMsg, DydxWsSubaccountsChannelData, DydxWsSubaccountsSubscribed,
-        DydxWsSubscriptionMsg,
+        DydxCandle, DydxMarketsContents, DydxOrderbookContents, DydxOrderbookSnapshotContents,
+        DydxTradeContents, DydxWsConnectedMsg, DydxWsSubaccountsChannelData,
+        DydxWsSubaccountsSubscribed, DydxWsSubscriptionMsg,
     },
 };
 
@@ -54,9 +47,9 @@ use super::{
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum DydxWsOperation {
-    /// Subscribe to a channel.
+    /// Subscribes to a channel.
     Subscribe,
-    /// Unsubscribe from a channel.
+    /// Unsubscribes from a channel.
     Unsubscribe,
     /// Ping keepalive message.
     Ping,
@@ -203,41 +196,45 @@ pub enum DydxWsMessage {
     Pong,
 }
 
-/// Nautilus domain message emitted after parsing dYdX WebSocket events.
+/// Venue-specific message emitted by the handler to consumers.
 ///
-/// This enum contains fully-parsed Nautilus domain objects ready for consumption
-/// by the Python layer without additional processing.
+/// The handler deserializes raw WebSocket JSON into these typed variants
+/// without converting to Nautilus domain types. Consumers (data client,
+/// execution client, Python bindings) perform the final conversion using
+/// their own instrument caches.
 #[derive(Debug, Clone)]
-pub enum NautilusWsMessage {
-    /// Market data (trades, quotes, bars).
-    Data(Vec<Data>),
-    /// Order book deltas.
-    Deltas(Box<OrderBookDeltas>),
-    /// Order status reports from subaccount stream.
-    Order(Box<OrderStatusReport>),
-    /// Fill reports from subaccount stream.
-    Fill(Box<FillReport>),
-    /// Position status reports from subaccount stream.
-    Position(Box<PositionStatusReport>),
-    /// Account state updates from subaccount stream.
-    AccountState(Box<AccountState>),
-    /// Raw subaccount subscription with full state (for execution client parsing).
+pub enum DydxWsOutputMessage {
+    /// Trade data for a market.
+    Trades {
+        id: String,
+        contents: DydxTradeContents,
+    },
+    /// Order book snapshot (initial subscription).
+    OrderbookSnapshot {
+        id: String,
+        contents: DydxOrderbookSnapshotContents,
+    },
+    /// Order book delta update.
+    OrderbookUpdate {
+        id: String,
+        contents: DydxOrderbookContents,
+    },
+    /// Order book batch update (multiple deltas).
+    OrderbookBatch {
+        id: String,
+        updates: Vec<DydxOrderbookContents>,
+    },
+    /// Candle data for a market.
+    Candles { id: String, contents: DydxCandle },
+    /// Markets channel data (oracle prices, trading, instrument status).
+    Markets(DydxMarketsContents),
+    /// Subaccount subscription with initial account state.
     SubaccountSubscribed(Box<DydxWsSubaccountsSubscribed>),
-    /// Raw subaccounts channel data (orders/fills) for execution client parsing.
+    /// Subaccount channel data (orders, fills).
     SubaccountsChannelData(Box<DydxWsSubaccountsChannelData>),
-    /// Mark price update from oracle prices.
-    MarkPrice(MarkPriceUpdate),
-    /// Index price update from oracle prices.
-    IndexPrice(IndexPriceUpdate),
-    /// Funding rate update from market trading data.
-    FundingRate(FundingRateUpdate),
-    /// Instrument status update from market trading data.
-    InstrumentStatus(InstrumentStatus),
-    /// Block height update from chain with timestamp.
+    /// Block height update from chain.
     BlockHeight { height: u64, time: DateTime<Utc> },
-    /// New instrument discovered via WebSocket that needs HTTP fetch.
-    NewInstrumentDiscovered { ticker: String },
-    /// Error message.
+    /// Error from the venue or handler.
     Error(DydxWebSocketError),
     /// Reconnection notification.
     Reconnected,

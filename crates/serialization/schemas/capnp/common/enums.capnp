@@ -1,5 +1,8 @@
 @0xb2c3d4e5f6071829;
 # Cap'n Proto schema for Nautilus enum types
+#
+# WARNING: This schema is not yet stable and may change without notice
+# between releases. Do not depend on wire compatibility across versions.
 
 enum AccountType {
     cash @0;
@@ -208,6 +211,12 @@ enum CurrencyType {
 enum InstrumentCloseType {
     endOfSession @0;
     contractExpired @1;
+}
+
+enum OptionalBool {
+    unknown @0;
+    true @1;
+    false @2;
 }
 
 enum MarketStatusAction {

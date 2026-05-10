@@ -1,7 +1,11 @@
 # Instruments
 
-The `Instrument` base class represents the core specification for any tradable asset/contract. There are
-currently a number of subclasses representing a range of *asset classes* and *instrument classes* which are supported by the platform:
+An instrument represents the specification for any tradable asset or contract. All
+instrument types are implemented as Rust structs that implement the `Instrument`
+trait. In Python, these are exposed as Cython extension types (via
+`nautilus_trader.model.instruments`), with parallel PyO3 representations that are
+converted to Cython types at the boundary. Pure Rust systems use the Rust types
+directly. The platform supports a range of asset classes and instrument classes:
 
 - `Equity`: Listed shares or ETFs traded on cash markets.
 - `CurrencyPair`: Spot FX or crypto pair in BASE/QUOTE format traded in cash markets.
@@ -43,8 +47,6 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ```
 
-Exchange specific instruments can be discovered from live exchange data using an adapters `InstrumentProvider`:
-
 ```python
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.model import InstrumentId
@@ -56,21 +58,39 @@ btcusdt = InstrumentId.from_str("BTCUSDT.BINANCE")
 instrument = provider.find(btcusdt)
 ```
 
-Or flexibly defined by the user through an `Instrument` constructor, or one of its more specific subclasses:
+Or defined directly by constructing a specific instrument type:
 
 ```python
-from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.instruments import OptionContract
 
-instrument = Instrument(...)  # <-- provide all necessary parameters
+instrument = OptionContract(...)  # provide all necessary parameters
 ```
 
-See the full instrument [API Reference](../api_reference/model/instruments.md).
+```rust
+use nautilus_model::instruments::CurrencyPair;
+use nautilus_model::identifiers::{InstrumentId, Symbol};
+use nautilus_model::types::{Currency, Price, Quantity};
+
+let instrument = CurrencyPair::new(
+    InstrumentId::from("EUR/USD.SIM"),
+    Symbol::from("EUR/USD"),
+    Currency::from("EUR"),
+    Currency::from("USD"),
+    5,                          // price_precision
+    0,                          // size_precision
+    Price::from("0.00001"),     // price_increment
+    Quantity::from("1"),        // size_increment
+    // ... remaining parameters
+);
+```
+
+See the full instrument [API Reference](/docs/python-api-latest/model/instruments.html).
 
 ## Live trading
 
-Live integration adapters have defined `InstrumentProvider` classes which work in an automated way to cache the
-latest instrument definitions for the exchange. Refer to a particular `Instrument`
-object by passing the matching `InstrumentId` to data and execution related methods and classes that require one.
+Live integration adapters have `InstrumentProvider` implementations that automatically
+cache the latest instrument definitions for the venue. Refer to a particular instrument
+by passing the matching `InstrumentId` to data and execution methods that require one.
 
 ## Finding instruments
 
@@ -82,6 +102,13 @@ from nautilus_trader.model import InstrumentId
 
 instrument_id = InstrumentId.from_str("ETHUSDT-PERP.BINANCE")
 instrument = self.cache.instrument(instrument_id)
+```
+
+```rust
+use nautilus_model::identifiers::InstrumentId;
+
+let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+let instrument = cache.instrument(&instrument_id);
 ```
 
 It's also possible to subscribe to any changes to a particular instrument:
@@ -100,7 +127,7 @@ self.subscribe_instruments(binance)
 ```
 
 When an update to the instrument(s) is received by the `DataEngine`, the object(s) will
-be passed to the actors/strategies `on_instrument()` method. A user can override this method with actions
+be passed to the `on_instrument()` handler. Override this method with actions
 to take upon receiving an instrument update:
 
 ```python
@@ -147,10 +174,10 @@ corruption of fill prices and quantities.
 
 Each instrument defines two precision values:
 
-| Field             | Constrains                           | Example            |
-|-------------------|--------------------------------------|--------------------|
-| `price_precision` | Order prices, trigger prices, fills. | `2` → `50000.01`  |
-| `size_precision`  | Order quantities, fill quantities.   | `5` → `1.00001`   |
+| Field             | Constrains                           | Example          |
+|-------------------|--------------------------------------|------------------|
+| `price_precision` | Order prices, trigger prices, fills. | `2` → `50000.01` |
+| `size_precision`  | Order quantities, fill quantities.   | `5` → `1.00001`  |
 
 These precisions are paired with minimum increments:
 
@@ -230,7 +257,7 @@ published limits *can* result in the exchange rejecting orders.
 
 Margin calculations are handled by the `MarginAccount` class. This section explains how margins work and introduces key concepts you need to know.
 
-### When margins apply?
+### When do margins apply?
 
 Each exchange (e.g., CME or Binance) operates with a specific account type that determines whether margin calculations are applicable.
 When setting up an exchange venue, you'll specify one of these account types:
@@ -322,7 +349,7 @@ The framework provides two built-in fee model implementations:
 ### Creating custom fee models
 
 While the built-in fee models cover common scenarios, you might encounter situations requiring specific commission structures.
-NautilusTrader's flexible architecture allows you to implement custom fee models by inheriting from the base `FeeModel` class.
+NautilusTrader's flexible architecture allows you to implement custom fee models by inheriting from `FeeModel`.
 
 For example, if you're trading futures on exchanges that charge per-contract commissions (like CME), you can implement
 a custom fee model. When creating custom fee models, we inherit from the `FeeModel` base class, which is implemented
@@ -410,104 +437,17 @@ their component instruments based on the synthetic instrument's behavior.
 The venue for a synthetic instrument is always designated as `'SYNTH'`.
 :::
 
-### Formula
+A synthetic instrument derives its price from a formula over two or more component instruments.
+It behaves like a normal instrument for subscriptions and emulation triggers, but it exists only
+within NautilusTrader.
 
-A synthetic instrument is composed of a combination of two or more component instruments (which
-can include instruments from multiple venues), as well as a "derivation formula".
-Utilizing the dynamic expression engine powered by the [evalexpr](https://github.com/ISibboI/evalexpr)
-Rust crate, the platform can evaluate the formula to calculate the latest synthetic price tick
-from the incoming component instrument prices.
+See the [Synthetics](synthetics.md) guide for:
 
-See the `evalexpr` documentation for a full description of available features, operators and precedence.
-
-:::tip
-Before defining a new synthetic instrument, ensure that all component instruments are already defined and exist in the cache.
-:::
-
-### Subscribing
-
-The following example demonstrates the creation of a new synthetic instrument with an actor/strategy.
-This synthetic instrument will represent a simple spread between Bitcoin and
-Ethereum spot prices on Binance. For this example, it is assumed that spot instruments for
-`BTCUSDT.BINANCE` and `ETHUSDT.BINANCE` are already present in the cache.
-
-```python
-from nautilus_trader.model.instruments import SyntheticInstrument
-
-btcusdt_binance_id = InstrumentId.from_str("BTCUSDT.BINANCE")
-ethusdt_binance_id = InstrumentId.from_str("ETHUSDT.BINANCE")
-
-# Define the synthetic instrument
-synthetic = SyntheticInstrument(
-    symbol=Symbol("BTC-ETH:BINANCE"),
-    price_precision=8,
-    components=[
-        btcusdt_binance_id,
-        ethusdt_binance_id,
-    ],
-    formula=f"{btcusdt_binance_id} - {ethusdt_binance_id}",
-    ts_event=self.clock.timestamp_ns(),
-    ts_init=self.clock.timestamp_ns(),
-)
-
-# Recommended to store the synthetic instruments ID somewhere
-self._synthetic_id = synthetic.id
-
-# Add the synthetic instrument for use by other components
-self.add_synthetic(synthetic)
-
-# Subscribe to quotes for the synthetic instrument
-self.subscribe_quote_ticks(self._synthetic_id)
-```
-
-:::note
-The `instrument_id` for the synthetic instrument in the above example will be structured as `{symbol}.{SYNTH}`, resulting in `'BTC-ETH:BINANCE.SYNTH'`.
-:::
-
-### Updating formulas
-
-It's also possible to update a synthetic instrument formulas at any time. The following example
-shows how to achieve this with an actor/strategy.
-
-```python
-# Recover the synthetic instrument from the cache (assuming `synthetic_id` was assigned)
-synthetic = self.cache.synthetic(self._synthetic_id)
-
-# Update the formula to take the average
-new_formula = "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2"
-synthetic.change_formula(new_formula)
-
-# Now update the synthetic instrument
-self.update_synthetic(synthetic)
-```
-
-### Trigger instrument IDs
-
-The platform allows for emulated orders to be triggered based on synthetic instrument prices. In
-the following example, we build upon the previous one to submit a new emulated order.
-This order will be retained in the emulator until a trigger from synthetic quotes releases it.
-It will then be submitted to Binance as a MARKET order:
-
-```python
-order = self.strategy.order_factory.limit(
-    instrument_id=ETHUSDT_BINANCE.id,
-    order_side=OrderSide.BUY,
-    quantity=Quantity.from_str("1.5"),
-    price=Price.from_str("30000.00000000"),  # <-- Synthetic instrument price
-    emulation_trigger=TriggerType.DEFAULT,
-    trigger_instrument_id=self._synthetic_id,  # <-- Synthetic instrument identifier
-)
-
-self.strategy.submit_order(order)
-```
-
-### Error handling
-
-Considerable effort has been made to validate inputs, including the derivation formula for
-synthetic instruments. Despite this, caution is advised as invalid or erroneous inputs may lead to
-undefined behavior.
-
-See the [`SyntheticInstrument` API Reference](../api_reference/model/instruments.md#class-syntheticinstrument-1) for input requirements and potential exceptions.
+- The formula language reference.
+- Supported operators and functions.
+- Creation and update examples.
+- Triggering emulated orders from synthetic prices.
+- Validation rules and error handling.
 
 ## Related guides
 

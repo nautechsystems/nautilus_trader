@@ -18,22 +18,31 @@ workspace = true
 
 [lib]
 name = "nautilus_bybit"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = ["high-precision"]
+examples = [
+  "nautilus-live/node",
+  "nautilus-network/transport-sockudo",
+  "nautilus-trading/examples",
+]
 python = [
+  "dep:nautilus-system",
   "nautilus-common/python",
   "nautilus-core/python",
+  "nautilus-live/python",
   "nautilus-model/python",
   "nautilus-network/python",
   "nautilus-system/python",
   "pyo3",
   "pyo3-async-runtimes",
+  "pyo3-stub-gen",
 ]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
+  "nautilus-live/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
   "python",
@@ -48,11 +57,10 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
-nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
-nautilus-system = { workspace = true }
+nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -60,12 +68,12 @@ arc-swap = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
+bon = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 dotenvy = { workspace = true }
 futures-util = { workspace = true }
-hex = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
@@ -82,15 +90,16 @@ zeroize = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+nautilus-trading = { workspace = true }
 
 axum = { workspace = true }
 criterion = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
-url = { workspace = true }
 
 # Run with `cargo bench -p nautilus-bybit --bench websocket`
 [[bench]]
@@ -102,23 +111,46 @@ harness = false
 name = "bybit-http"
 path = "bin/http.rs"
 doc = false
+test = false
 
 # Run with `cargo run -p nautilus-bybit --bin bybit-ws-data`.
 [[bin]]
 name = "bybit-ws-data"
 path = "bin/ws_data.rs"
 doc = false
+test = false
 
-# Run with `cargo run --example bybit-data-tester --package nautilus-bybit`.
+# Run with `cargo run --example bybit-data-tester --package nautilus-bybit --features examples`.
 [[example]]
 name = "bybit-data-tester"
 path = "examples/node_data_tester.rs"
-required-features = []
+required-features = ["examples"]
 doc = false
 
-# Run with `cargo run --example bybit-exec-tester --package nautilus-bybit`.
+# Run with `cargo run --example bybit-exec-tester --package nautilus-bybit --features examples`.
 [[example]]
 name = "bybit-exec-tester"
 path = "examples/node_exec_tester.rs"
-required-features = []
+required-features = ["examples"]
+doc = false
+
+# Run with `cargo run --example bybit-greeks-tester --package nautilus-bybit --features examples`.
+[[example]]
+name = "bybit-greeks-tester"
+path = "examples/node_greeks.rs"
+required-features = ["examples"]
+doc = false
+
+# Run with `cargo run --example bybit-option-chain --package nautilus-bybit --features examples`.
+[[example]]
+name = "bybit-option-chain"
+path = "examples/node_option_chain.rs"
+required-features = ["examples"]
+doc = false
+
+# Run with `cargo run --example bybit-delta-neutral --package nautilus-bybit --features examples`.
+[[example]]
+name = "bybit-delta-neutral"
+path = "examples/node_delta_neutral.rs"
+required-features = ["examples"]
 doc = false

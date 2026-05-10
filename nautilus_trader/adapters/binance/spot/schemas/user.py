@@ -313,13 +313,27 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
 
             instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
             if instrument is None:
-                raise ValueError(
-                    f"Cannot process fill for {instrument_id}: instrument not found in cache",
+                exec_client._log.warning(
+                    f"Instrument {instrument_id} not in cache, "
+                    f"sending order status report for reconciliation",
                 )
+
+                report = self.parse_to_order_status_report(
+                    account_id=exec_client.account_id,
+                    instrument_id=instrument_id,
+                    client_order_id=client_order_id,
+                    venue_order_id=venue_order_id,
+                    ts_event=ts_event,
+                    ts_init=exec_client._clock.timestamp_ns(),
+                    enum_parser=exec_client._enum_parser,
+                )
+                exec_client._send_order_status_report(report)
+                return
 
             # Determine commission
             commission_asset = self.N
             commission_amount = self.n
+
             if commission_asset is not None:
                 commission = Money.from_str(f"{commission_amount} {commission_asset}")
             else:
@@ -367,12 +381,9 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
                 ts_event=ts_event,
             )
         elif self.x == BinanceExecutionType.REJECTED:
-            # A rejection can occur for many reasons, but most commonly for
-            # POST-ONLY (GTX) orders that would immediately take liquidity. We
-            # flag these specifically so downstream components can distinguish
-            # between generic rejections and those due to the post-only
-            # constraint.
-            due_post_only = self.f == BinanceTimeInForce.GTX
+            due_post_only = self.f == BinanceTimeInForce.GTX or (
+                self.o == BinanceOrderType.LIMIT_MAKER and self.r in ("", "NONE")
+            )
 
             exec_client.generate_order_rejected(
                 strategy_id=strategy_id,

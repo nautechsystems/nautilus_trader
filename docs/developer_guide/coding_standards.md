@@ -28,7 +28,7 @@ Shell scripts in this repository use **bash** (not POSIX sh) and must be portabl
 | `sha256sum`          | `sha256sum file`  | N/A               | Use `shasum -a 256` or detect            |
 | `readlink -f`        | Works             | N/A               | Avoid, or use `realpath`                 |
 | `grep -P` (PCRE)     | Works             | N/A               | Use `-E` (extended regex) instead        |
-| `date` (nanoseconds) | `date +%N`        | N/A               | Use `$RANDOM` for cache-busting          |
+| `date` (nanoseconds) | `date +%N`        | N/A               | Use `$RANDOM` for cache‑busting          |
 
 **Bash version**: macOS ships with bash 3.2; avoid bash 4+ features in user-facing scripts:
 
@@ -79,11 +79,11 @@ documentation feel natural to end-users.
 
 ### Formatting
 
-1. For longer lines of code, and when passing more than a couple of arguments, you should take a new line which aligns at the next logical indent (rather than attempting a hanging 'vanity' alignment off an opening parenthesis). This practice conserves space to the right, ensures important code is more central in view, and is also robust to function/method name changes.
+1. For longer lines of code, and when passing more than a couple of arguments, you should take a new line which aligns at the next logical indent (rather than attempting a hanging 'vanity' alignment off an opening parenthesis). This practice conserves space to the right, keeps important code more central in view, and survives function/method name changes.
 
 2. The closing parenthesis should be located on a new line, aligned at the logical indent.
 
-3. Also ensure multiple hanging parameters or arguments end with a trailing comma:
+3. Multiple hanging parameters or arguments should end with a trailing comma:
 
 ```python
 long_method_with_many_params(
@@ -122,7 +122,7 @@ uv pip install gitlint
 To enable gitlint as an automatic commit-msg hook:
 
 ```bash
-pre-commit install --hook-type commit-msg
+prek install --hook-type commit-msg
 ```
 
 **Manual usage**: Check your last commit message:
@@ -137,5 +137,5 @@ Configuration is in `.gitlint` at the repository root:
 - **79-character body width**: Aligns with Python's PEP 8 conventions and the traditional limit for git tooling.
 
 :::note
-Gitlint may be enforced in CI in the future, so adopting these practices early helps ensure a smooth transition.
+Gitlint may be enforced in CI in the future, so adopting these practices early eases the transition.
 :::

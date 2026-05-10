@@ -122,6 +122,7 @@ class BetfairDataClient(LiveMarketDataClient):
             certs_dir=config.certs_dir,
         )
         self._race_stream: BetfairRaceStreamClient | None = None
+
         if config.subscribe_race_data:
             self._race_stream = BetfairRaceStreamClient(
                 http_client=self._client,
@@ -201,6 +202,7 @@ class BetfairDataClient(LiveMarketDataClient):
     async def _keep_alive(self) -> None:
         keep_alive_hrs = self.config.keep_alive_secs / (60 * 60)
         self._log.info(f"Starting keep-alive every {keep_alive_hrs}hrs")
+
         while True:
             try:
                 await asyncio.sleep(self.config.keep_alive_secs)

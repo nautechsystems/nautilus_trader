@@ -15,477 +15,26 @@
 
 //! Integration tests for Ax WebSocket clients using a mock server.
 
-use std::{
-    net::SocketAddr,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-    },
-    time::Duration,
-};
+mod common;
 
-use axum::{
-    Router,
-    extract::{
-        State,
-        ws::{Message, WebSocket, WebSocketUpgrade},
-    },
-    response::Response,
-    routing::get,
-};
+use std::{sync::atomic::Ordering, time::Duration};
+
 use nautilus_architect_ax::{
     common::enums::{AxCandleWidth, AxMarketDataLevel},
     websocket::{data::AxMdWebSocketClient, orders::AxOrdersWebSocketClient},
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
-    enums::{AssetClass, OrderSide, OrderType, TimeInForce},
-    identifiers::{
-        AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, Venue, VenueOrderId,
-    },
-    instruments::{Instrument, InstrumentAny, PerpetualContract},
-    types::{Currency, Price, Quantity},
+    enums::{OrderSide, OrderType, TimeInForce},
+    identifiers::{AccountId, ClientOrderId, StrategyId, TraderId, VenueOrderId},
+    instruments::Instrument,
+    types::{Price, Quantity},
 };
+use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
-use rust_decimal::Decimal;
-use serde_json::json;
 use ustr::Ustr;
 
-#[derive(Clone)]
-struct TestServerState {
-    connection_count: Arc<tokio::sync::Mutex<usize>>,
-    subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
-    subscription_events: Arc<tokio::sync::Mutex<Vec<(String, bool)>>>,
-    fail_next_subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
-    authenticated: Arc<AtomicBool>,
-    disconnect_trigger: Arc<AtomicBool>,
-    ping_count: Arc<AtomicUsize>,
-    pong_count: Arc<AtomicUsize>,
-    heartbeat_count: Arc<AtomicUsize>,
-    messages_received: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
-}
-
-impl Default for TestServerState {
-    fn default() -> Self {
-        Self {
-            connection_count: Arc::new(tokio::sync::Mutex::new(0)),
-            subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            subscription_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            fail_next_subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            authenticated: Arc::new(AtomicBool::new(false)),
-            disconnect_trigger: Arc::new(AtomicBool::new(false)),
-            ping_count: Arc::new(AtomicUsize::new(0)),
-            pong_count: Arc::new(AtomicUsize::new(0)),
-            heartbeat_count: Arc::new(AtomicUsize::new(0)),
-            messages_received: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-        }
-    }
-}
-
-impl TestServerState {
-    async fn reset(&self) {
-        *self.connection_count.lock().await = 0;
-        self.subscriptions.lock().await.clear();
-        self.subscription_events.lock().await.clear();
-        self.fail_next_subscriptions.lock().await.clear();
-        self.authenticated.store(false, Ordering::Relaxed);
-        self.disconnect_trigger.store(false, Ordering::Relaxed);
-        self.ping_count.store(0, Ordering::Relaxed);
-        self.pong_count.store(0, Ordering::Relaxed);
-        self.heartbeat_count.store(0, Ordering::Relaxed);
-        self.messages_received.lock().await.clear();
-    }
-
-    async fn set_subscription_failures(&self, topics: Vec<String>) {
-        *self.fail_next_subscriptions.lock().await = topics;
-    }
-
-    async fn subscription_events(&self) -> Vec<(String, bool)> {
-        self.subscription_events.lock().await.clone()
-    }
-
-    async fn get_messages(&self) -> Vec<serde_json::Value> {
-        self.messages_received.lock().await.clone()
-    }
-}
-
-async fn handle_md_websocket(
-    ws: WebSocketUpgrade,
-    State(state): State<TestServerState>,
-) -> Response {
-    ws.on_upgrade(|socket| handle_md_socket(socket, state))
-}
-
-async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
-    {
-        let mut count = state.connection_count.lock().await;
-        *count += 1;
-    }
-
-    let state_clone = state.clone();
-    let heartbeat_handle = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
-        loop {
-            interval.tick().await;
-
-            if state_clone.disconnect_trigger.load(Ordering::Relaxed) {
-                break;
-            }
-            state_clone.heartbeat_count.fetch_add(1, Ordering::Relaxed);
-        }
-    });
-
-    loop {
-        if state.disconnect_trigger.load(Ordering::Relaxed) {
-            break;
-        }
-
-        let msg_opt = match tokio::time::timeout(Duration::from_millis(50), socket.recv()).await {
-            Ok(opt) => opt,
-            Err(_) => continue,
-        };
-
-        let Some(msg) = msg_opt else {
-            break;
-        };
-
-        let msg = match msg {
-            Ok(m) => m,
-            Err(_) => break,
-        };
-
-        match msg {
-            Message::Text(text) => {
-                let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
-                    continue;
-                };
-
-                state.messages_received.lock().await.push(value.clone());
-
-                let msg_type = value.get("type").and_then(|v| v.as_str());
-
-                match msg_type {
-                    Some("subscribe") => {
-                        let symbol = value.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
-                        let level = value
-                            .get("level")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("LEVEL_1");
-                        let key = format!("{symbol}:{level}");
-
-                        let fail_list = state.fail_next_subscriptions.lock().await.clone();
-                        let should_fail = fail_list.contains(&key);
-
-                        state
-                            .subscription_events
-                            .lock()
-                            .await
-                            .push((key.clone(), !should_fail));
-
-                        if !should_fail {
-                            let mut subs = state.subscriptions.lock().await;
-                            if !subs.contains(&key) {
-                                subs.push(key);
-                            }
-                        }
-
-                        let book_file = match level {
-                            "LEVEL_1" => "ws_md_book_l1.json",
-                            "LEVEL_2" => "ws_md_book_l2.json",
-                            "LEVEL_3" => "ws_md_book_l3.json",
-                            _ => "ws_md_book_l1.json",
-                        };
-
-                        let book_msg = load_test_data(book_file);
-
-                        if socket
-                            .send(Message::Text(book_msg.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-
-                        let trade_msg = load_test_data("ws_md_trade.json");
-
-                        if socket
-                            .send(Message::Text(trade_msg.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    Some("unsubscribe") => {
-                        let symbol = value.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
-
-                        let mut subs = state.subscriptions.lock().await;
-                        subs.retain(|s| !s.starts_with(symbol));
-
-                        let mut events = state.subscription_events.lock().await;
-                        events.retain(|(t, _)| !t.starts_with(symbol));
-                    }
-                    Some("subscribe_candles") => {
-                        let symbol = value.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
-                        let width = value.get("width").and_then(|v| v.as_str()).unwrap_or("1m");
-
-                        let key = format!("{symbol}:candle:{width}");
-                        state
-                            .subscription_events
-                            .lock()
-                            .await
-                            .push((key.clone(), true));
-
-                        let mut subs = state.subscriptions.lock().await;
-                        if !subs.contains(&key) {
-                            subs.push(key);
-                        }
-
-                        let candle_msg = load_test_data("ws_md_candle.json");
-
-                        if socket
-                            .send(Message::Text(candle_msg.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    Some("unsubscribe_candles") => {
-                        let symbol = value.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
-
-                        let mut subs = state.subscriptions.lock().await;
-                        subs.retain(|s| !s.starts_with(&format!("{symbol}:candle")));
-                    }
-                    _ => {}
-                }
-            }
-            Message::Ping(_) => {
-                state.ping_count.fetch_add(1, Ordering::Relaxed);
-
-                if socket.send(Message::Pong(vec![].into())).await.is_err() {
-                    break;
-                }
-            }
-            Message::Pong(_) => {
-                state.pong_count.fetch_add(1, Ordering::Relaxed);
-            }
-            Message::Close(_) => {
-                break;
-            }
-            _ => {}
-        }
-    }
-
-    heartbeat_handle.abort();
-
-    let mut count = state.connection_count.lock().await;
-    *count = count.saturating_sub(1);
-}
-
-async fn handle_orders_websocket(
-    ws: WebSocketUpgrade,
-    State(state): State<TestServerState>,
-) -> Response {
-    ws.on_upgrade(|socket| handle_orders_socket(socket, state))
-}
-
-async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
-    {
-        let mut count = state.connection_count.lock().await;
-        *count += 1;
-    }
-
-    state.authenticated.store(true, Ordering::Relaxed);
-
-    loop {
-        if state.disconnect_trigger.load(Ordering::Relaxed) {
-            break;
-        }
-
-        let msg_opt = match tokio::time::timeout(Duration::from_millis(50), socket.recv()).await {
-            Ok(opt) => opt,
-            Err(_) => continue,
-        };
-
-        let Some(msg) = msg_opt else {
-            break;
-        };
-
-        let msg = match msg {
-            Ok(m) => m,
-            Err(_) => break,
-        };
-
-        match msg {
-            Message::Text(text) => {
-                let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
-                    continue;
-                };
-
-                state.messages_received.lock().await.push(value.clone());
-
-                let msg_type = value.get("t").and_then(|v| v.as_str());
-
-                match msg_type {
-                    Some("p") => {
-                        let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
-                        let ack = json!({
-                            "t": "a",
-                            "rid": rid,
-                            "oid": format!("order-{rid}"),
-                            "s": value.get("s").and_then(|v| v.as_str()).unwrap_or(""),
-                            "d": value.get("d").and_then(|v| v.as_str()).unwrap_or("BUY"),
-                            "q": value.get("q").and_then(|v| v.as_i64()).unwrap_or(0),
-                            "p": value.get("p").and_then(|v| v.as_str()).unwrap_or("0"),
-                        });
-
-                        if socket
-                            .send(Message::Text(ack.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    Some("c") => {
-                        let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
-                        let ack = json!({
-                            "t": "x",
-                            "rid": rid,
-                            "oid": value.get("oid").and_then(|v| v.as_str()).unwrap_or(""),
-                        });
-
-                        if socket
-                            .send(Message::Text(ack.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    Some("o") => {
-                        let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
-                        let response = load_test_data("ws_orders_open_orders.json");
-                        let mut response = response.clone();
-                        if let Some(obj) = response.as_object_mut() {
-                            obj.insert("rid".to_string(), json!(rid));
-                        }
-
-                        if socket
-                            .send(Message::Text(response.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            Message::Ping(_) => {
-                state.ping_count.fetch_add(1, Ordering::Relaxed);
-
-                if socket.send(Message::Pong(vec![].into())).await.is_err() {
-                    break;
-                }
-            }
-            Message::Pong(_) => {
-                state.pong_count.fetch_add(1, Ordering::Relaxed);
-            }
-            Message::Close(_) => {
-                break;
-            }
-            _ => {}
-        }
-    }
-
-    let mut count = state.connection_count.lock().await;
-    *count = count.saturating_sub(1);
-}
-
-fn load_test_data(filename: &str) -> serde_json::Value {
-    let path = format!("{}/test_data/{filename}", env!("CARGO_MANIFEST_DIR"));
-    let content = std::fs::read_to_string(&path).unwrap_or_else(|_| match filename {
-            "ws_md_book_l1.json" => r#"{"t":"1","s":"EURUSD-PERP","b":"50000.00","B":"1.0","a":"50001.00","A":"1.0","ts":"1234567890000000000"}"#.to_string(),
-            "ws_md_book_l2.json" => r#"{"t":"2","s":"EURUSD-PERP","b":[],"a":[],"ts":"1234567890000000000"}"#.to_string(),
-            "ws_md_book_l3.json" => r#"{"t":"3","s":"EURUSD-PERP","b":[],"a":[],"ts":"1234567890000000000"}"#.to_string(),
-            "ws_md_trade.json" => r#"{"t":"s","s":"EURUSD-PERP","p":"50000.00","q":"0.1","d":"BUY","tx":"123","ts":"1234567890000000000"}"#.to_string(),
-            "ws_md_candle.json" => r#"{"t":"c","s":"EURUSD-PERP","o":"50000","h":"50100","l":"49900","c":"50050","v":"100","ts":"1234567890000000000"}"#.to_string(),
-            "ws_orders_open_orders.json" => r#"{"t":"O","orders":[]}"#.to_string(),
-            _ => "{}".to_string(),
-    });
-    serde_json::from_str(&content).unwrap_or_else(|_| json!({}))
-}
-
-fn create_test_router(state: TestServerState) -> Router {
-    Router::new()
-        .route("/md/ws", get(handle_md_websocket))
-        .route("/orders/ws", get(handle_orders_websocket))
-        .with_state(state)
-}
-
-async fn start_test_server()
--> Result<(SocketAddr, TestServerState), Box<dyn std::error::Error + Send + Sync>> {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-    let addr = listener.local_addr()?;
-    let state = TestServerState::default();
-    let router = create_test_router(state.clone());
-
-    tokio::spawn(async move {
-        axum::serve(listener, router).await.unwrap();
-    });
-
-    wait_until_async(
-        || async { tokio::net::TcpStream::connect(addr).await.is_ok() },
-        Duration::from_secs(5),
-    )
-    .await;
-
-    Ok((addr, state))
-}
-
-async fn wait_for_connection(state: &TestServerState) {
-    wait_until_async(
-        || async { *state.connection_count.lock().await > 0 },
-        Duration::from_secs(5),
-    )
-    .await;
-}
-
-fn create_test_instrument(symbol: &str) -> InstrumentAny {
-    let underlying = Ustr::from(symbol.split('-').next().unwrap_or(symbol));
-    let instrument = PerpetualContract::new(
-        InstrumentId::new(Symbol::new(symbol), Venue::new("AX")),
-        Symbol::new(symbol),
-        underlying,
-        AssetClass::Cryptocurrency,
-        None,
-        Currency::USD(),
-        Currency::USD(),
-        false,
-        2,
-        3,
-        Price::new(0.01, 2),
-        Quantity::new(0.001, 3),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(Decimal::new(1, 2)),
-        Some(Decimal::new(5, 3)),
-        Some(Decimal::new(2, 4)),
-        Some(Decimal::new(5, 4)),
-        None,
-        0.into(),
-        0.into(),
-    );
-    InstrumentAny::PerpetualContract(instrument)
-}
+use crate::common::server::{create_test_instrument, start_test_server, wait_for_connection};
 
 #[rstest]
 #[tokio::test]
@@ -493,7 +42,13 @@ async fn test_md_client_connection() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), Some(30));
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -508,7 +63,13 @@ async fn test_md_client_connection() {
 #[tokio::test]
 async fn test_md_client_url_accessor() {
     let ws_url = "ws://localhost:9999/md/ws".to_string();
-    let client = AxMdWebSocketClient::new(ws_url.clone(), "test_token".to_string(), None);
+    let client = AxMdWebSocketClient::new(
+        ws_url.clone(),
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     assert_eq!(client.url(), ws_url);
 }
@@ -519,6 +80,8 @@ async fn test_md_client_not_active_before_connect() {
     let client = AxMdWebSocketClient::new(
         "ws://localhost:9999/md/ws".to_string(),
         "test_token".to_string(),
+        30,
+        TransportBackend::default(),
         None,
     );
 
@@ -532,6 +95,8 @@ async fn test_md_connection_failure_to_invalid_url() {
     let mut client = AxMdWebSocketClient::new(
         "ws://127.0.0.1:9999/invalid".to_string(),
         "test_token".to_string(),
+        30,
+        TransportBackend::default(),
         None,
     );
 
@@ -545,7 +110,13 @@ async fn test_md_close_sets_closed_flag() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -563,7 +134,13 @@ async fn test_md_disconnect_without_close() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -584,7 +161,13 @@ async fn test_md_subscribe_l1() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -615,7 +198,13 @@ async fn test_md_subscribe_l2() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -646,7 +235,13 @@ async fn test_md_subscribe_l3() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -677,7 +272,13 @@ async fn test_md_subscribe_multiple_symbols() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -715,7 +316,13 @@ async fn test_md_unsubscribe() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -750,7 +357,13 @@ async fn test_md_subscribe_candles() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -781,7 +394,13 @@ async fn test_md_unsubscribe_candles() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -819,69 +438,12 @@ async fn test_md_subscription_count_starts_at_zero() {
     let client = AxMdWebSocketClient::new(
         "ws://localhost:9999/md/ws".to_string(),
         "test_token".to_string(),
+        30,
+        TransportBackend::default(),
         None,
     );
 
     assert_eq!(client.subscription_count(), 0);
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_md_cache_instrument() {
-    let client = AxMdWebSocketClient::new(
-        "ws://localhost:9999/md/ws".to_string(),
-        "test_token".to_string(),
-        None,
-    );
-
-    let instrument = create_test_instrument("EURUSD-PERP");
-    client.cache_instrument(instrument);
-
-    let cached = client.get_cached_instrument(&Ustr::from("EURUSD-PERP"));
-    assert!(cached.is_some());
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_md_cache_multiple_instruments() {
-    let client = AxMdWebSocketClient::new(
-        "ws://localhost:9999/md/ws".to_string(),
-        "test_token".to_string(),
-        None,
-    );
-
-    client.cache_instrument(create_test_instrument("EURUSD-PERP"));
-    client.cache_instrument(create_test_instrument("ETHUSD-PERP"));
-    client.cache_instrument(create_test_instrument("EURUSD-PERP"));
-
-    assert!(
-        client
-            .get_cached_instrument(&Ustr::from("EURUSD-PERP"))
-            .is_some()
-    );
-    assert!(
-        client
-            .get_cached_instrument(&Ustr::from("ETHUSD-PERP"))
-            .is_some()
-    );
-    assert!(
-        client
-            .get_cached_instrument(&Ustr::from("EURUSD-PERP"))
-            .is_some()
-    );
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_md_get_cached_instrument_returns_none_for_unknown() {
-    let client = AxMdWebSocketClient::new(
-        "ws://localhost:9999/md/ws".to_string(),
-        "test_token".to_string(),
-        None,
-    );
-
-    let cached = client.get_cached_instrument(&Ustr::from("UNKNOWN-SYMBOL"));
-    assert!(cached.is_none());
 }
 
 #[rstest]
@@ -893,7 +455,9 @@ async fn test_md_ping_pong() {
     let mut client = AxMdWebSocketClient::new(
         ws_url,
         "test_token".to_string(),
-        Some(1), // 1 second heartbeat
+        1, // 1 second heartbeat,
+        TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -916,7 +480,13 @@ async fn test_md_server_disconnect_handling() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -949,7 +519,13 @@ async fn test_md_reconnection_after_disconnect() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url.clone(), "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url.clone(),
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -967,7 +543,13 @@ async fn test_md_reconnection_after_disconnect() {
 
     state.reset().await;
 
-    let mut client2 = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client2 = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client2.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -984,7 +566,13 @@ async fn test_md_rapid_subscribe_unsubscribe() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -1013,13 +601,197 @@ async fn test_md_rapid_subscribe_unsubscribe() {
 
 #[rstest]
 #[tokio::test]
+async fn test_md_subscribe_quotes_then_book_l2_resubscribes() {
+    // Subscribing quotes yields effective level L1. A subsequent book_deltas at L2
+    // changes the effective level; update_data_subscription should unsubscribe L1
+    // then subscribe L2, ending with exactly one L2 subscription on the server.
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/md/ws");
+
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
+    client.connect().await.unwrap();
+    wait_for_connection(&state).await;
+
+    client
+        .subscribe_quotes("EURUSD-PERP")
+        .await
+        .expect("Subscribe quotes failed");
+
+    wait_until_async(
+        || async {
+            state
+                .subscriptions
+                .lock()
+                .await
+                .iter()
+                .any(|s| s.contains("LEVEL_1"))
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level2)
+        .await
+        .expect("Subscribe book L2 failed");
+
+    wait_until_async(
+        || async {
+            let subs = state.subscriptions.lock().await;
+            subs.iter().any(|s| s.contains("LEVEL_2"))
+                && !subs.iter().any(|s| s.contains("LEVEL_1"))
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let subs = state.subscriptions.lock().await.clone();
+    assert_eq!(
+        subs.len(),
+        1,
+        "expected 1 live subscription, found {subs:?}"
+    );
+    assert!(subs[0].contains("LEVEL_2"));
+
+    // Verify the transition: inbound messages include L1 subscribe, unsubscribe,
+    // then L2 subscribe.
+    let messages = state.get_messages().await;
+    let subscribe_levels: Vec<String> = messages
+        .iter()
+        .filter(|m| m.get("type").and_then(|v| v.as_str()) == Some("subscribe"))
+        .filter_map(|m| m.get("level").and_then(|v| v.as_str()).map(str::to_string))
+        .collect();
+    assert!(
+        subscribe_levels.iter().any(|l| l == "LEVEL_1"),
+        "expected an L1 subscribe message, levels={subscribe_levels:?}",
+    );
+    assert!(
+        subscribe_levels.iter().any(|l| l == "LEVEL_2"),
+        "expected an L2 subscribe message, levels={subscribe_levels:?}",
+    );
+    let unsubscribe_count = messages
+        .iter()
+        .filter(|m| m.get("type").and_then(|v| v.as_str()) == Some("unsubscribe"))
+        .count();
+    assert!(
+        unsubscribe_count >= 1,
+        "expected at least one unsubscribe during level change",
+    );
+
+    client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_md_subscribe_same_level_is_idempotent() {
+    // Subscribing quotes and then mark_prices leaves effective level at L1;
+    // update_data_subscription should short-circuit without additional traffic.
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/md/ws");
+
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
+    client.connect().await.unwrap();
+    wait_for_connection(&state).await;
+
+    client
+        .subscribe_quotes("EURUSD-PERP")
+        .await
+        .expect("Subscribe quotes failed");
+
+    wait_until_async(
+        || async { !state.subscription_events().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let initial_event_count = state.subscription_events().await.len();
+    client
+        .subscribe_mark_prices("EURUSD-PERP")
+        .await
+        .expect("Subscribe mark prices failed");
+
+    // Give the handler a moment to (not) send anything
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let events_after = state.subscription_events().await;
+    assert_eq!(
+        events_after.len(),
+        initial_event_count,
+        "no new subscribe traffic expected, events_after={events_after:?}",
+    );
+
+    client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_md_unsubscribe_last_data_type_removes_server_subscription() {
+    // Some(L1) -> None transition when the last data type is unsubscribed
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/md/ws");
+
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
+    client.connect().await.unwrap();
+    wait_for_connection(&state).await;
+
+    client
+        .subscribe_quotes("EURUSD-PERP")
+        .await
+        .expect("Subscribe quotes failed");
+    wait_until_async(
+        || async { !state.subscriptions.lock().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client
+        .unsubscribe_quotes("EURUSD-PERP")
+        .await
+        .expect("Unsubscribe quotes failed");
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert!(state.subscriptions.lock().await.is_empty());
+
+    client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_md_subscribe_same_symbol_different_levels() {
     // Architect allows only one subscription per symbol - the second subscription
     // at a different level should be skipped (deduplication)
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -1060,7 +832,14 @@ async fn test_orders_client_connection() {
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, Some(30));
+    let mut client = AxOrdersWebSocketClient::new(
+        ws_url,
+        account_id,
+        trader_id,
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect("test_bearer_token").await.unwrap();
     wait_for_connection(&state).await;
@@ -1077,7 +856,14 @@ async fn test_orders_client_url_accessor() {
     let ws_url = "ws://localhost:9999/orders/ws".to_string();
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
-    let client = AxOrdersWebSocketClient::new(ws_url.clone(), account_id, trader_id, None);
+    let client = AxOrdersWebSocketClient::new(
+        ws_url.clone(),
+        account_id,
+        trader_id,
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     assert_eq!(client.url(), ws_url);
 }
@@ -1088,7 +874,14 @@ async fn test_orders_client_account_id_accessor() {
     let ws_url = "ws://localhost:9999/orders/ws".to_string();
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
-    let client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
+    let client = AxOrdersWebSocketClient::new(
+        ws_url,
+        account_id,
+        trader_id,
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     assert_eq!(client.account_id(), account_id);
 }
@@ -1102,6 +895,8 @@ async fn test_orders_client_not_active_before_connect() {
         "ws://localhost:9999/orders/ws".to_string(),
         account_id,
         trader_id,
+        30,
+        TransportBackend::default(),
         None,
     );
 
@@ -1118,6 +913,8 @@ async fn test_orders_connection_failure_to_invalid_url() {
         "ws://127.0.0.1:9999/invalid".to_string(),
         account_id,
         trader_id,
+        30,
+        TransportBackend::default(),
         None,
     );
 
@@ -1133,7 +930,14 @@ async fn test_orders_close_sets_closed_flag() {
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
+    let mut client = AxOrdersWebSocketClient::new(
+        ws_url,
+        account_id,
+        trader_id,
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect("test_token").await.unwrap();
     wait_for_connection(&state).await;
@@ -1153,7 +957,14 @@ async fn test_orders_submit_order() {
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
+    let mut client = AxOrdersWebSocketClient::new(
+        ws_url,
+        account_id,
+        trader_id,
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     // Cache instrument before submitting order
     let instrument = create_test_instrument("EURUSD-PERP");
@@ -1188,7 +999,15 @@ async fn test_orders_submit_order() {
     .await;
 
     let messages = state.get_messages().await;
-    assert!(!messages.is_empty());
+    let place = messages
+        .iter()
+        .find(|m| m.get("t").and_then(|v| v.as_str()) == Some("p"))
+        .expect("expected a place-order message");
+    assert_eq!(place.get("s").and_then(|v| v.as_str()), Some("EURUSD-PERP"));
+    assert_eq!(place.get("d").and_then(|v| v.as_str()), Some("B"));
+    assert_eq!(place.get("q").and_then(|v| v.as_i64()), Some(100));
+    assert_eq!(place.get("p").and_then(|v| v.as_str()), Some("50000.00"));
+    assert_eq!(place.get("tif").and_then(|v| v.as_str()), Some("GTC"));
 
     client.close().await;
 }
@@ -1201,7 +1020,14 @@ async fn test_orders_cancel_order_rejects_without_venue_order_id() {
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
+    let mut client = AxOrdersWebSocketClient::new(
+        ws_url,
+        account_id,
+        trader_id,
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect("test_token").await.unwrap();
     wait_for_connection(&state).await;
@@ -1224,7 +1050,14 @@ async fn test_orders_cancel_order_with_venue_order_id() {
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
+    let mut client = AxOrdersWebSocketClient::new(
+        ws_url,
+        account_id,
+        trader_id,
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect("test_token").await.unwrap();
     wait_for_connection(&state).await;
@@ -1244,6 +1077,14 @@ async fn test_orders_cancel_order_with_venue_order_id() {
     )
     .await;
 
+    // AxWsCancelOrder serializes t="x" (CancelOrder request type)
+    let messages = state.get_messages().await;
+    let cancel = messages
+        .iter()
+        .find(|m| m.get("t").and_then(|v| v.as_str()) == Some("x"))
+        .expect("expected a cancel-order message");
+    assert_eq!(cancel.get("oid").and_then(|v| v.as_str()), Some("OID-123"));
+
     client.close().await;
 }
 
@@ -1255,7 +1096,14 @@ async fn test_orders_get_open_orders() {
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
+    let mut client = AxOrdersWebSocketClient::new(
+        ws_url,
+        account_id,
+        trader_id,
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect("test_token").await.unwrap();
     wait_for_connection(&state).await;
@@ -1270,6 +1118,16 @@ async fn test_orders_get_open_orders() {
     )
     .await;
 
+    let messages = state.get_messages().await;
+    let request = messages
+        .iter()
+        .find(|m| m.get("t").and_then(|v| v.as_str()) == Some("o"))
+        .expect("expected a get-open-orders message");
+    assert_eq!(
+        request.get("rid").and_then(|v| v.as_i64()),
+        Some(request_id)
+    );
+
     client.close().await;
 }
 
@@ -1282,6 +1140,8 @@ async fn test_orders_cache_instrument() {
         "ws://localhost:9999/orders/ws".to_string(),
         account_id,
         trader_id,
+        30,
+        TransportBackend::default(),
         None,
     );
 
@@ -1301,6 +1161,8 @@ async fn test_orders_get_cached_instrument_returns_none_for_unknown() {
         "ws://localhost:9999/orders/ws".to_string(),
         account_id,
         trader_id,
+        30,
+        TransportBackend::default(),
         None,
     );
 
@@ -1314,7 +1176,13 @@ async fn test_md_subscription_events_tracking() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -1350,7 +1218,13 @@ async fn test_md_subscription_failure_tracking() {
         .set_subscription_failures(vec!["FAIL-SYMBOL:LEVEL_1".to_string()])
         .await;
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -1382,8 +1256,20 @@ async fn test_multiple_md_clients() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client1 = AxMdWebSocketClient::new(ws_url.clone(), "token1".to_string(), None);
-    let mut client2 = AxMdWebSocketClient::new(ws_url, "token2".to_string(), None);
+    let mut client1 = AxMdWebSocketClient::new(
+        ws_url.clone(),
+        "token1".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
+    let mut client2 = AxMdWebSocketClient::new(
+        ws_url,
+        "token2".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client1.connect().await.unwrap();
 
@@ -1413,7 +1299,9 @@ async fn test_md_client_debug() {
     let client = AxMdWebSocketClient::new(
         "ws://localhost:9999/md/ws".to_string(),
         "test_token".to_string(),
-        Some(30),
+        30,
+        TransportBackend::default(),
+        None,
     );
 
     let debug_str = format!("{client:?}");
@@ -1430,7 +1318,9 @@ async fn test_orders_client_debug() {
         "ws://localhost:9999/orders/ws".to_string(),
         account_id,
         trader_id,
-        Some(30),
+        30,
+        TransportBackend::default(),
+        None,
     );
 
     let debug_str = format!("{client:?}");
@@ -1445,7 +1335,13 @@ async fn test_md_rapid_connect_disconnect() {
     let ws_url = format!("ws://{addr}/md/ws");
 
     for _ in 0..3 {
-        let mut client = AxMdWebSocketClient::new(ws_url.clone(), "test_token".to_string(), None);
+        let mut client = AxMdWebSocketClient::new(
+            ws_url.clone(),
+            "test_token".to_string(),
+            30,
+            TransportBackend::default(),
+            None,
+        );
 
         client.connect().await.unwrap();
         wait_for_connection(&state).await;
@@ -1468,7 +1364,13 @@ async fn test_md_many_subscriptions() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;

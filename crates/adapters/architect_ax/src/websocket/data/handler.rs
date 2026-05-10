@@ -24,32 +24,16 @@ use std::{
 };
 
 use ahash::AHashMap;
-use dashmap::DashMap;
-use nautilus_core::{
-    nanos::UnixNanos,
-    time::{AtomicTime, get_atomic_clock_realtime},
-};
-use nautilus_model::{
-    data::Data,
-    instruments::{Instrument, InstrumentAny},
-};
 use nautilus_network::websocket::{SubscriptionState, WebSocketClient};
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
-use super::{
-    client::SymbolDataTypes,
-    parse::{
-        parse_book_l1_quote, parse_book_l2_deltas, parse_book_l3_deltas, parse_candle_bar,
-        parse_trade_tick,
-    },
-};
 use crate::{
     common::enums::{AxCandleWidth, AxMarketDataLevel, AxMdRequestType},
     websocket::{
         messages::{
-            AxMdCandle, AxMdMessage, AxMdSubscribe, AxMdSubscribeCandles, AxMdUnsubscribe,
-            AxMdUnsubscribeCandles, NautilusDataWsMessage,
+            AxDataWsMessage, AxMdMessage, AxMdSubscribe, AxMdSubscribeCandles, AxMdUnsubscribe,
+            AxMdUnsubscribeCandles,
         },
         parse::parse_md_message,
     },
@@ -98,61 +82,42 @@ pub enum HandlerCommand {
         /// Candle width/interval.
         width: AxCandleWidth,
     },
-    /// Initialize the instrument cache with instruments.
-    InitializeInstruments(Vec<InstrumentAny>),
-    /// Update a single instrument in the cache.
-    UpdateInstrument(Box<InstrumentAny>),
 }
 
 /// Market data feed handler that processes WebSocket messages.
 ///
 /// Runs in a dedicated Tokio task and owns the WebSocket client exclusively.
-pub(crate) struct FeedHandler {
-    clock: &'static AtomicTime,
+/// Emits raw venue types for downstream consumers to parse.
+pub(crate) struct AxMdWsFeedHandler {
     signal: Arc<AtomicBool>,
-    client: Option<WebSocketClient>,
+    inner: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
-    #[allow(dead_code)]
-    out_tx: tokio::sync::mpsc::UnboundedSender<NautilusDataWsMessage>,
     subscriptions: SubscriptionState,
-    symbol_data_types: Arc<DashMap<String, SymbolDataTypes>>,
-    instruments: AHashMap<Ustr, InstrumentAny>,
-    message_queue: VecDeque<NautilusDataWsMessage>,
+    message_queue: VecDeque<AxDataWsMessage>,
     replay_request_id: i64,
     needs_subscription_replay: bool,
-    book_sequences: AHashMap<Ustr, u64>,
-    candle_cache: AHashMap<(Ustr, AxCandleWidth), AxMdCandle>,
-    /// Maps request_id -> subscription topic for pending subscribe requests
     pending_subscribe_requests: AHashMap<i64, String>,
 }
 
-impl FeedHandler {
-    /// Creates a new [`FeedHandler`] instance.
+impl AxMdWsFeedHandler {
+    /// Creates a new [`AxMdWsFeedHandler`] instance.
     #[must_use]
     pub fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
-        out_tx: tokio::sync::mpsc::UnboundedSender<NautilusDataWsMessage>,
         subscriptions: SubscriptionState,
-        symbol_data_types: Arc<DashMap<String, SymbolDataTypes>>,
     ) -> Self {
         Self {
-            clock: get_atomic_clock_realtime(),
             signal,
-            client: None,
+            inner: None,
             cmd_rx,
             raw_rx,
-            out_tx,
             subscriptions,
-            symbol_data_types,
-            instruments: AHashMap::new(),
             message_queue: VecDeque::new(),
             replay_request_id: -1,
             needs_subscription_replay: false,
-            book_sequences: AHashMap::new(),
-            candle_cache: AHashMap::new(),
             pending_subscribe_requests: AHashMap::new(),
         }
     }
@@ -163,9 +128,6 @@ impl FeedHandler {
     }
 
     async fn replay_subscriptions(&mut self) {
-        // Clear stale candle data (book sequences persist to maintain monotonicity)
-        self.candle_cache.clear();
-
         let topics = self.subscriptions.all_topics();
         if topics.is_empty() {
             log::debug!("No subscriptions to replay after reconnect");
@@ -234,20 +196,10 @@ impl FeedHandler {
         }
     }
 
-    fn generate_ts_init(&self) -> UnixNanos {
-        self.clock.get_time_ns()
-    }
-
-    fn next_book_sequence(&mut self, symbol: Ustr) -> u64 {
-        let seq = self.book_sequences.entry(symbol).or_insert(0);
-        *seq += 1;
-        *seq
-    }
-
     /// Returns the next message from the handler.
     ///
     /// This method blocks until a message is available or the handler is stopped.
-    pub async fn next(&mut self) -> Option<NautilusDataWsMessage> {
+    pub async fn next(&mut self) -> Option<AxDataWsMessage> {
         loop {
             if self.needs_subscription_replay && self.message_queue.is_empty() {
                 self.needs_subscription_replay = false;
@@ -282,7 +234,7 @@ impl FeedHandler {
                     if let Message::Ping(data) = &msg {
                         log::trace!("Received ping frame with {} bytes", data.len());
 
-                        if let Some(client) = &self.client
+                        if let Some(client) = &self.inner
                             && let Err(e) = client.send_pong(data.to_vec()).await
                         {
                             log::warn!("Failed to send pong frame: {e}");
@@ -290,8 +242,8 @@ impl FeedHandler {
                         continue;
                     }
 
-                    if let Some(messages) = self.parse_raw_message(msg) {
-                        self.message_queue.extend(messages);
+                    if let Some(message) = self.parse_raw_message(msg) {
+                        self.message_queue.push_back(message);
                     }
 
                     if self.signal.load(Ordering::Acquire) {
@@ -307,15 +259,13 @@ impl FeedHandler {
         match cmd {
             HandlerCommand::SetClient(client) => {
                 log::debug!("WebSocketClient received by handler");
-                self.client = Some(client);
+                self.inner = Some(client);
             }
             HandlerCommand::Disconnect => {
                 log::debug!("Disconnect command received");
-                self.book_sequences.clear();
-                self.candle_cache.clear();
 
-                if let Some(client) = self.client.take() {
-                    client.disconnect().await;
+                if let Some(inner) = self.inner.take() {
+                    inner.disconnect().await;
                 }
             }
             HandlerCommand::ReplaySubscriptions => {
@@ -360,17 +310,10 @@ impl FeedHandler {
                 log::debug!(
                     "UnsubscribeCandles command received: request_id={request_id}, symbol={symbol}, width={width:?}"
                 );
-                self.candle_cache.remove(&(symbol, width));
+                self.message_queue
+                    .push_back(AxDataWsMessage::CandleUnsubscribed { symbol, width });
                 self.send_unsubscribe_candles(request_id, symbol, width)
                     .await;
-            }
-            HandlerCommand::InitializeInstruments(instruments) => {
-                for inst in instruments {
-                    self.instruments.insert(inst.symbol().inner(), inst);
-                }
-            }
-            HandlerCommand::UpdateInstrument(inst) => {
-                self.instruments.insert(inst.symbol().inner(), *inst);
             }
         }
     }
@@ -434,26 +377,26 @@ impl FeedHandler {
     }
 
     async fn send_json<T: serde::Serialize>(&self, msg: &T) -> Result<(), String> {
-        let Some(client) = &self.client else {
+        let Some(inner) = &self.inner else {
             return Err("No WebSocket client available".to_string());
         };
 
         let payload = serde_json::to_string(msg).map_err(|e| e.to_string())?;
         log::trace!("Sending: {payload}");
 
-        client
+        inner
             .send_text(payload, None)
             .await
             .map_err(|e| e.to_string())
     }
 
-    fn parse_raw_message(&mut self, msg: Message) -> Option<Vec<NautilusDataWsMessage>> {
+    fn parse_raw_message(&mut self, msg: Message) -> Option<AxDataWsMessage> {
         match msg {
             Message::Text(text) => {
                 if text == nautilus_network::RECONNECTED {
                     log::info!("Received WebSocket reconnected signal");
                     self.needs_subscription_replay = true;
-                    return Some(vec![NautilusDataWsMessage::Reconnected]);
+                    return Some(AxDataWsMessage::Reconnected);
                 }
 
                 log::trace!("Raw websocket message: {text}");
@@ -478,148 +421,18 @@ impl FeedHandler {
         }
     }
 
-    fn handle_message(&mut self, message: AxMdMessage) -> Option<Vec<NautilusDataWsMessage>> {
-        match message {
-            AxMdMessage::BookL1(book) => {
-                log::debug!("Received book L1: {}", book.s);
-
-                let l1_subscribed = self
-                    .symbol_data_types
-                    .get(book.s.as_str())
-                    .is_some_and(|e| e.quotes || e.book_level == Some(AxMarketDataLevel::Level1));
-
-                if !l1_subscribed {
-                    return None;
-                }
-
-                let Some(instrument) = self.instruments.get(&book.s) else {
-                    log::error!(
-                        "No instrument cached for symbol '{}' - cannot parse L1 book",
-                        book.s
-                    );
-                    return None;
-                };
-
-                let ts_init = self.generate_ts_init();
-                match parse_book_l1_quote(&book, instrument, ts_init) {
-                    Ok(quote) => Some(vec![NautilusDataWsMessage::Data(vec![Data::Quote(quote)])]),
-                    Err(e) => {
-                        log::error!("Failed to parse L1 to QuoteTick: {e}");
-                        None
-                    }
-                }
-            }
-            AxMdMessage::BookL2(book) => {
-                log::debug!(
-                    "Received book L2: {} ({} bids, {} asks)",
-                    book.s,
-                    book.b.len(),
-                    book.a.len()
-                );
-
-                let symbol = book.s;
-                let sequence = self.next_book_sequence(symbol);
-
-                let Some(instrument) = self.instruments.get(&symbol) else {
-                    log::error!(
-                        "No instrument cached for symbol '{symbol}' - cannot parse L2 book"
-                    );
-                    return None;
-                };
-
-                let ts_init = self.generate_ts_init();
-                match parse_book_l2_deltas(&book, instrument, sequence, ts_init) {
-                    Ok(deltas) => Some(vec![NautilusDataWsMessage::Deltas(deltas)]),
-                    Err(e) => {
-                        log::error!("Failed to parse L2 to OrderBookDeltas: {e}");
-                        None
-                    }
-                }
-            }
-            AxMdMessage::BookL3(book) => {
-                log::debug!(
-                    "Received book L3: {} ({} bids, {} asks)",
-                    book.s,
-                    book.b.len(),
-                    book.a.len()
-                );
-
-                let symbol = book.s;
-                let sequence = self.next_book_sequence(symbol);
-
-                let Some(instrument) = self.instruments.get(&symbol) else {
-                    log::error!(
-                        "No instrument cached for symbol '{symbol}' - cannot parse L3 book"
-                    );
-                    return None;
-                };
-
-                let ts_init = self.generate_ts_init();
-                match parse_book_l3_deltas(&book, instrument, sequence, ts_init) {
-                    Ok(deltas) => Some(vec![NautilusDataWsMessage::Deltas(deltas)]),
-                    Err(e) => {
-                        log::error!("Failed to parse L3 to OrderBookDeltas: {e}");
-                        None
-                    }
-                }
-            }
-            AxMdMessage::Ticker(ticker) => {
-                // Ticker lacks bid/ask, L1 book subscription provides actual quotes
-                log::debug!(
-                    "Received ticker: {} last={} vol={} oi={:?}",
-                    ticker.s,
-                    ticker.p,
-                    ticker.v,
-                    ticker.oi
-                );
-                None
-            }
-            AxMdMessage::Trade(trade) => {
-                log::debug!("Received trade: {} {} @ {}", trade.s, trade.q, trade.p);
-
-                let trades_subscribed = self
-                    .symbol_data_types
-                    .get(trade.s.as_str())
-                    .is_some_and(|e| e.trades);
-
-                if !trades_subscribed {
-                    return None;
-                }
-
-                let Some(instrument) = self.instruments.get(&trade.s) else {
-                    log::error!(
-                        "No instrument cached for symbol '{}' - cannot parse trade",
-                        trade.s
-                    );
-                    return None;
-                };
-
-                let ts_init = self.generate_ts_init();
-                match parse_trade_tick(&trade, instrument, ts_init) {
-                    Ok(tick) => Some(vec![NautilusDataWsMessage::Data(vec![Data::Trade(tick)])]),
-                    Err(e) => {
-                        log::error!("Failed to parse trade to TradeTick: {e}");
-                        None
-                    }
-                }
-            }
-            AxMdMessage::Candle(candle) => self.handle_candle(candle),
-            AxMdMessage::Heartbeat(heartbeat) => {
-                log::trace!("Received heartbeat ts={}", heartbeat.ts);
-                Some(vec![NautilusDataWsMessage::Heartbeat])
-            }
+    fn handle_message(&mut self, message: AxMdMessage) -> Option<AxDataWsMessage> {
+        match &message {
             AxMdMessage::Error(error) => {
                 let is_benign = error.message.contains("already subscribed")
                     || error.message.contains("not subscribed");
 
                 if is_benign {
-                    // Benign: venue state matches intent, just clean up tracking
                     if let Some(rid) = error.request_id {
                         self.pending_subscribe_requests.remove(&rid);
                     }
                     log::warn!("Subscription state: {}", error.message);
                 } else {
-                    // Real error: roll back subscription state
                     if let Some(rid) = error.request_id
                         && let Some(topic) = self.pending_subscribe_requests.remove(&rid)
                     {
@@ -632,7 +445,6 @@ impl FeedHandler {
                     }
                     log::error!("Received error from exchange: {}", error.message);
                 }
-                Some(vec![NautilusDataWsMessage::Error(error)])
             }
             AxMdMessage::SubscriptionResponse(response) => {
                 self.pending_subscribe_requests.remove(&response.rid);
@@ -646,52 +458,11 @@ impl FeedHandler {
                 } else if let Some(candle) = &response.result.unsubscribed_candle {
                     log::debug!("Candle unsubscription confirmed: {candle}");
                 }
-                None
+                return None;
             }
+            _ => {}
         }
-    }
 
-    fn handle_candle(&mut self, candle: AxMdCandle) -> Option<Vec<NautilusDataWsMessage>> {
-        log::debug!(
-            "Received candle: {} {} O={} C={}",
-            candle.symbol,
-            candle.width,
-            candle.open,
-            candle.close
-        );
-
-        let cache_key = (candle.symbol, candle.width);
-
-        // Only emit when timestamp changes (previous candle closed)
-        let closed_candle = if let Some(cached) = self.candle_cache.get(&cache_key) {
-            if cached.ts == candle.ts {
-                None
-            } else {
-                Some(cached.clone())
-            }
-        } else {
-            None
-        };
-
-        self.candle_cache.insert(cache_key, candle);
-
-        let closed = closed_candle?;
-
-        let Some(instrument) = self.instruments.get(&closed.symbol) else {
-            log::error!(
-                "No instrument cached for symbol '{}' - cannot parse candle",
-                closed.symbol
-            );
-            return None;
-        };
-
-        let ts_init = self.generate_ts_init();
-        match parse_candle_bar(&closed, instrument, ts_init) {
-            Ok(bar) => Some(vec![NautilusDataWsMessage::Bar(bar)]),
-            Err(e) => {
-                log::error!("Failed to parse candle to Bar: {e}");
-                None
-            }
-        }
+        Some(AxDataWsMessage::MdMessage(message))
     }
 }

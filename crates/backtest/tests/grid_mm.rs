@@ -13,9 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use ahash::AHashMap;
-use nautilus_backtest::{config::BacktestEngineConfig, engine::BacktestEngine};
-use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny};
+#![cfg(feature = "examples")]
+
+use nautilus_backtest::{
+    config::{BacktestEngineConfig, SimulatedVenueConfig},
+    engine::BacktestEngine,
+};
 use nautilus_model::{
     data::{Data, QuoteTick},
     enums::{AccountType, BookType, OmsType},
@@ -31,34 +34,13 @@ fn create_engine() -> BacktestEngine {
     let mut engine = BacktestEngine::new(config).unwrap();
     engine
         .add_venue(
-            Venue::from("BINANCE"),
-            OmsType::Netting,
-            AccountType::Margin,
-            BookType::L1_MBP,
-            vec![Money::from("1_000_000 USDT")],
-            None,
-            None,
-            AHashMap::new(),
-            vec![],
-            FillModelAny::default(),
-            FeeModelAny::default(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            SimulatedVenueConfig::builder()
+                .venue(Venue::from("BINANCE"))
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .build(),
         )
         .unwrap();
     engine
@@ -81,7 +63,7 @@ fn test_generates_orders(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let mut engine = create_engine();
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let instrument_id = instrument.id();
-    engine.add_instrument(instrument).unwrap();
+    engine.add_instrument(&instrument).unwrap();
 
     let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("10.0"))
         .with_trade_size(Quantity::from("0.100"))
@@ -123,7 +105,7 @@ fn test_generates_orders(crypto_perpetual_ethusdt: CryptoPerpetual) {
     }
 
     let total_quotes = quotes.len();
-    engine.add_data(quotes, None, true, true);
+    engine.add_data(quotes, None, true, true).unwrap();
 
     engine.run(None, None, None, false).unwrap();
 
@@ -142,7 +124,7 @@ fn test_skips_requote_within_threshold(crypto_perpetual_ethusdt: CryptoPerpetual
     let mut engine = create_engine();
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let instrument_id = instrument.id();
-    engine.add_instrument(instrument).unwrap();
+    engine.add_instrument(&instrument).unwrap();
 
     let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("10.0"))
         .with_trade_size(Quantity::from("0.100"))
@@ -164,7 +146,7 @@ fn test_skips_requote_within_threshold(crypto_perpetual_ethusdt: CryptoPerpetual
             )
         })
         .collect();
-    engine.add_data(quotes, None, true, true);
+    engine.add_data(quotes, None, true, true).unwrap();
 
     engine.run(None, None, None, false).unwrap();
 
@@ -183,7 +165,7 @@ fn test_enforces_max_position_across_levels(crypto_perpetual_ethusdt: CryptoPerp
     let mut engine = create_engine();
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let instrument_id = instrument.id();
-    engine.add_instrument(instrument).unwrap();
+    engine.add_instrument(&instrument).unwrap();
 
     let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("0.150"))
         .with_trade_size(Quantity::from("0.100"))
@@ -194,7 +176,7 @@ fn test_enforces_max_position_across_levels(crypto_perpetual_ethusdt: CryptoPerp
 
     // Single quote to trigger one requote cycle
     let quotes = vec![quote(instrument_id, "999.95", "1000.05", 1_000_000_000)];
-    engine.add_data(quotes, None, true, true);
+    engine.add_data(quotes, None, true, true).unwrap();
 
     engine.run(None, None, None, false).unwrap();
 

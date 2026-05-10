@@ -27,7 +27,7 @@ from nautilus_trader.adapters.polymarket.schemas.user import PolymarketMakerOrde
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
-from nautilus_trader.model.currencies import USDC_POS
+from nautilus_trader.model.currencies import pUSD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId
@@ -138,13 +138,6 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
             order = self.get_maker_order(filled_user_order_id)
             return Decimal(order.matched_amount)
 
-    def get_fee_rate_bps(self, filled_user_order_id: str) -> Decimal:
-        if self.liquidity_side() == LiquiditySide.TAKER:
-            return Decimal(self.fee_rate_bps)
-        else:
-            order = self.get_maker_order(filled_user_order_id)
-            return Decimal(order.fee_rate_bps)
-
     def parse_to_fill_report(
         self,
         account_id: AccountId,
@@ -155,8 +148,13 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
     ) -> FillReport:
         last_qty = instrument.make_qty(self.last_qty(filled_user_order_id))
         last_px = instrument.make_price(self.last_px(filled_user_order_id))
-        fee_rate_bps = self.get_fee_rate_bps(filled_user_order_id)
-        commission = calculate_commission(last_qty, last_px, fee_rate_bps)
+        liquidity_side = self.liquidity_side()
+        commission = calculate_commission(
+            quantity=last_qty.as_decimal(),
+            price=last_px.as_decimal(),
+            fee_rate=instrument.taker_fee,
+            liquidity_side=liquidity_side,
+        )
         venue_order_id = self.venue_order_id(filled_user_order_id)
         composite_trade_id = make_composite_trade_id(self.id, venue_order_id)
 
@@ -169,8 +167,8 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
             order_side=self.order_side(filled_user_order_id),
             last_qty=last_qty,
             last_px=last_px,
-            commission=Money(commission, USDC_POS),
-            liquidity_side=self.liquidity_side(),
+            commission=Money(commission, pUSD),
+            liquidity_side=liquidity_side,
             report_id=UUID4(),
             ts_event=secs_to_nanos(int(self.match_time)),
             ts_init=ts_init,

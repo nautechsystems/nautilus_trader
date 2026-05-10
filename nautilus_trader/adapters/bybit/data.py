@@ -19,6 +19,7 @@ from typing import Any
 import pandas as pd
 
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
+from nautilus_trader.adapters.bybit.config import _resolve_environment
 from nautilus_trader.adapters.bybit.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
 from nautilus_trader.cache.cache import Cache
@@ -28,6 +29,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestForwardPrices
 from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
@@ -35,14 +37,18 @@ from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
+from nautilus_trader.data.messages import SubscribeInstrumentStatus
 from nautilus_trader.data.messages import SubscribeMarkPrices
+from nautilus_trader.data.messages import SubscribeOptionGreeks
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeIndexPrices
+from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
 from nautilus_trader.data.messages import UnsubscribeMarkPrices
+from nautilus_trader.data.messages import UnsubscribeOptionGreeks
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
@@ -53,14 +59,18 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import IndexPriceUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import MarkPriceUpdate
+from nautilus_trader.model.data import OptionGreeks
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 class BybitDataClient(LiveMarketDataClient):
@@ -129,8 +139,8 @@ class BybitDataClient(LiveMarketDataClient):
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.recv_window_ms=:_}", LogColor.BLUE)
         self._log.info(f"{config.bars_timestamp_on_close=}", LogColor.BLUE)
-        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.instrument_status_poll_secs=}", LogColor.BLUE)
+        self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = client
@@ -144,20 +154,14 @@ class BybitDataClient(LiveMarketDataClient):
         ] = {}
         self._ws_client_futures: set[asyncio.Future] = set()
 
-        # Priority: demo > testnet > mainnet
-        if config.demo:
-            environment = nautilus_pyo3.BybitEnvironment.DEMO
-        elif config.testnet:
-            environment = nautilus_pyo3.BybitEnvironment.TESTNET
-        else:
-            environment = nautilus_pyo3.BybitEnvironment.MAINNET
+        environment = _resolve_environment(config.environment, config.demo, config.testnet)
 
         for product_type in self._product_types:
             ws_client = nautilus_pyo3.BybitWebSocketClient.new_public(
                 product_type=product_type,
                 environment=environment,
                 url=config.base_url_http,
-                heartbeat=None,
+                proxy_url=config.proxy_url,
             )
             ws_client.set_bars_timestamp_on_close(self._bars_timestamp_on_close)
             self._ws_clients[product_type] = ws_client
@@ -170,6 +174,10 @@ class BybitDataClient(LiveMarketDataClient):
 
         self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
+        self._instrument_status_poll_secs: int | None = config.instrument_status_poll_secs
+        self._instrument_status_task: asyncio.Task | None = None
+        self._instrument_status_subs: set[InstrumentId] = set()
+        self._status_cache: dict[InstrumentId, MarketStatusAction] = {}
 
     @property
     def instrument_provider(self) -> BybitInstrumentProvider:
@@ -191,6 +199,12 @@ class BybitDataClient(LiveMarketDataClient):
                 self._update_instruments(self._update_instruments_interval_mins),
             )
 
+        if self._instrument_status_poll_secs:
+            await self._seed_instrument_status_cache()
+            self._instrument_status_task = self.create_task(
+                self._poll_instrument_statuses(self._instrument_status_poll_secs),
+            )
+
     async def _disconnect(self) -> None:
         self._http_client.cancel_all_requests()
 
@@ -198,6 +212,11 @@ class BybitDataClient(LiveMarketDataClient):
             self._log.debug("Canceling task 'update_instruments'")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
+
+        if self._instrument_status_task:
+            self._log.debug("Canceling task 'poll_instrument_statuses'")
+            self._instrument_status_task.cancel()
+            self._instrument_status_task = None
 
         # Delay to allow websocket to send any unsubscribe messages
         await asyncio.sleep(1.0)
@@ -412,6 +431,43 @@ class BybitDataClient(LiveMarketDataClient):
             await ws_client.subscribe_ticker(pyo3_instrument_id)
         self._ticker_subscriptions[pyo3_instrument_id].add("funding")
 
+    async def _subscribe_option_greeks(self, command: SubscribeOptionGreeks) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            pyo3_instrument_id.symbol.value,
+        )
+
+        if product_type != nautilus_pyo3.BybitProductType.OPTION:
+            self._log.warning(
+                f"Cannot subscribe to option greeks for non-OPTION instrument {command.instrument_id}",
+            )
+            return
+
+        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
+
+        # Register in DashSet so the Rust handler emits OptionGreeks
+        ws_client.add_option_greeks_sub(pyo3_instrument_id)  # type: ignore[attr-defined]
+
+        # Follow the same ticker refcounting pattern as other subscribers
+        if pyo3_instrument_id not in self._ticker_subscriptions:
+            self._ticker_subscriptions[pyo3_instrument_id] = set()
+            await ws_client.subscribe_ticker(pyo3_instrument_id)
+        self._ticker_subscriptions[pyo3_instrument_id].add("option_greeks")
+
+    async def _unsubscribe_option_greeks(self, command: UnsubscribeOptionGreeks) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
+
+        # Always remove from DashSet to stop greeks emission
+        ws_client.remove_option_greeks_sub(pyo3_instrument_id)  # type: ignore[attr-defined]
+
+        # Follow the same ticker refcounting pattern as other subscribers
+        if pyo3_instrument_id in self._ticker_subscriptions:
+            self._ticker_subscriptions[pyo3_instrument_id].discard("option_greeks")
+            if not self._ticker_subscriptions[pyo3_instrument_id]:
+                await ws_client.unsubscribe_ticker(pyo3_instrument_id)
+                del self._ticker_subscriptions[pyo3_instrument_id]
+
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
 
@@ -511,6 +567,100 @@ class BybitDataClient(LiveMarketDataClient):
             if not self._ticker_subscriptions[pyo3_instrument_id]:
                 await ws_client.unsubscribe_ticker(pyo3_instrument_id)
                 del self._ticker_subscriptions[pyo3_instrument_id]
+
+    async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
+        self._log.debug(
+            f"subscribe_instrument_status: {command.instrument_id} "
+            "(status changes detected via periodic instrument info polling)",
+        )
+        self._instrument_status_subs.add(command.instrument_id)
+
+    async def _unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
+        self._log.debug(f"unsubscribe_instrument_status: {command.instrument_id}")
+        self._instrument_status_subs.discard(command.instrument_id)
+
+    async def _seed_instrument_status_cache(self) -> None:
+        for product_type in self._product_types:
+            try:
+                statuses = await self._http_client.request_instrument_statuses(product_type)
+                self._status_cache.update(statuses)
+            except Exception as e:
+                self._log.warning(f"Failed to seed instrument status cache for {product_type}: {e}")
+        self._log.info(
+            f"Seeded instrument status cache with {len(self._status_cache)} entries",
+            LogColor.BLUE,
+        )
+
+    async def _poll_instrument_statuses(self, interval_secs: int) -> None:
+        while True:
+            try:
+                await asyncio.sleep(interval_secs)
+
+                if not self._instrument_status_subs:
+                    continue
+
+                # Accumulate statuses from all product types before diffing
+                all_statuses: dict[InstrumentId, MarketStatusAction] = {}
+
+                for product_type in self._product_types:
+                    try:
+                        new_statuses = await self._http_client.request_instrument_statuses(
+                            product_type,
+                        )
+                        all_statuses.update(new_statuses)
+                    except Exception as e:
+                        self._log.warning(
+                            f"Instrument status poll failed for {product_type}: {e}",
+                        )
+
+                self._diff_and_emit_statuses(all_statuses)
+            except asyncio.CancelledError:
+                self._log.debug("Canceled task 'poll_instrument_statuses'")
+                return
+
+    def _diff_and_emit_statuses(
+        self,
+        new_statuses: dict[InstrumentId, MarketStatusAction],
+    ) -> None:
+        now = self._clock.timestamp_ns()
+
+        # Update cache for all instruments, emit only for subscribed
+        for instrument_id, new_action in new_statuses.items():
+            cached = self._status_cache.get(instrument_id)
+            if cached is None or cached != new_action:
+                self._status_cache[instrument_id] = new_action
+                if instrument_id in self._instrument_status_subs:
+                    self._emit_instrument_status(instrument_id, new_action, now)
+
+        # Detect symbols removed from the API snapshot
+        removed = [iid for iid in self._status_cache if iid not in new_statuses]
+        for instrument_id in removed:
+            del self._status_cache[instrument_id]
+            if instrument_id in self._instrument_status_subs:
+                self._emit_instrument_status(
+                    instrument_id,
+                    MarketStatusAction.NOT_AVAILABLE_FOR_TRADING,
+                    now,
+                )
+
+    def _emit_instrument_status(
+        self,
+        instrument_id: InstrumentId,
+        action: MarketStatusAction,
+        ts_ns: int,
+    ) -> None:
+        status = InstrumentStatus(
+            instrument_id=instrument_id,
+            action=action,
+            ts_event=ts_ns,
+            ts_init=ts_ns,
+            reason=None,
+            trading_event=None,
+            is_trading=action == MarketStatusAction.TRADING,
+            is_quoting=None,
+            is_short_sell_restricted=None,
+        )
+        self._handle_data(status)
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         self._log.error(
@@ -705,6 +855,28 @@ class BybitDataClient(LiveMarketDataClient):
             request.params,
         )
 
+    async def _request_forward_prices(self, request: RequestForwardPrices) -> None:
+        sample_id = request.sample_instrument_id
+        pyo3_inst_id = None
+
+        if sample_id is not None:
+            pyo3_inst_id = nautilus_pyo3.InstrumentId.from_str(str(sample_id))
+
+        try:
+            forward_prices = await self._http_client.request_forward_prices(  # type: ignore[attr-defined]
+                base_coin=request.underlying,
+                instrument_id=pyo3_inst_id,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to request forward prices for {request.underlying}: {e}")
+            self._handle_forward_prices([], request.id, request.params or {})
+            return
+
+        self._log.info(
+            f"Received {len(forward_prices)} forward prices for {request.underlying}",
+        )
+        self._handle_forward_prices(forward_prices, request.id, request.params or {})
+
     def _handle_msg(self, msg: Any) -> None:
         try:
             # Handle pycapsule data from Rust (market data)
@@ -716,11 +888,6 @@ class BybitDataClient(LiveMarketDataClient):
                 self._handle_data(data)
                 return
 
-            if isinstance(msg, nautilus_pyo3.FundingRateUpdate):
-                data = FundingRateUpdate.from_pyo3(msg)
-                self._handle_data(data)
-                return
-
             if isinstance(msg, nautilus_pyo3.MarkPriceUpdate):
                 data = MarkPriceUpdate.from_pyo3(msg)
                 self._handle_data(data)
@@ -728,6 +895,21 @@ class BybitDataClient(LiveMarketDataClient):
 
             if isinstance(msg, nautilus_pyo3.IndexPriceUpdate):
                 data = IndexPriceUpdate.from_pyo3(msg)
+                self._handle_data(data)
+                return
+
+            if isinstance(msg, nautilus_pyo3.FundingRateUpdate):
+                data = FundingRateUpdate.from_pyo3(msg)
+                self._handle_data(data)
+                return
+
+            if isinstance(msg, nautilus_pyo3.InstrumentStatus):
+                data = InstrumentStatus.from_pyo3(msg)
+                self._handle_data(data)
+                return
+
+            if isinstance(msg, nautilus_pyo3.OptionGreeks):
+                data = OptionGreeks.from_pyo3(msg)
                 self._handle_data(data)
                 return
 

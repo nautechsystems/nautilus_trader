@@ -41,17 +41,22 @@ from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeFundingRates
+from nautilus_trader.data.messages import SubscribeInstrumentStatus
+from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeFundingRates
+from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
+from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
@@ -140,6 +145,7 @@ class AxDataClient(LiveMarketDataClient):
         self._ws_client = nautilus_pyo3.AxMdWebSocketClient.without_auth(
             url=self._ws_url,
             heartbeat=20,
+            proxy_url=self._config.proxy_url,
         )
 
         try:
@@ -246,12 +252,6 @@ class AxDataClient(LiveMarketDataClient):
                 "Instrument subscription requested but update_instruments_interval_mins not configured",
             )
 
-    async def _unsubscribe_instruments(self, command) -> None:
-        pass
-
-    async def _unsubscribe_instrument(self, command) -> None:
-        pass
-
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if not self._ws_client:
             self._log.warning("WebSocket not connected, cannot subscribe to order book")
@@ -270,7 +270,6 @@ class AxDataClient(LiveMarketDataClient):
             level = nautilus_pyo3.AxMarketDataLevel.LEVEL2
 
         await self._ws_client.subscribe_book_deltas(instrument_id, level)
-        self._log.debug(f"Subscribed to order book for {command.instrument_id} at {level}")
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         if not self._ws_client:
@@ -279,7 +278,6 @@ class AxDataClient(LiveMarketDataClient):
 
         instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
         await self._ws_client.subscribe_quotes(instrument_id)
-        self._log.debug(f"Subscribed to quotes for {command.instrument_id}")
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         if not self._ws_client:
@@ -288,7 +286,17 @@ class AxDataClient(LiveMarketDataClient):
 
         instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
         await self._ws_client.subscribe_trades(instrument_id)
-        self._log.debug(f"Subscribed to trades for {command.instrument_id}")
+
+    async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
+        if not self._ws_client:
+            self._log.warning("WebSocket not connected, cannot subscribe to mark prices")
+            return
+
+        instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
+        await self._ws_client.subscribe_mark_prices(instrument_id)
+
+    async def _subscribe_index_prices(self, command) -> None:
+        self._log.warning("Index prices not supported by AX Exchange")
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         if not self._ws_client:
@@ -300,13 +308,41 @@ class AxDataClient(LiveMarketDataClient):
         await self._ws_client.subscribe_bars(pyo3_bar_type)
         self._log.debug(f"Subscribed to bars for {bar_type}")
 
+    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        instrument_id = command.instrument_id
+
+        if instrument_id in self._funding_rate_tasks:
+            self._log.debug(f"Already subscribed to funding rates for {instrument_id}")
+            return
+
+        task = self.create_task(self._poll_funding_rates(instrument_id))
+        self._funding_rate_tasks[instrument_id] = task  # type: ignore [assignment]
+
+    async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
+        if not self._ws_client:
+            self._log.warning("WebSocket not connected, cannot subscribe to instrument status")
+            return
+
+        instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
+        await self._ws_client.subscribe_instrument_status(instrument_id)
+
+    async def _subscribe_instrument_close(self, command) -> None:
+        self._log.warning("Instrument close not supported by AX Exchange")
+
+    # -- UNSUBSCRIBES (spec order) ------------------------------------------------
+
+    async def _unsubscribe_instruments(self, command) -> None:
+        pass
+
+    async def _unsubscribe_instrument(self, command) -> None:
+        pass
+
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         if not self._ws_client:
             return
 
         instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
         await self._ws_client.unsubscribe_book_deltas(instrument_id)
-        self._log.debug(f"Unsubscribed from order book for {command.instrument_id}")
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         if not self._ws_client:
@@ -314,7 +350,6 @@ class AxDataClient(LiveMarketDataClient):
 
         instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
         await self._ws_client.unsubscribe_quotes(instrument_id)
-        self._log.debug(f"Unsubscribed from quotes for {command.instrument_id}")
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         if not self._ws_client:
@@ -322,7 +357,16 @@ class AxDataClient(LiveMarketDataClient):
 
         instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
         await self._ws_client.unsubscribe_trades(instrument_id)
-        self._log.debug(f"Unsubscribed from trades for {command.instrument_id}")
+
+    async def _unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
+        if not self._ws_client:
+            return
+
+        instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
+        await self._ws_client.unsubscribe_mark_prices(instrument_id)
+
+    async def _unsubscribe_index_prices(self, command) -> None:
+        pass
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         if not self._ws_client:
@@ -331,27 +375,23 @@ class AxDataClient(LiveMarketDataClient):
         bar_type = command.bar_type
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
         await self._ws_client.unsubscribe_bars(pyo3_bar_type)
-        self._log.debug(f"Unsubscribed from bars for {bar_type}")
-
-    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
-        instrument_id = command.instrument_id
-
-        if instrument_id in self._funding_rate_tasks:
-            self._log.debug(f"Already subscribed to funding rates for {instrument_id}")
-            return
-
-        self._log.debug(f"Subscribing to funding rates for {instrument_id} (HTTP polling)")
-
-        task = self.create_task(self._poll_funding_rates(instrument_id))
-        self._funding_rate_tasks[instrument_id] = task  # type: ignore [assignment]
 
     async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
         instrument_id = command.instrument_id
         task = self._funding_rate_tasks.pop(instrument_id, None)
         if task is not None:
-            self._log.debug(f"Unsubscribing from funding rates for {instrument_id}")
             task.cancel()
             self._last_funding_rates.pop(instrument_id, None)
+
+    async def _unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
+        if not self._ws_client:
+            return
+
+        instrument_id = self._get_pyo3_instrument_id(command.instrument_id)
+        await self._ws_client.unsubscribe_instrument_status(instrument_id)
+
+    async def _unsubscribe_instrument_close(self, command) -> None:
+        pass
 
     async def _poll_funding_rates(self, instrument_id: InstrumentId) -> None:
         symbol = instrument_id.symbol.value
@@ -471,7 +511,12 @@ class AxDataClient(LiveMarketDataClient):
 
     def _handle_msg(self, msg) -> None:
         try:
-            data = capsule_to_data(msg)
-            self._handle_data(data)
+            if nautilus_pyo3.is_pycapsule(msg):
+                data = capsule_to_data(msg)
+                self._handle_data(data)
+            elif isinstance(msg, nautilus_pyo3.InstrumentStatus):
+                self._handle_data(InstrumentStatus.from_pyo3(msg))
+            else:
+                self._log.debug(f"Unhandled message type: {type(msg).__name__}")
         except Exception as e:
             self._log.exception("Error handling websocket message", e)

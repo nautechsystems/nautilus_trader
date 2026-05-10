@@ -29,6 +29,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.serialization.arrow.serializer import _ARROW_ENCODERS
+from nautilus_trader.serialization.arrow.serializer import _RUST_CUSTOM_TYPE_REGISTRY
 
 
 CUSTOM_DATA_PREFIX = "custom_"
@@ -68,6 +69,10 @@ def filename_to_class(filename: str) -> type | None:
         return builtin_filename_to_class[filename]
 
     for data_cls in _ARROW_ENCODERS:
+        if class_to_filename(data_cls) == filename:
+            return data_cls
+
+    for data_cls in _RUST_CUSTOM_TYPE_REGISTRY.values():
         if class_to_filename(data_cls) == filename:
             return data_cls
 

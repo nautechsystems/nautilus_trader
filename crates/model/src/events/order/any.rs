@@ -31,7 +31,10 @@ use crate::{
 };
 
 /// Wraps an `OrderEvent` allowing polymorphism.
-#[allow(clippy::large_enum_variant)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "lint fires only with high-precision feature"
+)]
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum OrderEventAny {
     Initialized(OrderInitialized),
@@ -309,5 +312,35 @@ impl Display for OrderEventAny {
             Self::Updated(e) => write!(f, "{e}"),
             Self::Filled(e) => write!(f, "{e}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::OrderEventAny;
+    use crate::events::{OrderAccepted, OrderFilled, order::stubs::*};
+
+    #[rstest]
+    fn test_from_order_event_any_to_filled(order_filled: OrderFilled) {
+        let expected_trade_id = order_filled.trade_id;
+        let event = OrderEventAny::Filled(order_filled);
+        let filled: OrderFilled = event.into();
+        assert_eq!(filled.trade_id, expected_trade_id);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Invalid `OrderEventAny` not `OrderFilled`")]
+    fn test_from_order_event_any_to_filled_panics_on_wrong_variant(order_accepted: OrderAccepted) {
+        let event = OrderEventAny::Accepted(order_accepted);
+        let _filled: OrderFilled = event.into();
+    }
+
+    #[rstest]
+    fn test_display_delegates_to_inner(order_filled: OrderFilled) {
+        let inner_display = format!("{order_filled}");
+        let event = OrderEventAny::Filled(order_filled);
+        assert_eq!(format!("{event}"), inner_display);
     }
 }

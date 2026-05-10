@@ -2301,6 +2301,79 @@ class TestCache:
         orders_for_strategy_after = self.cache.orders(strategy_id=strategy_id)
         assert order not in orders_for_strategy_after
 
+    def test_purge_order_after_position_purged_does_not_crash(self):
+        """
+        Regression test: purge_order should not KeyError when the
+        associated position has already been purged from the cache.
+        """
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        order.apply(TestEventStubs.order_submitted(order))
+        self.cache.update_order(order)
+
+        order.apply(TestEventStubs.order_accepted(order))
+        self.cache.update_order(order)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00001"),
+        )
+        order.apply(fill)
+        self.cache.update_order(order)
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.cache.add_position(position, OmsType.HEDGING)
+
+        # Close the position
+        order2 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+        self.cache.add_order(order2, position_id)
+
+        order2.apply(TestEventStubs.order_submitted(order2))
+        self.cache.update_order(order2)
+
+        order2.apply(TestEventStubs.order_accepted(order2))
+        self.cache.update_order(order2)
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00001"),
+            trade_id=TradeId("2"),
+        )
+        order2.apply(fill2)
+        self.cache.update_order(order2)
+
+        position.apply(fill2)
+        self.cache.update_position(position)
+
+        assert position.is_closed
+
+        # Purge the position first
+        self.cache.purge_position(position_id)
+
+        # Act - purge order whose position is already gone (should not crash)
+        self.cache.purge_order(order.client_order_id)
+        self.cache.purge_order(order2.client_order_id)
+
+        # Assert
+        assert not self.cache.order_exists(order.client_order_id)
+        assert not self.cache.order_exists(order2.client_order_id)
+
     def test_purge_order_cleans_up_exec_spawn_orders_index(self):
         # Arrange
         parent_order = self.strategy.order_factory.market(

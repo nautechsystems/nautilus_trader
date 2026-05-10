@@ -15,15 +15,16 @@
 
 use std::any::Any;
 
+use nautilus_common::factories::ClientConfig;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{Chain, DexType, SharedChain},
     identifiers::{AccountId, TraderId},
 };
-use nautilus_system::ClientConfig;
+use nautilus_network::websocket::TransportBackend;
 
 /// Defines filtering criteria for the DEX pool universe that the data client will operate on.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -33,34 +34,22 @@ use nautilus_system::ClientConfig;
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.blockchain")
 )]
 pub struct DexPoolFilters {
     /// Whether to exclude pools containing tokens with empty name or symbol fields.
+    #[builder(default = true)]
     pub remove_pools_with_empty_erc20fields: bool,
-}
-
-impl DexPoolFilters {
-    /// Creates a new [`DexPoolFilters`] instance.
-    #[must_use]
-    pub fn new(remove_pools_with_empty_erc20fields: Option<bool>) -> Self {
-        Self {
-            remove_pools_with_empty_erc20fields: remove_pools_with_empty_erc20fields
-                .unwrap_or(true),
-        }
-    }
 }
 
 impl Default for DexPoolFilters {
     fn default() -> Self {
-        Self {
-            remove_pools_with_empty_erc20fields: true,
-        }
+        Self::builder().build()
     }
 }
 
 /// Configuration for blockchain data clients.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -70,72 +59,41 @@ impl Default for DexPoolFilters {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.blockchain")
 )]
 pub struct BlockchainDataClientConfig {
     /// The blockchain chain configuration.
     pub chain: SharedChain,
     /// List of decentralized exchange IDs to register and sync during connection.
+    #[builder(default)]
     pub dex_ids: Vec<DexType>,
     /// Determines if the client should use Hypersync for live data streaming.
+    #[builder(default)]
     pub use_hypersync_for_live_data: bool,
     /// The HTTP URL for the blockchain RPC endpoint.
     pub http_rpc_url: String,
     /// The maximum number of RPC requests allowed per second.
     pub rpc_requests_per_second: Option<u32>,
     /// The maximum number of Multicall calls per one RPC request.
+    #[builder(default = 200)]
     pub multicall_calls_per_rpc_request: u32,
     /// The WebSocket secure URL for the blockchain RPC endpoint.
     pub wss_rpc_url: Option<String>,
-    /// Optional HTTP proxy URL for RPC requests.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL for RPC connections.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
     /// The block from which to sync historical data.
     pub from_block: Option<u64>,
     /// Filtering criteria that define which DEX pools to include in the data universe.
+    #[builder(default)]
     pub pool_filters: DexPoolFilters,
     /// Optional configuration for data client's Postgres cache database
     pub postgres_cache_database_config: Option<PostgresConnectOptions>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
-impl BlockchainDataClientConfig {
-    /// Creates a new [`BlockchainDataClientConfig`] instance.
-    #[allow(clippy::too_many_arguments)]
-    #[must_use]
-    pub fn new(
-        chain: SharedChain,
-        dex_ids: Vec<DexType>,
-        http_rpc_url: String,
-        rpc_requests_per_second: Option<u32>,
-        multicall_calls_per_rpc_request: Option<u32>,
-        wss_rpc_url: Option<String>,
-        use_hypersync_for_live_data: bool,
-        from_block: Option<u64>,
-        pools_filters: Option<DexPoolFilters>,
-        postgres_cache_database_config: Option<PostgresConnectOptions>,
-    ) -> Self {
-        Self {
-            chain,
-            dex_ids,
-            use_hypersync_for_live_data,
-            http_rpc_url,
-            rpc_requests_per_second,
-            multicall_calls_per_rpc_request: multicall_calls_per_rpc_request.unwrap_or(200),
-            wss_rpc_url,
-            http_proxy_url: None,
-            ws_proxy_url: None,
-            from_block,
-            pool_filters: pools_filters.unwrap_or_default(),
-            postgres_cache_database_config,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bon::Builder)]
 pub struct BlockchainExecutionClientConfig {
     /// The trader ID for the client.
     pub trader_id: TraderId,
@@ -151,28 +109,9 @@ pub struct BlockchainExecutionClientConfig {
     pub http_rpc_url: String,
     /// The maximum number of RPC requests allowed per second.
     pub rpc_requests_per_second: Option<u32>,
-}
-
-impl BlockchainExecutionClientConfig {
-    pub fn new(
-        trader_id: TraderId,
-        client_id: AccountId,
-        chain: Chain,
-        wallet_address: String,
-        tokens: Option<Vec<String>>,
-        http_rpc_url: String,
-        rpc_requests_per_second: Option<u32>,
-    ) -> Self {
-        Self {
-            trader_id,
-            client_id,
-            chain,
-            wallet_address,
-            tokens,
-            http_rpc_url,
-            rpc_requests_per_second,
-        }
-    }
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl ClientConfig for BlockchainExecutionClientConfig {

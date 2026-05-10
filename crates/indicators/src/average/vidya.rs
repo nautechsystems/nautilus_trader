@@ -32,6 +32,10 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators", unsendable)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
+)]
 pub struct VariableIndexDynamicAverage {
     pub period: usize,
     pub alpha: f64,
@@ -275,10 +279,10 @@ mod tests {
             sma.update_raw(price);
             assert_eq!(sma.count(), std::cmp::min(ix + 1, period));
 
-            let got = sma.value();
+            let actual = sma.value();
             assert!(
-                (got - exp).abs() < 1e-12,
-                "tick {ix}: expected {exp}, was {got}"
+                (actual - exp).abs() < 1e-12,
+                "tick {ix}: expected {exp}, was {actual}"
             );
         }
     }
@@ -298,10 +302,10 @@ mod tests {
         for (ix, (&price, &exp)) in prices.iter().zip(reference.iter()).enumerate() {
             sma.update_raw(price);
 
-            let got = sma.value();
+            let actual = sma.value();
             assert!(
-                (got - exp).abs() < 1e-12,
-                "tick {ix}: expected {exp}, was {got}"
+                (actual - exp).abs() < 1e-12,
+                "tick {ix}: expected {exp}, was {actual}"
             );
         }
     }

@@ -24,6 +24,8 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
+use super::enums::OKXInstrumentType;
+
 pub const OKX: &str = "OKX";
 pub static OKX_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(OKX)));
 
@@ -41,6 +43,21 @@ pub const OKX_WS_DEMO_PRIVATE_URL: &str = "wss://wspap.okx.com:8443/ws/v5/privat
 pub const OKX_WS_DEMO_BUSINESS_URL: &str = "wss://wspap.okx.com:8443/ws/v5/business";
 
 pub const OKX_WS_TOPIC_DELIMITER: char = ':';
+
+/// WebSocket heartbeat (ping/pong) interval in seconds.
+pub const OKX_WS_HEARTBEAT_SECS: u64 = 20;
+
+/// OKX success response code for WebSocket operations.
+pub const OKX_SUCCESS_CODE: &str = "0";
+
+/// JSON field key for sub-error code in order operation responses.
+pub const OKX_FIELD_SCODE: &str = "sCode";
+
+/// JSON field key for sub-error message in order operation responses.
+pub const OKX_FIELD_SMSG: &str = "sMsg";
+
+/// JSON field key for client order ID in order operation responses.
+pub const OKX_FIELD_CLORDID: &str = "clOrdId";
 
 /// OKX supported order time in force.
 ///
@@ -133,3 +150,39 @@ pub const OKX_TARGET_CCY_BASE: &str = "base_ccy";
 
 /// Target currency literal for quote currency.
 pub const OKX_TARGET_CCY_QUOTE: &str = "quote_ccy";
+
+/// Resolves instrument families for a given instrument type.
+///
+/// Returns `Some(families)` when the type supports family filtering, or `None`
+/// to skip the instrument type entirely (Option without configured families).
+/// An empty vec means no family filter is needed (Spot, Margin).
+pub fn resolve_instrument_families(
+    configured: &Option<Vec<String>>,
+    inst_type: OKXInstrumentType,
+) -> Option<Vec<String>> {
+    match (configured, inst_type) {
+        (Some(families), OKXInstrumentType::Option) => Some(families.clone()),
+        (Some(families), OKXInstrumentType::Futures | OKXInstrumentType::Swap) => {
+            Some(families.clone())
+        }
+        (None, OKXInstrumentType::Option) => {
+            log::warn!("Skipping OPTION type: instrument_families required but not configured");
+            None
+        }
+        _ => Some(vec![]),
+    }
+}
+
+/// Clamps a requested book depth to the nearest OKX-supported value.
+///
+/// OKX WebSocket channels support depths of 50 and 400. Depth 0 means
+/// auto-select based on VIP level. Any other value rounds up to the nearest
+/// supported depth so the subscription succeeds and the data engine can
+/// truncate to the originally requested depth.
+pub fn resolve_book_depth(raw_depth: usize) -> usize {
+    match raw_depth {
+        0 | 400 => raw_depth,
+        1..=50 => 50,
+        _ => 400,
+    }
+}

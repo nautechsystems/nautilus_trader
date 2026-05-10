@@ -1,0 +1,7 @@
+{
+  "feed": "open_orders",
+  "order_id": "770d7b34-9118-59d2-b8da-5a04e3683fa9",
+  "cli_ord_id": "O-20250306-001",
+  "is_cancel": true,
+  "reason": "post_order_failed_because_it_would_filled"
+}

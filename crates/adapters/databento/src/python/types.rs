@@ -32,6 +32,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DatabentoImbalance {
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
@@ -154,6 +155,7 @@ impl DatabentoImbalance {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DatabentoStatistics {
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
@@ -298,6 +300,10 @@ impl DatabentoStatistics {
         module = "nautilus_trader.core.nautilus_pyo3.databento",
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.databento")
 )]
 #[derive(Debug, Clone)]
 pub struct DatabentoSubscriptionAck {

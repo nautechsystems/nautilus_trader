@@ -29,10 +29,11 @@ extension-module = [
 ]
 ffi = ["cbindgen", "nautilus-core/ffi"]
 python = ["nautilus-core/python", "pyo3", "pyo3-stub-gen"]
-stubs = ["rstest"]
+stubs = ["bon", "rstest"]
 high-precision = []
 # DeFi domain model requires 18-decimal wei precision, implying `high-precision`
 defi = ["alloy-primitives", "high-precision"]
+cython-compat = []
 
 [package.metadata.docs.rs]
 all-features = true
@@ -43,11 +44,10 @@ nautilus-core = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+arrow = { workspace = true }
 chrono = { workspace = true }
 derive_builder = { workspace = true }
 enum_dispatch = { workspace = true }
-evalexpr = { workspace = true }
-hex = { workspace = true }
 implied-vol = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
@@ -61,11 +61,14 @@ thiserror = { workspace = true }
 ustr = { workspace = true }
 
 alloy-primitives = { workspace = true, optional = true }
+bon = { workspace = true, optional = true }
+dashmap.workspace = true
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 rstest = { workspace = true, optional = true }
 
 [dev-dependencies]
+bon = { workspace = true }
 criterion = { workspace = true }
 iai = { workspace = true }
 proptest = { workspace = true }
@@ -73,6 +76,16 @@ rstest = { workspace = true }
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
+
+[[bench]]
+name = "greeks_criterion"
+path = "benches/greeks_criterion.rs"
+harness = false
+
+[[bench]]
+name = "black_scholes_criterion"
+path = "benches/black_scholes_criterion.rs"
+harness = false
 
 [[bench]]
 name = "book_iai"
@@ -87,16 +100,6 @@ harness = false
 [[bench]]
 name = "fixed_precision_iai"
 path = "benches/fixed_precision_iai.rs"
-harness = false
-
-[[bench]]
-name = "greeks_criterion"
-path = "benches/greeks_criterion.rs"
-harness = false
-
-[[bench]]
-name = "black_scholes_simd_criterion"
-path = "benches/black_scholes_simd_criterion.rs"
 harness = false
 
 [[bench]]
@@ -117,4 +120,9 @@ harness = false
 [[bench]]
 name = "quantity_criterion"
 path = "benches/quantity_criterion.rs"
+harness = false
+
+[[bench]]
+name = "expressions_criterion"
+path = "benches/expressions_criterion.rs"
 harness = false

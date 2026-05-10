@@ -1,0 +1,50 @@
+{
+  "channel": "l2_data",
+  "client_id": "",
+  "timestamp": "2026-04-07T14:30:00.123456Z",
+  "sequence_num": 0,
+  "events": [
+    {
+      "type": "snapshot",
+      "product_id": "BTC-USD",
+      "updates": [
+        {
+          "side": "bid",
+          "event_time": "2026-04-07T14:30:00.123456Z",
+          "price_level": "68900.00",
+          "new_quantity": "1.50000000"
+        },
+        {
+          "side": "bid",
+          "event_time": "2026-04-07T14:30:00.123456Z",
+          "price_level": "68899.50",
+          "new_quantity": "0.75000000"
+        },
+        {
+          "side": "bid",
+          "event_time": "2026-04-07T14:30:00.123456Z",
+          "price_level": "68899.00",
+          "new_quantity": "2.30000000"
+        },
+        {
+          "side": "offer",
+          "event_time": "2026-04-07T14:30:00.123456Z",
+          "price_level": "68901.00",
+          "new_quantity": "0.50000000"
+        },
+        {
+          "side": "offer",
+          "event_time": "2026-04-07T14:30:00.123456Z",
+          "price_level": "68901.50",
+          "new_quantity": "1.20000000"
+        },
+        {
+          "side": "offer",
+          "event_time": "2026-04-07T14:30:00.123456Z",
+          "price_level": "68902.00",
+          "new_quantity": "0.80000000"
+        }
+      ]
+    }
+  ]
+}

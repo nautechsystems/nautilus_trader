@@ -1,3 +1,6 @@
 {
-  "not_canceled": "already canceled or matched"
+  "canceled": [],
+  "not_canceled": {
+    "0xb816482a1234567890abcdef1234567890abcdef1234567890abcdef12345678": "already canceled or matched"
+  }
 }

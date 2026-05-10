@@ -66,10 +66,14 @@ use crate::defi::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct PoolProfiler {
     /// Pool definition.
     pub pool: SharedPool,
-    /// Position tracking by position key (owner:tick_lower:tick_upper).
+    /// Position tracking by position key (`owner:tick_lower:tick_upper`).
     positions: AHashMap<String, PoolPosition>,
     /// Tick map managing liquidity distribution across price ranges.
     pub tick_map: TickMap,
@@ -349,11 +353,11 @@ impl PoolProfiler {
         Ok(swap_event)
     }
 
-    /// Core **read-only** swap simulation engine implementing UniswapV3 mathematics.
+    /// Core **read-only** swap simulation engine implementing `UniswapV3` mathematics.
     ///
     /// This method performs a complete swap simulation without modifying pool state,
     /// working entirely on stack-allocated local copies of state variables. It returns
-    /// a comprehensive [`SwapQuote`] containing all swap results and profiling data,
+    /// a [`SwapQuote`] containing all swap results and profiling data,
     /// including a complete audit trail of crossed ticks.
     ///
     ///
@@ -597,7 +601,7 @@ impl PoolProfiler {
     }
 
     // panics-doc-ok (transitive via check_if_initialized)
-    /// Returns a comprehensive swap quote without modifying pool state.
+    /// Returns a swap quote without modifying pool state.
     ///
     /// This method simulates a swap and provides detailed profiling metrics including:
     /// - Amounts of tokens that would be exchanged
@@ -724,13 +728,13 @@ impl PoolProfiler {
         size_estimator::size_for_impact_bps(self, impact_bps, zero_for_one, &config)
     }
 
-    /// Finds the maximum trade size with comprehensive search diagnostics.
+    /// Finds the maximum trade size with search diagnostics.
     /// This is the detailed version of [`Self::size_for_impact_bps`] that returns
     /// extensive information about the search process.It is useful for debugging,
     /// monitoring, and analyzing search behavior in production.
     ///
     /// # Returns
-    /// Detailed result with size and comprehensive search diagnostics
+    /// Detailed result with size and search diagnostics
     ///
     /// # Errors
     /// Returns error if:
@@ -1319,6 +1323,7 @@ impl PoolProfiler {
     ///
     /// The utilization rate measures what percentage of total deployed liquidity
     /// is currently active (in-range and earning fees) at the current price tick.
+    #[must_use]
     pub fn liquidity_utilization_rate(&self) -> f64 {
         const PRECISION: u32 = 1_000_000; // 6 decimal places
 
@@ -1337,7 +1342,7 @@ impl PoolProfiler {
 
         // Safe to cast to u64: Since active_liquidity <= total_liquidity,
         // the ratio is guaranteed to be <= PRECISION (1_000_000), which fits in u64
-        ratio.to::<u64>() as f64 / PRECISION as f64
+        ratio.to::<u64>() as f64 / f64::from(PRECISION)
     }
 
     /// Validates tick range for position operations.
@@ -1350,7 +1355,7 @@ impl PoolProfiler {
     /// This function returns an error if:
     /// - `tick_lower >= tick_upper` (invalid range).
     /// - Ticks are not multiples of pool's tick spacing.
-    /// - Ticks are outside MIN_TICK/MAX_TICK bounds.
+    /// - Ticks are outside `MIN_TICK/MAX_TICK` bounds.
     fn validate_ticks(&self, tick_lower: i32, tick_upper: i32) -> anyhow::Result<()> {
         if tick_lower >= tick_upper {
             anyhow::bail!("Invalid tick range: {tick_lower} >= {tick_upper}")
@@ -1462,6 +1467,7 @@ impl PoolProfiler {
                 .tick_spacing
                 .expect("Pool tick spacing must be set"),
         );
+
         for tick in snapshot.ticks {
             self.tick_map.restore_tick(tick);
         }
@@ -1485,6 +1491,7 @@ impl PoolProfiler {
     ///
     /// Returns tick values that have been initialized (have liquidity positions).
     /// Useful for understanding the liquidity distribution across price ranges.
+    #[must_use]
     pub fn get_active_tick_values(&self) -> Vec<i32> {
         self.tick_map
             .get_all_ticks()
@@ -1504,6 +1511,7 @@ impl PoolProfiler {
     ///
     /// Returns the tick data structure containing liquidity and fee information
     /// for the specified tick, if it exists.
+    #[must_use]
     pub fn get_tick(&self, tick: i32) -> Option<&PoolTick> {
         self.tick_map.get_tick(tick)
     }
@@ -1512,6 +1520,7 @@ impl PoolProfiler {
     ///
     /// Returns the tick that corresponds to the current pool price.
     /// The pool must be initialized before calling this method.
+    #[must_use]
     pub fn get_current_tick(&self) -> i32 {
         self.state.current_tick
     }
@@ -1523,6 +1532,7 @@ impl PoolProfiler {
     ///
     /// # Returns
     /// Total tick count in the tick map
+    #[must_use]
     pub fn get_total_tick_count(&self) -> usize {
         self.tick_map.total_tick_count()
     }
@@ -1531,6 +1541,7 @@ impl PoolProfiler {
     ///
     /// Looks up a position by its unique key (owner + tick range) and returns
     /// the position data if it exists.
+    #[must_use]
     pub fn get_position(
         &self,
         owner: &Address,
@@ -1550,6 +1561,7 @@ impl PoolProfiler {
     /// # Returns
     ///
     /// A vector of references to active [`PoolPosition`] objects.
+    #[must_use]
     pub fn get_active_positions(&self) -> Vec<&PoolPosition> {
         self.positions
             .values()
@@ -1570,11 +1582,13 @@ impl PoolProfiler {
     /// # Returns
     ///
     /// A vector of references to all [`PoolPosition`] objects.
+    #[must_use]
     pub fn get_all_positions(&self) -> Vec<&PoolPosition> {
         self.positions.values().collect()
     }
 
     /// Returns position keys for all tracked positions.
+    #[must_use]
     pub fn get_all_position_keys(&self) -> Vec<(Address, i32, i32)> {
         self.get_all_positions()
             .iter()
@@ -1592,6 +1606,7 @@ impl PoolProfiler {
     /// # Panics
     ///
     /// Panics if no events have been processed yet.
+    #[must_use]
     pub fn extract_snapshot(&self) -> PoolSnapshot {
         let positions: Vec<_> = self.positions.values().cloned().collect();
         let ticks: Vec<_> = self.tick_map.get_all_ticks().values().copied().collect();
@@ -1615,6 +1630,7 @@ impl PoolProfiler {
     ///
     /// Active positions are those with liquidity > 0 and whose tick range
     /// includes the current pool tick (meaning they have tokens in the pool).
+    #[must_use]
     pub fn get_total_active_positions(&self) -> usize {
         self.positions
             .iter()
@@ -1631,6 +1647,7 @@ impl PoolProfiler {
     ///
     /// Inactive positions are those that exist but don't span the current tick,
     /// meaning their liquidity is entirely in one token or the other.
+    #[must_use]
     pub fn get_total_inactive_positions(&self) -> usize {
         self.positions.len() - self.get_total_active_positions()
     }
@@ -1641,6 +1658,7 @@ impl PoolProfiler {
     /// - Token0 amounts from all active liquidity positions
     /// - Accumulated trading fees (approximated from fee growth)
     /// - Protocol fees collected
+    #[must_use]
     pub fn estimate_balance_of_token0(&self) -> U256 {
         let mut total_amount0 = U256::ZERO;
         let current_sqrt_price = self.state.price_sqrt_ratio_x96;
@@ -1709,6 +1727,7 @@ impl PoolProfiler {
     /// - Token1 amounts from all active liquidity positions
     /// - Accumulated trading fees (approximated from fee growth)
     /// - Protocol fees collected
+    #[must_use]
     pub fn estimate_balance_of_token1(&self) -> U256 {
         let mut total_amount1 = U256::ZERO;
         let current_sqrt_price = self.state.price_sqrt_ratio_x96;
@@ -1781,6 +1800,7 @@ impl PoolProfiler {
     }
 
     /// Returns the total number of events processed.
+    #[must_use]
     pub fn get_total_events(&self) -> u64 {
         self.analytics.total_swaps
             + self.analytics.total_mints

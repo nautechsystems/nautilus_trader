@@ -15,10 +15,10 @@
 
 //! Example demonstrating live execution testing with the Bybit adapter.
 //!
-//! Run with: `cargo run --example bybit-exec-tester --package nautilus-bybit`
+//! Run with: `cargo run --example bybit-exec-tester --package nautilus-bybit --features examples`
 
 use nautilus_bybit::{
-    common::enums::BybitProductType,
+    common::enums::{BybitEnvironment, BybitProductType},
     config::{BybitDataClientConfig, BybitExecClientConfig},
     factories::{BybitDataClientFactory, BybitExecutionClientFactory},
 };
@@ -28,11 +28,16 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
+use nautilus_trading::strategy::StrategyConfig;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
+
+    // Mainnet/Demo/Testnet
+    let bybit_environment = BybitEnvironment::Mainnet;
 
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");
@@ -42,17 +47,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
 
     let data_config = BybitDataClientConfig {
+        environment: bybit_environment,
         api_key: None,    // Will use 'BYBIT_API_KEY' env var
         api_secret: None, // Will use 'BYBIT_API_SECRET' env var
         product_types: vec![BybitProductType::Spot, BybitProductType::Linear],
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
     let exec_config = BybitExecClientConfig {
+        environment: bybit_environment,
         api_key: None,    // Will use 'BYBIT_API_KEY' env var
         api_secret: None, // Will use 'BYBIT_API_SECRET' env var
         product_types: vec![BybitProductType::Spot, BybitProductType::Linear],
         account_id: Some(account_id),
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -67,18 +76,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let mut tester_config = ExecTesterConfig::new(
-        StrategyId::from("EXEC_TESTER-001"),
-        instrument_id,
-        client_id,
-        Quantity::from("0.01"),
-    )
-    .with_log_data(false)
-    .with_use_post_only(true)
-    .with_cancel_orders_on_stop(true)
-    .with_close_positions_on_stop(true);
-
-    tester_config.base.external_order_claims = Some(vec![instrument_id]);
+    let order_qty = Quantity::from("0.01");
+    let tester_config = ExecTesterConfig::builder()
+        .base(StrategyConfig {
+            strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
+            external_order_claims: Some(vec![instrument_id]),
+            ..Default::default()
+        })
+        .instrument_id(instrument_id)
+        .client_id(client_id)
+        .order_qty(order_qty)
+        .log_data(false)
+        .open_position_on_start_qty(order_qty.as_decimal())
+        .use_post_only(true)
+        .build();
 
     let tester = ExecTester::new(tester_config);
 

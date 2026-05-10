@@ -53,6 +53,7 @@ from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Command
+from nautilus_trader.core.rust.core cimport SECONDS_IN_MINUTE
 from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OmsType
@@ -71,8 +72,6 @@ from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.book cimport should_handle_own_book_order
-from nautilus_trader.model.data cimport QuoteTick
-from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderDenied
@@ -167,12 +166,20 @@ cdef class ExecutionEngine(Component):
         # Configuration
         self.debug: bool = config.debug
         self.allow_overfills = config.allow_overfills
-        self.convert_quote_qty_to_base = config.convert_quote_qty_to_base
         self.manage_own_order_books = config.manage_own_order_books
         self.snapshot_orders = config.snapshot_orders
         self.snapshot_positions = config.snapshot_positions
         self.snapshot_positions_interval_secs = config.snapshot_positions_interval_secs or 0
         self.snapshot_positions_timer_name = "ExecEngine_SNAPSHOT_POSITIONS"
+
+        # Purge configuration
+        self.purge_closed_orders_interval_mins = config.purge_closed_orders_interval_mins
+        self.purge_closed_orders_buffer_mins = config.purge_closed_orders_buffer_mins
+        self.purge_closed_positions_interval_mins = config.purge_closed_positions_interval_mins
+        self.purge_closed_positions_buffer_mins = config.purge_closed_positions_buffer_mins
+        self.purge_account_events_interval_mins = config.purge_account_events_interval_mins
+        self.purge_account_events_lookback_mins = config.purge_account_events_lookback_mins
+        self.purge_from_database = config.purge_from_database
 
         self._log.info(f"{config.snapshot_orders=}", LogColor.BLUE)
         self._log.info(f"{config.snapshot_positions=}", LogColor.BLUE)
@@ -407,17 +414,6 @@ cdef class ExecutionEngine(Component):
 
         """
         self.manage_own_order_books = value
-
-    cpdef void set_convert_quote_qty_to_base(self, bint value):
-        """
-        Set the `convert_quote_qty_to_base` flag with the given `value`.
-
-        Parameters
-        ----------
-        value : bool
-            The value to set.
-        """
-        self.convert_quote_qty_to_base = value
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -684,6 +680,47 @@ cdef class ExecutionEngine(Component):
                 callback=self._snapshot_open_position_states,
             )
 
+        cdef uint64_t purge_interval_ns
+
+        if self.purge_closed_orders_interval_mins and "ExecEngine_PURGE_CLOSED_ORDERS" not in self._clock.timer_names:
+            purge_interval_ns = secs_to_nanos(self.purge_closed_orders_interval_mins * SECONDS_IN_MINUTE)
+            self._log.info(
+                f"Starting purge closed orders timer at {self.purge_closed_orders_interval_mins} minute intervals",
+            )
+            self._clock.set_timer_ns(
+                name="ExecEngine_PURGE_CLOSED_ORDERS",
+                interval_ns=purge_interval_ns,
+                start_time_ns=0,
+                stop_time_ns=0,
+                callback=self._purge_closed_orders,
+            )
+
+        if self.purge_closed_positions_interval_mins and "ExecEngine_PURGE_CLOSED_POSITIONS" not in self._clock.timer_names:
+            purge_interval_ns = secs_to_nanos(self.purge_closed_positions_interval_mins * SECONDS_IN_MINUTE)
+            self._log.info(
+                f"Starting purge closed positions timer at {self.purge_closed_positions_interval_mins} minute intervals",
+            )
+            self._clock.set_timer_ns(
+                name="ExecEngine_PURGE_CLOSED_POSITIONS",
+                interval_ns=purge_interval_ns,
+                start_time_ns=0,
+                stop_time_ns=0,
+                callback=self._purge_closed_positions,
+            )
+
+        if self.purge_account_events_interval_mins and "ExecEngine_PURGE_ACCOUNT_EVENTS" not in self._clock.timer_names:
+            purge_interval_ns = secs_to_nanos(self.purge_account_events_interval_mins * SECONDS_IN_MINUTE)
+            self._log.info(
+                f"Starting purge account events timer at {self.purge_account_events_interval_mins} minute intervals",
+            )
+            self._clock.set_timer_ns(
+                name="ExecEngine_PURGE_ACCOUNT_EVENTS",
+                interval_ns=purge_interval_ns,
+                start_time_ns=0,
+                stop_time_ns=0,
+                callback=self._purge_account_events,
+            )
+
         self._on_start()
 
     cpdef void _stop(self):
@@ -694,6 +731,18 @@ cdef class ExecutionEngine(Component):
         if self.snapshot_positions_interval_secs and self.snapshot_positions_timer_name in self._clock.timer_names:
             self._log.info(f"Canceling position snapshots timer")
             self._clock.cancel_timer(self.snapshot_positions_timer_name)
+
+        if "ExecEngine_PURGE_CLOSED_ORDERS" in self._clock.timer_names:
+            self._log.info("Canceling purge closed orders timer")
+            self._clock.cancel_timer("ExecEngine_PURGE_CLOSED_ORDERS")
+
+        if "ExecEngine_PURGE_CLOSED_POSITIONS" in self._clock.timer_names:
+            self._log.info("Canceling purge closed positions timer")
+            self._clock.cancel_timer("ExecEngine_PURGE_CLOSED_POSITIONS")
+
+        if "ExecEngine_PURGE_ACCOUNT_EVENTS" in self._clock.timer_names:
+            self._log.info("Canceling purge account events timer")
+            self._clock.cancel_timer("ExecEngine_PURGE_ACCOUNT_EVENTS")
 
         self._on_stop()
 
@@ -917,55 +966,6 @@ cdef class ExecutionEngine(Component):
             self._pos_id_generator.set_count(strategy_id, count)
             self._log.info(f"Set PositionId count for {strategy_id!r} to {count}")
 
-    cpdef Price _last_px_for_conversion(self, InstrumentId instrument_id, OrderSide order_side):
-        cdef Price last_px = None
-        cdef QuoteTick last_quote = self._cache.quote_tick(instrument_id)
-        cdef TradeTick last_trade = self._cache.trade_tick(instrument_id)
-        if last_quote is not None:
-            last_px = last_quote.ask_price if order_side == OrderSide.BUY else last_quote.bid_price
-        else:
-            if last_trade is not None:
-                last_px = last_trade.price
-
-        return last_px
-
-    cpdef void _set_order_base_qty(self, Order order, Quantity base_qty):
-        self._log.info(
-            f"Setting {order.instrument_id} order quote quantity {order.quantity} to base quantity {base_qty}",
-        )
-        cdef Quantity original_qty = order.quantity
-        order.quantity = base_qty
-        order.leaves_qty = base_qty
-        order.is_quote_quantity = False
-
-        if order.contingency_type != ContingencyType.OTO:
-            return
-
-        # Set base quantity for all OTO contingent orders
-        cdef ClientOrderId client_order_id
-        cdef Order contingent_order
-        for client_order_id in order.linked_order_ids or []:
-            contingent_order = self._cache.order(client_order_id)
-            if contingent_order is None:
-                self._log.error(f"Contingency order {client_order_id!r} not found")
-                continue
-            elif not contingent_order.is_quote_quantity:
-                continue  # Already base quantity
-            elif contingent_order.quantity != original_qty:
-                self._log.warning(
-                    f"Contingent order quantity {contingent_order.quantity} "
-                    f"was not equal to the OTO parent original quantity {original_qty} "
-                    f"when setting to base quantity of {base_qty}"
-                )
-
-            self._log.info(
-                f"Setting {contingent_order.instrument_id} order quote quantity "
-                f"{contingent_order.quantity} to base quantity {base_qty}",
-            )
-            contingent_order.quantity = base_qty
-            contingent_order.leaves_qty = base_qty
-            contingent_order.is_quote_quantity = False
-
     cpdef void _deny_order(self, Order order, str reason):
         # Generate event
         cdef OrderDenied denied = OrderDenied(
@@ -1131,22 +1131,6 @@ cdef class ExecutionEngine(Component):
             )
             return
 
-        # Check if converting quote quantity
-        cdef Price last_px = None
-        cdef Quantity base_qty = None
-        if self.convert_quote_qty_to_base and not instrument.is_inverse and order.is_quote_quantity:
-            self._log.warning(
-                "`convert_quote_qty_to_base is deprecated`; set `convert_quote_qty_to_base=False` to maintain consistent behavior.",
-                LogColor.YELLOW,
-            )
-            last_px = self._last_px_for_conversion(order.instrument_id, order.side)
-            if last_px is None:
-                self._deny_order(order, f"no-price-to-convert-quote-qty {order.instrument_id}")
-                return  # Denied
-
-            base_qty = instrument.calculate_base_quantity(order.quantity, last_px)
-            self._set_order_base_qty(order, base_qty)
-
         if self.manage_own_order_books and should_handle_own_book_order(order):
             self._add_own_book_order(order)
 
@@ -1170,29 +1154,6 @@ cdef class ExecutionEngine(Component):
                 f"no instrument found for {command.instrument_id}, {command}"
             )
             return
-
-        # Check if converting quote quantity
-        cdef Price last_px = None
-        cdef Quantity base_qty = None
-        if self.convert_quote_qty_to_base and not instrument.is_inverse:
-            for order in command.order_list.orders:
-                if not order.is_quote_quantity:
-                    continue  # Base quantity already set
-
-                self._log.warning(
-                    "`convert_quote_qty_to_base` is deprecated; set `convert_quote_qty_to_base=False` to maintain consistent behavior",
-                    LogColor.YELLOW,
-                )
-
-                last_px = self._last_px_for_conversion(order.instrument_id, order.side)
-                if last_px is None:
-                    for order in command.order_list.orders:
-                        self._deny_order(order, f"no-price-to-convert-quote-qty {order.instrument_id}")
-
-                    return  # Denied
-
-                base_qty = instrument.calculate_base_quantity(order.quantity, last_px)
-                self._set_order_base_qty(order, base_qty)
 
         if self.manage_own_order_books:
             for order in command.order_list.orders:
@@ -1379,9 +1340,10 @@ cdef class ExecutionEngine(Component):
         cdef OmsType oms_type = self._determine_oms_type(fill)
 
         # Determine position ID for leg fill without requiring an order in cache
-        cdef PositionId position_id
+        cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
         if oms_type == OmsType.HEDGING:
-            position_id = self._determine_hedging_position_id(fill)
+            if position_id is None:
+                position_id = self._determine_hedging_position_id(fill)
         elif oms_type == OmsType.NETTING:
             # Assign netted position ID
             position_id = self._determine_netting_position_id(fill)
@@ -1404,11 +1366,22 @@ cdef class ExecutionEngine(Component):
         # Handle position update
         self._handle_position_update(instrument, fill, oms_type)
 
+        # Pop position events which are pending publishing to prevent recursion issues
+        cdef list[PositionEvent] to_publish = self._pending_position_events
+        self._pending_position_events = []
+
         # Publish to message bus topic
         self._msgbus.publish_c(
             topic=self._get_order_events_topic(fill.strategy_id),
             msg=fill,
         )
+
+        cdef PositionEvent pos_event
+        for pos_event in to_publish:
+            self._msgbus.publish_c(
+                topic=self._get_position_events_topic(pos_event.strategy_id),
+                msg=pos_event,
+            )
 
     cpdef OmsType _determine_oms_type(self, OrderFilled fill):
         # Check for strategy OMS override
@@ -1486,6 +1459,7 @@ cdef class ExecutionEngine(Component):
             self._log.debug(f"Assigned primary order {position_id!r}", LogColor.MAGENTA)
 
     cpdef PositionId _determine_hedging_position_id(self, OrderFilled fill, Order order=None):
+        cdef PositionId position_id
         if fill.position_id is not None:
             if self.debug:
                 self._log.debug(f"Already had a position ID of: {fill.position_id!r}", LogColor.MAGENTA)
@@ -1496,6 +1470,17 @@ cdef class ExecutionEngine(Component):
         if order is None:
             order = self._cache.order(fill.client_order_id)
             if order is None:
+                if self._is_leg_fill(fill):
+                    position_id = self._pos_id_generator.generate(fill.strategy_id)
+
+                    if self.debug:
+                        self._log.debug(
+                            f"Generated synthetic leg {position_id!r} for {fill}",
+                            LogColor.MAGENTA,
+                        )
+
+                    return position_id
+
                 raise RuntimeError(
                     f"Order for {fill.client_order_id!r} not found to determine position ID",
                 )
@@ -1878,3 +1863,27 @@ cdef class ExecutionEngine(Component):
         cdef Position position
         for position in self._cache.positions_open():
             self._create_position_state_snapshot(position, open_only=True)
+
+    cpdef void _purge_closed_orders(self, TimeEvent event):
+        cdef uint64_t buffer_secs = (self.purge_closed_orders_buffer_mins or 0) * SECONDS_IN_MINUTE
+        self._cache.purge_closed_orders(
+            ts_now=self._clock.timestamp_ns(),
+            buffer_secs=buffer_secs,
+            purge_from_database=self.purge_from_database,
+        )
+
+    cpdef void _purge_closed_positions(self, TimeEvent event):
+        cdef uint64_t buffer_secs = (self.purge_closed_positions_buffer_mins or 0) * SECONDS_IN_MINUTE
+        self._cache.purge_closed_positions(
+            ts_now=self._clock.timestamp_ns(),
+            buffer_secs=buffer_secs,
+            purge_from_database=self.purge_from_database,
+        )
+
+    cpdef void _purge_account_events(self, TimeEvent event):
+        cdef uint64_t lookback_secs = (self.purge_account_events_lookback_mins or 0) * SECONDS_IN_MINUTE
+        self._cache.purge_account_events(
+            ts_now=self._clock.timestamp_ns(),
+            lookback_secs=lookback_secs,
+            purge_from_database=self.purge_from_database,
+        )

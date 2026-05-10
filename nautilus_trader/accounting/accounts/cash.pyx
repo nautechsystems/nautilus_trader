@@ -139,17 +139,16 @@ cdef class CashAccount(Account):
         Parameters
         ----------
         balances : list[AccountBalance]
-            The balances for the update.
+            The balances for the update. An empty list is treated as a no-op.
 
         Raises
         ------
-        ValueError
-            If `balances` is empty.
         AccountBalanceNegative
             If borrowing is not allowed and balance is negative.
 
         """
-        Condition.not_empty(balances, "balances")
+        if len(balances) == 0:
+            return
 
         cdef AccountBalance balance
         for balance in balances:
@@ -175,8 +174,8 @@ cdef class CashAccount(Account):
         System method (not intended to be called by user code).
 
         """
-        # Only clear locks for externally reported state (venue is authoritative)
-        if event.is_reported:
+        # Only clear locks when the venue reports a fresh balance snapshot
+        if event.is_reported and len(event.balances) > 0:
             self._balances_locked.clear()
 
         Account.apply(self, event)

@@ -130,6 +130,7 @@ async def _setup_order_state(
                     order_id = str(order_update.id)
                     venue_order_id = VenueOrderId(order_id)
                     client_order_id = ClientOrderId(order_id)
+
                     if not cache.instrument(instrument_id):
                         instrument = betting_instrument(
                             market_id=oc.id,
@@ -995,6 +996,7 @@ async def test_various_betfair_order_fill_scenarios(
     assert len(fill_events) == len(last_qtys), (
         f"Expected {len(last_qtys)} fills, received {len(fill_events)}"
     )
+
     for msg, last_qty in zip(fill_events, last_qtys, strict=True):
         assert isinstance(msg, OrderFilled)
         assert msg.last_qty == last_qty
@@ -4901,6 +4903,7 @@ async def test_submit_order_list_success(
         strategy_id=strategy_id,
         client_order_id=ClientOrderId("OL-order-2"),
     )
+
     for order in [order1, order2]:
         exec_client.submit_order = MagicMock()  # type: ignore[method-assign]
         strategy.submit_order(order)
@@ -4960,6 +4963,7 @@ async def test_submit_order_list_partial_failure(
         strategy_id=strategy_id,
         client_order_id=ClientOrderId("OL-order-2"),
     )
+
     for order in [order1, order2]:
         exec_client.submit_order = MagicMock()  # type: ignore[method-assign]
         strategy.submit_order(order)
@@ -5019,6 +5023,7 @@ async def test_submit_order_list_result_level_failure(
         strategy_id=strategy_id,
         client_order_id=ClientOrderId("OL-order-2"),
     )
+
     for order in [order1, order2]:
         exec_client.submit_order = MagicMock()  # type: ignore[method-assign]
         strategy.submit_order(order)
@@ -5081,6 +5086,7 @@ async def test_submit_order_list_result_level_timeout_leaves_submitted(
         strategy_id=strategy_id,
         client_order_id=ClientOrderId("OL-order-2"),
     )
+
     for order in [order1, order2]:
         exec_client.submit_order = MagicMock()  # type: ignore[method-assign]
         strategy.submit_order(order)
@@ -5139,6 +5145,7 @@ async def test_submit_order_list_network_error(
         strategy_id=strategy_id,
         client_order_id=ClientOrderId("OL-order-2"),
     )
+
     for order in [order1, order2]:
         exec_client.submit_order = MagicMock()  # type: ignore[method-assign]
         strategy.submit_order(order)
@@ -5192,6 +5199,7 @@ async def test_submit_order_list_non_betfair_error_leaves_submitted(
         strategy_id=strategy_id,
         client_order_id=ClientOrderId("OL-order-2"),
     )
+
     for order in [order1, order2]:
         exec_client.submit_order = MagicMock()  # type: ignore[method-assign]
         strategy.submit_order(order)
@@ -5608,6 +5616,7 @@ async def test_submit_order_list_timeout_leaves_submitted(
         strategy_id=strategy_id,
         client_order_id=ClientOrderId("OL-order-2"),
     )
+
     for order in [order1, order2]:
         exec_client.submit_order = MagicMock()  # type: ignore[method-assign]
         strategy.submit_order(order)

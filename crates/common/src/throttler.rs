@@ -29,6 +29,7 @@ use std::{
 };
 
 use nautilus_core::{UnixNanos, correctness::FAILED};
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use crate::{
@@ -42,7 +43,8 @@ use crate::{
 };
 
 /// Represents a throttling limit per interval.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RateLimit {
     pub limit: usize,
     pub interval_ns: u64,
@@ -130,7 +132,7 @@ where
         limit: usize,
         interval: u64,
         clock: Rc<RefCell<dyn Clock>>,
-        timer_name: String,
+        timer_name: &str,
         output_send: F,
         output_drop: Option<F>,
         actor_id: Ustr,
@@ -144,7 +146,7 @@ where
             timestamps: VecDeque::with_capacity(limit.min(1024)),
             clock,
             interval,
-            timer_name: Ustr::from(&timer_name),
+            timer_name: Ustr::from(timer_name),
             output_send,
             output_drop,
             actor_id,
@@ -417,7 +419,7 @@ mod tests {
 
     #[allow(unsafe_code)]
     impl TestThrottler {
-        #[allow(clippy::mut_from_ref)]
+        #[expect(clippy::mut_from_ref)]
         pub fn get_throttler(&self) -> &mut Throttler<u64, Box<dyn Fn(u64)>> {
             unsafe { &mut *self.throttler.get() }
         }
@@ -439,7 +441,7 @@ mod tests {
                 rate_limit.limit,
                 rate_limit.interval_ns,
                 clock,
-                "buffer_timer".to_string(),
+                "buffer_timer",
                 output_send,
                 None,
                 actor_id,
@@ -469,7 +471,7 @@ mod tests {
                 rate_limit.limit,
                 rate_limit.interval_ns,
                 clock,
-                "dropper_timer".to_string(),
+                "dropper_timer",
                 output_send,
                 Some(output_drop),
                 actor_id,
@@ -757,7 +759,7 @@ mod tests {
         prop::collection::vec(throttler_input_strategy(), 10..=150)
     }
 
-    fn test_throttler_with_inputs(inputs: Vec<ThrottlerInput>, test_throttler: TestThrottler) {
+    fn test_throttler_with_inputs(inputs: Vec<ThrottlerInput>, test_throttler: &TestThrottler) {
         let test_clock = test_throttler.clock.clone();
         let interval = test_throttler.interval;
         let throttler = test_throttler.get_throttler();
@@ -826,7 +828,7 @@ mod tests {
         // even when tests panic (which would skip the reset code)
         proptest!(|(inputs in throttler_test_strategy())| {
             let test_throttler = test_throttler_buffered();
-            test_throttler_with_inputs(inputs, test_throttler);
+            test_throttler_with_inputs(inputs, &test_throttler);
         });
     }
 

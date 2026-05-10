@@ -27,5 +27,37 @@ pub mod position;
 // Re-exports
 pub use fill::FillReport;
 pub use mass_status::ExecutionMassStatus;
+use nautilus_core::UnixNanos;
 pub use order::OrderStatusReport;
 pub use position::PositionStatusReport;
+
+use crate::data::HasTsInit;
+
+impl HasTsInit for FillReport {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl HasTsInit for OrderStatusReport {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl HasTsInit for PositionStatusReport {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl HasTsInit for ExecutionMassStatus {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+crate::impl_catalog_path_prefix!(FillReport, "fill_report");
+crate::impl_catalog_path_prefix!(OrderStatusReport, "order_status_report");
+crate::impl_catalog_path_prefix!(PositionStatusReport, "position_status_report");
+crate::impl_catalog_path_prefix!(ExecutionMassStatus, "execution_mass_status");

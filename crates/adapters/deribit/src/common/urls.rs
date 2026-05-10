@@ -15,27 +15,26 @@
 
 //! URL helpers for Deribit API endpoints.
 
-use super::consts::{
-    DERIBIT_HTTP_URL, DERIBIT_TESTNET_HTTP_URL, DERIBIT_TESTNET_WS_URL, DERIBIT_WS_URL,
+use super::{
+    consts::{DERIBIT_HTTP_URL, DERIBIT_TESTNET_HTTP_URL, DERIBIT_TESTNET_WS_URL, DERIBIT_WS_URL},
+    enums::DeribitEnvironment,
 };
 
 /// Returns the HTTP base URL for the given environment.
 #[must_use]
-pub fn get_http_base_url(is_testnet: bool) -> &'static str {
-    if is_testnet {
-        DERIBIT_TESTNET_HTTP_URL
-    } else {
-        DERIBIT_HTTP_URL
+pub fn get_http_base_url(environment: DeribitEnvironment) -> &'static str {
+    match environment {
+        DeribitEnvironment::Testnet => DERIBIT_TESTNET_HTTP_URL,
+        DeribitEnvironment::Mainnet => DERIBIT_HTTP_URL,
     }
 }
 
 /// Returns the WebSocket URL for the given environment.
 #[must_use]
-pub fn get_ws_url(is_testnet: bool) -> &'static str {
-    if is_testnet {
-        DERIBIT_TESTNET_WS_URL
-    } else {
-        DERIBIT_WS_URL
+pub fn get_ws_url(environment: DeribitEnvironment) -> &'static str {
+    match environment {
+        DeribitEnvironment::Testnet => DERIBIT_TESTNET_WS_URL,
+        DeribitEnvironment::Mainnet => DERIBIT_WS_URL,
     }
 }
 
@@ -47,21 +46,33 @@ mod tests {
 
     #[rstest]
     fn test_http_base_url_production() {
-        assert_eq!(get_http_base_url(false), "https://www.deribit.com");
+        assert_eq!(
+            get_http_base_url(DeribitEnvironment::Mainnet),
+            "https://www.deribit.com"
+        );
     }
 
     #[rstest]
     fn test_http_base_url_testnet() {
-        assert_eq!(get_http_base_url(true), "https://test.deribit.com");
+        assert_eq!(
+            get_http_base_url(DeribitEnvironment::Testnet),
+            "https://test.deribit.com"
+        );
     }
 
     #[rstest]
     fn test_ws_url_production() {
-        assert_eq!(get_ws_url(false), "wss://www.deribit.com/ws/api/v2");
+        assert_eq!(
+            get_ws_url(DeribitEnvironment::Mainnet),
+            "wss://www.deribit.com/ws/api/v2"
+        );
     }
 
     #[rstest]
     fn test_ws_url_testnet() {
-        assert_eq!(get_ws_url(true), "wss://test.deribit.com/ws/api/v2");
+        assert_eq!(
+            get_ws_url(DeribitEnvironment::Testnet),
+            "wss://test.deribit.com/ws/api/v2"
+        );
     }
 }

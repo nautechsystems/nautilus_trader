@@ -47,7 +47,7 @@ Cargo's build cache is keyed by the exact combination of features, profiles, and
 | Target                      | Features                         | Profile   | `--all-targets` | `--no-deps` | Purpose        |
 |-----------------------------|----------------------------------|-----------|-----------------|-------------|----------------|
 | `cargo-test`                | `ffi,python,high-precision,defi` | `nextest` | ✓ (implicit)    | n/a         | Run tests.     |
-| `cargo-clippy` (pre-commit) | `ffi,python,high-precision,defi` | `nextest` | ✓               | n/a         | Lint all code. |
+| `cargo-clippy` (pre‑commit) | `ffi,python,high-precision,defi` | `nextest` | ✓               | n/a         | Lint all code. |
 
 These targets share the same feature set and profile, allowing cargo to reuse compiled artifacts between linting and testing without rebuilds.
 The `nextest` profile is used to align with the workflow of the majority of core maintainers who use cargo-nextest for running tests.
@@ -287,7 +287,14 @@ Adapter crates (under `crates/adapters/`) require special handling for spawning 
    }
    ```
 
-4. **Tests are exempt**: Test code using `#[tokio::test]` creates its own runtime context, so `tokio::spawn()` works correctly. The enforcement hook skips test files and test modules.
+4. **Install custom runtimes before first use**: Rust-native binaries that own `main()` may call
+   `set_runtime()` before `LiveNode::build()` or any adapter/client usage. Build custom runtimes
+   with `tokio::runtime::Builder::new_multi_thread().enable_all()`; current-thread runtimes and
+   runtimes without I/O or timer drivers do not satisfy adapter assumptions. If the `python` feature
+   is enabled, prepare Python before building the runtime or keep the default initializer.
+
+5. **Tests are exempt**: Test code using `#[tokio::test]` creates its own runtime context, so
+   `tokio::spawn()` works correctly. The enforcement hook skips test files and test modules.
 
 :::info[Automated enforcement]
 The `check_tokio_usage.sh` pre-commit hook enforces these adapter runtime patterns automatically.
@@ -303,6 +310,10 @@ Consistent attribute usage and ordering:
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.model")
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct Symbol(Ustr);
 ```
@@ -339,6 +350,10 @@ For enums with extensive derive attributes:
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
+)]
 pub enum AccountType {
     /// An account with unleveraged cash assets only.
     Cash = 1,
@@ -346,6 +361,73 @@ pub enum AccountType {
     Margin = 2,
 }
 ```
+
+### Type stub annotations
+
+Python type stubs (`.pyi` files) are generated from Rust source using
+[pyo3-stub-gen](https://github.com/Jij-Inc/pyo3-stub-gen). Every type and function
+exposed to Python needs a matching stub annotation so the generated stubs stay in sync
+with the bindings.
+
+**Annotation types:**
+
+| PyO3 construct    | Stub annotation                                  |
+| ----------------- | ------------------------------------------------ |
+| `#[pyclass]`      | `pyo3_stub_gen::derive::gen_stub_pyclass`        |
+| enum `#[pyclass]` | `pyo3_stub_gen::derive::gen_stub_pyclass_enum`   |
+| `#[pymethods]`    | `pyo3_stub_gen::derive::gen_stub_pymethods`      |
+| `#[pyfunction]`   | `pyo3_stub_gen::derive::gen_stub_pyfunction`     |
+
+**Placement rules:**
+
+- On structs and enums, use `#[cfg_attr(feature = "python", ...)]` and place the stub
+  annotation directly below the `pyo3::pyclass` attribute.
+- On `#[pymethods]` impl blocks, place `#[pyo3_stub_gen::derive::gen_stub_pymethods]`
+  directly below `#[pymethods]`.
+- On functions, place the stub annotation directly above `#[pyfunction]`, after any doc
+  comments. Fully qualify the path rather than importing it.
+
+```rust
+/// Converts a list of `Bar` into Arrow IPC bytes.
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
+#[pyfunction(name = "bars_to_arrow")]
+pub fn py_bars_to_arrow(data: Vec<Bar>) -> PyResult<Py<PyBytes>> {
+    // ...
+}
+```
+
+```rust
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl AccountState {
+    #[staticmethod]
+    #[pyo3(name = "from_dict")]
+    pub fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
+        // ...
+    }
+}
+```
+
+**Module parameter:** set `module = "nautilus_trader.<package>"` to match the Python
+package where the type is imported. For example, model types use
+`nautilus_trader.model` and serialization functions use
+`nautilus_trader.serialization`.
+
+**Cargo.toml:** add `pyo3-stub-gen` as an optional dependency and include it in the
+`python` feature list:
+
+```toml
+[features]
+python = ["pyo3", "pyo3-stub-gen"]
+
+[dependencies]
+pyo3-stub-gen = { workspace = true, optional = true }
+```
+
+**Regenerating stubs:** run `make py-stubs-v2` (or `python python/generate_stubs.py`)
+after changing annotations. The post-processor handles `py_` prefix stripping,
+`@property`/`@staticmethod`/`@classmethod` decoration, keyword escaping, deduplication,
+and ruff formatting.
 
 ### Constructor patterns
 
@@ -361,7 +443,7 @@ Use the `new()` vs `new_checked()` convention consistently:
 /// # Notes
 ///
 /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+pub fn new_checked<T: AsRef<str>>(value: T) -> CorrectnessResult<Self> {
     // Implementation
 }
 
@@ -371,14 +453,15 @@ pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
 ///
 /// Panics if `value` is not a valid string.
 pub fn new<T: AsRef<str>>(value: T) -> Self {
-    Self::new_checked(value).expect(FAILED)
+    Self::new_checked(value).expect_display(FAILED)
 }
 ```
 
-Always use the `FAILED` constant for `.expect()` messages related to correctness checks:
+Always use the `FAILED` constant for `.expect_display()` messages on
+`CorrectnessResult`, and import the trait that provides it:
 
 ```rust
-use nautilus_core::correctness::FAILED;
+use nautilus_core::correctness::{CorrectnessResult, CorrectnessResultExt, FAILED};
 ```
 
 ### Type conversion patterns
@@ -427,17 +510,65 @@ pub const BAR_SPEC_1_MINUTE_LAST: BarSpecification = BarSpecification {
 
 ### Hash collections
 
-Use `AHashMap` and `AHashSet` from the `ahash` crate for performance-critical hot paths.
-For non-performance-critical code, standard `HashMap`/`HashSet` are preferred for simplicity:
+Three concerns drive the choice of hash collection:
+
+- **Iteration-order determinism** (the primary filter)
+- **Performance**
+- **Thread safety**
+
+Answer the determinism question first, then pick from the remaining options on performance grounds.
+
+#### Iteration-order determinism
+
+`AHash` randomizes its hasher per process, so `AHashMap` / `AHashSet`
+iteration order varies between runs. When the iteration order of a
+collection feeds observable state on the deterministic simulation testing
+(DST) path (events emitted on the message bus, ordered `Vec`s returned
+from public methods, the sequence in which a seeded RNG is consumed, the
+order in which downstream effects fire), use `IndexMap` / `IndexSet` from
+the `indexmap` crate instead. They preserve insertion order and are a
+drop-in replacement for the `AHash*` collections.
 
 ```rust
-// For hot paths - using AHashMap/AHashSet
+use indexmap::{IndexMap, IndexSet};
+
+// Insertion-order iteration; deterministic across runs
+let mut commissions: IndexMap<Currency, Money> = IndexMap::new();
+let mut subscribed: IndexSet<InstrumentId> = IndexSet::new();
+```
+
+The pre-commit hook `check-dst-conventions` enforces `IndexMap` / `IndexSet`
+in `crates/live/src/manager.rs` and
+`crates/execution/src/matching_engine/engine.rs` because both files were
+audited as load-bearing for fill ordering and reconciliation. Other call
+sites are reviewed individually; the closed sites and remaining allowed
+patterns are listed under "Implementation notes" in
+[../concepts/dst.md](../concepts/dst.md).
+
+When the collection is **lookup-only** (no `.iter()`, `.values()`,
+`.keys()`, `.into_iter()`, `.drain()`, or `for x in map { ... }`),
+iteration order is irrelevant and `AHashMap` / `AHashSet` is the right
+choice on performance grounds. Borderline cases (e.g. a public getter
+that clones the map and lets callers iterate) should be reviewed against
+the inventory's classification rules.
+
+#### Performance
+
+For lookup-heavy hot paths where iteration order does not feed observable
+state, prefer `AHashMap` / `AHashSet` over the standard library:
+
+```rust
 use ahash::{AHashMap, AHashSet};
 
 let mut symbols: AHashSet<Symbol> = AHashSet::new();
 let mut prices: AHashMap<InstrumentId, Price> = AHashMap::new();
+```
 
-// For non-hot paths - standard library HashMap/HashSet
+For non-performance-critical, non-iteration-sensitive cases (factory
+registries, configuration maps, test fixtures), standard
+`HashMap` / `HashSet` is acceptable and often preferred for simplicity:
+
+```rust
 use std::collections::{HashMap, HashSet};
 
 let mut symbols: HashSet<Symbol> = HashSet::new();
@@ -456,6 +587,55 @@ let mut prices: HashMap<InstrumentId, Price> = HashMap::new();
 - **Cryptographic security required**: Use standard `HashMap` when hash flooding attacks are a concern (e.g., handling untrusted user input in network protocols).
 - **Network clients**: Prefer standard `HashMap` for network-facing components where security considerations outweigh performance benefits.
 - **External library boundaries**: Use standard `HashMap` when interfacing with external libraries that expect it (e.g., Arrow serialization metadata).
+
+#### AHashMap vs IndexMap microbenchmarks
+
+The numbers below come from `crates/core/benches/hash_map.rs` (release
+profile). Times are per operation; ratio is `IndexMap` relative to
+`AHashMap` (values below 1.0 favour `IndexMap`).
+
+| Pattern               | Size | AHashMap | IndexMap | Ratio |
+|-----------------------|-----:|---------:|---------:|------:|
+| Insert (build map)    |    4 |  40.8 ns |  49.8 ns | 1.22x |
+| Insert (build map)    |   32 | 192.4 ns | 348.2 ns | 1.81x |
+| Insert (build map)    |  256 |  1.01 us |  2.74 us | 2.72x |
+| Lookup (random get)   |    4 |  2.56 ns |  9.36 ns | 3.66x |
+| Lookup (random get)   |   32 |  2.49 ns |  7.95 ns | 3.19x |
+| Lookup (random get)   |  256 |  3.00 ns |  9.48 ns | 3.16x |
+| `.values().collect()` |    4 |  8.08 ns |  6.61 ns | 0.82x |
+| `.values().collect()` |   32 |  22.8 ns |  14.8 ns | 0.65x |
+| `.values().collect()` |  256 |   145 ns |   109 ns | 0.75x |
+| `.keys().collect()`   |    4 |  7.90 ns |  6.24 ns | 0.79x |
+| `.keys().collect()`   |   32 |  23.0 ns |  12.6 ns | 0.55x |
+| `.keys().collect()`   |  256 |   145 ns |   101 ns | 0.70x |
+| Clone                 |    4 |  8.48 ns |  17.8 ns | 2.10x |
+| Clone                 |   32 |  25.3 ns |  62.5 ns | 2.47x |
+| Clone                 |  256 |  71.0 ns |   247 ns | 3.48x |
+| Entry accumulate      |    4 |   122 ns |   159 ns | 1.30x |
+| Entry accumulate      |   32 |   439 ns |  1.10 us | 2.51x |
+| Entry accumulate      |  256 |  2.21 us |  7.83 us | 3.54x |
+
+For one-key removal, `IndexMap` exposes two methods: `shift_remove`
+preserves insertion order at `O(n)` cost; `swap_remove` is `O(1)` but
+swaps the last entry into the removed slot, breaking iteration order.
+
+| Pattern    | Size | AHashMap.remove | IndexMap.shift_remove | IndexMap.swap_remove |
+|------------|-----:|----------------:|----------------------:|---------------------:|
+| Remove one |    4 |         9.89 ns |               37.8 ns |              37.1 ns |
+| Remove one |   32 |         62.0 ns |                117 ns |              53.4 ns |
+| Remove one |  256 |         70.3 ns |                355 ns |               269 ns |
+
+How to read the table:
+
+- `AHashMap` is roughly 3x faster on pure lookup. Keep `AHashMap` on hot
+  lookup paths where iteration order does not flow into observable state.
+- `IndexMap` is 25 to 45 percent faster on `.values().collect()` and
+  `.keys().collect()`. Where iteration drives observable state, the flip
+  to `IndexMap` is a small performance win as well as a determinism win.
+- `IndexMap` is 1.3 to 3.5x slower on insert, clone, and entry-modify-or-insert.
+  Keep `AHashMap` on construction-heavy or per-fill accumulation paths.
+- Prefer `swap_remove` over `shift_remove` when iteration order does not
+  matter after the removal; it stays competitive with `AHashMap` removal.
 
 ### Thread-safe hash map patterns
 
@@ -524,9 +704,11 @@ cache.insert(other_key, other_value);  // Data race
 
 **Decision tree:**
 
-- Immutable after construction → Use `Arc<AHashMap<K, V>>`
-- Concurrent access needed → Use `Arc<DashMap<K, V>>`
-- Single-threaded access → Use plain `AHashMap<K, V>`
+1. Iteration order observable on the DST path? Use `IndexMap<K, V>` / `IndexSet<T>`
+2. Otherwise, by access pattern:
+   - Immutable after construction: use `Arc<AHashMap<K, V>>`
+   - Concurrent access needed: use `Arc<DashMap<K, V>>`
+   - Single-threaded access: use plain `AHashMap<K, V>`
 
 ### Re-export patterns
 
@@ -777,6 +959,56 @@ fn test_symbol_is_composite(#[case] input: &str, #[case] expected: bool) {
 }
 ```
 
+#### Test specs (bon builders)
+
+For events with many constructor arguments, the canonical test builder is a
+fluent spec defined alongside the event under `events/<event>/spec/<name>.rs`
+(see `crates/model/src/events/order/spec/filled.rs` for the reference
+implementation). Gate the spec module with
+`#[cfg(any(test, feature = "stubs"))]` so it is available to in-crate tests
+and to downstream crates that opt in with the `stubs` feature, but compiled
+out of production builds. Specs must not be referenced from production code.
+
+Why a custom spec instead of `derive_builder::Builder` with `builder(default)`:
+the latter bypasses the production constructor, so invariants added later are
+not exercised by tests. A spec funnels through the production constructor on
+every `build()`.
+
+Anatomy:
+
+- Derive `bon::Builder` with `finish_fn = into_spec` so the generated finish
+  method does not collide with the custom `build()`.
+- Mark every required field `#[builder(default = ...)]` with a literal or a
+  `TestDefault::test_default()` call. Leave optional fields as `Option<T>`
+  without a default so callers either set them or accept `None`.
+- Default event ID fields to `test_uuid()` from `crate::stubs`. This yields
+  distinct, reproducible UUIDs without callers managing state.
+- Implement `build()` on the generated builder so it calls `into_spec()` and
+  forwards through the production constructor (e.g. `OrderFilled::new`). The
+  return type is the event itself, not a `Result`, because spec defaults are
+  valid by construction.
+
+Caller usage:
+
+```rust
+let fill = OrderFilledSpec::builder()
+    .last_qty(Quantity::from(50_000))
+    .trade_id(TradeId::from("TRADE-1"))
+    .build();
+```
+
+Override only the fields the test cares about; the rest take spec defaults.
+Do not write `.unwrap()` after `build()`.
+
+Determinism: under `cargo nextest` each test runs in a fresh process, so the
+per-thread UUID sequence resets automatically. Under plain `cargo test`, call
+`reset_test_uuid_rng()` from `crate::stubs` at the start of any test that
+compares UUID sequences across draws.
+
+Pin spec defaults with a single test in the spec module so accidental drift
+in any field surfaces there rather than as silent behavior change in
+downstream tests.
+
 #### Property-based testing
 
 Use the `proptest` crate for property-based tests. Place these in a separate
@@ -973,6 +1205,59 @@ The `clone_py_object()` function:
 
 This approach allows both Rust and Python garbage collectors to work correctly, eliminating memory leaks from reference cycles.
 
+## Design by contract
+
+Design by contract states the obligations between a function and its callers:
+
+- **Preconditions**: what the function requires from callers.
+- **Postconditions**: what the function guarantees in return.
+- **Invariants**: what properties its type maintains across calls.
+
+Prefer the type system first. Ownership, lifetimes, `Send`/`Sync`, `Result`/`Option`,
+exhaustive matching, newtypes, and visibility encode most contracts at compile time
+and cost nothing at runtime. Use runtime checks only where the type system cannot.
+
+For most preconditions, use the `nautilus_core::correctness` module: it is the
+project's design-by-contract mechanism and should be the default. `check_*`
+functions (`check_predicate_true`, `check_valid_string_ascii`,
+`check_positive_u64`, `check_in_range_inclusive_f64`, `check_equal_usize`,
+`check_key_in_map`, ...) return a typed `CorrectnessResult<()>` whose
+`CorrectnessError` variants name each kind of violation. Pair `new_checked()` (fallible, returns
+`CorrectnessResult`) with a `new()` wrapper that panics via
+`.expect_display(FAILED)` for validated types; this is the
+[Constructor patterns](#constructor-patterns) convention and produces panic
+messages prefixed with `Condition failed: ...`.
+
+Use `debug_assert!` (and `debug_assert_eq!`/`_ne!`) for *internal* invariants the
+correctness module does not model: field relationships, monotonic sequences, CAS
+postconditions, encode/decode round-trips, provably in-range indices, and
+preconditions on internal helpers that trusted upstream validation. Release builds
+strip the check, so never use `debug_assert!` for public API input. For `unsafe`
+code, use always-on `assert!` for soundness-critical preconditions (null,
+alignment, provenance) and reserve `debug_assert!` for hot-path preconditions
+upheld by design.
+
+Choosing a mechanism:
+
+| Situation                                                          | Use                                               |
+|--------------------------------------------------------------------|---------------------------------------------------|
+| Public API input against named preconditions                       | `check_*` from `nautilus_core::correctness`       |
+| Validated constructors (fallible + panic pair)                     | `new_checked()` / `new()`                         |
+| Recoverable non‑validation errors (I/O, parse, network)            | `Result<T, DomainError>`                          |
+| Internal invariant the compiler cannot prove                       | `debug_assert!`                                   |
+| Always‑on internal invariant without a matching `CorrectnessError` | `assert!`                                         |
+| Soundness‑critical `unsafe` precondition                           | `assert!` (always on)                             |
+| Hot‑path `unsafe` precondition upheld by design                    | `debug_assert!` plus a documented `Safety` clause |
+
+Style:
+
+- Prefix `debug_assert!` messages with `Invariant:` and state the positive rule,
+  not the failure: `debug_assert!(next > last, "Invariant: time is strictly monotonic across CAS")`.
+- `Condition failed: ...` (from the `FAILED` constant) marks a caller-supplied
+  input violation; `Invariant: ...` marks an internal contract bug.
+- Place assertions where the invariant is first assumed. When an invariant holds
+  across a hot loop, assert once at the boundary rather than inside the loop.
+
 ## Common anti-patterns
 
 1. **Avoid `.clone()` in hot paths** – favour borrowing or shared ownership via `Arc`.
@@ -1043,12 +1328,76 @@ Where unsafe code relies on invariants, add defense mechanisms:
 - **RAII guards**: Ensure cleanup on both normal return and panic paths.
 - **Runtime checks**: Fail fast when invariants are violated rather than proceeding unsafely.
 
+### Runtime invariants
+
+Several core subsystems rely on runtime invariants rather than compile-time
+guarantees. Tests verify the first three contracts below. The guard usage
+rules are enforced by convention. Any PR that touches `UnsafeCell`,
+registries, `unsendable`, or live-node threading should confirm the
+invariant tests still pass.
+
+#### Thread-local registries
+
+The actor registry, component registry, and message bus each use
+`thread_local!` storage. An object registered on one thread is never visible
+from another. The live node event loop runs on a single thread, and all
+registry and message bus access happens on that thread.
+
+`LiveNodeHandle` is the only intended cross-thread control surface. It uses
+`Arc<AtomicBool>` for stop signaling and `Arc<AtomicU8>` for state, both
+with `Ordering::Relaxed`.
+
+#### Actor registry vs component registry
+
+Both registries store `Rc<UnsafeCell<dyn Trait>>` in thread-local maps but
+differ in how they handle aliased access:
+
+| Property          | Actor registry                     | Component registry                 |
+|-------------------|------------------------------------|------------------------------------|
+| Aliasing          | Allowed (multiple guards)          | Prevented (`BorrowGuard` + set)    |
+| Re‑entrant access | Yes, required for callbacks        | No, lifecycle ops are sequential   |
+| Error handling    | Panic or `None` on lookup failure  | Returns `anyhow::Result` on error  |
+| Guard type        | `ActorRef<T>` (Rc‑backed)          | Stack‑local `BorrowGuard`          |
+
+The actor registry chooses re-entrant access over aliasing prevention because
+message handlers frequently call back into the registry to look up other
+actors. The component registry can enforce strict aliasing because lifecycle
+operations (start, stop, reset, dispose) are non-re-entrant.
+
+#### `ActorRef` usage rules
+
+`ActorRef` guards must be:
+
+- Obtained and dropped within a single synchronous scope.
+- Never stored in a struct field.
+- Never held across an `.await` point.
+- Never sent to another thread.
+
+The canonical pattern captures an actor's `Ustr` ID in a closure and looks
+up the actor each time the callback fires:
+
+```rust
+let actor_id = actor.actor_id().inner();
+let handler = TypedHandler::from(move |quote: &QuoteTick| {
+    if let Some(mut actor) = try_get_actor_unchecked::<MyActor>(&actor_id) {
+        actor.handle_quote(quote);
+    }
+});
+```
+
 ## Tooling configuration
 
 The project uses several tools for code quality:
 
 - **rustfmt**: Automatic code formatting (see `rustfmt.toml`).
 - **clippy**: Linting and best practices (see `clippy.toml`).
+  When suppressing `missing_panics_doc` or `missing_errors_doc`, include a `reason`
+  explaining why the lint does not apply:
+
+  ```rust
+  #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+  ```
+
 - **cbindgen**: C header generation for FFI.
 
 ## Rust version management
@@ -1062,10 +1411,10 @@ rustup update       # Update to latest stable Rust
 rustup show         # Verify correct toolchain is active
 ```
 
-If pre-commit passes locally but fails in CI, clear the pre-commit cache and re-run:
+If pre-commit passes locally but fails in CI, clear the prek cache and re-run:
 
 ```bash
-pre-commit clean    # Clear cached environments
+prek clean    # Clear cached environments
 make pre-commit     # Re-run all checks
 ```
 
@@ -1086,7 +1435,7 @@ This feature is opt-in to avoid requiring the Cap'n Proto compiler for standard 
 ### Installing Cap'n Proto
 
 Install the Cap'n Proto compiler before working with schemas. The required version is
-specified in the `capnp-version` file in the repository root.
+specified in `tools.toml` in the repository root.
 
 See the [Environment Setup](environment_setup.md#capn-proto) guide for detailed installation
 instructions for each platform.
@@ -1098,7 +1447,7 @@ Ubuntu's default `capnproto` package is too old. Linux users must install from s
 Verify installation:
 
 ```bash
-capnp --version  # Should match the version in capnp-version
+capnp --version  # Should match the version in tools.toml
 ```
 
 ### Schema development workflow

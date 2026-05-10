@@ -44,13 +44,13 @@ NautilusTrader integration guide.
 AX Exchange specializes in perpetual futures contracts on traditional asset classes. Perpetual
 contracts never expire, eliminating rollover costs associated with standard futures.
 
-| Asset Class      | Examples                            | Notes                        |
-|------------------|-------------------------------------|------------------------------|
-| Foreign exchange | GBPUSD-PERP, EURUSD-PERP.           | Major and minor FX pairs.    |
-| Stock indices    | Equity index perpetuals.            |                              |
-| Metals           | XAU-PERP (gold), XAG-PERP (silver). | Precious metals perpetuals.  |
-| Energy           | Crude oil, natural gas.             | Energy commodity perpetuals. |
-| Interest rates   | SOFR, treasury yields.              | Rate perpetuals.             |
+| Asset Class      | Examples                           | Notes                        |
+|------------------|------------------------------------|------------------------------|
+| Foreign exchange | GBPUSD-PERP, EURUSD-PERP           | Major and minor FX pairs.    |
+| Stock indices    | Equity index perpetuals            |                              |
+| Metals           | XAU-PERP (gold), XAG-PERP (silver) | Precious metals perpetuals.  |
+| Energy           | Crude oil, natural gas             | Energy commodity perpetuals. |
+| Interest rates   | SOFR, treasury yields              | Rate perpetuals.             |
 
 ### Perpetual contracts
 
@@ -108,7 +108,7 @@ AX Exchange provides two trading environments. Configure the appropriate environ
 
 ### Sandbox
 
-The sandbox is the default environment for development and testing with simulated funds.
+The default environment for development and testing with simulated funds.
 All sandbox endpoints are resolved automatically when `environment=AxEnvironment.SANDBOX`.
 
 #### 1. Create a sandbox account
@@ -160,7 +160,7 @@ config = AxExecClientConfig(
 
 :::warning
 Ensure you are using the correct environment before placing orders.
-The sandbox environment is the default to prevent accidental live trading.
+Sandbox is the default to prevent accidental live trading.
 :::
 
 ## Market data
@@ -170,14 +170,16 @@ for historical data backfill.
 
 ### Data types
 
-| AX Data         | Nautilus Data Type  | Notes                                                       |
-|-----------------|---------------------|-------------------------------------------------------------|
-| Order book (L1) | `QuoteTick`         | Best bid/ask top-of-book from L1 book subscription.         |
-| Order book (L2) | `OrderBookDelta`    | Aggregated price levels.                                    |
-| Order book (L3) | `OrderBookDelta`    | Individual order quantities.                                |
-| Trades          | `TradeTick`         | Real-time trade events from L1 subscription.                |
-| Bars/candles    | `Bar`               | OHLCV data (total volume only, no buy/sell breakdown).      |
-| Funding rates   | `FundingRateUpdate` | Polled via HTTP (not real-time WebSocket); interval configurable. |
+| AX Data           | Nautilus Data Type   | Notes                                                              |
+|-------------------|----------------------|--------------------------------------------------------------------|
+| Order book (L1)   | `QuoteTick`          | Best bid/ask top‑of‑book from L1 book subscription.                |
+| Order book (L2)   | `OrderBookDelta`     | Aggregated price levels.                                           |
+| Order book (L3)   | `OrderBookDelta`     | Individual order quantities.                                       |
+| Trades            | `TradeTick`          | Real‑time trade events from L1 subscription.                       |
+| Mark price        | `MarkPriceUpdate`    | Extracted from L1 ticker subscription.                             |
+| Bars/candles      | `Bar`                | OHLCV data (total volume only, no buy/sell breakdown).             |
+| Funding rates     | `FundingRateUpdate`  | Polled via HTTP (not real‑time WebSocket); interval configurable.  |
+| Instrument status | `InstrumentStatus`   | State changes (open, halted, closed) from L1 ticker subscription.  |
 
 :::note
 Historical quote tick requests are not supported by AX Exchange. Only real-time quote
@@ -216,7 +218,7 @@ AX Exchange supports market and limit order types with stop triggers.
 
 | Instruction   | Supported | Notes                                               |
 |---------------|-----------|-----------------------------------------------------|
-| `post_only`   | ✓         | Maker-only; rejected if order would take liquidity. |
+| `post_only`   | ✓         | Maker‑only; rejected if order would take liquidity. |
 | `reduce_only` | -         | *Not supported*.                                    |
 
 ### Time in force
@@ -224,7 +226,7 @@ AX Exchange supports market and limit order types with stop triggers.
 | Time in Force | Supported | Notes                                        |
 |---------------|-----------|----------------------------------------------|
 | `GTC`         | ✓         | Good Till Canceled.                          |
-| `GTD`         | ✓         | Good Till Date.                              |
+| `GTD`         | -         | *Not supported by AX Exchange*.              |
 | `DAY`         | ✓         | Valid until end of trading day.              |
 | `IOC`         | ✓         | Immediate or Cancel.                         |
 | `FOK`         | ✓         | Fill or Kill.                                |
@@ -235,19 +237,19 @@ AX Exchange supports market and limit order types with stop triggers.
 
 | Feature            | Supported | Notes                                                              |
 |--------------------|-----------|--------------------------------------------------------------------|
-| Order modification | -         | *Not supported by AX*. Cancel and resubmit instead.                |
+| Order modification | ✓         | Atomic replace via `POST /replace_order`. Returns a new order ID.  |
 | Cancel order       | ✓         | Single order cancellation.                                         |
 | Cancel all orders  | ✓         | Cancel all open orders for an instrument.                          |
-| Batch cancel       | ✓         | Cancel multiple specified orders.                                  |
-| Order lists        | ✓         | Sequential submission (orders submitted individually, non-atomic). |
+| Batch cancel       | -         | *Not supported by AX Exchange*. Individual cancels used instead.   |
+| Order lists        | ✓         | Sequential submission (orders submitted individually, non‑atomic). |
 
 ### Position management
 
 | Feature          | Supported | Notes                                |
 |------------------|-----------|--------------------------------------|
-| Query positions  | ✓         | Real-time position updates.          |
+| Query positions  | ✓         | Real‑time position updates.          |
 | Position mode    | -         | Netting mode only.                   |
-| Cross margin     | ✓         | Cross-margin across all instruments. |
+| Cross margin     | ✓         | Cross‑margin across all instruments. |
 
 ### Order querying
 
@@ -295,29 +297,36 @@ from market data endpoints. This is handled automatically by the adapter configu
 | `api_secret`                       | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
 | `environment`                      | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
 | `base_url_http`                    | `None`    | Override for the REST base URL.                                     |
-| `base_url_ws`                      | `None`    | Override for the WebSocket URL.                                     |
-| `http_proxy_url`                   | `None`    | Optional HTTP proxy URL.                                            |
+| `base_url_ws_public`               | `None`    | Override for the market data WebSocket URL.                         |
+| `base_url_ws_private`              | `None`    | Override for the orders WebSocket URL.                              |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.               |
 | `http_timeout_secs`                | `60`      | Timeout (seconds) for REST requests.                                |
 | `max_retries`                      | `3`       | Maximum retry attempts for REST requests.                           |
-| `retry_delay_initial_ms`           | `1,000`   | Initial delay (milliseconds) between retries.                       |
-| `retry_delay_max_ms`               | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff). |
+| `retry_delay_initial_ms`           | `1000`    | Initial delay (milliseconds) between retries.                       |
+| `retry_delay_max_ms`               | `10000`   | Maximum delay (milliseconds) between retries (exponential backoff). |
+| `heartbeat_interval_secs`          | `20`      | Heartbeat interval (seconds) for WebSocket connections.             |
+| `recv_window_ms`                   | `5000`    | Receive window (milliseconds) for signed requests.                  |
 | `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalog refreshes.            |
 | `funding_rate_poll_interval_mins`  | `15`      | Interval (minutes) between funding rate poll requests.              |
 
 ### Execution client configuration options
 
-| Option                   | Default   | Description                                                         |
-|--------------------------|-----------|---------------------------------------------------------------------|
-| `api_key`                | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.             |
-| `api_secret`             | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
-| `environment`            | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
-| `base_url_http`          | `None`    | Override for the REST base URL.                                     |
-| `base_url_ws`            | `None`    | Override for the orders WebSocket URL.                              |
-| `http_proxy_url`         | `None`    | Optional HTTP proxy URL.                                            |
-| `http_timeout_secs`      | `60`      | Timeout (seconds) for REST requests.                                |
-| `max_retries`            | `3`       | Maximum retry attempts for REST requests.                           |
-| `retry_delay_initial_ms` | `1,000`   | Initial delay (milliseconds) between retries.                       |
-| `retry_delay_max_ms`     | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff). |
+| Option                    | Default   | Description                                                         |
+|---------------------------|-----------|---------------------------------------------------------------------|
+| `api_key`                 | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.             |
+| `api_secret`              | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
+| `environment`             | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
+| `base_url_http`           | `None`    | Override for the REST base URL.                                     |
+| `base_url_orders`         | `None`    | Override for the orders REST base URL.                              |
+| `base_url_ws_private`     | `None`    | Override for the orders WebSocket URL.                              |
+| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.               |
+| `http_timeout_secs`       | `60`      | Timeout (seconds) for REST requests.                                |
+| `max_retries`             | `3`       | Maximum retry attempts for REST requests.                           |
+| `retry_delay_initial_ms`  | `1000`    | Initial delay (milliseconds) between retries.                       |
+| `retry_delay_max_ms`      | `10000`   | Maximum delay (milliseconds) between retries (exponential backoff). |
+| `heartbeat_interval_secs` | `30`      | Heartbeat interval (seconds) for WebSocket connections.             |
+| `recv_window_ms`          | `5000`    | Receive window (milliseconds) for signed requests.                  |
+| `cancel_on_disconnect`    | `false`   | Cancel all open orders when the orders WebSocket disconnects.       |
 
 The most common use case is to configure a live `TradingNode` to include AX Exchange
 data and execution clients. To achieve this, add an `AX` section to your client
@@ -391,6 +400,14 @@ credentials are valid and have trading permissions.
   automatic exponential backoff on rate limit responses.
 - **Market orders**: AX does not support native market orders. The adapter uses a preview endpoint
   to determine the take-through price and submits an aggressive IOC limit order.
+- **Order modification**: AX supports atomic order replacement via `POST /replace_order`. The
+  adapter maps `modify_order` to this endpoint. The exchange cancels the original order and
+  creates a new one with the updated fields, returning a new order ID.
+- **Cancel on disconnect**: Set `cancel_on_disconnect=True` in the execution client config
+  to have the exchange cancel all open orders if the orders WebSocket disconnects.
+- **Fill commissions**: Real-time fill events from the WebSocket do not include fee data.
+  Commission is reported as zero for streaming fills. During reconciliation, the REST
+  `/fills` endpoint provides accurate fee information.
 
 ## Contributing
 

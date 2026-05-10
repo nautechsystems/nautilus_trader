@@ -68,7 +68,15 @@ impl From<TimeEventHandler> for TimeEventHandler_Py {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl TimeEvent {
+    /// Creates a valid nanoseconds interval that is guaranteed to be positive.
+    ///
+    /// Coerces zero to one to ensure a valid `NonZeroU64`.
+    /// Represents a time event occurring at the event timestamp.
+    ///
+    /// A `TimeEvent` carries metadata such as the event's name, a unique event ID,
+    /// and timestamps indicating when the event was scheduled to occur and when it was initialized.
     #[new]
     fn py_new(name: &str, event_id: UUID4, ts_event: u64, ts_init: u64) -> Self {
         Self::new(Ustr::from(name), event_id, ts_event.into(), ts_init.into())
@@ -180,9 +188,8 @@ mod tests {
     };
 
     #[pyfunction]
-    const fn receive_event(_py: Python, _event: TimeEvent) -> PyResult<()> {
+    const fn receive_event(_py: Python, _event: TimeEvent) {
         // TODO: Assert the length of a handler vec
-        Ok(())
     }
 
     #[derive(Debug)]

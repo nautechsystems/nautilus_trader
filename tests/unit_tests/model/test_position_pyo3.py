@@ -191,12 +191,12 @@ def test_position_filled_with_buy_order():
     assert position.duration_ns == 0
     assert position.avg_px_open == 1.00001
     assert position.event_count == 1
-    assert position.client_order_ids == [order.client_order_id]
-    assert position.venue_order_ids == [VenueOrderId("1")]
-    assert position.trade_ids == [TradeId("E-20210410-022422-001-001-1")]
+    assert position.client_order_ids() == [order.client_order_id]
+    assert position.venue_order_ids() == [VenueOrderId("1")]
+    assert position.trade_ids() == [TradeId("E-20210410-022422-001-001-1")]
     assert position.last_trade_id == TradeId("E-20210410-022422-001-001-1")
     assert position.id == PositionId("P-123456")
-    assert len(position.events) == 1
+    assert len(position.events()) == 1
     assert position.is_long
     assert not position.is_short
     assert not position.is_closed
@@ -221,7 +221,7 @@ def test_position_filled_with_sell_order():
     assert position.ts_opened == 0
     assert position.avg_px_open == 1.00001
     assert position.event_count == 1
-    assert position.trade_ids == [TradeId("E-20210410-022422-001-001-1")]
+    assert position.trade_ids() == [TradeId("E-20210410-022422-001-001-1")]
     assert position.last_trade_id == TradeId("E-20210410-022422-001-001-1")
     assert position.id == PositionId("P-123456")
     assert not position.is_long
@@ -426,7 +426,7 @@ def test_position_filled_with_sell_order_then_buy_order():
     assert position.ts_opened == 0
     assert position.avg_px_open == 1.0
     assert position.event_count == 3
-    assert position.client_order_ids == [order1.client_order_id, order2.client_order_id]
+    assert position.client_order_ids() == [order1.client_order_id, order2.client_order_id]
     assert position.ts_closed == 0
     assert position.avg_px_close == 1.00002
     assert not position.is_long
@@ -479,8 +479,8 @@ def test_position_filled_with_no_change():
     assert position.ts_opened == 0
     assert position.avg_px_open == 1.0
     assert position.event_count == 2
-    assert position.client_order_ids == [order1.client_order_id, order2.client_order_id]
-    assert position.trade_ids == [
+    assert position.client_order_ids() == [order1.client_order_id, order2.client_order_id]
+    assert position.trade_ids() == [
         TradeId("E-19700101-000000-000-001-1"),
         TradeId("E-19700101-000000-000-001-2"),
     ]
@@ -553,7 +553,7 @@ def test_position_long_with_multiple_filled_orders():
     assert position.ts_opened == 0
     assert position.avg_px_open == 1.000005
     assert position.event_count == 3
-    assert position.client_order_ids == [
+    assert position.client_order_ids() == [
         order1.client_order_id,
         order2.client_order_id,
         order3.client_order_id,
@@ -1227,9 +1227,9 @@ def test_position_with_adjustments_tracking() -> None:
     position.apply_adjustment(adjustment)
 
     # Assert
-    assert len(position.adjustments) == 1
-    assert position.adjustments[0].adjustment_type == PositionAdjustmentType.COMMISSION
-    assert position.adjustments[0].quantity_change == Decimal("-0.001")
+    assert len(position.adjustments()) == 1
+    assert position.adjustments()[0].adjustment_type == PositionAdjustmentType.COMMISSION
+    assert position.adjustments()[0].quantity_change == Decimal("-0.001")
     assert position.quantity == Quantity.from_str("0.999")
 
 
@@ -1366,8 +1366,8 @@ def test_position_close_and_reopen_clears_adjustments() -> None:
     position = Position(instrument=instrument, fill=buy_fill)
 
     # Verify initial state
-    assert len(position.adjustments) == 1
-    assert position.adjustments[0].quantity_change == Decimal("-0.001")
+    assert len(position.adjustments()) == 1
+    assert position.adjustments()[0].quantity_change == Decimal("-0.001")
 
     # Close position
     sell_order = TestOrderProviderPyo3.market_order(
@@ -1399,7 +1399,7 @@ def test_position_close_and_reopen_clears_adjustments() -> None:
     position.apply(sell_fill)
 
     assert position.is_closed
-    assert len(position.adjustments) == 1  # Only buy had adjustment
+    assert len(position.adjustments()) == 1  # Only buy had adjustment
 
     # Reopen position - adjustments should be cleared
     buy_order2 = TestOrderProviderPyo3.market_order(
@@ -1432,9 +1432,9 @@ def test_position_close_and_reopen_clears_adjustments() -> None:
 
     # Assert - old adjustments cleared, only new adjustment
     assert position.is_open
-    assert len(position.adjustments) == 1
-    assert position.adjustments[0].quantity_change == Decimal("-0.002")
-    assert len(position.events) == 1  # Events also cleared
+    assert len(position.adjustments()) == 1
+    assert position.adjustments()[0].quantity_change == Decimal("-0.002")
+    assert len(position.events()) == 1  # Events also cleared
 
 
 def test_position_purge_events_clears_adjustments() -> None:
@@ -1502,16 +1502,16 @@ def test_position_purge_events_clears_adjustments() -> None:
     )
     position.apply(fill2)
 
-    assert len(position.adjustments) == 2
-    assert len(position.events) == 2
+    assert len(position.adjustments()) == 2
+    assert len(position.events()) == 2
 
     # Act - Purge first order
     position.purge_events_for_order(order1_id)  # type: ignore[attr-defined]
 
     # Assert - Only second adjustment remains
-    assert len(position.events) == 1
-    assert len(position.adjustments) == 1
-    assert position.adjustments[0].quantity_change == Decimal("-0.002")  # From order2
+    assert len(position.events()) == 1
+    assert len(position.adjustments()) == 1
+    assert position.adjustments()[0].quantity_change == Decimal("-0.002")  # From order2
 
 
 def test_position_sell_base_currency_commission_reduces_short() -> None:
@@ -1553,10 +1553,10 @@ def test_position_sell_base_currency_commission_reduces_short() -> None:
 
     # Assert
     # Should have created one adjustment event for base currency commission
-    assert len(position.adjustments) == 1
+    assert len(position.adjustments()) == 1
 
     # The adjustment is -0.001 (commission negated), increasing the short
-    assert position.adjustments[0].quantity_change == Decimal("-0.001")
+    assert position.adjustments()[0].quantity_change == Decimal("-0.001")
 
     # The final position should be -1.001 (sold 1.0 + paid 0.001 commission)
     # This represents the true short exposure: you sold and paid commission
@@ -1604,7 +1604,7 @@ def test_position_flattens_with_quote_currency_commission_on_close() -> None:
     # Assert: Position should be 0.999 long after commission
     assert abs(position.signed_qty - 0.999) < 1e-9
     assert position.side == PositionSide.LONG
-    assert len(position.adjustments) == 1
+    assert len(position.adjustments()) == 1
 
     # Act: Close by selling position.quantity with QUOTE currency commission (realistic)
     fill2 = OrderFilled(
@@ -1636,7 +1636,7 @@ def test_position_flattens_with_quote_currency_commission_on_close() -> None:
     assert abs(position.signed_qty) < 1e-9
     assert position.is_closed
     # Only 1 adjustment (from open) - no adjustment on close with quote commission
-    assert len(position.adjustments) == 1
+    assert len(position.adjustments()) == 1
 
 
 def test_position_flattens_with_base_currency_commission_on_close() -> None:
@@ -1681,7 +1681,7 @@ def test_position_flattens_with_base_currency_commission_on_close() -> None:
     # Assert: Position should be 0.999 long after commission
     assert abs(position.signed_qty - 0.999) < 1e-9
     assert position.side == PositionSide.LONG
-    assert len(position.adjustments) == 1
+    assert len(position.adjustments()) == 1
 
     # Act: Sell exact quantity with base currency commission
     fill2 = OrderFilled(
@@ -1715,9 +1715,9 @@ def test_position_flattens_with_base_currency_commission_on_close() -> None:
     assert abs(position.signed_qty - (-0.000999)) < 1e-9
     assert position.is_open
     # Should have 2 adjustments: both with quantity changes
-    assert len(position.adjustments) == 2
-    assert position.adjustments[0].quantity_change == Decimal("-0.001")
-    assert position.adjustments[1].quantity_change == Decimal("-0.000999")
+    assert len(position.adjustments()) == 2
+    assert position.adjustments()[0].quantity_change == Decimal("-0.001")
+    assert position.adjustments()[1].quantity_change == Decimal("-0.000999")
 
 
 def test_position_flip_short_to_long_applies_full_commission() -> None:
@@ -1789,9 +1789,9 @@ def test_position_flip_short_to_long_applies_full_commission() -> None:
     assert position.is_open
 
     # Should have 1 adjustment from the flip (full commission applied to opening)
-    assert len(position.adjustments) == 1
-    assert position.adjustments[0].adjustment_type == PositionAdjustmentType.COMMISSION
-    assert position.adjustments[0].quantity_change == Decimal("-0.001")
+    assert len(position.adjustments()) == 1
+    assert position.adjustments()[0].adjustment_type == PositionAdjustmentType.COMMISSION
+    assert position.adjustments()[0].quantity_change == Decimal("-0.001")
 
 
 def test_position_flip_long_to_short_applies_full_commission() -> None:
@@ -1864,6 +1864,6 @@ def test_position_flip_long_to_short_applies_full_commission() -> None:
     assert position.is_open
 
     # Should have 1 adjustment from the flip (full commission applied to opening)
-    assert len(position.adjustments) == 1
-    assert position.adjustments[0].adjustment_type == PositionAdjustmentType.COMMISSION
-    assert position.adjustments[0].quantity_change == Decimal("-0.001")
+    assert len(position.adjustments()) == 1
+    assert position.adjustments()[0].adjustment_type == PositionAdjustmentType.COMMISSION
+    assert position.adjustments()[0].quantity_change == Decimal("-0.001")

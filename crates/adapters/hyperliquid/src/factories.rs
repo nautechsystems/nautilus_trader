@@ -21,13 +21,13 @@ use nautilus_common::{
     cache::Cache,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::{AccountId, ClientId, TraderId},
 };
-use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
 use crate::{
     common::consts::HYPERLIQUID_VENUE,
@@ -56,6 +56,10 @@ impl ClientConfig for HyperliquidExecClientConfig {
         module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.hyperliquid")
 )]
 pub struct HyperliquidDataClientFactory;
 
@@ -117,6 +121,10 @@ impl DataClientFactory for HyperliquidDataClientFactory {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.hyperliquid")
+)]
 pub struct HyperliquidExecFactoryConfig {
     /// The trader ID for the execution client.
     pub trader_id: TraderId,
@@ -140,6 +148,10 @@ impl ClientConfig for HyperliquidExecFactoryConfig {
         module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.hyperliquid")
 )]
 pub struct HyperliquidExecutionClientFactory;
 
@@ -208,9 +220,12 @@ impl ExecutionClientFactory for HyperliquidExecutionClientFactory {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{cache::Cache, clock::TestClock};
+    use nautilus_common::{
+        cache::Cache,
+        clock::TestClock,
+        factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+    };
     use nautilus_model::identifiers::{AccountId, TraderId};
-    use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
     use rstest::rstest;
 
     use super::*;
@@ -258,7 +273,9 @@ mod tests {
         let config = HyperliquidExecFactoryConfig {
             trader_id: TraderId::from("TRADER-001"),
             account_id: AccountId::from("HYPERLIQUID-001"),
-            config: HyperliquidExecClientConfig::new(Some("test_private_key".to_string())),
+            config: HyperliquidExecClientConfig::builder()
+                .private_key("test_private_key".to_string())
+                .build(),
         };
 
         let boxed_config: Box<dyn ClientConfig> = Box::new(config);
@@ -275,7 +292,9 @@ mod tests {
         let wrong_config = HyperliquidExecFactoryConfig {
             trader_id: TraderId::from("TRADER-001"),
             account_id: AccountId::from("HYPERLIQUID-001"),
-            config: HyperliquidExecClientConfig::new(Some("test_private_key".to_string())),
+            config: HyperliquidExecClientConfig::builder()
+                .private_key("test_private_key".to_string())
+                .build(),
         };
 
         let cache = Rc::new(RefCell::new(Cache::default()));

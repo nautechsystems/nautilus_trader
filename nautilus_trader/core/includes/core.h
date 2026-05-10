@@ -26,6 +26,31 @@
 #define NANOSECONDS_IN_MICROSECOND 1000
 
 /**
+ * Number of nanoseconds in one minute.
+ */
+#define NANOSECONDS_IN_MINUTE (60 * NANOSECONDS_IN_SECOND)
+
+/**
+ * Number of nanoseconds in one day.
+ */
+#define NANOSECONDS_IN_DAY ((24 * 60) * NANOSECONDS_IN_MINUTE)
+
+/**
+ * Number of seconds in one minute.
+ */
+#define SECONDS_IN_MINUTE 60
+
+/**
+ * Number of seconds in one hour.
+ */
+#define SECONDS_IN_HOUR (60 * SECONDS_IN_MINUTE)
+
+/**
+ * Number of seconds in one day.
+ */
+#define SECONDS_IN_DAY (24 * SECONDS_IN_HOUR)
+
+/**
  * Maximum capacity in characters for a [`StackStr`].
  */
 #define STACKSTR_CAPACITY 36
@@ -122,6 +147,12 @@ uint64_t secs_to_nanos(double secs);
 
 /**
  * Converts seconds to milliseconds (ms).
+ *
+ * # Panics
+ *
+ * Panics if [`crate::datetime::secs_to_millis`] returns an error for `secs`.
+ * The panic is caught by [`abort_on_panic`] and converted into a process abort
+ * across the FFI boundary.
  */
 uint64_t secs_to_millis(double secs);
 

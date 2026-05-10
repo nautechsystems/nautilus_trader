@@ -1,5 +1,9 @@
 # Polymarket
 
+This page documents the Python adapter modules in `nautilus_trader.adapters.polymarket`.
+The repository also exposes a Rust-native surface in `nautilus_trader.polymarket`.
+That surface is the consolidation target and has a different config surface today.
+
 ```{eval-rst}
 .. automodule:: nautilus_trader.adapters.polymarket
    :show-inheritance:

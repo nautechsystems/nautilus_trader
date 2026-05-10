@@ -16,13 +16,16 @@
 //! Binance Spot WebSocket API message types.
 //!
 //! This module defines:
-//! - [`HandlerCommand`]: Commands sent from the client to the handler.
-//! - [`NautilusWsApiMessage`]: Output messages emitted by the handler to the client.
-//! - Request/response structures for the Binance WebSocket API.
+//! - [`BinanceSpotWsTradingCommand`]: Commands sent from the client to the handler.
+//! - [`BinanceSpotWsTradingMessage`]: Output messages emitted by the handler to the client.
+//! - Request/response structures for the Binance Spot WebSocket Trading API.
 
 use nautilus_network::websocket::WebSocketClient;
 use serde::{Deserialize, Serialize};
 
+use super::user_data::{
+    BinanceSpotAccountPositionMsg, BinanceSpotBalanceUpdateMsg, BinanceSpotExecutionReport,
+};
 use crate::spot::http::{
     models::{BinanceCancelOrderResponse, BinanceNewOrderResponse},
     query::{CancelOrderParams, CancelReplaceOrderParams, NewOrderParams},
@@ -37,39 +40,43 @@ use crate::spot::http::{
     clippy::large_enum_variant,
     reason = "Commands are ephemeral and immediately consumed"
 )]
-pub enum HandlerCommand {
-    /// Set the WebSocket client after connection.
+pub enum BinanceSpotWsTradingCommand {
+    /// Sets the WebSocket client after connection.
     SetClient(WebSocketClient),
-    /// Disconnect and clean up.
+    /// Disconnects and cleans up.
     Disconnect,
-    /// Place a new order.
+    /// Places a new order.
     PlaceOrder {
         /// Request ID for correlation.
         id: String,
         /// Order parameters.
         params: NewOrderParams,
     },
-    /// Cancel an order.
+    /// Cancels an order.
     CancelOrder {
         /// Request ID for correlation.
         id: String,
         /// Cancel parameters.
         params: CancelOrderParams,
     },
-    /// Cancel and replace an order atomically.
+    /// Cancels and replaces an order atomically.
     CancelReplaceOrder {
         /// Request ID for correlation.
         id: String,
         /// Cancel-replace parameters.
         params: CancelReplaceOrderParams,
     },
-    /// Cancel all open orders for a symbol.
+    /// Cancels all open orders for a symbol.
     CancelAllOrders {
         /// Request ID for correlation.
         id: String,
         /// Symbol to cancel all orders for.
         symbol: String,
     },
+    /// Authenticates the WebSocket session via `session.logon`.
+    SessionLogon,
+    /// Subscribes to the user data stream via `userDataStream.subscribe`.
+    SubscribeUserData,
 }
 
 /// Normalized output message from the WebSocket API handler.
@@ -77,7 +84,7 @@ pub enum HandlerCommand {
 /// These messages are emitted by the handler and consumed by the client
 /// for routing to callers or the execution engine.
 #[derive(Debug, Clone)]
-pub enum NautilusWsApiMessage {
+pub enum BinanceSpotWsTradingMessage {
     /// Connection established.
     Connected,
     /// Session authenticated successfully.
@@ -141,6 +148,17 @@ pub enum NautilusWsApiMessage {
         /// Canceled order responses.
         responses: Vec<BinanceCancelOrderResponse>,
     },
+    /// User data stream subscribed.
+    UserDataSubscribed {
+        /// Subscription ID from Binance.
+        subscription_id: String,
+    },
+    /// Order execution report from user data stream.
+    ExecutionReport(Box<BinanceSpotExecutionReport>),
+    /// Account position update from user data stream.
+    AccountPosition(BinanceSpotAccountPositionMsg),
+    /// Balance update from user data stream.
+    BalanceUpdate(BinanceSpotBalanceUpdateMsg),
     /// Error from venue or network.
     Error(String),
 }
@@ -148,8 +166,8 @@ pub enum NautilusWsApiMessage {
 /// Metadata for a pending request.
 ///
 /// Stored in the handler to match responses to their originating requests.
-#[derive(Debug, Clone)]
-pub enum RequestMeta {
+#[derive(Debug, Clone, Copy)]
+pub enum BinanceSpotWsTradingRequestMeta {
     /// Pending order placement.
     PlaceOrder,
     /// Pending order cancellation.
@@ -158,13 +176,17 @@ pub enum RequestMeta {
     CancelReplaceOrder,
     /// Pending cancel-all.
     CancelAllOrders,
+    /// Pending session logon.
+    SessionLogon,
+    /// Pending user data subscription.
+    SubscribeUserData,
 }
 
 /// WebSocket API request wrapper.
 ///
 /// Requests are sent as JSON text frames, responses come back as SBE binary.
 #[derive(Debug, Clone, Serialize)]
-pub struct WsApiRequest {
+pub struct BinanceSpotWsTradingRequest {
     /// Unique request ID for correlation.
     pub id: String,
     /// API method name (e.g., "order.place").
@@ -173,8 +195,8 @@ pub struct WsApiRequest {
     pub params: serde_json::Value,
 }
 
-impl WsApiRequest {
-    /// Create a new WebSocket API request.
+impl BinanceSpotWsTradingRequest {
+    /// Creates a new WebSocket API request.
     #[must_use]
     pub fn new(
         id: impl Into<String>,
@@ -191,7 +213,7 @@ impl WsApiRequest {
 
 /// WebSocket API error response (JSON).
 #[derive(Debug, Clone, Deserialize)]
-pub struct WsApiErrorResponse {
+pub struct BinanceSpotWsTradingResponseError {
     /// Error code from venue.
     pub code: i32,
     /// Error message from venue.
@@ -202,18 +224,18 @@ pub struct WsApiErrorResponse {
 
 /// WebSocket API method names.
 pub mod method {
-    /// Place a new order.
+    /// Places a new order.
     pub const ORDER_PLACE: &str = "order.place";
-    /// Cancel an order.
+    /// Cancels an order.
     pub const ORDER_CANCEL: &str = "order.cancel";
-    /// Cancel and replace an order.
+    /// Cancels and replaces an order.
     pub const ORDER_CANCEL_REPLACE: &str = "order.cancelReplace";
-    /// Cancel all open orders for a symbol.
+    /// Cancels all open orders for a symbol.
     pub const OPEN_ORDERS_CANCEL_ALL: &str = "openOrders.cancelAll";
-    /// Session logon.
+    /// Initiates session logon.
     pub const SESSION_LOGON: &str = "session.logon";
-    /// Session status.
+    /// Queries session status.
     pub const SESSION_STATUS: &str = "session.status";
-    /// Session logout.
+    /// Initiates session logout.
     pub const SESSION_LOGOUT: &str = "session.logout";
 }

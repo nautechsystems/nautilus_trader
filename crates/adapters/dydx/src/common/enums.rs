@@ -122,6 +122,10 @@ pub enum DydxTimeInForce {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.dydx")
+)]
 pub enum DydxOrderSide {
     /// Buy order.
     Buy,
@@ -142,7 +146,7 @@ impl TryFrom<OrderSide> for DydxOrderSide {
 }
 
 impl DydxOrderSide {
-    /// Try to convert from Nautilus `OrderSide`.
+    /// Tries to convert from Nautilus `OrderSide`.
     ///
     /// # Errors
     ///
@@ -187,6 +191,10 @@ impl From<DydxOrderSide> for OrderSide {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.dydx")
+)]
 pub enum DydxOrderType {
     /// Limit order with specified price.
     Limit,
@@ -200,7 +208,7 @@ pub enum DydxOrderType {
     TakeProfitLimit,
     /// Take-profit order (market).
     TakeProfitMarket,
-    /// Trailing stop order.
+    /// Trailing stop order (parsing only, not supported for submission).
     TrailingStop,
 }
 
@@ -222,7 +230,7 @@ impl TryFrom<OrderType> for DydxOrderType {
 }
 
 impl DydxOrderType {
-    /// Try to convert from Nautilus `OrderType`.
+    /// Tries to convert from Nautilus `OrderType`.
     ///
     /// # Errors
     ///
@@ -404,13 +412,11 @@ pub enum DydxPositionStatus {
     Liquidated,
 }
 
-impl From<DydxPositionStatus> for PositionSide {
-    fn from(value: DydxPositionStatus) -> Self {
-        match value {
-            DydxPositionStatus::Open => Self::Long, // Default, actual side from position size
-            DydxPositionStatus::Closed => Self::Flat,
-            DydxPositionStatus::Liquidated => Self::Flat,
-        }
+impl DydxPositionStatus {
+    /// Returns whether this status represents a closed position.
+    #[must_use]
+    pub const fn is_closed(&self) -> bool {
+        matches!(self, Self::Closed | Self::Liquidated)
     }
 }
 
@@ -579,7 +585,7 @@ pub enum DydxTradeType {
     TwapSuborder,
     /// Stop limit order.
     StopLimit,
-    /// Take profit limit order.
+    /// Take-profit order (limit).
     TakeProfitLimit,
 }
 
@@ -607,6 +613,10 @@ pub enum DydxTradeType {
         eq_int,
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.dydx")
 )]
 pub enum DydxTransferType {
     /// Transfer into the account.
@@ -645,6 +655,10 @@ pub enum DydxTransferType {
         eq_int,
         from_py_object
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.dydx")
 )]
 pub enum DydxCandleResolution {
     /// 1 minute candles.
@@ -700,6 +714,68 @@ impl DydxCandleResolution {
                 "Unsupported bar step: {step} with aggregation {:?}",
                 spec.aggregation
             ),
+        }
+    }
+}
+
+/// dYdX network environment (mainnet vs testnet).
+///
+/// This selects the underlying Cosmos chain for transaction submission.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[strum(serialize_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        module = "nautilus_trader.core.nautilus_pyo3.dydx",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.dydx")
+)]
+pub enum DydxNetwork {
+    /// dYdX mainnet (dydx-mainnet-1).
+    #[default]
+    Mainnet,
+    /// dYdX testnet (dydx-testnet-4).
+    Testnet,
+}
+
+impl DydxNetwork {
+    /// Maps the logical network to the underlying gRPC chain identifier.
+    #[must_use]
+    pub const fn chain_id(self) -> ChainId {
+        match self {
+            Self::Mainnet => ChainId::Mainnet1,
+            Self::Testnet => ChainId::Testnet4,
+        }
+    }
+
+    /// Returns the canonical lowercase string used in config/env.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Mainnet => "mainnet",
+            Self::Testnet => "testnet",
         }
     }
 }
@@ -887,56 +963,5 @@ mod tests {
 
         let deserialized: DydxNetwork = serde_json::from_str("\"testnet\"").unwrap();
         assert_eq!(deserialized, DydxNetwork::Testnet);
-    }
-}
-
-/// dYdX network environment (mainnet vs testnet).
-///
-/// This selects the underlying Cosmos chain for transaction submission.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Default,
-    Display,
-    PartialEq,
-    Eq,
-    Hash,
-    AsRefStr,
-    EnumString,
-    Serialize,
-    Deserialize,
-)]
-#[strum(serialize_all = "lowercase")]
-#[serde(rename_all = "lowercase")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
-)]
-pub enum DydxNetwork {
-    /// dYdX mainnet (dydx-mainnet-1)
-    #[default]
-    Mainnet,
-    /// dYdX testnet (dydx-testnet-4)
-    Testnet,
-}
-
-impl DydxNetwork {
-    /// Map the logical network to the underlying gRPC chain identifier.
-    #[must_use]
-    pub const fn chain_id(self) -> ChainId {
-        match self {
-            Self::Mainnet => ChainId::Mainnet1,
-            Self::Testnet => ChainId::Testnet4,
-        }
-    }
-
-    /// Return the canonical lowercase string used in config/env.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Mainnet => "mainnet",
-            Self::Testnet => "testnet",
-        }
     }
 }

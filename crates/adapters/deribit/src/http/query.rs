@@ -432,6 +432,36 @@ impl GetUserTradesByCurrencyAndTimeParams {
     }
 }
 
+/// Query parameters for `/public/get_book_summary_by_currency` endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+pub struct GetBookSummaryByCurrencyParams {
+    /// Currency filter (e.g., "BTC", "ETH")
+    pub currency: String,
+    /// Optional product type filter (e.g., "option", "future")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub kind: Option<String>,
+}
+
+impl GetBookSummaryByCurrencyParams {
+    /// Creates parameters for options book summaries for a given currency.
+    #[must_use]
+    pub fn options(currency: impl Into<String>) -> Self {
+        Self {
+            currency: currency.into(),
+            kind: Some("option".to_string()),
+        }
+    }
+}
+
+/// Query parameters for `/public/ticker` endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct GetTickerParams {
+    /// Instrument name (e.g., "BTC-28FEB26-65000-C")
+    pub instrument_name: String,
+}
+
 /// Query parameters for `/private/get_positions` endpoint.
 /// Retrieves positions for a specific currency.
 #[derive(Clone, Debug, Deserialize, Serialize, Builder)]

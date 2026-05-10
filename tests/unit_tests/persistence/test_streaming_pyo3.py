@@ -18,7 +18,7 @@ import sys
 
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3 import StreamingFeatherWriterV2
+from nautilus_trader.core.nautilus_pyo3 import StreamingFeatherWriter
 from nautilus_trader.core.nautilus_pyo3.common import Cache
 from nautilus_trader.core.nautilus_pyo3.common import Clock
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
@@ -30,10 +30,10 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Failing on wind
 
 def _make_writer(path, **kwargs):
     """
-    Create a StreamingFeatherWriterV2, ensuring the path directory exists.
+    Create a StreamingFeatherWriter, ensuring the path directory exists.
     """
     os.makedirs(path, exist_ok=True)
-    return StreamingFeatherWriterV2(
+    return StreamingFeatherWriter(
         path=path,
         cache=kwargs.pop("cache", Cache()),
         clock=kwargs.pop("clock", Clock.new_test()),
@@ -41,9 +41,9 @@ def _make_writer(path, **kwargs):
     )
 
 
-def test_streaming_feather_writer_v2_creation(catalog: ParquetDataCatalog):
+def test_streaming_feather_writer_creation(catalog: ParquetDataCatalog):
     """
-    Test creating a StreamingFeatherWriterV2 instance.
+    Test creating a StreamingFeatherWriter instance.
     """
     # Arrange
     path = os.path.join(catalog.path, "streaming_test")
@@ -55,9 +55,9 @@ def test_streaming_feather_writer_v2_creation(catalog: ParquetDataCatalog):
     assert writer is not None
 
 
-def test_streaming_feather_writer_v2_write_quote_tick(catalog: ParquetDataCatalog):
+def test_streaming_feather_writer_write_quote_tick(catalog: ParquetDataCatalog):
     """
-    Test writing a QuoteTick to StreamingFeatherWriterV2.
+    Test writing a QuoteTick to StreamingFeatherWriter.
     """
     # Arrange
     path = os.path.join(catalog.path, "streaming_test")
@@ -71,9 +71,9 @@ def test_streaming_feather_writer_v2_write_quote_tick(catalog: ParquetDataCatalo
     writer.flush()
 
 
-def test_streaming_feather_writer_v2_write_trade_tick(catalog: ParquetDataCatalog):
+def test_streaming_feather_writer_write_trade_tick(catalog: ParquetDataCatalog):
     """
-    Test writing a TradeTick to StreamingFeatherWriterV2.
+    Test writing a TradeTick to StreamingFeatherWriter.
     """
     # Arrange
     path = os.path.join(catalog.path, "streaming_test")
@@ -87,9 +87,9 @@ def test_streaming_feather_writer_v2_write_trade_tick(catalog: ParquetDataCatalo
     writer.flush()
 
 
-def test_streaming_feather_writer_v2_write_all_types(catalog: ParquetDataCatalog):
+def test_streaming_feather_writer_write_all_types(catalog: ParquetDataCatalog):
     """
-    Test writing all supported data types to StreamingFeatherWriterV2.
+    Test writing all supported data types to StreamingFeatherWriter.
     """
     # Arrange
     path = os.path.join(catalog.path, "streaming_test")
@@ -105,9 +105,9 @@ def test_streaming_feather_writer_v2_write_all_types(catalog: ParquetDataCatalog
     writer.flush()
 
 
-def test_streaming_feather_writer_v2_flush(catalog: ParquetDataCatalog):
+def test_streaming_feather_writer_flush(catalog: ParquetDataCatalog):
     """
-    Test flushing StreamingFeatherWriterV2 buffers.
+    Test flushing StreamingFeatherWriter buffers.
     """
     # Arrange
     path = os.path.join(catalog.path, "streaming_test")
@@ -119,9 +119,9 @@ def test_streaming_feather_writer_v2_flush(catalog: ParquetDataCatalog):
     writer.flush()
 
 
-def test_streaming_feather_writer_v2_close(catalog: ParquetDataCatalog):
+def test_streaming_feather_writer_close(catalog: ParquetDataCatalog):
     """
-    Test closing StreamingFeatherWriterV2.
+    Test closing StreamingFeatherWriter.
     """
     # Arrange
     path = os.path.join(catalog.path, "streaming_test")
@@ -133,9 +133,9 @@ def test_streaming_feather_writer_v2_close(catalog: ParquetDataCatalog):
     writer.close()
 
 
-def test_streaming_feather_writer_v2_rotation_modes(catalog: ParquetDataCatalog):
+def test_streaming_feather_writer_rotation_modes(catalog: ParquetDataCatalog):
     """
-    Test creating StreamingFeatherWriterV2 with different rotation modes.
+    Test creating StreamingFeatherWriter with different rotation modes.
     """
     # Arrange
     path = os.path.join(catalog.path, "streaming_test")
@@ -179,9 +179,9 @@ def test_streaming_feather_writer_v2_rotation_modes(catalog: ParquetDataCatalog)
     assert writer4 is not None
 
 
-def test_streaming_feather_writer_v2_include_types(catalog: ParquetDataCatalog):
+def test_streaming_feather_writer_include_types(catalog: ParquetDataCatalog):
     """
-    Test creating StreamingFeatherWriterV2 with include_types filter.
+    Test creating StreamingFeatherWriter with include_types filter.
     """
     # Arrange
     path = os.path.join(catalog.path, "streaming_test")
@@ -193,9 +193,9 @@ def test_streaming_feather_writer_v2_include_types(catalog: ParquetDataCatalog):
     assert writer is not None
 
 
-def test_streaming_feather_writer_v2_flush_interval(catalog: ParquetDataCatalog):
+def test_streaming_feather_writer_flush_interval(catalog: ParquetDataCatalog):
     """
-    Test creating StreamingFeatherWriterV2 with flush_interval_ms.
+    Test creating StreamingFeatherWriter with flush_interval_ms.
     """
     # Arrange
     path = os.path.join(catalog.path, "streaming_test")

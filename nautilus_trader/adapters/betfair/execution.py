@@ -470,6 +470,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                         selection_id=o.selection_id,
                         selection_handicap=o.handicap if o.handicap not in (None, 0) else None,
                     )
+
                     if order_instrument_id == command.instrument_id:
                         matching_orders.append(o)
                 except Exception:
@@ -525,6 +526,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 orders = await self._client.list_current_orders(
                     customer_order_refs={customer_order_ref},
                 )
+
                 if not orders:
                     legacy_ref = make_customer_order_ref_legacy(command.client_order_id)
                     if legacy_ref != customer_order_ref:
@@ -856,6 +858,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.error(
                 f"Cannot submit order list: no instrument found for {command.instrument_id}",
             )
+
             for order in orders:
                 self._try_mark_terminal_order(order.client_order_id)
                 self.generate_order_denied(
@@ -873,6 +876,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     f"Cannot submit order list: order {order.client_order_id} "
                     f"has unsupported quote quantity",
                 )
+
                 for o in orders:
                     self._try_mark_terminal_order(o.client_order_id)
                     self.generate_order_denied(
@@ -1112,6 +1116,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         except Exception as e:
             # Ensure we remove pending key on exception
             self._pending_update_keys.discard(pending_key)
+
             if isinstance(e, BetfairError):
                 await self.on_api_exception(error=e)
 
@@ -1207,7 +1212,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
             return
 
-        size_reduction = existing_order.quantity - command.quantity
+        size_reduction = (existing_order.quantity - command.quantity).as_double()
 
         cancel_orders: CancelOrders = order_update_to_cancel_order_params(
             command=command,
@@ -1319,6 +1324,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         for report in result.instruction_reports:
             venue_order_id = VenueOrderId(str(report.instruction.bet_id))
+
             if (
                 report.status == InstructionReportStatus.FAILURE
                 and report.error_code != InstructionReportErrorCode.BET_TAKEN_OR_LAPSED
@@ -1390,6 +1396,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         # Reject cancels without venue_order_id (e.g. cancel before acceptance)
         valid_cancels = []
+
         for cancel in cancels:
             if cancel.venue_order_id is None:
                 self._log.warning(
@@ -1628,6 +1635,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         # Guard on venue_order_id not yet cached to avoid duplicate acceptance
         # when the HTTP response path has already emitted one.
         order = self._cache.order(client_order_id)
+
         if (
             order is not None
             and order.status == OrderStatus.SUBMITTED
@@ -1667,6 +1675,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             f"Skipping external order: bet_id={unmatched_order.id}, "
             f"rfo={unmatched_order.rfo!r}, instrument_id={instrument_id}"
         )
+
         if self.config.ignore_external_orders:
             self._log.debug(msg)
         else:
@@ -2137,6 +2146,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             for cid, ts in self._cache_filled_completed_ns.items()
             if (ts_now - ts) > BETFAIR_FILL_CACHE_TTL_NS
         ]
+
         for cid in expired:
             self._evict_fill_cache(cid)
 
@@ -2163,6 +2173,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     def _format_error_reason(self, error_code, result_error_code=None) -> str:
         parts = []
+
         if error_code is not None:
             parts.append(f"{error_code.name} ({error_code.__doc__})")
         if result_error_code is not None and result_error_code != error_code:

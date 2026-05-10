@@ -17,7 +17,7 @@
 
 use std::fmt::Display;
 
-use crate::common::sbe::error::SbeDecodeError;
+use crate::spot::sbe::error::SbeDecodeError;
 
 /// Binance WebSocket API client error type.
 #[derive(Debug)]

@@ -16,6 +16,7 @@
 import os
 import sys
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -75,6 +76,7 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -86,6 +88,7 @@ from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -1814,6 +1817,76 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.subscribed_instrument_status() == []
         assert self.binance_client.subscribed_instrument_status() == []
+
+    def test_process_instrument_status_when_subscriber_then_caches_and_publishes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        handler = []
+        self.msgbus.subscribe(
+            topic=f"data.status.BINANCE.{ETHUSDT_BINANCE.id.symbol}",
+            handler=handler.append,
+        )
+
+        subscribe = SubscribeInstrumentStatus(
+            client_id=None,
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.data_engine.execute(subscribe)
+
+        status = InstrumentStatus(
+            instrument_id=ETHUSDT_BINANCE.id,
+            action=MarketStatusAction.TRADING,
+            ts_event=1,
+            ts_init=2,
+        )
+
+        # Act
+        self.data_engine.process(status)
+
+        # Assert
+        assert handler == [status]
+        assert self.cache.instrument_status(ETHUSDT_BINANCE.id) == status
+        assert self.cache.instrument_statuses(ETHUSDT_BINANCE.id) == [status]
+
+    def test_process_instrument_status_updates_existing_in_cache(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        subscribe = SubscribeInstrumentStatus(
+            client_id=None,
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.data_engine.execute(subscribe)
+
+        status1 = InstrumentStatus(
+            instrument_id=ETHUSDT_BINANCE.id,
+            action=MarketStatusAction.PRE_OPEN,
+            ts_event=1,
+            ts_init=2,
+        )
+        status2 = InstrumentStatus(
+            instrument_id=ETHUSDT_BINANCE.id,
+            action=MarketStatusAction.TRADING,
+            ts_event=3,
+            ts_init=4,
+        )
+
+        # Act
+        self.data_engine.process(status1)
+        self.data_engine.process(status2)
+
+        # Assert: latest status is returned by the default-index getter
+        assert self.cache.instrument_status(ETHUSDT_BINANCE.id) == status2
+        assert self.cache.instrument_statuses(ETHUSDT_BINANCE.id) == [status2, status1]
 
     def test_subscribe_instrument_close_then_subscribes(self):
         # Arrange
@@ -3668,6 +3741,80 @@ class TestDataEngine:
             pd.Timestamp("2024-3-25"),
         )
 
+    def test_long_request_quote_ticks_preserves_request_params(self):
+        # Arrange
+        self.data_engine.register_client(self.mock_market_data_client)
+
+        start = pd.Timestamp("2024-01-15T00:00:00", tz="UTC")
+        end = pd.Timestamp("2024-01-15T00:10:00", tz="UTC")
+        self.clock.advance_time((end + pd.Timedelta(seconds=1)).value)
+
+        handler = []
+        params = {
+            "durations_seconds": [600],
+            "time_range_generator": "",
+            "update_catalog": False,
+        }
+        request = RequestQuoteTicks(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=start,
+            end=end,
+            limit=0,
+            client_id=None,
+            venue=ETHUSDT_BINANCE.venue,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=params,
+            correlation_id=None,
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert len(handler) == 1
+        assert request.start == start
+        assert request.end == end
+        assert request.params == params
+        assert handler[0].start == start
+        assert handler[0].end == end
+        assert handler[0].params == params
+
+    def test_long_request_data_count_accumulates_without_mutating_request(self):
+        # Arrange
+        self.data_engine.register_client(self.mock_market_data_client)
+
+        start = pd.Timestamp("2024-01-15T00:00:00", tz="UTC")
+        end = pd.Timestamp("2024-01-15T00:10:00", tz="UTC")
+        self.clock.advance_time((end + pd.Timedelta(seconds=1)).value)
+
+        handler = []
+        params = {
+            "durations_seconds": [300],
+            "time_range_generator": "",
+            "update_catalog": False,
+        }
+        request = RequestQuoteTicks(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=start,
+            end=end,
+            limit=0,
+            client_id=None,
+            venue=ETHUSDT_BINANCE.venue,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=params,
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert "data_count" not in request.params
+        assert request.params == params
+
     def test_request_trade_ticks_reaches_client(self):
         # Arrange
         self.data_engine.register_client(self.mock_market_data_client)
@@ -3951,11 +4098,11 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.request_count == 1
-        # Verify that original_start_date is stored in params
-        assert "original_start_date" in request.params
-        assert request.params["original_start_date"] == start_date
-        # Verify that start date was floored to start of day
-        assert request.start == pd.Timestamp("2024-01-15T00:00:00", tz="UTC")
+        assert len(handler) == 1
+        assert request.params == {"update_catalog": False}
+        assert request.start == start_date
+        assert handler[0].start == pd.Timestamp("2024-01-15T00:00:00", tz="UTC")
+        assert handler[0].params == {"update_catalog": False}
 
     def test_request_order_book_deltas_with_from_day_start_false_preserves_start_date(self):
         # Arrange
@@ -3981,11 +4128,11 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.request_count == 1
-        # Verify that original_start_date is stored in params
-        assert "original_start_date" in request.params
-        assert request.params["original_start_date"] == start_date
-        # Verify that start date was NOT floored
+        assert len(handler) == 1
+        assert request.params == {"update_catalog": False, "from_day_start": False}
         assert request.start == start_date
+        assert handler[0].start == start_date
+        assert handler[0].params == {"update_catalog": False, "from_day_start": False}
 
     def test_process_order_book_deltas_with_historical_flag(self):
         # Arrange
@@ -4151,20 +4298,25 @@ class TestDataEngine:
             start=day_start,
             end=pd.Timestamp("2024-01-15T23:59:59", tz="UTC"),
             ts_init=self.clock.timestamp_ns(),
-            params={
-                "original_start_date": original_start,
-                "book_type": BookType.L2_MBP,
-            },
+            params={"book_type": BookType.L2_MBP},
+        )
+        self.data_engine._request_workflows[response.correlation_id] = SimpleNamespace(
+            original_start_date=original_start,
         )
 
         # Act
-        self.data_engine._handle_order_book_deltas_snapshot_replay(response)
+        result = self.data_engine._handle_order_book_deltas_snapshot_replay(
+            response.correlation_id,
+            response.data,
+            response.params,
+        )
 
         # Assert
-        # Response data should be filtered and contain evolved snapshot
-        assert len(response.data) > 0
+        # Result data should be filtered to contain evolved snapshot
+        assert len(result) == 1
+        assert response.params == {"book_type": BookType.L2_MBP}
         # First item should be the evolved snapshot (not the original snapshot)
-        first_item = response.data[0]
+        first_item = result[0]
         assert isinstance(first_item, OrderBookDeltas)
         # Should contain a Clear delta followed by Add deltas (snapshot format)
         assert len(first_item.deltas) > 0
@@ -4199,20 +4351,25 @@ class TestDataEngine:
             start=pd.Timestamp("2024-01-15T00:00:00", tz="UTC"),
             end=pd.Timestamp("2024-01-15T23:59:59", tz="UTC"),
             ts_init=self.clock.timestamp_ns(),
-            params={
-                "original_start_date": pd.Timestamp("2024-01-15T10:00:00", tz="UTC"),
-                "book_type": BookType.L2_MBP,
-            },
+            params={"book_type": BookType.L2_MBP},
+        )
+        self.data_engine._request_workflows[response.correlation_id] = SimpleNamespace(
+            original_start_date=pd.Timestamp("2024-01-15T10:00:00", tz="UTC"),
         )
 
         original_data = response.data.copy()
 
         # Act
-        self.data_engine._handle_order_book_deltas_snapshot_replay(response)
+        result = self.data_engine._handle_order_book_deltas_snapshot_replay(
+            response.correlation_id,
+            response.data,
+            response.params,
+        )
 
         # Assert
         # Data should remain unchanged (no snapshot replay)
-        assert response.data == original_data
+        assert result == original_data
+        assert response.params == {"book_type": BookType.L2_MBP}
 
     def test_handle_order_book_deltas_snapshot_replay_without_original_start_date_skips_replay(
         self,
@@ -4251,11 +4408,51 @@ class TestDataEngine:
         original_data = response.data.copy()
 
         # Act
-        self.data_engine._handle_order_book_deltas_snapshot_replay(response)
+        result = self.data_engine._handle_order_book_deltas_snapshot_replay(
+            response.correlation_id,
+            response.data,
+            response.params,
+        )
 
         # Assert
         # Data should remain unchanged (no original_start_date in params)
-        assert response.data == original_data
+        assert result == original_data
+        assert response.params == {"book_type": BookType.L2_MBP}
+
+    def test_aggregated_bars_rejection_cleans_up_workflow_state(self):
+        # Arrange
+        self.data_engine.register_client(self.mock_market_data_client)
+
+        bar_type = BarType.from_str("ETHUSDT-BINANCE.BINANCE-1-MINUTE-LAST-EXTERNAL")
+
+        # Pre-populate a running aggregator so the request is rejected
+        self.data_engine._bar_aggregators[(bar_type, None)] = SimpleNamespace(is_running=True)
+
+        handler = []
+        request = RequestBars(
+            bar_type=bar_type,
+            start=pd.Timestamp("2024-01-15T00:00:00", tz="UTC"),
+            end=pd.Timestamp("2024-01-15T01:00:00", tz="UTC"),
+            limit=0,
+            client_id=None,
+            venue=ETHUSDT_BINANCE.venue,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={
+                "bar_types": (bar_type,),
+                "update_subscriptions": True,
+                "update_catalog": False,
+            },
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert request.id not in self.data_engine._request_workflows
+        assert request.id not in self.data_engine._requests
+        assert len(handler) == 0
 
     def test_request_aggregated_bars_with_bars(self):
         # Arrange

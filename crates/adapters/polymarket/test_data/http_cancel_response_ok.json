@@ -1,3 +1,4 @@
 {
-  "not_canceled": null
+  "canceled": ["0xb816482a1234567890abcdef1234567890abcdef1234567890abcdef12345678"],
+  "not_canceled": {}
 }

@@ -2,6 +2,7 @@
   "tardis_ws_url": "ws://localhost:8001",
   "normalize_symbols": true,
   "output_path": null,
+  "compression": "zstd",
   "options": [
     {
       "exchange": "binance-futures",

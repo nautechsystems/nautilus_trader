@@ -102,10 +102,14 @@ pub fn init_tracing() -> anyhow::Result<()> {
 
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
 
-    tracing_subscriber::registry()
+    let subscriber = tracing_subscriber::registry()
         .with(filter)
-        .with(fmt::layer().event_format(NautilusFormatter))
-        .try_init()
+        .with(fmt::layer().event_format(NautilusFormatter));
+
+    // Install only the tracing subscriber here. Python logging manages the
+    // global `log` logger separately, so we must not claim it through
+    // SubscriberInitExt::try_init().
+    tracing::subscriber::set_global_default(subscriber)
         .map_err(|e| anyhow::anyhow!("Failed to initialize tracing subscriber: {e}"))?;
 
     TRACING_INITIALIZED.store(true, Ordering::SeqCst);

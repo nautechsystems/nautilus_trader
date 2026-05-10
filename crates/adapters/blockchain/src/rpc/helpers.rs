@@ -19,6 +19,7 @@
 //! converting hex strings to the appropriate types.
 
 use alloy::primitives::Address;
+use nautilus_core::hex;
 use nautilus_model::defi::rpc::RpcLog;
 
 /// Decode hex string (with or without 0x prefix) to bytes.

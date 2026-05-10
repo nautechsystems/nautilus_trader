@@ -40,6 +40,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import nanos_to_secs
+from nautilus_trader.core.nautilus_pyo3 import DydxNetwork
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
@@ -61,6 +62,11 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.functions import order_side_to_pyo3
+from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.orders import LimitIfTouchedOrder
@@ -135,8 +141,13 @@ class DydxExecutionClient(LiveExecutionClient):
         # Configuration
         self._config = config
         self._subaccount = config.subaccount
-        self._is_testnet = config.is_testnet
-        self._log.info(f"{config.is_testnet=}", LogColor.BLUE)
+        self._network = (
+            config.environment
+            if config.environment is not None
+            else (DydxNetwork.TESTNET if config.is_testnet else DydxNetwork.MAINNET)
+        )
+        self._is_testnet = self._network == DydxNetwork.TESTNET
+        self._log.info(f"network={self._network}", LogColor.BLUE)
         self._log.info(f"{config.subaccount=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
@@ -146,8 +157,8 @@ class DydxExecutionClient(LiveExecutionClient):
         self._http_client = client
 
         # Resolve URLs
-        ws_url = config.base_url_ws or nautilus_pyo3.get_dydx_ws_url(config.is_testnet)  # type: ignore[attr-defined]
-        grpc_urls = config.base_url_grpc or nautilus_pyo3.get_dydx_grpc_urls(config.is_testnet)  # type: ignore[attr-defined]
+        ws_url = config.base_url_ws or nautilus_pyo3.get_dydx_ws_url(self._network)  # type: ignore[attr-defined]
+        grpc_urls = config.base_url_grpc or nautilus_pyo3.get_dydx_grpc_urls(self._network)  # type: ignore[attr-defined]
 
         # Initialize gRPC and order submitter (created on connect)
         self._grpc_client: nautilus_pyo3.DydxGrpcClient | None = None  # type: ignore[name-defined]
@@ -249,6 +260,7 @@ class DydxExecutionClient(LiveExecutionClient):
             authenticator_ids=self._config.authenticator_ids or [],
             account_id=nautilus_pyo3.AccountId(account_id.value),
             heartbeat=20,
+            proxy_url=self._config.proxy_url,
         )
 
         self._encoder = self._ws_client.encoder()
@@ -259,6 +271,7 @@ class DydxExecutionClient(LiveExecutionClient):
             loop_=self._loop,
             instruments=instruments,
             callback=self._handle_msg,
+            trader_id=nautilus_pyo3.TraderId(str(self.trader_id)),
         )
 
         # Wait for connection
@@ -300,6 +313,15 @@ class DydxExecutionClient(LiveExecutionClient):
                 self._handle_dict_message(raw)
             elif isinstance(raw, nautilus_pyo3.AccountState):
                 self._handle_account_state(raw)
+            elif isinstance(raw, nautilus_pyo3.OrderAccepted):
+                event = OrderAccepted.from_dict(raw.to_dict())
+                self._send_order_event(event)
+            elif isinstance(raw, nautilus_pyo3.OrderFilled):
+                event = OrderFilled.from_dict(raw.to_dict())
+                self._send_order_event(event)
+            elif isinstance(raw, nautilus_pyo3.OrderCanceled):
+                event = OrderCanceled.from_dict(raw.to_dict())
+                self._send_order_event(event)
             elif isinstance(raw, nautilus_pyo3.OrderStatusReport):
                 report = OrderStatusReport.from_pyo3(raw)
                 self._cleanup_order_context(report)
@@ -325,6 +347,7 @@ class DydxExecutionClient(LiveExecutionClient):
     def _handle_block_height(self, msg: dict) -> None:
         height = msg.get("height")
         time_str = msg.get("time")
+
         if height is not None and self._order_submitter is not None:
             try:
                 self._order_submitter.record_block(height, time_str)
@@ -434,7 +457,15 @@ class DydxExecutionClient(LiveExecutionClient):
 
         self._log.debug(f"Submit {order}")
 
-        # Generate OrderSubmitted event before dispatch
+        assert self._ws_client is not None
+        self._ws_client.register_order_identity(
+            client_order_id=nautilus_pyo3.ClientOrderId(str(order.client_order_id)),
+            instrument_id=nautilus_pyo3.InstrumentId.from_str(str(order.instrument_id)),
+            strategy_id=nautilus_pyo3.StrategyId(str(order.strategy_id)),
+            order_side=order_side_to_pyo3(order.side),
+            order_type=order_type_to_pyo3(order.order_type),
+        )
+
         self.generate_order_submitted(
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
@@ -699,6 +730,7 @@ class DydxExecutionClient(LiveExecutionClient):
         # Collect all open orders into batch list
         assert self._encoder is not None
         batch = []
+
         for order in open_orders:
             client_order_id_u32, _ = self._encoder.encode(str(order.client_order_id))
             if client_order_id_u32 not in self._order_contexts:
@@ -732,6 +764,7 @@ class DydxExecutionClient(LiveExecutionClient):
         # Collect all orders into batch list
         assert self._encoder is not None
         batch = []
+
         for cancel in command.cancels:
             order = self._cache.order(cancel.client_order_id)
             if order is None:
@@ -804,6 +837,7 @@ class DydxExecutionClient(LiveExecutionClient):
 
         try:
             pyo3_instrument_id = None
+
             if command.instrument_id:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                     command.instrument_id.value,
@@ -852,6 +886,7 @@ class DydxExecutionClient(LiveExecutionClient):
 
         try:
             pyo3_instrument_id = None
+
             if command.instrument_id:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                     command.instrument_id.value,
@@ -896,6 +931,7 @@ class DydxExecutionClient(LiveExecutionClient):
 
         try:
             pyo3_instrument_id = None
+
             if command.instrument_id:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                     command.instrument_id.value,

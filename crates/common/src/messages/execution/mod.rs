@@ -21,7 +21,7 @@ pub mod query;
 pub mod report;
 pub mod submit;
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     identifiers::{ClientId, InstrumentId, StrategyId},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -46,12 +46,13 @@ pub use self::{
 pub enum ExecutionReport {
     Order(Box<OrderStatusReport>),
     Fill(Box<FillReport>),
+    OrderWithFills(Box<OrderStatusReport>, Vec<FillReport>),
     Position(Box<PositionStatusReport>),
     MassStatus(Box<ExecutionMassStatus>),
 }
 
 // TODO
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Eq, PartialEq, Display)]
 pub enum TradingCommand {
     SubmitOrder(SubmitOrder),
@@ -123,6 +124,20 @@ impl TradingCommand {
             Self::BatchCancelOrders(command) => Some(command.strategy_id),
             Self::QueryOrder(command) => Some(command.strategy_id),
             Self::QueryAccount(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn params(&self) -> Option<&Params> {
+        match self {
+            Self::SubmitOrder(command) => command.params.as_ref(),
+            Self::SubmitOrderList(command) => command.params.as_ref(),
+            Self::ModifyOrder(command) => command.params.as_ref(),
+            Self::CancelOrder(command) => command.params.as_ref(),
+            Self::CancelAllOrders(command) => command.params.as_ref(),
+            Self::BatchCancelOrders(command) => command.params.as_ref(),
+            Self::QueryOrder(command) => command.params.as_ref(),
+            Self::QueryAccount(command) => command.params.as_ref(),
         }
     }
 }

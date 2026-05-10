@@ -114,6 +114,7 @@ async def test_connect(mocker, data_client, instrument):
 
     # Act
     data_client.connect()
+
     for _ in range(5):
         await asyncio.sleep(0)  # _connect uses multiple awaits, multiple sleeps required.
 
@@ -626,6 +627,7 @@ def test_market_bsp(data_client, mock_data_engine_process):
     # Arrange
     update = BetfairStreaming.mcm_BSP()
     provider = data_client.instrument_provider
+
     for mc in stream_decode(update[0]).mc:
         market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
         instruments = make_instruments(

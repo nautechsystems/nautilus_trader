@@ -97,6 +97,38 @@
             "base": "PEPE",
             "quote": "USD",
             "pair": "PEPE:USD"
+        },
+        {
+            "symbol": "PF_AAPLxUSD",
+            "type": "flexible_futures",
+            "tickSize": 0.01,
+            "contractSize": 1,
+            "tradeable": true,
+            "impactMidSize": 250.0,
+            "maxPositionSize": 5000.0,
+            "openingDate": "2025-07-01T00:00:00Z",
+            "marginLevels": [
+                {
+                    "numNonContractUnits": 0.0,
+                    "initialMargin": 0.2,
+                    "maintenanceMargin": 0.1
+                },
+                {
+                    "numNonContractUnits": 1000.0,
+                    "initialMargin": 0.4,
+                    "maintenanceMargin": 0.2
+                }
+            ],
+            "fundingRateCoefficient": 24,
+            "maxRelativeFundingRate": 0.0025,
+            "isin": "US0378331005",
+            "contractValueTradePrecision": 2,
+            "postOnly": false,
+            "feeScheduleUid": "2f41d1db-f776-4b68-9c3a-c4c8e0c53d9a",
+            "mtf": true,
+            "base": "AAPLx",
+            "quote": "USD",
+            "pair": "AAPLx:USD"
         }
     ]
 }

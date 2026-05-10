@@ -27,7 +27,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use crate::{
-    common::parse::ax_timestamp_s_to_unix_nanos,
+    common::parse::ax_timestamp_stn_to_unix_nanos,
     http::parse::candle_width_to_bar_spec,
     websocket::messages::{
         AxBookLevel, AxBookLevelL3, AxMdBookL1, AxMdBookL2, AxMdBookL3, AxMdCandle, AxMdTrade,
@@ -74,7 +74,7 @@ pub fn parse_book_l1_quote(
         (Price::zero(price_precision), Quantity::zero(size_precision))
     };
 
-    let ts_event = ax_timestamp_s_to_unix_nanos(book.ts)?;
+    let ts_event = ax_timestamp_stn_to_unix_nanos(book.ts, book.tn)?;
 
     QuoteTick::new_checked(
         instrument.id(),
@@ -117,7 +117,7 @@ pub fn parse_book_l2_deltas(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let ts_event = ax_timestamp_s_to_unix_nanos(book.ts)?;
+    let ts_event = ax_timestamp_stn_to_unix_nanos(book.ts, book.tn)?;
 
     let total_levels = book.b.len() + book.a.len();
     let capacity = total_levels + 1;
@@ -222,7 +222,7 @@ pub fn parse_book_l3_deltas(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let ts_event = ax_timestamp_s_to_unix_nanos(book.ts)?;
+    let ts_event = ax_timestamp_stn_to_unix_nanos(book.ts, book.tn)?;
 
     let total_orders: usize = book.b.iter().map(|l| l.o.len()).sum::<usize>()
         + book.a.iter().map(|l| l.o.len()).sum::<usize>();
@@ -334,7 +334,7 @@ pub fn parse_trade_tick(
     let trade_id = TradeId::new_checked(buf.format(trade.tn))
         .context("Failed to create TradeId from transaction number")?;
 
-    let ts_event = ax_timestamp_s_to_unix_nanos(trade.ts)?;
+    let ts_event = ax_timestamp_stn_to_unix_nanos(trade.ts, trade.tn)?;
 
     TradeTick::new_checked(
         instrument.id(),
@@ -367,7 +367,7 @@ pub fn parse_candle_bar(
     let close = decimal_to_price_dp(candle.close, price_precision, "candle.close")?;
     let volume = Quantity::new(candle.volume as f64, size_precision);
 
-    let ts_event = ax_timestamp_s_to_unix_nanos(candle.ts)?;
+    let ts_event = ax_timestamp_stn_to_unix_nanos(candle.ts, 0)?;
 
     let bar_spec = candle_width_to_bar_spec(candle.width);
     let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::External);
@@ -501,6 +501,7 @@ mod tests {
                     q: 250,
                 },
             ],
+            st: false,
         };
 
         let instrument = create_test_instrument();
@@ -531,6 +532,7 @@ mod tests {
                 q: 250,
                 o: vec![150, 100],
             }],
+            st: false,
         };
 
         let instrument = create_test_instrument();
@@ -707,6 +709,7 @@ mod tests {
             s: Ustr::from("TEST-PERP"),
             b: vec![],
             a: vec![],
+            st: false,
         };
 
         let instrument = create_test_instrument();

@@ -32,7 +32,7 @@ use nautilus_core::Params;
 use nautilus_model::{
     identifiers::InstrumentId,
     instruments::betting::BettingInstrument,
-    types::{currency::Currency, price::Price, quantity::Quantity},
+    types::{price::Price, quantity::Quantity},
 };
 #[allow(unused)]
 use rust_decimal::Decimal;
@@ -217,7 +217,7 @@ impl EncodeToRecordBatch for BettingInstrument {
 /// Returns an `EncodingError` if the RecordBatch cannot be decoded.
 pub fn decode_betting_instrument_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
-    record_batch: RecordBatch,
+    record_batch: &RecordBatch,
 ) -> Result<Vec<BettingInstrument>, EncodingError> {
     let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();
@@ -269,8 +269,12 @@ pub fn decode_betting_instrument_batch(
     for i in 0..num_rows {
         let id = InstrumentId::from_str(id_values.value(i))
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
-        let currency = Currency::from_str(currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("currency", format!("row {i}: {e}")))?;
+        let currency = super::decode_currency(
+            currency_values.value(i),
+            "currency",
+            "betting_instrument.currency",
+            i,
+        )?;
         let event_type_id = event_type_id_values.value(i);
         let event_type_name = Ustr::from(event_type_name_values.value(i));
         let competition_id = competition_id_values.value(i);
@@ -299,6 +303,7 @@ pub fn decode_betting_instrument_batch(
                 .downcast_ref::<BinaryArray>()
                 .ok_or_else(|| EncodingError::ParseError("info", format!("row {i}: invalid type")))?
                 .value(i);
+
             match serde_json::from_slice::<Params>(info_bytes) {
                 Ok(info_dict) => Some(info_dict),
                 Err(e) => {

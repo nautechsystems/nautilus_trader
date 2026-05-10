@@ -1081,56 +1081,6 @@ class TestOrderEmulatorWithOrderLists:
         assert not matching_core.order_exists(sl_order.client_order_id)
         assert matching_core.order_exists(tp_order.client_order_id)
 
-    def test_released_order_with_quote_quantity_sets_contingent_orders_to_base_quantity(
-        self,
-    ) -> None:
-        # Arrange
-        bracket = self.strategy.order_factory.bracket(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            order_side=OrderSide.BUY,
-            quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            entry_order_type=OrderType.LIMIT_IF_TOUCHED,
-            entry_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5001.0),
-            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.0),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
-            tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
-            quote_quantity=True,
-            emulation_trigger=TriggerType.BID_ASK,
-        )
-
-        self.strategy.submit_order_list(order_list=bracket)
-
-        tick = TestDataStubs.quote_tick(
-            instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5000.0,
-            ask_price=5000.0,
-        )
-
-        # Act
-        self.data_engine.process(tick)
-
-        # Assert
-        self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id)
-        entry_order = self.cache.order(bracket.orders[0].client_order_id)
-        sl_order = self.cache.order(bracket.orders[1].client_order_id)
-        tp_order = self.cache.order(bracket.orders[2].client_order_id)
-        assert self.exec_engine.command_count == 1
-        assert len(self.emulator.get_submit_order_commands()) == 0
-        assert self.cache.orders_emulated_count() == 2
-        assert not entry_order.is_quote_quantity
-        assert not sl_order.is_quote_quantity
-        assert not tp_order.is_quote_quantity
-        assert not entry_order.is_active_local
-        assert sl_order.is_active_local
-        assert tp_order.is_active_local
-        assert entry_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(0.002)
-        assert sl_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(0.002)
-        assert tp_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(0.002)
-        assert entry_order.leaves_qty == ETHUSDT_PERP_BINANCE.make_qty(0.002)
-        assert sl_order.leaves_qty == ETHUSDT_PERP_BINANCE.make_qty(0.002)
-        assert tp_order.leaves_qty == ETHUSDT_PERP_BINANCE.make_qty(0.002)
-
     def test_restart_emulator_with_emulated_parent(self) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(

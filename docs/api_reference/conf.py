@@ -41,9 +41,39 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
-    "sphinx_markdown_builder",
     "sphinx_comments",
 ]
+
+html_theme = "furo"
+html_title = "NautilusTrader Python API"
+html_favicon = "https://nautilustrader.io/docs/img/shell.ico"
+
+html_theme_options = {
+    "dark_css_variables": {
+        "color-brand-primary": "#33bca4",
+        "color-brand-content": "#33bca4",
+        "color-background-primary": "#0d1117",
+        "color-background-secondary": "#0e1316",
+        "color-background-border": "#23282c",
+        "color-foreground-primary": "#b7b7b7",
+        "color-foreground-secondary": "#cdcdcd",
+        "color-highlight-on-target": "#171c20",
+        "color-api-name": "#33bca4",
+        "color-api-pre-name": "#33bca4",
+    },
+    "light_css_variables": {
+        "color-brand-primary": "#007e68",
+        "color-brand-content": "#007e68",
+    },
+    "footer_icons": [],
+    "source_repository": "https://github.com/nautechsystems/nautilus_trader",
+    "source_branch": "master",
+    "source_directory": "docs/api_reference/",
+}
+
+html_show_sphinx = False
+html_static_path = ["_static"]
+html_css_files = ["custom.css"]
 
 comments_config = {"hypothesis": False, "utterances": False}
 exclude_patterns = ["**.ipynb_checkpoints", ".DS_Store", "Thumbs.db", "_build"]

@@ -22,13 +22,13 @@ The major architectural techniques and design patterns employed by NautilusTrade
 - [Ports and adapters](https://en.wikipedia.org/wiki/Hexagonal_architecture_(software))
 - [Crash-only design](#crash-only-design)
 
-These techniques have been used to assist in achieving certain architectural quality attributes.
+These techniques help achieve certain architectural quality attributes.
 
 ### Quality attributes
 
-Architectural decisions are often a trade-off between competing priorities. The
-below is a list of some of the most important quality attributes which are considered
-when making design and architectural decisions, roughly in order of 'weighting'.
+Architectural decisions are often a trade-off between competing priorities.
+The following quality attributes guide design and architectural decisions,
+roughly in order of weighting.
 
 - Reliability
 - Performance
@@ -54,8 +54,8 @@ business requirements. Practically this means we:
 - Track “assurance debt” alongside feature work so new integrations extend the
   safety net rather than bypass it.
 
-This approach preserves the platform’s delivery cadence while giving mission
-critical flows the additional scrutiny they need.
+This approach preserves the platform’s delivery cadence while giving
+high-stakes flows the additional scrutiny they need.
 
 Further reading: [High Assurance Rust](https://highassurance.rs/).
 
@@ -169,7 +169,7 @@ The NautilusTrader codebase is actually both a framework for composing trading
 
 ### Core components
 
-The platform is built around several key components that work together to provide a complete trading system:
+Several core components work together to form the trading system:
 
 #### `NautilusKernel`
 
@@ -228,8 +228,8 @@ Provides risk management:
 
 ### Environment contexts
 
-An environment context in NautilusTrader defines the type of data and trading venue you are working
-with. Understanding these contexts is crucial for effective backtesting, development, and live trading.
+An environment context in NautilusTrader defines the type of data and trading venue you work with.
+Understanding these contexts matters for backtesting, development, and live trading.
 
 Here are the available environments you can work with:
 
@@ -248,25 +248,98 @@ core system, providing various hooks for user-defined or custom component implem
 
 ### Data and execution flow patterns
 
-Understanding how data and execution flow through the system is crucial for effective use of the platform:
+Understanding how data and execution flow through the system helps when working with the platform.
 
-#### Data flow pattern
+#### Data flow: life of a quote tick
 
-1. **External Data Ingestion**: Market data enters via venue-specific `DataClient` adapters where it is normalized.
-2. **Data Processing**: The `DataEngine` handles data processing for internal components.
-3. **Caching**: Processed data is stored in the high-performance `Cache` for fast access.
-4. **Event Publishing**: Data events are published to the `MessageBus`.
-5. **Consumer Delivery**: Subscribed components (Actors, Strategies) receive relevant data events.
+The following trace shows every step a `QuoteTick` takes from the network to your
+strategy. Trades and bars follow the same cache-then-publish path with different
+handler names. Order book deltas and depth snapshots take a different route (see
+the tip below the steps).
 
-#### Execution flow pattern
+```mermaid
+sequenceDiagram
+    participant Adapter as DataClient adapter
+    participant Channel as MPSC channel
+    participant DE as DataEngine
+    participant Cache as Cache
+    participant MB as MessageBus
+    participant Strategy as Strategy
 
-1. **Command Generation**: User strategies create trading commands.
-2. **Command Publishing**: Commands are sent through the `MessageBus`.
-3. **Risk Validation**: The `RiskEngine` validates trading commands against configured risk rules.
-4. **Execution Routing**: The `ExecutionEngine` routes commands to appropriate venues.
-5. **External Submission**: The `ExecutionClient` submits orders to external trading venues.
-6. **Event Flow Back**: Order events (fills, cancellations) flow back through the system.
-7. **State Updates**: Portfolio and position states are updated based on execution events.
+    Adapter->>Channel: DataEvent::Data(Data::Quote(quote))
+    Channel->>DE: process_data(Data::Quote)
+    DE->>DE: handle_quote(quote)
+    DE->>Cache: add_quote(quote)
+    DE->>MB: publish_quote(topic, quote)
+    MB->>Strategy: on_quote_tick(quote)
+```
+
+**Step by step:**
+
+1. **Adapter receives raw data.** A venue-specific `DataClient` (e.g. Binance, Bybit)
+   receives a WebSocket message, parses it, and constructs a `QuoteTick`.
+2. **Adapter sends a data event.** The adapter sends
+   `DataEvent::Data(Data::Quote(quote))` through an MPSC channel. In live mode
+   this is an async unbounded channel; in backtests the engine feeds data directly.
+3. **DataEngine processes the event.** The channel receiver routes the event to
+   `DataEngine::process_data`, which dispatches to `handle_quote`.
+4. **Cache stores the quote.** `handle_quote` writes the quote into the `Cache`
+   via `cache.add_quote(quote)`, making it available to any component through
+   `self.cache.quote_tick(instrument_id)`.
+5. **MessageBus publishes.** The engine publishes the quote on a topic derived
+   from the instrument ID (e.g. `data.quotes.BINANCE.BTCUSDT-PERP`). The
+   `MessageBus` finds all handlers subscribed to that topic.
+6. **Strategy handler fires.** Each subscribed strategy's `on_quote_tick(quote)`
+   runs on the single-threaded kernel. The quote is already in the cache before
+   the handler executes, so `self.cache.quote_tick(instrument_id)` returns the
+   same quote.
+
+:::tip
+For quotes, trades, and bars the cache-then-publish order means your strategy
+handler can always read the latest value from the cache. Order book deltas and
+depth snapshots are published directly; book state is maintained separately
+through `BookUpdater` subscriptions.
+:::
+
+#### Execution flow: life of an order
+
+When a strategy submits an order, it flows through validation, routing, and back
+again as execution events:
+
+```mermaid
+sequenceDiagram
+    participant Strategy as Strategy
+    participant RE as RiskEngine
+    participant EE as ExecutionEngine
+    participant EC as ExecutionClient
+    participant Venue as Venue
+
+    Strategy->>RE: submit_order(command)
+    RE->>RE: pre-trade risk checks
+    RE->>EE: route command
+    EE->>EC: submit_order
+    EC->>Venue: place order (REST/WS)
+    Venue-->>EC: OrderAccepted
+    EC->>EE: OrderAccepted event
+    EE->>Strategy: on_order_accepted(event)
+    Venue-->>EC: OrderFilled
+    EC->>EE: OrderFilled event
+    EE->>Strategy: on_order_filled(event)
+```
+
+1. **Strategy creates a command.** The strategy calls `self.submit_order(order)`.
+2. **RiskEngine validates.** Pre-trade checks run (position limits, notional
+   limits, order rate). If a check fails the strategy receives `OrderDenied`
+   and the order never reaches the venue.
+3. **ExecutionEngine routes.** The command is routed to the `ExecutionClient`
+   for the target venue.
+4. **ExecutionClient submits.** The adapter sends the order to the venue over
+   REST or WebSocket.
+5. **Events flow back.** The venue responds with acknowledgments and fills.
+   Each event (Accepted, Filled, Canceled, Rejected, Expired) flows back through
+   the `ExecutionEngine`, which updates order state in the `Cache` and delivers
+   the event to the strategy's handler. Fill events also trigger position and
+   portfolio updates.
 
 #### Component state management
 
@@ -415,7 +488,7 @@ The traits are managed by separate registries to support their different access 
 
 ### Messaging
 
-For modularity and loose coupling, an extremely efficient `MessageBus` passes messages (data, commands and events) between components.
+For modularity and loose coupling, an efficient `MessageBus` passes messages (data, commands, and events) between components.
 
 #### Threading model
 
@@ -447,11 +520,11 @@ ultimately deliver events to the single-threaded core.
 
 ## Framework organization
 
-The codebase is organized with a layering of abstraction levels, and generally
-grouped into logical subpackages of cohesive concepts. You can navigate to the documentation
-for each of these subpackages from the left nav menu.
+The codebase organizes into layers of abstraction, grouped into logical subpackages
+of cohesive concepts. You can navigate to the documentation for each subpackage
+from the left nav menu.
 
-### Core / low-Level
+### Core / low-level
 
 - `core`: Constants, functions and low-level components used throughout the framework.
 - `common`: Common parts for assembling the frameworks various components.
@@ -569,7 +642,7 @@ flowchart BT
 | Foundation     | `core`, `model`, `common`, `system`, `trading`            | Primitives, domain model, kernel, actor & strategy base. |
 | Engines        | `data`, `execution`, `portfolio`, `risk`                  | Core trading engine components.                          |
 | Infrastructure | `serialization`, `network`, `cryptography`, `persistence` | Encoding, networking, signing, storage.                  |
-| Runtime        | `live`, `backtest`                                        | Environment-specific node implementations.               |
+| Runtime        | `live`, `backtest`                                        | Environment‑specific node implementations.               |
 | External       | `adapters/*`                                              | Venue and data integrations.                             |
 | Bindings       | `pyo3`                                                    | Python bindings.                                         |
 
@@ -579,7 +652,7 @@ flowchart BT
 |-------------|----------------------------|------------------------------------------------------------|
 | `streaming` | `data`, `system`, `live`   | Enables `persistence` dependency for catalog streaming.    |
 | `cloud`     | `persistence`              | Enables cloud storage backends (S3, Azure, GCP, HTTP).     |
-| `python`    | most crates                | Enables PyO3 bindings (auto-enables `streaming`, `cloud`). |
+| `python`    | most crates                | Enables PyO3 bindings (auto‑enables `streaming`, `cloud`). |
 | `defi`      | `common`, `model`, `data`  | Enables DeFi/blockchain data types.                        |
 
 :::note
@@ -589,7 +662,7 @@ Rust or Cython to be installed at runtime.
 
 ### Type safety
 
-The design of the platform prioritizes software correctness and safety at the highest level.
+The platform design prioritizes software correctness and safety.
 
 The Rust codebase under `crates/` relies on the `rustc` compiler's guarantees for safe code.
 Any `unsafe` blocks are explicit opt-outs where we must uphold the required invariants ourselves
@@ -612,8 +685,8 @@ The above exceptions are not explicitly documented to prevent excessive bloating
 
 ### Errors and exceptions
 
-Every attempt has been made to accurately document the possible exceptions which
-can be raised from NautilusTrader code, and the conditions which will trigger them.
+The documentation aims to cover all possible exceptions that NautilusTrader code
+can raise, and the conditions that trigger them.
 
 :::warning
 There may be other undocumented exceptions which can be raised by Python's standard

@@ -232,7 +232,7 @@ where
                     break;
                 }
                 Err(e) => {
-                    tokio::time::sleep(e.wait_time_from(self.clock.now())).await;
+                    self.clock.sleep(e.wait_time_from(self.clock.now())).await;
                 }
             }
         }
@@ -241,18 +241,30 @@ where
     /// Waits until all specified keys are ready (not rate-limited).
     ///
     /// If no keys are provided, this function returns immediately.
+    /// Uses fast paths for 0-2 keys to avoid stream scheduling overhead.
     pub async fn await_keys_ready(&self, keys: Option<&[K]>) {
         let Some(keys) = keys else {
             return;
         };
 
-        let tasks = keys.iter().map(|key| self.until_key_ready(key));
-
-        futures::stream::iter(tasks)
-            .for_each_concurrent(None, |key_future| async move {
-                key_future.await;
-            })
-            .await;
+        match keys.len() {
+            0 => {}
+            1 => self.until_key_ready(&keys[0]).await,
+            2 => {
+                tokio::join!(
+                    self.until_key_ready(&keys[0]),
+                    self.until_key_ready(&keys[1]),
+                );
+            }
+            _ => {
+                let tasks = keys.iter().map(|key| self.until_key_ready(key));
+                futures::stream::iter(tasks)
+                    .for_each_concurrent(None, |key_future| async move {
+                        key_future.await;
+                    })
+                    .await;
+            }
+        }
     }
 }
 
@@ -526,11 +538,15 @@ mod tests {
             .allow_burst(NonZeroU32::new(u32::MAX).unwrap());
 
         let replenished_in = quota.burst_size_replenished_in();
-        let full: u128 = 100_000_000_000u128 * u32::MAX as u128;
+        let full: u128 = 100_000_000_000u128 * u128::from(u32::MAX);
         let truncated = full as u64;
 
         assert_eq!(replenished_in, Duration::from_nanos(truncated));
-        assert_ne!(full, truncated as u128, "Truncation should have occurred");
+        assert_ne!(
+            full,
+            u128::from(truncated),
+            "Truncation should have occurred"
+        );
     }
 
     #[rstest]

@@ -52,6 +52,10 @@ pub const NULL_ORDER: BookOrder = BookOrder {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
 pub struct BookOrder {
     /// The order side.
     pub side: OrderSide,
@@ -97,7 +101,7 @@ impl BookOrder {
         match self.side {
             OrderSide::Buy => self.size.as_f64(),
             OrderSide::Sell => -(self.size.as_f64()),
-            _ => panic!("{}", BookIntegrityError::NoOrderSide),
+            OrderSide::NoOrderSide => panic!("{}", BookIntegrityError::NoOrderSide),
         }
     }
 }

@@ -41,6 +41,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.core.nautilus_pyo3 import DeribitEnvironment
 from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
@@ -85,8 +86,7 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         DERIBIT: DeribitDataClientConfig(
-            api_key=None,  # Will use env var: DERIBIT_TESTNET_API_KEY or DERIBIT_API_KEY
-            api_secret=None,  # Will use env var: DERIBIT_TESTNET_API_SECRET or DERIBIT_API_SECRET
+            environment=DeribitEnvironment.TESTNET if USE_TESTNET else DeribitEnvironment.MAINNET,
             product_types=product_types,
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,

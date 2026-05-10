@@ -1,0 +1,43 @@
+[
+    {
+        "id": "101259",
+        "label": "Health and Human Services",
+        "slug": "health-and-human-services",
+        "createdAt": "2024-11-13T19:58:34.318816Z",
+        "updatedAt": "2026-03-09T22:21:41.828275Z",
+        "requiresTranslation": false
+    },
+    {
+        "id": "101842",
+        "label": "Sweeden",
+        "slug": "sweeden",
+        "createdAt": "2025-02-10T21:54:06.650573Z",
+        "updatedAt": "2026-03-09T22:21:41.830021Z",
+        "requiresTranslation": false
+    },
+    {
+        "id": "101302",
+        "label": "attorney general",
+        "slug": "attorney-general",
+        "createdAt": "2024-11-21T20:31:05.176197Z",
+        "updatedAt": "2026-03-09T22:21:41.830966Z",
+        "requiresTranslation": false
+    },
+    {
+        "id": "102067",
+        "label": "Madrid Open",
+        "slug": "madrid-open",
+        "createdAt": "2025-04-21T08:24:20.179712Z",
+        "updatedAt": "2026-03-09T22:21:41.831844Z",
+        "requiresTranslation": false
+    },
+    {
+        "id": "101944",
+        "label": "Crypto Summit",
+        "slug": "crypto-summit",
+        "forceShow": false,
+        "createdAt": "2025-03-06T22:20:20.05325Z",
+        "updatedAt": "2026-03-09T22:21:41.833123Z",
+        "requiresTranslation": false
+    }
+]

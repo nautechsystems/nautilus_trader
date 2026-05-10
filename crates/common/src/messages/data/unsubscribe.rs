@@ -13,10 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::num::NonZeroUsize;
+
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{BarType, DataType},
-    identifiers::{ClientId, InstrumentId, Venue},
+    identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
 };
 
 use super::check_client_id_or_venue;
@@ -34,7 +36,6 @@ pub struct UnsubscribeCustomData {
 
 impl UnsubscribeCustomData {
     /// Creates a new [`UnsubscribeCustomData`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         client_id: Option<ClientId>,
         venue: Option<Venue>,
@@ -70,7 +71,6 @@ pub struct UnsubscribeInstrument {
 
 impl UnsubscribeInstrument {
     /// Creates a new [`UnsubscribeInstrument`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -137,7 +137,6 @@ pub struct UnsubscribeBookDeltas {
 
 impl UnsubscribeBookDeltas {
     /// Creates a new [`UnsubscribeBookDeltas`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -173,7 +172,6 @@ pub struct UnsubscribeBookDepth10 {
 
 impl UnsubscribeBookDepth10 {
     /// Creates a new [`UnsubscribeBookDepth10`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -199,6 +197,7 @@ impl UnsubscribeBookDepth10 {
 #[derive(Clone, Debug)]
 pub struct UnsubscribeBookSnapshots {
     pub instrument_id: InstrumentId,
+    pub interval_ms: NonZeroUsize,
     pub client_id: Option<ClientId>,
     pub venue: Option<Venue>,
     pub command_id: UUID4,
@@ -209,9 +208,10 @@ pub struct UnsubscribeBookSnapshots {
 
 impl UnsubscribeBookSnapshots {
     /// Creates a new [`UnsubscribeBookSnapshots`] instance.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
+        interval_ms: NonZeroUsize,
         client_id: Option<ClientId>,
         venue: Option<Venue>,
         command_id: UUID4,
@@ -222,6 +222,7 @@ impl UnsubscribeBookSnapshots {
         check_client_id_or_venue(&client_id, &venue);
         Self {
             instrument_id,
+            interval_ms,
             client_id,
             venue,
             command_id,
@@ -245,7 +246,6 @@ pub struct UnsubscribeQuotes {
 
 impl UnsubscribeQuotes {
     /// Creates a new [`UnsubscribeQuotes`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -281,7 +281,6 @@ pub struct UnsubscribeTrades {
 
 impl UnsubscribeTrades {
     /// Creates a new [`UnsubscribeTrades`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -317,7 +316,6 @@ pub struct UnsubscribeBars {
 
 impl UnsubscribeBars {
     /// Creates a new [`UnsubscribeBars`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         bar_type: BarType,
         client_id: Option<ClientId>,
@@ -353,7 +351,6 @@ pub struct UnsubscribeMarkPrices {
 
 impl UnsubscribeMarkPrices {
     /// Creates a new [`UnsubscribeMarkPrices`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -389,7 +386,6 @@ pub struct UnsubscribeIndexPrices {
 
 impl UnsubscribeIndexPrices {
     /// Creates a new [`UnsubscribeIndexPrices`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -425,7 +421,6 @@ pub struct UnsubscribeFundingRates {
 
 impl UnsubscribeFundingRates {
     /// Creates a new [`UnsubscribeFundingRates`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -461,7 +456,41 @@ pub struct UnsubscribeInstrumentStatus {
 
 impl UnsubscribeInstrumentStatus {
     /// Creates a new [`UnsubscribeInstrumentStatus`] instance.
-    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        venue: Option<Venue>,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
+        params: Option<Params>,
+    ) -> Self {
+        check_client_id_or_venue(&client_id, &venue);
+        Self {
+            instrument_id,
+            client_id,
+            venue,
+            command_id,
+            ts_init,
+            correlation_id,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct UnsubscribeOptionGreeks {
+    pub instrument_id: InstrumentId,
+    pub client_id: Option<ClientId>,
+    pub venue: Option<Venue>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
+    pub params: Option<Params>,
+}
+
+impl UnsubscribeOptionGreeks {
+    /// Creates a new [`UnsubscribeOptionGreeks`] instance.
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -497,7 +526,6 @@ pub struct UnsubscribeInstrumentClose {
 
 impl UnsubscribeInstrumentClose {
     /// Creates a new [`UnsubscribeInstrumentClose`] instance.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -516,6 +544,35 @@ impl UnsubscribeInstrumentClose {
             ts_init,
             correlation_id,
             params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct UnsubscribeOptionChain {
+    pub series_id: OptionSeriesId,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub client_id: Option<ClientId>,
+    pub venue: Option<Venue>,
+}
+
+impl UnsubscribeOptionChain {
+    /// Creates a new [`UnsubscribeOptionChain`] instance.
+    pub fn new(
+        series_id: OptionSeriesId,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        client_id: Option<ClientId>,
+        venue: Option<Venue>,
+    ) -> Self {
+        check_client_id_or_venue(&client_id, &venue);
+        Self {
+            series_id,
+            command_id,
+            ts_init,
+            client_id,
+            venue,
         }
     }
 }

@@ -17,6 +17,7 @@ import asyncio
 import pkgutil
 from datetime import UTC
 from datetime import datetime
+from decimal import Decimal
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import Mock
@@ -24,7 +25,8 @@ from unittest.mock import patch
 
 import msgspec
 import pytest
-from py_clob_client.client import ClobClient
+from py_clob_client_v2.client import ClobClient
+from py_clob_client_v2.client import OrderPayload
 
 from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trades_key
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_CANCEL_ALREADY_DONE
@@ -34,7 +36,6 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStat
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.config import PolymarketExecClientConfig
 from nautilus_trader.adapters.polymarket.execution import PolymarketExecutionClient
-from nautilus_trader.adapters.polymarket.http.conversion import convert_tif_to_polymarket_order_type
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -46,7 +47,7 @@ from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.model.currencies import USDC
-from nautilus_trader.model.currencies import USDC_POS
+from nautilus_trader.model.currencies import pUSD
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -105,6 +106,7 @@ class TestPolymarketExecutionClient:
         mock_creds = MagicMock()
         mock_creds.api_key = "test_api_key"
         self.http_client.creds = mock_creds
+        self.http_client.get_balance_allowance.return_value = {"balance": str(1_000_000_000)}
 
         # Mock instrument provider
         self.provider = MagicMock(spec=PolymarketInstrumentProvider)
@@ -210,9 +212,9 @@ class TestPolymarketExecutionClient:
 
         # Mock account state
         balance = AccountBalance(
-            total=Money(1000, USDC_POS),
-            locked=Money(0, USDC_POS),
-            free=Money(1000, USDC_POS),
+            total=Money(1000, pUSD),
+            locked=Money(0, pUSD),
+            free=Money(1000, pUSD),
         )
         self.exec_client.generate_account_state(
             balances=[balance],
@@ -1194,8 +1196,11 @@ class TestPolymarketExecutionClient:
         mock_create_market_order = mocker.patch.object(self.http_client, "create_market_order")
         mock_post_order = mocker.patch.object(self.http_client, "post_order")
 
-        # Mock successful responses
-        mock_create_market_order.return_value = {"signed_order": "mock_signed_market"}
+        # Mock signed order with takerAmount (20.00 shares = 20000000 in fixed-point)
+        # SignedOrderV2 is a flat dataclass; takerAmount is a string of base units.
+        mock_signed = MagicMock()
+        mock_signed.takerAmount = "20000000"
+        mock_create_market_order.return_value = mock_signed
         mock_post_order.return_value = {"success": True, "orderID": "test_market_order_id"}
 
         market_order = self.strategy.order_factory.market(
@@ -1203,7 +1208,7 @@ class TestPolymarketExecutionClient:
             order_side=OrderSide.BUY,
             quantity=Quantity.from_str("10"),
             quote_quantity=True,
-            time_in_force=TimeInForce.IOC,  # Test IOC -> FAK mapping
+            time_in_force=TimeInForce.FOK,
         )
         self.cache.add_order(market_order, None)
 
@@ -1228,12 +1233,135 @@ class TestPolymarketExecutionClient:
         assert call_args.amount == 10.0
         assert call_args.side == "BUY"
         assert call_args.price == 0  # Market order should have price 0 (calculated server-side)
-        assert call_args.order_type == convert_tif_to_polymarket_order_type(TimeInForce.IOC)
+        assert call_args.order_type == "FOK"  # Market orders always use FOK
+        assert call_args.user_usdc_balance == 1000.0
 
         # Check that venue order ID was cached
         venue_order_id = VenueOrderId("test_market_order_id")
         cached_client_order_id = self.cache.client_order_id(venue_order_id)
         assert cached_client_order_id == market_order.client_order_id
+
+    @pytest.mark.asyncio
+    async def test_market_buy_collateral_balance_cached_until_account_state_refresh(self, mocker):
+        # Pins the contract for `_collateral_balance_pusd`: the cache is
+        # populated lazily and only refreshed by `generate_account_state`.
+        # Two market BUYs in a row (no account state in between) must use
+        # the same `user_usdc_balance` value, even if the venue balance
+        # has changed underneath; once account state runs, the next BUY
+        # picks up the new value.
+        balance_responses = [
+            {"balance": str(7_000_000)},  # 7 pUSD on first BUY
+            {"balance": str(99_000_000)},  # 99 pUSD if the cache were re-fetched (must NOT be)
+            {"balance": str(42_000_000)},  # 42 pUSD picked up by generate_account_state
+        ]
+        self.http_client.get_balance_allowance.side_effect = balance_responses
+
+        mock_create_market_order = mocker.patch.object(self.http_client, "create_market_order")
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+        mock_signed = MagicMock()
+        mock_signed.takerAmount = "20000000"
+        mock_create_market_order.return_value = mock_signed
+        mock_post_order.return_value = {"success": True, "orderID": "x"}
+
+        async def submit_buy(client_order_id_suffix: str) -> None:
+            order = self.strategy.order_factory.market(
+                instrument_id=ELECTION_INSTRUMENT.id,
+                order_side=OrderSide.BUY,
+                quantity=Quantity.from_str("10.00"),
+                quote_quantity=True,
+                time_in_force=TimeInForce.FOK,
+            )
+            self.cache.add_order(order, None)
+            cmd = SubmitOrder(
+                trader_id=self.trader_id,
+                strategy_id=self.strategy.id,
+                position_id=None,
+                order=order,
+                command_id=UUID4(),
+                ts_init=0,
+            )
+            await self.exec_client._submit_order(cmd)
+
+        # First BUY: cache miss, fetches balance #1 (7 pUSD).
+        await submit_buy("first")
+        first_call_balance = mock_create_market_order.call_args_list[0][0][0].user_usdc_balance
+        assert first_call_balance == 7.0
+
+        # Second BUY without an account-state refresh: cache holds 7 pUSD.
+        # Even though the next get_balance_allowance() would return 99 pUSD,
+        # we must observe the cached value because the cache is not invalidated
+        # by individual submissions.
+        await submit_buy("second")
+        second_call_balance = mock_create_market_order.call_args_list[1][0][0].user_usdc_balance
+        assert second_call_balance == 7.0
+
+        # Run account state: refreshes the cache from balance #2 (99 pUSD).
+        # That consumes the second side_effect entry.
+        await self.exec_client._update_account_state()
+
+        # Third BUY now sees the refreshed cache value (99 pUSD).
+        await submit_buy("third")
+        third_call_balance = mock_create_market_order.call_args_list[2][0][0].user_usdc_balance
+        assert third_call_balance == 99.0
+
+    @pytest.mark.asyncio
+    async def test_submit_market_buy_quote_to_base_conversion(self, mocker):
+        """
+        Market BUY with quote_quantity=True emits OrderUpdated converting the order from
+        quote (USDC) to base (shares) units.
+
+        Uses the same values as the Rust test
+        test_submit_market_order_buy_quote_to_base_conversion:
+        - Quote amount: 10 USDC
+        - takerAmount: 20_000_000 (= 20.00 shares at 0.50 crossing price)
+        - Expected base quantity: 20.00 (instrument size_precision=2)
+        - is_quote_quantity flips from True to False
+
+        """
+        mock_create_market_order = mocker.patch.object(self.http_client, "create_market_order")
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+        send_spy = mocker.spy(self.exec_client, "_send_order_event")
+
+        # 20.00 shares * 10^6 fixed-point (matches 10 USDC / 0.50 crossing price)
+        # SignedOrderV2 is a flat dataclass; takerAmount is a string of base units.
+        mock_signed = MagicMock()
+        mock_signed.takerAmount = "20000000"
+        mock_create_market_order.return_value = mock_signed
+        mock_post_order.return_value = {"success": True, "orderID": "test_qty_order_id"}
+
+        order = self.strategy.order_factory.market(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10.00"),
+            quote_quantity=True,
+            time_in_force=TimeInForce.FOK,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        assert order.is_quote_quantity
+
+        await self.exec_client._submit_order(submit_order)
+
+        # Verify OrderUpdated was sent via _send_order_event
+        updated_calls = [
+            call
+            for call in send_spy.call_args_list
+            if type(call.args[0]).__name__ == "OrderUpdated"
+        ]
+        assert len(updated_calls) == 1, f"Expected 1 OrderUpdated, found {len(updated_calls)}"
+
+        updated_event = updated_calls[0].args[0]
+        assert updated_event.quantity == Quantity.from_str("20.00")
+        assert not updated_event.is_quote_quantity
 
     @pytest.mark.asyncio
     async def test_submit_market_order_with_fok(self, mocker):
@@ -1276,7 +1404,7 @@ class TestPolymarketExecutionClient:
         assert call_args.amount == 5.0
         assert call_args.side == "SELL"
         assert call_args.price == 0
-        assert call_args.order_type == convert_tif_to_polymarket_order_type(TimeInForce.FOK)
+        assert call_args.order_type == "FOK"  # Market orders always use FOK
 
     @pytest.mark.asyncio
     async def test_submit_limit_order_still_works(self, mocker):
@@ -1458,6 +1586,112 @@ class TestPolymarketExecutionClient:
         assert call_kwargs["client_order_id"] == client_order_id
         assert call_kwargs["venue_order_id"] == venue_order_id
         assert call_kwargs["liquidity_side"] == LiquiditySide.MAKER
+
+    def test_taker_fill_uses_instrument_taker_fee_for_commission(self, mocker):
+        """
+        Taker fills compute commission from `instrument.taker_fee` using the
+        Polymarket formula `fee = C * feeRate * p * (1 - p)`.
+
+        References
+        ----------
+        https://docs.polymarket.com/trading/fees
+
+        """
+        # Arrange
+        market = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
+        asset_id = "21742633143463906290569050155826241533067272736897614950488156847949938836455"
+        instrument_id = get_polymarket_instrument_id(market, asset_id)
+
+        fee_paying_instrument = BinaryOption(
+            instrument_id=instrument_id,
+            raw_symbol=Symbol(f"{instrument_id.symbol.value}"),
+            outcome="Yes",
+            description="Fee-paying test instrument",
+            asset_class=AssetClass.ALTERNATIVE,
+            currency=USDC,
+            price_precision=3,
+            price_increment=Price.from_str("0.001"),
+            size_precision=2,
+            size_increment=Quantity.from_str("0.01"),
+            activation_ns=0,
+            expiration_ns=0,
+            max_quantity=None,
+            min_quantity=Quantity.from_str("1"),
+            maker_fee=Decimal(0),
+            taker_fee=Decimal("0.03"),  # sports rate from feeSchedule.rate
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(fee_paying_instrument)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=instrument_id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("100"),
+            price=Price.from_str("0.500"),
+        )
+        submitted = TestEventStubs.order_submitted(order)
+        order.apply(submitted)
+
+        venue_order_id = VenueOrderId("0xtaker_commission_test_order")
+        self.cache.add_order(order, None)
+        self.cache.add_venue_order_id(order.client_order_id, venue_order_id)
+        self.exec_client._fill_tracker.register(
+            venue_order_id=venue_order_id,
+            submitted_qty=Quantity.from_str("100"),
+            order_side=OrderSide.BUY,
+            instrument_id=instrument_id,
+            size_precision=2,
+            price_precision=3,
+        )
+
+        trade_payload = {
+            "asset_id": asset_id,
+            "bucket_index": 0,
+            "event_type": "trade",
+            "fee_rate_bps": "1000",  # Max cap on message; not used for commission
+            "id": "taker-commission-test-trade",
+            "last_update": "1725958682",
+            "maker_address": "0x1234567890123456789012345678901234567890",
+            "maker_orders": [
+                {
+                    "asset_id": asset_id,
+                    "fee_rate_bps": "0",
+                    "maker_address": "0x5678",
+                    "matched_amount": "100",
+                    "order_id": "0xmaker_order_counterparty",
+                    "outcome": "Yes",
+                    "owner": "maker-owner-id",
+                    "price": "0.50",
+                },
+            ],
+            "market": market,
+            "match_time": "1725958681",
+            "outcome": "Yes",
+            "owner": self.http_client.creds.api_key,
+            "price": "0.50",
+            "side": "BUY",
+            "size": "100",
+            "status": "MATCHED",
+            "taker_order_id": venue_order_id.value,
+            "timestamp": "1725958682125",
+            "trade_owner": self.http_client.creds.api_key,
+            "trader_side": "TAKER",
+            "transaction_hash": "0xdeadbeef",
+            "type": "TRADE",
+        }
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(trade_payload))
+        filled_spy = mocker.spy(self.exec_client, "generate_order_filled")
+
+        # Act
+        self.exec_client._handle_ws_trade_msg(msg, wait_for_ack=False)
+
+        # Assert
+        filled_spy.assert_called_once()
+        call_kwargs = filled_spy.call_args.kwargs
+        # 100 * 0.03 * 0.50 * 0.50 = 0.75 USDC
+        assert call_kwargs["commission"] == Money(0.75, pUSD)
+        assert call_kwargs["liquidity_side"] == LiquiditySide.TAKER
 
     @pytest.mark.parametrize(
         ("status", "should_update_account"),
@@ -3029,6 +3263,9 @@ class TestPolymarketCancelAndPostOnly:
 
         # Assert
         mock_cancel_market.assert_called_once()
+        payload = mock_cancel_market.call_args.args[0]
+        assert payload.market is not None
+        assert payload.asset_id is not None
 
     @pytest.mark.asyncio
     async def test_cancel_market_orders_all_markets(self, mocker):
@@ -3048,8 +3285,12 @@ class TestPolymarketCancelAndPostOnly:
         # Act
         await self.exec_client._cancel_market_orders()
 
-        # Assert
-        mock_cancel_market.assert_called_once_with("", "")
+        # Assert: V2 takes a single OrderMarketCancelParams payload; both
+        # `market` and `asset_id` default to None for an all-markets cancel.
+        mock_cancel_market.assert_called_once()
+        payload = mock_cancel_market.call_args.args[0]
+        assert payload.market is None
+        assert payload.asset_id is None
 
     # -------------------------------------------------------------------------
     # Tests for post_only order support
@@ -3298,6 +3539,67 @@ class TestPolymarketCancelAndPostOnly:
         assert rejected_call.kwargs["client_order_id"] == order2.client_order_id
         assert "not included in API response" in rejected_call.kwargs["reason"]
 
+    @pytest.mark.asyncio
+    async def test_batch_submit_deferred_cancel_for_pending_cancel_order(self, mocker):
+        """
+        Test that _process_batch_response issues a deferred cancel when an order
+        transitioned to PENDING_CANCEL during the batch HTTP round-trip.
+        """
+        # Arrange
+        mock_create_order = mocker.patch.object(self.http_client, "create_order")
+        mock_post_orders = mocker.patch.object(self.http_client, "post_orders")
+        mock_cancel = mocker.patch.object(self.http_client, "cancel_order")
+
+        mock_create_order.return_value = {"signed_order": "mock_signed"}
+        mock_post_orders.return_value = [
+            {"success": True, "orderID": "0xbatch_deferred_cancel"},
+        ]
+        mock_cancel.return_value = {
+            "canceled": ["0xbatch_deferred_cancel"],
+            "not_canceled": {},
+        }
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("5"),
+            price=Price.from_str("0.50"),
+        )
+        self.cache.add_order(order, None)
+
+        order_list = OrderList(
+            order_list_id=OrderListId("BATCH-CANCEL-001"),
+            orders=[order],
+        )
+
+        submit_order_list = SubmitOrderList(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            order_list=order_list,
+            position_id=None,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Patch _post_signed_orders_batch to apply PendingCancel before
+        # the batch HTTP response is processed
+        original_post_batch = self.exec_client._post_signed_orders_batch
+
+        async def post_batch_with_cancel(orders_arg, *args, **kwargs):
+            for o in orders_arg:
+                pending_cancel = TestEventStubs.order_pending_cancel(o)
+                o.apply(pending_cancel)
+            await original_post_batch(orders_arg, *args, **kwargs)
+
+        self.exec_client._post_signed_orders_batch = post_batch_with_cancel
+
+        # Act
+        await self.exec_client._submit_order_list(submit_order_list)
+        await asyncio.sleep(0.1)
+
+        # Assert
+        mock_cancel.assert_called_once_with(OrderPayload(orderID="0xbatch_deferred_cancel"))
+
 
 class TestPolymarketGenerateCancelEvent:
     """
@@ -3433,3 +3735,221 @@ class TestPolymarketGenerateCancelEvent:
         cancel_rejected_spy.assert_called_once()
         call_kwargs = cancel_rejected_spy.call_args.kwargs
         assert call_kwargs["reason"] == "insufficient balance"
+
+    @pytest.mark.asyncio
+    async def test_deferred_cancel_triggered_when_order_pending_cancel(self, mocker):
+        """
+        Test that _post_signed_order issues a deferred cancel when the order
+        transitioned to PENDING_CANCEL during the HTTP round-trip.
+        """
+        # Arrange
+        mock_create_order = mocker.patch.object(self.http_client, "create_order")
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+        mock_cancel = mocker.patch.object(self.http_client, "cancel_order")
+
+        mock_create_order.return_value = {"signed_order": "mock_signed"}
+        mock_post_order.return_value = {"success": True, "orderID": "0xdeferred_cancel_id"}
+        mock_cancel.return_value = {"canceled": ["0xdeferred_cancel_id"], "not_canceled": {}}
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("5"),
+            price=Price.from_str("0.50"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Patch _post_signed_order to apply PendingCancel between the
+        # generate_order_submitted (already done by _submit_limit_order)
+        # and the actual HTTP post, simulating a cancel arriving mid-flight.
+        original_post = self.exec_client._post_signed_order
+
+        async def post_with_cancel(order_obj, *args, **kwargs):
+            pending_cancel = TestEventStubs.order_pending_cancel(order_obj)
+            order_obj.apply(pending_cancel)
+            await original_post(order_obj, *args, **kwargs)
+
+        self.exec_client._post_signed_order = post_with_cancel
+
+        # Act
+        await self.exec_client._submit_order(submit_order)
+
+        # Allow the deferred cancel coroutine to execute
+        await asyncio.sleep(0.1)
+
+        # Assert
+        mock_cancel.assert_called_once_with(OrderPayload(orderID="0xdeferred_cancel_id"))
+
+    @pytest.mark.asyncio
+    async def test_deferred_cancel_handles_rejection(self, mocker):
+        """
+        Test that a deferred cancel properly handles a rejected cancel response.
+        """
+        # Arrange
+        mock_create_order = mocker.patch.object(self.http_client, "create_order")
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+        mock_cancel = mocker.patch.object(self.http_client, "cancel_order")
+        cancel_event_spy = mocker.spy(self.exec_client, "_generate_cancel_event")
+
+        mock_create_order.return_value = {"signed_order": "mock_signed"}
+        mock_post_order.return_value = {"success": True, "orderID": "0xdeferred_reject_id"}
+        mock_cancel.return_value = {"not_canceled": "insufficient balance"}
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("5"),
+            price=Price.from_str("0.50"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        original_post = self.exec_client._post_signed_order
+
+        async def post_with_cancel(order_obj, *args, **kwargs):
+            pending_cancel = TestEventStubs.order_pending_cancel(order_obj)
+            order_obj.apply(pending_cancel)
+            await original_post(order_obj, *args, **kwargs)
+
+        self.exec_client._post_signed_order = post_with_cancel
+
+        # Act
+        await self.exec_client._submit_order(submit_order)
+        await asyncio.sleep(0.1)
+
+        # Assert
+        mock_cancel.assert_called_once_with(OrderPayload(orderID="0xdeferred_reject_id"))
+        cancel_event_spy.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cancel_order_returns_when_no_venue_order_id(self, mocker):
+        """
+        Test that cancel_order returns without sending to venue when venue_order_id is
+        not yet available.
+        """
+        # Arrange
+        mock_cancel = mocker.patch.object(self.http_client, "cancel_order")
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("5"),
+            price=Price.from_str("0.50"),
+        )
+        submitted = TestEventStubs.order_submitted(order)
+        order.apply(submitted)
+        self.cache.add_order(order, None)
+
+        from nautilus_trader.execution.messages import CancelOrder
+
+        cancel = CancelOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            instrument_id=ELECTION_INSTRUMENT.id,
+            client_order_id=order.client_order_id,
+            venue_order_id=None,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        await self.exec_client._cancel_order(cancel)
+
+        # Assert - no HTTP cancel sent (cancel was deferred)
+        mock_cancel.assert_not_called()
+
+    def test_calculate_commission_strategy_buy_fill(self):
+        # Issue #3860 strategy BUY fill:
+        # qty=15.463900, price=0.97, fee_rate=0.072
+        # Expected: 15.4639 * 0.97 * 0.072 * (1 - 0.97) = 0.03240
+        instrument = BinaryOption(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            raw_symbol=ELECTION_INSTRUMENT.raw_symbol,
+            outcome="Yes",
+            description="test",
+            asset_class=AssetClass.ALTERNATIVE,
+            currency=USDC,
+            price_precision=3,
+            price_increment=Price.from_str("0.001"),
+            size_precision=6,
+            size_increment=Quantity.from_str("0.000001"),
+            activation_ns=0,
+            expiration_ns=0,
+            max_quantity=None,
+            min_quantity=None,
+            maker_fee=Decimal(0),
+            taker_fee=Decimal("0.072"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        result = self.exec_client.calculate_commission(
+            instrument,
+            Quantity.from_str("15.463900"),
+            Price.from_str("0.970"),
+            LiquiditySide.TAKER,
+        )
+
+        assert result == Money(0.03240, pUSD)
+
+    def test_calculate_commission_reconciliation_sell_fill(self):
+        # Issue #3860 reconciliation EXTERNAL SELL fill:
+        # qty=0.033400, price=0.98, fee_rate=0.072
+        # Expected: 0.0334 * 0.98 * 0.072 * (1 - 0.98) = 0.00005
+        instrument = BinaryOption(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            raw_symbol=ELECTION_INSTRUMENT.raw_symbol,
+            outcome="Yes",
+            description="test",
+            asset_class=AssetClass.ALTERNATIVE,
+            currency=USDC,
+            price_precision=3,
+            price_increment=Price.from_str("0.001"),
+            size_precision=6,
+            size_increment=Quantity.from_str("0.000001"),
+            activation_ns=0,
+            expiration_ns=0,
+            max_quantity=None,
+            min_quantity=None,
+            maker_fee=Decimal(0),
+            taker_fee=Decimal("0.072"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        result = self.exec_client.calculate_commission(
+            instrument,
+            Quantity.from_str("0.033400"),
+            Price.from_str("0.980"),
+            LiquiditySide.TAKER,
+        )
+
+        # Was 0.002357 with old generic formula (qty * price * fee_rate)
+        assert result == Money(0.00005, pUSD)
+
+    def test_calculate_commission_maker_returns_zero(self):
+        result = self.exec_client.calculate_commission(
+            ELECTION_INSTRUMENT,
+            Quantity.from_str("100.00"),
+            Price.from_str("0.500"),
+            LiquiditySide.MAKER,
+        )
+
+        assert result == Money(0, pUSD)

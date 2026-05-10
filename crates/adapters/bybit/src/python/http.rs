@@ -15,20 +15,34 @@
 
 //! Python bindings for the Bybit HTTP client.
 
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::{
+    UnixNanos,
+    python::{to_pyruntime_err, to_pyvalue_err},
+};
 use nautilus_model::{
-    data::BarType,
+    data::{BarType, forward::ForwardPrice},
     enums::{OrderSide, OrderType, TimeInForce},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
-use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
+use pyo3::{
+    conversion::IntoPyObjectExt,
+    prelude::*,
+    types::{PyDict, PyList},
+};
+use ustr::Ustr;
 
 use crate::{
-    common::enums::{
-        BybitMarginMode, BybitOpenOnly, BybitOrderFilter, BybitPositionMode, BybitProductType,
+    common::{
+        enums::{
+            BybitMarginMode, BybitOpenOnly, BybitOrderFilter, BybitPositionIdx, BybitPositionMode,
+            BybitProductType,
+        },
+        parse::extract_raw_symbol,
     },
     http::{
         client::{BybitHttpClient, BybitRawHttpClient},
@@ -38,21 +52,26 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BybitRawHttpClient {
+    /// Raw HTTP client for low-level Bybit API operations.
+    ///
+    /// This client handles request/response operations with the Bybit API,
+    /// returning venue-specific response types. It does not parse to Nautilus domain types.
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, recv_window_ms=None, proxy_url=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, testnet=false, timeout_secs=60, max_retries=3, retry_delay_ms=1000, retry_delay_max_ms=10_000, recv_window_ms=5_000, proxy_url=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url: Option<String>,
         demo: bool,
         testnet: bool,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
-        recv_window_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
+        recv_window_ms: u64,
         proxy_url: Option<String>,
     ) -> PyResult<Self> {
         Self::new_with_env(
@@ -61,7 +80,7 @@ impl BybitRawHttpClient {
             base_url,
             demo,
             testnet,
-            timeout_secs.or(Some(60)),
+            timeout_secs,
             max_retries,
             retry_delay_ms,
             retry_delay_max_ms,
@@ -71,6 +90,7 @@ impl BybitRawHttpClient {
         .map_err(to_pyvalue_err)
     }
 
+    /// Returns the base URL used for requests.
     #[getter]
     #[pyo3(name = "base_url")]
     #[must_use]
@@ -85,6 +105,7 @@ impl BybitRawHttpClient {
         self.credential().map(|c| c.api_key().to_string())
     }
 
+    /// Returns the configured receive window in milliseconds.
     #[getter]
     #[pyo3(name = "recv_window_ms")]
     #[must_use]
@@ -92,11 +113,21 @@ impl BybitRawHttpClient {
         self.recv_window_ms()
     }
 
+    /// Cancels all pending HTTP requests.
     #[pyo3(name = "cancel_all_requests")]
     fn py_cancel_all_requests(&self) {
         self.cancel_all_requests();
     }
 
+    /// Fetches the current server time from Bybit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/market/time>
     #[pyo3(name = "get_server_time")]
     fn py_get_server_time<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -111,9 +142,14 @@ impl BybitRawHttpClient {
         })
     }
 
+    /// Fetches open orders (requires authentication).
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/order/open-order>
     #[pyo3(name = "get_open_orders")]
     #[pyo3(signature = (category, symbol=None, base_coin=None, settle_coin=None, order_id=None, order_link_id=None, open_only=None, order_filter=None, limit=None, cursor=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_get_open_orders<'py>(
         &self,
         py: Python<'py>,
@@ -157,21 +193,27 @@ impl BybitRawHttpClient {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BybitHttpClient {
+    /// Provides a HTTP client for connecting to the [Bybit](https://bybit.com) REST API.
+    /// High-level HTTP client that wraps the raw client and provides Nautilus domain types.
+    ///
+    /// This client maintains an instrument cache and uses it to parse venue responses
+    /// into Nautilus domain objects.
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, recv_window_ms=None, proxy_url=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, testnet=false, timeout_secs=60, max_retries=3, retry_delay_ms=1000, retry_delay_max_ms=10_000, recv_window_ms=5_000, proxy_url=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url: Option<String>,
         demo: bool,
         testnet: bool,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
-        recv_window_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
+        recv_window_ms: u64,
         proxy_url: Option<String>,
     ) -> PyResult<Self> {
         Self::new_with_env(
@@ -180,7 +222,7 @@ impl BybitHttpClient {
             base_url,
             demo,
             testnet,
-            timeout_secs.or(Some(60)),
+            timeout_secs,
             max_retries,
             retry_delay_ms,
             retry_delay_max_ms,
@@ -211,6 +253,7 @@ impl BybitHttpClient {
         self.credential().map(|c| c.api_key_masked())
     }
 
+    /// Any existing instrument with the same symbol will be replaced.
     #[pyo3(name = "cache_instrument")]
     fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
@@ -228,6 +271,11 @@ impl BybitHttpClient {
         self.set_use_spot_position_reports(value);
     }
 
+    /// Sets margin mode (requires authentication).
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/account/set-margin-mode>
     #[pyo3(name = "set_margin_mode")]
     fn py_set_margin_mode<'py>(
         &self,
@@ -246,6 +294,17 @@ impl BybitHttpClient {
         })
     }
 
+    /// Fetches API key information including account details (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/apikey-info>
     #[pyo3(name = "get_account_details")]
     fn py_get_account_details<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -260,6 +319,11 @@ impl BybitHttpClient {
         })
     }
 
+    /// Sets leverage for a symbol (requires authentication).
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/position/leverage>
     #[pyo3(name = "set_leverage")]
     #[pyo3(signature = (product_type, symbol, buy_leverage, sell_leverage))]
     fn py_set_leverage<'py>(
@@ -282,6 +346,11 @@ impl BybitHttpClient {
         })
     }
 
+    /// Switches position mode (requires authentication).
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/position/position-mode>
     #[pyo3(name = "switch_mode")]
     #[pyo3(signature = (product_type, mode, symbol=None, coin=None))]
     fn py_switch_mode<'py>(
@@ -304,6 +373,13 @@ impl BybitHttpClient {
         })
     }
 
+    /// Get the outstanding spot borrow amount for a specific coin.
+    ///
+    /// Returns zero if no borrow exists.
+    ///
+    /// # Parameters
+    ///
+    /// - `coin`: The coin to check (e.g., "BTC", "ETH")
     #[pyo3(name = "get_spot_borrow_amount")]
     fn py_get_spot_borrow_amount<'py>(
         &self,
@@ -322,6 +398,14 @@ impl BybitHttpClient {
         })
     }
 
+    /// Borrows coins for spot margin trading.
+    ///
+    /// This should be called before opening short spot positions.
+    ///
+    /// # Parameters
+    ///
+    /// - `coin`: The coin to repay (e.g., "BTC", "ETH")
+    /// - `amount`: Optional amount to borrow. If None, repays all outstanding borrows.
     #[pyo3(name = "borrow_spot")]
     #[pyo3(signature = (coin, amount))]
     fn py_borrow_spot<'py>(
@@ -342,6 +426,14 @@ impl BybitHttpClient {
         })
     }
 
+    /// Repays spot borrows for a specific coin.
+    ///
+    /// This should be called after closing short spot positions to avoid accruing interest.
+    ///
+    /// # Parameters
+    ///
+    /// - `coin`: The coin to repay (e.g., "BTC", "ETH")
+    /// - `amount`: Optional amount to repay. If None, repays all outstanding borrows.
     #[pyo3(name = "repay_spot_borrow")]
     #[pyo3(signature = (coin, amount=None))]
     fn py_repay_spot_borrow<'py>(
@@ -362,19 +454,26 @@ impl BybitHttpClient {
         })
     }
 
+    /// Request instruments for a given product type.
+    ///
+    /// When `base_coin` is provided, the request is narrowed to that base coin.
+    /// This is required for `Option`: Bybit's API returns only `BTC` options when
+    /// `baseCoin` is omitted.
     #[pyo3(name = "request_instruments")]
-    #[pyo3(signature = (product_type, symbol=None))]
+    #[pyo3(signature = (product_type, symbol=None, base_coin=None))]
     fn py_request_instruments<'py>(
         &self,
         py: Python<'py>,
         product_type: BybitProductType,
         symbol: Option<String>,
+        base_coin: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+        let base_coin = base_coin.map(|s| Ustr::from(&s));
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let instruments = client
-                .request_instruments(product_type, symbol)
+                .request_instruments(product_type, symbol, base_coin)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -392,6 +491,46 @@ impl BybitHttpClient {
         })
     }
 
+    /// Fetches instrument info and returns the current status of each symbol.
+    ///
+    /// Paginates through the instruments endpoint collecting only
+    /// `(InstrumentId, MarketStatusAction)` pairs. This avoids fee-rate
+    /// fetching and full instrument parsing.
+    #[pyo3(name = "request_instrument_statuses")]
+    fn py_request_instrument_statuses<'py>(
+        &self,
+        py: Python<'py>,
+        product_type: BybitProductType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let statuses = client
+                .request_instrument_statuses(product_type)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let dict = PyDict::new(py);
+                for (instrument_id, action) in statuses {
+                    dict.set_item(
+                        instrument_id.into_bound_py_any(py)?,
+                        action.into_bound_py_any(py)?,
+                    )?;
+                }
+                Ok(dict.into_any().unbind())
+            })
+        })
+    }
+
+    /// Request ticker information for market data.
+    ///
+    /// Fetches ticker data from Bybit's `/v5/market/tickers` endpoint and returns
+    /// a unified `BybitTickerData` structure compatible with all product types.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/market/tickers>
     #[pyo3(name = "request_tickers")]
     fn py_request_tickers<'py>(
         &self,
@@ -417,6 +556,7 @@ impl BybitHttpClient {
         })
     }
 
+    /// Submit a new order.
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (
         account_id,
@@ -432,9 +572,10 @@ impl BybitHttpClient {
         post_only = None,
         reduce_only = false,
         is_quote_quantity = false,
-        is_leverage = false
+        is_leverage = false,
+        position_idx = None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
         &self,
         py: Python<'py>,
@@ -452,6 +593,7 @@ impl BybitHttpClient {
         reduce_only: bool,
         is_quote_quantity: bool,
         is_leverage: bool,
+        position_idx: Option<BybitPositionIdx>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -472,6 +614,7 @@ impl BybitHttpClient {
                     reduce_only,
                     is_quote_quantity,
                     is_leverage,
+                    position_idx,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
@@ -480,6 +623,7 @@ impl BybitHttpClient {
         })
     }
 
+    /// Modify an existing order.
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (
         account_id,
@@ -490,7 +634,7 @@ impl BybitHttpClient {
         quantity=None,
         price=None
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
         &self,
         py: Python<'py>,
@@ -522,6 +666,7 @@ impl BybitHttpClient {
         })
     }
 
+    /// Cancel an order.
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (account_id, product_type, instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_cancel_order<'py>(
@@ -551,6 +696,7 @@ impl BybitHttpClient {
         })
     }
 
+    /// Cancel all orders for an instrument.
     #[pyo3(name = "cancel_all_orders")]
     fn py_cancel_all_orders<'py>(
         &self,
@@ -578,6 +724,7 @@ impl BybitHttpClient {
         })
     }
 
+    /// Query a single order by client order ID or venue order ID.
     #[pyo3(name = "query_order")]
     #[pyo3(signature = (account_id, product_type, instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_query_order<'py>(
@@ -609,6 +756,18 @@ impl BybitHttpClient {
         })
     }
 
+    /// Request recent trade tick history for a given symbol.
+    ///
+    /// Returns the most recent public trades from Bybit's `/v5/market/recent-trade` endpoint.
+    /// This endpoint only provides recent trades (up to 1000 most recent), typically covering
+    /// only the last few minutes for active markets.
+    ///
+    /// **Note**: For historical trade data with time ranges, use the klines endpoint instead.
+    /// The Bybit public API does not support fetching historical trades by time range.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/market/recent-trade>
     #[pyo3(name = "request_trades")]
     #[pyo3(signature = (product_type, instrument_id, limit=None))]
     fn py_request_trades<'py>(
@@ -637,6 +796,11 @@ impl BybitHttpClient {
         })
     }
 
+    /// Request funding rate history for a given symbol.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/market/history-fund-rate>
     #[pyo3(name = "request_funding_rates")]
     #[pyo3(signature = (product_type, instrument_id, start=None, end=None, limit=None))]
     fn py_request_funding_rates<'py>(
@@ -670,6 +834,16 @@ impl BybitHttpClient {
         })
     }
 
+    /// Request an orderbook snapshot for a given symbol.
+    ///
+    /// Bybit limits the amount of levels (depth) for each product type to:
+    /// - Spot: `1..=200` (default: `1`)
+    /// - Linear & Inverse: `1..=500` (default: `25`)
+    /// - Options: `1..=25` (default: `1`)
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/market/orderbook>
     #[pyo3(name = "request_orderbook_snapshot")]
     #[pyo3(signature = (product_type, instrument_id, limit=None))]
     fn py_request_orderbook_snapshot<'py>(
@@ -691,9 +865,14 @@ impl BybitHttpClient {
         })
     }
 
+    /// Request bar/kline history for a given symbol.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/market/kline>
     #[pyo3(name = "request_bars")]
     #[pyo3(signature = (product_type, bar_type, start=None, end=None, limit=None, timestamp_on_close=true))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_request_bars<'py>(
         &self,
         py: Python<'py>,
@@ -728,6 +907,11 @@ impl BybitHttpClient {
         })
     }
 
+    /// Requests trading fee rates for the specified product type and optional filters.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/account/fee-rate>
     #[pyo3(name = "request_fee_rates")]
     #[pyo3(signature = (product_type, symbol=None, base_coin=None))]
     fn py_request_fee_rates<'py>(
@@ -756,6 +940,11 @@ impl BybitHttpClient {
         })
     }
 
+    /// Requests the current account state for the specified account type.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/account/wallet-balance>
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -775,9 +964,12 @@ impl BybitHttpClient {
         })
     }
 
+    /// Request multiple order status reports.
+    ///
+    /// Orders for instruments not currently loaded in cache will be skipped.
     #[pyo3(name = "request_order_status_reports")]
     #[pyo3(signature = (account_id, product_type, instrument_id=None, open_only=false, start=None, end=None, limit=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_request_order_status_reports<'py>(
         &self,
         py: Python<'py>,
@@ -816,9 +1008,16 @@ impl BybitHttpClient {
         })
     }
 
+    /// Fetches execution history (fills) for the account and returns a list of `FillReport`s.
+    ///
+    /// Executions for instruments not currently loaded in cache will be skipped.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/order/execution>
     #[pyo3(name = "request_fill_reports")]
     #[pyo3(signature = (account_id, product_type, instrument_id=None, start=None, end=None, limit=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn py_request_fill_reports<'py>(
         &self,
         py: Python<'py>,
@@ -848,6 +1047,13 @@ impl BybitHttpClient {
         })
     }
 
+    /// Fetches position information for the account and returns a list of `PositionStatusReport`s.
+    ///
+    /// Positions for instruments not currently loaded in cache will be skipped.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/position>
     #[pyo3(name = "request_position_status_reports")]
     #[pyo3(signature = (account_id, product_type, instrument_id=None))]
     fn py_request_position_status_reports<'py>(
@@ -871,6 +1077,93 @@ impl BybitHttpClient {
                     .map(|report| report.into_py_any(py))
                     .collect();
                 let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                Ok(pylist)
+            })
+        })
+    }
+
+    /// Request forward prices for option chain ATM determination.
+    ///
+    /// Single-instrument path (1 HTTP call) if `instrument_id` is provided,
+    /// otherwise bulk path via option tickers.
+    #[pyo3(name = "request_forward_prices")]
+    #[pyo3(signature = (base_coin, instrument_id=None))]
+    fn py_request_forward_prices<'py>(
+        &self,
+        py: Python<'py>,
+        base_coin: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let forward_prices: Vec<ForwardPrice> = if let Some(inst_id) = instrument_id {
+                // Single-instrument path: fetch ticker for one symbol
+                let raw_symbol = extract_raw_symbol(inst_id.symbol.as_str()).to_string();
+                let params = crate::http::query::BybitTickersParams {
+                    category: BybitProductType::Option,
+                    symbol: Some(raw_symbol),
+                    base_coin: None,
+                    exp_date: None,
+                };
+                let tickers = client
+                    .request_option_tickers_raw_with_params(&params)
+                    .await
+                    .map_err(to_pyvalue_err)?;
+
+                let ts = UnixNanos::default();
+                tickers
+                    .into_iter()
+                    .filter_map(|t| {
+                        let up: rust_decimal::Decimal = t.underlying_price.parse().ok()?;
+                        if up.is_zero() {
+                            return None;
+                        }
+                        Some(ForwardPrice::new(inst_id, up, None, ts, ts))
+                    })
+                    .collect()
+            } else {
+                // Bulk path: fetch all option tickers for base coin
+                let tickers = client
+                    .request_option_tickers_raw(&base_coin)
+                    .await
+                    .map_err(to_pyvalue_err)?;
+
+                let ts = nautilus_core::UnixNanos::default();
+                let mut seen_expiries = HashSet::new();
+                tickers
+                    .into_iter()
+                    .filter_map(|t| {
+                        let up: rust_decimal::Decimal = t.underlying_price.parse().ok()?;
+                        if up.is_zero() {
+                            return None;
+                        }
+                        let parts: Vec<&str> = t.symbol.splitn(3, '-').collect();
+                        let expiry_key = if parts.len() >= 2 {
+                            format!("{}-{}", parts[0], parts[1])
+                        } else {
+                            t.symbol.to_string()
+                        };
+
+                        if !seen_expiries.insert(expiry_key) {
+                            return None;
+                        }
+                        let symbol_str = format!("{}-OPTION", t.symbol);
+                        let inst_id = InstrumentId::new(
+                            Symbol::new(&symbol_str),
+                            *crate::common::consts::BYBIT_VENUE,
+                        );
+                        Some(ForwardPrice::new(inst_id, up, None, ts, ts))
+                    })
+                    .collect()
+            };
+
+            Python::attach(|py| {
+                let py_prices: PyResult<Vec<_>> = forward_prices
+                    .into_iter()
+                    .map(|fp| Py::new(py, fp))
+                    .collect();
+                let pylist = PyList::new(py, py_prices?)?.into_any().unbind();
                 Ok(pylist)
             })
         })

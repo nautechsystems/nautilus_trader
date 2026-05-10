@@ -26,9 +26,14 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
-use crate::common::sbe::spot::{
-    order_side::OrderSide, order_status::OrderStatus, order_type::OrderType,
-    self_trade_prevention_mode::SelfTradePreventionMode, time_in_force::TimeInForce,
+use crate::{
+    common::enums::{
+        BinanceOrderStatus, BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce,
+    },
+    spot::sbe::spot::{
+        order_side::OrderSide, order_status::OrderStatus, order_type::OrderType,
+        self_trade_prevention_mode::SelfTradePreventionMode, time_in_force::TimeInForce,
+    },
 };
 
 /// Price/quantity level in an order book.
@@ -294,16 +299,10 @@ impl BinanceAccountInfo {
             let locked = Decimal::new(asset.locked_mantissa, 0) * multiplier;
             let total = free + locked;
 
-            let total_money = Money::from_decimal(total, currency)
-                .unwrap_or_else(|_| Money::new(total.to_string().parse().unwrap_or(0.0), currency));
-            let locked_money = Money::from_decimal(locked, currency).unwrap_or_else(|_| {
-                Money::new(locked.to_string().parse().unwrap_or(0.0), currency)
-            });
-            let free_money = Money::from_decimal(free, currency)
-                .unwrap_or_else(|_| Money::new(free.to_string().parse().unwrap_or(0.0), currency));
-
-            let balance = AccountBalance::new(total_money, locked_money, free_money);
-            balances.push(balance);
+            match AccountBalance::from_total_and_locked(total, locked, currency) {
+                Ok(balance) => balances.push(balance),
+                Err(e) => log::warn!("Skipping spot balance for {}: {e}", currency.code.as_str()),
+            }
         }
 
         // Ensure at least one balance exists
@@ -314,7 +313,7 @@ impl BinanceAccountInfo {
             balances.push(zero_balance);
         }
 
-        let ts_event = UnixNanos::from((self.update_time * 1_000) as u64);
+        let ts_event = UnixNanos::from_micros(self.update_time as u64);
 
         AccountState::new(
             account_id,
@@ -603,20 +602,20 @@ pub struct BatchOrderSuccess {
     #[serde(rename = "cummulativeQuoteQty")]
     pub cummulative_quote_qty: String,
     /// Order status.
-    pub status: String,
+    pub status: BinanceOrderStatus,
     /// Time in force.
-    pub time_in_force: String,
+    pub time_in_force: BinanceTimeInForce,
     /// Order type.
     #[serde(rename = "type")]
     pub order_type: String,
     /// Order side.
-    pub side: String,
+    pub side: BinanceSide,
     /// Working time in milliseconds.
     #[serde(default)]
     pub working_time: Option<i64>,
     /// Self-trade prevention mode.
     #[serde(default)]
-    pub self_trade_prevention_mode: Option<String>,
+    pub self_trade_prevention_mode: Option<BinanceSelfTradePreventionMode>,
 }
 
 /// Error in a batch order response.
@@ -666,23 +665,23 @@ pub struct BatchCancelSuccess {
     #[serde(rename = "cummulativeQuoteQty")]
     pub cummulative_quote_qty: String,
     /// Order status.
-    pub status: String,
+    pub status: BinanceOrderStatus,
     /// Time in force.
-    pub time_in_force: String,
+    pub time_in_force: BinanceTimeInForce,
     /// Order type.
     #[serde(rename = "type")]
     pub order_type: String,
     /// Order side.
-    pub side: String,
+    pub side: BinanceSide,
     /// Self-trade prevention mode.
     #[serde(default)]
-    pub self_trade_prevention_mode: Option<String>,
+    pub self_trade_prevention_mode: Option<BinanceSelfTradePreventionMode>,
 }
 
 /// A single kline (candlestick) from Binance.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BinanceKline {
-    /// Kline open time in milliseconds.
+    /// Kline open time in microseconds.
     pub open_time: i64,
     /// Open price mantissa.
     pub open_price: i64,
@@ -694,7 +693,7 @@ pub struct BinanceKline {
     pub close_price: i64,
     /// Volume (base asset) as 128-bit bytes.
     pub volume: [u8; 16],
-    /// Kline close time in milliseconds.
+    /// Kline close time in microseconds.
     pub close_time: i64,
     /// Quote volume as 128-bit bytes.
     pub quote_volume: [u8; 16],
@@ -711,6 +710,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::common::testing::load_fixture_string;
 
     #[rstest]
     fn test_listen_key_response_deserialize() {
@@ -721,34 +721,28 @@ mod tests {
 
     #[rstest]
     fn test_ticker_price_deserialize() {
-        let json = r#"{"symbol": "BTCUSDT", "price": "50000.00"}"#;
-        let response: TickerPrice = serde_json::from_str(json).unwrap();
-        assert_eq!(response.symbol, "BTCUSDT");
-        assert_eq!(response.price, "50000.00");
+        let json = load_fixture_string("spot/http_json/ticker_price_response.json");
+        let response: TickerPrice = serde_json::from_str(&json).unwrap();
+        assert_eq!(response.symbol, "LTCBTC");
+        assert_eq!(response.price, "4.00000200");
     }
 
     #[rstest]
     fn test_book_ticker_deserialize() {
-        let json = r#"{
-            "symbol": "BTCUSDT",
-            "bidPrice": "49999.00",
-            "bidQty": "1.5",
-            "askPrice": "50001.00",
-            "askQty": "2.0"
-        }"#;
-        let response: BookTicker = serde_json::from_str(json).unwrap();
-        assert_eq!(response.symbol, "BTCUSDT");
-        assert_eq!(response.bid_price, "49999.00");
-        assert_eq!(response.ask_price, "50001.00");
+        let json = load_fixture_string("spot/http_json/book_ticker_response.json");
+        let response: BookTicker = serde_json::from_str(&json).unwrap();
+        assert_eq!(response.symbol, "LTCBTC");
+        assert_eq!(response.bid_price, "4.00000000");
+        assert_eq!(response.ask_price, "4.00000200");
     }
 
     #[rstest]
     fn test_avg_price_deserialize() {
-        let json = r#"{"mins": 5, "price": "50000.00", "closeTime": 1734300000000}"#;
-        let response: AvgPrice = serde_json::from_str(json).unwrap();
+        let json = load_fixture_string("spot/http_json/avg_price_response.json");
+        let response: AvgPrice = serde_json::from_str(&json).unwrap();
         assert_eq!(response.mins, 5);
-        assert_eq!(response.price, "50000.00");
-        assert_eq!(response.close_time, 1734300000000);
+        assert_eq!(response.price, "9.35751834");
+        assert_eq!(response.close_time, 1694061154503);
     }
 
     #[rstest]
@@ -766,26 +760,20 @@ mod tests {
 
     #[rstest]
     fn test_batch_order_result_success() {
-        let json = r#"{
-            "symbol": "BTCUSDT",
-            "orderId": 12345,
-            "orderListId": -1,
-            "clientOrderId": "my-order-1",
-            "transactTime": 1734300000000,
-            "price": "50000.00",
-            "origQty": "0.1",
-            "executedQty": "0.0",
-            "cummulativeQuoteQty": "0.0",
-            "status": "NEW",
-            "timeInForce": "GTC",
-            "type": "LIMIT",
-            "side": "BUY"
-        }"#;
-        let result: BatchOrderResult = serde_json::from_str(json).unwrap();
+        let json = load_fixture_string("spot/http_json/new_order_full_response.json");
+        let result: BatchOrderResult = serde_json::from_str(&json).unwrap();
         match result {
             BatchOrderResult::Success(order) => {
                 assert_eq!(order.symbol, "BTCUSDT");
-                assert_eq!(order.order_id, 12345);
+                assert_eq!(order.order_id, 28);
+                assert_eq!(order.status, BinanceOrderStatus::Filled);
+                assert_eq!(order.time_in_force, BinanceTimeInForce::Gtc);
+                assert_eq!(order.order_type, "MARKET");
+                assert_eq!(order.side, BinanceSide::Sell);
+                assert_eq!(
+                    order.self_trade_prevention_mode,
+                    Some(BinanceSelfTradePreventionMode::None)
+                );
             }
             BatchOrderResult::Error(_) => panic!("Expected Success"),
         }
@@ -806,27 +794,20 @@ mod tests {
 
     #[rstest]
     fn test_batch_cancel_result_success() {
-        let json = r#"{
-            "symbol": "BTCUSDT",
-            "orderId": 12345,
-            "orderListId": -1,
-            "origClientOrderId": "my-order-1",
-            "clientOrderId": "cancel-1",
-            "transactTime": 1734300000000,
-            "price": "50000.00",
-            "origQty": "0.1",
-            "executedQty": "0.0",
-            "cummulativeQuoteQty": "0.0",
-            "status": "CANCELED",
-            "timeInForce": "GTC",
-            "type": "LIMIT",
-            "side": "BUY"
-        }"#;
-        let result: BatchCancelResult = serde_json::from_str(json).unwrap();
+        let json = load_fixture_string("spot/http_json/cancel_order_response.json");
+        let result: BatchCancelResult = serde_json::from_str(&json).unwrap();
         match result {
             BatchCancelResult::Success(cancel) => {
-                assert_eq!(cancel.symbol, "BTCUSDT");
-                assert_eq!(cancel.order_id, 12345);
+                assert_eq!(cancel.symbol, "LTCBTC");
+                assert_eq!(cancel.order_id, 4);
+                assert_eq!(cancel.status, BinanceOrderStatus::Canceled);
+                assert_eq!(cancel.time_in_force, BinanceTimeInForce::Gtc);
+                assert_eq!(cancel.order_type, "LIMIT");
+                assert_eq!(cancel.side, BinanceSide::Buy);
+                assert_eq!(
+                    cancel.self_trade_prevention_mode,
+                    Some(BinanceSelfTradePreventionMode::None)
+                );
             }
             BatchCancelResult::Error(_) => panic!("Expected Success"),
         }
@@ -847,32 +828,10 @@ mod tests {
 
     #[rstest]
     fn test_ticker_24hr_deserialize() {
-        let json = r#"{
-            "symbol": "BTCUSDT",
-            "priceChange": "100.00",
-            "priceChangePercent": "0.2",
-            "weightedAvgPrice": "50050.00",
-            "prevClosePrice": "49950.00",
-            "lastPrice": "50050.00",
-            "lastQty": "0.01",
-            "bidPrice": "50049.00",
-            "bidQty": "1.0",
-            "askPrice": "50051.00",
-            "askQty": "1.0",
-            "openPrice": "49950.00",
-            "highPrice": "50200.00",
-            "lowPrice": "49800.00",
-            "volume": "1000.0",
-            "quoteVolume": "50000000.0",
-            "openTime": 1734200000000,
-            "closeTime": 1734300000000,
-            "firstId": 1000,
-            "lastId": 2000,
-            "count": 1000
-        }"#;
-        let response: Ticker24hr = serde_json::from_str(json).unwrap();
-        assert_eq!(response.symbol, "BTCUSDT");
-        assert_eq!(response.last_price, "50050.00");
-        assert_eq!(response.count, 1000);
+        let json = load_fixture_string("spot/http_json/ticker_24hr_response.json");
+        let response: Ticker24hr = serde_json::from_str(&json).unwrap();
+        assert_eq!(response.symbol, "BNBBTC");
+        assert_eq!(response.last_price, "4.00000200");
+        assert_eq!(response.count, 76);
     }
 }

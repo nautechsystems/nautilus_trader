@@ -19,7 +19,10 @@ use pyo3::prelude::*;
 use crate::{indicator::Indicator, momentum::aroon::AroonOscillator};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl AroonOscillator {
+    /// The Aroon Oscillator calculates the Aroon Up and Aroon Down indicators to
+    /// determine if an instrument is trending, and the strength of the trend.
     #[new]
     #[must_use]
     pub fn py_new(period: usize) -> Self {

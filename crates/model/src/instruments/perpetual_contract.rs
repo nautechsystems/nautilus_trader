@@ -17,7 +17,9 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     Params, UnixNanos,
-    correctness::{FAILED, check_equal_u8},
+    correctness::{
+        CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8,
+    },
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -44,6 +46,10 @@ use crate::{
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct PerpetualContract {
     /// The instrument ID for the instrument.
@@ -111,7 +117,7 @@ impl PerpetualContract {
     /// # Errors
     ///
     /// Returns an error if any input validation fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new_checked(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -140,7 +146,7 @@ impl PerpetualContract {
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> CorrectnessResult<Self> {
         check_equal_u8(
             price_precision,
             price_increment.precision,
@@ -157,7 +163,9 @@ impl PerpetualContract {
         check_positive_quantity(size_increment, stringify!(size_increment))?;
 
         if is_inverse && base_currency.is_none() {
-            anyhow::bail!("Inverse perpetual contract requires a `base_currency`");
+            return Err(CorrectnessError::PredicateViolation {
+                message: "Inverse perpetual contract requires a `base_currency`".to_string(),
+            });
         }
 
         Ok(Self {
@@ -196,7 +204,8 @@ impl PerpetualContract {
     /// # Panics
     ///
     /// Panics if any input parameter is invalid (see `new_checked`).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -255,7 +264,7 @@ impl PerpetualContract {
             ts_event,
             ts_init,
         )
-        .expect(FAILED)
+        .expect_display(FAILED)
     }
 }
 
@@ -414,12 +423,125 @@ impl Instrument for PerpetualContract {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use ustr::Ustr;
 
-    use crate::instruments::{PerpetualContract, stubs::*};
+    use crate::{
+        enums::{AssetClass, InstrumentClass},
+        identifiers::{InstrumentId, Symbol},
+        instruments::{Instrument, PerpetualContract, stubs::*},
+        types::{Currency, Price, Quantity},
+    };
 
     #[rstest]
-    fn test_equality(perpetual_contract_eurusd: PerpetualContract) {
-        let cloned = perpetual_contract_eurusd.clone();
-        assert_eq!(perpetual_contract_eurusd, cloned);
+    fn test_trait_accessors(perpetual_contract_eurusd: PerpetualContract) {
+        assert_eq!(
+            perpetual_contract_eurusd.id(),
+            InstrumentId::from("EURUSD-PERP.AX"),
+        );
+        assert_eq!(perpetual_contract_eurusd.asset_class(), AssetClass::FX);
+        assert_eq!(
+            perpetual_contract_eurusd.instrument_class(),
+            InstrumentClass::Swap
+        );
+        assert_eq!(
+            perpetual_contract_eurusd.base_currency(),
+            Some(Currency::EUR())
+        );
+        assert_eq!(perpetual_contract_eurusd.quote_currency(), Currency::USD());
+        assert_eq!(
+            perpetual_contract_eurusd.settlement_currency(),
+            Currency::USD()
+        );
+        assert!(!perpetual_contract_eurusd.is_inverse());
+        assert_eq!(perpetual_contract_eurusd.price_precision(), 5);
+        assert_eq!(perpetual_contract_eurusd.size_precision(), 0);
+        assert_eq!(
+            perpetual_contract_eurusd.price_increment(),
+            Price::from("0.00001")
+        );
+        assert_eq!(
+            perpetual_contract_eurusd.size_increment(),
+            Quantity::from("1")
+        );
+        assert_eq!(
+            perpetual_contract_eurusd.underlying(),
+            Some(Ustr::from("EURUSD")),
+        );
+    }
+
+    #[rstest]
+    fn test_new_checked_inverse_without_base_currency() {
+        let result = PerpetualContract::new_checked(
+            InstrumentId::from("TEST.EXCHANGE"),
+            Symbol::from("TEST"),
+            Ustr::from("TEST"),
+            AssetClass::FX,
+            None, // no base_currency
+            Currency::USD(),
+            Currency::USD(),
+            true, // is_inverse
+            5,
+            0,
+            Price::from("0.00001"),
+            Quantity::from("1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("base_currency"),);
+    }
+
+    #[rstest]
+    fn test_new_checked_price_precision_mismatch() {
+        let result = PerpetualContract::new_checked(
+            InstrumentId::from("TEST.EXCHANGE"),
+            Symbol::from("TEST"),
+            Ustr::from("TEST"),
+            AssetClass::FX,
+            Some(Currency::EUR()),
+            Currency::USD(),
+            Currency::USD(),
+            false,
+            3, // mismatch
+            0,
+            Price::from("0.00001"),
+            Quantity::from("1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip(perpetual_contract_eurusd: PerpetualContract) {
+        let json = serde_json::to_string(&perpetual_contract_eurusd).unwrap();
+        let deserialized: PerpetualContract = serde_json::from_str(&json).unwrap();
+        assert_eq!(perpetual_contract_eurusd, deserialized);
     }
 }

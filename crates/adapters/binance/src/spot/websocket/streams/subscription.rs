@@ -30,6 +30,9 @@
 /// Maximum number of streams per connection.
 pub const MAX_STREAMS_PER_CONNECTION: usize = 1024;
 
+/// Maximum number of connections per pool.
+pub const MAX_CONNECTIONS: usize = 20;
+
 /// Stream type for subscription management.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StreamType {

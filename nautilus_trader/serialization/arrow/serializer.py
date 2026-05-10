@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import inspect
 from collections.abc import Callable
 from io import BytesIO
 from typing import Any
@@ -70,6 +71,7 @@ NautilusRustDataType = Union[  # noqa: UP007 (mypy does not like pipe operators)
 ]
 
 _ARROW_ENCODERS: dict[type, Callable] = {}
+_ARROW_BATCH_ENCODERS: dict[type, Callable] = {}
 _ARROW_DECODERS: dict[type, Callable] = {}
 _SCHEMAS: dict[type, pa.Schema] = {}
 
@@ -87,6 +89,7 @@ def register_arrow(
     schema: pa.Schema | None,
     encoder: Callable | None = None,
     decoder: Callable | None = None,
+    batch_encoder: Callable | None = None,
 ) -> None:
     """
     Register a new class for serialization to parquet.
@@ -99,20 +102,24 @@ def register_arrow(
         If the schema cannot be correctly inferred from a subset of the data
         (i.e. if certain values may be missing in the first chunk).
     encoder : Callable, optional
-        The callable to encode instances of type `cls_type` to Arrow record batches.
+        The callable to encode a single instance of type `cls_type` to an Arrow record batch.
     decoder : Callable, optional
         The callable to decode rows from Arrow record batches into `cls_type`.
-    table : type, optional
-        An optional table override for `cls`. Used if `cls` is going to be
-        transformed and stored in a table other than its own.
+    batch_encoder : Callable, optional
+        The callable to encode a list of instances to a single Arrow record batch.
+        When provided, `serialize_batch` uses this instead of encoding per item,
+        which preserves metadata consistency across the batch.
 
     """
     PyCondition.type(schema, pa.Schema, "schema")
     PyCondition.type_or_none(encoder, Callable, "encoder")
     PyCondition.type_or_none(decoder, Callable, "decoder")
+    PyCondition.type_or_none(batch_encoder, Callable, "batch_encoder")
 
     if encoder is not None:
         _ARROW_ENCODERS[data_cls] = encoder
+    if batch_encoder is not None:
+        _ARROW_BATCH_ENCODERS[data_cls] = batch_encoder
     if decoder is not None:
         _ARROW_DECODERS[data_cls] = decoder
     if schema is not None:
@@ -196,6 +203,10 @@ class ArrowSerializer:
                     batch_bytes = nautilus_pyo3.book_depth10_to_arrow_record_batch_bytes(
                         data,
                     )
+                elif data_cls.__name__ in _RUST_CUSTOM_SERIALIZERS:
+                    encoder_fn, converter_fn = _RUST_CUSTOM_SERIALIZERS[data_cls.__name__]
+                    pyo3_data = [converter_fn(item) for item in data]
+                    batch_bytes = encoder_fn(pyo3_data)
                 else:
                     raise RuntimeError(
                         f"Unsupported Rust defined data type for catalog write, was `{data_cls}`",
@@ -258,6 +269,11 @@ class ArrowSerializer:
         """
         if data_cls in RUST_SERIALIZERS or data_cls.__name__ in RUST_STR_SERIALIZERS:
             return ArrowSerializer.rust_defined_to_record_batch(data, data_cls=data_cls)
+
+        batch_delegate = _ARROW_BATCH_ENCODERS.get(data_cls)
+        if batch_delegate is not None:
+            batch = batch_delegate(data)
+            return pa.Table.from_batches([batch], schema=batch.schema)
 
         batches = [ArrowSerializer.serialize(obj, data_cls) for obj in data]
 
@@ -327,7 +343,14 @@ def make_dict_serializer(schema: pa.Schema) -> Callable[[list[Data | Event]], pa
         if not isinstance(data, list):
             data = [data]
 
-        dicts = [d.to_dict(d) for d in data]
+        if not data:
+            return dicts_to_record_batch([], schema=schema)
+
+        raw = inspect.getattr_static(type(data[0]), "to_dict")
+        if isinstance(raw, staticmethod):
+            dicts = [d.to_dict(d) for d in data]
+        else:
+            dicts = [d.to_dict() for d in data]
 
         return dicts_to_record_batch(dicts, schema=schema)
 
@@ -361,6 +384,33 @@ RUST_SERIALIZERS = {
     # InstrumentClose,  # TODO: Not implemented yet
 }
 RUST_STR_SERIALIZERS = {s.__name__ for s in RUST_SERIALIZERS}
+
+# Registry for adapter-specific custom data types with Rust Arrow serializers.
+# Maps class name to (encoder_fn, converter_fn) tuple where:
+#   encoder_fn: callable that takes a list of Rust pyo3 objects and returns Arrow IPC bytes
+#   converter_fn: callable that converts a Python object to a Rust pyo3 object
+_RUST_CUSTOM_SERIALIZERS: dict[str, tuple[Callable, Callable]] = {}
+
+# Maps class name to the Python type for Rust custom serializers.
+# Used by filename_to_class to resolve directory names back to types.
+_RUST_CUSTOM_TYPE_REGISTRY: dict[str, type] = {}
+
+
+def register_rust_custom_serializer(
+    class_name: str,
+    encoder_fn: Callable,
+    converter_fn: Callable,
+    data_cls: type | None = None,
+) -> None:
+    """
+    Register a Rust custom data serializer for Arrow encoding.
+    """
+    _RUST_CUSTOM_SERIALIZERS[class_name] = (encoder_fn, converter_fn)
+    RUST_STR_SERIALIZERS.add(class_name)
+
+    if data_cls is not None:
+        _RUST_CUSTOM_TYPE_REGISTRY[class_name] = data_cls
+
 
 # TODO - breaking while we don't have access to rust schemas
 # Check we have each type defined only once (rust or python)
@@ -453,4 +503,54 @@ register_arrow(
     schema=NAUTILUS_ARROW_SCHEMA[FundingRateUpdate],
     encoder=funding_rate_update.serialize,
     decoder=funding_rate_update.deserialize,
+)
+
+
+# Rust-native Arrow registration for pyo3 InstrumentStatus.
+# The Cython InstrumentStatus is already registered via NAUTILUS_ARROW_SCHEMA above; this
+# additional registration lets callers pass a pyo3 InstrumentStatus directly to
+# ArrowSerializer.serialize_batch (which ParquetDataCatalog.write uses).
+_INSTRUMENT_STATUS_PYO3_SCHEMA = pa.schema(
+    [
+        pa.field("instrument_id", pa.utf8(), False),
+        pa.field("action", pa.utf8(), False),
+        pa.field("ts_event", pa.uint64(), False),
+        pa.field("ts_init", pa.uint64(), False),
+        pa.field("reason", pa.utf8(), True),
+        pa.field("trading_event", pa.utf8(), True),
+        pa.field("is_trading", pa.bool_(), True),
+        pa.field("is_quoting", pa.bool_(), True),
+        pa.field("is_short_sell_restricted", pa.bool_(), True),
+    ],
+    metadata={"type": "InstrumentStatus"},
+)
+
+
+def _instrument_status_encoder(data: list) -> pa.RecordBatch:
+    if not isinstance(data, list):
+        data = [data]
+    batch_bytes = nautilus_pyo3.instrument_status_to_arrow_record_batch_bytes(data)
+    reader = pa.ipc.open_stream(BytesIO(batch_bytes))
+    table = reader.read_all()
+    return table.to_batches()[0]
+
+
+def _instrument_status_decoder(table) -> list:
+    if isinstance(table, pa.RecordBatch):
+        table = pa.Table.from_batches([table])
+    sink = pa.BufferOutputStream()
+    writer = pa.ipc.new_stream(sink, table.schema)
+    for batch in table.to_batches():
+        writer.write_batch(batch)
+    writer.close()
+    ipc_bytes = sink.getvalue().to_pybytes()
+    return nautilus_pyo3.instrument_status_from_arrow_record_batch_bytes(ipc_bytes)
+
+
+register_arrow(
+    nautilus_pyo3.InstrumentStatus,
+    schema=_INSTRUMENT_STATUS_PYO3_SCHEMA,
+    encoder=_instrument_status_encoder,
+    decoder=_instrument_status_decoder,
+    batch_encoder=_instrument_status_encoder,
 )

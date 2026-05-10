@@ -1,0 +1,54 @@
+{
+  "retCode": 0,
+  "retMsg": "",
+  "result": {
+    "result": [
+      {
+        "id": "24828209",
+        "ips": [
+          "*"
+        ],
+        "apiKey": "XXXXXX",
+        "note": "UTA",
+        "status": 3,
+        "expiredAt": "2023-12-01T02:36:06Z",
+        "createdAt": "2023-08-25T06:42:39Z",
+        "type": 1,
+        "permissions": {
+          "ContractTrade": [
+            "Order",
+            "Position"
+          ],
+          "Spot": [
+            "SpotTrade"
+          ],
+          "Wallet": [
+            "AccountTransfer",
+            "SubMemberTransferList"
+          ],
+          "Options": [
+            "OptionsTrade"
+          ],
+          "Derivatives": [
+            "DerivativesTrade"
+          ],
+          "CopyTrading": [],
+          "BlockTrade": [],
+          "Exchange": [
+            "ExchangeHistory"
+          ],
+          "NFT": [],
+          "Affiliate": [],
+          "Earn": []
+        },
+        "secret": "******",
+        "readOnly": false,
+        "deadlineDay": 21,
+        "flag": "hmac"
+      }
+    ],
+    "nextPageCursor": ""
+  },
+  "retExtInfo": {},
+  "time": 1699515251698
+}

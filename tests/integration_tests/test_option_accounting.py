@@ -126,6 +126,7 @@ def test_option_cash_balance_impact(account_type, order_side, multiplier):
     balance = account.balance(USD).total
 
     expected_balance = starting_balance.as_decimal()
+
     if order_side == OrderSide.BUY:
         expected_balance -= expected_impact
     else:

@@ -22,7 +22,110 @@ pub use nautilus_core::serialization::{
     deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
     deserialize_optional_decimal_str, deserialize_string_to_u8,
 };
-use nautilus_core::{UUID4, datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
+
+/// Serde helper for Bybit `ON`/`OFF` string fields that represent booleans.
+///
+/// Use as `#[serde(with = "on_off_bool")]`. Unknown values deserialize as an
+/// error rather than silently coercing, so field renames surface rather than
+/// decoding to the wrong value.
+pub mod on_off_bool {
+    use serde::{Deserialize, Deserializer, Serializer, de::Error};
+
+    pub fn serialize<S: Serializer>(value: &bool, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(if *value { "ON" } else { "OFF" })
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
+        let raw = String::deserialize(d)?;
+        match raw.as_str() {
+            "ON" => Ok(true),
+            "OFF" => Ok(false),
+            other => Err(D::Error::custom(format!(
+                "expected 'ON' or 'OFF', received {other:?}"
+            ))),
+        }
+    }
+}
+
+/// Serde helper that accepts `readOnly` as either a bool or `0`/`1` integer.
+///
+/// Bybit returns `readOnly` as a bool on `/v5/user/list-sub-apikeys` and as an
+/// integer on `/v5/user/query-api` and the two update endpoints. Deserializing
+/// through this module keeps the Rust field a plain `bool` across all DTOs.
+pub mod bool_or_int {
+    use serde::{Deserialize, Deserializer, Serializer, de::Error};
+
+    pub fn serialize<S: Serializer>(value: &bool, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_bool(*value)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum BoolOrInt {
+            Bool(bool),
+            Int(i64),
+        }
+
+        match BoolOrInt::deserialize(d)? {
+            BoolOrInt::Bool(b) => Ok(b),
+            BoolOrInt::Int(0) => Ok(false),
+            BoolOrInt::Int(1) => Ok(true),
+            BoolOrInt::Int(n) => Err(D::Error::custom(format!(
+                "expected bool or 0/1, received {n}"
+            ))),
+        }
+    }
+}
+
+/// Round-trips `Option<bool>` as `0`/`1` integers for Bybit request bodies
+/// that advertise `readOnly` as an integer on the wire.
+pub mod opt_bool_as_int {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+
+    pub fn serialize<S: Serializer>(value: &Option<bool>, s: S) -> Result<S::Ok, S::Error> {
+        value.map(i32::from).serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<bool>, D::Error> {
+        match Option::<i32>::deserialize(d)? {
+            None => Ok(None),
+            Some(0) => Ok(Some(false)),
+            Some(1) => Ok(Some(true)),
+            Some(n) => Err(D::Error::custom(format!("expected 0 or 1, received {n}"))),
+        }
+    }
+}
+
+/// Serde helper that treats the masked secret literal (`"******"`) and empty
+/// strings as `None`, preserving real values as `Some`.
+///
+/// Bybit responses never expose a usable secret: `list-sub-apikeys` returns
+/// `"******"`, while the update endpoints return `""`. Surfacing `Option<String>`
+/// keeps callers from accidentally treating the sentinel as a real credential.
+pub mod masked_secret {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &Option<String>, s: S) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(v) => v.serialize(s),
+            None => "".serialize(s),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+        let raw = Option::<String>::deserialize(d)?;
+        Ok(match raw.as_deref() {
+            None | Some("" | "******") => None,
+            Some(_) => raw,
+        })
+    }
+}
+use nautilus_core::{
+    Params, UUID4,
+    datetime::{NANOSECONDS_IN_MILLISECOND, nanos_to_millis as nanos_to_millis_u64},
+    nanos::UnixNanos,
+};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, FundingRateUpdate, OrderBookDelta, OrderBookDeltas, TradeTick,
@@ -33,7 +136,9 @@ use nautilus_model::{
         TriggerType,
     },
     events::account::state::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, TradeId, VenueOrderId,
+    },
     instruments::{
         Instrument, any::InstrumentAny, crypto_future::CryptoFuture, crypto_option::CryptoOption,
         crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
@@ -46,11 +151,11 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{BYBIT_BASE_COIN, BYBIT_QUOTE_COIN},
         enums::{
-            BybitContractType, BybitKlineInterval, BybitOptionType, BybitOrderSide,
-            BybitOrderStatus, BybitOrderType, BybitPositionSide, BybitProductType,
-            BybitStopOrderType, BybitTimeInForce, BybitTriggerDirection,
+            BybitContractType, BybitKlineInterval, BybitMarketUnit, BybitOptionType,
+            BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionSide,
+            BybitProductType, BybitStopOrderType, BybitTimeInForce, BybitTriggerDirection,
+            BybitTriggerType,
         },
         symbol::BybitSymbol,
     },
@@ -68,6 +173,14 @@ const BYBIT_HOUR_INTERVALS: &[u64] = &[1, 2, 4, 6, 12];
 #[must_use]
 pub fn extract_raw_symbol(symbol: &str) -> &str {
     symbol.rsplit_once('-').map_or(symbol, |(prefix, _)| prefix)
+}
+
+/// Extracts the base coin from a Bybit option symbol.
+///
+/// For example, `"BTC-27MAR26-70000-P"` returns `"BTC"`.
+#[must_use]
+pub fn extract_base_coin(symbol: &str) -> &str {
+    symbol.split_once('-').map_or(symbol, |(base, _)| base)
 }
 
 /// Constructs a full Bybit symbol from a raw symbol and product type.
@@ -482,6 +595,7 @@ pub fn parse_inverse_instrument(
 /// Parses a Bybit option contract definition into a Nautilus [`CryptoOption`].
 pub fn parse_option_instrument(
     definition: &BybitInstrumentOption,
+    fee_rate: Option<&BybitFeeRate>,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
@@ -525,6 +639,22 @@ pub fn parse_option_instrument(
     let activation_ns = parse_millis_timestamp(&definition.launch_time, "launchTime")?;
     let expiration_ns = parse_millis_timestamp(&definition.delivery_time, "deliveryTime")?;
 
+    let (maker_fee, taker_fee) = match fee_rate {
+        Some(fee) => (
+            Some(
+                fee.maker_fee_rate
+                    .parse::<Decimal>()
+                    .unwrap_or(Decimal::ZERO),
+            ),
+            Some(
+                fee.taker_fee_rate
+                    .parse::<Decimal>()
+                    .unwrap_or(Decimal::ZERO),
+            ),
+        ),
+        None => (Some(Decimal::ZERO), Some(Decimal::ZERO)),
+    };
+
     let instrument = CryptoOption::new(
         instrument_id,
         raw_symbol,
@@ -548,10 +678,10 @@ pub fn parse_option_instrument(
         None,
         max_price,
         min_price,
-        Some(Decimal::ZERO),
-        Some(Decimal::ZERO),
-        Some(Decimal::ZERO),
-        Some(Decimal::ZERO),
+        None, // margin_init
+        None, // margin_maint
+        maker_fee,
+        taker_fee,
         None,
         ts_event,
         ts_init,
@@ -592,13 +722,18 @@ pub fn parse_trade_tick(
 pub fn parse_funding_rate(
     funding: &BybitFunding,
     instrument: &InstrumentAny,
+    interval_millis: Option<i64>,
 ) -> anyhow::Result<FundingRateUpdate> {
     let rate = parse_decimal(&funding.funding_rate, "funding.rate")?;
     let ts_event = parse_millis_timestamp(&funding.funding_rate_timestamp, "funding.timestamp")?;
+    let interval = interval_millis
+        .map(|ms| u16::try_from(ms / 60_000).context("interval milliseconds out of bounds"))
+        .transpose()?;
 
     Ok(FundingRateUpdate::new(
         instrument.id(),
         rate,
+        interval,
         None, // next_funding_ns not provided with historical funding rates
         ts_event,
         ts_event,
@@ -662,6 +797,7 @@ pub fn parse_orderbook(
     for level in &result.b {
         push_level(level, OrderSide::Buy)?;
     }
+
     for level in &result.a {
         push_level(level, OrderSide::Sell)?;
     }
@@ -724,6 +860,24 @@ pub fn parse_kline_bar(
 
     Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
         .context("failed to construct Bar from Bybit kline entry")
+}
+
+/// Constructs a venue position ID from an instrument and Bybit position index.
+///
+/// Position index values: 0 = one-way mode, 1 = buy-side hedge, 2 = sell-side hedge.
+///
+/// Not currently wired into reports because Bybit defaults to netting mode where
+/// non-None `venue_position_id` overrides the computed netting position ID.
+/// Ready to activate when hedge-mode support is added.
+#[must_use]
+pub fn make_venue_position_id(instrument_id: InstrumentId, position_idx: i32) -> PositionId {
+    let side = match position_idx {
+        0 => "ONEWAY",
+        1 => "LONG",
+        2 => "SHORT",
+        _ => "UNKNOWN",
+    };
+    PositionId::new(format!("{instrument_id}-{side}"))
 }
 
 /// Parses a Bybit execution into a Nautilus FillReport.
@@ -798,7 +952,7 @@ pub fn parse_fill_report(
         commission,
         liquidity_side,
         client_order_id,
-        None, // venue_position_id not provided by Bybit executions
+        None, // venue_position_id: execution data lacks position_idx
         ts_event,
         ts_init,
         None, // Will generate a new UUID4
@@ -857,6 +1011,17 @@ pub fn parse_position_status_report(
         parse_millis_timestamp(&position.updated_time, "position.updatedTime")?
     };
 
+    // Bybit ranks open positions 1-5 by ADL priority (5 = next to be deleveraged);
+    // 0 means the account has no open position or is flat.
+    if position.adl_rank_indicator >= 4 {
+        log::warn!(
+            "Elevated ADL risk: {} position size={} adl_rank={}",
+            instrument_id,
+            position.size,
+            position.adl_rank_indicator,
+        );
+    }
+
     Ok(PositionStatusReport::new(
         account_id,
         instrument_id,
@@ -865,7 +1030,7 @@ pub fn parse_position_status_report(
         ts_last,
         ts_init,
         None, // Will generate a new UUID4
-        None, // venue_position_id not used for now
+        None, // venue_position_id omitted: non-None triggers hedge-mode reconciliation
         avg_px_open,
     ))
 }
@@ -889,45 +1054,41 @@ pub fn parse_account_state(
         let locked_dec = coin.locked;
 
         let currency = get_currency(&coin.coin);
-        let total = Money::from_decimal(total_dec, currency)?;
-        let locked = Money::from_decimal(locked_dec, currency)?;
-        let free = Money::from_raw(total.raw - locked.raw, currency);
-
-        balances.push(AccountBalance::new(total, locked, free));
+        balances.push(AccountBalance::from_total_and_locked(
+            total_dec, locked_dec, currency,
+        )?);
     }
 
     let mut margins = Vec::new();
 
     for coin in &wallet_balance.coin {
-        let initial_margin_f64 = match &coin.total_position_im {
+        // Position IM is reserved against open positions; order IM is reserved against
+        // pending orders. Sum both so an account that only has open orders still
+        // reports a non-zero initial margin.
+        let position_im_f64 = match &coin.total_position_im {
             Some(im) if !im.is_empty() => im.parse::<f64>()?,
             _ => 0.0,
         };
+        let order_im_f64 = match &coin.total_order_im {
+            Some(im) if !im.is_empty() => im.parse::<f64>()?,
+            _ => 0.0,
+        };
+        let initial_margin_f64 = position_im_f64 + order_im_f64;
 
         let maintenance_margin_f64 = match &coin.total_position_mm {
             Some(mm) if !mm.is_empty() => mm.parse::<f64>()?,
             _ => 0.0,
         };
 
-        let currency = get_currency(&coin.coin);
-
-        // Only create margin balance if there are actual margin requirements
-        if initial_margin_f64 > 0.0 || maintenance_margin_f64 > 0.0 {
-            let initial_margin = Money::new(initial_margin_f64, currency);
-            let maintenance_margin = Money::new(maintenance_margin_f64, currency);
-
-            // Create a synthetic instrument_id for account-level margins
-            let margin_instrument_id = InstrumentId::new(
-                Symbol::from_str_unchecked(format!("ACCOUNT-{}", coin.coin)),
-                Venue::new("BYBIT"),
-            );
-
-            margins.push(MarginBalance::new(
-                initial_margin,
-                maintenance_margin,
-                margin_instrument_id,
-            ));
+        if initial_margin_f64 == 0.0 && maintenance_margin_f64 == 0.0 {
+            continue;
         }
+
+        let currency = get_currency(&coin.coin);
+        let initial_margin = Money::new(initial_margin_f64, currency);
+        let maintenance_margin = Money::new(maintenance_margin_f64, currency);
+
+        margins.push(MarginBalance::new(initial_margin, maintenance_margin, None));
     }
 
     let account_type = AccountType::Margin;
@@ -1031,6 +1192,75 @@ fn extract_strike_from_symbol(symbol: &str) -> anyhow::Result<Price> {
     parse_price(strike, "option strike")
 }
 
+/// Resolves a Nautilus [`OrderType`] from Bybit order classification fields.
+///
+/// Bybit represents conditional orders using a combination of `orderType` (Market/Limit),
+/// `stopOrderType` (Stop, TakeProfit, StopLoss, etc.), `triggerDirection` (RisesTo/FallsTo),
+/// and `side` (Buy/Sell). This function maps all combinations to the appropriate Nautilus
+/// conditional order types.
+///
+/// When `triggerDirection` is `None`, the stop order type is informational only (a parent
+/// order with TP/SL metadata attached), so the order is classified as plain Market/Limit.
+#[must_use]
+pub fn parse_bybit_order_type(
+    order_type: BybitOrderType,
+    stop_order_type: BybitStopOrderType,
+    trigger_direction: BybitTriggerDirection,
+    side: BybitOrderSide,
+) -> OrderType {
+    if matches!(
+        stop_order_type,
+        BybitStopOrderType::None | BybitStopOrderType::Unknown
+    ) {
+        return match order_type {
+            BybitOrderType::Market => OrderType::Market,
+            BybitOrderType::Limit | BybitOrderType::Unknown => OrderType::Limit,
+        };
+    }
+
+    // No trigger direction means TP/SL metadata on a parent order,
+    // not a standalone conditional
+    if trigger_direction == BybitTriggerDirection::None {
+        return match order_type {
+            BybitOrderType::Market => OrderType::Market,
+            BybitOrderType::Limit | BybitOrderType::Unknown => OrderType::Limit,
+        };
+    }
+
+    // TrailingStop maps to StopMarket/StopLimit because Bybit does not
+    // provide the trailing offset fields needed for the dedicated types.
+    match (order_type, trigger_direction, side) {
+        (BybitOrderType::Market, BybitTriggerDirection::RisesTo, BybitOrderSide::Buy) => {
+            OrderType::StopMarket
+        }
+        (BybitOrderType::Market, BybitTriggerDirection::FallsTo, BybitOrderSide::Buy) => {
+            OrderType::MarketIfTouched
+        }
+        (BybitOrderType::Market, BybitTriggerDirection::FallsTo, BybitOrderSide::Sell) => {
+            OrderType::StopMarket
+        }
+        (BybitOrderType::Market, BybitTriggerDirection::RisesTo, BybitOrderSide::Sell) => {
+            OrderType::MarketIfTouched
+        }
+        (BybitOrderType::Limit, BybitTriggerDirection::RisesTo, BybitOrderSide::Buy) => {
+            OrderType::StopLimit
+        }
+        (BybitOrderType::Limit, BybitTriggerDirection::FallsTo, BybitOrderSide::Buy) => {
+            OrderType::LimitIfTouched
+        }
+        (BybitOrderType::Limit, BybitTriggerDirection::FallsTo, BybitOrderSide::Sell) => {
+            OrderType::StopLimit
+        }
+        (BybitOrderType::Limit, BybitTriggerDirection::RisesTo, BybitOrderSide::Sell) => {
+            OrderType::LimitIfTouched
+        }
+        _ => match order_type {
+            BybitOrderType::Market => OrderType::Market,
+            BybitOrderType::Limit | BybitOrderType::Unknown => OrderType::Limit,
+        },
+    }
+}
+
 /// Parses a Bybit order into a Nautilus OrderStatusReport.
 pub fn parse_order_status_report(
     order: &crate::http::models::BybitOrder,
@@ -1043,86 +1273,12 @@ pub fn parse_order_status_report(
 
     let order_side: OrderSide = order.side.into();
 
-    // Bybit represents conditional orders using orderType + stopOrderType + triggerDirection + side
-    let order_type: OrderType = match (
+    let order_type = parse_bybit_order_type(
         order.order_type,
         order.stop_order_type,
         order.trigger_direction,
         order.side,
-    ) {
-        (BybitOrderType::Market, BybitStopOrderType::None | BybitStopOrderType::Unknown, _, _) => {
-            OrderType::Market
-        }
-        (BybitOrderType::Limit, BybitStopOrderType::None | BybitStopOrderType::Unknown, _, _) => {
-            OrderType::Limit
-        }
-
-        (
-            BybitOrderType::Market,
-            BybitStopOrderType::Stop,
-            BybitTriggerDirection::RisesTo,
-            BybitOrderSide::Buy,
-        ) => OrderType::StopMarket,
-        (
-            BybitOrderType::Market,
-            BybitStopOrderType::Stop,
-            BybitTriggerDirection::FallsTo,
-            BybitOrderSide::Buy,
-        ) => OrderType::MarketIfTouched,
-
-        (
-            BybitOrderType::Market,
-            BybitStopOrderType::Stop,
-            BybitTriggerDirection::FallsTo,
-            BybitOrderSide::Sell,
-        ) => OrderType::StopMarket,
-        (
-            BybitOrderType::Market,
-            BybitStopOrderType::Stop,
-            BybitTriggerDirection::RisesTo,
-            BybitOrderSide::Sell,
-        ) => OrderType::MarketIfTouched,
-
-        (
-            BybitOrderType::Limit,
-            BybitStopOrderType::Stop,
-            BybitTriggerDirection::RisesTo,
-            BybitOrderSide::Buy,
-        ) => OrderType::StopLimit,
-        (
-            BybitOrderType::Limit,
-            BybitStopOrderType::Stop,
-            BybitTriggerDirection::FallsTo,
-            BybitOrderSide::Buy,
-        ) => OrderType::LimitIfTouched,
-
-        (
-            BybitOrderType::Limit,
-            BybitStopOrderType::Stop,
-            BybitTriggerDirection::FallsTo,
-            BybitOrderSide::Sell,
-        ) => OrderType::StopLimit,
-        (
-            BybitOrderType::Limit,
-            BybitStopOrderType::Stop,
-            BybitTriggerDirection::RisesTo,
-            BybitOrderSide::Sell,
-        ) => OrderType::LimitIfTouched,
-
-        // triggerDirection=None means regular order with TP/SL attached, not a standalone conditional order
-        (BybitOrderType::Market, BybitStopOrderType::Stop, BybitTriggerDirection::None, _) => {
-            OrderType::Market
-        }
-        (BybitOrderType::Limit, BybitStopOrderType::Stop, BybitTriggerDirection::None, _) => {
-            OrderType::Limit
-        }
-
-        // TP/SL stopOrderTypes are attached to positions, not standalone conditional orders
-        (BybitOrderType::Market, _, _, _) => OrderType::Market,
-        (BybitOrderType::Limit, _, _, _) => OrderType::Limit,
-
-        (BybitOrderType::Unknown, _, _, _) => OrderType::Limit,
-    };
+    );
 
     let time_in_force: TimeInForce = match order.time_in_force {
         BybitTimeInForce::Gtc => TimeInForce::Gtc,
@@ -1218,6 +1374,17 @@ pub fn parse_order_status_report(
         report = report.with_trigger_type(trigger_type);
     }
 
+    // venue_position_id omitted: in netting mode, non-None values override the
+    // computed netting position ID and break position tracking.
+
+    if order.reduce_only {
+        report = report.with_reduce_only(true);
+    }
+
+    if order.time_in_force == BybitTimeInForce::PostOnly {
+        report = report.with_post_only(true);
+    }
+
     Ok(report)
 }
 
@@ -1227,12 +1394,12 @@ pub fn spot_market_unit(
     product_type: BybitProductType,
     order_type: BybitOrderType,
     is_quote_quantity: bool,
-) -> Option<String> {
+) -> Option<BybitMarketUnit> {
     if product_type == BybitProductType::Spot && order_type == BybitOrderType::Market {
         if is_quote_quantity {
-            Some(BYBIT_QUOTE_COIN.to_string())
+            Some(BybitMarketUnit::QuoteCoin)
         } else {
-            Some(BYBIT_BASE_COIN.to_string())
+            Some(BybitMarketUnit::BaseCoin)
         }
     } else {
         None
@@ -1259,6 +1426,7 @@ pub fn trigger_direction(
     if !is_stop_order {
         return None;
     }
+
     match (order_type, order_side) {
         (OrderType::StopMarket | OrderType::StopLimit, OrderSide::Buy) => {
             Some(BybitTriggerDirection::RisesTo)
@@ -1291,12 +1459,214 @@ pub fn map_time_in_force(
     if post_only == Some(true) {
         return Ok(Some(BybitTimeInForce::PostOnly));
     }
+
     match time_in_force {
         Some(TimeInForce::Gtc) => Ok(Some(BybitTimeInForce::Gtc)),
         Some(TimeInForce::Ioc) => Ok(Some(BybitTimeInForce::Ioc)),
         Some(TimeInForce::Fok) => Ok(Some(BybitTimeInForce::Fok)),
         Some(tif) => Err(tif),
         None => Ok(None),
+    }
+}
+
+/// Converts an optional `UnixNanos` timestamp to optional milliseconds.
+pub fn nanos_to_millis(value: Option<UnixNanos>) -> Option<i64> {
+    value.map(|nanos| nanos_to_millis_u64(nanos.as_u64()) as i64)
+}
+
+/// Parsed and validated Bybit TP/SL parameters from a `SubmitOrder.params` map.
+#[derive(Debug, Default)]
+pub struct BybitTpSlParams {
+    pub take_profit: Option<Price>,
+    pub stop_loss: Option<Price>,
+    pub tp_trigger_by: Option<BybitTriggerType>,
+    pub sl_trigger_by: Option<BybitTriggerType>,
+    pub tp_order_type: Option<BybitOrderType>,
+    pub sl_order_type: Option<BybitOrderType>,
+    pub tp_limit_price: Option<String>,
+    pub sl_limit_price: Option<String>,
+    pub tp_trigger_price: Option<String>,
+    pub sl_trigger_price: Option<String>,
+    pub close_on_trigger: Option<bool>,
+    pub is_leverage: bool,
+    pub order_iv: Option<String>,
+    pub mmp: Option<bool>,
+    pub position_idx: Option<BybitPositionIdx>,
+}
+
+impl BybitTpSlParams {
+    pub fn has_tp_sl(&self) -> bool {
+        self.take_profit.is_some() || self.stop_loss.is_some()
+    }
+}
+
+/// Extracts a string value from params, accepting both string and numeric JSON values.
+pub fn get_price_str(params: &Params, key: &str) -> Option<String> {
+    let value = params.get(key)?;
+    if let Some(s) = value.as_str() {
+        Some(s.to_string())
+    } else if let Some(n) = value.as_f64() {
+        Some(n.to_string())
+    } else if let Some(n) = value.as_i64() {
+        Some(n.to_string())
+    } else {
+        value.as_u64().map(|n| n.to_string())
+    }
+}
+
+/// Parses Bybit TP/SL parameters from an optional params map.
+pub fn parse_bybit_tp_sl_params(params: Option<&Params>) -> anyhow::Result<BybitTpSlParams> {
+    let Some(params) = params else {
+        return Ok(BybitTpSlParams::default());
+    };
+
+    let mut result = BybitTpSlParams {
+        is_leverage: params.get_bool("is_leverage").unwrap_or(false),
+        ..Default::default()
+    };
+
+    if let Some(s) = get_price_str(params, "take_profit") {
+        let p =
+            Price::from_str(&s).map_err(|e| anyhow::anyhow!("invalid 'take_profit' price: {e}"))?;
+
+        if p.as_f64() < 0.0 {
+            anyhow::bail!("invalid 'take_profit' price: '{s}', expected a non-negative value");
+        }
+        result.take_profit = Some(p);
+    }
+
+    if let Some(s) = get_price_str(params, "stop_loss") {
+        let p =
+            Price::from_str(&s).map_err(|e| anyhow::anyhow!("invalid 'stop_loss' price: {e}"))?;
+
+        if p.as_f64() < 0.0 {
+            anyhow::bail!("invalid 'stop_loss' price: '{s}', expected a non-negative value");
+        }
+        result.stop_loss = Some(p);
+    }
+
+    for (key, setter) in [
+        (
+            "tp_limit_price",
+            &mut result.tp_limit_price as &mut Option<String>,
+        ),
+        ("sl_limit_price", &mut result.sl_limit_price),
+        ("tp_trigger_price", &mut result.tp_trigger_price),
+        ("sl_trigger_price", &mut result.sl_trigger_price),
+    ] {
+        if let Some(s) = get_price_str(params, key) {
+            let v: f64 = s
+                .parse()
+                .map_err(|_| anyhow::anyhow!("invalid price for '{key}': '{s}'"))?;
+
+            if !v.is_finite() || v < 0.0 {
+                anyhow::bail!(
+                    "invalid price for '{key}': '{s}', expected a finite non-negative number"
+                );
+            }
+            *setter = Some(s);
+        }
+    }
+
+    if let Some(s) = params.get_str("tp_trigger_by") {
+        result.tp_trigger_by = Some(parse_trigger_type(s)?);
+    }
+
+    if let Some(s) = params.get_str("sl_trigger_by") {
+        result.sl_trigger_by = Some(parse_trigger_type(s)?);
+    }
+
+    if let Some(s) = params.get_str("tp_order_type") {
+        result.tp_order_type = Some(parse_tp_sl_order_type(s)?);
+    }
+
+    if let Some(s) = params.get_str("sl_order_type") {
+        result.sl_order_type = Some(parse_tp_sl_order_type(s)?);
+    }
+
+    let has_tp_fields = result.tp_trigger_by.is_some()
+        || result.tp_order_type.is_some()
+        || result.tp_limit_price.is_some()
+        || result.tp_trigger_price.is_some();
+
+    let has_sl_fields = result.sl_trigger_by.is_some()
+        || result.sl_order_type.is_some()
+        || result.sl_limit_price.is_some()
+        || result.sl_trigger_price.is_some();
+
+    if result.take_profit.is_none() && has_tp_fields {
+        anyhow::bail!("TP override fields require 'take_profit' to be set");
+    }
+
+    if result.stop_loss.is_none() && has_sl_fields {
+        anyhow::bail!("SL override fields require 'stop_loss' to be set");
+    }
+
+    if result.tp_order_type == Some(BybitOrderType::Limit) && result.tp_limit_price.is_none() {
+        anyhow::bail!("'tp_order_type' is 'Limit' but 'tp_limit_price' was not provided");
+    }
+
+    if result.sl_order_type == Some(BybitOrderType::Limit) && result.sl_limit_price.is_none() {
+        anyhow::bail!("'sl_order_type' is 'Limit' but 'sl_limit_price' was not provided");
+    }
+
+    if result.tp_limit_price.is_some() && result.tp_order_type != Some(BybitOrderType::Limit) {
+        anyhow::bail!("'tp_limit_price' requires 'tp_order_type' to be 'Limit'");
+    }
+
+    if result.sl_limit_price.is_some() && result.sl_order_type != Some(BybitOrderType::Limit) {
+        anyhow::bail!("'sl_limit_price' requires 'sl_order_type' to be 'Limit'");
+    }
+
+    result.close_on_trigger = params.get_bool("close_on_trigger");
+
+    if let Some(value) = params.get("order_iv") {
+        match get_price_str(params, "order_iv") {
+            Some(s) => result.order_iv = Some(s),
+            None => {
+                anyhow::bail!("invalid type for 'order_iv': {value}, expected string or number")
+            }
+        }
+    }
+
+    if let Some(value) = params.get("mmp") {
+        match value.as_bool() {
+            Some(b) => result.mmp = Some(b),
+            None => anyhow::bail!("invalid type for 'mmp': {value}, expected bool"),
+        }
+    }
+
+    if let Some(value) = params.get("position_idx") {
+        let idx = value.as_i64().ok_or_else(|| {
+            anyhow::anyhow!("invalid type for 'position_idx': {value}, expected integer")
+        })?;
+        result.position_idx = Some(match idx {
+            0 => BybitPositionIdx::OneWay,
+            1 => BybitPositionIdx::BuyHedge,
+            2 => BybitPositionIdx::SellHedge,
+            _ => anyhow::bail!("invalid 'position_idx': {idx}, expected 0, 1, or 2"),
+        });
+    }
+
+    Ok(result)
+}
+
+fn parse_trigger_type(s: &str) -> anyhow::Result<BybitTriggerType> {
+    match s {
+        "LastPrice" => Ok(BybitTriggerType::LastPrice),
+        "MarkPrice" => Ok(BybitTriggerType::MarkPrice),
+        "IndexPrice" => Ok(BybitTriggerType::IndexPrice),
+        _ => anyhow::bail!(
+            "invalid Bybit trigger type: '{s}', expected LastPrice, MarkPrice, or IndexPrice"
+        ),
+    }
+}
+
+fn parse_tp_sl_order_type(s: &str) -> anyhow::Result<BybitOrderType> {
+    match s {
+        "Market" => Ok(BybitOrderType::Market),
+        "Limit" => Ok(BybitOrderType::Limit),
+        _ => anyhow::bail!("invalid Bybit TP/SL order type: '{s}', expected Market or Limit"),
     }
 }
 
@@ -1307,14 +1677,18 @@ mod tests {
         enums::{AggregationSource, BarAggregation, PositionSide, PriceType},
     };
     use rstest::rstest;
+    use serde_json::json;
 
     use super::*;
     use crate::{
-        common::testing::load_test_json,
+        common::{
+            enums::{BybitOrderSide, BybitOrderType, BybitStopOrderType, BybitTriggerDirection},
+            testing::load_test_json,
+        },
         http::models::{
             BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
             BybitInstrumentOptionResponse, BybitInstrumentSpotResponse, BybitKlinesResponse,
-            BybitTradesResponse,
+            BybitOpenOrdersResponse, BybitTradeHistoryResponse, BybitTradesResponse,
         },
     };
 
@@ -1406,7 +1780,7 @@ mod tests {
         let response: BybitInstrumentOptionResponse = serde_json::from_str(&json).unwrap();
         let instrument = &response.result.list[0];
 
-        let parsed = parse_option_instrument(instrument, TS, TS).unwrap();
+        let parsed = parse_option_instrument(instrument, None, TS, TS).unwrap();
         match parsed {
             InstrumentAny::CryptoOption(option) => {
                 assert_eq!(option.id.to_string(), "ETH-26JUN26-16000-P-OPTION.BYBIT");
@@ -1420,6 +1794,56 @@ mod tests {
                 assert_eq!(option.size_precision, 0);
                 assert_eq!(option.size_increment, Quantity::from_str("1").unwrap());
                 assert_eq!(option.lot_size, Quantity::from_str("1").unwrap());
+            }
+            other => panic!("unexpected instrument variant: {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_extract_base_coin_from_option_symbol() {
+        assert_eq!(extract_base_coin("BTC-27MAR26-70000-P"), "BTC");
+        assert_eq!(extract_base_coin("ETH-26JUN26-16000-C"), "ETH");
+        assert_eq!(extract_base_coin("SOL-30MAR26-200-P-USDT"), "SOL");
+        assert_eq!(extract_base_coin("BTC"), "BTC");
+    }
+
+    #[rstest]
+    fn test_extract_base_coin_from_nautilus_option_symbol() {
+        // After extract_raw_symbol strips the "-OPTION" suffix
+        let raw = extract_raw_symbol("BTC-27MAR26-70000-P-USDT-OPTION");
+        assert_eq!(extract_base_coin(raw), "BTC");
+    }
+
+    #[rstest]
+    fn parse_option_instrument_with_fee_rate() {
+        let json = load_test_json("http_get_instruments_option.json");
+        let response: BybitInstrumentOptionResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+        let fee = sample_fee_rate("", "0.0006", "0.0001", Some("ETH"));
+
+        let parsed = parse_option_instrument(instrument, Some(&fee), TS, TS).unwrap();
+        match parsed {
+            InstrumentAny::CryptoOption(option) => {
+                assert_eq!(option.taker_fee, Decimal::new(6, 4));
+                assert_eq!(option.maker_fee, Decimal::new(1, 4));
+                assert_eq!(option.margin_init, Decimal::ZERO);
+                assert_eq!(option.margin_maint, Decimal::ZERO);
+            }
+            other => panic!("unexpected instrument variant: {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn parse_option_instrument_without_fee_rate_defaults_to_zero() {
+        let json = load_test_json("http_get_instruments_option.json");
+        let response: BybitInstrumentOptionResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+
+        let parsed = parse_option_instrument(instrument, None, TS, TS).unwrap();
+        match parsed {
+            InstrumentAny::CryptoOption(option) => {
+                assert_eq!(option.taker_fee, Decimal::ZERO);
+                assert_eq!(option.maker_fee, Decimal::ZERO);
             }
             other => panic!("unexpected instrument variant: {other:?}"),
         }
@@ -1642,5 +2066,437 @@ mod tests {
     fn test_bybit_interval_to_bar_spec_unsupported(#[case] interval: &str) {
         let result = bybit_interval_to_bar_spec(interval);
         assert!(result.is_none());
+    }
+
+    fn params_from(pairs: &[(&str, serde_json::Value)]) -> Params {
+        let mut p = Params::new();
+        for (k, v) in pairs {
+            p.insert(k.to_string(), v.clone());
+        }
+        p
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_none_returns_defaults() {
+        let result = parse_bybit_tp_sl_params(None).unwrap();
+        assert!(!result.is_leverage);
+        assert!(!result.has_tp_sl());
+        assert!(result.order_iv.is_none());
+        assert!(result.mmp.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_empty_returns_defaults() {
+        let p = Params::new();
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+        assert!(!result.is_leverage);
+        assert!(!result.has_tp_sl());
+        assert!(result.order_iv.is_none());
+        assert!(result.mmp.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_valid_full() {
+        let p = params_from(&[
+            ("take_profit", json!("55000.00")),
+            ("stop_loss", json!("47000.00")),
+            ("tp_trigger_by", json!("MarkPrice")),
+            ("sl_trigger_by", json!("IndexPrice")),
+            ("tp_order_type", json!("Limit")),
+            ("tp_limit_price", json!("54990.00")),
+            ("sl_order_type", json!("Market")),
+            ("close_on_trigger", json!(true)),
+            ("is_leverage", json!(true)),
+        ]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+
+        assert!(result.has_tp_sl());
+        assert!(result.take_profit.is_some());
+        assert!(result.stop_loss.is_some());
+        assert_eq!(result.tp_trigger_by, Some(BybitTriggerType::MarkPrice));
+        assert_eq!(result.sl_trigger_by, Some(BybitTriggerType::IndexPrice));
+        assert_eq!(result.tp_order_type, Some(BybitOrderType::Limit));
+        assert_eq!(result.sl_order_type, Some(BybitOrderType::Market));
+        assert_eq!(result.tp_limit_price.as_deref(), Some("54990.00"));
+        assert_eq!(result.close_on_trigger, Some(true));
+        assert!(result.is_leverage);
+    }
+
+    #[rstest]
+    #[case("abc")]
+    #[case("nan")]
+    #[case("inf")]
+    #[case("-1.0")]
+    fn test_parse_tp_sl_params_rejects_invalid_take_profit(#[case] price: &str) {
+        let p = params_from(&[("take_profit", json!(price))]);
+        assert!(parse_bybit_tp_sl_params(Some(&p)).is_err());
+    }
+
+    #[rstest]
+    #[case("abc")]
+    #[case("nan")]
+    #[case("inf")]
+    fn test_parse_tp_sl_params_rejects_invalid_stop_loss(#[case] price: &str) {
+        let p = params_from(&[("stop_loss", json!(price))]);
+        assert!(parse_bybit_tp_sl_params(Some(&p)).is_err());
+    }
+
+    #[rstest]
+    #[case("nan")]
+    #[case("inf")]
+    #[case("-5.0")]
+    #[case("not_a_number")]
+    fn test_parse_tp_sl_params_rejects_invalid_limit_price(#[case] price: &str) {
+        let p = params_from(&[
+            ("take_profit", json!("55000.00")),
+            ("tp_order_type", json!("Limit")),
+            ("tp_limit_price", json!(price)),
+        ]);
+        assert!(parse_bybit_tp_sl_params(Some(&p)).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_rejects_invalid_trigger_type() {
+        let p = params_from(&[
+            ("take_profit", json!("55000.00")),
+            ("tp_trigger_by", json!("InvalidType")),
+        ]);
+        assert!(parse_bybit_tp_sl_params(Some(&p)).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_rejects_invalid_order_type() {
+        let p = params_from(&[
+            ("stop_loss", json!("47000.00")),
+            ("sl_order_type", json!("Stop")),
+        ]);
+        assert!(parse_bybit_tp_sl_params(Some(&p)).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_rejects_limit_without_limit_price() {
+        let p = params_from(&[
+            ("take_profit", json!("55000.00")),
+            ("tp_order_type", json!("Limit")),
+        ]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+        assert!(err.to_string().contains("tp_limit_price"));
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_rejects_limit_price_without_limit_type() {
+        let p = params_from(&[
+            ("take_profit", json!("55000.00")),
+            ("tp_limit_price", json!("54990.00")),
+        ]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+        assert!(err.to_string().contains("tp_order_type"));
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_rejects_orphaned_tp_fields() {
+        let p = params_from(&[("tp_trigger_by", json!("MarkPrice"))]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+        assert!(err.to_string().contains("TP override fields require"));
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_accepts_numeric_prices() {
+        let p = params_from(&[("take_profit", json!(55000.0)), ("stop_loss", json!(47000))]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+        assert!(result.take_profit.is_some());
+        assert!(result.stop_loss.is_some());
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_rejects_orphaned_sl_fields() {
+        let p = params_from(&[("sl_trigger_by", json!("IndexPrice"))]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+        assert!(err.to_string().contains("SL override fields require"));
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_rejects_bool_order_iv() {
+        let p = params_from(&[("order_iv", json!(true))]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+        assert!(err.to_string().contains("order_iv"));
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_rejects_string_mmp() {
+        let p = params_from(&[("mmp", json!("true"))]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+        assert!(err.to_string().contains("mmp"));
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_order_iv_string() {
+        let p = params_from(&[("order_iv", json!("0.75"))]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+        assert_eq!(result.order_iv.as_deref(), Some("0.75"));
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_order_iv_numeric() {
+        let p = params_from(&[("order_iv", json!(0.75))]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+        assert_eq!(result.order_iv.as_deref(), Some("0.75"));
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_mmp() {
+        let p = params_from(&[("mmp", json!(true))]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+        assert_eq!(result.mmp, Some(true));
+    }
+
+    #[rstest]
+    #[case(0, BybitPositionIdx::OneWay)]
+    #[case(1, BybitPositionIdx::BuyHedge)]
+    #[case(2, BybitPositionIdx::SellHedge)]
+    fn test_parse_tp_sl_params_position_idx_valid(
+        #[case] idx: i64,
+        #[case] expected: BybitPositionIdx,
+    ) {
+        let p = params_from(&[("position_idx", json!(idx))]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+        assert_eq!(result.position_idx, Some(expected));
+    }
+
+    #[rstest]
+    #[case(json!(3))]
+    #[case(json!(-1))]
+    #[case(json!("1"))]
+    #[case(json!(true))]
+    fn test_parse_tp_sl_params_position_idx_invalid(#[case] value: serde_json::Value) {
+        let p = params_from(&[("position_idx", value)]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+        assert!(err.to_string().contains("position_idx"));
+    }
+
+    #[rstest]
+    #[case(
+        BybitOrderType::Market,
+        BybitStopOrderType::TakeProfit,
+        BybitTriggerDirection::RisesTo,
+        BybitOrderSide::Sell,
+        OrderType::MarketIfTouched
+    )]
+    #[case(
+        BybitOrderType::Market,
+        BybitStopOrderType::StopLoss,
+        BybitTriggerDirection::FallsTo,
+        BybitOrderSide::Sell,
+        OrderType::StopMarket
+    )]
+    #[case(
+        BybitOrderType::Market,
+        BybitStopOrderType::TakeProfit,
+        BybitTriggerDirection::FallsTo,
+        BybitOrderSide::Buy,
+        OrderType::MarketIfTouched
+    )]
+    #[case(
+        BybitOrderType::Market,
+        BybitStopOrderType::StopLoss,
+        BybitTriggerDirection::RisesTo,
+        BybitOrderSide::Buy,
+        OrderType::StopMarket
+    )]
+    #[case(
+        BybitOrderType::Limit,
+        BybitStopOrderType::TakeProfit,
+        BybitTriggerDirection::RisesTo,
+        BybitOrderSide::Sell,
+        OrderType::LimitIfTouched
+    )]
+    #[case(
+        BybitOrderType::Limit,
+        BybitStopOrderType::StopLoss,
+        BybitTriggerDirection::FallsTo,
+        BybitOrderSide::Sell,
+        OrderType::StopLimit
+    )]
+    #[case(
+        BybitOrderType::Limit,
+        BybitStopOrderType::PartialTakeProfit,
+        BybitTriggerDirection::FallsTo,
+        BybitOrderSide::Buy,
+        OrderType::LimitIfTouched
+    )]
+    #[case(
+        BybitOrderType::Limit,
+        BybitStopOrderType::PartialStopLoss,
+        BybitTriggerDirection::RisesTo,
+        BybitOrderSide::Buy,
+        OrderType::StopLimit
+    )]
+    #[case(
+        BybitOrderType::Market,
+        BybitStopOrderType::TpslOrder,
+        BybitTriggerDirection::FallsTo,
+        BybitOrderSide::Sell,
+        OrderType::StopMarket
+    )]
+    #[case(
+        BybitOrderType::Market,
+        BybitStopOrderType::Stop,
+        BybitTriggerDirection::RisesTo,
+        BybitOrderSide::Buy,
+        OrderType::StopMarket
+    )]
+    #[case(
+        BybitOrderType::Market,
+        BybitStopOrderType::Stop,
+        BybitTriggerDirection::FallsTo,
+        BybitOrderSide::Sell,
+        OrderType::StopMarket
+    )]
+    #[case(
+        BybitOrderType::Market,
+        BybitStopOrderType::TrailingStop,
+        BybitTriggerDirection::FallsTo,
+        BybitOrderSide::Sell,
+        OrderType::StopMarket
+    )]
+    #[case(
+        BybitOrderType::Limit,
+        BybitStopOrderType::TrailingStop,
+        BybitTriggerDirection::RisesTo,
+        BybitOrderSide::Buy,
+        OrderType::StopLimit
+    )]
+    fn test_parse_bybit_order_type_conditional(
+        #[case] order_type: BybitOrderType,
+        #[case] stop_order_type: BybitStopOrderType,
+        #[case] trigger_direction: BybitTriggerDirection,
+        #[case] side: BybitOrderSide,
+        #[case] expected: OrderType,
+    ) {
+        let result = parse_bybit_order_type(order_type, stop_order_type, trigger_direction, side);
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(
+        BybitOrderType::Market,
+        BybitStopOrderType::None,
+        BybitTriggerDirection::None,
+        BybitOrderSide::Buy,
+        OrderType::Market
+    )]
+    #[case(
+        BybitOrderType::Limit,
+        BybitStopOrderType::Unknown,
+        BybitTriggerDirection::None,
+        BybitOrderSide::Sell,
+        OrderType::Limit
+    )]
+    #[case(
+        BybitOrderType::Market,
+        BybitStopOrderType::TakeProfit,
+        BybitTriggerDirection::None,
+        BybitOrderSide::Sell,
+        OrderType::Market
+    )]
+    #[case(
+        BybitOrderType::Limit,
+        BybitStopOrderType::StopLoss,
+        BybitTriggerDirection::None,
+        BybitOrderSide::Buy,
+        OrderType::Limit
+    )]
+    fn test_parse_bybit_order_type_plain(
+        #[case] order_type: BybitOrderType,
+        #[case] stop_order_type: BybitStopOrderType,
+        #[case] trigger_direction: BybitTriggerDirection,
+        #[case] side: BybitOrderSide,
+        #[case] expected: OrderType,
+    ) {
+        let result = parse_bybit_order_type(order_type, stop_order_type, trigger_direction, side);
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_take_profit() {
+        let instrument = linear_instrument();
+        let json = load_test_json("http_get_orders_realtime_tp_sl.json");
+        let response: BybitOpenOrdersResponse = serde_json::from_str(&json).unwrap();
+        let order = &response.result.list[0];
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_order_status_report(order, &instrument, account_id, TS).unwrap();
+
+        assert_eq!(report.order_type, OrderType::MarketIfTouched);
+        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert!(report.trigger_price.is_some());
+        assert_eq!(
+            report.trigger_price.unwrap(),
+            Price::from_str("55000.0").unwrap()
+        );
+        assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
+        assert!(report.reduce_only);
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_stop_loss_limit() {
+        let instrument = linear_instrument();
+        let json = load_test_json("http_get_orders_realtime_tp_sl.json");
+        let response: BybitOpenOrdersResponse = serde_json::from_str(&json).unwrap();
+        let order = &response.result.list[1];
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_order_status_report(order, &instrument, account_id, TS).unwrap();
+
+        assert_eq!(report.order_type, OrderType::StopLimit);
+        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert!(report.trigger_price.is_some());
+        assert_eq!(
+            report.trigger_price.unwrap(),
+            Price::from_str("48000.0").unwrap()
+        );
+        assert!(report.price.is_some());
+        assert_eq!(report.price.unwrap(), Price::from_str("47500.0").unwrap());
+        assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
+        assert!(report.reduce_only);
+    }
+
+    #[rstest]
+    #[case::oneway(0, "BTCUSDT-LINEAR.BYBIT-ONEWAY")]
+    #[case::long(1, "BTCUSDT-LINEAR.BYBIT-LONG")]
+    #[case::short(2, "BTCUSDT-LINEAR.BYBIT-SHORT")]
+    #[case::unknown(99, "BTCUSDT-LINEAR.BYBIT-UNKNOWN")]
+    fn test_make_venue_position_id(#[case] position_idx: i32, #[case] expected: &str) {
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let result = make_venue_position_id(instrument_id, position_idx);
+        assert_eq!(result, PositionId::from(expected));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_venue_position_id_is_none() {
+        let instrument = linear_instrument();
+        let json = load_test_json("http_get_executions.json");
+        let response: BybitTradeHistoryResponse = serde_json::from_str(&json).unwrap();
+        let execution = &response.result.list[0];
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_fill_report(execution, account_id, &instrument, TS).unwrap();
+
+        assert_eq!(report.venue_position_id, None);
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_venue_position_id_is_none() {
+        let instrument = linear_instrument();
+        let json = load_test_json("http_get_orders_realtime_tp_sl.json");
+        let response: BybitOpenOrdersResponse = serde_json::from_str(&json).unwrap();
+        let order = &response.result.list[0]; // TP order, positionIdx=0
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_order_status_report(order, &instrument, account_id, TS).unwrap();
+
+        assert_eq!(report.venue_position_id, None);
     }
 }

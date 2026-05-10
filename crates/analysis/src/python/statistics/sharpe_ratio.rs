@@ -21,7 +21,21 @@ use super::transform_returns;
 use crate::{statistic::PortfolioStatistic, statistics::sharpe_ratio::SharpeRatio};
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl SharpeRatio {
+    /// Calculates the Sharpe ratio for portfolio returns.
+    ///
+    /// The Sharpe ratio measures risk-adjusted return and is calculated as:
+    /// `(Mean Return - Risk-free Rate) / Standard Deviation of Returns * sqrt(period)`
+    ///
+    /// This implementation assumes a risk-free rate of 0 and annualizes the ratio
+    /// using the square root of the specified period (default: 252 trading days).
+    ///
+    /// # References
+    ///
+    /// - Sharpe, W. F. (1966). "Mutual Fund Performance". *Journal of Business*, 39(1), 119-138.
+    /// - Sharpe, W. F. (1994). "The Sharpe Ratio". *Journal of Portfolio Management*, 21(1), 49-58.
+    /// - CFA Institute Investment Foundations, 3rd Edition
     #[new]
     #[pyo3(signature = (period=None))]
     fn py_new(period: Option<usize>) -> Self {
@@ -39,8 +53,9 @@ impl SharpeRatio {
     }
 
     #[pyo3(name = "calculate_from_returns")]
+    #[expect(clippy::needless_pass_by_value)]
     fn py_calculate_from_returns(&mut self, raw_returns: BTreeMap<u64, f64>) -> Option<f64> {
-        self.calculate_from_returns(&transform_returns(raw_returns))
+        self.calculate_from_returns(&transform_returns(&raw_returns))
     }
 
     #[pyo3(name = "calculate_from_realized_pnls")]

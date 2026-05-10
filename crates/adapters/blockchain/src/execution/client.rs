@@ -79,6 +79,7 @@ impl BlockchainExecutionClient {
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
             config.http_rpc_url.clone(),
             config.rpc_requests_per_second,
+            None,
         ));
         let wallet_address = validate_address(config.wallet_address.as_str())?;
         let erc20_contract = Erc20Contract::new(http_rpc_client.clone(), true);
@@ -172,6 +173,7 @@ impl BlockchainExecutionClient {
                 .clone()
                 .into_iter()
                 .collect();
+
             for token in tokens {
                 if let Ok(token_balance) = self.fetch_token_balance(&token).await {
                     log::info!("Adding token balance to the wallet: {token_balance}");
@@ -230,35 +232,35 @@ impl ExecutionClient for BlockchainExecutionClient {
         todo!("implement stop")
     }
 
-    fn submit_order(&self, _cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, _cmd: SubmitOrder) -> anyhow::Result<()> {
         todo!("implement submit_order")
     }
 
-    fn submit_order_list(&self, _cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, _cmd: SubmitOrderList) -> anyhow::Result<()> {
         todo!("implement submit_order_list")
     }
 
-    fn modify_order(&self, _cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, _cmd: ModifyOrder) -> anyhow::Result<()> {
         todo!("implement modify_order")
     }
 
-    fn cancel_order(&self, _cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order(&self, _cmd: CancelOrder) -> anyhow::Result<()> {
         todo!("implement cancel_order")
     }
 
-    fn cancel_all_orders(&self, _cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, _cmd: CancelAllOrders) -> anyhow::Result<()> {
         todo!("implement cancel_all_orders")
     }
 
-    fn batch_cancel_orders(&self, _cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, _cmd: BatchCancelOrders) -> anyhow::Result<()> {
         todo!("implement batch_cancel_orders")
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         todo!("implement query_account")
     }
 
-    fn query_order(&self, _cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
         todo!("implement query_order")
     }
 

@@ -94,6 +94,19 @@ cdef class SubscribeInstrumentClose(SubscribeData):
     pass
 
 
+cdef class SubscribeOptionGreeks(SubscribeData):
+    pass
+
+
+cdef class SubscribeOptionChain(SubscribeData):
+    cdef readonly object series_id
+    """The option series ID for the subscription."""
+    cdef readonly object strike_range
+    """The strike range for filtering the chain."""
+    cdef readonly object snapshot_interval_ms
+    """The snapshot interval in milliseconds (None for raw mode)."""
+
+
 cdef class UnsubscribeData(DataCommand):
     cdef readonly InstrumentId instrument_id
     """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
@@ -142,6 +155,15 @@ cdef class UnsubscribeInstrumentStatus(UnsubscribeData):
 
 cdef class UnsubscribeInstrumentClose(UnsubscribeData):
     pass
+
+
+cdef class UnsubscribeOptionGreeks(UnsubscribeData):
+    pass
+
+
+cdef class UnsubscribeOptionChain(UnsubscribeData):
+    cdef readonly object series_id
+    """The option series ID for the subscription."""
 
 
 cdef class RequestData(Request):
@@ -199,6 +221,13 @@ cdef class RequestFundingRates(RequestData):
 cdef class RequestBars(RequestData):
     cdef readonly BarType bar_type
     """The bar type for the request.\n\n:returns: `BarType`"""
+
+
+cdef class RequestForwardPrices(RequestData):
+    cdef readonly str underlying
+    """The underlying asset symbol.\n\n:returns: `str`"""
+    cdef readonly object sample_instrument_id
+    """Optional sample instrument ID for single-instrument fast path.\n\n:returns: `InstrumentId` or ``None``"""
 
 
 cdef class RequestJoin(RequestData):

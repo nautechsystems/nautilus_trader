@@ -205,8 +205,8 @@ cpdef str bar_aggregation_not_implemented_message(BarAggregation aggregation):
     agg_str = bar_aggregation_to_str(aggregation)
     supported = supported_bar_aggregations_str()
     return (
-        f"BarAggregation.{agg_str} is not currently implemented. "
-        f"Supported aggregations are: {supported}."
+        f"BarAggregation.{agg_str} is unsupported in this context. "
+        f"Known aggregations are: {supported}."
     )
 
 
@@ -315,6 +315,55 @@ cpdef list capsule_to_list(capsule):
             raise RuntimeError("Invalid data element to convert from `PyCapsule`")
 
     return objects
+
+
+cpdef list pyo3_list_to_data_list(list pyo3_items):
+    """
+    Convert a list of PyO3 data objects to a list of Cython Data objects.
+
+    The Rust backend returns Python lists (instead of PyCapsules) for chunks
+    that contain custom data types. Items in these lists are PyO3 instances
+    of built-in types (QuoteTick, TradeTick, etc.) or PyO3 CustomData wrappers.
+    This function converts each item to its Cython equivalent so the backtest
+    engine can process them.
+    """
+    cdef list result = []
+    for item in pyo3_items:
+        type_name = type(item).__name__
+        if type_name == "QuoteTick":
+            result.append(QuoteTick.from_pyo3(item))
+        elif type_name == "TradeTick":
+            result.append(TradeTick.from_pyo3(item))
+        elif type_name == "Bar":
+            result.append(Bar.from_pyo3(item))
+        elif type_name == "OrderBookDelta":
+            result.append(OrderBookDelta.from_pyo3(item))
+        elif type_name == "OrderBookDeltas":
+            result.append(OrderBookDeltas.from_pyo3(item))
+        elif type_name == "OrderBookDepth10":
+            result.append(OrderBookDepth10.from_pyo3(item))
+        elif type_name == "MarkPriceUpdate":
+            result.append(MarkPriceUpdate.from_pyo3(item))
+        elif type_name == "IndexPriceUpdate":
+            result.append(IndexPriceUpdate.from_pyo3(item))
+        elif type_name == "InstrumentStatus":
+            result.append(InstrumentStatus.from_pyo3(item))
+        elif type_name == "InstrumentClose":
+            result.append(InstrumentClose.from_pyo3(item))
+        elif type_name == "CustomData":
+            inner = item.data
+            pyo3_dt = item.data_type
+            # Rust-native custom types return a PyO3 object that is not a
+            # Cython Data subclass. Convert via from_dict round-trip so the
+            # result satisfies CustomData(data_type, Data).
+            if not isinstance(inner, Data):
+                inner_cls = type(inner)
+                inner = inner_cls.from_dict(inner.to_dict())
+            cy_dt = DataType(type(inner), metadata=pyo3_dt.metadata)
+            result.append(CustomData(data_type=cy_dt, data=inner))
+        else:
+            raise RuntimeError(f"Cannot convert PyO3 data type '{type_name}' to Cython")
+    return result
 
 
 # SAFETY: Do NOT deallocate the capsule here
@@ -1141,9 +1190,8 @@ cdef class BarType:
     - Time aggregations support timedelta conversion
     - Threshold aggregations (tick, volume, value) don't have fixed time intervals
     - Information aggregations use complex algorithms for bar creation
+    - All bar aggregation methods can be internally aggregated
     - String representation format: "{step}-{aggregation}-{price_type}"
-        It is expected that all bar aggregation methods other than time will be
-        internally aggregated.
 
     """
 
@@ -2016,8 +2064,10 @@ cdef class DataType:
     ----------
     type : type
         The `Data` type of the data.
-    metadata : dict
+    metadata : dict, optional
         The data types metadata.
+    identifier : str, optional
+        Optional catalog path identifier (can contain subdirs, e.g. "venue//symbol").
 
     Raises
     ------
@@ -2033,13 +2083,14 @@ cdef class DataType:
 
     """
 
-    def __init__(self, type type not None, dict metadata = None) -> None:  # noqa (shadows built-in type)
+    def __init__(self, type type not None, dict metadata = None, identifier = None) -> None:  # noqa (shadows built-in type)
         if not issubclass(type, Data):
             if not (hasattr(type, "ts_event") and hasattr(type, "ts_init")):
                 raise TypeError("`type` was not a subclass of `Data`")
 
         self.type = type
         self.metadata = metadata or {}
+        self.identifier = identifier
         self.topic = self.type.__name__ + '.' + '.'.join([
             f'{k}={v if v is not None else "*"}' for k, v in self.metadata.items()
         ]) if self.metadata else self.type.__name__ + "*"
@@ -2950,10 +3001,17 @@ cdef class OrderBookDelta(Data):
             if size_prec == 0:
                 size_prec = delta._mem.order.size.precision
 
+            # Use per-delta precision for sentinel values (PRICE_UNDEF has precision=0)
             pyo3_book_order = nautilus_pyo3.BookOrder(
                nautilus_pyo3.OrderSide(order_side_to_str(delta._mem.order.side)),
-               nautilus_pyo3.Price.from_raw(delta._mem.order.price.raw, price_prec),
-               nautilus_pyo3.Quantity.from_raw(delta._mem.order.size.raw, size_prec),
+               nautilus_pyo3.Price.from_raw(
+                   delta._mem.order.price.raw,
+                   delta._mem.order.price.precision if delta._mem.order.price.precision == 0 else price_prec,
+               ),
+               nautilus_pyo3.Quantity.from_raw(
+                   delta._mem.order.size.raw,
+                   delta._mem.order.size.precision if delta._mem.order.size.precision == 0 else size_prec,
+               ),
                delta._mem.order.order_id,
             )
 
@@ -6034,6 +6092,8 @@ cdef class FundingRateUpdate(Data):
         The instrument ID for the funding rate.
     rate : Decimal
         The current funding rate.
+    interval : int
+        Time interval (minutes) between funding payments.
     next_funding_ns : int, optional
         UNIX timestamp (nanoseconds) of the next funding payment (if available).
     ts_event : int
@@ -6049,10 +6109,12 @@ cdef class FundingRateUpdate(Data):
         rate not None,
         uint64_t ts_event,
         uint64_t ts_init,
+        interval = None,
         next_funding_ns = None,
     ) -> None:
         self.instrument_id = instrument_id
         self.rate = rate
+        self.interval = interval
         self.next_funding_ns = next_funding_ns
         self._ts_event = ts_event
         self._ts_init = ts_init
@@ -6063,6 +6125,7 @@ cdef class FundingRateUpdate(Data):
         return (
             self.instrument_id == other.instrument_id
             and self.rate == other.rate
+            and self.interval == other.interval
             and self.next_funding_ns == other.next_funding_ns
         )
 
@@ -6070,6 +6133,7 @@ cdef class FundingRateUpdate(Data):
         return hash((
             self.instrument_id,
             self.rate,
+            self.interval,
             self.next_funding_ns,
         ))
 
@@ -6078,6 +6142,7 @@ cdef class FundingRateUpdate(Data):
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
             f"rate={self.rate}, "
+            f"interval={self.interval}, "
             f"next_funding_ns={self.next_funding_ns}, "
             f"ts_event={self._ts_event}, "
             f"ts_init={self._ts_init})"
@@ -6115,6 +6180,7 @@ cdef class FundingRateUpdate(Data):
             rate=values["rate"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            interval=values.get("interval"),
             next_funding_ns=values.get("next_funding_ns"),
         )
 
@@ -6128,6 +6194,8 @@ cdef class FundingRateUpdate(Data):
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
+        if obj.interval is not None:
+            result["interval"] = obj.interval
         if obj.next_funding_ns is not None:
             result["next_funding_ns"] = obj.next_funding_ns
         return result
@@ -6201,7 +6269,151 @@ cdef class FundingRateUpdate(Data):
         return FundingRateUpdate(
             instrument_id=InstrumentId.from_str(pyo3_funding_rate.instrument_id.value),
             rate=pyo3_funding_rate.rate,
+            interval=pyo3_funding_rate.interval,
             next_funding_ns=pyo3_funding_rate.next_funding_ns,
             ts_event=pyo3_funding_rate.ts_event,
             ts_init=pyo3_funding_rate.ts_init,
+        )
+
+
+cdef class OptionGreeks(Data):
+    """
+    Represents exchange-provided option Greeks and implied volatility for a single instrument.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID these Greeks apply to.
+    delta : double
+        The delta.
+    gamma : double
+        The gamma.
+    vega : double
+        The vega.
+    theta : double
+        The theta.
+    rho : double
+        The rho.
+    mark_iv : float, optional
+        The mark implied volatility.
+    bid_iv : float, optional
+        The bid implied volatility.
+    ask_iv : float, optional
+        The ask implied volatility.
+    underlying_price : float, optional
+        The underlying price at time of Greeks calculation.
+    open_interest : float, optional
+        The open interest for the instrument.
+    ts_event : uint64_t
+        UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the object was initialized.
+    convention : GreeksConvention, optional
+        The greeks convention (Black-Scholes or price-adjusted). Defaults to
+        ``GreeksConvention.BLACK_SCHOLES`` when not provided.
+
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        double delta,
+        double gamma,
+        double vega,
+        double theta,
+        double rho,
+        object mark_iv,
+        object bid_iv,
+        object ask_iv,
+        object underlying_price,
+        object open_interest,
+        uint64_t ts_event,
+        uint64_t ts_init,
+        object convention = None,
+    ) -> None:
+        self.instrument_id = instrument_id
+        self.delta = delta
+        self.gamma = gamma
+        self.vega = vega
+        self.theta = theta
+        self.rho = rho
+        self.mark_iv = mark_iv
+        self.bid_iv = bid_iv
+        self.ask_iv = ask_iv
+        self.underlying_price = underlying_price
+        self.open_interest = open_interest
+        self.convention = convention if convention is not None else nautilus_pyo3.GreeksConvention.BLACK_SCHOLES
+        self.ts_event = ts_event
+        self.ts_init = ts_init
+
+    def __repr__(self) -> str:
+        return (
+            f"OptionGreeks("
+            f"instrument_id={self.instrument_id}, "
+            f"delta={self.delta:.4f}, "
+            f"gamma={self.gamma:.4f}, "
+            f"vega={self.vega:.4f}, "
+            f"theta={self.theta:.4f}, "
+            f"mark_iv={self.mark_iv})"
+        )
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+    @staticmethod
+    def from_pyo3(pyo3_greeks) -> OptionGreeks:
+        """
+        Return a legacy Cython OptionGreeks converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_greeks : nautilus_pyo3.OptionGreeks
+            The pyo3 Rust option greeks to convert from.
+
+        Returns
+        -------
+        OptionGreeks
+
+        """
+        return OptionGreeks(
+            instrument_id=InstrumentId.from_str(pyo3_greeks.instrument_id.value),
+            delta=pyo3_greeks.delta,
+            gamma=pyo3_greeks.gamma,
+            vega=pyo3_greeks.vega,
+            theta=pyo3_greeks.theta,
+            rho=pyo3_greeks.rho,
+            mark_iv=pyo3_greeks.mark_iv,
+            bid_iv=pyo3_greeks.bid_iv,
+            ask_iv=pyo3_greeks.ask_iv,
+            underlying_price=pyo3_greeks.underlying_price,
+            open_interest=pyo3_greeks.open_interest,
+            ts_event=pyo3_greeks.ts_event,
+            ts_init=pyo3_greeks.ts_init,
+            convention=pyo3_greeks.convention,
+        )
+
+    def to_pyo3(self) -> nautilus_pyo3.OptionGreeks:
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.OptionGreeks
+
+        """
+        return nautilus_pyo3.OptionGreeks(
+            nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
+            self.delta,
+            self.gamma,
+            self.vega,
+            self.theta,
+            self.rho,
+            self.mark_iv,
+            self.bid_iv,
+            self.ask_iv,
+            self.underlying_price,
+            self.open_interest,
+            self.ts_event,
+            self.ts_init,
+            self.convention,
         )

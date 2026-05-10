@@ -1529,6 +1529,7 @@ class TestBacktestPnLAlignmentAcceptance:
         from decimal import Decimal
 
         position_report_sum = Decimal(0)
+
         if not positions_report.empty:
             for pnl_str in positions_report["realized_pnl"]:
                 pnl_money = Money.from_str(pnl_str)
@@ -1625,6 +1626,7 @@ class TestBacktestCommandSettling:
 
         timestamps = pd.date_range(start="2020-01-01", periods=3, freq="1min")
         quotes = []
+
         for i, ts in enumerate(timestamps):
             bid = 0.70000 + (i * 0.00001)
             quote = QuoteTick(
@@ -1736,6 +1738,7 @@ class TestBacktestCommandSettling:
 
         timestamps = pd.date_range(start="2020-01-01", periods=3, freq="1min")
         quotes = []
+
         for i, ts in enumerate(timestamps):
             bid = 0.70000 + (i * 0.00001)
             quote = QuoteTick(
@@ -1840,6 +1843,7 @@ class TestBacktestCommandSettling:
         # Data spans timer time so the timer fires between data points
         timestamps = pd.date_range(start="2020-01-01", periods=3, freq="1min")
         quotes = []
+
         for ts in timestamps:
             quote = QuoteTick(
                 instrument_id=instrument.id,
@@ -1863,6 +1867,7 @@ class TestBacktestCommandSettling:
         assert len(strategy.orders_submitted) == 2
 
         timer_ts = pd.Timestamp("2020-01-01 00:00:30", tz="UTC").value
+
         for order in strategy.orders_submitted:
             cached = engine.cache.order(order.client_order_id)
             assert cached.is_closed
@@ -1879,6 +1884,7 @@ class TestBacktestNodeWithBacktestDataIterator:
         catalog_data_path = (
             PACKAGE_ROOT / "tests" / "test_data" / "databento" / "options_catalog" / "data"
         )
+
         if catalog_data_path.exists():
             shutil.rmtree(catalog_data_path)
 
@@ -1908,17 +1914,19 @@ class TestBacktestNodeWithBacktestDataIterator:
 
         # Assert
         expected_order_filled_messages = [
-            "Order filled: ESM4 P5230.XCME, qty=10, price=97.25, trade_id=XCME-1-001",
-            "Order filled: ESM4 P5250.XCME, qty=10, price=108.50, trade_id=XCME-2-001",
-            "Order filled: ESM4.XCME, qty=1, price=5199.75, trade_id=XCME-3-002",
+            "Order filled: ESM4 P5230.XCME, qty=10, price=97.25, trade_id=T-d47be5ca9f6901ab-001",
+            "Order filled: ESM4 P5250.XCME, qty=10, price=108.50, trade_id=T-7f8e274f85bbdd3e-001",
+            "Order filled: ESM4.XCME, qty=1, price=5199.75, trade_id=T-75d12aa71a6bb07d-004",
             "Order filled: ((1))ESM4 P5230___(1)ESM4 P5250.XCME, qty=5, price=10.75, "
-            "trade_id=XCME-5-001",
-            "Order filled: ESM4 P5230.XCME, qty=5, price=97.62, trade_id=XCME-5-001-0",
-            "Order filled: ESM4 P5250.XCME, qty=5, price=108.38, trade_id=XCME-5-001-1",
-            "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=2, price=12930.50, trade_id=XCME-6-001",
-            "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=3, price=12930.75, trade_id=XCME-6-002",
-            "Order filled: ESM4.XCME, qty=2, price=5199.62, trade_id=XCME-6-002-0",
-            "Order filled: NQM4.XCME, qty=2, price=18130.12, trade_id=XCME-6-002-1",
+            "trade_id=T-75c4107db8ae4ad7-001",
+            "Order filled: ESM4 P5230.XCME, qty=5, price=97.62, trade_id=T-75c4107db8ae4ad7-001-0",
+            "Order filled: ESM4 P5250.XCME, qty=5, price=108.38, trade_id=T-75c4107db8ae4ad7-001-1",
+            "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=2, price=12930.50, "
+            "trade_id=T-8ba53c03fcdf19ba-001",
+            "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=3, price=12930.75, "
+            "trade_id=T-8ba53c03fcdf19ba-002",
+            "Order filled: ESM4.XCME, qty=2, price=5199.62, trade_id=T-8ba53c03fcdf19ba-002-0",
+            "Order filled: NQM4.XCME, qty=2, price=18130.12, trade_id=T-8ba53c03fcdf19ba-002-1",
         ]
         assert order_filled_messages == expected_order_filled_messages
 
@@ -1942,8 +1950,8 @@ class TestBacktestNodeWithBacktestDataIterator:
         expected_spread_bar_messages = [
             "Historical Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12928.25,12928.25,12927.25,12927.25,4,1715248560000000000, ts=2024-05-09T09:56:00.000000000Z",
             "Historical Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12927.50,12928.00,12927.50,12928.00,3,1715248680000000000, ts=2024-05-09T09:58:00.000000000Z",
-            "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12930.25,12930.25,12930.25,12930.25,1,1715248800000000000, ts=2024-05-09T10:00:00.000000000Z",
-            "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12930.50,12931.75,12930.25,12931.75,10,1715248920000000000, ts=2024-05-09T10:02:00.000000000Z",
+            "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12930.25,12930.50,12930.25,12930.50,3,1715248800000000000, ts=2024-05-09T10:00:00.000000000Z",
+            "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12930.25,12931.75,12930.25,12931.75,8,1715248920000000000, ts=2024-05-09T10:02:00.000000000Z",
             "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12933.00,12933.00,12932.50,12932.50,4,1715249040000000000, ts=2024-05-09T10:04:00.000000000Z",
         ]
         assert spread_bar_messages == expected_spread_bar_messages
@@ -2091,6 +2099,7 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
 
     # Create and write custom data to catalog (every minute between 10:00 and 10:05)
     custom_data_list = []
+
     for minute in range(6):  # 0, 1, 2, 3, 4, 5 (10:00 to 10:05)
         timestamp_str = f"2024-05-09T10:0{minute}:00"
         ts_nanos = dt_to_unix_nanos(time_object_to_dt(timestamp_str))
@@ -2245,6 +2254,7 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
             start=backtest_start_time,
             end=end_time,
             raise_exception=True,
+            dispose_on_completion=False,
         ),
     ]
 
@@ -2331,8 +2341,7 @@ class OptionStrategy(Strategy):
         self.request_quote_ticks(
             self.config.spread_id2,
             start=time_object_to_dt(self.config.start_time),
-            # Note: we need to request up to 10:00 so the spread quote at 9:59 is produced
-            end=self.clock.utc_now() - pd.Timedelta(minutes=0),
+            end=self.clock.utc_now() - pd.Timedelta(minutes=1),
             params=self.default_data_params,
         )
 
@@ -2340,8 +2349,7 @@ class OptionStrategy(Strategy):
         self.request_aggregated_bars(
             [self.bar_type_3],
             start=time_object_to_dt(self.config.start_time),
-            # Note: we need to request up to 10:00 so the spread quote at 9:59 is produced
-            end=self.clock.utc_now() - pd.Timedelta(minutes=0),
+            end=self.clock.utc_now() - pd.Timedelta(minutes=1),
             update_subscriptions=True,
             params=self.default_data_params,
         )

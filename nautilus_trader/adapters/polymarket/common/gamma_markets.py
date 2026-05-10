@@ -64,6 +64,7 @@ def build_markets_query(filters: dict[str, Any] | None = None) -> dict[str, Any]
 
     """
     params: dict[str, Any] = {}
+
     if not filters:
         return params
 
@@ -95,6 +96,7 @@ def build_markets_query(filters: dict[str, Any] | None = None) -> dict[str, Any]
         "tag_id",
         "related_tags",
     )
+
     for key in passthrough_keys:
         if key in filters and filters[key] is not None:
             params[key] = filters[key]
@@ -126,6 +128,7 @@ async def _request_markets_page(
         params=effective_params,
         timeout_secs=max(1, ceil(timeout)),
     )
+
     if resp.status != 200:
         body = resp.body.decode("utf-8", errors="replace")
         raise RuntimeError(
@@ -164,6 +167,7 @@ async def iter_markets(
             limit=limit,
             timeout=timeout,
         )
+
         if not markets:
             break
         for market in markets:
@@ -193,6 +197,7 @@ def normalize_gamma_market_to_clob_format(gamma_market: dict[str, Any]) -> dict[
     """
     rewards = gamma_market.get("clobRewards", [])
     rewards_dict = None
+
     if rewards and len(rewards) > 0:
         reward = rewards[0]
         rewards_dict = {
@@ -279,6 +284,7 @@ async def list_markets(
 
     """
     results: list[dict[str, Any]] = []
+
     async for market in iter_markets(
         http_client=http_client,
         filters=filters,
@@ -288,4 +294,67 @@ async def list_markets(
         results.append(market)
         if max_results is not None and len(results) >= max_results:
             break
+    return results
+
+
+# Maximum number of condition_ids Gamma accepts per request
+_GAMMA_CONDITION_IDS_BATCH_SIZE = 100
+
+
+async def fetch_fee_schedules(
+    http_client: HttpClient,
+    condition_ids: list[str],
+    base_url: str | None = None,
+    timeout: float = 10.0,
+) -> dict[str, dict[str, Any]]:
+    """
+    Fetch `feeSchedule` from Gamma for each condition ID in batches.
+
+    The CLOB `/markets` endpoint omits `feeSchedule`, which holds the effective
+    fee rate. This helper hits Gamma `/markets?condition_ids=...` to recover it,
+    so callers on the CLOB path can still populate an accurate taker fee.
+
+    Parameters
+    ----------
+    http_client : HttpClient
+        The HTTP client to use.
+    condition_ids : list[str]
+        Condition IDs to look up. Deduped internally.
+    base_url : str, optional
+        Base Gamma URL override.
+    timeout : float, default 10.0
+        Per-request timeout in seconds.
+
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        A mapping of `condition_id` to `feeSchedule` dict. Markets without a
+        schedule or missing from Gamma are omitted.
+
+    References
+    ----------
+    https://docs.polymarket.com/trading/fees
+
+    """
+    unique_ids = list(dict.fromkeys(cid for cid in condition_ids if cid))
+    if not unique_ids:
+        return {}
+
+    results: dict[str, dict[str, Any]] = {}
+
+    for start in range(0, len(unique_ids), _GAMMA_CONDITION_IDS_BATCH_SIZE):
+        batch = unique_ids[start : start + _GAMMA_CONDITION_IDS_BATCH_SIZE]
+        markets = await list_markets(
+            http_client=http_client,
+            filters={"condition_ids": batch},
+            base_url=base_url,
+            timeout=timeout,
+        )
+
+        for market in markets:
+            condition_id = market.get("conditionId")
+            fee_schedule = market.get("feeSchedule")
+            if condition_id and isinstance(fee_schedule, dict):
+                results[condition_id] = fee_schedule
+
     return results

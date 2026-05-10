@@ -21,13 +21,13 @@ use nautilus_common::{
     cache::Cache,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::ClientId,
 };
-use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
 use crate::{
     common::consts::DERIBIT_VENUE,
@@ -47,6 +47,10 @@ impl ClientConfig for DeribitDataClientConfig {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.deribit")
 )]
 pub struct DeribitDataClientFactory;
 
@@ -107,6 +111,10 @@ impl ClientConfig for DeribitExecClientConfig {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.deribit")
 )]
 pub struct DeribitExecutionClientFactory;
 
@@ -175,9 +183,12 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{
-        cache::Cache, clock::TestClock, live::runner::set_data_event_sender, messages::DataEvent,
+        cache::Cache,
+        clock::TestClock,
+        factories::{ClientConfig, DataClientFactory},
+        live::runner::set_data_event_sender,
+        messages::DataEvent,
     };
-    use nautilus_system::factories::{ClientConfig, DataClientFactory};
     use rstest::rstest;
 
     use super::*;
@@ -224,7 +235,7 @@ mod tests {
         let factory = DeribitDataClientFactory::new();
         let config = DeribitDataClientConfig {
             product_types: vec![DeribitProductType::Future],
-            use_testnet: true,
+            environment: crate::common::enums::DeribitEnvironment::Testnet,
             ..Default::default()
         };
 

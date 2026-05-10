@@ -1217,3 +1217,56 @@ class TestRedisCacheDatabaseIntegrity:
 
         # Assert
         await eventually(lambda: self.engine.cache.check_integrity())
+
+
+@pytest.mark.xdist_group(name="redis_integration")
+class TestRedisCacheCustomData:
+    """
+    Tests Redis cache add_custom_data and load_custom_data roundtrip via PyO3.
+    """
+
+    def setup(self):
+        from nautilus_trader.common.config import msgspec_encoding_hook
+        from nautilus_trader.core import nautilus_pyo3
+
+        self.clock = TestClock()
+        self.trader_id = TestIdStubs.trader_id()
+        config = CacheConfig(database=DatabaseConfig())
+        config_json = msgspec.json.encode(config, enc_hook=msgspec_encoding_hook)
+        self.database = nautilus_pyo3.RedisCacheDatabase(
+            trader_id=nautilus_pyo3.TraderId(self.trader_id.value),
+            instance_id=nautilus_pyo3.UUID4.from_str(UUID4().value),
+            config_json=config_json,
+        )
+
+    def teardown(self):
+        time.sleep(0.2)
+        self.database.flushdb()
+        time.sleep(0.5)
+
+    @pytest.mark.asyncio
+    async def test_add_and_load_custom_data_roundtrip(self):
+        """
+        Add custom data to Redis cache and load it back by DataType.
+        """
+        from nautilus_trader.core.nautilus_pyo3 import InstrumentId
+        from nautilus_trader.core.nautilus_pyo3.model import CustomData
+        from nautilus_trader.core.nautilus_pyo3.model import DataType
+        from nautilus_trader.core.nautilus_pyo3.model import register_custom_data_class
+        from nautilus_trader.core.nautilus_pyo3.persistence import RustTestCustomData
+
+        register_custom_data_class(RustTestCustomData)
+        instrument_id_pyo3 = InstrumentId.from_str("REDIS.TEST")
+        metadata = {"venue": "TEST", "instrument_id": "REDIS.TEST"}
+        data_type_pyo3 = DataType("RustTestCustomData", metadata, "REDIS.TEST")
+        inner = RustTestCustomData(instrument_id_pyo3, 1.23, True, 1, 1000)
+        custom_data_pyo3 = CustomData(data_type_pyo3, inner)
+
+        self.database.add_custom_data(custom_data_pyo3)
+
+        await eventually(lambda: len(self.database.load_custom_data(data_type_pyo3)) > 0, timeout=5)
+
+        loaded = self.database.load_custom_data(data_type_pyo3)
+        assert len(loaded) == 1
+        assert loaded[0].data_type.type_name == "RustTestCustomData"
+        assert loaded[0].data.value == 1.23

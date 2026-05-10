@@ -650,6 +650,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["algoType"] == "CONDITIONAL"
         assert request[1]["payload"]["timeInForce"] == "GTC"
         assert request[1]["payload"]["quantity"] == "10"
+
         if _is_dual_side_position:
             assert "reduceOnly" not in request[1]["payload"]
         else:
@@ -660,6 +661,80 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["recvWindow"] == "5000"
         assert request[1]["payload"]["signature"] is not None
         assert request[1]["payload"]["positionSide"] == expected
+
+    @pytest.mark.asyncio
+    async def test_submit_stop_market_order_with_close_position(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+
+        order = self.strategy.order_factory.stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            trigger_price=Price.from_str("10099.00"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"close_position": True},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_send_request.call_args)
+
+        # Assert
+        request = mock_send_request.call_args
+        assert request[0][0] == HttpMethod.POST
+        assert request[0][1] == "/fapi/v1/algoOrder"
+        assert request[1]["payload"]["closePosition"] == "true"
+        assert "quantity" not in request[1]["payload"]
+        assert "reduceOnly" not in request[1]["payload"]
+        assert request[1]["payload"]["triggerPrice"] == "10099.00"
+        assert request[1]["payload"]["workingType"] == "CONTRACT_PRICE"
+
+    @pytest.mark.asyncio
+    async def test_submit_stop_market_order_close_position_with_reduce_only_denied(self, mocker):
+        # Arrange
+        mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            trigger_price=Price.from_str("10099.00"),
+            reduce_only=True,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"close_position": True},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "close_position" in reason
+        assert "reduce_only" in reason
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -903,7 +978,7 @@ class TestBinanceFuturesExecutionClient:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.SELL,
             quantity=Quantity.from_int(10),
-            trailing_offset=Decimal(100),
+            trailing_offset=Decimal(25),
             trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
             activation_price=Price.from_str("10000.00"),
             trigger_type=TriggerType.MARK_PRICE,
@@ -935,13 +1010,15 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["algoType"] == "CONDITIONAL"
         assert request[1]["payload"]["timeInForce"] == "GTC"
         assert request[1]["payload"]["quantity"] == "10"
+
         if _is_dual_side_position:
             assert "reduceOnly" not in request[1]["payload"]
         else:
             assert request[1]["payload"]["reduceOnly"] == "True"
         assert request[1]["payload"]["clientAlgoId"] is not None
-        assert request[1]["payload"]["activationPrice"] == "10000.00"
-        assert request[1]["payload"]["callbackRate"] == "1.0"
+        assert request[1]["payload"]["activatePrice"] == "10000.00"
+        assert "activationPrice" not in request[1]["payload"]
+        assert Decimal(request[1]["payload"]["callbackRate"]) == Decimal("0.25")
         assert request[1]["payload"]["workingType"] == "MARK_PRICE"
         assert request[1]["payload"]["recvWindow"] == "5000"
         assert request[1]["payload"]["signature"] is not None
@@ -1236,7 +1313,7 @@ class TestBinanceFuturesExecutionClient:
         self.exec_client.submit_order(submit_order)
         await eventually(lambda: mock_send_request.call_args)
 
-        # Assert: Order submitted successfully with activationPrice omitted
+        # Assert: Order submitted successfully with activatePrice omitted
         # As of 2025-12-09, conditional orders use the algo order endpoint
         request = mock_send_request.call_args
         assert request[0][0] == HttpMethod.POST
@@ -1248,8 +1325,9 @@ class TestBinanceFuturesExecutionClient:
         assert payload["side"] == "SELL"
         assert payload["quantity"] == "10"
         assert payload["callbackRate"] == "1.0"
-        # Critical: activationPrice should NOT be in the payload when None
+        # Critical: activatePrice should not be in the payload when None
         # This allows Binance to use server-side current market price
+        assert "activatePrice" not in payload
         assert "activationPrice" not in payload
 
     @pytest.mark.asyncio
@@ -1293,6 +1371,7 @@ class TestBinanceFuturesExecutionClient:
             call.kwargs["client_order_id"] for call in mock_generate_denied.call_args_list
         }
         assert denied_client_order_ids == {order.client_order_id for order in bracket.orders}
+
         for call in mock_generate_denied.call_args_list:
             assert "UNSUPPORTED_OCO_CONDITIONAL_ORDERS" in call.kwargs["reason"]
 

@@ -52,6 +52,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef set[OrderType] STOP_ORDER_TYPES
 cdef set[OrderType] LIMIT_ORDER_TYPES
+cdef set[OrderType] TRIGGERABLE_ORDER_TYPES
 cdef set[OrderStatus] CANCELLABLE_ORDER_STATUSES
 cdef set[OrderStatus] LOCAL_ACTIVE_ORDER_STATUSES
 

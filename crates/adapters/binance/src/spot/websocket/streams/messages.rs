@@ -15,52 +15,41 @@
 
 //! Binance Spot WebSocket message types.
 //!
-//! This module defines:
-//! - [`BinanceSpotWsMessage`]: Wrapper enum for handler output.
-//! - [`NautilusSpotDataWsMessage`]: Market data messages for data clients.
-//! - [`HandlerCommand`]: Commands sent from the client to the handler.
-//! - Subscription request/response structures for the Binance WebSocket API.
+//! The handler emits venue-specific types via [`BinanceSpotWsMessage`].
+//! Data client layers convert these to Nautilus domain types.
 
-use nautilus_model::{
-    data::{Data, OrderBookDeltas},
-    instruments::InstrumentAny,
-};
 use nautilus_network::websocket::WebSocketClient;
 use serde::{Deserialize, Serialize};
 
 use crate::common::enums::BinanceWsMethod;
-// Re-export SBE stream types for convenience
-pub use crate::common::sbe::stream::{
+pub use crate::spot::sbe::stream::{
     BestBidAskStreamEvent, DepthDiffStreamEvent, DepthSnapshotStreamEvent, PriceLevel, Trade,
     TradesStreamEvent,
 };
 
-/// Output message from the Spot WebSocket handler.
+/// Output message from the Spot WebSocket streams handler.
+///
+/// Contains venue-specific SBE-decoded event types. The data client layer
+/// converts these to Nautilus domain types using parse functions with
+/// instrument context.
 #[derive(Debug, Clone)]
 pub enum BinanceSpotWsMessage {
-    /// Public market data message.
-    Data(NautilusSpotDataWsMessage),
+    /// Trade stream events (SBE decoded).
+    Trades(TradesStreamEvent),
+    /// Best bid/ask stream event (SBE decoded).
+    BestBidAsk(BestBidAskStreamEvent),
+    /// Depth snapshot stream event (SBE decoded).
+    DepthSnapshot(DepthSnapshotStreamEvent),
+    /// Depth diff stream event (SBE decoded).
+    DepthDiff(DepthDiffStreamEvent),
+    /// Raw binary message (unhandled SBE template).
+    RawBinary(Vec<u8>),
+    /// Raw JSON message (unhandled text frame).
+    RawJson(serde_json::Value),
     /// Error from the server.
     Error(BinanceWsErrorMsg),
-    /// WebSocket reconnected - subscriptions should be restored.
+    /// WebSocket reconnected.
     Reconnected,
-}
-
-/// Market data message from Binance Spot WebSocket.
-///
-/// These are public messages that don't require authentication.
-#[derive(Debug, Clone)]
-pub enum NautilusSpotDataWsMessage {
-    /// Market data (trades, quotes, bars).
-    Data(Vec<Data>),
-    /// Order book deltas.
-    Deltas(OrderBookDeltas),
-    /// Instrument definition update.
-    Instrument(Box<InstrumentAny>),
-    /// Raw binary message (unhandled SBE).
-    RawBinary(Vec<u8>),
-    /// Raw JSON message (unhandled).
-    RawJson(serde_json::Value),
 }
 
 /// Binance WebSocket error message.
@@ -81,15 +70,11 @@ pub struct BinanceWsErrorMsg {
     clippy::large_enum_variant,
     reason = "Commands are ephemeral and immediately consumed"
 )]
-pub enum HandlerCommand {
+pub enum BinanceSpotWsStreamsCommand {
     /// Set the WebSocket client after connection.
     SetClient(WebSocketClient),
     /// Disconnect and clean up.
     Disconnect,
-    /// Initialize instrument cache with bulk data.
-    InitializeInstruments(Vec<InstrumentAny>),
-    /// Update a single instrument in the cache.
-    UpdateInstrument(InstrumentAny),
     /// Subscribe to streams.
     Subscribe { streams: Vec<String> },
     /// Unsubscribe from streams.

@@ -464,6 +464,7 @@ def test_pnl_aggregation_multiple_position_cycles(
     # Sum realized PnL from report using Money objects for robust parsing
 
     report_total_pnl = Decimal(0)
+
     for pnl_str in report["realized_pnl"]:
         pnl_money = Money.from_str(pnl_str)
         report_total_pnl += pnl_money.as_decimal()

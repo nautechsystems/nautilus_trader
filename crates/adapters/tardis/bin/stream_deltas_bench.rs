@@ -23,12 +23,12 @@ fn main() {
     );
 
     if !test_data_path.exists() {
-        eprintln!("Test data file not found: {test_data_path:?}");
+        eprintln!("Test data file not found: {}", test_data_path.display());
         return;
     }
 
     println!("Running stream_deltas benchmarks...");
-    println!("Test data: {test_data_path:?}");
+    println!("Test data: {}", test_data_path.display());
     println!();
 
     // Benchmark 1: Small chunks

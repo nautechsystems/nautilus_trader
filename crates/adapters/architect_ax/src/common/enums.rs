@@ -18,8 +18,8 @@
 use nautilus_model::{
     data::BarSpecification,
     enums::{
-        AggressorSide, AssetClass, BarAggregation, OrderSide, OrderStatus, OrderType, PositionSide,
-        TimeInForce,
+        AggressorSide, AssetClass, BarAggregation, MarketStatusAction, OrderSide, OrderStatus,
+        OrderType, PositionSide, TimeInForce,
     },
 };
 use serde::{Deserialize, Deserializer, Serialize};
@@ -60,6 +60,10 @@ use super::consts::{
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
 )]
 pub enum AxEnvironment {
     /// Sandbox/test environment.
@@ -139,17 +143,54 @@ impl AxEnvironment {
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+)]
 pub enum AxInstrumentState {
     /// Instrument is in pre-open state.
     PreOpen,
     /// Instrument is open for trading.
     Open,
+    /// Instrument trading is closed.
+    Closed,
+    /// Instrument trading is closed and frozen.
+    ClosedFrozen,
+    /// Instrument trading is halted.
+    Halted,
+    /// Instrument is in a match-and-close auction.
+    MatchAndCloseAuction,
     /// Instrument trading is suspended.
     Suspended,
     /// Instrument has been delisted.
     Delisted,
     /// Instrument state is unknown.
+    #[serde(other)]
     Unknown,
+}
+
+impl AxInstrumentState {
+    /// Returns whether the instrument is in a tradeable state.
+    #[must_use]
+    pub fn is_tradeable(self) -> bool {
+        matches!(self, Self::Open | Self::PreOpen)
+    }
+}
+
+impl From<AxInstrumentState> for MarketStatusAction {
+    fn from(state: AxInstrumentState) -> Self {
+        match state {
+            AxInstrumentState::PreOpen => Self::PreOpen,
+            AxInstrumentState::Open => Self::Trading,
+            AxInstrumentState::Closed | AxInstrumentState::ClosedFrozen => Self::Close,
+            AxInstrumentState::Halted => Self::Halt,
+            AxInstrumentState::MatchAndCloseAuction => Self::Cross,
+            AxInstrumentState::Suspended => Self::Suspend,
+            AxInstrumentState::Delisted | AxInstrumentState::Unknown => {
+                Self::NotAvailableForTrading
+            }
+        }
+    }
 }
 
 /// Instrument category as returned by the AX Exchange API.
@@ -236,6 +277,10 @@ impl From<AxCategory> for AssetClass {
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+)]
 pub enum AxOrderSide {
     /// Buy order.
     #[serde(rename = "B", alias = "Buy")]
@@ -317,6 +362,10 @@ impl TryFrom<OrderSide> for AxOrderSide {
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
 )]
 pub enum AxOrderStatus {
     /// Order is pending submission.
@@ -402,6 +451,10 @@ impl From<AxOrderStatus> for OrderStatus {
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+)]
 pub enum AxTimeInForce {
     /// Good-Till-Canceled: order remains active until filled or canceled.
     Gtc,
@@ -481,6 +534,10 @@ impl TryFrom<TimeInForce> for AxTimeInForce {
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+)]
 pub enum AxOrderType {
     /// Market order; execute immediately at best available price.
     Market,
@@ -555,6 +612,10 @@ impl TryFrom<OrderType> for AxOrderType {
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
 )]
 pub enum AxMarketDataLevel {
     /// Level 1: best bid/ask only.
@@ -735,6 +796,10 @@ pub enum AxOrderRequestType {
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+)]
 pub enum AxMdWsMessageType {
     /// Heartbeat event.
     #[serde(rename = "h")]
@@ -795,6 +860,10 @@ pub enum AxMdWsMessageType {
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
 )]
 pub enum AxOrderWsMessageType {
     /// Heartbeat event.
@@ -871,6 +940,10 @@ pub enum AxOrderWsMessageType {
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+)]
 pub enum AxCancelReason {
     /// User requested cancellation.
     UserRequested,
@@ -911,6 +984,10 @@ pub enum AxCancelReason {
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.architect_ax")
+)]
 pub enum AxCancelRejectionReason {
     /// Order not found or already canceled.
     OrderNotFound,
@@ -928,6 +1005,10 @@ mod tests {
     #[rstest]
     #[case(AxInstrumentState::Open, "\"OPEN\"")]
     #[case(AxInstrumentState::PreOpen, "\"PRE_OPEN\"")]
+    #[case(AxInstrumentState::Closed, "\"CLOSED\"")]
+    #[case(AxInstrumentState::ClosedFrozen, "\"CLOSED_FROZEN\"")]
+    #[case(AxInstrumentState::Halted, "\"HALTED\"")]
+    #[case(AxInstrumentState::MatchAndCloseAuction, "\"MATCH_AND_CLOSE_AUCTION\"")]
     #[case(AxInstrumentState::Suspended, "\"SUSPENDED\"")]
     #[case(AxInstrumentState::Delisted, "\"DELISTED\"")]
     fn test_instrument_state_serialization(
@@ -939,6 +1020,49 @@ mod tests {
 
         let parsed: AxInstrumentState = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, state);
+    }
+
+    #[rstest]
+    fn test_instrument_state_unknown_string_deserializes_as_unknown() {
+        let parsed: AxInstrumentState = serde_json::from_str("\"SOME_FUTURE_STATE\"").unwrap();
+        assert_eq!(parsed, AxInstrumentState::Unknown);
+    }
+
+    #[rstest]
+    #[case(AxInstrumentState::PreOpen, true)]
+    #[case(AxInstrumentState::Open, true)]
+    #[case(AxInstrumentState::Closed, false)]
+    #[case(AxInstrumentState::ClosedFrozen, false)]
+    #[case(AxInstrumentState::Halted, false)]
+    #[case(AxInstrumentState::MatchAndCloseAuction, false)]
+    #[case(AxInstrumentState::Suspended, false)]
+    #[case(AxInstrumentState::Delisted, false)]
+    #[case(AxInstrumentState::Unknown, false)]
+    fn test_instrument_state_is_tradeable(
+        #[case] state: AxInstrumentState,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(state.is_tradeable(), expected);
+    }
+
+    #[rstest]
+    #[case(AxInstrumentState::PreOpen, MarketStatusAction::PreOpen)]
+    #[case(AxInstrumentState::Open, MarketStatusAction::Trading)]
+    #[case(AxInstrumentState::Closed, MarketStatusAction::Close)]
+    #[case(AxInstrumentState::ClosedFrozen, MarketStatusAction::Close)]
+    #[case(AxInstrumentState::Halted, MarketStatusAction::Halt)]
+    #[case(AxInstrumentState::MatchAndCloseAuction, MarketStatusAction::Cross)]
+    #[case(AxInstrumentState::Suspended, MarketStatusAction::Suspend)]
+    #[case(
+        AxInstrumentState::Delisted,
+        MarketStatusAction::NotAvailableForTrading
+    )]
+    #[case(AxInstrumentState::Unknown, MarketStatusAction::NotAvailableForTrading)]
+    fn test_instrument_state_to_market_status_action(
+        #[case] state: AxInstrumentState,
+        #[case] expected: MarketStatusAction,
+    ) {
+        assert_eq!(MarketStatusAction::from(state), expected);
     }
 
     #[rstest]

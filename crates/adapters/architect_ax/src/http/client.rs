@@ -26,9 +26,8 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use dashmap::DashMap;
 use nautilus_core::{
-    AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
+    AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
@@ -55,15 +54,15 @@ use ustr::Ustr;
 use super::{
     error::AxHttpError,
     models::{
-        AuthenticateApiKeyRequest, AxAuthenticateResponse, AxBalancesResponse,
-        AxBatchCancelOrdersResponse, AxBookResponse, AxCancelAllOrdersResponse,
-        AxCancelOrderResponse, AxCandle, AxCandleResponse, AxCandlesResponse, AxFillsResponse,
-        AxFundingRatesResponse, AxInitialMarginRequirementResponse, AxInstrument,
-        AxInstrumentsResponse, AxOpenOrdersResponse, AxOrderStatusQueryResponse, AxOrdersResponse,
-        AxPlaceOrderResponse, AxPositionsResponse, AxPreviewAggressiveLimitOrderResponse,
+        AuthenticateApiKeyRequest, AxAuthenticateResponse, AxBalancesResponse, AxBookResponse,
+        AxCancelAllOrdersResponse, AxCancelOrderResponse, AxCandle, AxCandleResponse,
+        AxCandlesResponse, AxFillsResponse, AxFundingRatesResponse,
+        AxInitialMarginRequirementResponse, AxInstrument, AxInstrumentsResponse,
+        AxOpenOrdersResponse, AxOrderStatusQueryResponse, AxOrdersResponse, AxPlaceOrderResponse,
+        AxPositionsResponse, AxPreviewAggressiveLimitOrderResponse, AxReplaceOrderResponse,
         AxRiskSnapshotResponse, AxTicker, AxTickersResponse, AxTradesResponse,
-        AxTransactionsResponse, AxWhoAmI, BatchCancelOrdersRequest, CancelAllOrdersRequest,
-        CancelOrderRequest, PlaceOrderRequest, PreviewAggressiveLimitOrderRequest,
+        AxTransactionsResponse, AxWhoAmI, CancelAllOrdersRequest, CancelOrderRequest,
+        PlaceOrderRequest, PreviewAggressiveLimitOrderRequest, ReplaceOrderRequest,
     },
     parse::{
         parse_account_state, parse_bar, parse_fill_report, parse_funding_rate,
@@ -108,7 +107,7 @@ pub struct AxRawHttpClient {
 
 impl Default for AxRawHttpClient {
     fn default() -> Self {
-        Self::new(None, None, Some(60), None, None, None, None)
+        Self::new(None, None, 60, 3, 1000, 10_000, None)
             .expect("Failed to create default AxRawHttpClient")
     }
 }
@@ -178,20 +177,19 @@ impl AxRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the retry manager cannot be created.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         base_url: Option<String>,
         orders_base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         proxy_url: Option<String>,
     ) -> Result<Self, AxHttpError> {
         let retry_config = RetryConfig {
-            max_retries: max_retries.unwrap_or(3),
-            initial_delay_ms: retry_delay_ms.unwrap_or(1000),
-            max_delay_ms: retry_delay_max_ms.unwrap_or(10_000),
+            max_retries,
+            initial_delay_ms: retry_delay_ms,
+            max_delay_ms: retry_delay_max_ms,
             backoff_factor: 2.0,
             jitter_ms: 1000,
             operation_timeout_ms: Some(60_000),
@@ -209,7 +207,7 @@ impl AxRawHttpClient {
                 vec![],
                 Self::rate_limiter_quotas(),
                 Some(*AX_REST_QUOTA),
-                timeout_secs,
+                Some(timeout_secs),
                 proxy_url,
             )
             .map_err(|e| AxHttpError::NetworkError(format!("Failed to create HTTP client: {e}")))?,
@@ -225,22 +223,22 @@ impl AxRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be created.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
         base_url: Option<String>,
         orders_base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         proxy_url: Option<String>,
     ) -> Result<Self, AxHttpError> {
         let retry_config = RetryConfig {
-            max_retries: max_retries.unwrap_or(3),
-            initial_delay_ms: retry_delay_ms.unwrap_or(1000),
-            max_delay_ms: retry_delay_max_ms.unwrap_or(10_000),
+            max_retries,
+            initial_delay_ms: retry_delay_ms,
+            max_delay_ms: retry_delay_max_ms,
             backoff_factor: 2.0,
             jitter_ms: 1000,
             operation_timeout_ms: Some(60_000),
@@ -258,7 +256,7 @@ impl AxRawHttpClient {
                 vec![],
                 Self::rate_limiter_quotas(),
                 Some(*AX_REST_QUOTA),
-                timeout_secs,
+                Some(timeout_secs),
                 proxy_url,
             )
             .map_err(|e| AxHttpError::NetworkError(format!("Failed to create HTTP client: {e}")))?,
@@ -648,6 +646,34 @@ impl AxRawHttpClient {
         .await
     }
 
+    /// Replaces (amends) an existing order.
+    ///
+    /// The exchange cancels the original order and creates a new one with the
+    /// updated fields. Unspecified optional fields inherit from the original.
+    ///
+    /// # Endpoint
+    /// `POST /replace_order` (orders base URL)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn replace_order(
+        &self,
+        request: &ReplaceOrderRequest,
+    ) -> Result<AxReplaceOrderResponse, AxHttpError> {
+        let body = serde_json::to_vec(request)
+            .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
+        self.send_request_to_url::<AxReplaceOrderResponse, ()>(
+            &self.orders_base_url,
+            Method::POST,
+            "/replace_order",
+            None,
+            Some(body),
+            true,
+        )
+        .await
+    }
+
     /// Cancels all open orders, optionally filtered by symbol or venue.
     ///
     /// # Endpoint
@@ -666,31 +692,6 @@ impl AxRawHttpClient {
             &self.orders_base_url,
             Method::POST,
             "/cancel_all_orders",
-            None,
-            Some(body),
-            true,
-        )
-        .await
-    }
-
-    /// Cancels multiple orders by their IDs in a single batch request.
-    ///
-    /// # Endpoint
-    /// `POST /batch_cancel_orders` (orders base URL)
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the request fails or the response cannot be parsed.
-    pub async fn batch_cancel_orders(
-        &self,
-        request: &BatchCancelOrdersRequest,
-    ) -> Result<AxBatchCancelOrdersResponse, AxHttpError> {
-        let body = serde_json::to_vec(request)
-            .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
-        self.send_request_to_url::<AxBatchCancelOrdersResponse, ()>(
-            &self.orders_base_url,
-            Method::POST,
-            "/batch_cancel_orders",
             None,
             Some(body),
             true,
@@ -1050,9 +1051,13 @@ impl AxRawHttpClient {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.architect_ax")
+)]
 pub struct AxHttpClient {
     pub(crate) inner: Arc<AxRawHttpClient>,
-    pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     clock: &'static AtomicTime,
     cache_initialized: Arc<AtomicBool>,
 }
@@ -1070,7 +1075,7 @@ impl Clone for AxHttpClient {
 
 impl Default for AxHttpClient {
     fn default() -> Self {
-        Self::new(None, None, None, None, None, None, None)
+        Self::new(None, None, 60, 3, 1000, 10_000, None)
             .expect("Failed to create default AxHttpClient")
     }
 }
@@ -1081,14 +1086,13 @@ impl AxHttpClient {
     /// # Errors
     ///
     /// Returns an error if the retry manager cannot be created.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         base_url: Option<String>,
         orders_base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         proxy_url: Option<String>,
     ) -> Result<Self, AxHttpError> {
         Ok(Self {
@@ -1101,7 +1105,7 @@ impl AxHttpClient {
                 retry_delay_max_ms,
                 proxy_url,
             )?),
-            instruments_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             clock: get_atomic_clock_realtime(),
         })
@@ -1112,16 +1116,16 @@ impl AxHttpClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be created.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
         base_url: Option<String>,
         orders_base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         proxy_url: Option<String>,
     ) -> Result<Self, AxHttpError> {
         Ok(Self {
@@ -1136,7 +1140,7 @@ impl AxHttpClient {
                 retry_delay_max_ms,
                 proxy_url,
             )?),
-            instruments_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             clock: get_atomic_clock_realtime(),
         })
@@ -1188,19 +1192,21 @@ impl AxHttpClient {
     #[must_use]
     pub fn get_cached_symbols(&self) -> Vec<String> {
         self.instruments_cache
-            .iter()
-            .map(|entry| entry.key().to_string())
+            .load()
+            .keys()
+            .map(|k| k.to_string())
             .collect()
     }
 
     /// Caches multiple instruments.
     ///
     /// Any existing instruments with the same symbols will be replaced.
-    pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        for inst in instruments {
-            self.instruments_cache
-                .insert(inst.raw_symbol().inner(), inst);
-        }
+    pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
+        self.instruments_cache.rcu(|m| {
+            for inst in instruments {
+                m.insert(inst.raw_symbol().inner(), inst.clone());
+            }
+        });
         self.cache_initialized.store(true, Ordering::Release);
     }
 
@@ -1258,9 +1264,7 @@ impl AxHttpClient {
 
     /// Gets an instrument from the cache by symbol.
     pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instruments_cache
-            .get(symbol)
-            .map(|entry| entry.value().clone())
+        self.instruments_cache.get_cloned(symbol)
     }
 
     /// Requests all instruments from Ax.
@@ -1285,8 +1289,8 @@ impl AxHttpClient {
 
         let mut instruments: Vec<InstrumentAny> = Vec::new();
         for inst in &resp.instruments {
-            if inst.state == AxInstrumentState::Suspended {
-                log::debug!("Skipping suspended instrument: {}", inst.symbol);
+            if inst.state == AxInstrumentState::Delisted {
+                log::debug!("Skipping delisted instrument: {}", inst.symbol);
                 continue;
             }
 
@@ -1567,7 +1571,7 @@ impl AxHttpClient {
     /// Returns an error if:
     /// - Neither `venue_order_id` nor `client_order_id` is provided.
     /// - The HTTP request fails.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn request_order_status(
         &self,
         account_id: AccountId,
@@ -1754,5 +1758,16 @@ impl AxHttpClient {
         }
 
         Ok(reports)
+    }
+
+    /// Cancels all open orders for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn cancel_all_orders(&self, instrument_id: InstrumentId) -> Result<(), AxHttpError> {
+        let request = CancelAllOrdersRequest::new().with_symbol(instrument_id.symbol.inner());
+        self.inner.cancel_all_orders(&request).await?;
+        Ok(())
     }
 }

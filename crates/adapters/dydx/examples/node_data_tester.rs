@@ -15,18 +15,21 @@
 
 //! Example demonstrating live data testing with the dYdX adapter.
 //!
-//! Run with: `cargo run --example dydx-data-tester --package nautilus-dydx`
+//! Run with: `cargo run --example dydx-data-tester --package nautilus-dydx --features examples`
 
 use std::num::NonZeroUsize;
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
-use nautilus_dydx::{config::DydxDataClientConfig, factories::DydxDataClientFactory};
+use nautilus_dydx::{
+    common::enums::DydxNetwork, config::DydxDataClientConfig, factories::DydxDataClientFactory,
+};
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId},
     stubs::TestDefault,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 #[tokio::main]
@@ -42,7 +45,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     let dydx_config = DydxDataClientConfig {
-        is_testnet: false, // Set to true for testnet
+        network: DydxNetwork::Mainnet,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -61,11 +65,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_data_client(None, Box::new(client_factory), Box::new(dydx_config))?
         .build()?;
 
-    let tester_config = DataTesterConfig::new(client_id, instrument_ids)
-        // .with_subscribe_quotes(true)
-        // .with_subscribe_trades(true);
-        .with_subscribe_book_at_interval(true)
-        .with_book_interval_ms(NonZeroUsize::new(10).unwrap());
+    let tester_config = DataTesterConfig::builder()
+        .client_id(client_id)
+        .instrument_ids(instrument_ids)
+        // .subscribe_quotes(true)
+        // .subscribe_trades(true)
+        .subscribe_book_at_interval(true)
+        .book_interval_ms(NonZeroUsize::new(10).unwrap())
+        .manage_book(true)
+        .build();
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;
