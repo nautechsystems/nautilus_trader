@@ -23,6 +23,8 @@ use nautilus_model::identifiers::TraderId;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 
+#[cfg(feature = "event_store")]
+use crate::event_store::EventStoreConfig;
 use crate::{config::KernelConfig, kernel::NautilusKernel};
 
 /// Builder for constructing a [`NautilusKernel`] with a fluent API.
@@ -49,6 +51,8 @@ pub struct NautilusKernelBuilder {
     risk_engine: Option<RiskEngineConfig>,
     exec_engine: Option<ExecutionEngineConfig>,
     portfolio: Option<PortfolioConfig>,
+    #[cfg(feature = "event_store")]
+    event_store: Option<EventStoreConfig>,
 }
 
 impl NautilusKernelBuilder {
@@ -74,6 +78,8 @@ impl NautilusKernelBuilder {
             risk_engine: None,
             exec_engine: None,
             portfolio: None,
+            #[cfg(feature = "event_store")]
+            event_store: None,
         }
     }
 
@@ -182,6 +188,14 @@ impl NautilusKernelBuilder {
         self
     }
 
+    /// Set the event-store configuration; enables run-lifecycle capture.
+    #[cfg(feature = "event_store")]
+    #[must_use]
+    pub fn with_event_store_config(mut self, config: EventStoreConfig) -> Self {
+        self.event_store = Some(config);
+        self
+    }
+
     /// Build the [`NautilusKernel`] with the configured settings.
     ///
     /// # Errors
@@ -208,6 +222,8 @@ impl NautilusKernelBuilder {
             exec_engine: self.exec_engine,
             portfolio: self.portfolio,
             streaming: None,
+            #[cfg(feature = "event_store")]
+            event_store: self.event_store,
         };
 
         NautilusKernel::new(self.name, config)

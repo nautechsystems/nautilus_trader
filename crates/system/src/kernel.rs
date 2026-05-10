@@ -36,12 +36,18 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
+#[cfg(feature = "event_store")]
+use nautilus_event_store::RegisteredComponents;
 use nautilus_execution::{engine::ExecutionEngine, order_emulator::adapter::OrderEmulatorAdapter};
 use nautilus_model::identifiers::{ClientId, TraderId};
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_risk::engine::RiskEngine;
 use ustr::Ustr;
 
+#[cfg(feature = "event_store")]
+pub use crate::event_store::KernelError;
+#[cfg(feature = "event_store")]
+use crate::event_store::KernelEventStore;
 use crate::{builder::NautilusKernelBuilder, config::NautilusKernelConfig, trader::Trader};
 
 /// Core Nautilus system kernel.
@@ -82,6 +88,8 @@ pub struct NautilusKernel {
     /// The UNIX timestamp (nanoseconds) when the kernel was last shutdown.
     pub ts_shutdown: Option<UnixNanos>,
     shutdown_requested: Rc<Cell<bool>>,
+    #[cfg(feature = "event_store")]
+    event_store: KernelEventStore,
 }
 
 impl NautilusKernel {
@@ -171,6 +179,8 @@ impl NautilusKernel {
             name,
             instance_id,
             machine_id,
+            #[cfg(feature = "event_store")]
+            event_store: KernelEventStore::boot(config.event_store(), instance_id, clock.clone())?,
             config: Box::new(config),
             cache,
             clock,
@@ -423,6 +433,21 @@ impl NautilusKernel {
     /// Starts the Nautilus system kernel synchronously (for backtest use).
     pub fn start(&mut self) {
         log::info!("Starting");
+
+        #[cfg(feature = "event_store")]
+        {
+            let components = self.collect_registered_components();
+            let environment = self.config.environment();
+
+            if let Err(e) = self
+                .event_store
+                .open(self.instance_id, &components, environment)
+            {
+                log::error!("Failed to open event-store run: {e}");
+                return;
+            }
+        }
+
         self.start_engines();
 
         log::info!("Initializing trader");
@@ -440,6 +465,30 @@ impl NautilusKernel {
 
         self.ts_started = Some(self.clock.borrow().timestamp_ns());
         log::info!("Started");
+    }
+
+    #[cfg(feature = "event_store")]
+    fn collect_registered_components(&self) -> RegisteredComponents {
+        let trader = self.trader.borrow();
+        let mut components = RegisteredComponents::default();
+        for actor_id in trader.actor_ids() {
+            components
+                .actors
+                .insert(actor_id.to_string(), String::new());
+        }
+
+        for strategy_id in trader.strategy_ids() {
+            components
+                .strategies
+                .insert(strategy_id.to_string(), String::new());
+        }
+
+        for algo_id in trader.exec_algorithm_ids() {
+            components
+                .algorithms
+                .insert(algo_id.to_string(), String::new());
+        }
+        components
     }
 
     /// Starts the Nautilus system kernel asynchronously.
@@ -488,8 +537,21 @@ impl NautilusKernel {
         self.stop_engines();
         self.cancel_timers();
 
-        self.ts_shutdown = Some(self.clock.borrow().timestamp_ns());
+        let ts_shutdown = self.clock.borrow().timestamp_ns();
+        #[cfg(feature = "event_store")]
+        self.event_store.seal(ts_shutdown);
+        self.ts_shutdown = Some(ts_shutdown);
         log::info!("Stopped");
+    }
+
+    /// Returns the kernel-managed event-store integration.
+    ///
+    /// The wrapper exposes the recovery report, parent run id, halt signal, and
+    /// open-run id. Returns `None` when the `event_store` feature is disabled.
+    #[cfg(feature = "event_store")]
+    #[must_use]
+    pub const fn event_store(&self) -> &KernelEventStore {
+        &self.event_store
     }
 
     /// Resets the Nautilus system kernel to its initial state.
@@ -522,6 +584,16 @@ impl NautilusKernel {
         self.stop_engines();
         self.portfolio.borrow_mut().reset();
         self.cancel_timers();
+
+        // BacktestEngine::end() does not call finalize_stop, so dispose() seals the
+        // run for non-streaming backtests. finalize_stop (live) consumes the session
+        // first; this call is then a no-op. Callers that skip dispose entirely fall
+        // back to KernelEventStore::Drop.
+        #[cfg(feature = "event_store")]
+        {
+            let ts_dispose = self.clock.borrow().timestamp_ns();
+            self.event_store.seal(ts_dispose);
+        }
 
         self.data_engine.borrow_mut().dispose();
         self.exec_engine.borrow_mut().dispose();

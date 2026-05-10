@@ -6513,11 +6513,15 @@ version = "0.57.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
+ "bincode 2.0.1",
  "bon",
+ "bytes",
+ "indexmap 2.14.0",
  "log",
  "nautilus-common",
  "nautilus-core",
  "nautilus-data",
+ "nautilus-event-store",
  "nautilus-execution",
  "nautilus-model",
  "nautilus-persistence",
@@ -6527,6 +6531,8 @@ dependencies = [
  "pyo3",
  "rstest",
  "sysinfo",
+ "tempfile",
+ "thiserror 2.0.18",
  "ustr",
 ]
 

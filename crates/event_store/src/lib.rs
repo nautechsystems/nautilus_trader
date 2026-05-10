@@ -49,8 +49,9 @@ pub mod headers;
 pub mod manifest;
 pub mod reader;
 pub mod verifier;
-mod wire;
 pub mod writer;
+
+mod wire;
 
 pub use backend::{
     AppendEntry, EventStore, IndexKey, IndexKind, MemoryBackend, RedbBackend, ScanDirection,

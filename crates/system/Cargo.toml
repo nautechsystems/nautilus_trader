@@ -23,7 +23,13 @@ crate-type = ["rlib"]
 [features]
 default = []
 defi = ["nautilus-common/defi", "nautilus-data/defi", "nautilus-model/defi"]
-streaming = ["nautilus-persistence"]
+event_store = [
+  "dep:bincode",
+  "dep:bytes",
+  "dep:indexmap",
+  "dep:nautilus-event-store",
+  "dep:thiserror",
+]
 extension-module = ["python", "pyo3/extension-module", "streaming"]
 live = ["nautilus-common/live"]
 python = [
@@ -32,6 +38,7 @@ python = [
   "pyo3",
   "streaming",
 ]
+streaming = ["nautilus-persistence"]
 tracing-bridge = ["nautilus-common/tracing-bridge"]
 
 [package.metadata.docs.rs]
@@ -44,10 +51,12 @@ nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
-nautilus-persistence = { workspace = true, optional = true }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
 nautilus-trading = { workspace = true }
+
+nautilus-event-store = { workspace = true, optional = true }
+nautilus-persistence = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -56,7 +65,12 @@ log = { workspace = true }
 sysinfo = { workspace = true }
 ustr = { workspace = true }
 
+bincode = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
+indexmap = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
+tempfile = { workspace = true }

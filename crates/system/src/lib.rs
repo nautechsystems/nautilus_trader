@@ -63,6 +63,9 @@ pub mod trader;
 
 mod registration;
 
+#[cfg(feature = "event_store")]
+pub mod event_store;
+
 #[cfg(feature = "python")]
 pub mod python;
 
@@ -70,6 +73,11 @@ pub mod python;
 pub use builder::NautilusKernelBuilder;
 pub use config::{NautilusKernelConfig, RotationConfig, StreamingConfig};
 pub use controller::Controller;
+#[cfg(feature = "event_store")]
+pub use event_store::{
+    BootError, EventStoreConfig, EventStoreSession, HaltSignal, RecoveredRun, RecoveryOutcome,
+    RetentionMode, RunIdentity, build_run_id, open_run, recover_predecessors,
+};
 pub use kernel::NautilusKernel;
 pub use messages::ControllerCommand;
 #[cfg(feature = "python")]
