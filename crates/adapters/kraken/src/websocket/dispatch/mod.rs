@@ -139,6 +139,11 @@ pub struct WsDispatchState {
     /// here from the first frame and look it up when later frames omit it.
     /// Keyed by venue `order_id` because delta frames often lack `cl_ord_id`
     /// as well.
+    ///
+    /// Steady-state eviction happens on terminal exec types
+    /// (`Canceled`/`Filled`/`Expired`). Bounded by `DEDUP_CAPACITY` as a
+    /// safety net so missed terminal frames (reconnects, partial replays)
+    /// cannot leak entries indefinitely.
     pub order_symbol_cache: DashMap<String, String>,
     /// Last snapshot of qty / filled / price / trigger_price seen on a
     /// tracked `OpenOrdersDelta`.
@@ -223,14 +228,19 @@ impl WsDispatchState {
 
     /// Caches the symbol for a venue `order_id` if not already present.
     ///
-    /// First-write-wins so a later frame carrying a stale or differently
-    /// formatted symbol cannot overwrite the value resolved from the original
-    /// `pending_new` frame.
+    /// Atomic via [`DashMap::entry`] so concurrent callers cannot overwrite an
+    /// existing cached value — first writer wins, all later writers no-op.
+    /// The cheap `contains_key` fast path skips the key allocation when the
+    /// entry already exists; the `or_insert_with` covers the race that opens
+    /// between that check and the insert.
     pub fn cache_order_symbol(&self, order_id: &str, symbol: &str) {
-        if !self.order_symbol_cache.contains_key(order_id) {
-            self.order_symbol_cache
-                .insert(order_id.to_string(), symbol.to_string());
+        if self.order_symbol_cache.contains_key(order_id) {
+            return;
         }
+        self.evict_map_if_full(&self.order_symbol_cache);
+        self.order_symbol_cache
+            .entry(order_id.to_string())
+            .or_insert_with(|| symbol.to_string());
     }
 
     /// Returns the symbol previously cached for a venue `order_id`, if any.
@@ -323,6 +333,21 @@ impl WsDispatchState {
                 .is_ok()
         {
             set.clear();
+            self.clearing.store(false, Ordering::Release);
+        }
+    }
+
+    fn evict_map_if_full<K, V>(&self, map: &DashMap<K, V>)
+    where
+        K: Eq + std::hash::Hash,
+    {
+        if map.len() >= DEDUP_CAPACITY
+            && self
+                .clearing
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+        {
+            map.clear();
             self.clearing.store(false, Ordering::Release);
         }
     }
@@ -487,6 +512,39 @@ mod tests {
         assert!(
             !state.insert_accepted(cid),
             "second insert must report already present (atomic dedup)",
+        );
+    }
+
+    #[rstest]
+    fn test_cache_order_symbol_first_write_wins() {
+        let state = WsDispatchState::new();
+        state.cache_order_symbol("v-order-1", "BTC/USD");
+        state.cache_order_symbol("v-order-1", "ETH/USD");
+
+        assert_eq!(
+            state.lookup_order_symbol("v-order-1").as_deref(),
+            Some("BTC/USD"),
+            "later writes must not overwrite the original cached symbol",
+        );
+    }
+
+    #[rstest]
+    fn test_cache_order_symbol_bounded_by_capacity() {
+        let state = WsDispatchState::new();
+        for i in 0..DEDUP_CAPACITY {
+            state.cache_order_symbol(format!("v-order-{i}").as_str(), "BTC/USD");
+        }
+        // At capacity; the next insert triggers a `clear()` before insertion.
+        state.cache_order_symbol("v-order-overflow", "BTC/USD");
+
+        assert!(
+            state.order_symbol_cache.len() <= DEDUP_CAPACITY,
+            "cache must stay within DEDUP_CAPACITY after overflow",
+        );
+        assert_eq!(
+            state.lookup_order_symbol("v-order-overflow").as_deref(),
+            Some("BTC/USD"),
+            "the overflow entry was inserted after eviction",
         );
     }
 
