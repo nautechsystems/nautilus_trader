@@ -39,6 +39,7 @@ from py_clob_client_v2.order_utils.model.signature_type_v2 import SignatureTypeV
 
 from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trades_key
 from nautilus_trader.adapters.polymarket.common.constants import DUST_POSITION_THRESHOLD
+from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_BATCH_MAX_SIZE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_CANCEL_ALREADY_DONE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_FINALIZED_TRADE_STATUSES
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_INVALID_API_KEY
@@ -268,6 +269,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._order_timing_starts: dict[VenueOrderId, float] = {}
         self._order_ack_seen_at: dict[VenueOrderId, float] = {}
         self._collateral_balance_pusd: float | None = None
+        self._batch_submit_endpoint = f"{self.id}.submit_order_batch_concurrent"
+        self._msgbus.register(
+            endpoint=self._batch_submit_endpoint,
+            handler=self.submit_order_batch_concurrent,
+        )
 
     def calculate_commission(self, instrument, last_qty, last_px, liquidity_side):
         commission = calculate_commission(
@@ -981,6 +987,34 @@ class PolymarketExecutionClient(LiveExecutionClient):
         )
         return self._build_signed_order_v2_from_rust_json(signed_order_json)
 
+    async def _sign_market_order_python_as_limit(
+        self,
+        order: Order,
+        instrument,
+    ) -> SignedOrderV2:
+        """
+        Sign a market-intent order as an aggressive limit via the Python V2 client.
+
+        This mirrors the Rust market path but keeps Python's builder code support.
+        The signed order is posted as short-lived GTD to avoid quote-notional market
+        BUY validation while preserving exact base-share size.
+        """
+        min_price, max_price = self._get_min_max_prices(instrument)
+        price = max_price if order.side == OrderSide.BUY else min_price
+        order_args = OrderArgsV2(
+            price=price,
+            token_id=get_polymarket_token_id(order.instrument_id),
+            size=float(order.quantity),
+            side=order_side_to_str(order.side),
+            expiration=self._get_rust_market_order_expiration_secs(),
+            builder_code=POLYMARKET_NAUTILUS_BUILDER_CODE,
+        )
+        return await asyncio.to_thread(
+            self._http_client.create_order,
+            order_args,
+            options=self._create_order_options(instrument),
+        )
+
     async def _query_account(self, _command: QueryAccount) -> None:
         # Specific account ID (sub account) not yet supported
         await self._update_account_state()
@@ -1384,6 +1418,223 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         return None
 
+    def _validate_order_for_concurrent_batch(self, order: Order) -> str | None:
+        """
+        Validate an order for direct Polymarket concurrent batch submission.
+
+        Unlike Nautilus ``OrderList`` submission, this path can include multiple
+        instruments and market-intent orders. Market-intent orders are signed as
+        aggressive limits, so all quantities must be base-share quantities.
+        """
+        if order.is_reduce_only:
+            return "REDUCE_ONLY_NOT_SUPPORTED"
+
+        if order.is_post_only and order.time_in_force not in (TimeInForce.GTC, TimeInForce.GTD):
+            return "POST_ONLY_REQUIRES_GTC_OR_GTD"
+
+        if order.time_in_force not in VALID_POLYMARKET_TIME_IN_FORCE:
+            return "UNSUPPORTED_TIME_IN_FORCE"
+
+        if order.order_type not in (OrderType.LIMIT, OrderType.MARKET):
+            return "UNSUPPORTED_ORDER_TYPE"
+
+        if order.is_quote_quantity:
+            return "UNSUPPORTED_QUOTE_QUANTITY"
+
+        return None
+
+    def submit_order_batch_concurrent(self, orders: list[Order]) -> None:
+        """
+        Submit multiple Polymarket orders through a direct concurrent batch path.
+
+        This is a Polymarket-specific latency path for multi-instrument arb
+        completion. It bypasses Nautilus ``OrderList`` because ``OrderList``
+        requires one instrument ID, while Polymarket ``POST /orders`` supports
+        different token IDs in one request.
+
+        The method is also registered on the message bus at
+        ``POLYMARKET.submit_order_batch_concurrent``.
+        """
+        if not isinstance(orders, list):
+            self._log.error(
+                f"submit_order_batch_concurrent expected list[Order], got {type(orders).__name__}",
+                LogColor.RED,
+            )
+            return
+
+        self.create_task(
+            self._submit_order_batch_concurrent(orders),
+            log_msg=f"submit_order_batch_concurrent: {len(orders)} orders",
+        )
+
+    async def _submit_order_batch_concurrent(self, orders: list[Order]) -> None:
+        if not orders:
+            self._log.warning("submit_order_batch_concurrent called with empty order list")
+            return
+
+        valid_orders: list[Order] = []
+        for order in orders:
+            if order.is_closed:
+                self._log.warning(f"Order {order} is already closed")
+                continue
+
+            denial_reason = self._validate_order_for_concurrent_batch(order)
+            if denial_reason:
+                self._log.error(
+                    f"Cannot submit order {order.client_order_id}: {denial_reason}",
+                    LogColor.RED,
+                )
+                self.generate_order_denied(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=denial_reason,
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                continue
+
+            if self._cache.instrument(order.instrument_id) is None:
+                self.generate_order_denied(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=f"Instrument for {order.instrument_id} not found",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                continue
+
+            if not self._cache.order_exists(order.client_order_id):
+                self._msgbus.publish_c(
+                    topic=f"events.order.{order.strategy_id}",
+                    msg=order.init_event(),
+                )
+                self._cache.add_order(order, None, self.id)
+
+            valid_orders.append(order)
+
+        if not valid_orders:
+            self._log.warning("No valid orders to submit after validation")
+            return
+
+        self._log.info(
+            f"Submitting concurrent Polymarket batch of {len(valid_orders)} orders",
+            LogColor.BLUE,
+        )
+        await asyncio.gather(
+            *[
+                self._maintain_active_market(instrument_id)
+                for instrument_id in {order.instrument_id for order in valid_orders}
+            ],
+        )
+
+        for post_only in (False, True):
+            batch_orders = [order for order in valid_orders if order.is_post_only == post_only]
+            if not batch_orders:
+                continue
+            await self._submit_valid_orders_concurrent_batch(batch_orders, post_only=post_only)
+
+    async def _submit_valid_orders_concurrent_batch(
+        self,
+        orders: list[Order],
+        post_only: bool,
+    ) -> None:
+        timing_start = self._clock.timestamp()
+        signed_orders, signed_orders_args = await self._sign_orders_for_concurrent_batch(orders)
+        if not signed_orders:
+            self._log.warning("No orders successfully signed for concurrent batch submission")
+            return
+
+        now_ns = self._clock.timestamp_ns()
+        for order in signed_orders:
+            self.generate_order_submitted(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                ts_event=now_ns,
+            )
+
+        await self._post_signed_orders_batch(
+            signed_orders,
+            signed_orders_args,
+            post_only=post_only,
+            timing_start=timing_start,
+        )
+
+    async def _sign_orders_for_concurrent_batch(
+        self,
+        orders: list[Order],
+    ) -> tuple[list[Order], list[PostOrdersV2Args]]:
+        signing_start = self._clock.timestamp()
+        results = await asyncio.gather(
+            *[self._sign_order_for_concurrent_batch(order) for order in orders],
+            return_exceptions=True,
+        )
+
+        signed_orders: list[Order] = []
+        signed_orders_args: list[PostOrdersV2Args] = []
+        for order, result in zip(orders, results, strict=True):
+            if isinstance(result, BaseException):
+                self._log.error(
+                    f"Failed to sign order {order.client_order_id} for concurrent batch: {result}",
+                    LogColor.RED,
+                )
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=f"Order signing failed: {result}",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                continue
+
+            signed_orders.append(order)
+            signed_orders_args.append(result)
+
+        elapsed = self._clock.timestamp() - signing_start
+        signer = "rust" if self._rust_client is not None else "python"
+        self._log.info(
+            "POLYMARKET_ORDER_TIMING sign_order_batch_concurrent "
+            f"signed_count={len(signed_orders)} order_count={len(orders)} "
+            f"signer={signer} elapsed={elapsed:.3f}s",
+            LogColor.BLUE,
+        )
+        return signed_orders, signed_orders_args
+
+    async def _sign_order_for_concurrent_batch(self, order: Order) -> PostOrdersV2Args:
+        instrument = self._cache.instrument(order.instrument_id)
+
+        if order.order_type == OrderType.MARKET:
+            if self._rust_client is not None:
+                signed_order = await self._sign_market_order_rust_as_limit(order, instrument)
+            else:
+                signed_order = await self._sign_market_order_python_as_limit(order, instrument)
+            order_type = PolyOrderType.GTD
+        elif order.order_type == OrderType.LIMIT:
+            if self._rust_client is not None:
+                signed_order = await self._sign_limit_order_rust(order, instrument)
+            else:
+                order_args = OrderArgsV2(
+                    price=float(order.price),
+                    token_id=get_polymarket_token_id(order.instrument_id),
+                    size=float(order.quantity),
+                    side=order_side_to_str(order.side),
+                    expiration=self._get_expiration_secs(order),
+                    builder_code=POLYMARKET_NAUTILUS_BUILDER_CODE,
+                )
+                signed_order = await asyncio.to_thread(
+                    self._http_client.create_order,
+                    order_args,
+                    options=self._create_order_options(instrument),
+                )
+            order_type = convert_tif_to_polymarket_order_type(order.time_in_force)
+        else:
+            raise RuntimeError(f"Unsupported order type {order.type_string()}")
+
+        return PostOrdersV2Args(
+            order=signed_order,
+            orderType=order_type,
+        )
+
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         """
         Submit a batch of orders to Polymarket using the post_orders endpoint.
@@ -1616,36 +1867,47 @@ class PolymarketExecutionClient(LiveExecutionClient):
         """
         Post a batch of signed orders to Polymarket.
         """
-        retry_manager = await self._retry_manager_pool.acquire()
-        try:
-            client_order_ids = [order.client_order_id for order in orders]
-            response = await retry_manager.run(
-                "submit_orders_batch",
-                client_order_ids,
-                asyncio.to_thread,
-                self._http_client.post_orders,
-                signed_orders_args,
-                post_only=post_only,
-            )
-
-            if not response:
-                self._reject_all_orders(orders, str(retry_manager.message))
-                return
-
-            self._process_batch_response(orders, response)
-            if timing_start is not None:
-                elapsed = self._clock.timestamp() - timing_start
+        for chunk_start in range(0, len(orders), POLYMARKET_BATCH_MAX_SIZE):
+            chunk_orders = orders[chunk_start : chunk_start + POLYMARKET_BATCH_MAX_SIZE]
+            chunk_args = signed_orders_args[chunk_start : chunk_start + POLYMARKET_BATCH_MAX_SIZE]
+            if len(orders) > POLYMARKET_BATCH_MAX_SIZE:
                 self._log.info(
-                    "POLYMARKET_ORDER_TIMING sign_and_post_order_batch "
-                    f"order_count={len(orders)} elapsed={elapsed:.3f}s",
+                    f"Posting Polymarket order batch chunk "
+                    f"{chunk_start // POLYMARKET_BATCH_MAX_SIZE + 1} "
+                    f"({len(chunk_orders)} orders)",
                     LogColor.BLUE,
                 )
 
-        except Exception as e:
-            self._log.error(f"Error submitting order batch: {e}")
-            self._reject_all_orders(orders, str(e))
-        finally:
-            await self._retry_manager_pool.release(retry_manager)
+            retry_manager = await self._retry_manager_pool.acquire()
+            try:
+                client_order_ids = [order.client_order_id for order in chunk_orders]
+                response = await retry_manager.run(
+                    "submit_orders_batch",
+                    client_order_ids,
+                    asyncio.to_thread,
+                    self._http_client.post_orders,
+                    chunk_args,
+                    post_only=post_only,
+                )
+
+                if not response:
+                    self._reject_all_orders(chunk_orders, str(retry_manager.message))
+                    continue
+
+                self._process_batch_response(chunk_orders, response)
+            except Exception as e:
+                self._log.error(f"Error submitting order batch chunk: {e}")
+                self._reject_all_orders(chunk_orders, str(e))
+            finally:
+                await self._retry_manager_pool.release(retry_manager)
+
+        if timing_start is not None:
+            elapsed = self._clock.timestamp() - timing_start
+            self._log.info(
+                "POLYMARKET_ORDER_TIMING sign_and_post_order_batch "
+                f"order_count={len(orders)} elapsed={elapsed:.3f}s",
+                LogColor.BLUE,
+            )
 
     def _reject_all_orders(self, orders: list[Order], reason: str) -> None:
         """

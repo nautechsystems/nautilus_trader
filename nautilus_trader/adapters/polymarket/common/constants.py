@@ -29,6 +29,7 @@ POLYMARKET_MAX_PRICE: Final[float] = 0.999
 POLYMARKET_MIN_PRICE: Final[float] = 0.001
 POLYMARKET_MAX_PRECISION_TAKER: Final[int] = 2
 POLYMARKET_MAX_PRECISION_MAKER: Final[int] = 5
+POLYMARKET_BATCH_MAX_SIZE: Final[int] = 15
 
 # Per tick-size (min, max) marketable limit prices, used when signing a market
 # order as an aggressive limit (e.g. via the Rust adapter which has no native

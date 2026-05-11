@@ -2868,6 +2868,31 @@ class TestPolymarketBatchOrderSubmission:
         # Add test instrument to cache
         self.cache.add_instrument(ELECTION_INSTRUMENT)
 
+    @staticmethod
+    def _make_binary_option(market: str, asset_id: str, outcome: str = "No") -> BinaryOption:
+        instrument_id = get_polymarket_instrument_id(market, asset_id)
+        return BinaryOption(
+            instrument_id=instrument_id,
+            raw_symbol=Symbol(f"{instrument_id.symbol.value}"),
+            outcome=outcome,
+            description=f"Test Polymarket {outcome} Instrument",
+            asset_class=AssetClass.ALTERNATIVE,
+            currency=USDC,
+            price_precision=3,
+            price_increment=Price.from_str("0.001"),
+            size_precision=2,
+            size_increment=Quantity.from_str("0.01"),
+            activation_ns=0,
+            expiration_ns=0,
+            max_quantity=None,
+            min_quantity=Quantity.from_str("1"),
+            maker_fee=0.0,
+            taker_fee=0.0,
+            ts_event=0,
+            ts_init=0,
+            info={"neg_risk": True},
+        )
+
     @pytest.mark.asyncio
     async def test_submit_order_list_success(self, mocker):
         """
@@ -3141,6 +3166,102 @@ class TestPolymarketBatchOrderSubmission:
         denied_call = mock_generate_denied.call_args
         assert "POST_ONLY_REQUIRES_GTC_OR_GTD" in denied_call.kwargs["reason"]
         mock_post_orders.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_submit_order_batch_concurrent_posts_multi_instrument_market_intent(
+        self,
+        mocker,
+    ):
+        """
+        Test direct concurrent batch submission for multi-instrument market intent.
+        """
+        # Arrange
+        market1 = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
+        market2 = "0x51c53409d8f7ad60702672cc2b9074cae796b8057b62d0e60d4452ab53283800"
+        instrument1 = self._make_binary_option(
+            market1,
+            "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        )
+        instrument2 = self._make_binary_option(
+            market2,
+            "1234567890123456789012345678901234567890123456789012345678901234",
+        )
+        self.cache.add_instrument(instrument1)
+        self.cache.add_instrument(instrument2)
+
+        mock_create_order = mocker.patch.object(self.http_client, "create_order")
+        mock_post_orders = mocker.patch.object(self.http_client, "post_orders")
+        mock_create_order.return_value = {"signed_order": "mock_signed"}
+        mock_post_orders.return_value = [
+            {"success": True, "orderID": "batch_order_1"},
+            {"success": True, "orderID": "batch_order_2"},
+        ]
+
+        order1 = self.strategy.order_factory.market(
+            instrument_id=instrument1.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),
+            tags=["0.001", True],
+        )
+        order2 = self.strategy.order_factory.market(
+            instrument_id=instrument2.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("5"),
+            tags=["0.001", True],
+        )
+
+        # Act
+        await self.exec_client._submit_order_batch_concurrent([order1, order2])
+
+        # Assert
+        assert self.cache.order(order1.client_order_id) == order1
+        assert self.cache.order(order2.client_order_id) == order2
+        assert mock_create_order.call_count == 2
+        mock_post_orders.assert_called_once()
+        posted_args = mock_post_orders.call_args.args[0]
+        assert len(posted_args) == 2
+        assert all(arg.orderType.name == "GTD" for arg in posted_args)
+        for call in mock_create_order.call_args_list:
+            order_args = call.args[0]
+            assert order_args.price == 0.999
+            assert order_args.expiration > 0
+            assert call.kwargs["options"].neg_risk is True
+
+        assert self.cache.client_order_id(VenueOrderId("batch_order_1")) == order1.client_order_id
+        assert self.cache.client_order_id(VenueOrderId("batch_order_2")) == order2.client_order_id
+
+    @pytest.mark.asyncio
+    async def test_submit_order_batch_concurrent_chunks_over_polymarket_limit(self, mocker):
+        """
+        Test direct concurrent batch submission chunks over Polymarket's 15 order cap.
+        """
+        # Arrange
+        mock_create_order = mocker.patch.object(self.http_client, "create_order")
+        mock_post_orders = mocker.patch.object(self.http_client, "post_orders")
+        mock_create_order.return_value = {"signed_order": "mock_signed"}
+        mock_post_orders.side_effect = [
+            [{"success": True, "orderID": f"batch_order_{i}"} for i in range(15)],
+            [{"success": True, "orderID": "batch_order_15"}],
+        ]
+
+        orders = [
+            self.strategy.order_factory.limit(
+                instrument_id=ELECTION_INSTRUMENT.id,
+                order_side=OrderSide.BUY,
+                quantity=Quantity.from_str("10"),
+                price=Price.from_str("0.50"),
+            )
+            for _ in range(16)
+        ]
+
+        # Act
+        await self.exec_client._submit_order_batch_concurrent(orders)
+
+        # Assert
+        assert mock_create_order.call_count == 16
+        assert mock_post_orders.call_count == 2
+        assert len(mock_post_orders.call_args_list[0].args[0]) == 15
+        assert len(mock_post_orders.call_args_list[1].args[0]) == 1
 
 
 # =====================================================================================
