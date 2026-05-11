@@ -22,15 +22,15 @@
 //! [`crate::EventStoreWriter`].
 
 pub mod adapter;
+pub mod builtins;
 pub mod encoder;
-pub mod encoders;
 pub mod registry;
 
 pub use adapter::{BusCaptureAdapter, CaptureError};
-pub use encoder::{Encode, EncodeError, EncodedPayload, TypedEncoder};
-pub use encoders::{
+pub use builtins::{
     PAYLOAD_TYPE_ORDER_FILLED, PAYLOAD_TYPE_ORDER_STATUS_REPORT, PAYLOAD_TYPE_SUBMIT_ORDER,
     default_registry, encode_order_filled, encode_order_status_report, encode_submit_order,
     register_default,
 };
+pub use encoder::{Encode, EncodeError, EncodedPayload, TypedEncoder};
 pub use registry::EncoderRegistry;

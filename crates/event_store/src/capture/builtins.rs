@@ -18,22 +18,25 @@
 //! Phase 6 shipped a sample triple (`SubmitOrder` command, `OrderFilled` generated event,
 //! `OrderStatusReport` raw venue report) so the bus capture adapter had a working
 //! allow-list end-to-end. Phase 7 adds envelope-aware dispatchers for the
-//! wrapper enums production code actually pushes through `send_trading_command` and
-//! `publish_order_event` ([`TradingCommand`], [`OrderEventAny`]); these reach the bus
-//! tap as their wrapper [`std::any::TypeId`] and the bare-type registrations would miss
-//! them. Each dispatcher unwraps its variant, runs the inner-typed encode, and stamps
-//! the inner-variant's canonical `payload_type` tag so forensics scans see entries
-//! identical to the bare-type capture path.
+//! wrapper enums production code actually pushes through `send_trading_command`,
+//! `publish_order_event`, and `send_execution_report` ([`TradingCommand`],
+//! [`OrderEventAny`], [`ExecutionReport`]); these reach the bus tap as their wrapper
+//! [`std::any::TypeId`] and the bare-type registrations would miss them. Each dispatcher
+//! unwraps its variant, runs the inner-typed encode, and stamps the inner-variant's
+//! canonical `payload_type` tag so forensics scans see entries identical to the
+//! bare-type capture path.
 //!
 //! The payload serialization format is MessagePack via `rmp-serde`. The on-disk envelope
 //! codec stays bincode (positional, non-self-describing); MessagePack inside the payload
 //! handles the upstream Nautilus types that carry `#[serde(tag = "type")]` internal
 //! tagging, which a non-self-describing format like bincode cannot round-trip.
 
+use std::collections::HashSet;
+
 use bytes::Bytes;
 use nautilus_common::messages::execution::{
-    BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
-    SubmitOrder, SubmitOrderList, TradingCommand,
+    BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport, ModifyOrder, QueryAccount,
+    QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
 };
 use nautilus_model::{
     events::{
@@ -42,7 +45,7 @@ use nautilus_model::{
         OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
         OrderTriggered, OrderUpdated,
     },
-    reports::OrderStatusReport,
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 use serde::Serialize;
 use ustr::Ustr;
@@ -107,6 +110,14 @@ pub const PAYLOAD_TYPE_ORDER_UPDATED: &str = "OrderUpdated";
 pub const PAYLOAD_TYPE_ORDER_FILLED: &str = "OrderFilled";
 /// The canonical `payload_type` tag for [`OrderStatusReport`].
 pub const PAYLOAD_TYPE_ORDER_STATUS_REPORT: &str = "OrderStatusReport";
+/// The canonical `payload_type` tag for [`FillReport`].
+pub const PAYLOAD_TYPE_FILL_REPORT: &str = "FillReport";
+/// The canonical `payload_type` tag for the [`ExecutionReport::OrderWithFills`] bundle.
+pub const PAYLOAD_TYPE_ORDER_WITH_FILLS: &str = "OrderWithFills";
+/// The canonical `payload_type` tag for [`PositionStatusReport`].
+pub const PAYLOAD_TYPE_POSITION_STATUS_REPORT: &str = "PositionStatusReport";
+/// The canonical `payload_type` tag for [`ExecutionMassStatus`].
+pub const PAYLOAD_TYPE_EXECUTION_MASS_STATUS: &str = "ExecutionMassStatus";
 
 // Wrapper-level fallback tag reached only when a dispatcher returns an
 // `EncodedPayload` without an override. Every current variant stamps its own
@@ -115,6 +126,8 @@ pub const PAYLOAD_TYPE_ORDER_STATUS_REPORT: &str = "OrderStatusReport";
 const PAYLOAD_TYPE_TRADING_COMMAND: &str = "TradingCommand";
 
 const PAYLOAD_TYPE_ORDER_EVENT_ANY: &str = "OrderEventAny";
+
+const PAYLOAD_TYPE_EXECUTION_REPORT: &str = "ExecutionReport";
 
 /// Returns an [`EncoderRegistry`] preloaded with the default encoders.
 ///
@@ -132,9 +145,10 @@ pub fn default_registry() -> EncoderRegistry {
 /// The bare-type registrations remain for capture sites that already submit the inner
 /// type directly (the kernel's `RunStarted` path and a few internal tests). The envelope
 /// registrations are what production bus traffic actually hits: `send_trading_command`
-/// reaches the tap as [`TradingCommand`], and `publish_order_event` reaches it as
-/// [`OrderEventAny`]. Without these wrapper-aware dispatchers the tap looks up the
-/// wrapper's [`std::any::TypeId`], finds no encoder, and silently drops the capture.
+/// reaches the tap as [`TradingCommand`], `publish_order_event` reaches it as
+/// [`OrderEventAny`], and `send_execution_report` reaches it as [`ExecutionReport`].
+/// Without these wrapper-aware dispatchers the tap looks up the wrapper's
+/// [`std::any::TypeId`], finds no encoder, and silently drops the capture.
 pub fn register_default(registry: &mut EncoderRegistry) {
     registry
         .register::<SubmitOrder, _>(payload_type(PAYLOAD_TYPE_SUBMIT_ORDER), encode_submit_order);
@@ -151,6 +165,10 @@ pub fn register_default(registry: &mut EncoderRegistry) {
     registry.register::<OrderEventAny, _>(
         payload_type(PAYLOAD_TYPE_ORDER_EVENT_ANY),
         encode_order_event_any,
+    );
+    registry.register::<ExecutionReport, _>(
+        payload_type(PAYLOAD_TYPE_EXECUTION_REPORT),
+        encode_execution_report,
     );
 }
 
@@ -253,6 +271,197 @@ pub fn encode_order_event_any(event: &OrderEventAny) -> Result<EncodedPayload, E
         OrderEventAny::CancelRejected(e) => encode_order_cancel_rejected(e),
         OrderEventAny::Updated(e) => encode_order_updated(e),
         OrderEventAny::Filled(e) => Ok(retag(encode_order_filled(e)?, PAYLOAD_TYPE_ORDER_FILLED)),
+    }
+}
+
+/// Encodes an [`ExecutionReport`] envelope by dispatching on the variant.
+///
+/// `send_execution_report` hands the bus tap an [`ExecutionReport`] wrapper, so the tap
+/// dispatches by the wrapper's [`std::any::TypeId`] and the inner variants never reach
+/// their bare-type encoders. The dispatcher unwraps each variant, encodes the inner type
+/// with its own index keys, and stamps the inner-variant tag so forensics scans see
+/// entries identical to a bare capture path.
+///
+/// The [`ExecutionReport::Order`] arm reuses [`encode_order_status_report`] because the
+/// bare-type encoder already exists; the remaining variants delegate to private inner
+/// encoders that index the report's identifiers individually.
+///
+/// # Errors
+///
+/// Returns the inner encoder's [`EncodeError`] when MessagePack rejects the inner
+/// payload.
+pub fn encode_execution_report(report: &ExecutionReport) -> Result<EncodedPayload, EncodeError> {
+    match report {
+        ExecutionReport::Order(r) => Ok(retag(
+            encode_order_status_report(r)?,
+            PAYLOAD_TYPE_ORDER_STATUS_REPORT,
+        )),
+        ExecutionReport::Fill(r) => encode_fill_report(r),
+        ExecutionReport::OrderWithFills(order, fills) => encode_order_with_fills(order, fills),
+        ExecutionReport::Position(r) => encode_position_status_report(r),
+        ExecutionReport::MassStatus(s) => encode_execution_mass_status(s),
+    }
+}
+
+fn encode_fill_report(report: &FillReport) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(report)?;
+    let mut index_keys = Vec::with_capacity(2);
+    index_keys.push(IndexKey::new(
+        IndexKind::VenueOrderId,
+        report.venue_order_id.to_string(),
+    ));
+
+    if let Some(client_order_id) = &report.client_order_id {
+        index_keys.push(IndexKey::new(
+            IndexKind::ClientOrderId,
+            client_order_id.to_string(),
+        ));
+    }
+
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_FILL_REPORT),
+        payload,
+        index_keys,
+    ))
+}
+
+fn encode_position_status_report(
+    report: &PositionStatusReport,
+) -> Result<EncodedPayload, EncodeError> {
+    // PositionStatusReport carries only AccountId, InstrumentId, and PositionId; none of
+    // those have a matching IndexKind variant today. Capture with no sidecar indices so
+    // the entry is forensics-discoverable by sequential scan rather than synthesising an
+    // index against an identifier the reader cannot query.
+    let payload = encode_serde(report)?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_POSITION_STATUS_REPORT),
+        payload,
+        Vec::new(),
+    ))
+}
+
+fn encode_order_with_fills(
+    order: &OrderStatusReport,
+    fills: &[FillReport],
+) -> Result<EncodedPayload, EncodeError> {
+    #[derive(Serialize)]
+    struct OrderWithFillsRef<'a> {
+        order_report: &'a OrderStatusReport,
+        fill_reports: &'a [FillReport],
+    }
+
+    let payload = encode_serde(&OrderWithFillsRef {
+        order_report: order,
+        fill_reports: fills,
+    })?;
+    let mut index_keys = Vec::new();
+    let mut seen = HashSet::new();
+    push_unique_index_key(
+        &mut index_keys,
+        &mut seen,
+        IndexKind::VenueOrderId,
+        order.venue_order_id.to_string(),
+    );
+
+    if let Some(client_order_id) = &order.client_order_id {
+        push_unique_index_key(
+            &mut index_keys,
+            &mut seen,
+            IndexKind::ClientOrderId,
+            client_order_id.to_string(),
+        );
+    }
+
+    for fill in fills {
+        push_unique_index_key(
+            &mut index_keys,
+            &mut seen,
+            IndexKind::VenueOrderId,
+            fill.venue_order_id.to_string(),
+        );
+
+        if let Some(client_order_id) = &fill.client_order_id {
+            push_unique_index_key(
+                &mut index_keys,
+                &mut seen,
+                IndexKind::ClientOrderId,
+                client_order_id.to_string(),
+            );
+        }
+    }
+
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_ORDER_WITH_FILLS),
+        payload,
+        index_keys,
+    ))
+}
+
+fn encode_execution_mass_status(
+    status: &ExecutionMassStatus,
+) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(status)?;
+    let mut index_keys = Vec::new();
+    let mut seen = HashSet::new();
+
+    let order_reports = status.order_reports();
+
+    for (venue_order_id, report) in &order_reports {
+        push_unique_index_key(
+            &mut index_keys,
+            &mut seen,
+            IndexKind::VenueOrderId,
+            venue_order_id.to_string(),
+        );
+
+        if let Some(client_order_id) = &report.client_order_id {
+            push_unique_index_key(
+                &mut index_keys,
+                &mut seen,
+                IndexKind::ClientOrderId,
+                client_order_id.to_string(),
+            );
+        }
+    }
+
+    let fill_reports = status.fill_reports();
+
+    for (venue_order_id, fills) in &fill_reports {
+        push_unique_index_key(
+            &mut index_keys,
+            &mut seen,
+            IndexKind::VenueOrderId,
+            venue_order_id.to_string(),
+        );
+
+        for fill in fills {
+            if let Some(client_order_id) = &fill.client_order_id {
+                push_unique_index_key(
+                    &mut index_keys,
+                    &mut seen,
+                    IndexKind::ClientOrderId,
+                    client_order_id.to_string(),
+                );
+            }
+        }
+    }
+    // PositionStatusReport identifiers are not indexable today, see
+    // `encode_position_status_report`.
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_EXECUTION_MASS_STATUS),
+        payload,
+        index_keys,
+    ))
+}
+
+fn push_unique_index_key(
+    index_keys: &mut Vec<IndexKey>,
+    seen: &mut HashSet<(IndexKind, String)>,
+    kind: IndexKind,
+    key: String,
+) {
+    if seen.insert((kind, key.clone())) {
+        index_keys.push(IndexKey::new(kind, key));
     }
 }
 
@@ -527,12 +736,15 @@ pub fn encode_order_status_report(
 mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
+        enums::{
+            LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
+        },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId,
-            TraderId, VenueOrderId,
+            AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
+            TradeId, TraderId, Venue, VenueOrderId,
         },
         orders::OrderList,
+        reports::{ExecutionMassStatus, FillReport, PositionStatusReport},
         types::{Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
@@ -701,12 +913,13 @@ mod tests {
     fn default_registry_contains_bare_and_envelope_encoders() {
         let registry = default_registry();
 
-        assert_eq!(registry.len(), 5);
+        assert_eq!(registry.len(), 6);
         assert!(registry.contains::<SubmitOrder>());
         assert!(registry.contains::<OrderFilled>());
         assert!(registry.contains::<OrderStatusReport>());
         assert!(registry.contains::<TradingCommand>());
         assert!(registry.contains::<OrderEventAny>());
+        assert!(registry.contains::<ExecutionReport>());
     }
 
     #[rstest]
@@ -1318,5 +1531,302 @@ mod tests {
             assert_eq!(encoded.index_keys[idx].kind, IndexKind::ClientOrderId);
             assert_eq!(encoded.index_keys[idx].key, expected_id.to_string());
         }
+    }
+
+    fn make_fill_report() -> FillReport {
+        FillReport::new(
+            AccountId::from("BINANCE-001"),
+            instrument_id(),
+            venue_order_id(),
+            TradeId::from("T-1111"),
+            OrderSide::Buy,
+            Quantity::from("1"),
+            Price::from("100.00"),
+            Money::new(0.10, Currency::USDT()),
+            LiquiditySide::Taker,
+            Some(client_order_id()),
+            None,
+            UnixNanos::from(40),
+            UnixNanos::from(41),
+            None,
+        )
+    }
+
+    fn make_position_status_report() -> PositionStatusReport {
+        PositionStatusReport::new(
+            AccountId::from("BINANCE-001"),
+            instrument_id(),
+            PositionSideSpecified::Long,
+            Quantity::from("1"),
+            UnixNanos::from(50),
+            UnixNanos::from(51),
+            None,
+            Some(PositionId::from("P-001")),
+            None,
+        )
+    }
+
+    fn make_execution_mass_status_with_reports() -> ExecutionMassStatus {
+        let mut status = ExecutionMassStatus::new(
+            ClientId::from("BINANCE"),
+            AccountId::from("BINANCE-001"),
+            Venue::from("BINANCE"),
+            UnixNanos::from(60),
+            None,
+        );
+        status.add_order_reports(vec![make_order_status_report()]);
+        status.add_fill_reports(vec![make_fill_report()]);
+        status.add_position_reports(vec![make_position_status_report()]);
+        status
+    }
+
+    #[rstest]
+    fn execution_report_order_envelope_reuses_bare_status_encoder() {
+        // ExecutionReport::Order maps onto the existing OrderStatusReport bare-type
+        // encoder; the dispatcher must produce identical bytes and indices and stamp
+        // the OrderStatusReport tag so forensics scans pair the entry with the same
+        // decoder as the bare-type capture path.
+        let report = make_order_status_report();
+        let bare = encode_order_status_report(&report).expect("bare");
+
+        let envelope = ExecutionReport::Order(Box::new(report));
+        let wrapped = encode_execution_report(&envelope).expect("envelope");
+
+        assert_eq!(wrapped.payload, bare.payload);
+        assert_eq!(wrapped.index_keys, bare.index_keys);
+        assert_eq!(
+            wrapped.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_ORDER_STATUS_REPORT,
+        );
+    }
+
+    #[rstest]
+    fn execution_report_fill_envelope_emits_venue_and_client_order_id_indices() {
+        let fill = make_fill_report();
+        let envelope = ExecutionReport::Fill(Box::new(fill.clone()));
+        let encoded = encode_execution_report(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_FILL_REPORT,
+        );
+        assert_eq!(encoded.index_keys.len(), 2);
+        assert_eq!(encoded.index_keys[0].kind, IndexKind::VenueOrderId);
+        assert_eq!(encoded.index_keys[0].key, fill.venue_order_id.to_string());
+        assert_eq!(encoded.index_keys[1].kind, IndexKind::ClientOrderId);
+        assert_eq!(
+            encoded.index_keys[1].key,
+            fill.client_order_id.expect("set").to_string(),
+        );
+
+        let decoded: FillReport = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded, fill);
+    }
+
+    #[rstest]
+    fn execution_report_fill_envelope_omits_client_order_id_when_absent() {
+        let mut fill = make_fill_report();
+        fill.client_order_id = None;
+        let envelope = ExecutionReport::Fill(Box::new(fill));
+        let encoded = encode_execution_report(&envelope).expect("encode");
+
+        assert_eq!(encoded.index_keys.len(), 1);
+        assert_eq!(encoded.index_keys[0].kind, IndexKind::VenueOrderId);
+    }
+
+    #[rstest]
+    fn execution_report_position_envelope_records_no_indices() {
+        // PositionStatusReport identifiers (AccountId, InstrumentId, PositionId) have
+        // no matching IndexKind today; the dispatcher must not invent sidecar indices
+        // pointing at an identifier the reader cannot query.
+        let position = make_position_status_report();
+        let envelope = ExecutionReport::Position(Box::new(position.clone()));
+        let encoded = encode_execution_report(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_POSITION_STATUS_REPORT,
+        );
+        assert!(encoded.index_keys.is_empty());
+
+        let decoded: PositionStatusReport =
+            rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded, position);
+    }
+
+    #[rstest]
+    fn execution_report_order_with_fills_envelope_dedupes_shared_order_ids() {
+        // The order and its fills semantically carry the same venue_order_id and
+        // client_order_id, so the dispatcher must dedupe rather than emit a duplicate
+        // (kind, key) pair the backend would silently drop.
+        let order = make_order_status_report();
+        let fills = vec![make_fill_report()];
+        let envelope = ExecutionReport::OrderWithFills(Box::new(order.clone()), fills);
+        let encoded = encode_execution_report(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_ORDER_WITH_FILLS,
+        );
+        assert_eq!(encoded.index_keys.len(), 2);
+        assert_eq!(encoded.index_keys[0].kind, IndexKind::VenueOrderId);
+        assert_eq!(encoded.index_keys[0].key, order.venue_order_id.to_string());
+        assert_eq!(encoded.index_keys[1].kind, IndexKind::ClientOrderId);
+        assert_eq!(
+            encoded.index_keys[1].key,
+            order.client_order_id.expect("set").to_string(),
+        );
+    }
+
+    #[rstest]
+    fn execution_report_order_with_fills_envelope_indexes_distinct_fill_ids() {
+        // A bundled OrderWithFills can carry a fill whose client_order_id differs
+        // from the order's (rare, but real: external orders observed via a fill
+        // before the venue confirms the canonical id). The dispatcher must index
+        // both client_order_ids so forensics can resolve either to the same seq.
+        let order = make_order_status_report();
+        let mut fill = make_fill_report();
+        fill.client_order_id = Some(ClientOrderId::from("O-EXTRA-001"));
+        let envelope = ExecutionReport::OrderWithFills(Box::new(order), vec![fill.clone()]);
+        let encoded = encode_execution_report(&envelope).expect("encode");
+
+        assert_eq!(encoded.index_keys.len(), 3);
+        assert_eq!(encoded.index_keys[2].kind, IndexKind::ClientOrderId);
+        assert_eq!(
+            encoded.index_keys[2].key,
+            fill.client_order_id.expect("set").to_string(),
+        );
+    }
+
+    #[rstest]
+    fn execution_report_order_with_fills_payload_round_trips() {
+        #[derive(serde::Deserialize)]
+        struct OrderWithFillsOwned {
+            order_report: OrderStatusReport,
+            fill_reports: Vec<FillReport>,
+        }
+
+        let order = make_order_status_report();
+        let fills = vec![make_fill_report()];
+        let envelope = ExecutionReport::OrderWithFills(Box::new(order.clone()), fills.clone());
+        let encoded = encode_execution_report(&envelope).expect("encode");
+
+        let decoded: OrderWithFillsOwned = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded.order_report, order);
+        assert_eq!(decoded.fill_reports, fills);
+    }
+
+    #[rstest]
+    fn execution_report_mass_status_envelope_indexes_orders_and_fills() {
+        let status = make_execution_mass_status_with_reports();
+        let envelope = ExecutionReport::MassStatus(Box::new(status.clone()));
+        let encoded = encode_execution_report(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_EXECUTION_MASS_STATUS,
+        );
+        // One order with venue+client ids, one fill sharing both ids, one position
+        // (unindexable). The dispatcher must dedupe the shared ids.
+        assert_eq!(encoded.index_keys.len(), 2);
+        assert_eq!(encoded.index_keys[0].kind, IndexKind::VenueOrderId);
+        assert_eq!(encoded.index_keys[0].key, venue_order_id().to_string());
+        assert_eq!(encoded.index_keys[1].kind, IndexKind::ClientOrderId);
+        assert_eq!(encoded.index_keys[1].key, client_order_id().to_string());
+
+        let decoded: ExecutionMassStatus = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded, status);
+    }
+
+    #[rstest]
+    fn execution_report_mass_status_envelope_indexes_distinct_children() {
+        // Two distinct orders + a fill for a third venue_order_id with its own
+        // client_order_id. The dispatcher must record an index for each unique id
+        // so forensics can resolve any child of the status report.
+        let mut status = ExecutionMassStatus::new(
+            ClientId::from("BINANCE"),
+            AccountId::from("BINANCE-001"),
+            Venue::from("BINANCE"),
+            UnixNanos::from(60),
+            None,
+        );
+        let order_a = make_order_status_report();
+        let order_b = OrderStatusReport {
+            client_order_id: Some(ClientOrderId::from("O-B")),
+            venue_order_id: VenueOrderId::from("V-B"),
+            ..make_order_status_report()
+        };
+        let fill_c = FillReport {
+            venue_order_id: VenueOrderId::from("V-C"),
+            client_order_id: Some(ClientOrderId::from("O-C")),
+            ..make_fill_report()
+        };
+        status.add_order_reports(vec![order_a, order_b]);
+        status.add_fill_reports(vec![fill_c]);
+
+        let encoded = encode_execution_report(&ExecutionReport::MassStatus(Box::new(status)))
+            .expect("encode");
+
+        // Three venue_order_ids + three client_order_ids = 6 distinct keys
+        assert_eq!(encoded.index_keys.len(), 6);
+        let venue_keys: Vec<&str> = encoded
+            .index_keys
+            .iter()
+            .filter(|k| k.kind == IndexKind::VenueOrderId)
+            .map(|k| k.key.as_str())
+            .collect();
+        let client_keys: Vec<&str> = encoded
+            .index_keys
+            .iter()
+            .filter(|k| k.kind == IndexKind::ClientOrderId)
+            .map(|k| k.key.as_str())
+            .collect();
+        assert!(venue_keys.contains(&venue_order_id().to_string().as_str()));
+        assert!(venue_keys.contains(&"V-B"));
+        assert!(venue_keys.contains(&"V-C"));
+        assert!(client_keys.contains(&client_order_id().to_string().as_str()));
+        assert!(client_keys.contains(&"O-B"));
+        assert!(client_keys.contains(&"O-C"));
+    }
+
+    // Walks every ExecutionReport variant and asserts the dispatcher stamps the
+    // inner-variant tag. Catches a swapped match arm or a forgotten override that
+    // would otherwise fall back to the wrapper sentinel tag.
+    #[rstest]
+    #[case::order(
+        ExecutionReport::Order(Box::new(make_order_status_report())),
+        PAYLOAD_TYPE_ORDER_STATUS_REPORT
+    )]
+    #[case::fill(
+        ExecutionReport::Fill(Box::new(make_fill_report())),
+        PAYLOAD_TYPE_FILL_REPORT
+    )]
+    #[case::order_with_fills(
+        ExecutionReport::OrderWithFills(
+            Box::new(make_order_status_report()),
+            vec![make_fill_report()],
+        ),
+        PAYLOAD_TYPE_ORDER_WITH_FILLS,
+    )]
+    #[case::position(
+        ExecutionReport::Position(Box::new(make_position_status_report())),
+        PAYLOAD_TYPE_POSITION_STATUS_REPORT
+    )]
+    #[case::mass_status(
+        ExecutionReport::MassStatus(Box::new(make_execution_mass_status_with_reports())),
+        PAYLOAD_TYPE_EXECUTION_MASS_STATUS
+    )]
+    fn execution_report_envelope_stamps_inner_tag_for_every_variant(
+        #[case] report: ExecutionReport,
+        #[case] expected_tag: &str,
+    ) {
+        let encoded = encode_execution_report(&report).expect("encode");
+        let tag = encoded.payload_type.expect("override").as_str().to_string();
+
+        assert_eq!(tag, expected_tag);
+        assert_ne!(
+            tag, PAYLOAD_TYPE_EXECUTION_REPORT,
+            "wrapper fallback tag must never reach the writer",
+        );
     }
 }
