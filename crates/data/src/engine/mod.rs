@@ -121,6 +121,9 @@ use crate::{
     option_chains::OptionChainManager,
 };
 
+// Between built-in handlers (10) and default user handlers (0)
+const BAR_AGGREGATOR_PRIORITY: u32 = 5;
+
 /// Provides a high-performance `DataEngine` for all environments.
 #[derive(Debug)]
 pub struct DataEngine {
@@ -927,7 +930,7 @@ impl DataEngine {
             UnsubscribeCommand::OptionGreeks(cmd) if cmd.instrument_id.is_synthetic() => {
                 anyhow::bail!("Cannot unsubscribe from synthetic instrument `OptionGreeks` data");
             }
-            _ => {} // Do nothing else
+            _ => {}
         }
 
         if let Some(client_id) = cmd.client_id()
@@ -938,6 +941,11 @@ impl DataEngine {
                     "Skipping unsubscribe command for external client {client_id}: {cmd:?}",
                 );
             }
+            return Ok(());
+        }
+
+        // Keep client subscribed while exact-topic subscribers remain
+        if Self::topic_has_remaining_subscribers(cmd) {
             return Ok(());
         }
 
@@ -952,6 +960,39 @@ impl DataEngine {
         }
 
         Ok(())
+    }
+
+    fn topic_has_remaining_subscribers(cmd: &UnsubscribeCommand) -> bool {
+        // Exact match only; wildcard observers must not block venue detach.
+        // BookDeltas/Depth10 excluded: binary engine state cannot distinguish
+        // the internal BookUpdater handler from external subscribers
+        match cmd {
+            UnsubscribeCommand::Quotes(c) => {
+                let topic = switchboard::get_quotes_topic(c.instrument_id);
+                msgbus::exact_subscriber_count_quotes(topic) > 0
+            }
+            UnsubscribeCommand::Trades(c) => {
+                let topic = switchboard::get_trades_topic(c.instrument_id);
+                msgbus::exact_subscriber_count_trades(topic) > 0
+            }
+            UnsubscribeCommand::MarkPrices(c) => {
+                let topic = switchboard::get_mark_price_topic(c.instrument_id);
+                msgbus::exact_subscriber_count_mark_prices(topic) > 0
+            }
+            UnsubscribeCommand::IndexPrices(c) => {
+                let topic = switchboard::get_index_price_topic(c.instrument_id);
+                msgbus::exact_subscriber_count_index_prices(topic) > 0
+            }
+            UnsubscribeCommand::FundingRates(c) => {
+                let topic = switchboard::get_funding_rate_topic(c.instrument_id);
+                msgbus::exact_subscriber_count_funding_rates(topic) > 0
+            }
+            UnsubscribeCommand::OptionGreeks(c) => {
+                let topic = switchboard::get_option_greeks_topic(c.instrument_id);
+                msgbus::exact_subscriber_count_option_greeks(topic) > 0
+            }
+            _ => false,
+        }
     }
 
     /// Sends a [`RequestCommand`] to a suitable data client implementation.
@@ -2368,7 +2409,7 @@ impl DataEngine {
         } else if bar_type.spec().price_type == PriceType::Last {
             let topic = switchboard::get_trades_topic(bar_type.instrument_id());
             let handler = TypedHandler::new(BarTradeHandler::new(&aggregator, bar_key));
-            msgbus::subscribe_trades(topic.into(), handler.clone(), Some(self.msgbus_priority));
+            msgbus::subscribe_trades(topic.into(), handler.clone(), Some(BAR_AGGREGATOR_PRIORITY));
             subscriptions.push(BarAggregatorSubscription::Trade { topic, handler });
         } else {
             // Warn if imbalance/runs aggregation is wired to quotes (needs aggressor_side from trades)
@@ -2390,7 +2431,7 @@ impl DataEngine {
 
             let topic = switchboard::get_quotes_topic(bar_type.instrument_id());
             let handler = TypedHandler::new(BarQuoteHandler::new(&aggregator, bar_key));
-            msgbus::subscribe_quotes(topic.into(), handler.clone(), Some(self.msgbus_priority));
+            msgbus::subscribe_quotes(topic.into(), handler.clone(), Some(BAR_AGGREGATOR_PRIORITY));
             subscriptions.push(BarAggregatorSubscription::Quote { topic, handler });
         }
 

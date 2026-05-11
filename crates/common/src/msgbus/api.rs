@@ -851,6 +851,60 @@ pub fn subscriber_count_book_snapshots(topic: MStr<Topic>) -> usize {
         .subscriber_count(topic)
 }
 
+/// Returns the exact subscriber count for quotes on a topic,
+/// excluding wildcard pattern subscriptions.
+pub fn exact_subscriber_count_quotes(topic: MStr<Topic>) -> usize {
+    get_message_bus()
+        .borrow()
+        .router_quotes
+        .exact_subscriber_count(topic)
+}
+
+/// Returns the exact subscriber count for trades on a topic,
+/// excluding wildcard pattern subscriptions.
+pub fn exact_subscriber_count_trades(topic: MStr<Topic>) -> usize {
+    get_message_bus()
+        .borrow()
+        .router_trades
+        .exact_subscriber_count(topic)
+}
+
+/// Returns the exact subscriber count for mark prices on a topic,
+/// excluding wildcard pattern subscriptions.
+pub fn exact_subscriber_count_mark_prices(topic: MStr<Topic>) -> usize {
+    get_message_bus()
+        .borrow()
+        .router_mark_prices
+        .exact_subscriber_count(topic)
+}
+
+/// Returns the exact subscriber count for index prices on a topic,
+/// excluding wildcard pattern subscriptions.
+pub fn exact_subscriber_count_index_prices(topic: MStr<Topic>) -> usize {
+    get_message_bus()
+        .borrow()
+        .router_index_prices
+        .exact_subscriber_count(topic)
+}
+
+/// Returns the exact subscriber count for funding rates on a topic,
+/// excluding wildcard pattern subscriptions.
+pub fn exact_subscriber_count_funding_rates(topic: MStr<Topic>) -> usize {
+    get_message_bus()
+        .borrow()
+        .router_funding_rates
+        .exact_subscriber_count(topic)
+}
+
+/// Returns the exact subscriber count for option greeks on a topic,
+/// excluding wildcard pattern subscriptions.
+pub fn exact_subscriber_count_option_greeks(topic: MStr<Topic>) -> usize {
+    get_message_bus()
+        .borrow()
+        .router_option_greeks
+        .exact_subscriber_count(topic)
+}
+
 /// Returns the exact subscriber count for bars on a topic,
 /// excluding wildcard pattern subscriptions.
 pub fn exact_subscriber_count_bars(topic: MStr<Topic>) -> usize {

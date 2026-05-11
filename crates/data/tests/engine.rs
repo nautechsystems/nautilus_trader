@@ -75,7 +75,7 @@ use nautilus_model::{
         Bar, BarType, BookOrder, DEPTH10_LEN, Data, DataType, FundingRateUpdate, IndexPriceUpdate,
         InstrumentStatus, MarkPriceUpdate, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10,
         QuoteTick, TradeTick,
-        option_chain::StrikeRange,
+        option_chain::{OptionGreeks, StrikeRange},
         stubs::{OrderBookDeltaTestBuilder, stub_delta, stub_deltas, stub_depth10},
     },
     enums::{AggressorSide, AssetClass, BookType, MarketStatusAction, OptionKind, PriceType},
@@ -2117,6 +2117,128 @@ fn test_execute_subscribe_quotes(
 }
 
 #[rstest]
+fn test_unsubscribe_quotes_keeps_client_subscribed_when_other_subscribers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let topic = switchboard::get_quotes_topic(audusd_sim.id);
+    let (handler_a, saver_a) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("subscriber-a")));
+    let (handler_b, saver_b) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("subscriber-b")));
+    msgbus::subscribe_quotes(topic.into(), handler_a, None);
+    msgbus::subscribe_quotes(topic.into(), handler_b, None);
+
+    let sub = SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Quotes(sub));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub = UnsubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(unsub));
+    data_engine.execute(unsub_cmd);
+
+    assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+
+    let quote = QuoteTick::new(
+        audusd_sim.id,
+        Price::from("1.0000"),
+        Price::from("1.0001"),
+        Quantity::from(1),
+        Quantity::from(1),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    data_engine.process_data(Data::Quote(quote));
+
+    assert_eq!(saver_a.get_messages(), vec![quote]);
+    assert_eq!(saver_b.get_messages(), vec![quote]);
+}
+
+#[rstest]
+fn test_unsubscribe_quotes_ignores_wildcard_observers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let (wildcard_handler, _wildcard_saver) =
+        get_typed_message_saving_handler::<QuoteTick>(Some(Ustr::from("wildcard-observer")));
+    msgbus::subscribe_quotes("data.quotes.*".into(), wildcard_handler, Some(10));
+
+    let sub = SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Quotes(sub));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub = UnsubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(unsub));
+    data_engine.execute(unsub_cmd.clone());
+
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
 fn test_execute_subscribe_trades(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
@@ -2167,6 +2289,56 @@ fn test_execute_subscribe_trades(
     data_engine.execute(unsub_cmd.clone());
 
     assert!(!data_engine.subscribed_trades().contains(&audusd_sim.id));
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
+fn test_unsubscribe_trades_ignores_wildcard_observers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let (wildcard_handler, _wildcard_saver) =
+        get_typed_message_saving_handler::<TradeTick>(Some(Ustr::from("wildcard-trades")));
+    msgbus::subscribe_trades("data.trades.*".into(), wildcard_handler, Some(10));
+
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Trades(SubscribeTrades::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Trades(UnsubscribeTrades::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(unsub_cmd.clone());
+
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
 }
 
@@ -2231,6 +2403,208 @@ fn test_execute_subscribe_bars(
 }
 
 #[rstest]
+fn test_unsubscribe_bars_forwards_to_client_with_remaining_exact_subscribers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    // Bars excluded from the gate; venue unsubscribe must forward even with exact subscribers
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim);
+    data_engine.process(&inst_any as &dyn Any);
+
+    let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
+    let bar_topic = switchboard::get_bars_topic(bar_type);
+    let (handler, _saver) =
+        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("exact-bar-subscriber")));
+    msgbus::subscribe_bars(bar_topic.into(), handler, None);
+
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Bars(SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Bars(UnsubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(unsub_cmd.clone());
+
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
+fn test_bar_aggregator_quote_subscription_priority_is_between_4_and_6(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    data_engine.process(&inst_any as &dyn Any);
+
+    let bar_type = BarType::from("AUD/USD.SIM-1-TICK-BID-INTERNAL");
+    let quote_topic = switchboard::get_quotes_topic(audusd_sim.id);
+    let bar_topic = switchboard::get_bars_topic(bar_type);
+
+    let dispatch_order: Rc<RefCell<Vec<&'static str>>> = Rc::new(RefCell::new(Vec::new()));
+
+    let order_high = dispatch_order.clone();
+    let handler_high = TypedHandler::from_with_id("prio-6", move |_q: &QuoteTick| {
+        order_high.borrow_mut().push("high");
+    });
+    msgbus::subscribe_quotes(quote_topic.into(), handler_high, Some(6));
+
+    let order_low = dispatch_order.clone();
+    let handler_low = TypedHandler::from_with_id("prio-4", move |_q: &QuoteTick| {
+        order_low.borrow_mut().push("low");
+    });
+    msgbus::subscribe_quotes(quote_topic.into(), handler_low, Some(4));
+
+    let order_bar = dispatch_order.clone();
+    let handler_bar = TypedHandler::from_with_id("bar-observer", move |_b: &Bar| {
+        order_bar.borrow_mut().push("bar");
+    });
+    msgbus::subscribe_bars(bar_topic.into(), handler_bar, None);
+
+    let sub = SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    let quote = QuoteTick::new(
+        audusd_sim.id,
+        Price::from("1.0000"),
+        Price::from("1.0001"),
+        Quantity::from(1),
+        Quantity::from(1),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    data_engine.process_data(Data::Quote(quote));
+
+    assert_eq!(*dispatch_order.borrow(), vec!["high", "bar", "low"]);
+}
+
+#[rstest]
+fn test_bar_aggregator_trade_subscription_priority_is_between_4_and_6(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    data_engine.process(&inst_any as &dyn Any);
+
+    let bar_type = BarType::from("AUD/USD.SIM-1-TICK-LAST-INTERNAL");
+    let trades_topic = switchboard::get_trades_topic(audusd_sim.id);
+    let bar_topic = switchboard::get_bars_topic(bar_type);
+
+    let dispatch_order: Rc<RefCell<Vec<&'static str>>> = Rc::new(RefCell::new(Vec::new()));
+
+    let order_high = dispatch_order.clone();
+    let handler_high = TypedHandler::from_with_id("prio-6", move |_t: &TradeTick| {
+        order_high.borrow_mut().push("high");
+    });
+    msgbus::subscribe_trades(trades_topic.into(), handler_high, Some(6));
+
+    let order_low = dispatch_order.clone();
+    let handler_low = TypedHandler::from_with_id("prio-4", move |_t: &TradeTick| {
+        order_low.borrow_mut().push("low");
+    });
+    msgbus::subscribe_trades(trades_topic.into(), handler_low, Some(4));
+
+    let order_bar = dispatch_order.clone();
+    let handler_bar = TypedHandler::from_with_id("bar-observer", move |_b: &Bar| {
+        order_bar.borrow_mut().push("bar");
+    });
+    msgbus::subscribe_bars(bar_topic.into(), handler_bar, None);
+
+    let sub = SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    let trade = TradeTick::new(
+        audusd_sim.id,
+        Price::from("1.0000"),
+        Quantity::from(1),
+        AggressorSide::Buyer,
+        TradeId::new("T-1"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    data_engine.process_data(Data::Trade(trade));
+
+    assert_eq!(*dispatch_order.borrow(), vec!["high", "bar", "low"]);
+}
+
+#[rstest]
 fn test_execute_subscribe_mark_prices(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
@@ -2289,6 +2663,112 @@ fn test_execute_subscribe_mark_prices(
             .subscribed_mark_prices()
             .contains(&audusd_sim.id)
     );
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
+fn test_unsubscribe_mark_prices_keeps_client_subscribed_when_other_subscribers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let topic = switchboard::get_mark_price_topic(audusd_sim.id);
+    let (handler_a, _saver_a) =
+        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("mark-a")));
+    let (handler_b, _saver_b) =
+        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("mark-b")));
+    msgbus::subscribe_mark_prices(topic.into(), handler_a, None);
+    msgbus::subscribe_mark_prices(topic.into(), handler_b, None);
+
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::MarkPrices(SubscribeMarkPrices::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub_cmd =
+        DataCommand::Unsubscribe(UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )));
+    data_engine.execute(unsub_cmd);
+
+    assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+}
+
+#[rstest]
+fn test_unsubscribe_mark_prices_ignores_wildcard_observers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let (wildcard_handler, _wildcard_saver) =
+        get_typed_message_saving_handler::<MarkPriceUpdate>(Some(Ustr::from("wildcard-mark")));
+    msgbus::subscribe_mark_prices("data.mark_prices.*".into(), wildcard_handler, Some(10));
+
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::MarkPrices(SubscribeMarkPrices::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub_cmd =
+        DataCommand::Unsubscribe(UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )));
+    data_engine.execute(unsub_cmd.clone());
+
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
 }
 
@@ -2357,6 +2837,58 @@ fn test_execute_subscribe_index_prices(
 }
 
 #[rstest]
+fn test_unsubscribe_index_prices_ignores_wildcard_observers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let (wildcard_handler, _wildcard_saver) =
+        get_typed_message_saving_handler::<IndexPriceUpdate>(Some(Ustr::from("wildcard-index")));
+    msgbus::subscribe_index_prices("data.index_prices.*".into(), wildcard_handler, Some(10));
+
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::IndexPrices(SubscribeIndexPrices::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::IndexPrices(
+        UnsubscribeIndexPrices::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    ));
+    data_engine.execute(unsub_cmd.clone());
+
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
 fn test_execute_subscribe_funding_rates(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
@@ -2415,6 +2947,59 @@ fn test_execute_subscribe_funding_rates(
             .subscribed_funding_rates()
             .contains(&audusd_sim.id)
     );
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
+fn test_unsubscribe_funding_rates_ignores_wildcard_observers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let (wildcard_handler, _wildcard_saver) =
+        get_typed_message_saving_handler::<FundingRateUpdate>(Some(Ustr::from("wildcard-funding")));
+    msgbus::subscribe_funding_rates("data.funding_rates.*".into(), wildcard_handler, Some(10));
+
+    let sub_cmd =
+        DataCommand::Subscribe(SubscribeCommand::FundingRates(SubscribeFundingRates::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::FundingRates(
+        UnsubscribeFundingRates::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    ));
+    data_engine.execute(unsub_cmd.clone());
+
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
 }
 
@@ -2589,6 +3174,59 @@ fn test_execute_subscribe_option_greeks(
         None,
     );
     let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(unsub));
+    data_engine.execute(unsub_cmd.clone());
+
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
+fn test_unsubscribe_option_greeks_ignores_wildcard_observers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let (wildcard_handler, _wildcard_saver) =
+        get_typed_message_saving_handler::<OptionGreeks>(Some(Ustr::from("wildcard-greeks")));
+    msgbus::subscribe_option_greeks("data.option_greeks.*".into(), wildcard_handler, Some(10));
+
+    let sub_cmd =
+        DataCommand::Subscribe(SubscribeCommand::OptionGreeks(SubscribeOptionGreeks::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(
+        UnsubscribeOptionGreeks::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    ));
     data_engine.execute(unsub_cmd.clone());
 
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
