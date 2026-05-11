@@ -155,6 +155,23 @@ pub struct WsDispatchState {
     /// safety net so missed terminal frames (reconnects, partial replays)
     /// cannot leak entries indefinitely.
     pub order_symbol_cache: DashMap<String, String>,
+    /// `ClientOrderId` captured from execution frames for a venue order id.
+    ///
+    /// Kraken's `pending_new` echoes our submitted `cl_ord_id`, but follow-up
+    /// delta frames (`new`, `amended`, `restated`, `status`) routinely omit
+    /// it. Without this mapping the dispatch cannot resolve the tracked
+    /// order from a delta and falls back to the untracked report path,
+    /// which loses the typed `OrderAccepted` event — the symptom behind
+    /// issue #4051.
+    ///
+    /// Populated whenever a frame resolves a `cl_ord_id` (first writer
+    /// wins, keyed by venue `order_id`). Consulted when `exec.cl_ord_id`
+    /// is `None`. Mirrors the `venue_client_map` used by the futures
+    /// dispatch path.
+    ///
+    /// Eviction policy matches `order_symbol_cache`: cleared on terminal
+    /// exec types and bounded by `DEDUP_CAPACITY` as a safety net.
+    pub order_client_id_cache: DashMap<String, ClientOrderId>,
     /// Last snapshot of qty / filled / price / trigger_price seen on a
     /// tracked `OpenOrdersDelta`.
     ///
@@ -189,6 +206,7 @@ impl Default for WsDispatchState {
             emitted_accepted: DashSet::default(),
             filled_orders: DashSet::default(),
             order_symbol_cache: DashMap::new(),
+            order_client_id_cache: DashMap::new(),
             delta_snapshots: DashMap::new(),
             order_filled_qty: DashMap::new(),
             emitted_trades: Mutex::new(IndexSet::with_capacity(DEDUP_CAPACITY)),
@@ -265,6 +283,35 @@ impl WsDispatchState {
     /// reaches a terminal state on the executions stream.
     pub fn forget_order_symbol(&self, order_id: &str) {
         self.order_symbol_cache.remove(order_id);
+    }
+
+    /// Caches the resolved `ClientOrderId` for a venue `order_id` if not
+    /// already present.
+    ///
+    /// Atomic via [`DashMap::entry`] so concurrent callers cannot overwrite an
+    /// existing cached value — first writer wins. The cheap `contains_key`
+    /// fast path skips the key allocation when the entry already exists.
+    pub fn cache_order_client_id(&self, order_id: &str, client_order_id: ClientOrderId) {
+        if self.order_client_id_cache.contains_key(order_id) {
+            return;
+        }
+        self.evict_map_if_full(&self.order_client_id_cache);
+        self.order_client_id_cache
+            .entry(order_id.to_string())
+            .or_insert(client_order_id);
+    }
+
+    /// Returns the `ClientOrderId` previously cached for a venue `order_id`,
+    /// if any.
+    #[must_use]
+    pub fn lookup_order_client_id(&self, order_id: &str) -> Option<ClientOrderId> {
+        self.order_client_id_cache.get(order_id).map(|r| *r)
+    }
+
+    /// Removes any cached `ClientOrderId` for a venue `order_id`. Called when
+    /// the order reaches a terminal state on the executions stream.
+    pub fn forget_order_client_id(&self, order_id: &str) {
+        self.order_client_id_cache.remove(order_id);
     }
 
     /// Atomically inserts a trade id into the dedup set.
