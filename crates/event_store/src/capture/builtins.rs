@@ -19,12 +19,12 @@
 //! `OrderStatusReport` raw venue report) so the bus capture adapter had a working
 //! allow-list end-to-end. Phase 7 adds envelope-aware dispatchers for the
 //! wrapper enums production code actually pushes through `send_trading_command`,
-//! `publish_order_event`, and `send_execution_report` ([`TradingCommand`],
-//! [`OrderEventAny`], [`ExecutionReport`]); these reach the bus tap as their wrapper
-//! [`std::any::TypeId`] and the bare-type registrations would miss them. Each dispatcher
-//! unwraps its variant, runs the inner-typed encode, and stamps the inner-variant's
-//! canonical `payload_type` tag so forensics scans see entries identical to the
-//! bare-type capture path.
+//! `publish_order_event`, `send_execution_report`, and `publish_position_event`
+//! ([`TradingCommand`], [`OrderEventAny`], [`ExecutionReport`], [`PositionEvent`]);
+//! these reach the bus tap as their wrapper [`std::any::TypeId`] and the bare-type
+//! registrations would miss them. Each dispatcher unwraps its variant, runs the
+//! inner-typed encode, and stamps the inner-variant's canonical `payload_type` tag so
+//! forensics scans see entries identical to the bare-type capture path.
 //!
 //! The payload serialization format is MessagePack via `rmp-serde`. The on-disk envelope
 //! codec stays bincode (positional, non-self-describing); MessagePack inside the payload
@@ -43,7 +43,8 @@ use nautilus_model::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
         OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
         OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
-        OrderTriggered, OrderUpdated,
+        OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged, PositionClosed,
+        PositionEvent, PositionOpened,
     },
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
@@ -118,6 +119,14 @@ pub const PAYLOAD_TYPE_ORDER_WITH_FILLS: &str = "OrderWithFills";
 pub const PAYLOAD_TYPE_POSITION_STATUS_REPORT: &str = "PositionStatusReport";
 /// The canonical `payload_type` tag for [`ExecutionMassStatus`].
 pub const PAYLOAD_TYPE_EXECUTION_MASS_STATUS: &str = "ExecutionMassStatus";
+/// The canonical `payload_type` tag for [`PositionOpened`].
+pub const PAYLOAD_TYPE_POSITION_OPENED: &str = "PositionOpened";
+/// The canonical `payload_type` tag for [`PositionChanged`].
+pub const PAYLOAD_TYPE_POSITION_CHANGED: &str = "PositionChanged";
+/// The canonical `payload_type` tag for [`PositionClosed`].
+pub const PAYLOAD_TYPE_POSITION_CLOSED: &str = "PositionClosed";
+/// The canonical `payload_type` tag for [`PositionAdjusted`].
+pub const PAYLOAD_TYPE_POSITION_ADJUSTED: &str = "PositionAdjusted";
 
 // Wrapper-level fallback tag reached only when a dispatcher returns an
 // `EncodedPayload` without an override. Every current variant stamps its own
@@ -128,6 +137,8 @@ const PAYLOAD_TYPE_TRADING_COMMAND: &str = "TradingCommand";
 const PAYLOAD_TYPE_ORDER_EVENT_ANY: &str = "OrderEventAny";
 
 const PAYLOAD_TYPE_EXECUTION_REPORT: &str = "ExecutionReport";
+
+const PAYLOAD_TYPE_POSITION_EVENT: &str = "PositionEvent";
 
 /// Returns an [`EncoderRegistry`] preloaded with the default encoders.
 ///
@@ -146,9 +157,10 @@ pub fn default_registry() -> EncoderRegistry {
 /// type directly (the kernel's `RunStarted` path and a few internal tests). The envelope
 /// registrations are what production bus traffic actually hits: `send_trading_command`
 /// reaches the tap as [`TradingCommand`], `publish_order_event` reaches it as
-/// [`OrderEventAny`], and `send_execution_report` reaches it as [`ExecutionReport`].
-/// Without these wrapper-aware dispatchers the tap looks up the wrapper's
-/// [`std::any::TypeId`], finds no encoder, and silently drops the capture.
+/// [`OrderEventAny`], `send_execution_report` reaches it as [`ExecutionReport`], and
+/// `publish_position_event` reaches it as [`PositionEvent`]. Without these wrapper-aware
+/// dispatchers the tap looks up the wrapper's [`std::any::TypeId`], finds no encoder,
+/// and silently drops the capture.
 pub fn register_default(registry: &mut EncoderRegistry) {
     registry
         .register::<SubmitOrder, _>(payload_type(PAYLOAD_TYPE_SUBMIT_ORDER), encode_submit_order);
@@ -169,6 +181,10 @@ pub fn register_default(registry: &mut EncoderRegistry) {
     registry.register::<ExecutionReport, _>(
         payload_type(PAYLOAD_TYPE_EXECUTION_REPORT),
         encode_execution_report,
+    );
+    registry.register::<PositionEvent, _>(
+        payload_type(PAYLOAD_TYPE_POSITION_EVENT),
+        encode_position_event,
     );
 }
 
@@ -465,6 +481,94 @@ fn push_unique_index_key(
     }
 }
 
+/// Encodes a [`PositionEvent`] envelope by dispatching on the variant.
+///
+/// `publish_position_event` hands the bus tap a [`PositionEvent`] wrapper, so the tap
+/// dispatches by the wrapper's [`std::any::TypeId`] and the inner variants never reach
+/// their bare-type encoders. The dispatcher unwraps each variant, encodes the inner
+/// struct, and stamps the inner-variant tag so forensics scans see entries identical
+/// to the bare-type capture path.
+///
+/// # Errors
+///
+/// Returns the inner encoder's [`EncodeError`] when MessagePack rejects the inner
+/// payload.
+pub fn encode_position_event(event: &PositionEvent) -> Result<EncodedPayload, EncodeError> {
+    match event {
+        PositionEvent::PositionOpened(e) => encode_position_opened(e),
+        PositionEvent::PositionChanged(e) => encode_position_changed(e),
+        PositionEvent::PositionClosed(e) => encode_position_closed(e),
+        PositionEvent::PositionAdjusted(e) => encode_position_adjusted(e),
+    }
+}
+
+fn encode_position_opened(event: &PositionOpened) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(event)?;
+    let index_keys = vec![IndexKey::new(
+        IndexKind::ClientOrderId,
+        event.opening_order_id.to_string(),
+    )];
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_POSITION_OPENED),
+        payload,
+        index_keys,
+    ))
+}
+
+fn encode_position_changed(event: &PositionChanged) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(event)?;
+    let index_keys = vec![IndexKey::new(
+        IndexKind::ClientOrderId,
+        event.opening_order_id.to_string(),
+    )];
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_POSITION_CHANGED),
+        payload,
+        index_keys,
+    ))
+}
+
+fn encode_position_closed(event: &PositionClosed) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(event)?;
+    let mut index_keys = Vec::new();
+    let mut seen = HashSet::new();
+
+    push_unique_index_key(
+        &mut index_keys,
+        &mut seen,
+        IndexKind::ClientOrderId,
+        event.opening_order_id.to_string(),
+    );
+
+    // Opening and closing client_order_ids are distinct in normal operation; dedup
+    // guards the rare case where a single order both opens and closes the position.
+    if let Some(closing_order_id) = &event.closing_order_id {
+        push_unique_index_key(
+            &mut index_keys,
+            &mut seen,
+            IndexKind::ClientOrderId,
+            closing_order_id.to_string(),
+        );
+    }
+
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_POSITION_CLOSED),
+        payload,
+        index_keys,
+    ))
+}
+
+fn encode_position_adjusted(event: &PositionAdjusted) -> Result<EncodedPayload, EncodeError> {
+    // PositionAdjusted carries no client_order_id; identifiers are PositionId,
+    // AccountId, and InstrumentId, none of which have a matching IndexKind today.
+    let payload = encode_serde(event)?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_POSITION_ADJUSTED),
+        payload,
+        Vec::new(),
+    ))
+}
+
 fn encode_submit_order_list(cmd: &SubmitOrderList) -> Result<EncodedPayload, EncodeError> {
     let payload = encode_serde(cmd)?;
     let index_keys = cmd
@@ -737,8 +841,10 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::{
-            LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
+            LiquiditySide, OrderSide, OrderStatus, OrderType, PositionAdjustmentType, PositionSide,
+            PositionSideSpecified, TimeInForce,
         },
+        events::{PositionAdjusted, PositionChanged, PositionClosed, PositionOpened},
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
             TradeId, TraderId, Venue, VenueOrderId,
@@ -913,13 +1019,14 @@ mod tests {
     fn default_registry_contains_bare_and_envelope_encoders() {
         let registry = default_registry();
 
-        assert_eq!(registry.len(), 6);
+        assert_eq!(registry.len(), 7);
         assert!(registry.contains::<SubmitOrder>());
         assert!(registry.contains::<OrderFilled>());
         assert!(registry.contains::<OrderStatusReport>());
         assert!(registry.contains::<TradingCommand>());
         assert!(registry.contains::<OrderEventAny>());
         assert!(registry.contains::<ExecutionReport>());
+        assert!(registry.contains::<PositionEvent>());
     }
 
     #[rstest]
@@ -1826,6 +1933,261 @@ mod tests {
         assert_eq!(tag, expected_tag);
         assert_ne!(
             tag, PAYLOAD_TYPE_EXECUTION_REPORT,
+            "wrapper fallback tag must never reach the writer",
+        );
+    }
+
+    fn opening_order_id() -> ClientOrderId {
+        ClientOrderId::from("O-OPEN-001")
+    }
+
+    fn closing_order_id() -> ClientOrderId {
+        ClientOrderId::from("O-CLOSE-001")
+    }
+
+    fn position_id() -> PositionId {
+        PositionId::from("P-001")
+    }
+
+    fn make_position_opened() -> PositionOpened {
+        PositionOpened {
+            trader_id: trader_id(),
+            strategy_id: strategy_id(),
+            instrument_id: instrument_id(),
+            position_id: position_id(),
+            account_id: AccountId::from("BINANCE-001"),
+            opening_order_id: opening_order_id(),
+            entry: OrderSide::Buy,
+            side: PositionSide::Long,
+            signed_qty: 1.0,
+            quantity: Quantity::from("1"),
+            last_qty: Quantity::from("1"),
+            last_px: Price::from("100.00"),
+            currency: Currency::USDT(),
+            avg_px_open: 100.0,
+            event_id: UUID4::new(),
+            ts_event: UnixNanos::from(70),
+            ts_init: UnixNanos::from(71),
+        }
+    }
+
+    fn make_position_changed() -> PositionChanged {
+        PositionChanged {
+            trader_id: trader_id(),
+            strategy_id: strategy_id(),
+            instrument_id: instrument_id(),
+            position_id: position_id(),
+            account_id: AccountId::from("BINANCE-001"),
+            opening_order_id: opening_order_id(),
+            entry: OrderSide::Buy,
+            side: PositionSide::Long,
+            signed_qty: 2.0,
+            quantity: Quantity::from("2"),
+            peak_quantity: Quantity::from("2"),
+            last_qty: Quantity::from("1"),
+            last_px: Price::from("101.00"),
+            currency: Currency::USDT(),
+            avg_px_open: 100.5,
+            avg_px_close: None,
+            realized_return: 0.0,
+            realized_pnl: None,
+            unrealized_pnl: Money::new(1.0, Currency::USDT()),
+            event_id: UUID4::new(),
+            ts_opened: UnixNanos::from(70),
+            ts_event: UnixNanos::from(80),
+            ts_init: UnixNanos::from(81),
+        }
+    }
+
+    fn make_position_closed() -> PositionClosed {
+        PositionClosed {
+            trader_id: trader_id(),
+            strategy_id: strategy_id(),
+            instrument_id: instrument_id(),
+            position_id: position_id(),
+            account_id: AccountId::from("BINANCE-001"),
+            opening_order_id: opening_order_id(),
+            closing_order_id: Some(closing_order_id()),
+            entry: OrderSide::Buy,
+            side: PositionSide::Flat,
+            signed_qty: 0.0,
+            quantity: Quantity::from("0"),
+            peak_quantity: Quantity::from("2"),
+            last_qty: Quantity::from("2"),
+            last_px: Price::from("102.00"),
+            currency: Currency::USDT(),
+            avg_px_open: 100.5,
+            avg_px_close: Some(102.0),
+            realized_return: 0.015,
+            realized_pnl: Some(Money::new(3.0, Currency::USDT())),
+            unrealized_pnl: Money::new(0.0, Currency::USDT()),
+            duration: 3_600_000_000_000,
+            event_id: UUID4::new(),
+            ts_opened: UnixNanos::from(70),
+            ts_closed: Some(UnixNanos::from(90)),
+            ts_event: UnixNanos::from(90),
+            ts_init: UnixNanos::from(91),
+        }
+    }
+
+    fn make_position_adjusted() -> PositionAdjusted {
+        PositionAdjusted::new(
+            trader_id(),
+            strategy_id(),
+            instrument_id(),
+            position_id(),
+            AccountId::from("BINANCE-001"),
+            PositionAdjustmentType::Commission,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::from(100),
+            UnixNanos::from(101),
+        )
+    }
+
+    #[rstest]
+    fn position_event_opened_envelope_emits_opening_order_id_index() {
+        let opened = make_position_opened();
+        let envelope = PositionEvent::PositionOpened(opened.clone());
+        let encoded = encode_position_event(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_POSITION_OPENED,
+        );
+        assert_eq!(encoded.index_keys.len(), 1);
+        assert_eq!(encoded.index_keys[0].kind, IndexKind::ClientOrderId);
+        assert_eq!(
+            encoded.index_keys[0].key,
+            opened.opening_order_id.to_string(),
+        );
+
+        let decoded: PositionOpened = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded, opened);
+    }
+
+    #[rstest]
+    fn position_event_changed_envelope_emits_opening_order_id_index() {
+        let changed = make_position_changed();
+        let envelope = PositionEvent::PositionChanged(changed.clone());
+        let encoded = encode_position_event(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_POSITION_CHANGED,
+        );
+        assert_eq!(encoded.index_keys.len(), 1);
+        assert_eq!(encoded.index_keys[0].kind, IndexKind::ClientOrderId);
+        assert_eq!(
+            encoded.index_keys[0].key,
+            changed.opening_order_id.to_string(),
+        );
+
+        let decoded: PositionChanged = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded, changed);
+    }
+
+    #[rstest]
+    fn position_event_closed_envelope_indexes_both_opening_and_closing_order_ids() {
+        let closed = make_position_closed();
+        let envelope = PositionEvent::PositionClosed(closed.clone());
+        let encoded = encode_position_event(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_POSITION_CLOSED,
+        );
+        assert_eq!(encoded.index_keys.len(), 2);
+        assert_eq!(encoded.index_keys[0].kind, IndexKind::ClientOrderId);
+        assert_eq!(
+            encoded.index_keys[0].key,
+            closed.opening_order_id.to_string(),
+        );
+        assert_eq!(encoded.index_keys[1].kind, IndexKind::ClientOrderId);
+        assert_eq!(
+            encoded.index_keys[1].key,
+            closed.closing_order_id.expect("set").to_string(),
+        );
+
+        let decoded: PositionClosed = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded, closed);
+    }
+
+    #[rstest]
+    fn position_event_closed_envelope_omits_closing_order_id_when_absent() {
+        let mut closed = make_position_closed();
+        closed.closing_order_id = None;
+        let envelope = PositionEvent::PositionClosed(closed);
+        let encoded = encode_position_event(&envelope).expect("encode");
+
+        assert_eq!(encoded.index_keys.len(), 1);
+        assert_eq!(encoded.index_keys[0].kind, IndexKind::ClientOrderId);
+        assert_eq!(encoded.index_keys[0].key, opening_order_id().to_string());
+    }
+
+    #[rstest]
+    fn position_event_closed_envelope_dedupes_when_open_and_close_match() {
+        // Rare but real: a single order both opens and closes the position (e.g.,
+        // reduce-only fills against a stale position). The dispatcher must dedupe
+        // rather than insert the same (kind, key) twice.
+        let mut closed = make_position_closed();
+        closed.closing_order_id = Some(closed.opening_order_id);
+        let envelope = PositionEvent::PositionClosed(closed);
+        let encoded = encode_position_event(&envelope).expect("encode");
+
+        assert_eq!(encoded.index_keys.len(), 1);
+        assert_eq!(encoded.index_keys[0].key, opening_order_id().to_string());
+    }
+
+    #[rstest]
+    fn position_event_adjusted_envelope_records_no_indices() {
+        // PositionAdjusted has no ClientOrderId field; PositionId/AccountId/
+        // InstrumentId have no matching IndexKind today, so the dispatcher must
+        // not invent sidecar indices pointing at an identifier the reader cannot
+        // query.
+        let adjusted = make_position_adjusted();
+        let envelope = PositionEvent::PositionAdjusted(adjusted);
+        let encoded = encode_position_event(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_POSITION_ADJUSTED,
+        );
+        assert!(encoded.index_keys.is_empty());
+
+        let decoded: PositionAdjusted = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded, adjusted);
+    }
+
+    #[rstest]
+    #[case::opened(
+        PositionEvent::PositionOpened(make_position_opened()),
+        PAYLOAD_TYPE_POSITION_OPENED
+    )]
+    #[case::changed(
+        PositionEvent::PositionChanged(make_position_changed()),
+        PAYLOAD_TYPE_POSITION_CHANGED
+    )]
+    #[case::closed(
+        PositionEvent::PositionClosed(make_position_closed()),
+        PAYLOAD_TYPE_POSITION_CLOSED
+    )]
+    #[case::adjusted(
+        PositionEvent::PositionAdjusted(make_position_adjusted()),
+        PAYLOAD_TYPE_POSITION_ADJUSTED
+    )]
+    fn position_event_envelope_stamps_inner_tag_for_every_variant(
+        #[case] event: PositionEvent,
+        #[case] expected_tag: &str,
+    ) {
+        let encoded = encode_position_event(&event).expect("encode");
+        let tag = encoded.payload_type.expect("override").as_str().to_string();
+
+        assert_eq!(tag, expected_tag);
+        assert_ne!(
+            tag, PAYLOAD_TYPE_POSITION_EVENT,
             "wrapper fallback tag must never reach the writer",
         );
     }
