@@ -40,11 +40,11 @@ use nautilus_common::messages::execution::{
 };
 use nautilus_model::{
     events::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
-        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
-        OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged, PositionClosed,
-        PositionEvent, PositionOpened,
+        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEmulated, OrderEventAny, OrderExpired, OrderFilled, OrderInitialized,
+        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
+        OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged,
+        PositionClosed, PositionEvent, PositionOpened,
     },
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
@@ -127,6 +127,8 @@ pub const PAYLOAD_TYPE_POSITION_CHANGED: &str = "PositionChanged";
 pub const PAYLOAD_TYPE_POSITION_CLOSED: &str = "PositionClosed";
 /// The canonical `payload_type` tag for [`PositionAdjusted`].
 pub const PAYLOAD_TYPE_POSITION_ADJUSTED: &str = "PositionAdjusted";
+/// The canonical `payload_type` tag for [`AccountState`].
+pub const PAYLOAD_TYPE_ACCOUNT_STATE: &str = "AccountState";
 
 // Wrapper-level fallback tag reached only when a dispatcher returns an
 // `EncodedPayload` without an override. Every current variant stamps its own
@@ -161,6 +163,10 @@ pub fn default_registry() -> EncoderRegistry {
 /// `publish_position_event` reaches it as [`PositionEvent`]. Without these wrapper-aware
 /// dispatchers the tap looks up the wrapper's [`std::any::TypeId`], finds no encoder,
 /// and silently drops the capture.
+///
+/// [`AccountState`] is registered as a bare type: `publish_account_state` and
+/// `send_account_state` both reach the tap as the same `AccountState` `TypeId`, so a
+/// single registration covers both dispatch paths.
 pub fn register_default(registry: &mut EncoderRegistry) {
     registry
         .register::<SubmitOrder, _>(payload_type(PAYLOAD_TYPE_SUBMIT_ORDER), encode_submit_order);
@@ -185,6 +191,10 @@ pub fn register_default(registry: &mut EncoderRegistry) {
     registry.register::<PositionEvent, _>(
         payload_type(PAYLOAD_TYPE_POSITION_EVENT),
         encode_position_event,
+    );
+    registry.register::<AccountState, _>(
+        payload_type(PAYLOAD_TYPE_ACCOUNT_STATE),
+        encode_account_state,
     );
 }
 
@@ -836,13 +846,28 @@ pub fn encode_order_status_report(
     Ok(EncodedPayload::new(payload, index_keys))
 }
 
+/// Encodes an [`AccountState`] into canonical bytes with no sidecar indices.
+///
+/// `AccountState` carries `AccountId` and `event_id` (UUID4); neither matches an
+/// [`IndexKind`] variant today, so the encoder emits no sidecar keys and forensics
+/// scans rely on sequential range or the header-derived `intent_id` index. This
+/// mirrors the [`PositionStatusReport`] precedent.
+///
+/// # Errors
+///
+/// Returns [`EncodeError::Serialize`] when MessagePack rejects the payload.
+pub fn encode_account_state(message: &AccountState) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(message)?;
+    Ok(EncodedPayload::new(payload, Vec::new()))
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::{
-            LiquiditySide, OrderSide, OrderStatus, OrderType, PositionAdjustmentType, PositionSide,
-            PositionSideSpecified, TimeInForce,
+            AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionAdjustmentType,
+            PositionSide, PositionSideSpecified, TimeInForce,
         },
         events::{PositionAdjusted, PositionChanged, PositionClosed, PositionOpened},
         identifiers::{
@@ -851,7 +876,7 @@ mod tests {
         },
         orders::OrderList,
         reports::{ExecutionMassStatus, FillReport, PositionStatusReport},
-        types::{Currency, Money, Price, Quantity},
+        types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
 
@@ -1019,7 +1044,7 @@ mod tests {
     fn default_registry_contains_bare_and_envelope_encoders() {
         let registry = default_registry();
 
-        assert_eq!(registry.len(), 7);
+        assert_eq!(registry.len(), 8);
         assert!(registry.contains::<SubmitOrder>());
         assert!(registry.contains::<OrderFilled>());
         assert!(registry.contains::<OrderStatusReport>());
@@ -1027,6 +1052,7 @@ mod tests {
         assert!(registry.contains::<OrderEventAny>());
         assert!(registry.contains::<ExecutionReport>());
         assert!(registry.contains::<PositionEvent>());
+        assert!(registry.contains::<AccountState>());
     }
 
     #[rstest]
@@ -2190,5 +2216,65 @@ mod tests {
             tag, PAYLOAD_TYPE_POSITION_EVENT,
             "wrapper fallback tag must never reach the writer",
         );
+    }
+
+    fn make_account_state() -> AccountState {
+        AccountState::new(
+            AccountId::from("BINANCE-001"),
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::from("1000000 USD"),
+                Money::from("0 USD"),
+                Money::from("1000000 USD"),
+            )],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(110),
+            UnixNanos::from(111),
+            Some(Currency::USD()),
+        )
+    }
+
+    #[rstest]
+    fn account_state_encoder_records_no_indices() {
+        // AccountState carries AccountId and event_id (UUID4); neither matches an
+        // IndexKind variant today. The encoder must capture the payload without
+        // synthesising sidecar indices pointing at identifiers the reader cannot
+        // query, mirroring the PositionStatusReport precedent.
+        let state = make_account_state();
+        let encoded = encode_account_state(&state).expect("encode");
+
+        assert!(!encoded.payload.is_empty());
+        assert!(encoded.index_keys.is_empty());
+        assert!(
+            encoded.payload_type.is_none(),
+            "bare-type encoders inherit the registry's registered tag",
+        );
+    }
+
+    #[rstest]
+    fn account_state_payload_round_trips_through_msgpack() {
+        let state = make_account_state();
+        let encoded = encode_account_state(&state).expect("encode");
+
+        let decoded: AccountState = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded, state);
+    }
+
+    #[rstest]
+    fn account_state_registered_under_canonical_payload_type() {
+        // The default registry must dispatch AccountState through encode_account_state
+        // and stamp PAYLOAD_TYPE_ACCOUNT_STATE so both `publish_account_state` and
+        // `send_account_state` capture under the same canonical tag.
+        let registry = default_registry();
+        let state = make_account_state();
+        let (tag, encoded) = registry
+            .encode(&state)
+            .expect("encode")
+            .expect("registered");
+
+        assert_eq!(tag.as_str(), PAYLOAD_TYPE_ACCOUNT_STATE);
+        assert!(encoded.index_keys.is_empty());
     }
 }

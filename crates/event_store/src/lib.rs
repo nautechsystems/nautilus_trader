@@ -58,9 +58,9 @@ pub use backend::{
 };
 pub use capture::{
     BusCaptureAdapter, CaptureError, Encode, EncodeError, EncodedPayload, EncoderRegistry,
-    PAYLOAD_TYPE_ORDER_FILLED, PAYLOAD_TYPE_ORDER_STATUS_REPORT, PAYLOAD_TYPE_SUBMIT_ORDER,
-    TypedEncoder, default_registry, encode_order_filled, encode_order_status_report,
-    encode_submit_order, register_default,
+    PAYLOAD_TYPE_ACCOUNT_STATE, PAYLOAD_TYPE_ORDER_FILLED, PAYLOAD_TYPE_ORDER_STATUS_REPORT,
+    PAYLOAD_TYPE_SUBMIT_ORDER, TypedEncoder, default_registry, encode_account_state,
+    encode_order_filled, encode_order_status_report, encode_submit_order, register_default,
 };
 pub use entry::{EventStoreEntry, PayloadType, Topic};
 pub use error::EventStoreError;
