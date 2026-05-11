@@ -130,6 +130,16 @@ pub struct WsDispatchState {
     pub emitted_accepted: DashSet<ClientOrderId>,
     /// Client order IDs that have reached the filled terminal state.
     pub filled_orders: DashSet<ClientOrderId>,
+    /// Symbol captured from the first execution frame for a venue order id.
+    ///
+    /// Kraken's spot v2 executions channel sends a `pending_new` frame with
+    /// full order details, then follow-up frames (`new`, `amended`, `restated`,
+    /// `status`) that omit fields which have not changed — `symbol` included.
+    /// The dispatch needs the symbol to resolve the instrument, so we cache it
+    /// here from the first frame and look it up when later frames omit it.
+    /// Keyed by venue `order_id` because delta frames often lack `cl_ord_id`
+    /// as well.
+    pub order_symbol_cache: DashMap<String, String>,
     /// Last snapshot of qty / filled / price / trigger_price seen on a
     /// tracked `OpenOrdersDelta`.
     ///
@@ -163,6 +173,7 @@ impl Default for WsDispatchState {
             order_identities: DashMap::new(),
             emitted_accepted: DashSet::default(),
             filled_orders: DashSet::default(),
+            order_symbol_cache: DashMap::new(),
             delta_snapshots: DashMap::new(),
             order_filled_qty: DashMap::new(),
             emitted_trades: Mutex::new(IndexSet::with_capacity(DEDUP_CAPACITY)),
@@ -208,6 +219,32 @@ impl WsDispatchState {
     pub fn insert_filled(&self, cid: ClientOrderId) {
         self.evict_if_full(&self.filled_orders);
         self.filled_orders.insert(cid);
+    }
+
+    /// Caches the symbol for a venue `order_id` if not already present.
+    ///
+    /// First-write-wins so a later frame carrying a stale or differently
+    /// formatted symbol cannot overwrite the value resolved from the original
+    /// `pending_new` frame.
+    pub fn cache_order_symbol(&self, order_id: &str, symbol: &str) {
+        if !self.order_symbol_cache.contains_key(order_id) {
+            self.order_symbol_cache
+                .insert(order_id.to_string(), symbol.to_string());
+        }
+    }
+
+    /// Returns the symbol previously cached for a venue `order_id`, if any.
+    #[must_use]
+    pub fn lookup_order_symbol(&self, order_id: &str) -> Option<String> {
+        self.order_symbol_cache
+            .get(order_id)
+            .map(|r| r.value().clone())
+    }
+
+    /// Removes any cached symbol for a venue `order_id`. Called when the order
+    /// reaches a terminal state on the executions stream.
+    pub fn forget_order_symbol(&self, order_id: &str) {
+        self.order_symbol_cache.remove(order_id);
     }
 
     /// Atomically inserts a trade id into the dedup set.

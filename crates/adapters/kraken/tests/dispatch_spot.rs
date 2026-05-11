@@ -618,3 +618,152 @@ fn test_spot_restated_emits_order_updated() {
         ExecutionEvent::Order(OrderEventAny::Updated(_))
     ));
 }
+
+/// Builds a delta-style execution frame matching what Kraken sends as a
+/// follow-up to `pending_new` (and for `amended` / `restated` / `status`):
+/// only `order_id`, `exec_type`, `order_status`, and `timestamp` are
+/// populated — every other field, including `symbol`, is `None`.
+fn make_spot_execution_delta(
+    exec_type: KrakenExecType,
+    venue_order_id: &str,
+    order_status: KrakenWsOrderStatus,
+) -> KrakenWsExecutionData {
+    KrakenWsExecutionData {
+        exec_type,
+        order_id: venue_order_id.to_string(),
+        cl_ord_id: None,
+        symbol: None,
+        side: None,
+        order_type: None,
+        order_qty: None,
+        limit_price: None,
+        order_status: Some(order_status),
+        cum_qty: None,
+        cum_cost: None,
+        avg_price: None,
+        time_in_force: None,
+        post_only: None,
+        reduce_only: None,
+        timestamp: "2026-04-11T00:00:00.001Z".parse().unwrap(),
+        exec_id: None,
+        last_qty: None,
+        last_price: None,
+        cost: None,
+        liquidity_ind: None,
+        fees: None,
+        fee_usd_equiv: None,
+        reason: None,
+    }
+}
+
+#[rstest]
+fn test_spot_pending_new_then_symbolless_new_both_emit_reports() {
+    // Untracked / external order: `pending_new` arrives with full data and
+    // emits a `Submitted` report, then `new` arrives as a delta (no symbol)
+    // and must still emit an `Accepted` report via the cached symbol
+    // populated from the first frame.
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let instruments = instruments_with(make_spot_pair());
+
+    let pending = make_spot_execution(KrakenExecType::PendingNew, None, "v-spot-delta", None);
+    dispatch::spot::execution(
+        &pending,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_f64_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+    assert_eq!(drain_events(&mut rx).len(), 1);
+
+    let new_delta = make_spot_execution_delta(
+        KrakenExecType::New,
+        "v-spot-delta",
+        KrakenWsOrderStatus::New,
+    );
+    dispatch::spot::execution(
+        &new_delta,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_f64_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(
+        events.len(),
+        1,
+        "the delta `new` frame should resolve via the cached symbol and emit a report"
+    );
+    assert!(matches!(events[0], ExecutionEvent::Report(_)));
+}
+
+#[rstest]
+fn test_spot_delta_without_cached_symbol_is_dropped() {
+    // No prior `pending_new` -> no cached symbol -> the delta frame must be
+    // skipped (existing behaviour, no panic, no event).
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let instruments = instruments_with(make_spot_pair());
+
+    let new_delta = make_spot_execution_delta(
+        KrakenExecType::New,
+        "v-spot-no-prior",
+        KrakenWsOrderStatus::New,
+    );
+    dispatch::spot::execution(
+        &new_delta,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_f64_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(drain_events(&mut rx).is_empty());
+}
+
+#[rstest]
+fn test_spot_terminal_exec_type_evicts_symbol_cache() {
+    let state = Arc::new(WsDispatchState::new());
+    let (emitter, _rx) = test_emitter();
+    let instruments = instruments_with(make_spot_pair());
+
+    let pending = make_spot_execution(KrakenExecType::PendingNew, None, "v-spot-evict", None);
+    dispatch::spot::execution(
+        &pending,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_f64_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+    assert!(state.lookup_order_symbol("v-spot-evict").is_some());
+
+    let canceled = make_spot_execution_delta(
+        KrakenExecType::Canceled,
+        "v-spot-evict",
+        KrakenWsOrderStatus::Canceled,
+    );
+    dispatch::spot::execution(
+        &canceled,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_f64_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+    assert!(state.lookup_order_symbol("v-spot-evict").is_none());
+}

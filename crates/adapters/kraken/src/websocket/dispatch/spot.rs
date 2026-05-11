@@ -57,16 +57,31 @@ pub fn execution(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
-    let symbol = match &exec.symbol {
-        Some(s) => s.as_str(),
-        None => {
-            log::debug!(
-                "Execution message without symbol: exec_type={:?}, order_id={}",
-                exec.exec_type,
-                exec.order_id
-            );
-            return;
+    // Resolve the trading symbol. Per Kraken's executions docs, follow-up
+    // frames (`new`, `amended`, `restated`, `status`) carry only changed
+    // fields and omit `symbol`. We cache the symbol from the first frame for
+    // the venue order id and consult it here when the current frame omits it.
+    let cached_symbol;
+    let symbol = match exec.symbol.as_deref() {
+        Some(s) => {
+            state.cache_order_symbol(&exec.order_id, s);
+            s
         }
+        None => match state.lookup_order_symbol(&exec.order_id) {
+            Some(s) => {
+                cached_symbol = s;
+                cached_symbol.as_str()
+            }
+            None => {
+                log::debug!(
+                    "Execution message without symbol and no cached mapping: \
+                     exec_type={:?}, order_id={}",
+                    exec.exec_type,
+                    exec.order_id
+                );
+                return;
+            }
+        },
     };
     let Some(instrument) = lookup_instrument(instruments, symbol) else {
         log::warn!("No instrument for symbol: {symbol}");
@@ -160,6 +175,15 @@ pub fn execution(
             }
             Err(e) => log::error!("Failed to parse fill report: {e}"),
         }
+    }
+
+    // Evict the cached symbol on terminal exec types so the cache does not
+    // grow unbounded across the lifetime of the connection.
+    if matches!(
+        exec.exec_type,
+        KrakenExecType::Canceled | KrakenExecType::Filled | KrakenExecType::Expired
+    ) {
+        state.forget_order_symbol(&exec.order_id);
     }
 }
 
