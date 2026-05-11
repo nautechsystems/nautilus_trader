@@ -44,6 +44,8 @@ thiserror = { workspace = true }
 ustr = { workspace = true }
 
 [dev-dependencies]
+nautilus-model = { workspace = true, features = ["stubs"] }
+
 criterion = { workspace = true }
 proptest = { workspace = true }
 redb = { workspace = true }

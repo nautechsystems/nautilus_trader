@@ -935,14 +935,20 @@ fn install_bus_tap(adapter: Arc<BusCaptureAdapter>, clock: &'static AtomicTime) 
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::{clock::TestClock, messages::execution::SubmitOrder};
+    use nautilus_common::{
+        clock::TestClock,
+        messages::execution::{SubmitOrder, TradingCommand},
+    };
     use nautilus_core::time::get_atomic_clock_static;
     use nautilus_event_store::IndexKind;
     use nautilus_model::{
-        enums::{OrderSide, OrderType, TimeInForce},
-        events::OrderInitialized,
-        identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
-        types::Quantity,
+        enums::{LiquiditySide, OrderSide, OrderType, TimeInForce},
+        events::{OrderEventAny, OrderFilled, OrderInitialized},
+        identifiers::{
+            AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId,
+            VenueOrderId,
+        },
+        types::{Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
     use tempfile::TempDir;
@@ -1729,5 +1735,242 @@ mod tests {
             sealed.scan_seq(3).expect("scan").is_none(),
             "no entry must land after seal",
         );
+    }
+
+    /// Production code reaches the bus tap with [`TradingCommand`] wrapped around the
+    /// inner command (the wrapper's `TypeId`, not `SubmitOrder`'s). The envelope
+    /// dispatcher in [`default_registry`] must unwrap the variant, stamp the inner
+    /// `payload_type` (`SubmitOrder`), and commit the same indices the bare-type encoder
+    /// would have produced.
+    #[rstest]
+    fn bus_tap_captures_trading_command_envelope_with_inner_payload_type() {
+        let tmp = TempDir::new().expect("tempdir");
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+
+        let mut store = KernelEventStore::boot(
+            Some(make_config(tmp.path().to_path_buf())),
+            instance_id,
+            clock_rc,
+        )
+        .expect("boot store");
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open run");
+        let run_id = store.run_id().expect("run open").to_string();
+
+        let trader_id = TraderId::from("TRADER-001");
+        let strategy_id = StrategyId::from("S-001");
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let client_order_id = ClientOrderId::from("O-20260510-000002");
+        let order_init = OrderInitialized::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            OrderSide::Buy,
+            OrderType::Market,
+            Quantity::from("1"),
+            TimeInForce::Gtc,
+            false,
+            false,
+            false,
+            false,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let submit_order = SubmitOrder::new(
+            trader_id,
+            Some(ClientId::from("BINANCE")),
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_init,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::from(3),
+        );
+        let command = TradingCommand::SubmitOrder(submit_order.clone());
+
+        let endpoint = MStr::<Endpoint>::from("test.exec.engine.envelope");
+        msgbus::send_trading_command(endpoint, command);
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+
+        loop {
+            let hwm = store
+                .session
+                .as_ref()
+                .map_or(0, EventStoreSession::high_watermark);
+
+            if hwm >= 2 {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "captured TradingCommand did not commit within deadline (hwm={hwm})",
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
+
+        drop(store);
+
+        let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
+            .expect("open sealed");
+        let captured = sealed
+            .scan_seq(2)
+            .expect("scan")
+            .expect("captured entry present");
+        assert_eq!(
+            captured.payload_type.as_str(),
+            "SubmitOrder",
+            "wrapper envelope must stamp the inner payload_type",
+        );
+        assert_eq!(captured.topic.as_ref(), endpoint.as_str());
+
+        let by_client = sealed
+            .lookup(IndexKind::ClientOrderId, client_order_id.as_str())
+            .expect("lookup")
+            .expect("indexed");
+        assert_eq!(by_client, 2);
+
+        // Round-trip the captured payload back through the inner-type decoder so the
+        // bytes-equal-bare invariant is checked at the integration layer too: a mutation
+        // that wrote the wrapper-typed bytes instead of the inner would fail here.
+        let decoded: SubmitOrder =
+            rmp_serde::from_slice(&captured.payload).expect("decode captured SubmitOrder");
+        assert_eq!(decoded, submit_order);
+    }
+
+    /// `publish_order_event` reaches the bus tap with `OrderEventAny::Filled(...)`; the
+    /// envelope dispatcher must unwrap to `OrderFilled`, stamp `OrderFilled` as the
+    /// payload_type, and commit both the client_order_id and venue_order_id indices.
+    #[rstest]
+    fn bus_tap_captures_order_event_any_envelope_with_inner_payload_type() {
+        let tmp = TempDir::new().expect("tempdir");
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+
+        let mut store = KernelEventStore::boot(
+            Some(make_config(tmp.path().to_path_buf())),
+            instance_id,
+            clock_rc,
+        )
+        .expect("boot store");
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open run");
+        let run_id = store.run_id().expect("run open").to_string();
+
+        let trader_id = TraderId::from("TRADER-001");
+        let strategy_id = StrategyId::from("S-001");
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let client_order_id = ClientOrderId::from("O-20260510-000003");
+        let venue_order_id = VenueOrderId::from("V-99");
+        let filled = OrderFilled::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            AccountId::from("BINANCE-001"),
+            TradeId::from("T-1"),
+            OrderSide::Buy,
+            OrderType::Market,
+            Quantity::from("1"),
+            Price::from("100.00"),
+            Currency::USDT(),
+            LiquiditySide::Taker,
+            UUID4::new(),
+            UnixNanos::from(10),
+            UnixNanos::from(11),
+            false,
+            None,
+            Some(Money::new(0.10, Currency::USDT())),
+        );
+        let event = OrderEventAny::Filled(filled.clone());
+
+        let topic: MStr<msgbus::Topic> = MStr::from("events.order.ETHUSDT-PERP.BINANCE");
+        msgbus::publish_order_event(topic, &event);
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+
+        loop {
+            let hwm = store
+                .session
+                .as_ref()
+                .map_or(0, EventStoreSession::high_watermark);
+
+            if hwm >= 2 {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "captured OrderEventAny did not commit within deadline (hwm={hwm})",
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
+
+        drop(store);
+
+        let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
+            .expect("open sealed");
+        let captured = sealed
+            .scan_seq(2)
+            .expect("scan")
+            .expect("captured entry present");
+        assert_eq!(
+            captured.payload_type.as_str(),
+            "OrderFilled",
+            "wrapper envelope must stamp the inner payload_type",
+        );
+        assert_eq!(captured.topic.as_ref(), topic.as_str());
+
+        let by_client = sealed
+            .lookup(IndexKind::ClientOrderId, client_order_id.as_str())
+            .expect("lookup")
+            .expect("indexed");
+        let by_venue = sealed
+            .lookup(IndexKind::VenueOrderId, venue_order_id.as_str())
+            .expect("lookup")
+            .expect("indexed");
+        assert_eq!(by_client, 2);
+        assert_eq!(by_venue, 2);
+
+        // Round-trip the captured payload back through the inner-type decoder so a
+        // mutation that wrote the wrapper-typed bytes instead of the inner would fail
+        // here rather than only at the unit-level bytes-equal-bare check.
+        let decoded: OrderFilled =
+            rmp_serde::from_slice(&captured.payload).expect("decode captured OrderFilled");
+        assert_eq!(decoded, filled);
     }
 }

@@ -32,7 +32,7 @@ use std::{any::Any, marker::PhantomData};
 
 use bytes::Bytes;
 
-use crate::backend::IndexKey;
+use crate::{backend::IndexKey, entry::PayloadType};
 
 /// Errors returned by an [`Encode`] implementation.
 #[derive(Debug, thiserror::Error)]
@@ -57,21 +57,30 @@ pub enum EncodeError {
 /// The encoder does not stamp `seq`, `ts_publish`, or `entry_hash`: those are writer-side
 /// fields. It also does not stamp `headers`; the bus capture adapter carries headers from
 /// the dispatch boundary so encoders stay focused on payload identity.
+///
+/// `payload_type` is `None` for the typical bare-type encoder (e.g. `SubmitOrder`): the
+/// registry's registered tag is used. Envelope encoders that dispatch on a wrapper enum
+/// (e.g. `TradingCommand`, `OrderEventAny`) set it to the inner-variant's canonical tag
+/// so forensics scans see entries identical to the bare-type capture path.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EncodedPayload {
     /// The canonical encoded bytes the writer commits as the entry payload.
     pub payload: Bytes,
     /// Sidecar index keys produced for this entry. May be empty.
     pub index_keys: Vec<IndexKey>,
+    /// Optional override for the registry's registered payload type tag. Set by envelope
+    /// encoders to stamp the inner-variant tag on captured entries.
+    pub payload_type: Option<PayloadType>,
 }
 
 impl EncodedPayload {
-    /// Creates a new [`EncodedPayload`].
+    /// Creates a new [`EncodedPayload`] that inherits the registry's registered tag.
     #[must_use]
     pub const fn new(payload: Bytes, index_keys: Vec<IndexKey>) -> Self {
         Self {
             payload,
             index_keys,
+            payload_type: None,
         }
     }
 
@@ -81,6 +90,22 @@ impl EncodedPayload {
         Self {
             payload,
             index_keys: Vec::new(),
+            payload_type: None,
+        }
+    }
+
+    /// Creates a new [`EncodedPayload`] that stamps `payload_type` on the captured entry,
+    /// overriding the registry's registered tag.
+    #[must_use]
+    pub const fn with_payload_type(
+        payload_type: PayloadType,
+        payload: Bytes,
+        index_keys: Vec<IndexKey>,
+    ) -> Self {
+        Self {
+            payload,
+            index_keys,
+            payload_type: Some(payload_type),
         }
     }
 }

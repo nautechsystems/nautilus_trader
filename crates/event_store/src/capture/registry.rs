@@ -148,7 +148,8 @@ impl EncoderRegistry {
         };
 
         let encoded = reg.encoder.encode(message as &dyn Any)?;
-        Ok(Some((reg.payload_type, encoded)))
+        let payload_type = encoded.payload_type.unwrap_or(reg.payload_type);
+        Ok(Some((payload_type, encoded)))
     }
 
     /// Encodes a type-erased `message` if an encoder is registered for the concrete type.
@@ -170,7 +171,8 @@ impl EncoderRegistry {
         };
 
         let encoded = reg.encoder.encode(message)?;
-        Ok(Some((reg.payload_type, encoded)))
+        let payload_type = encoded.payload_type.unwrap_or(reg.payload_type);
+        Ok(Some((payload_type, encoded)))
     }
 }
 
@@ -278,5 +280,31 @@ mod tests {
             .expect("encode_any");
 
         assert!(outcome.is_none());
+    }
+
+    #[rstest]
+    fn encoder_payload_type_override_overrides_registered_tag() {
+        // Envelope encoders (TradingCommand, OrderEventAny) need to stamp the
+        // inner-variant tag on captured entries so forensics scans see the same
+        // payload_type as the bare-type capture path. The override mechanism is
+        // tested here independent of the bus surface so the registry contract
+        // is self-documenting.
+        let mut registry = EncoderRegistry::new();
+        registry.register::<Sample, _>(Ustr::from("Wrapper"), |s| {
+            Ok(EncodedPayload::with_payload_type(
+                Ustr::from("Inner"),
+                Bytes::copy_from_slice(&[s.0]),
+                Vec::new(),
+            ))
+        });
+
+        let (tag, _) = registry.encode(&Sample(1)).expect("encode").expect("hit");
+        assert_eq!(tag.as_str(), "Inner");
+
+        let (any_tag, _) = registry
+            .encode_any(&Sample(1) as &dyn Any)
+            .expect("encode_any")
+            .expect("hit");
+        assert_eq!(any_tag.as_str(), "Inner");
     }
 }

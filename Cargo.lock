@@ -6529,6 +6529,7 @@ dependencies = [
  "nautilus-risk",
  "nautilus-trading",
  "pyo3",
+ "rmp-serde",
  "rstest",
  "sysinfo",
  "tempfile",
