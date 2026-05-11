@@ -20,18 +20,14 @@ decisions, and counterfactual research.
 
 ## Design contract
 
-The event store is the authoritative durable boundary for the deterministic engine's
-state-affecting history:
+The event store is the authoritative durable boundary for the deterministic engine's state-affecting history:
 
 - The synchronous core is deterministic.
-- The cache is a write-through projection, not the source of truth. Replay derives cache state
-  from captured history and named replay rules, not from the cache as an independent authority.
-- The event store records the ordered inputs and generated state-affecting messages that make
-  replay possible.
-- Anything not recorded is either non-state-affecting or explicitly named as a deterministic
-  replay rule.
-- External I/O remains outside the bit-identical core unless it is captured as raw reports or
-  commands.
+- Replay derives cache state from captured history and named replay rules, not from the cache as an independent authority.
+- The cache is a write-through projection, not the source of truth.
+- The event store records the ordered inputs and generated state-affecting messages that make replay possible.
+- Anything not recorded is either non-state-affecting or explicitly named as a deterministic replay rule.
+- External I/O remains outside the bit-identical core unless it is captured as raw reports or commands.
 
 ## Scope
 
@@ -52,7 +48,7 @@ It does not define:
 - Replay-from-zero as the default recovery path. The cache stays write-through; replay-from-zero
   is an optional optimization tracked separately.
 - Cross-instance aggregation. This crate is single-node, single event store.
-- Analytics queries. The event store is not an OLAP engine.
+- Analytics queries (the event store is not an OLAP engine).
 
 ## Properties
 
@@ -191,6 +187,18 @@ generated lifecycle event; for those paths, the event store records the successf
 the publish boundary and does not claim durable-before-cache-write ordering. State-affecting
 handlers reached through the bus run after the writer has acknowledged the captured entry's
 batch.
+
+The tap must fire before fanout, never after. Three guarantees depend on it:
+
+- **Replay fidelity.** If a handler observes a message and mutates state, the message must be in
+  the log for replay to reconstruct that state. Tap-after-fanout would let handlers commit state
+  changes whose originating message never reached the log, producing inconsistent replays.
+- **Fail-stop coupling.** When the writer halts or fails its submit, the halt callback fires
+  inside the tap dispatch. Tap-after-fanout would let the in-flight message reach handlers and
+  mutate state before the kernel responds to the halt.
+- **Causal ordering on the log.** Forensics scans and replay rely on the cause (command, raw
+  report) preceding its effects (generated events). Tap-after-fanout would invert this on the
+  hot path: handler-emitted events would commit before the message that produced them.
 
 ## API shape
 

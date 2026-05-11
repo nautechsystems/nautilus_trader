@@ -150,6 +150,28 @@ impl EncoderRegistry {
         let encoded = reg.encoder.encode(message as &dyn Any)?;
         Ok(Some((reg.payload_type, encoded)))
     }
+
+    /// Encodes a type-erased `message` if an encoder is registered for the concrete type.
+    ///
+    /// Mirror of [`Self::encode`] for `&dyn Any` callers; the bus tap reaches the
+    /// capture path through this entry point because dispatch returns a `&dyn Any` and
+    /// the static type is not in scope.
+    ///
+    /// # Errors
+    ///
+    /// Returns the encoder's [`EncodeError`] when an encoder is registered for the
+    /// concrete type but rejects the message.
+    pub fn encode_any(
+        &self,
+        message: &dyn Any,
+    ) -> Result<Option<(PayloadType, EncodedPayload)>, EncodeError> {
+        let Some(reg) = self.by_type.get(&message.type_id()) else {
+            return Ok(None);
+        };
+
+        let encoded = reg.encoder.encode(message)?;
+        Ok(Some((reg.payload_type, encoded)))
+    }
 }
 
 #[cfg(test)]
@@ -219,5 +241,42 @@ mod tests {
         assert!(registry.is_empty());
         assert_eq!(registry.len(), 0);
         assert!(!registry.contains::<Other>());
+    }
+
+    #[rstest]
+    fn encode_any_dispatches_by_concrete_type_id() {
+        // The bus tap reaches the registry through `encode_any` because the static
+        // type is not in scope at the dispatch site. Verify the &dyn Any lookup
+        // resolves to the same registration as the typed `encode<T>` path.
+        let mut registry = EncoderRegistry::new();
+        registry.register::<Sample, _>(Ustr::from("Sample"), |s| {
+            Ok(EncodedPayload::without_indices(Bytes::copy_from_slice(&[
+                s.0,
+            ])))
+        });
+
+        let sample = Sample(5);
+        let (tag, encoded) = registry
+            .encode_any(&sample as &dyn Any)
+            .expect("encode_any")
+            .expect("hit");
+
+        assert_eq!(tag.as_str(), "Sample");
+        assert_eq!(encoded.payload.as_ref(), &[5]);
+    }
+
+    #[rstest]
+    fn encode_any_returns_none_for_unregistered_type() {
+        // Out-of-allow-list messages must surface as `Ok(None)` so the adapter can
+        // skip them silently at the dispatch boundary rather than treating them as
+        // capture failures.
+        let registry = EncoderRegistry::new();
+
+        let unregistered = Other;
+        let outcome = registry
+            .encode_any(&unregistered as &dyn Any)
+            .expect("encode_any");
+
+        assert!(outcome.is_none());
     }
 }

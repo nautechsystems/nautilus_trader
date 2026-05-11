@@ -23,6 +23,7 @@
 //! caller polls to convert a fail-stop into kernel shutdown rather than a panic.
 
 use std::{
+    any::Any,
     cell::RefCell,
     fmt::Debug,
     path::{Path, PathBuf},
@@ -37,7 +38,11 @@ use std::{
 
 use bytes::Bytes;
 use indexmap::IndexMap;
-use nautilus_common::{clock::Clock, enums::Environment};
+use nautilus_common::{
+    clock::Clock,
+    enums::Environment,
+    msgbus::{self, BusTap, Endpoint, MStr},
+};
 #[cfg(feature = "live")]
 use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_core::{
@@ -45,9 +50,9 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_static},
 };
 use nautilus_event_store::{
-    EntryDraft, EventStore, EventStoreError, EventStoreWriter, HaltCallback, HaltReason, Headers,
-    RedbBackend, RegisteredComponents, RunId, RunManifest, RunStatus, ScanDirection, Topic,
-    WriterConfig,
+    BusCaptureAdapter, CaptureError, EntryDraft, EventStore, EventStoreError, EventStoreWriter,
+    HaltCallback, HaltReason, Headers, RedbBackend, RegisteredComponents, RunId, RunManifest,
+    RunStatus, ScanDirection, Topic, WriterConfig, default_registry,
 };
 use ustr::Ustr;
 
@@ -246,7 +251,8 @@ impl HaltSignal {
 
 /// Live event-store session owned by the kernel between `start()` and `finalize_stop()`.
 pub struct EventStoreSession {
-    writer: Option<EventStoreWriter>,
+    writer: Option<Arc<EventStoreWriter>>,
+    adapter: Option<Arc<BusCaptureAdapter>>,
     manifest: RunManifest,
     halt_signal: HaltSignal,
 }
@@ -296,9 +302,15 @@ impl EventStoreSession {
     /// Returns `0` when the writer has been consumed by a prior `close`.
     #[must_use]
     pub fn high_watermark(&self) -> u64 {
-        self.writer
-            .as_ref()
-            .map_or(0, EventStoreWriter::high_watermark)
+        self.writer.as_ref().map_or(0, |w| w.high_watermark())
+    }
+
+    /// Returns the live bus capture adapter, when one was wired into this run.
+    ///
+    /// `None` after [`Self::close`] consumes the writer.
+    #[must_use]
+    pub fn adapter(&self) -> Option<&Arc<BusCaptureAdapter>> {
+        self.adapter.as_ref()
     }
 
     /// Submits the terminal `RunEnded` entry, drains pending entries, and seals the
@@ -308,12 +320,24 @@ impl EventStoreSession {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError`] if the writer fails to commit the final batch or
-    /// the seal step fails.
+    /// Returns [`EventStoreError`] if the writer fails to commit the final batch, the
+    /// seal step fails, or the writer Arc has outstanding clones (the bus tap must be
+    /// cleared before close to release the adapter's writer reference).
     pub fn close(&mut self, ts_init: UnixNanos) -> Result<(), EventStoreError> {
-        let Some(writer) = self.writer.take() else {
+        // Drop the adapter first so the writer Arc has no other strong owners on
+        // try_unwrap. The kernel clears the bus tap before this site, so dropping the
+        // session-side adapter clone here is the last release before close.
+        self.adapter = None;
+
+        let Some(writer_arc) = self.writer.take() else {
             return Ok(());
         };
+        let writer = Arc::try_unwrap(writer_arc).map_err(|_| {
+            EventStoreError::Backend(
+                "event store writer has multiple owners; clear the bus tap before close"
+                    .to_string(),
+            )
+        })?;
 
         let run_ended = run_ended_draft(ts_init);
         writer.close(run_ended)?;
@@ -323,7 +347,9 @@ impl EventStoreSession {
 
 impl Drop for EventStoreSession {
     fn drop(&mut self) {
-        // Drop without close: writer exits unsealed; the next boot recovers.
+        // Drop without close: release adapter then writer so the writer thread exits
+        // unsealed; the next boot recovers.
+        self.adapter.take();
         self.writer.take();
     }
 }
@@ -432,6 +458,7 @@ impl KernelEventStore {
             self.seal(ts);
         }
 
+        let clock = Self::clock_for(environment);
         let start_ts_init = self.clock.borrow().timestamp_ns();
         let run_id = build_run_id(start_ts_init);
         let session = open_run(
@@ -442,13 +469,17 @@ impl KernelEventStore {
             start_ts_init,
             components,
             self.halt.clone(),
-            Self::clock_for(environment),
+            clock,
         )?;
         log::info!(
             "Opened event-store run {} (parent_run_id={:?})",
             session.run_id(),
             session.parent_run_id(),
         );
+
+        if let Some(adapter) = session.adapter() {
+            install_bus_tap(Arc::clone(adapter), clock);
+        }
         self.session = Some(session);
         Ok(())
     }
@@ -460,6 +491,10 @@ impl KernelEventStore {
         let Some(mut session) = self.session.take() else {
             return;
         };
+
+        // Drop the bus tap before close so the adapter's writer Arc is released; the
+        // close path then takes sole ownership of the writer and commits RunEnded.
+        msgbus::clear_bus_tap();
 
         if session.is_halted() {
             log::warn!(
@@ -687,12 +722,12 @@ pub fn open_run(
     let mut backend = RedbBackend::new(config.base_dir.clone());
     backend.open_run(manifest.clone())?;
 
-    let writer = EventStoreWriter::spawn(
+    let writer = Arc::new(EventStoreWriter::spawn(
         Box::new(backend),
         clock,
         halt_signal.callback(),
         writer_config_from(config),
-    )?;
+    )?);
 
     submit_run_started_blocking(
         &writer,
@@ -702,8 +737,15 @@ pub fn open_run(
         config.run_started_timeout,
     )?;
 
+    let adapter = Arc::new(BusCaptureAdapter::new(
+        Arc::clone(&writer),
+        Arc::new(default_registry()),
+        halt_signal.callback(),
+    ));
+
     Ok(EventStoreSession {
         writer: Some(writer),
+        adapter: Some(adapter),
         manifest,
         halt_signal,
     })
@@ -829,10 +871,79 @@ fn run_ended_draft(ts_init: UnixNanos) -> EntryDraft {
     )
 }
 
+/// Bus tap that forwards captured publish and send dispatches to the event store.
+///
+/// Built and registered by [`KernelEventStore::open`]; cleared by
+/// [`KernelEventStore::seal`] and the wrapper's [`Drop`]. The tap reads `ts_init` from
+/// the kernel's `AtomicTime` at capture time so non-Phase-A headers carry a
+/// writer-receive timestamp.
+struct EventStoreBusTap {
+    adapter: Arc<BusCaptureAdapter>,
+    clock: &'static AtomicTime,
+}
+
+impl Debug for EventStoreBusTap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(EventStoreBusTap))
+            .field("halted", &self.adapter.is_halted())
+            .finish_non_exhaustive()
+    }
+}
+
+impl BusTap for EventStoreBusTap {
+    fn on_publish(&self, topic: Topic, message: &dyn Any) {
+        let ts_init = self.clock.get_time_ns();
+        self.capture(topic, message, ts_init);
+    }
+
+    fn on_send(&self, endpoint: MStr<Endpoint>, message: &dyn Any) {
+        let ts_init = self.clock.get_time_ns();
+        // Reuse the endpoint string as the captured topic. The MStr markers differ but
+        // the underlying interned string is the same; forensics scans match either way.
+        let topic = Topic::from(*endpoint);
+        self.capture(topic, message, ts_init);
+    }
+}
+
+impl EventStoreBusTap {
+    fn capture(&self, topic: Topic, message: &dyn Any, ts_init: UnixNanos) {
+        match self
+            .adapter
+            .capture_any(topic, message, Headers::empty(), ts_init)
+        {
+            Ok(_) => {}
+            // Submit failures fire the adapter's halt callback before returning; the
+            // kernel's HaltSignal observes the failure through that path, so we only
+            // log the surface here for forensic visibility.
+            Err(CaptureError::Submit(e)) => {
+                log::error!("Event store capture submit failed on {topic}: {e}");
+            }
+            Err(CaptureError::Halted) => {
+                // Already signaled; suppress per-call noise
+            }
+            Err(CaptureError::Encode(e)) => {
+                log::warn!("Event store encoder rejected message on {topic}: {e}");
+            }
+        }
+    }
+}
+
+fn install_bus_tap(adapter: Arc<BusCaptureAdapter>, clock: &'static AtomicTime) {
+    let tap: Rc<dyn BusTap> = Rc::new(EventStoreBusTap { adapter, clock });
+    msgbus::set_bus_tap(tap);
+}
+
 #[cfg(test)]
 mod tests {
-    use nautilus_common::clock::TestClock;
+    use nautilus_common::{clock::TestClock, messages::execution::SubmitOrder};
     use nautilus_core::time::get_atomic_clock_static;
+    use nautilus_event_store::IndexKind;
+    use nautilus_model::{
+        enums::{OrderSide, OrderType, TimeInForce},
+        events::OrderInitialized,
+        identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+        types::Quantity,
+    };
     use rstest::rstest;
     use tempfile::TempDir;
 
@@ -1452,5 +1563,171 @@ mod tests {
         fn high_watermark(&self) -> Result<u64, EventStoreError> {
             Ok(0)
         }
+    }
+
+    /// Integration: the kernel-installed bus tap forwards a `SubmitOrder` dispatched
+    /// through the typed-send path into the event store before any subscriber observes
+    /// it. The captured entry carries the dispatching endpoint as the topic and the
+    /// canonical `SubmitOrder` payload type tag.
+    #[rstest]
+    fn bus_tap_captures_submit_order_sent_through_msgbus() {
+        let tmp = TempDir::new().expect("tempdir");
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+
+        let mut store = KernelEventStore::boot(
+            Some(make_config(tmp.path().to_path_buf())),
+            instance_id,
+            clock_rc,
+        )
+        .expect("boot store");
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open run");
+        let run_id = store.run_id().expect("run open").to_string();
+
+        let trader_id = TraderId::from("TRADER-001");
+        let strategy_id = StrategyId::from("S-001");
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let client_order_id = ClientOrderId::from("O-20260510-000001");
+        let order_init = OrderInitialized::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            OrderSide::Buy,
+            OrderType::Market,
+            Quantity::from("1"),
+            TimeInForce::Gtc,
+            false,
+            false,
+            false,
+            false,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let submit_order = SubmitOrder::new(
+            trader_id,
+            Some(ClientId::from("BINANCE")),
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_init,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::from(3),
+        );
+
+        let endpoint = MStr::<Endpoint>::from("test.exec.engine.process");
+        msgbus::send_any_value(endpoint, &submit_order);
+
+        // RunStarted is seq=1; the captured SubmitOrder lands at seq=2 once the
+        // writer commits.
+        let deadline = Instant::now() + Duration::from_secs(2);
+
+        loop {
+            let hwm = store
+                .session
+                .as_ref()
+                .map_or(0, EventStoreSession::high_watermark);
+
+            if hwm >= 2 {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "captured SubmitOrder did not commit within deadline (hwm={hwm})",
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
+
+        // Seal cleanly so we can re-open the run read-only
+        drop(store);
+
+        let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
+            .expect("open sealed");
+        let captured = sealed
+            .scan_seq(2)
+            .expect("scan")
+            .expect("captured entry present");
+        assert_eq!(captured.payload_type.as_str(), "SubmitOrder");
+        assert_eq!(captured.topic.as_ref(), endpoint.as_str());
+
+        // The SubmitOrder encoder commits a ClientOrderId sidecar index; the lookup
+        // must resolve to the captured seq.
+        let by_client = sealed
+            .lookup(IndexKind::ClientOrderId, client_order_id.as_str())
+            .expect("lookup")
+            .expect("indexed");
+        assert_eq!(by_client, 2);
+    }
+
+    /// `KernelEventStore::seal` must clear the bus tap so a publish issued after the
+    /// run closes cannot reach the sealed writer. Without the clear, the dropped
+    /// adapter would still receive captures and `Arc::try_unwrap` inside close would
+    /// fail with multiple owners.
+    #[rstest]
+    fn seal_clears_bus_tap_so_post_seal_dispatches_do_not_capture() {
+        let tmp = TempDir::new().expect("tempdir");
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+
+        let mut store = KernelEventStore::boot(
+            Some(make_config(tmp.path().to_path_buf())),
+            instance_id,
+            clock_rc,
+        )
+        .expect("boot store");
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open run");
+        let run_id = store.run_id().expect("run open").to_string();
+
+        store.seal(UnixNanos::from(0));
+
+        // Post-seal dispatch: any tap that survived would either capture into the
+        // dropped writer (panic via the channel close path) or hold the adapter Arc
+        // and fail the close try_unwrap. The session is already gone, so this just
+        // exercises the cleared-tap path through msgbus dispatch.
+        let endpoint = MStr::<Endpoint>::from("test.post.seal.endpoint");
+        let payload: u32 = 99;
+        msgbus::send_any_value(endpoint, &payload);
+
+        let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
+            .expect("open sealed");
+        // RunStarted at seq=1, RunEnded at seq=2; no captured u32 entry must exist
+        assert!(
+            sealed.scan_seq(3).expect("scan").is_none(),
+            "no entry must land after seal",
+        );
     }
 }

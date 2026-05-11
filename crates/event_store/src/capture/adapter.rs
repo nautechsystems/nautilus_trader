@@ -164,11 +164,31 @@ impl BusCaptureAdapter {
         headers: Headers,
         ts_init: UnixNanos,
     ) -> Result<bool, CaptureError> {
+        self.capture_any(topic, message as &dyn std::any::Any, headers, ts_init)
+    }
+
+    /// Type-erased counterpart to [`Self::capture`].
+    ///
+    /// Bus dispatch hands messages to the tap as `&dyn Any` because the static type is
+    /// not in scope at the registration site. This method dispatches on the concrete
+    /// type behind the trait object and follows the same fail-stop semantics as
+    /// [`Self::capture`].
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::capture`].
+    pub fn capture_any(
+        &self,
+        topic: Topic,
+        message: &dyn std::any::Any,
+        headers: Headers,
+        ts_init: UnixNanos,
+    ) -> Result<bool, CaptureError> {
         if self.halted.load(Ordering::Acquire) {
             return Err(CaptureError::Halted);
         }
 
-        let Some((payload_type, encoded)) = self.registry.encode(message)? else {
+        let Some((payload_type, encoded)) = self.registry.encode_any(message)? else {
             return Ok(false);
         };
 

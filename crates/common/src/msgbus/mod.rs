@@ -48,7 +48,7 @@ pub mod typed_endpoints;
 pub mod typed_handler;
 pub mod typed_router;
 
-use std::{cell::RefCell, rc::Rc};
+use std::{any::Any, cell::RefCell, rc::Rc};
 
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{Block, Pool, PoolFeeCollect, PoolFlash, PoolLiquidityUpdate, PoolSwap};
@@ -163,4 +163,63 @@ pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
         let rc = slot.get_or_insert_with(|| Rc::new(RefCell::new(MessageBus::default())));
         rc.clone()
     })
+}
+
+/// Observes dispatched bus traffic for the durable event store.
+///
+/// The bus invokes the registered tap (when present) before each publish or send
+/// fanout, so subscribers cannot observe a message that has not yet been handed to the
+/// tap. The tap callback runs on the engine thread and must be cheap; it must not
+/// re-enter the bus (the bus is single-threaded and the call site holds no live borrow
+/// of the bus, so any re-entrant publish would deadlock through downstream
+/// `RefCell::borrow_mut` calls inside the registered tap).
+pub trait BusTap: 'static {
+    /// Invoked before a publish fanout dispatches to subscribers on `topic`.
+    fn on_publish(&self, topic: MStr<Topic>, message: &dyn Any);
+
+    /// Invoked before a send dispatch reaches the endpoint handler.
+    fn on_send(&self, endpoint: MStr<Endpoint>, message: &dyn Any);
+}
+
+thread_local! {
+    pub(super) static BUS_TAP: RefCell<Option<Rc<dyn BusTap>>> = const { RefCell::new(None) };
+}
+
+/// Registers `tap` as the thread-local bus tap, replacing any previously installed tap.
+///
+/// The tap fires before each publish and send fanout. Callers are responsible for
+/// clearing the tap on shutdown via [`clear_bus_tap`] so a stale adapter does not
+/// outlive the writer it captures into.
+pub fn set_bus_tap(tap: Rc<dyn BusTap>) {
+    BUS_TAP.with(|slot| {
+        *slot.borrow_mut() = Some(tap);
+    });
+}
+
+/// Clears the registered bus tap on this thread.
+///
+/// A no-op when no tap is installed.
+pub fn clear_bus_tap() {
+    BUS_TAP.with(|slot| {
+        *slot.borrow_mut() = None;
+    });
+}
+
+#[inline]
+pub(super) fn dispatch_tap_publish(topic: MStr<Topic>, message: &dyn Any) {
+    // Clone the Rc so the cell borrow is released before the tap runs. The tap is
+    // single-threaded with the bus; a re-entrant `set_bus_tap` during dispatch would
+    // otherwise panic on RefCell.
+    let tap = BUS_TAP.with(|slot| slot.borrow().clone());
+    if let Some(tap) = tap {
+        tap.on_publish(topic, message);
+    }
+}
+
+#[inline]
+pub(super) fn dispatch_tap_send(endpoint: MStr<Endpoint>, message: &dyn Any) {
+    let tap = BUS_TAP.with(|slot| slot.borrow().clone());
+    if let Some(tap) = tap {
+        tap.on_send(endpoint, message);
+    }
 }
