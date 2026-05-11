@@ -114,23 +114,7 @@ struct TestContext {
 }
 
 fn create_test_context(trader_id: TraderId, account_id: AccountId, venue: Venue) -> TestContext {
-    let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
-    let config = create_config(trader_id, account_id, venue);
-
-    let core = ExecutionClientCore::new(
-        config.trader_id,
-        ClientId::new("SANDBOX"),
-        config.venue,
-        config.oms_type,
-        config.account_id,
-        config.account_type,
-        config.base_currency,
-        cache.clone(),
-    );
-
-    let client = SandboxExecutionClient::new(core, config, clock, cache.clone());
-    TestContext { client, cache }
+    create_test_context_with(trader_id, account_id, venue, |_| {})
 }
 
 fn create_test_context_with_trade_execution(
@@ -138,10 +122,21 @@ fn create_test_context_with_trade_execution(
     account_id: AccountId,
     venue: Venue,
 ) -> TestContext {
+    create_test_context_with(trader_id, account_id, venue, |config| {
+        config.trade_execution = true;
+    })
+}
+
+fn create_test_context_with(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    customize: impl FnOnce(&mut SandboxExecutionClientConfig),
+) -> TestContext {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let mut config = create_config(trader_id, account_id, venue);
-    config.trade_execution = true;
+    customize(&mut config);
 
     let core = ExecutionClientCore::new(
         config.trader_id,

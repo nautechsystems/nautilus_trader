@@ -1686,27 +1686,6 @@ impl OrderMatchingEngine {
         self.fill_at_market = true;
     }
 
-    fn update_quote_tick_or_skip(&mut self, quote: &QuoteTick, context: &str) -> bool {
-        if let Err(e) = self.book.update_quote_tick(quote) {
-            log::warn!(
-                "Skipping {context} for {}: update_quote_tick failed: {e}",
-                quote.instrument_id,
-            );
-            return false;
-        }
-        true
-    }
-
-    fn update_trade_tick_or_skip(&mut self, trade: &TradeTick, context: &str) -> bool {
-        if let Err(e) = self.book.update_trade_tick(trade) {
-            log::warn!(
-                "Skipping {context} for {}: update_trade_tick failed: {e}",
-                trade.instrument_id,
-            );
-            return false;
-        }
-        true
-    }
     /// Processes a trade tick to update the market state.
     ///
     /// For L1 books, always updates the order book with the trade tick to maintain
@@ -1880,6 +1859,28 @@ impl OrderMatchingEngine {
                 AggressorSide::NoAggressor => {}
             }
         }
+    }
+
+    fn update_quote_tick_or_skip(&mut self, quote: &QuoteTick, context: &str) -> bool {
+        if let Err(e) = self.book.update_quote_tick(quote) {
+            log::warn!(
+                "Skipping {context} for {}: update_quote_tick failed: {e}",
+                quote.instrument_id,
+            );
+            return false;
+        }
+        true
+    }
+
+    fn update_trade_tick_or_skip(&mut self, trade: &TradeTick, context: &str) -> bool {
+        if let Err(e) = self.book.update_trade_tick(trade) {
+            log::warn!(
+                "Skipping {context} for {}: update_trade_tick failed: {e}",
+                trade.instrument_id,
+            );
+            return false;
+        }
+        true
     }
 
     /// Processes a market status action to update the market state.
