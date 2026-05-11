@@ -618,3 +618,307 @@ fn test_spot_restated_emits_order_updated() {
         ExecutionEvent::Order(OrderEventAny::Updated(_))
     ));
 }
+
+/// Builds a delta-style execution frame matching what Kraken sends as a
+/// follow-up to `pending_new` (and for `amended` / `restated` / `status`):
+/// only `order_id`, `exec_type`, `order_status`, and `timestamp` are
+/// populated — every other field, including `symbol`, is `None`.
+fn make_spot_execution_delta(
+    exec_type: KrakenExecType,
+    venue_order_id: &str,
+    order_status: KrakenWsOrderStatus,
+) -> KrakenWsExecutionData {
+    KrakenWsExecutionData {
+        exec_type,
+        order_id: venue_order_id.to_string(),
+        cl_ord_id: None,
+        symbol: None,
+        side: None,
+        order_type: None,
+        order_qty: None,
+        limit_price: None,
+        order_status: Some(order_status),
+        cum_qty: None,
+        cum_cost: None,
+        avg_price: None,
+        time_in_force: None,
+        post_only: None,
+        reduce_only: None,
+        timestamp: "2026-04-11T00:00:00.001Z".parse().unwrap(),
+        exec_id: None,
+        last_qty: None,
+        last_price: None,
+        cost: None,
+        liquidity_ind: None,
+        fees: None,
+        fee_usd_equiv: None,
+        reason: None,
+    }
+}
+
+#[rstest]
+#[case::new(KrakenExecType::New, KrakenWsOrderStatus::New)]
+#[case::amended(KrakenExecType::Amended, KrakenWsOrderStatus::New)]
+#[case::restated(KrakenExecType::Restated, KrakenWsOrderStatus::New)]
+#[case::status(KrakenExecType::Status, KrakenWsOrderStatus::New)]
+fn test_spot_pending_new_then_symbolless_delta_resolves_via_cache(
+    #[case] delta_exec_type: KrakenExecType,
+    #[case] delta_order_status: KrakenWsOrderStatus,
+) {
+    // Untracked / external order: `pending_new` arrives with full data and
+    // emits an initial report, then a delta frame (no symbol) arrives and
+    // must still emit a report via the cached symbol populated from the
+    // first frame. Covers every delta exec type that omits `symbol`
+    // (`new` / `amended` / `restated` / `status`) per Kraken's executions
+    // docs.
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let instruments = instruments_with(make_spot_pair());
+
+    let pending = make_spot_execution(KrakenExecType::PendingNew, None, "v-spot-delta", None);
+    dispatch::spot::execution(
+        &pending,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_f64_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+    assert_eq!(drain_events(&mut rx).len(), 1);
+
+    let delta = make_spot_execution_delta(delta_exec_type, "v-spot-delta", delta_order_status);
+    dispatch::spot::execution(
+        &delta,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_f64_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(
+        events.len(),
+        1,
+        "delta frame should resolve via the cached symbol and emit a report"
+    );
+    assert!(matches!(events[0], ExecutionEvent::Report(_)));
+}
+
+#[rstest]
+fn test_spot_delta_without_cached_symbol_is_dropped() {
+    // No prior `pending_new` -> no cached symbol -> the delta frame must be
+    // skipped (existing behaviour, no panic, no event).
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let instruments = instruments_with(make_spot_pair());
+
+    let new_delta = make_spot_execution_delta(
+        KrakenExecType::New,
+        "v-spot-no-prior",
+        KrakenWsOrderStatus::New,
+    );
+    dispatch::spot::execution(
+        &new_delta,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_f64_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(drain_events(&mut rx).is_empty());
+}
+
+#[rstest]
+fn test_spot_tracked_pending_new_seeds_caches_no_event_yet() {
+    // Realistic `pending_new` for a tracked order: carries `cl_ord_id` and
+    // `symbol`, parses as `OrderStatus::Submitted` (which `status_tracked`
+    // treats as a no-op since the engine already has the order Submitted
+    // locally). Both venue-id caches must be seeded so the follow-up delta
+    // can resolve the identity.
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-spot-tracked");
+    state.register_identity(
+        cid,
+        make_identity(SPOT_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+    let instruments = instruments_with(make_spot_pair());
+
+    let mut pending = make_spot_execution(
+        KrakenExecType::PendingNew,
+        Some("uuid-spot-tracked"),
+        "v-spot-tracked",
+        None,
+    );
+    pending.order_status = Some(KrakenWsOrderStatus::PendingNew);
+    dispatch::spot::execution(
+        &pending,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_f64_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(
+        drain_events(&mut rx).is_empty(),
+        "tracked pending_new parses as Submitted; status_tracked emits nothing"
+    );
+    assert_eq!(
+        state.lookup_order_symbol("v-spot-tracked").as_deref(),
+        Some(SPOT_SYMBOL)
+    );
+    assert_eq!(state.lookup_order_client_id("v-spot-tracked"), Some(cid));
+}
+
+#[rstest]
+fn test_spot_tracked_delta_new_without_cl_ord_id_emits_order_accepted() {
+    // Issue #4051: Kraken's `new` delta lacks both `symbol` and `cl_ord_id`.
+    // With both venue-id caches seeded from the prior `pending_new` the
+    // dispatch must still resolve the tracked identity and emit
+    // `OrderAccepted`. Without the `order_client_id_cache` lookup this
+    // delta falls through to the untracked report path and the strategy
+    // never transitions out of `Submitted`.
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-spot-tracked-delta");
+    state.register_identity(
+        cid,
+        make_identity(SPOT_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+    let instruments = instruments_with(make_spot_pair());
+
+    let mut pending = make_spot_execution(
+        KrakenExecType::PendingNew,
+        Some("uuid-spot-tracked-delta"),
+        "v-spot-tracked-delta",
+        None,
+    );
+    pending.order_status = Some(KrakenWsOrderStatus::PendingNew);
+    dispatch::spot::execution(
+        &pending,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_f64_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+    let _ = drain_events(&mut rx);
+
+    let delta = make_spot_execution_delta(
+        KrakenExecType::New,
+        "v-spot-tracked-delta",
+        KrakenWsOrderStatus::New,
+    );
+    dispatch::spot::execution(
+        &delta,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_f64_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(
+        events.len(),
+        1,
+        "delta `new` without cl_ord_id must resolve via the venue-id cache and emit OrderAccepted"
+    );
+    assert!(matches!(
+        events[0],
+        ExecutionEvent::Order(OrderEventAny::Accepted(_))
+    ));
+}
+
+#[rstest]
+fn test_spot_terminal_eviction_runs_on_missing_instrument_early_return() {
+    // Terminal cleanup must run regardless of which early return the inner
+    // dispatch hits. Here `lookup_instrument` bails because no instruments
+    // are registered, but the outer eviction still clears both venue-id
+    // caches for the terminal exec type.
+    let state = Arc::new(WsDispatchState::new());
+    let (emitter, _rx) = test_emitter();
+    let cid = ClientOrderId::new("uuid-spot-orphan");
+
+    state.cache_order_symbol("v-spot-orphan", "FOO/BAR");
+    state.cache_order_client_id("v-spot-orphan", cid);
+
+    let empty_instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>> = Arc::new(AtomicMap::new());
+    let canceled = make_spot_execution_delta(
+        KrakenExecType::Canceled,
+        "v-spot-orphan",
+        KrakenWsOrderStatus::Canceled,
+    );
+    dispatch::spot::execution(
+        &canceled,
+        &state,
+        &emitter,
+        &empty_instruments,
+        &empty_string_map(),
+        &empty_f64_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(state.lookup_order_symbol("v-spot-orphan").is_none());
+    assert!(state.lookup_order_client_id("v-spot-orphan").is_none());
+}
+
+#[rstest]
+fn test_spot_terminal_exec_type_evicts_symbol_cache() {
+    let state = Arc::new(WsDispatchState::new());
+    let (emitter, _rx) = test_emitter();
+    let instruments = instruments_with(make_spot_pair());
+
+    let pending = make_spot_execution(
+        KrakenExecType::PendingNew,
+        Some("uuid-spot-evict"),
+        "v-spot-evict",
+        None,
+    );
+    dispatch::spot::execution(
+        &pending,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_f64_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+    assert!(state.lookup_order_symbol("v-spot-evict").is_some());
+    assert!(state.lookup_order_client_id("v-spot-evict").is_some());
+
+    let canceled = make_spot_execution_delta(
+        KrakenExecType::Canceled,
+        "v-spot-evict",
+        KrakenWsOrderStatus::Canceled,
+    );
+    dispatch::spot::execution(
+        &canceled,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_f64_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+    assert!(state.lookup_order_symbol("v-spot-evict").is_none());
+    assert!(state.lookup_order_client_id("v-spot-evict").is_none());
+}

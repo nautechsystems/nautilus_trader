@@ -57,16 +57,63 @@ pub fn execution(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
-    let symbol = match &exec.symbol {
-        Some(s) => s.as_str(),
-        None => {
-            log::debug!(
-                "Execution message without symbol: exec_type={:?}, order_id={}",
-                exec.exec_type,
-                exec.order_id
-            );
-            return;
+    execution_inner(
+        exec,
+        state,
+        emitter,
+        instruments,
+        truncated_id_map,
+        order_qty_cache,
+        account_id,
+        ts_init,
+    );
+
+    // Run terminal cache cleanup regardless of which early return the inner
+    // dispatch hit (symbol miss, instrument miss, stale-filled suppression,
+    // parse error). Keying eviction off `exec.order_id` means it does not
+    // depend on `cl_ord_id` or identity resolution succeeding.
+    if is_terminal_exec_type(exec.exec_type) {
+        state.forget_order_symbol(&exec.order_id);
+        state.forget_order_client_id(&exec.order_id);
+    }
+}
+
+#[expect(clippy::too_many_arguments)]
+fn execution_inner(
+    exec: &KrakenWsExecutionData,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    truncated_id_map: &Arc<AtomicMap<String, ClientOrderId>>,
+    order_qty_cache: &Arc<AtomicMap<String, f64>>,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) {
+    // Resolve the trading symbol. Per Kraken's executions docs, follow-up
+    // frames (`new`, `amended`, `restated`, `status`) carry only changed
+    // fields and omit `symbol`. We cache the symbol from the first frame for
+    // the venue order id and consult it here when the current frame omits it.
+    let cached_symbol;
+    let symbol = match exec.symbol.as_deref() {
+        Some(s) => {
+            state.cache_order_symbol(&exec.order_id, s);
+            s
         }
+        None => match state.lookup_order_symbol(&exec.order_id) {
+            Some(s) => {
+                cached_symbol = s;
+                cached_symbol.as_str()
+            }
+            None => {
+                log::debug!(
+                    "Execution message without symbol and no cached mapping: \
+                     exec_type={:?}, order_id={}",
+                    exec.exec_type,
+                    exec.order_id
+                );
+                return;
+            }
+        },
     };
     let Some(instrument) = lookup_instrument(instruments, symbol) else {
         log::warn!("No instrument for symbol: {symbol}");
@@ -83,10 +130,20 @@ pub fn execution(
         order_qty_cache.insert(cl_ord_id.clone(), qty);
     }
 
-    let resolved_id = exec
-        .cl_ord_id
-        .as_ref()
-        .map(|id| resolve_client_order_id(id, truncated_id_map));
+    // Resolve the `ClientOrderId`. When the frame carries `cl_ord_id` we
+    // resolve it through the truncation map and seed the venue-id cache so
+    // later delta frames (which routinely omit `cl_ord_id`) can recover it.
+    // When `cl_ord_id` is absent we consult the cache; without this lookup a
+    // tracked order's delta `new` would fall through to the untracked report
+    // path and the strategy would never see `OrderAccepted` (issue #4051).
+    let resolved_id = match exec.cl_ord_id.as_ref() {
+        Some(id) => {
+            let cid = resolve_client_order_id(id, truncated_id_map);
+            state.cache_order_client_id(&exec.order_id, cid);
+            Some(cid)
+        }
+        None => state.lookup_order_client_id(&exec.order_id),
+    };
 
     // Stale-report suppression for previously-tracked orders that already
     // reached the filled terminal state.

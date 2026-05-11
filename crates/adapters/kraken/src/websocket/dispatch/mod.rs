@@ -130,6 +130,48 @@ pub struct WsDispatchState {
     pub emitted_accepted: DashSet<ClientOrderId>,
     /// Client order IDs that have reached the filled terminal state.
     pub filled_orders: DashSet<ClientOrderId>,
+    /// Symbol captured from execution frames for a venue order id.
+    ///
+    /// Kraken's spot v2 executions channel sends a `pending_new` frame with
+    /// full order details, then follow-up frames (`new`, `amended`,
+    /// `restated`, `status`) that omit fields which have not changed —
+    /// Kraken's docs show `symbol` omitted on the `new` delta. The dispatch
+    /// needs the symbol to resolve the instrument, so we cache it here from
+    /// any frame that carries it (first writer wins). Keyed by venue
+    /// `order_id` because delta frames often lack `cl_ord_id` as well.
+    ///
+    /// Known limitation: the live spot execution client currently subscribes
+    /// with `snap_orders=false` (see `execution/spot.rs`). Orders that were
+    /// already open at the venue before this process connected therefore do
+    /// not receive an in-session `pending_new`, and if their next delta
+    /// frame omits `symbol` it is dropped at symbol resolution. State for
+    /// such orders is recovered via REST reconciliation
+    /// (`request_order_status_reports`). Enabling `snap_orders=true` would
+    /// allow the executions snapshot to seed the cache for pre-existing
+    /// orders.
+    ///
+    /// Steady-state eviction happens on terminal exec types
+    /// (`Canceled`/`Filled`/`Expired`). Bounded by `DEDUP_CAPACITY` as a
+    /// safety net so missed terminal frames (reconnects, partial replays)
+    /// cannot leak entries indefinitely.
+    pub order_symbol_cache: DashMap<String, String>,
+    /// `ClientOrderId` captured from execution frames for a venue order id.
+    ///
+    /// Kraken's `pending_new` echoes our submitted `cl_ord_id`, but follow-up
+    /// delta frames (`new`, `amended`, `restated`, `status`) routinely omit
+    /// it. Without this mapping the dispatch cannot resolve the tracked
+    /// order from a delta and falls back to the untracked report path,
+    /// which loses the typed `OrderAccepted` event — the symptom behind
+    /// issue #4051.
+    ///
+    /// Populated whenever a frame resolves a `cl_ord_id` (first writer
+    /// wins, keyed by venue `order_id`). Consulted when `exec.cl_ord_id`
+    /// is `None`. Mirrors the `venue_client_map` used by the futures
+    /// dispatch path.
+    ///
+    /// Eviction policy matches `order_symbol_cache`: cleared on terminal
+    /// exec types and bounded by `DEDUP_CAPACITY` as a safety net.
+    pub order_client_id_cache: DashMap<String, ClientOrderId>,
     /// Last snapshot of qty / filled / price / trigger_price seen on a
     /// tracked `OpenOrdersDelta`.
     ///
@@ -163,6 +205,8 @@ impl Default for WsDispatchState {
             order_identities: DashMap::new(),
             emitted_accepted: DashSet::default(),
             filled_orders: DashSet::default(),
+            order_symbol_cache: DashMap::new(),
+            order_client_id_cache: DashMap::new(),
             delta_snapshots: DashMap::new(),
             order_filled_qty: DashMap::new(),
             emitted_trades: Mutex::new(IndexSet::with_capacity(DEDUP_CAPACITY)),
@@ -208,6 +252,66 @@ impl WsDispatchState {
     pub fn insert_filled(&self, cid: ClientOrderId) {
         self.evict_if_full(&self.filled_orders);
         self.filled_orders.insert(cid);
+    }
+
+    /// Caches the symbol for a venue `order_id` if not already present.
+    ///
+    /// Atomic via [`DashMap::entry`] so concurrent callers cannot overwrite an
+    /// existing cached value — first writer wins, all later writers no-op.
+    /// The cheap `contains_key` fast path skips the key allocation when the
+    /// entry already exists; the `or_insert_with` covers the race that opens
+    /// between that check and the insert.
+    pub fn cache_order_symbol(&self, order_id: &str, symbol: &str) {
+        if self.order_symbol_cache.contains_key(order_id) {
+            return;
+        }
+        self.evict_map_if_full(&self.order_symbol_cache);
+        self.order_symbol_cache
+            .entry(order_id.to_string())
+            .or_insert_with(|| symbol.to_string());
+    }
+
+    /// Returns the symbol previously cached for a venue `order_id`, if any.
+    #[must_use]
+    pub fn lookup_order_symbol(&self, order_id: &str) -> Option<String> {
+        self.order_symbol_cache
+            .get(order_id)
+            .map(|r| r.value().clone())
+    }
+
+    /// Removes any cached symbol for a venue `order_id`. Called when the order
+    /// reaches a terminal state on the executions stream.
+    pub fn forget_order_symbol(&self, order_id: &str) {
+        self.order_symbol_cache.remove(order_id);
+    }
+
+    /// Caches the resolved `ClientOrderId` for a venue `order_id` if not
+    /// already present.
+    ///
+    /// Atomic via [`DashMap::entry`] so concurrent callers cannot overwrite an
+    /// existing cached value — first writer wins. The cheap `contains_key`
+    /// fast path skips the key allocation when the entry already exists.
+    pub fn cache_order_client_id(&self, order_id: &str, client_order_id: ClientOrderId) {
+        if self.order_client_id_cache.contains_key(order_id) {
+            return;
+        }
+        self.evict_map_if_full(&self.order_client_id_cache);
+        self.order_client_id_cache
+            .entry(order_id.to_string())
+            .or_insert(client_order_id);
+    }
+
+    /// Returns the `ClientOrderId` previously cached for a venue `order_id`,
+    /// if any.
+    #[must_use]
+    pub fn lookup_order_client_id(&self, order_id: &str) -> Option<ClientOrderId> {
+        self.order_client_id_cache.get(order_id).map(|r| *r)
+    }
+
+    /// Removes any cached `ClientOrderId` for a venue `order_id`. Called when
+    /// the order reaches a terminal state on the executions stream.
+    pub fn forget_order_client_id(&self, order_id: &str) {
+        self.order_client_id_cache.remove(order_id);
     }
 
     /// Atomically inserts a trade id into the dedup set.
@@ -286,6 +390,21 @@ impl WsDispatchState {
                 .is_ok()
         {
             set.clear();
+            self.clearing.store(false, Ordering::Release);
+        }
+    }
+
+    fn evict_map_if_full<K, V>(&self, map: &DashMap<K, V>)
+    where
+        K: Eq + std::hash::Hash,
+    {
+        if map.len() >= DEDUP_CAPACITY
+            && self
+                .clearing
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+        {
+            map.clear();
             self.clearing.store(false, Ordering::Release);
         }
     }
@@ -450,6 +569,39 @@ mod tests {
         assert!(
             !state.insert_accepted(cid),
             "second insert must report already present (atomic dedup)",
+        );
+    }
+
+    #[rstest]
+    fn test_cache_order_symbol_first_write_wins() {
+        let state = WsDispatchState::new();
+        state.cache_order_symbol("v-order-1", "BTC/USD");
+        state.cache_order_symbol("v-order-1", "ETH/USD");
+
+        assert_eq!(
+            state.lookup_order_symbol("v-order-1").as_deref(),
+            Some("BTC/USD"),
+            "later writes must not overwrite the original cached symbol",
+        );
+    }
+
+    #[rstest]
+    fn test_cache_order_symbol_bounded_by_capacity() {
+        let state = WsDispatchState::new();
+        for i in 0..DEDUP_CAPACITY {
+            state.cache_order_symbol(format!("v-order-{i}").as_str(), "BTC/USD");
+        }
+        // At capacity; the next insert triggers a `clear()` before insertion.
+        state.cache_order_symbol("v-order-overflow", "BTC/USD");
+
+        assert!(
+            state.order_symbol_cache.len() <= DEDUP_CAPACITY,
+            "cache must stay within DEDUP_CAPACITY after overflow",
+        );
+        assert_eq!(
+            state.lookup_order_symbol("v-order-overflow").as_deref(),
+            Some("BTC/USD"),
+            "the overflow entry was inserted after eviction",
         );
     }
 
