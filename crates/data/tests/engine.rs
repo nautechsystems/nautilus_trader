@@ -2001,6 +2001,126 @@ fn test_reset_clears_book_state_and_timers(
 }
 
 #[rstest]
+fn test_reset_clears_book_and_option_chain_state_and_allows_resubscribe(
+    audusd_sim: CurrencyPair,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+
+    let sim_recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock.clone(),
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &sim_recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let deribit_client_id = ClientId::new("DERIBIT");
+    let deribit_venue = Venue::new("DERIBIT");
+    let deribit_recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        deribit_client_id,
+        deribit_venue,
+        Some(deribit_venue),
+        &deribit_recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let call = make_btc_option("50000.000", OptionKind::Call);
+    let put = make_btc_option("50000.000", OptionKind::Put);
+    let call_id = call.id();
+    let _ = cache.borrow_mut().add_instrument(call);
+    let _ = cache.borrow_mut().add_instrument(put);
+
+    let book_id = audusd_sim.id;
+    let deltas_topic = switchboard::get_book_deltas_topic(book_id);
+    let depth_topic = switchboard::get_book_depth10_topic(book_id);
+    let greeks_topic = switchboard::get_option_greeks_topic(call_id);
+    let series_id = make_series_id();
+
+    let subscribe_all = |engine: &Rc<RefCell<DataEngine>>| {
+        engine
+            .borrow_mut()
+            .execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+                SubscribeBookDeltas::new(
+                    book_id,
+                    BookType::L2_MBP,
+                    Some(client_id),
+                    Some(venue),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    true,
+                    None,
+                    None,
+                ),
+            )));
+        engine
+            .borrow_mut()
+            .execute(DataCommand::Subscribe(SubscribeCommand::BookSnapshots(
+                SubscribeBookSnapshots::new(
+                    book_id,
+                    BookType::L2_MBP,
+                    Some(client_id),
+                    Some(venue),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    NonZeroUsize::new(1000).unwrap(),
+                    None,
+                    None,
+                ),
+            )));
+        engine.borrow_mut().execute(make_subscribe_option_chain(
+            series_id,
+            vec![Price::from("50000.000")],
+            Some(deribit_client_id),
+            Some(deribit_venue),
+        ));
+    };
+
+    subscribe_all(&data_engine);
+
+    assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
+    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 1);
+    assert!(!data_engine.borrow().subscribed_book_snapshots().is_empty());
+    assert!(!data_engine.borrow().get_clock().timer_names().is_empty());
+    assert!(data_engine.borrow().has_option_chain_manager(&series_id));
+    assert!(msgbus::exact_subscriber_count_option_greeks(greeks_topic) >= 1);
+
+    data_engine.borrow_mut().reset();
+
+    assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
+    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+    assert!(data_engine.borrow().subscribed_book_snapshots().is_empty());
+    assert!(data_engine.borrow().get_clock().timer_names().is_empty());
+    assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
+    assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 0);
+    assert_eq!(
+        msgbus::exact_subscriber_count_option_greeks(greeks_topic),
+        0
+    );
+
+    subscribe_all(&data_engine);
+
+    assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
+    assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 1);
+    assert!(!data_engine.borrow().subscribed_book_snapshots().is_empty());
+    assert!(!data_engine.borrow().get_clock().timer_names().is_empty());
+    assert!(data_engine.borrow().has_option_chain_manager(&series_id));
+    assert!(msgbus::exact_subscriber_count_option_greeks(greeks_topic) >= 1);
+}
+
+#[rstest]
 fn test_execute_subscribe_instrument(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,

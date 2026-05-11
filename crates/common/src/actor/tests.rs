@@ -563,6 +563,87 @@ fn test_subscribe_and_receive_book_deltas(
 }
 
 #[rstest]
+fn test_composite_book_deltas_subscription_receives_per_underlying(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    let underlying_id = InstrumentId::from("ESZ24.XCME");
+
+    actor.subscribe_book_deltas(composite_id, BookType::L2_MBP, None, None, false, None);
+
+    let underlying_topic = get_book_deltas_topic(underlying_id);
+
+    let order = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("4000.00"),
+        Quantity::from("1"),
+        123456,
+    );
+    let delta = OrderBookDelta::new(
+        underlying_id,
+        BookAction::Add,
+        order,
+        0,
+        1,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let deltas = OrderBookDeltas::new(underlying_id, vec![delta]);
+
+    msgbus::publish_deltas(underlying_topic, &deltas);
+
+    assert_eq!(actor.received_deltas.len(), 1);
+}
+
+#[rstest]
+fn test_composite_book_deltas_unsubscribe_removes_per_underlying_handler(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    let underlying_id = InstrumentId::from("ESZ24.XCME");
+
+    actor.subscribe_book_deltas(composite_id, BookType::L2_MBP, None, None, false, None);
+    assert_eq!(actor.deltas_handler_count(), 1);
+
+    actor.unsubscribe_book_deltas(composite_id, None, None);
+    assert_eq!(actor.deltas_handler_count(), 0);
+
+    let underlying_topic = get_book_deltas_topic(underlying_id);
+    let order = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("4000.00"),
+        Quantity::from("1"),
+        123456,
+    );
+    let delta = OrderBookDelta::new(
+        underlying_id,
+        BookAction::Add,
+        order,
+        0,
+        1,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let deltas = OrderBookDeltas::new(underlying_id, vec![delta]);
+
+    msgbus::publish_deltas(underlying_topic, &deltas);
+
+    assert_eq!(actor.received_deltas.len(), 0);
+}
+
+#[rstest]
 fn test_unsubscribe_book_deltas(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,

@@ -87,12 +87,12 @@ use crate::{
     msgbus::{
         self, MStr, Pattern, ShareableMessageHandler, Topic, TypedHandler, get_message_bus,
         switchboard::{
-            MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_snapshots_topic,
-            get_custom_topic, get_funding_rate_topic, get_index_price_topic,
-            get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
-            get_instruments_pattern, get_mark_price_topic, get_option_chain_topic,
-            get_option_greeks_topic, get_order_cancels_topic, get_order_fills_topic,
-            get_quotes_topic, get_signal_pattern, get_trades_topic,
+            MessagingSwitchboard, get_bars_topic, get_book_deltas_pattern,
+            get_book_snapshots_topic, get_custom_topic, get_funding_rate_topic,
+            get_index_price_topic, get_instrument_close_topic, get_instrument_status_topic,
+            get_instrument_topic, get_instruments_pattern, get_mark_price_topic,
+            get_option_chain_topic, get_option_greeks_topic, get_order_cancels_topic,
+            get_order_fills_topic, get_quotes_topic, get_signal_pattern, get_trades_topic,
         },
     },
     signal::Signal,
@@ -1154,7 +1154,7 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let topic = get_book_deltas_topic(instrument_id);
+        let pattern = get_book_deltas_pattern(instrument_id);
 
         let handler = TypedHandler::from(move |deltas: &OrderBookDeltas| {
             get_actor_unchecked::<Self>(&actor_id).handle_book_deltas(deltas);
@@ -1162,7 +1162,7 @@ pub trait DataActor:
 
         DataActorCore::subscribe_book_deltas(
             self,
-            topic,
+            pattern,
             handler,
             instrument_id,
             book_type,
@@ -2242,8 +2242,8 @@ pub struct DataActorCore {
     cache: Option<Rc<RefCell<Cache>>>,     // Wired up on registration
     state: ComponentState,
     topic_handlers: AHashMap<MStr<Pattern>, ShareableMessageHandler>,
-    deltas_handlers: AHashMap<MStr<Topic>, TypedHandler<OrderBookDeltas>>,
-    depth10_handlers: AHashMap<MStr<Topic>, TypedHandler<OrderBookDepth10>>,
+    deltas_handlers: AHashMap<MStr<Pattern>, TypedHandler<OrderBookDeltas>>,
+    depth10_handlers: AHashMap<MStr<Pattern>, TypedHandler<OrderBookDepth10>>,
     book_handlers: AHashMap<MStr<Topic>, TypedHandler<OrderBook>>,
     quote_handlers: AHashMap<MStr<Topic>, TypedHandler<QuoteTick>>,
     trade_handlers: AHashMap<MStr<Topic>, TypedHandler<TradeTick>>,
@@ -2411,48 +2411,48 @@ impl DataActorCore {
 
     pub(crate) fn add_deltas_subscription(
         &mut self,
-        topic: MStr<Topic>,
+        pattern: MStr<Pattern>,
         handler: TypedHandler<OrderBookDeltas>,
     ) {
-        if self.deltas_handlers.contains_key(&topic) {
+        if self.deltas_handlers.contains_key(&pattern) {
             log::warn!(
-                "Actor {} attempted duplicate deltas subscription to '{topic}'",
+                "Actor {} attempted duplicate deltas subscription to '{pattern}'",
                 self.actor_id
             );
             return;
         }
-        self.deltas_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_book_deltas(topic.into(), handler, None);
+        self.deltas_handlers.insert(pattern, handler.clone());
+        msgbus::subscribe_book_deltas(pattern, handler, None);
     }
 
     #[allow(dead_code)]
-    pub(crate) fn remove_deltas_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.deltas_handlers.remove(&topic) {
-            msgbus::unsubscribe_book_deltas(topic.into(), &handler);
+    pub(crate) fn remove_deltas_subscription(&mut self, pattern: MStr<Pattern>) {
+        if let Some(handler) = self.deltas_handlers.remove(&pattern) {
+            msgbus::unsubscribe_book_deltas(pattern, &handler);
         }
     }
 
     #[allow(dead_code)]
     pub(crate) fn add_depth10_subscription(
         &mut self,
-        topic: MStr<Topic>,
+        pattern: MStr<Pattern>,
         handler: TypedHandler<OrderBookDepth10>,
     ) {
-        if self.depth10_handlers.contains_key(&topic) {
+        if self.depth10_handlers.contains_key(&pattern) {
             log::warn!(
-                "Actor {} attempted duplicate depth10 subscription to '{topic}'",
+                "Actor {} attempted duplicate depth10 subscription to '{pattern}'",
                 self.actor_id
             );
             return;
         }
-        self.depth10_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_book_depth10(topic.into(), handler, None);
+        self.depth10_handlers.insert(pattern, handler.clone());
+        msgbus::subscribe_book_depth10(pattern, handler, None);
     }
 
     #[allow(dead_code)]
-    pub(crate) fn remove_depth10_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.depth10_handlers.remove(&topic) {
-            msgbus::unsubscribe_book_depth10(topic.into(), &handler);
+    pub(crate) fn remove_depth10_subscription(&mut self, pattern: MStr<Pattern>) {
+        if let Some(handler) = self.depth10_handlers.remove(&pattern) {
+            msgbus::unsubscribe_book_depth10(pattern, &handler);
         }
     }
 
@@ -3283,7 +3283,7 @@ impl DataActorCore {
     #[expect(clippy::too_many_arguments)]
     pub fn subscribe_book_deltas(
         &mut self,
-        topic: MStr<Topic>,
+        pattern: MStr<Pattern>,
         handler: TypedHandler<OrderBookDeltas>,
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -3294,7 +3294,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_deltas_subscription(topic, handler);
+        self.add_deltas_subscription(pattern, handler);
 
         let command = SubscribeCommand::BookDeltas(SubscribeBookDeltas {
             instrument_id,
@@ -3709,8 +3709,8 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        let topic = get_book_deltas_topic(instrument_id);
-        self.remove_deltas_subscription(topic);
+        let pattern = get_book_deltas_pattern(instrument_id);
+        self.remove_deltas_subscription(pattern);
 
         let command = UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas {
             instrument_id,
@@ -4375,9 +4375,9 @@ impl DataActorCore {
     }
 
     #[cfg(test)]
-    pub fn has_deltas_handler(&self, topic: &str) -> bool {
+    pub fn has_deltas_handler(&self, pattern: &str) -> bool {
         self.deltas_handlers
-            .contains_key(&MStr::<Topic>::from(topic))
+            .contains_key(&MStr::<Pattern>::from(pattern))
     }
 }
 
