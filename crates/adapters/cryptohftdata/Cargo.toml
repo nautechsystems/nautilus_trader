@@ -1,0 +1,92 @@
+[package]
+name = "nautilus-cryptohftdata"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "CryptoHFTData integration adapter for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_cryptohftdata"
+crate-type = ["rlib"]
+
+[features]
+default = ["download", "high-precision"]
+download = []
+extension-module = [
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+  "nautilus-persistence/extension-module",
+  "nautilus-serialization/extension-module",
+  "pyo3/extension-module",
+  "python",
+]
+python = [
+  "nautilus-core/python",
+  "nautilus-model/python",
+  "nautilus-persistence/python",
+  "nautilus-serialization/python",
+  "pyo3",
+  "pyo3-async-runtimes",
+  "pyo3-stub-gen",
+]
+high-precision = [
+  "nautilus-model/high-precision",
+  "nautilus-persistence/high-precision",
+  "nautilus-serialization/high-precision",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-core = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-network = { workspace = true }
+nautilus-persistence = { workspace = true }
+nautilus-persistence-macros = { workspace = true }
+nautilus-serialization = { workspace = true, features = ["arrow"] }
+
+ahash = { workspace = true }
+anyhow = { workspace = true }
+arrow = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+log = { workspace = true }
+parquet = { workspace = true, features = ["zstd"] }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+ustr = { workspace = true }
+zeroize = { workspace = true }
+zstd = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+tempfile = { workspace = true }
+
+[[bin]]
+name = "cryptohftdata-ingest"
+path = "bin/ingest.rs"
+required-features = ["download"]
+doc = false
+test = false

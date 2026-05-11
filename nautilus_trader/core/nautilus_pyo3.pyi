@@ -7471,6 +7471,129 @@ def bybit_extract_raw_symbol(symbol: str) -> str: ...
 def bybit_bar_spec_to_interval(aggregation: int, step: int) -> str: ...
 def bybit_product_type_from_symbol(symbol: str) -> BybitProductType: ...
 
+# CryptoHFTData
+
+class CryptoHFTDataClientConfig:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        use_jwt: bool | None = None,
+        proxy_url: str | None = None,
+        timeout_secs: int | None = None,
+        rate_limit_per_sec: int | None = None,
+    ) -> None: ...
+
+class CryptoHFTDataCatalogIngestConfig:
+    def __init__(
+        self,
+        exchange: str,
+        symbols: list[str],
+        data_types: list[str],
+        from_: str,
+        to: str,
+        output_path: str | None = None,
+        cache_dir: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        use_jwt: bool | None = None,
+        proxy_url: str | None = None,
+        timeout_secs: int | None = None,
+        max_concurrent_downloads: int | None = None,
+        batch_size: int | None = None,
+        max_row_group_size: int | None = None,
+        compression: str | None = None,
+        gap_policy: str | None = None,
+    ) -> None: ...
+
+class CryptoHFTDataClient:
+    def __init__(self, config: CryptoHFTDataClientConfig | None = None) -> None: ...
+    @property
+    def api_key_masked(self) -> str | None: ...
+    @property
+    def base_url(self) -> str: ...
+
+class CryptoHFTDataOpenInterest:
+    @property
+    def instrument_id(self) -> InstrumentId: ...
+    @property
+    def open_interest(self) -> Quantity: ...
+    @property
+    def open_interest_value(self) -> str: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+
+class CryptoHFTDataLiquidation:
+    @property
+    def instrument_id(self) -> InstrumentId: ...
+    @property
+    def side(self) -> str: ...
+    @property
+    def price(self) -> Price: ...
+    @property
+    def quantity(self) -> Quantity: ...
+    @property
+    def order_id(self) -> str: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+
+class CryptoHFTDataDataLoader:
+    def __init__(
+        self,
+        batch_size: int | None = None,
+        gap_policy: str | None = None,
+    ) -> None: ...
+    def load_trades(
+        self,
+        filepath: PathLike[str] | str,
+        exchange: str,
+        symbol: str,
+        instrument_id: InstrumentId | None = None,
+    ) -> list[TradeTick]: ...
+    def load_order_book_deltas(
+        self,
+        filepath: PathLike[str] | str,
+        exchange: str,
+        symbol: str,
+        instrument_id: InstrumentId | None = None,
+    ) -> list[OrderBookDelta]: ...
+    def load_bars(
+        self,
+        filepath: PathLike[str] | str,
+        exchange: str,
+        symbol: str,
+        instrument_id: InstrumentId | None = None,
+    ) -> list[Bar]: ...
+    def load_price_updates(
+        self,
+        filepath: PathLike[str] | str,
+        exchange: str,
+        symbol: str,
+        instrument_id: InstrumentId | None = None,
+    ) -> tuple[list[MarkPriceUpdate], list[IndexPriceUpdate], list[FundingRateUpdate]]: ...
+    def load_open_interest(
+        self,
+        filepath: PathLike[str] | str,
+        exchange: str,
+        symbol: str,
+        instrument_id: InstrumentId | None = None,
+    ) -> list[CryptoHFTDataOpenInterest]: ...
+    def load_liquidations(
+        self,
+        filepath: PathLike[str] | str,
+        exchange: str,
+        symbol: str,
+        instrument_id: InstrumentId | None = None,
+    ) -> list[CryptoHFTDataLiquidation]: ...
+
+def run_cryptohftdata_ingest_from_config(config_path: PathLike[str] | str) -> Awaitable[None]: ...
+def cryptohftdata_exchanges() -> list[str]: ...
+def cryptohftdata_data_types() -> list[str]: ...
+
 # Databento
 
 class DatabentoStatisticType(Enum):

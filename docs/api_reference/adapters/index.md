@@ -14,6 +14,7 @@
    betfair.md
    binance.md
    bybit.md
+   cryptohftdata.md
    databento.md
    dydx.md
    interactive_brokers.md

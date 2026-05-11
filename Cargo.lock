@@ -5722,6 +5722,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-cryptohftdata"
+version = "0.57.0"
+dependencies = [
+ "ahash 0.8.12",
+ "anyhow",
+ "arrow 58.2.0",
+ "bytes",
+ "chrono",
+ "futures",
+ "log",
+ "nautilus-core",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-persistence",
+ "nautilus-persistence-macros",
+ "nautilus-serialization",
+ "parquet 58.2.0",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "pyo3-stub-gen",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "ustr",
+ "zeroize",
+ "zstd",
+]
+
+[[package]]
 name = "nautilus-data"
 version = "0.57.0"
 dependencies = [
@@ -6406,6 +6440,7 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-cryptography",
+ "nautilus-cryptohftdata",
  "nautilus-data",
  "nautilus-databento",
  "nautilus-deribit",

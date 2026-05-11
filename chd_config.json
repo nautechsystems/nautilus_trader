@@ -1,0 +1,14 @@
+{
+  "exchange": "binance_futures",
+  "symbols": ["AAVEUSDT"],
+  "data_types": ["trades", "orderbook", "mark_price", "open_interest"],
+  "from": "2025-07-16",
+  "to": "2025-07-16",
+  "output_path": "/tmp/nautilus/catalog",
+  "cache_dir": "/tmp/chd-cache",
+  "max_concurrent_downloads": 4,
+  "use_jwt": true,
+  "compression": "zstd",
+  "gap_policy": "error"
+}
+

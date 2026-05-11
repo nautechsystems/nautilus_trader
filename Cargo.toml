@@ -12,6 +12,7 @@ members = [
   "crates/adapters/deribit",
   "crates/adapters/dydx",
   "crates/adapters/coinbase",
+  "crates/adapters/cryptohftdata",
   "crates/adapters/hyperliquid",
   "crates/adapters/kraken",
   "crates/adapters/polymarket",
@@ -99,6 +100,7 @@ nautilus-bitmex = { path = "crates/adapters/bitmex", version = "0.57.0", default
 nautilus-blockchain = { path = "crates/adapters/blockchain", version = "0.57.0" }
 nautilus-bybit = { path = "crates/adapters/bybit", version = "0.57.0", default-features = false }
 nautilus-coinbase = { path = "crates/adapters/coinbase", version = "0.57.0", default-features = false }
+nautilus-cryptohftdata = { path = "crates/adapters/cryptohftdata", version = "0.57.0", default-features = false }
 nautilus-databento = { path = "crates/adapters/databento", version = "0.57.0", default-features = false }
 nautilus-deribit = { path = "crates/adapters/deribit", version = "0.57.0", default-features = false }
 nautilus-dydx = { path = "crates/adapters/dydx", version = "0.57.0", default-features = false }
@@ -350,6 +352,7 @@ tonic = { version = "0.13.1", default-features = false, features = [
   "tls-webpki-roots",
 ] }
 zeroize = { version = "1.8.2", features = ["alloc", "zeroize_derive"] }
+zstd = "0.13.3"
 
 # -----------------------------------------------------------------------------
 # Dev dependencies

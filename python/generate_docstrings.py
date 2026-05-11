@@ -68,6 +68,7 @@ ANNOTATED_ADAPTER_CRATES = [
     "bitmex",
     "blockchain",
     "bybit",
+    "cryptohftdata",
     "databento",
     "deribit",
     "dydx",

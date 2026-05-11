@@ -24,6 +24,7 @@ Released on TBD (UTC).
 - Added Bybit BBO order support for linear and inverse limit-style orders
 - Added Coinbase liquidation/ADL warning on forced-close order events
 - Added Coinbase CFM liquidation buffer warning when buffer drops below 20%
+- Added CryptoHFTData historical market data adapter for Rust-native download, decoding, and catalog ingest
 - Added Deribit `auto_load_missing_instruments` config flag to lazy-load uncached instruments on subscribe
 - Added dYdX historical funding rate requests via the `request_funding_rates` HTTP method and PyO3 binding
 - Added Kraken Spot margin trading support (#3965), thanks @mcgrj

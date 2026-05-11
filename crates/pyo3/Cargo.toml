@@ -38,6 +38,7 @@ extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-cryptography/extension-module",
+  "nautilus-cryptohftdata/extension-module",
   "nautilus-data/extension-module",
   "nautilus-databento/extension-module",
   "nautilus-deribit/extension-module",
@@ -73,6 +74,7 @@ high-precision = [
   "nautilus-binance/high-precision",
   "nautilus-bitmex/high-precision",
   "nautilus-coinbase/high-precision",
+  "nautilus-cryptohftdata/high-precision",
   "nautilus-bybit/high-precision",
   "nautilus-databento/high-precision",
   "nautilus-deribit/high-precision",
@@ -124,6 +126,7 @@ nautilus-blockchain = { workspace = true, features = [
 ], optional = true }
 nautilus-bybit = { workspace = true, features = ["python"] }
 nautilus-coinbase = { workspace = true, features = ["python"] }
+nautilus-cryptohftdata = { workspace = true, features = ["python"] }
 nautilus-databento = { workspace = true, features = ["python", "live"] }
 nautilus-deribit = { workspace = true, features = ["python"] }
 nautilus-dydx = { workspace = true, features = ["python"] }
