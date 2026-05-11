@@ -179,10 +179,7 @@ pub fn execution(
 
     // Evict the cached symbol on terminal exec types so the cache does not
     // grow unbounded across the lifetime of the connection.
-    if matches!(
-        exec.exec_type,
-        KrakenExecType::Canceled | KrakenExecType::Filled | KrakenExecType::Expired
-    ) {
+    if is_terminal_exec_type(exec.exec_type) {
         state.forget_order_symbol(&exec.order_id);
     }
 }

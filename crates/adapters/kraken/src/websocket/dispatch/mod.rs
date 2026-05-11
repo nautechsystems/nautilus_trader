@@ -130,15 +130,25 @@ pub struct WsDispatchState {
     pub emitted_accepted: DashSet<ClientOrderId>,
     /// Client order IDs that have reached the filled terminal state.
     pub filled_orders: DashSet<ClientOrderId>,
-    /// Symbol captured from the first execution frame for a venue order id.
+    /// Symbol captured from execution frames for a venue order id.
     ///
     /// Kraken's spot v2 executions channel sends a `pending_new` frame with
-    /// full order details, then follow-up frames (`new`, `amended`, `restated`,
-    /// `status`) that omit fields which have not changed — `symbol` included.
-    /// The dispatch needs the symbol to resolve the instrument, so we cache it
-    /// here from the first frame and look it up when later frames omit it.
-    /// Keyed by venue `order_id` because delta frames often lack `cl_ord_id`
-    /// as well.
+    /// full order details, then follow-up frames (`new`, `amended`,
+    /// `restated`, `status`) that omit fields which have not changed —
+    /// Kraken's docs show `symbol` omitted on the `new` delta. The dispatch
+    /// needs the symbol to resolve the instrument, so we cache it here from
+    /// any frame that carries it (first writer wins). Keyed by venue
+    /// `order_id` because delta frames often lack `cl_ord_id` as well.
+    ///
+    /// Known limitation: the live spot execution client currently subscribes
+    /// with `snap_orders=false` (see `execution/spot.rs`). Orders that were
+    /// already open at the venue before this process connected therefore do
+    /// not receive an in-session `pending_new`, and if their next delta
+    /// frame omits `symbol` it is dropped at symbol resolution. State for
+    /// such orders is recovered via REST reconciliation
+    /// (`request_order_status_reports`). Enabling `snap_orders=true` would
+    /// allow the executions snapshot to seed the cache for pre-existing
+    /// orders.
     ///
     /// Steady-state eviction happens on terminal exec types
     /// (`Canceled`/`Filled`/`Expired`). Bounded by `DEDUP_CAPACITY` as a

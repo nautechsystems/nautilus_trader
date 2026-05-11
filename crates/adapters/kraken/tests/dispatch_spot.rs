@@ -657,11 +657,20 @@ fn make_spot_execution_delta(
 }
 
 #[rstest]
-fn test_spot_pending_new_then_symbolless_new_both_emit_reports() {
+#[case::new(KrakenExecType::New, KrakenWsOrderStatus::New)]
+#[case::amended(KrakenExecType::Amended, KrakenWsOrderStatus::New)]
+#[case::restated(KrakenExecType::Restated, KrakenWsOrderStatus::New)]
+#[case::status(KrakenExecType::Status, KrakenWsOrderStatus::New)]
+fn test_spot_pending_new_then_symbolless_delta_resolves_via_cache(
+    #[case] delta_exec_type: KrakenExecType,
+    #[case] delta_order_status: KrakenWsOrderStatus,
+) {
     // Untracked / external order: `pending_new` arrives with full data and
-    // emits a `Submitted` report, then `new` arrives as a delta (no symbol)
-    // and must still emit an `Accepted` report via the cached symbol
-    // populated from the first frame.
+    // emits an initial report, then a delta frame (no symbol) arrives and
+    // must still emit a report via the cached symbol populated from the
+    // first frame. Covers every delta exec type that omits `symbol`
+    // (`new` / `amended` / `restated` / `status`) per Kraken's executions
+    // docs.
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let instruments = instruments_with(make_spot_pair());
@@ -679,13 +688,9 @@ fn test_spot_pending_new_then_symbolless_new_both_emit_reports() {
     );
     assert_eq!(drain_events(&mut rx).len(), 1);
 
-    let new_delta = make_spot_execution_delta(
-        KrakenExecType::New,
-        "v-spot-delta",
-        KrakenWsOrderStatus::New,
-    );
+    let delta = make_spot_execution_delta(delta_exec_type, "v-spot-delta", delta_order_status);
     dispatch::spot::execution(
-        &new_delta,
+        &delta,
         &state,
         &emitter,
         &instruments,
@@ -699,7 +704,7 @@ fn test_spot_pending_new_then_symbolless_new_both_emit_reports() {
     assert_eq!(
         events.len(),
         1,
-        "the delta `new` frame should resolve via the cached symbol and emit a report"
+        "delta frame should resolve via the cached symbol and emit a report"
     );
     assert!(matches!(events[0], ExecutionEvent::Report(_)));
 }
