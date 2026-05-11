@@ -13,12 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Example demonstrating live execution testing with the Hyperliquid adapter.
+//! Live execution tester targeting a HIP-4 outcome side token.
+//!
+//! Mirrors `examples/live/hyperliquid/hyperliquid_outcomes_exec_tester.py` so
+//! the same Yes-side BTC daily market is exercised from the Rust live node.
 //!
 //! Prerequisites:
-//! - Set `HYPERLIQUID_PK` (or `HYPERLIQUID_TESTNET_PK` for testnet)
+//! - Set `HYPERLIQUID_PK` (mainnet) or `HYPERLIQUID_TESTNET_PK` (testnet)
+//! - Optionally `HYPERLIQUID_ACCOUNT_ADDRESS` for agent-wallet setups
 //!
-//! Run with: `cargo run --example hyperliquid-exec-tester --package nautilus-hyperliquid --features examples`
+//! Run with:
+//! `cargo run --example hyperliquid-outcome-exec-tester --package nautilus-hyperliquid --features examples`
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
@@ -43,9 +48,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hl_environment = HyperliquidEnvironment::Mainnet;
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("HYPERLIQUID-001");
-    let node_name = "HYPERLIQUID-EXEC-TESTER-001".to_string();
+    let node_name = "HYPERLIQUID-OUTCOME-EXEC-TESTER-001".to_string();
     let client_id = *HYPERLIQUID_CLIENT_ID;
-    let instrument_id = InstrumentId::from("ETH-USD-PERP.HYPERLIQUID");
+
+    // Targets a HIP-4 outcome side token by Nautilus instrument id (`+E`).
+    // Pick the encoding for the desired outcome / side from the current
+    // `outcomeMeta` snapshot: `encoding = 10 * outcome_index + outcome_side`,
+    // side 0 = Yes, side 1 = No. The venue's spot-coin form is `#E`.
+    // Inspect the live universe with:
+    //   curl -s -X POST https://api.hyperliquid.xyz/info \
+    //     -d '{"type":"outcomeMeta"}'
+    let instrument_id = InstrumentId::from("+250.HYPERLIQUID");
 
     let data_config = HyperliquidDataClientConfig {
         environment: hl_environment,
@@ -78,22 +91,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(10)
         .build()?;
 
-    let order_qty = Quantity::from("0.01"); // Minimum order size for ETH-USD-PERP
+    // Outcome size precision is 2 (lot 0.01). Pick `order_qty` such that
+    // `order_qty * limit_price` stays within the spot USDH balance and clears
+    // the 10 USDH venue minimum notional. Sized for a settled-near-final Yes
+    // mid (~0.85): 20 contracts at 0.85 = $17 notional, fits a ~$20 USDH
+    // balance with headroom. Drop this if the live mid is much lower.
+    let order_qty = Quantity::from("20");
 
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
-            strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
+            strategy_id: Some(StrategyId::from("OUTCOME_EXEC_TESTER-001")),
             external_order_claims: Some(vec![instrument_id]),
-            // Hyperliquid supports hyphens in client order IDs (they're hashed to cloid)
             use_hyphens_in_client_order_ids: true,
             ..Default::default()
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
-        .log_data(false)
-        .open_position_on_start_qty(order_qty.as_decimal())
+        .tob_offset_ticks(5)
+        .enable_limit_sells(false)
         .use_post_only(true)
+        .reduce_only_on_stop(false)
+        .cancel_orders_on_stop(true)
+        .log_data(false)
         .build();
 
     let tester = ExecTester::new(tester_config);

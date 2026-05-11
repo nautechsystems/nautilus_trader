@@ -36,7 +36,8 @@ use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    let environment = Environment::Live;
+    let nt_environment = Environment::Live;
+    let hl_environment = HyperliquidEnvironment::Mainnet;
     let trader_id = TraderId::test_default();
     let node_name = "HYPERLIQUID-DATA-TESTER-001".to_string();
     let instrument_ids = vec![
@@ -45,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     let hyperliquid_config = HyperliquidDataClientConfig {
-        environment: HyperliquidEnvironment::Mainnet,
+        environment: hl_environment,
         ..Default::default()
     };
 
@@ -57,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let mut node = LiveNode::builder(trader_id, environment)?
+    let mut node = LiveNode::builder(trader_id, nt_environment)?
         .with_name(node_name)
         .with_logging(log_config)
         .with_delay_post_stop_secs(2)

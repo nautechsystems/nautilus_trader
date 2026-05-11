@@ -52,6 +52,7 @@ pub mod data;
 pub mod execution;
 pub mod factories;
 pub mod http;
+pub mod outcome_settlement;
 pub mod signing;
 pub mod websocket;
 

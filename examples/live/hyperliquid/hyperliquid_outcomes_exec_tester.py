@@ -47,15 +47,18 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # address. See docs: integrations/hyperliquid.md#agent-wallets
 
 
-# HIP-4 outcome targeted exec tester. The BTC daily binary `+50.HYPERLIQUID`
-# (Yes side of outcome 5) is the venue's most active outcome market and
-# settles each day at 06:00 UTC. Outcomes are fully-collateralized in [0, 1]:
-# the maximum loss per contract on the Yes side is the limit price paid.
+# HIP-4 outcome targeted exec tester. The BTC daily binary
+# `+{10*outcome+side}.HYPERLIQUID` is the venue's most active outcome market
+# and settles each day at 06:00 UTC. Outcomes are fully-collateralized in
+# [0, 1]: the maximum loss per contract on the Yes side is the limit price
+# paid.
 #
-# Switch outcome_index / outcome_side to target a different outcome from the
-# current `outcomeMeta` snapshot. Run `curl -s -X POST
-# https://api.hyperliquid.xyz/info -d '{"type":"outcomeMeta"}'` to inspect the
-# live universe.
+# The outcome universe cycles: the index in `outcomeMeta` advances with each
+# new settlement. The default below points at the current BTC daily at the
+# time of writing; switch `outcome_index` / `outcome_side` to target a
+# different outcome from the current snapshot. Run
+# `curl -s -X POST https://api.hyperliquid.xyz/info -d '{"type":"outcomeMeta"}'`
+# to inspect the live universe.
 #
 # Outcome-specific ExecTester tuning:
 # - `tob_offset_ticks` defaults to 500 (works for high-priced perps), which
@@ -67,7 +70,7 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 #   that needs ~500 contracts.
 
 testnet = False  # Set to True for testnet, False for mainnet
-outcome_index = 5  # Outcome index from outcomeMeta
+outcome_index = 25  # Outcome index from outcomeMeta
 outcome_side = 0  # 0 = Yes, 1 = No
 
 # HIP-4 encoding: 10 * outcome + side

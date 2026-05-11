@@ -811,7 +811,7 @@ mod tests {
         assert_eq!(state.balances.len(), 2);
         let usdc = &state.balances[0];
         assert_eq!(usdc.coin.as_str(), "USDC");
-        assert_eq!(usdc.token, 0);
+        assert_eq!(usdc.token, Some(0));
         assert_eq!(usdc.total.to_string(), "14.625485");
         assert_eq!(usdc.hold, rust_decimal::Decimal::ZERO);
         assert_eq!(usdc.free().to_string(), "14.625485");
@@ -819,12 +819,21 @@ mod tests {
 
         let purr = &state.balances[1];
         assert_eq!(purr.coin.as_str(), "PURR");
-        assert_eq!(purr.token, 1);
+        assert_eq!(purr.token, Some(1));
         assert_eq!(purr.free().to_string(), "1900");
         assert_eq!(
             purr.avg_entry_px().unwrap(),
             rust_decimal_macros::dec!(0.61728)
         );
+    }
+
+    #[rstest]
+    fn test_spot_balance_outcome_side_token_lacks_token_field() {
+        // HIP-4 outcome side tokens come back without `token` from the venue
+        let json = r#"{"coin": "+250", "total": "0.0", "hold": "0.0", "entryNtl": "0.0"}"#;
+        let balance: SpotBalance = serde_json::from_str(json).unwrap();
+        assert_eq!(balance.coin.as_str(), "+250");
+        assert_eq!(balance.token, None);
     }
 
     #[rstest]
@@ -1514,8 +1523,10 @@ pub struct SpotClearinghouseState {
 pub struct SpotBalance {
     /// Token name (e.g., "USDC", "PURR").
     pub coin: Ustr,
-    /// Token index matching `spotMeta.tokens[*].index`.
-    pub token: u32,
+    /// Token index matching `spotMeta.tokens[*].index`. Omitted by the venue
+    /// for HIP-4 outcome side tokens (`+E` coins).
+    #[serde(default)]
+    pub token: Option<u32>,
     /// Total token balance (on-hold plus available).
     #[serde(
         serialize_with = "crate::common::parse::serialize_decimal_as_str",

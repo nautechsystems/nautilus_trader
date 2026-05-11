@@ -294,8 +294,8 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
 // decimals of price granularity (tick `0.0001`) and 2 decimals of size
 // granularity (lot `0.01`) are conservative starting values; refine when
 // real venue payloads land.
-const OUTCOME_PRICE_DECIMALS: u32 = 4;
-const OUTCOME_SIZE_DECIMALS: u32 = 2;
+pub const OUTCOME_PRICE_DECIMALS: u32 = 4;
+pub const OUTCOME_SIZE_DECIMALS: u32 = 2;
 
 /// Parse outcome instrument definitions from Hyperliquid `outcomeMeta` response.
 ///

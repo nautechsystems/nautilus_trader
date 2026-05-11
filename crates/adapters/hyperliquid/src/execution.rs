@@ -70,7 +70,9 @@ use crate::{
             ClearinghouseState, Cloid, HyperliquidExecAction, HyperliquidExecGrouping,
             HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind, SpotClearinghouseState,
         },
+        parse::derive_outcome_settlements,
     },
+    outcome_settlement::{OutcomeSettlementTracker, build_settlement_fills},
     websocket::{
         ExecutionReport, NautilusWsMessage,
         client::HyperliquidWebSocketClient,
@@ -91,7 +93,9 @@ pub struct HyperliquidExecutionClient {
     ws_client: HyperliquidWebSocketClient,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
     ws_stream_handle: Mutex<Option<JoinHandle<()>>>,
+    settlement_poll_handle: Mutex<Option<JoinHandle<()>>>,
     ws_dispatch_state: Arc<WsDispatchState>,
+    outcome_settlement_tracker: Arc<Mutex<OutcomeSettlementTracker>>,
 }
 
 impl HyperliquidExecutionClient {
@@ -202,7 +206,9 @@ impl HyperliquidExecutionClient {
             ws_client,
             pending_tasks: Mutex::new(Vec::new()),
             ws_stream_handle: Mutex::new(None),
+            settlement_poll_handle: Mutex::new(None),
             ws_dispatch_state: Arc::new(WsDispatchState::new()),
+            outcome_settlement_tracker: Arc::new(Mutex::new(OutcomeSettlementTracker::new())),
         })
     }
 
@@ -349,6 +355,86 @@ impl HyperliquidExecutionClient {
         tasks.push(handle);
     }
 
+    fn start_outcome_settlement_poll(&self) -> anyhow::Result<()> {
+        let poll_secs = self.config.outcome_settlement_poll_secs;
+        if poll_secs == 0 {
+            log::info!("Outcome settlement polling disabled by config");
+            return Ok(());
+        }
+
+        let http_client = self.http_client.clone();
+        let emitter = self.emitter.clone();
+        let tracker = self.outcome_settlement_tracker.clone();
+        let account_id = self.core.account_id;
+        let account_address = self.get_account_address()?;
+        let clock = self.clock;
+
+        // Stored on a dedicated handle so this long-running loop does not block
+        // `pending_tasks_all_finished` used by tests for short-lived RPCs.
+        let handle = get_runtime().spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(poll_secs));
+            interval.tick().await;
+
+            loop {
+                interval.tick().await;
+
+                let meta = match http_client.get_outcome_meta().await {
+                    Ok(meta) => meta,
+                    Err(e) => {
+                        log::warn!("Outcome meta poll failed: {e}");
+                        continue;
+                    }
+                };
+
+                let settlements = derive_outcome_settlements(&meta);
+                if settlements.is_empty() {
+                    continue;
+                }
+
+                let spot_json = match http_client
+                    .info_spot_clearinghouse_state(&account_address)
+                    .await
+                {
+                    Ok(value) => value,
+                    Err(e) => {
+                        log::warn!("Settlement dispatch skipped: spot state fetch failed: {e}");
+                        continue;
+                    }
+                };
+                let spot_state: SpotClearinghouseState = match serde_json::from_value(spot_json) {
+                    Ok(state) => state,
+                    Err(e) => {
+                        log::warn!("Settlement dispatch skipped: spot state parse failed: {e}");
+                        continue;
+                    }
+                };
+
+                let ts = clock.get_time_ns();
+                let fills = {
+                    let mut guard = tracker.lock().expect(MUTEX_POISONED);
+                    build_settlement_fills(&settlements, &spot_state, &mut guard, account_id, ts)
+                };
+
+                for fill in fills {
+                    log::info!(
+                        "Dispatching outcome settlement fill: instrument={}, price={}, qty={}",
+                        fill.instrument_id,
+                        fill.last_px,
+                        fill.last_qty,
+                    );
+                    emitter.send_fill_report(fill);
+                }
+            }
+        });
+
+        let mut slot = self.settlement_poll_handle.lock().expect(MUTEX_POISONED);
+        if let Some(previous) = slot.replace(handle) {
+            previous.abort();
+        }
+
+        Ok(())
+    }
+
     fn abort_pending_tasks(&self) {
         let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
         for handle in tasks.drain(..) {
@@ -424,6 +510,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
         log::info!("Stopping Hyperliquid execution client");
 
         if let Some(handle) = self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() {
+            handle.abort();
+        }
+
+        if let Some(handle) = self
+            .settlement_poll_handle
+            .lock()
+            .expect(MUTEX_POISONED)
+            .take()
+        {
             handle.abort();
         }
 
@@ -1452,6 +1547,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Err(e);
         }
 
+        if let Err(e) = self.start_outcome_settlement_poll() {
+            log::warn!("Outcome settlement polling not started: {e}");
+        }
+
         self.core.set_connected();
 
         log::info!("Connected: client_id={}", self.core.client_id);
@@ -1467,6 +1566,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         // Disconnect WebSocket
         self.ws_client.disconnect().await?;
+
+        if let Some(handle) = self
+            .settlement_poll_handle
+            .lock()
+            .expect(MUTEX_POISONED)
+            .take()
+        {
+            handle.abort();
+        }
 
         // Abort any pending tasks
         self.abort_pending_tasks();

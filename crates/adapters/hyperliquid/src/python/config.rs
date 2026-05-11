@@ -125,6 +125,7 @@ impl HyperliquidExecClientConfig {
             market_order_slippage_bps: market_order_slippage_bps
                 .unwrap_or(defaults.market_order_slippage_bps),
             transport_backend: defaults.transport_backend,
+            outcome_settlement_poll_secs: defaults.outcome_settlement_poll_secs,
         }
     }
 

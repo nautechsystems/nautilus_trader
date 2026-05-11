@@ -160,6 +160,10 @@ pub struct HyperliquidExecClientConfig {
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
+    /// Poll interval in seconds for `outcomeMeta` settlement detection.
+    /// Set to `0` to disable polling entirely.
+    #[builder(default = 60)]
+    pub outcome_settlement_poll_secs: u64,
 }
 
 impl Default for HyperliquidExecClientConfig {

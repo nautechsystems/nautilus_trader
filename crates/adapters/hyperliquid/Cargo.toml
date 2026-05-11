@@ -152,3 +152,10 @@ name = "hyperliquid-exec-tester"
 path = "examples/node_exec_tester.rs"
 required-features = ["examples"]
 doc = false
+
+# Run with `cargo run --example hyperliquid-outcome-exec-tester --package nautilus-hyperliquid --features examples`.
+[[example]]
+name = "hyperliquid-outcome-exec-tester"
+path = "examples/node_outcome_exec_tester.rs"
+required-features = ["examples"]
+doc = false

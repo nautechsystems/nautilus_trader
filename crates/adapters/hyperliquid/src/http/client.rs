@@ -1456,7 +1456,6 @@ impl HyperliquidHttpClient {
     }
 
     /// Get outcome metadata (internal helper).
-    #[allow(dead_code)]
     pub(crate) async fn get_outcome_meta(&self) -> Result<OutcomeMeta> {
         self.inner.get_outcome_meta().await
     }
