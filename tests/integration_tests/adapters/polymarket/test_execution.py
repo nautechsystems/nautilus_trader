@@ -1237,7 +1237,9 @@ class TestPolymarketExecutionClient:
         assert call_args.price == 0  # Market order should have price 0 (calculated server-side)
         assert call_args.order_type == "FOK"  # Market orders always use FOK
         assert call_args.user_usdc_balance == 1000.0
-        assert call_options.tick_size == format(ELECTION_INSTRUMENT.price_increment.as_decimal(), "f")
+        assert call_options.tick_size == format(
+            ELECTION_INSTRUMENT.price_increment.as_decimal(), "f"
+        )
         assert call_options.neg_risk == ELECTION_INSTRUMENT.info.get("neg_risk", False)
 
         # Check that venue order ID was cached
@@ -1394,6 +1396,62 @@ class TestPolymarketExecutionClient:
         assert call_args.order_type == "FOK"  # Market orders always use FOK
 
     @pytest.mark.asyncio
+    async def test_submit_market_order_with_rust_signer_posts_regular_limit(self, mocker):
+        """
+        Rust-signed market orders are posted as short-lived aggressive limits.
+
+        This keeps BUY quantity share-denominated and capped at the submitted
+        quantity instead of converting it into quote-denominated FOK semantics,
+        while avoiding indefinitely resting extreme-price orders.
+        """
+        rust_client = MagicMock()
+        rust_client.create_order = AsyncMock(
+            return_value=(
+                '{"salt":1,"maker":"0xmaker","signer":"0xsigner","tokenId":"token",'
+                '"makerAmount":"14985000","takerAmount":"15000000","side":"BUY",'
+                '"expiration":"0","signatureType":0,"timestamp":"1",'
+                '"metadata":"0x0000000000000000000000000000000000000000000000000000000000000000",'
+                '"builder":"0x0000000000000000000000000000000000000000000000000000000000000000",'
+                '"signature":"0xsig"}'
+            ),
+        )
+        rust_client.create_marketable_order = AsyncMock()
+        self.exec_client._rust_client = rust_client
+
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+        mock_post_order.return_value = {"success": True, "orderID": "test_rust_market_order_id"}
+
+        market_order = self.strategy.order_factory.market(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("15"),
+            time_in_force=TimeInForce.FOK,
+        )
+        self.cache.add_order(market_order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=market_order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        await self.exec_client._submit_order(submit_order)
+
+        rust_client.create_order.assert_awaited_once()
+        rust_client.create_marketable_order.assert_not_awaited()
+        create_order_args = rust_client.create_order.call_args.args
+        assert create_order_args[1] == "BUY"
+        assert create_order_args[2] == 15.0
+        assert create_order_args[3] == 0.999
+        assert create_order_args[4] > 0
+        self.http_client.create_market_order.assert_not_called()
+        mock_post_order.assert_called_once()
+        assert mock_post_order.call_args.args[1] == "GTD"
+
+    @pytest.mark.asyncio
     async def test_submit_limit_order_still_works(self, mocker):
         """
         Test that limit orders still work with the refactored submission logic.
@@ -1437,7 +1495,9 @@ class TestPolymarketExecutionClient:
         assert call_args.size == 10.0
         assert call_args.side == "BUY"
         assert call_args.price == 0.50  # Limit order should have specific price
-        assert call_options.tick_size == format(ELECTION_INSTRUMENT.price_increment.as_decimal(), "f")
+        assert call_options.tick_size == format(
+            ELECTION_INSTRUMENT.price_increment.as_decimal(), "f"
+        )
         assert call_options.neg_risk == ELECTION_INSTRUMENT.info.get("neg_risk", False)
 
     @pytest.mark.asyncio

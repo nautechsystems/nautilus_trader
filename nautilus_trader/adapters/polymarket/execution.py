@@ -120,6 +120,9 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 
 
+POLYMARKET_RUST_MARKET_ORDER_EXPIRATION_SECS = 120
+
+
 class PolymarketExecutionClient(LiveExecutionClient):
     """
     Provides an execution client for Polymarket, a decentralized predication market.
@@ -871,7 +874,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
     @staticmethod
     def _build_signed_order_v2_from_rust_json(signed_order_json: str) -> SignedOrderV2:
         """
-        Build a ``SignedOrderV2`` from the JSON returned by ``PyClobClient.create_order``.
+        Build a ``SignedOrderV2`` from JSON returned by ``PyClobClient`` signing methods.
 
         The Rust adapter emits a camelCase payload matching the V2 wire schema
         (``timestamp`` / ``metadata`` / ``builder`` populated), so we just need
@@ -910,7 +913,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             order_side_to_str(order.side),
             float(order.quantity),
             float(order.price),
-            int(nanos_to_secs(order.expire_time_ns)),
+            self._get_expiration_secs(order),
             tick_size,
             neg_risk,
         )
@@ -927,6 +930,20 @@ class PolymarketExecutionClient(LiveExecutionClient):
             POLYMARKET_MIN_MAX_PRICES[None],
         )
 
+    @staticmethod
+    def _get_expiration_secs(order: Order) -> int:
+        """
+        Return the Polymarket order expiration in seconds, or 0 for no expiry.
+        """
+        expire_time_ns = getattr(order, "expire_time_ns", None)
+        return int(nanos_to_secs(expire_time_ns)) if expire_time_ns else 0
+
+    def _get_rust_market_order_expiration_secs(self) -> int:
+        """
+        Return a short GTD expiration for Rust-signed market-as-limit orders.
+        """
+        return int(self._clock.timestamp()) + POLYMARKET_RUST_MARKET_ORDER_EXPIRATION_SECS
+
     async def _sign_market_order_rust_as_limit(
         self,
         order: Order,
@@ -935,12 +952,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
         """
         Sign a market order as an aggressive limit via the Rust CLOB client.
 
-        The Rust adapter has no native ``create_market_order`` entry point, so
-        we sign a limit at the per-tick-size boundary (max for BUY, min for
-        SELL) and rely on FOK time-in-force at post time to enforce
-        market-order semantics. ``order.quantity`` is passed straight through as
-        base-share size for both sides — callers must submit base-quantity
-        market orders on the Rust path.
+        We sign a regular limit at the per-tick-size boundary (max for BUY,
+        min for SELL) with a short GTD expiration. ``order.quantity`` is passed
+        straight through as base-share size for both sides so fills cannot
+        exceed the requested share quantity.
         """
         min_price, max_price = self._get_min_max_prices(instrument)
         tick_size = float(instrument.price_increment.as_decimal())
@@ -960,7 +975,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             order_side_to_str(order.side),
             size,
             price,
-            int(nanos_to_secs(order.expire_time_ns)),
+            self._get_rust_market_order_expiration_secs(),
             tick_size,
             neg_risk,
         )
@@ -1480,14 +1495,15 @@ class PolymarketExecutionClient(LiveExecutionClient):
         signing_start = self._clock.timestamp()
 
         if self._rust_client is not None:
-            successfully_signed_orders, signed_orders_args = (
-                await self._sign_orders_for_batch_rust(orders)
+            successfully_signed_orders, signed_orders_args = await self._sign_orders_for_batch_rust(
+                orders
             )
             signing_backend = "rust"
         else:
-            successfully_signed_orders, signed_orders_args = (
-                await self._sign_orders_for_batch_python(orders)
-            )
+            (
+                successfully_signed_orders,
+                signed_orders_args,
+            ) = await self._sign_orders_for_batch_python(orders)
             signing_backend = "python"
 
         interval = self._clock.timestamp() - signing_start
@@ -1516,7 +1532,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     token_id=get_polymarket_token_id(order.instrument_id),
                     size=float(order.quantity),
                     side=order_side_to_str(order.side),
-                    expiration=int(nanos_to_secs(order.expire_time_ns)),
+                    expiration=self._get_expiration_secs(order),
                     builder_code=POLYMARKET_NAUTILUS_BUILDER_CODE,
                 )
 
@@ -1806,7 +1822,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
         await self._post_signed_order(
             order,
             signed_order,
-            order_type_override=PolyOrderType.FOK,
+            order_type_override=PolyOrderType.GTD
+            if self._rust_client is not None
+            else PolyOrderType.FOK,
             base_quantity=base_quantity,
             timing_start=signing_start,
         )
@@ -1840,7 +1858,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 token_id=get_polymarket_token_id(order.instrument_id),
                 size=float(order.quantity),
                 side=order_side_to_str(order.side),
-                expiration=int(nanos_to_secs(order.expire_time_ns)),
+                expiration=self._get_expiration_secs(order),
                 builder_code=POLYMARKET_NAUTILUS_BUILDER_CODE,
             )
             signed_order = await asyncio.to_thread(

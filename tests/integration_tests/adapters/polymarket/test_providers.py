@@ -334,7 +334,9 @@ async def test_load_markets_supports_cursor_list_and_page_limit(
         "CURSOR-A",
         "CURSOR-B",
     ]
-    condition_ids = {instrument.info["condition_id"] for instrument in instrument_provider.list_all()}
+    condition_ids = {
+        instrument.info["condition_id"] for instrument in instrument_provider.list_all()
+    }
     assert condition_ids == {
         ACTIVE_OPEN_MARKET["condition_id"],
         ACTIVE_CLOSED_MARKET["condition_id"],
