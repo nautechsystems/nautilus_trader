@@ -7,12 +7,13 @@ permissions: # Principle of least privilege
 on:
   push:
     branches: [master, nightly, test-docker]
+  workflow_dispatch:
 
 env:
   # SPDX in-toto predicate URI emitted by `actions/attest-sbom` for the SPDX 2.3
-  # SBOMs produced by anchore/sbom-action (syft 1.42.x). Must exact-match in
-  # `cosign verify-attestation --type` since cosign's `spdx` alias maps to the
-  # unversioned `https://spdx.dev/Document` and would skip these attestations.
+  # SBOMs produced by anchore/sbom-action (syft 1.42.x). Must exact-match
+  # `--predicate-type` since cosign's `spdx` alias maps to the unversioned
+  # `https://spdx.dev/Document` and would skip these attestations.
   SPDX_PREDICATE_TYPE: https://spdx.dev/Document/v2.3
 
 jobs:
@@ -358,17 +359,41 @@ jobs:
           push-to-registry: true
 
       - name: Verify image signature and SBOM attestation
+        timeout-minutes: 15
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}
           IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
           ISSUER: https://token.actions.githubusercontent.com
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cosign verify "$IMAGE" \
-            --certificate-identity "$IDENTITY" \
-            --certificate-oidc-issuer "$ISSUER"
-          cosign verify-attestation --type "$SPDX_PREDICATE_TYPE" "$IMAGE" \
-            --certificate-identity "$IDENTITY" \
-            --certificate-oidc-issuer "$ISSUER"
+          retry() {
+            local label=$1
+            shift
+            for attempt in 1 2 3; do
+              if "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "::error::${label} failed after 3 attempts"
+                return 1
+              fi
+              echo "::warning::${label} attempt ${attempt} failed, retrying in 30s"
+              sleep 30
+            done
+          }
+
+          retry "cosign verify" \
+            timeout 90 cosign verify "$IMAGE" \
+              --timeout=60s \
+              --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer "$ISSUER"
+
+          retry "gh attestation verify" \
+            timeout 90 gh attestation verify "oci://${IMAGE}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --predicate-type "$SPDX_PREDICATE_TYPE" \
+              --cert-identity "$IDENTITY" \
+              --cert-oidc-issuer "$ISSUER"
 
   build-docker-images-jupyterlab:
     name: build-docker-images (jupyterlab-${{ matrix.platform }})
@@ -604,14 +629,38 @@ jobs:
           push-to-registry: true
 
       - name: Verify image signature and SBOM attestation
+        timeout-minutes: 15
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}
           IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
           ISSUER: https://token.actions.githubusercontent.com
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cosign verify "$IMAGE" \
-            --certificate-identity "$IDENTITY" \
-            --certificate-oidc-issuer "$ISSUER"
-          cosign verify-attestation --type "$SPDX_PREDICATE_TYPE" "$IMAGE" \
-            --certificate-identity "$IDENTITY" \
-            --certificate-oidc-issuer "$ISSUER"
+          retry() {
+            local label=$1
+            shift
+            for attempt in 1 2 3; do
+              if "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "::error::${label} failed after 3 attempts"
+                return 1
+              fi
+              echo "::warning::${label} attempt ${attempt} failed, retrying in 30s"
+              sleep 30
+            done
+          }
+
+          retry "cosign verify" \
+            timeout 90 cosign verify "$IMAGE" \
+              --timeout=60s \
+              --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer "$ISSUER"
+
+          retry "gh attestation verify" \
+            timeout 90 gh attestation verify "oci://${IMAGE}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --predicate-type "$SPDX_PREDICATE_TYPE" \
+              --cert-identity "$IDENTITY" \
+              --cert-oidc-issuer "$ISSUER"
