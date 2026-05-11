@@ -77,12 +77,13 @@ instrument_id = InstrumentId.from_str(f"{symbol}.{HYPERLIQUID}")
 
 # Default sized for the BTC daily Yes side (`+50`). Notional must clear the
 # venue-enforced 10 USDH minimum after `tob_offset_ticks` shifts the limit
-# below the bid (a 0.02 mid with the 5-tick offset below lands at 0.0195,
-# so 1000 contracts give ~19.5 USDH, well above the minimum). Adjust to
-# `ceil(10 / target_price) + headroom` when targeting a different market.
-# Outcomes do not support reduce-only or trigger orders; the validator
-# rejects those at submission.
-order_qty = Decimal(1000)
+# below the bid; sizing for ~3x the minimum at the prevailing mid leaves
+# headroom for intraday drift (a 0.02 mid with the 5-tick offset lands at
+# 0.0195, so 2000 contracts give ~39 USDH and stay above the minimum even
+# if the mid halves). Adjust to `ceil(10 / target_price) + headroom` when
+# targeting a different market. Outcomes do not support reduce-only or
+# trigger orders; the validator rejects those at submission.
+order_qty = Decimal(2000)
 
 
 # Configure the trading node

@@ -32,7 +32,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport},
-    types::{Currency, Money, Price, Quantity},
+    types::{Money, Price, Quantity},
 };
 use rust_decimal::{Decimal, prelude::FromPrimitive};
 
@@ -407,8 +407,8 @@ pub fn parse_ws_fill_report(
     let fee_amount = Decimal::from_str(&fill.fee)
         .with_context(|| format!("Failed to parse fee='{}' as decimal", fill.fee))?;
 
-    let commission_currency = Currency::from_str(fill.fee_token.as_str())
-        .with_context(|| format!("Unknown fee token '{}'", fill.fee_token))?;
+    let commission_currency =
+        crate::http::parse::resolve_fee_currency(fill.fee_token.as_str(), fee_amount, instrument)?;
 
     let commission = Money::from_decimal(fee_amount, commission_currency)
         .with_context(|| format!("Failed to create commission from fee='{}'", fill.fee))?;
@@ -682,6 +682,64 @@ mod tests {
         assert_eq!(report.order_side, OrderSide::Sell);
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.venue_order_id.to_string(), "54321");
+    }
+
+    #[rstest]
+    fn test_parse_ws_fill_report_outcome_round_trip() {
+        use crate::http::{
+            models::{OutcomeMarket, OutcomeMeta},
+            parse::{create_instrument_from_def, parse_outcome_instruments},
+        };
+
+        let meta = OutcomeMeta {
+            outcomes: vec![OutcomeMarket {
+                outcome: 99,
+                name: "BTC daily".to_string(),
+                description: String::new(),
+                side_specs: vec![],
+            }],
+            questions: vec![],
+        };
+
+        let defs = parse_outcome_instruments(&meta).unwrap();
+        let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+        assert_eq!(instrument.id().symbol.as_str(), "+990");
+
+        let fill_data = WsFillData {
+            coin: Ustr::from("#990"),
+            px: "0.4500".to_string(),
+            sz: "1500.00".to_string(),
+            side: HyperliquidSide::Buy,
+            time: 1_704_470_400_000,
+            start_position: "0.00".to_string(),
+            dir: HyperliquidFillDirection::OpenLong,
+            closed_pnl: "0.0".to_string(),
+            hash: "0xabc789".to_string(),
+            oid: 42_42,
+            crossed: true,
+            fee: "0.0".to_string(),
+            tid: 7777,
+            liquidation: None,
+            fee_token: Ustr::from("+990"),
+            builder_fee: None,
+            cloid: None,
+            twap_id: None,
+        };
+
+        let report = parse_ws_fill_report(
+            &fill_data,
+            &instrument,
+            AccountId::new("HYPERLIQUID-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        // Zero-fee outcome fills fall back to the instrument's quote currency
+        // (USDC) instead of the unregistered side token, keeping downstream
+        // OrderFilled events and persistence on a registered currency.
+        assert_eq!(report.commission.currency.code.as_str(), "USDC");
+        assert!(report.commission.as_decimal().is_zero());
+        assert_eq!(report.order_side, OrderSide::Buy);
     }
 
     #[rstest]

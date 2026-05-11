@@ -528,6 +528,59 @@ pub fn get_currency(code: &str) -> Currency {
     })
 }
 
+/// Resolves the commission currency for a fill given the venue's `feeToken` field.
+///
+/// HIP-4 outcome fills echo the side token (e.g. `+50`) as `feeToken` even when
+/// the fee is zero. The side token is not a Nautilus currency and emitting it as
+/// the commission currency would leak into `OrderFilled` events and persistence;
+/// for outcome side tokens the instrument's quote currency is always used, even
+/// when another adapter path (such as spot-balance parsing) has registered the
+/// side token in the global registry. Non-zero side-token fees error: the venue
+/// does not denominate fees in side tokens. Other unknown tokens fall back to
+/// the instrument's quote currency only when the fee is zero.
+///
+/// # Errors
+///
+/// Returns an error when an outcome side token carries a non-zero fee, or when
+/// `fee_token` cannot be resolved and `fee_amount` is non-zero.
+pub fn resolve_fee_currency(
+    fee_token: &str,
+    fee_amount: Decimal,
+    instrument: &dyn Instrument,
+) -> anyhow::Result<Currency> {
+    if is_outcome_side_token(fee_token) {
+        if !fee_amount.is_zero() {
+            anyhow::bail!(
+                "Outcome side token '{fee_token}' carried a non-zero fee {fee_amount}; \
+                 venue does not denominate fees in side tokens",
+            );
+        }
+        return Ok(instrument.quote_currency());
+    }
+
+    if let Some(currency) = Currency::try_from_str(fee_token) {
+        return Ok(currency);
+    }
+
+    if fee_amount.is_zero() {
+        let fallback = instrument.quote_currency();
+        log::debug!(
+            "Unregistered fee token '{fee_token}' on zero-fee fill for {}; using {fallback} as fallback",
+            instrument.id(),
+        );
+        return Ok(fallback);
+    }
+
+    anyhow::bail!("Unknown fee token '{fee_token}' with non-zero fee {fee_amount}")
+}
+
+fn is_outcome_side_token(symbol: &str) -> bool {
+    let Some(rest) = symbol.strip_prefix('+') else {
+        return false;
+    };
+    !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit())
+}
+
 /// Converts a single Hyperliquid instrument definition into a Nautilus `InstrumentAny`.
 ///
 /// Returns `None` if the conversion fails (e.g., unsupported market type).
@@ -866,10 +919,7 @@ pub fn parse_fill_report(
         .parse()
         .map_err(|e| anyhow::anyhow!("Failed to parse fee: {e}"))?;
 
-    let fee_currency: Currency = fill
-        .fee_token
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Unknown fee token '{}': {e}", fill.fee_token))?;
+    let fee_currency = resolve_fee_currency(fill.fee_token.as_str(), fee_amount, instrument)?;
     let commission = Money::from_decimal(fee_amount, fee_currency)
         .map_err(|e| anyhow::anyhow!("Failed to create commission from fee: {e}"))?;
 
@@ -1506,6 +1556,128 @@ mod tests {
             }
             other => panic!("Expected BinaryOption, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_outcome_round_trip() {
+        let meta = OutcomeMeta {
+            outcomes: vec![OutcomeMarket {
+                outcome: 42,
+                name: "BTC daily".to_string(),
+                description: "BTC settles above strike at 06:00 UTC".to_string(),
+                side_specs: vec![
+                    OutcomeSideSpec {
+                        name: "Yes".to_string(),
+                    },
+                    OutcomeSideSpec {
+                        name: "No".to_string(),
+                    },
+                ],
+            }],
+            questions: vec![],
+        };
+
+        let defs = parse_outcome_instruments(&meta).unwrap();
+        let yes = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+        assert_eq!(yes.id().symbol.as_str(), "+420");
+
+        let fill = HyperliquidFill {
+            coin: Ustr::from("#420"),
+            px: "0.5500".to_string(),
+            sz: "1000.00".to_string(),
+            side: HyperliquidSide::Buy,
+            time: 1_704_470_400_000,
+            start_position: "0.00".to_string(),
+            dir: HyperliquidFillDirection::OpenLong,
+            closed_pnl: "0.0".to_string(),
+            hash: "0xfeed".to_string(),
+            oid: 99_001,
+            crossed: true,
+            fee: "0.0".to_string(),
+            fee_token: Ustr::from("+420"),
+        };
+
+        let account_id = AccountId::from("HYPERLIQUID-001");
+        let report = parse_fill_report(&fill, &yes, account_id, UnixNanos::default()).unwrap();
+
+        // Zero-fee outcome fills resolve commission to the instrument's quote
+        // currency (USDC) rather than the side token, so downstream OrderFilled
+        // events and persistence carry a registered currency.
+        assert_eq!(report.commission.currency.code.as_str(), "USDC");
+        assert!(report.commission.as_decimal().is_zero());
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(report.last_qty.as_decimal(), dec!(1000));
+        assert_eq!(report.last_px.as_decimal(), dec!(0.55));
+    }
+
+    #[rstest]
+    fn test_resolve_fee_currency_outcome_token_returns_quote_even_when_registered() {
+        let meta = OutcomeMeta {
+            outcomes: vec![OutcomeMarket {
+                outcome: 88,
+                name: "Edge".to_string(),
+                description: String::new(),
+                side_specs: vec![],
+            }],
+            questions: vec![],
+        };
+        let defs = parse_outcome_instruments(&meta).unwrap();
+        let yes = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+
+        // Simulate another adapter path (e.g. spot balance parsing) having already
+        // registered the side token in the global currency registry.
+        let _ = get_currency("+880");
+        assert!(Currency::try_from_str("+880").is_some());
+
+        let currency = resolve_fee_currency("+880", Decimal::ZERO, &yes)
+            .expect("zero-fee outcome side token must resolve to quote currency");
+        assert_eq!(currency.code.as_str(), "USDC");
+
+        let err = resolve_fee_currency("+880", dec!(0.01), &yes).unwrap_err();
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("Outcome side token '+880'"));
+        assert!(err_msg.contains("non-zero fee"));
+    }
+
+    #[rstest]
+    #[case("+50", true)]
+    #[case("+0", true)]
+    #[case("+880", true)]
+    #[case("", false)]
+    #[case("+", false)]
+    #[case("+abc", false)]
+    #[case("+50a", false)]
+    #[case("#50", false)]
+    #[case("USDC", false)]
+    #[case("-50", false)]
+    fn test_is_outcome_side_token(#[case] input: &str, #[case] expected: bool) {
+        assert_eq!(is_outcome_side_token(input), expected);
+    }
+
+    #[rstest]
+    fn test_resolve_fee_currency_falls_back_to_quote_when_unregistered_and_zero_fee() {
+        let meta = OutcomeMeta {
+            outcomes: vec![OutcomeMarket {
+                outcome: 77,
+                name: "Edge".to_string(),
+                description: String::new(),
+                side_specs: vec![],
+            }],
+            questions: vec![],
+        };
+
+        let defs = parse_outcome_instruments(&meta).unwrap();
+        let no = create_instrument_from_def(&defs[1], UnixNanos::default()).unwrap();
+
+        // Use a token that the venue would not normally emit; the helper must still
+        // return the instrument's quote currency on a zero-fee fill.
+        let currency = resolve_fee_currency("+UNREGISTERED-TOKEN", Decimal::ZERO, &no)
+            .expect("zero-fee fallback should succeed");
+        assert_eq!(currency.code.as_str(), "USDC");
+
+        let err = resolve_fee_currency("+UNREGISTERED-TOKEN", dec!(0.01), &no).unwrap_err();
+        assert!(err.to_string().contains("non-zero fee"));
     }
 
     #[rstest]
