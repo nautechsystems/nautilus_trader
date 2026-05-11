@@ -735,9 +735,9 @@ mod tests {
         .unwrap();
 
         // Zero-fee outcome fills fall back to the instrument's quote currency
-        // (USDC) instead of the unregistered side token, keeping downstream
+        // (USDH) instead of the unregistered side token, keeping downstream
         // OrderFilled events and persistence on a registered currency.
-        assert_eq!(report.commission.currency.code.as_str(), "USDC");
+        assert_eq!(report.commission.currency.code.as_str(), "USDH");
         assert!(report.commission.as_decimal().is_zero());
         assert_eq!(report.order_side, OrderSide::Buy);
     }

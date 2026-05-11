@@ -366,7 +366,7 @@ fn build_outcome_def(
         symbol: Ustr::from(token.as_str()),
         raw_symbol: Ustr::from(coin.as_str()),
         base: Ustr::from(token.as_str()),
-        quote: "USDC".into(),
+        quote: "USDH".into(),
         market_type: HyperliquidMarketType::Outcome,
         asset_index: asset_id.to_raw(),
         price_decimals: OUTCOME_PRICE_DECIMALS,
@@ -528,6 +528,22 @@ pub fn get_currency(code: &str) -> Currency {
     })
 }
 
+/// Returns the HIP-4 outcome settlement currency, registering it on first call.
+///
+/// Outcome markets settle in USDH (token index 360 on the `USDH/USDC` spot pair
+/// `@230`), not USDC. The registration is explicit so the precision is
+/// deterministic rather than dependent on whichever caller first triggers
+/// `get_currency`'s auto-register path.
+pub fn get_usdh_currency() -> Currency {
+    Currency::try_from_str("USDH").unwrap_or_else(|| {
+        let currency = Currency::new("USDH", 8, 0, "Hyperliquid USD", CurrencyType::Crypto);
+        if let Err(e) = Currency::register(currency, false) {
+            log::error!("Failed to register USDH currency: {e}");
+        }
+        currency
+    })
+}
+
 /// Resolves the commission currency for a fill given the venue's `feeToken` field.
 ///
 /// HIP-4 outcome fills echo the side token (e.g. `+50`) as `feeToken` even when
@@ -667,7 +683,7 @@ pub fn create_instrument_from_def(
         }
         HyperliquidMarketType::Outcome => {
             let outcome = def.outcome.as_ref()?;
-            let currency = get_currency("USDC");
+            let currency = get_usdh_currency();
 
             Some(InstrumentAny::BinaryOption(BinaryOption::new(
                 instrument_id,
@@ -1474,7 +1490,7 @@ mod tests {
         assert_eq!(yes.size_decimals, OUTCOME_SIZE_DECIMALS);
         assert_eq!(yes.tick_size, dec!(0.0001));
         assert_eq!(yes.lot_size, dec!(0.01));
-        assert_eq!(yes.quote.as_str(), "USDC");
+        assert_eq!(yes.quote.as_str(), "USDH");
         assert!(yes.active);
 
         let yes_meta = yes.outcome.as_ref().unwrap();
@@ -1522,6 +1538,19 @@ mod tests {
     }
 
     #[rstest]
+    fn test_get_usdh_currency_registers_with_explicit_precision() {
+        let currency = get_usdh_currency();
+        assert_eq!(currency.code.as_str(), "USDH");
+        assert_eq!(currency.precision, 8);
+        assert_eq!(currency.currency_type, CurrencyType::Crypto);
+
+        // Repeated calls return the same registered currency
+        let again = get_usdh_currency();
+        assert_eq!(again, currency);
+        assert!(Currency::try_from_str("USDH").is_some());
+    }
+
+    #[rstest]
     fn test_create_instrument_from_def_outcome_emits_binary_option() {
         let meta = OutcomeMeta {
             outcomes: vec![OutcomeMarket {
@@ -1548,7 +1577,7 @@ mod tests {
                 assert_eq!(bo.id.symbol.as_str(), "+20");
                 assert_eq!(bo.raw_symbol.as_str(), "#20");
                 assert_eq!(bo.asset_class, AssetClass::Alternative);
-                assert_eq!(bo.currency.code.as_str(), "USDC");
+                assert_eq!(bo.currency.code.as_str(), "USDH");
                 assert_eq!(bo.price_precision, OUTCOME_PRICE_DECIMALS as u8);
                 assert_eq!(bo.size_precision, OUTCOME_SIZE_DECIMALS as u8);
                 assert_eq!(bo.outcome.unwrap().as_str(), "Yes");
@@ -1601,9 +1630,9 @@ mod tests {
         let report = parse_fill_report(&fill, &yes, account_id, UnixNanos::default()).unwrap();
 
         // Zero-fee outcome fills resolve commission to the instrument's quote
-        // currency (USDC) rather than the side token, so downstream OrderFilled
+        // currency (USDH) rather than the side token, so downstream OrderFilled
         // events and persistence carry a registered currency.
-        assert_eq!(report.commission.currency.code.as_str(), "USDC");
+        assert_eq!(report.commission.currency.code.as_str(), "USDH");
         assert!(report.commission.as_decimal().is_zero());
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
@@ -1632,7 +1661,7 @@ mod tests {
 
         let currency = resolve_fee_currency("+880", Decimal::ZERO, &yes)
             .expect("zero-fee outcome side token must resolve to quote currency");
-        assert_eq!(currency.code.as_str(), "USDC");
+        assert_eq!(currency.code.as_str(), "USDH");
 
         let err = resolve_fee_currency("+880", dec!(0.01), &yes).unwrap_err();
         let err_msg = err.to_string();
@@ -1674,7 +1703,7 @@ mod tests {
         // return the instrument's quote currency on a zero-fee fill.
         let currency = resolve_fee_currency("+UNREGISTERED-TOKEN", Decimal::ZERO, &no)
             .expect("zero-fee fallback should succeed");
-        assert_eq!(currency.code.as_str(), "USDC");
+        assert_eq!(currency.code.as_str(), "USDH");
 
         let err = resolve_fee_currency("+UNREGISTERED-TOKEN", dec!(0.01), &no).unwrap_err();
         assert!(err.to_string().contains("non-zero fee"));
