@@ -957,6 +957,7 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
+        id: attest-wheels
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: 'dist/nautilus_trader-*.whl'
@@ -1025,6 +1026,21 @@ jobs:
             echo "Failed to publish wheels to PyPI after retries"
             exit 1
           fi
+
+      # Scorecard's Signed-Releases check detects signing only by release-asset
+      # filenames (.sig/.sigstore/.intoto.jsonl). Copy the existing Sigstore
+      # bundle next to each wheel so Scorecard sees coverage. Runs after PyPI
+      # publish (uv publish reads dist/) and is non-blocking on failure.
+      - name: Attach attestation siblings to GitHub release
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
+          BUNDLE_PATH: ${{ steps.attest-wheels.outputs.bundle-path }}
+        run: |
+          bash ./scripts/ci/publish-release-attestation-siblings.sh \
+            dist/nautilus_trader-*.whl
 
       - name: Fetch and delete artifacts for current run
         shell: bash
@@ -1141,6 +1157,7 @@ jobs:
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest sdist provenance
+        id: attest-sdist
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: 'dist/*.tar.gz'
@@ -1222,3 +1239,16 @@ jobs:
             echo "Failed to publish sdist to PyPI after retries"
             exit 1
           fi
+
+      # Mirrors the wheels job: copy the Sigstore bundle next to the sdist so
+      # Scorecard's filename-based Signed-Releases check sees coverage.
+      - name: Attach attestation sibling to GitHub release
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
+          BUNDLE_PATH: ${{ steps.attest-sdist.outputs.bundle-path }}
+        run: |
+          bash ./scripts/ci/publish-release-attestation-siblings.sh \
+            "$ASSET_PATH"
