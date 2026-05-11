@@ -22,7 +22,9 @@ import pytest
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.execution import HyperliquidExecutionClient
+from nautilus_trader.adapters.hyperliquid.execution import _is_transport_error
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import GenerateFillReports
@@ -521,6 +523,7 @@ async def test_submit_order_rejection(exec_client_builder, monkeypatch, instrume
     )
     await client._connect()
 
+    client.generate_order_rejected = MagicMock()
     http_client.submit_order.side_effect = Exception("Order rejected: Insufficient margin")
 
     order = LimitOrder(
@@ -549,8 +552,11 @@ async def test_submit_order_rejection(exec_client_builder, monkeypatch, instrume
         # Act - Should not raise, but handle gracefully
         await client._submit_order(command)
 
-        # Assert - Order rejection is handled internally
+        # Assert - Order rejection is emitted with the venue reason
         http_client.submit_order.assert_awaited_once()
+        client.generate_order_rejected.assert_called_once()
+        reason = client.generate_order_rejected.call_args.kwargs["reason"]
+        assert "Insufficient margin" in reason
     finally:
         await client._disconnect()
 
@@ -664,6 +670,7 @@ async def test_cancel_order_rejection(
     )
     await client._connect()
 
+    client.generate_order_cancel_rejected = MagicMock()
     http_client.cancel_order.side_effect = Exception("Order already filled")
 
     order = LimitOrder(
@@ -695,8 +702,11 @@ async def test_cancel_order_rejection(
         # Act - Should not raise
         await client._cancel_order(command)
 
-        # Assert - Rejection is handled internally
+        # Assert - Cancel rejection is emitted with the venue reason
         http_client.cancel_order.assert_awaited_once()
+        client.generate_order_cancel_rejected.assert_called_once()
+        reason = client.generate_order_cancel_rejected.call_args.kwargs["reason"]
+        assert "Order already filled" in reason
     finally:
         await client._disconnect()
 
@@ -2712,5 +2722,306 @@ async def test_buffered_fills_cleared_on_terminal_cleanup(
 
         # Assert
         assert cid.value not in client._buffered_fills
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected"),
+    [
+        (TimeoutError("connect"), True),
+        (OSError("connection reset"), True),
+        (ValueError("transport error: HTTP client error: refused"), True),
+        (ValueError("IO error: broken pipe"), True),
+        (ValueError("timeout"), True),
+        (ValueError("bad request: invalid payload"), False),
+        (ValueError("exchange error: insufficient margin"), False),
+        (ValueError("auth error: invalid signature"), False),
+        (Exception("Order already filled"), False),
+    ],
+)
+def test_is_transport_error_classifier(exc, expected):
+    assert _is_transport_error(exc) is expected
+
+
+def _make_limit_order(instrument, coid: str = "O-TXP-001") -> LimitOrder:
+    return LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId(coid),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00100"),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+
+def _accept_order(order: LimitOrder, voi: str) -> None:
+    order.apply(TestEventStubs.order_submitted(order=order))
+    order.apply(
+        TestEventStubs.order_accepted(order=order, venue_order_id=VenueOrderId(voi)),
+    )
+
+
+_TRANSPORT_EXC_CASES = [
+    pytest.param(TimeoutError("connect timeout"), id="native-timeout"),
+    pytest.param(
+        ValueError("transport error: HTTP client error: connection refused"),
+        id="pyo3-transport",
+    ),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exc", _TRANSPORT_EXC_CASES)
+async def test_submit_order_transport_failure_does_not_reject(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    exc,
+):
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    client.generate_order_rejected = MagicMock()
+    http_client.submit_order.side_effect = exc
+
+    order = _make_limit_order(instrument, coid="O-TXP-SUBMIT")
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+    )
+
+    try:
+        await client._submit_order(command)
+
+        http_client.submit_order.assert_awaited_once()
+        client.generate_order_rejected.assert_not_called()
+        assert order.client_order_id.value not in client._terminal_orders
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exc", _TRANSPORT_EXC_CASES)
+async def test_submit_order_list_transport_failure_does_not_reject(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    exc,
+):
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    client.generate_order_rejected = MagicMock()
+    http_client.submit_orders.side_effect = exc
+
+    order = _make_limit_order(instrument, coid="O-TXP-LIST")
+    order_list = OrderList(order_list_id=OrderListId("OL-TXP"), orders=[order])
+    command = SubmitOrderList(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order_list=order_list,
+        position_id=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        client_id=None,
+    )
+
+    try:
+        await client._submit_order_list(command)
+
+        http_client.submit_orders.assert_awaited_once()
+        client.generate_order_rejected.assert_not_called()
+        assert order.client_order_id.value not in client._terminal_orders
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exc", _TRANSPORT_EXC_CASES)
+async def test_cancel_order_transport_failure_does_not_reject(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+    exc,
+):
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    client.generate_order_cancel_rejected = MagicMock()
+    http_client.cancel_order.side_effect = exc
+
+    order = _make_limit_order(instrument, coid="O-TXP-CANCEL")
+    _accept_order(order, voi="9001")
+    cache.add_order(order, None)
+
+    command = CancelOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=order.venue_order_id,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        client_id=None,
+    )
+
+    try:
+        await client._cancel_order(command)
+
+        http_client.cancel_order.assert_awaited_once()
+        client.generate_order_cancel_rejected.assert_not_called()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exc", _TRANSPORT_EXC_CASES)
+async def test_cancel_all_orders_transport_failure_does_not_reject(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+    exc,
+):
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    client.generate_order_cancel_rejected = MagicMock()
+    http_client.cancel_order.side_effect = exc
+
+    order_a = _make_limit_order(instrument, coid="O-TXP-ALL-A")
+    order_b = _make_limit_order(instrument, coid="O-TXP-ALL-B")
+    _accept_order(order_a, voi="9101")
+    _accept_order(order_b, voi="9102")
+    cache.add_order(order_a, None)
+    cache.add_order(order_b, None)
+    cache.update_order(order_a)
+    cache.update_order(order_b)
+
+    command = CancelAllOrders(
+        trader_id=order_a.trader_id,
+        strategy_id=order_a.strategy_id,
+        instrument_id=instrument.id,
+        order_side=OrderSide.NO_ORDER_SIDE,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        client_id=None,
+    )
+
+    try:
+        await client._cancel_all_orders(command)
+
+        assert http_client.cancel_order.await_count == 2
+        client.generate_order_cancel_rejected.assert_not_called()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exc", _TRANSPORT_EXC_CASES)
+async def test_batch_cancel_orders_transport_failure_does_not_reject(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+    exc,
+):
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    client.generate_order_cancel_rejected = MagicMock()
+    http_client.cancel_order.side_effect = exc
+
+    order_a = _make_limit_order(instrument, coid="O-TXP-BATCH-A")
+    order_b = _make_limit_order(instrument, coid="O-TXP-BATCH-B")
+    _accept_order(order_a, voi="9201")
+    _accept_order(order_b, voi="9202")
+    cache.add_order(order_a, None)
+    cache.add_order(order_b, None)
+
+    cancels = [
+        CancelOrder(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            command_id=TestIdStubs.uuid(),
+            ts_init=0,
+            client_id=None,
+        )
+        for order in (order_a, order_b)
+    ]
+    command = BatchCancelOrders(
+        trader_id=order_a.trader_id,
+        strategy_id=order_a.strategy_id,
+        instrument_id=instrument.id,
+        cancels=cancels,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        client_id=None,
+    )
+
+    try:
+        await client._batch_cancel_orders(command)
+
+        assert http_client.cancel_order.await_count == 2
+        client.generate_order_cancel_rejected.assert_not_called()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exc", _TRANSPORT_EXC_CASES)
+async def test_modify_order_transport_failure_preserves_pending_state(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+    exc,
+):
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    client.generate_order_modify_rejected = MagicMock()
+    http_client.modify_order.side_effect = exc
+
+    order = _make_limit_order(instrument, coid="O-TXP-MODIFY")
+    _accept_order(order, voi="9301")
+    cache.add_order(order, None)
+
+    target_qty = Quantity.from_str("0.00200")
+    command = ModifyOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=order.venue_order_id,
+        quantity=target_qty,
+        price=Price.from_str("51000.0"),
+        trigger_price=None,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    try:
+        await client._modify_order(command)
+
+        http_client.modify_order.assert_awaited_once()
+        client.generate_order_modify_rejected.assert_not_called()
+        assert (
+            client._pending_modify_keys[order.client_order_id.value] == order.venue_order_id.value
+        )
+        assert client._pending_modify_target_qty[order.client_order_id.value] == target_qty
     finally:
         await client._disconnect()

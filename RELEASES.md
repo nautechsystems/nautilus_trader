@@ -123,12 +123,13 @@ Released on TBD (UTC).
 - Fixed dYdX Python `_request_instrument(s)` to pass the full `_handle_data_response` argument set
 - Fixed dYdX Python `_subscribe_order_book_depth` to log a graceful warning instead of raising `NotImplementedError`
 - Fixed Deribit `StopMarket` `OrderRejected` when the order response omits `filled_amount` (#3995), thanks for reporting @marco-rigoni
-- Fixed Deribit cross-margin balance overcounting where `margin_balance` per currency re-denominates the entire cross-collateral portfolio; cross-margin accounts now report `equity` for total and `available_withdrawal_funds` for free (#4009), thanks @filipmacek
+- Fixed Deribit cross-margin balance overcounting; now reports `equity` for total and `available_withdrawal_funds` for free (#4009), thanks @filipmacek
 - Fixed Deribit subscriptions silently dropping data for uncached instruments (#4035), thanks for reporting @linimin
 - Fixed Hyperliquid modify-after-partial-fill sending absolute total quantity to the cancel-replace leg, causing the engine to overfill the order (#3986)
 - Fixed Hyperliquid testnet orders rejected with "Builder fee has not been approved"; testnet orders now omit builder attribution to match the vault-order behavior (#3989)
 - Fixed Hyperliquid spurious `OrderCanceled` on concurrent modifies (Python and Rust) (#3971), thanks @M-Advis
 - Fixed Hyperliquid cancel-replace fill race emitting `OrderFilled` against stale local order state (Python and Rust) (#3972)
+- Fixed Hyperliquid emitting terminal rejections on submit, cancel, and modify transport failures; defers to WS reconciliation (Python and Rust), thanks for reporting @M-Advis
 - Fixed Interactive Brokers spread fill races (#3957), thanks @taozle
 - Fixed Interactive Brokers callback ordering races (#3976), thanks @faysou
 - Fixed Interactive Brokers market data farm reconnects not resubscribing feeds (#3968), thanks @onixenix

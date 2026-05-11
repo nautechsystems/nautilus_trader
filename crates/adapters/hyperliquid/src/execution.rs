@@ -980,8 +980,16 @@ impl ExecutionClient for HyperliquidExecutionClient {
                     }
                 }
                 Err(e) => {
-                    log::warn!("Order modification HTTP request failed: {e}");
-                    dispatch_state.clear_pending_modify(&client_order_id);
+                    if e.is_transport_error() {
+                        // Keep pending state so WS can reconcile target qty if the modify landed
+                        log::warn!(
+                            "Order modification transport failure for {client_order_id}: {e}; \
+                             awaiting WS reconciliation",
+                        );
+                    } else {
+                        log::warn!("Order modification HTTP request failed: {e}");
+                        dispatch_state.clear_pending_modify(&client_order_id);
+                    }
                 }
             }
 
@@ -1053,14 +1061,21 @@ impl ExecutionClient for HyperliquidExecutionClient {
                     }
                 }
                 Err(e) => {
-                    emitter.emit_order_cancel_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        venue_order_id,
-                        &format!("Cancel HTTP request failed: {e}"),
-                        clock.get_time_ns(),
-                    );
+                    if e.is_transport_error() {
+                        log::warn!(
+                            "Cancel transport failure for {client_order_id}: {e}; \
+                             awaiting WS reconciliation",
+                        );
+                    } else {
+                        emitter.emit_order_cancel_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            venue_order_id,
+                            &format!("Cancel HTTP request failed: {e}"),
+                            clock.get_time_ns(),
+                        );
+                    }
                 }
             }
 
@@ -1186,19 +1201,25 @@ impl ExecutionClient for HyperliquidExecutionClient {
                     }
                 }
                 Err(e) => {
-                    let reason = format!("Cancel-all HTTP request failed: {e}");
-                    log::warn!("{reason}");
-                    let ts = clock.get_time_ns();
-
-                    for entry in &entries {
-                        emitter.emit_order_cancel_rejected_event(
-                            entry.strategy_id,
-                            entry.instrument_id,
-                            entry.client_order_id,
-                            entry.venue_order_id,
-                            &reason,
-                            ts,
+                    if e.is_transport_error() {
+                        log::warn!(
+                            "Cancel-all transport failure: {e}; awaiting WS reconciliation",
                         );
+                    } else {
+                        let reason = format!("Cancel-all HTTP request failed: {e}");
+                        log::warn!("{reason}");
+                        let ts = clock.get_time_ns();
+
+                        for entry in &entries {
+                            emitter.emit_order_cancel_rejected_event(
+                                entry.strategy_id,
+                                entry.instrument_id,
+                                entry.client_order_id,
+                                entry.venue_order_id,
+                                &reason,
+                                ts,
+                            );
+                        }
                     }
                 }
             }
@@ -1314,19 +1335,25 @@ impl ExecutionClient for HyperliquidExecutionClient {
                     }
                 }
                 Err(e) => {
-                    let reason = format!("Batch cancel HTTP request failed: {e}");
-                    log::warn!("{reason}");
-                    let ts = clock.get_time_ns();
-
-                    for entry in &sent_entries {
-                        emitter.emit_order_cancel_rejected_event(
-                            entry.strategy_id,
-                            entry.instrument_id,
-                            entry.client_order_id,
-                            entry.venue_order_id,
-                            &reason,
-                            ts,
+                    if e.is_transport_error() {
+                        log::warn!(
+                            "Batch cancel transport failure: {e}; awaiting WS reconciliation",
                         );
+                    } else {
+                        let reason = format!("Batch cancel HTTP request failed: {e}");
+                        log::warn!("{reason}");
+                        let ts = clock.get_time_ns();
+
+                        for entry in &sent_entries {
+                            emitter.emit_order_cancel_rejected_event(
+                                entry.strategy_id,
+                                entry.instrument_id,
+                                entry.client_order_id,
+                                entry.venue_order_id,
+                                &reason,
+                                ts,
+                            );
+                        }
                     }
                 }
             }

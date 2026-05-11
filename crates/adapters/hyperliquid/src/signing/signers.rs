@@ -78,7 +78,7 @@ impl HyperliquidEip712Signer {
         let key_hex = key_hex.strip_prefix("0x").unwrap_or(key_hex);
 
         let signer = PrivateKeySigner::from_str(key_hex)
-            .map_err(|e| Error::transport(format!("Failed to create signer: {e}")))?;
+            .map_err(|e| Error::auth(format!("Failed to create signer: {e}")))?;
 
         let address = format!("{:#x}", signer.address());
 
@@ -100,7 +100,7 @@ impl HyperliquidEip712Signer {
         let signature = match request.action_type {
             HyperliquidActionType::L1 => self.sign_l1_action(request)?,
             HyperliquidActionType::UserSigned => {
-                return Err(Error::transport(
+                return Err(Error::bad_request(
                     "UserSigned signing is not implemented; all exchange actions use L1",
                 ));
             }
@@ -142,7 +142,7 @@ impl HyperliquidEip712Signer {
                 "Falling back to JSON Value msgpack serialization - this may cause hash mismatch!"
             );
             rmp_serde::to_vec_named(&request.action)
-                .map_err(|e| Error::transport(format!("Failed to serialize action: {e}")))?
+                .map_err(|e| Error::bad_request(format!("Failed to serialize action: {e}")))?
         };
 
         // Append timestamp as big-endian u64
@@ -153,7 +153,7 @@ impl HyperliquidEip712Signer {
             bytes.push(1); // vault flag
             let vault_hex = vault_addr.trim_start_matches("0x");
             let vault_bytes = hex::decode(vault_hex)
-                .map_err(|e| Error::transport(format!("Invalid vault address: {e}")))?;
+                .map_err(|e| Error::bad_request(format!("Invalid vault address: {e}")))?;
             bytes.extend_from_slice(&vault_bytes);
         } else {
             bytes.push(0); // no vault
@@ -168,7 +168,7 @@ impl HyperliquidEip712Signer {
         let signature = self
             .signer
             .sign_hash_sync(&hash_b256)
-            .map_err(|e| Error::transport(format!("Failed to sign hash: {e}")))?;
+            .map_err(|e| Error::auth(format!("Failed to sign hash: {e}")))?;
 
         let r = signature.r();
         let s = signature.s();
@@ -247,7 +247,11 @@ mod tests {
             vault_address: None,
         };
 
-        assert!(signer.sign(&request).is_err());
+        let err = signer.sign(&request).unwrap_err();
+        assert!(
+            matches!(err, Error::BadRequest(_)),
+            "expected BadRequest, was {err:?}"
+        );
     }
 
     #[rstest]
