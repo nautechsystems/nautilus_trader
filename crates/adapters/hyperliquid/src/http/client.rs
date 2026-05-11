@@ -2070,6 +2070,8 @@ impl HyperliquidHttpClient {
     /// When `instrument_id` resolves to a specific product type, the opposite
     /// product's endpoint is skipped to avoid wasted round trips and make
     /// filtered queries independent of the unused endpoint's availability.
+    /// HIP-4 outcomes live in `spotClearinghouseState`, so an outcome filter
+    /// is routed like a spot filter (perp leg skipped).
     ///
     /// For vault tokens (starting with "vntls:") that are not in the cache,
     /// synthetic instruments will be created automatically. Spot balances whose
@@ -2092,7 +2094,11 @@ impl HyperliquidHttpClient {
 
         let filter_product = instrument_id
             .and_then(|id| HyperliquidProductType::from_symbol(id.symbol.as_str()).ok());
-        let fetch_perp = filter_product != Some(HyperliquidProductType::Spot);
+
+        let fetch_perp = !matches!(
+            filter_product,
+            Some(HyperliquidProductType::Spot | HyperliquidProductType::Outcome)
+        );
         let fetch_spot = filter_product != Some(HyperliquidProductType::Perp);
 
         let mut reports = Vec::new();
@@ -2239,10 +2245,13 @@ impl HyperliquidHttpClient {
     /// Request spot position status reports for a user.
     ///
     /// Each non-zero spot balance is reported as a Long position against its
-    /// `{BASE}-{QUOTE}-SPOT` instrument. Balances whose base token has no
-    /// matching instrument in the cache are skipped with a debug log (callers
-    /// should ensure [`request_instruments`](Self::request_instruments) has run
-    /// first).
+    /// `{BASE}-{QUOTE}-SPOT` instrument. HIP-4 outcome side tokens arrive on
+    /// this same endpoint with `coin` set to the `+<encoding>` token form;
+    /// those balances are resolved against the matching Outcome instrument so
+    /// outcome holdings surface as positions through the standard reconcile
+    /// path. Balances whose base token has no matching instrument in the
+    /// cache are skipped with a debug log (callers should ensure
+    /// [`request_instruments`](Self::request_instruments) has run first).
     ///
     /// # Errors
     ///
@@ -2278,8 +2287,12 @@ impl HyperliquidHttpClient {
                 continue;
             }
 
-            let instrument = match self
-                .get_or_create_instrument(&balance.coin, Some(HyperliquidProductType::Spot))
+            let product_type = match HyperliquidProductType::from_symbol(balance.coin.as_str()) {
+                Ok(HyperliquidProductType::Outcome) => HyperliquidProductType::Outcome,
+                _ => HyperliquidProductType::Spot,
+            };
+
+            let instrument = match self.get_or_create_instrument(&balance.coin, Some(product_type))
             {
                 Some(inst) => inst,
                 None => continue,

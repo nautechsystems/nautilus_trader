@@ -123,7 +123,6 @@ impl HyperliquidDataClient {
             )?
         };
 
-        // Apply URL overrides from config (used for testing with mock servers)
         if let Some(url) = &config.base_url_http {
             http_client.set_base_info_url(url.clone());
         }
