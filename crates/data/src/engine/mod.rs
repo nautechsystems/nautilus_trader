@@ -137,6 +137,8 @@ pub struct DataEngine {
     book_deltas_subs: AHashSet<InstrumentId>,
     book_depth10_subs: AHashSet<InstrumentId>,
     book_updaters: AHashMap<InstrumentId, Rc<BookUpdater>>,
+    book_deltas_composite_expansions: AHashMap<InstrumentId, Vec<InstrumentId>>,
+    book_depth10_composite_expansions: AHashMap<InstrumentId, Vec<InstrumentId>>,
     book_snapshotters: AHashMap<NonZeroUsize, Rc<BookSnapshotter>>,
     bar_aggregators: IndexMap<BarType, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarType, Vec<BarAggregatorSubscription>>,
@@ -194,6 +196,8 @@ impl DataEngine {
             book_deltas_subs: AHashSet::new(),
             book_depth10_subs: AHashSet::new(),
             book_updaters: AHashMap::new(),
+            book_deltas_composite_expansions: AHashMap::new(),
+            book_depth10_composite_expansions: AHashMap::new(),
             book_snapshotters: AHashMap::new(),
             bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
@@ -486,7 +490,9 @@ impl DataEngine {
         self.pending_option_chain_requests.clear();
 
         // Unsubscribe BookUpdaters before dropping; otherwise the typed router
-        // keeps dispatching to abandoned updaters
+        // keeps dispatching to abandoned updaters. `book_updaters` is keyed by
+        // per-underlying id, so the literal per-underlying topic is the same
+        // string the subscribe path used.
         let book_updaters: Vec<(InstrumentId, Rc<BookUpdater>)> =
             self.book_updaters.drain().collect();
         for (instrument_id, updater) in book_updaters {
@@ -497,6 +503,8 @@ impl DataEngine {
             msgbus::unsubscribe_book_deltas(deltas_topic.into(), &deltas_handler);
             msgbus::unsubscribe_book_depth10(depth_topic.into(), &depth_handler);
         }
+        self.book_deltas_composite_expansions.clear();
+        self.book_depth10_composite_expansions.clear();
 
         self.book_deltas_subs.clear();
         self.book_depth10_subs.clear();
@@ -1447,7 +1455,11 @@ impl DataEngine {
         let had_snapshots = self.has_book_snapshot_subscriptions(&cmd.instrument_id);
         let inserted = self.increment_book_snapshot_subscription(cmd);
 
-        if inserted && !had_snapshots && !self.book_deltas_subs.contains(&cmd.instrument_id) {
+        if inserted && !had_snapshots {
+            // Always run setup so the depth10 handler is registered alongside
+            // the deltas handler when this is the first snapshot for the id;
+            // setup_book_updater is idempotent and the typed router dedups
+            // overlapping subscribes.
             self.setup_book_updater(&cmd.instrument_id, cmd.book_type, false)?;
         }
 
@@ -1796,30 +1808,74 @@ impl DataEngine {
     }
 
     fn maintain_book_updater(&mut self, instrument_id: &InstrumentId) {
-        let Some(updater) = self.book_updaters.get(instrument_id) else {
-            return;
+        // Determine which per-underlying books this subscription touched, then
+        // for each book check whether any other active subscription still
+        // wants it before unsubscribing/dropping the shared BookUpdater.
+        let target_ids: Vec<InstrumentId> = if instrument_id.symbol.is_composite() {
+            let mut set: AHashSet<InstrumentId> = AHashSet::new();
+
+            if let Some(expansion) = self.book_deltas_composite_expansions.get(instrument_id) {
+                set.extend(expansion.iter().copied());
+            }
+
+            if let Some(expansion) = self.book_depth10_composite_expansions.get(instrument_id) {
+                set.extend(expansion.iter().copied());
+            }
+
+            if set.is_empty() {
+                return;
+            }
+
+            set.into_iter().collect()
+        } else {
+            vec![*instrument_id]
         };
 
-        let has_deltas = self.book_deltas_subs.contains(instrument_id);
-        let has_depth10 = self.book_depth10_subs.contains(instrument_id);
-        let has_snapshots = self.has_book_snapshot_subscriptions(instrument_id);
+        if instrument_id.symbol.is_composite() {
+            // Each composite kind (deltas / depth10 / snapshots) writes its own
+            // memo via setup_book_updater. Keep each memo alive while any
+            // sibling subscription that drives the same handler kind remains
+            // active for this composite id.
+            let composite_still_needs_deltas = self.book_deltas_subs.contains(instrument_id)
+                || self.book_depth10_subs.contains(instrument_id)
+                || self.has_book_snapshot_subscriptions(instrument_id);
+            let composite_still_needs_depth10 = self.book_depth10_subs.contains(instrument_id)
+                || self.has_book_snapshot_subscriptions(instrument_id);
 
-        let deltas_topic = switchboard::get_book_deltas_topic(*instrument_id);
-        let depth_topic = switchboard::get_book_depth10_topic(*instrument_id);
-        let deltas_handler: TypedHandler<OrderBookDeltas> = TypedHandler::new(updater.clone());
-        let depth_handler: TypedHandler<OrderBookDepth10> = TypedHandler::new(updater.clone());
+            if !composite_still_needs_deltas {
+                self.book_deltas_composite_expansions.remove(instrument_id);
+            }
 
-        if !has_deltas && !has_snapshots {
-            msgbus::unsubscribe_book_deltas(deltas_topic.into(), &deltas_handler);
+            if !composite_still_needs_depth10 {
+                self.book_depth10_composite_expansions.remove(instrument_id);
+            }
         }
 
-        if !has_depth10 {
-            msgbus::unsubscribe_book_depth10(depth_topic.into(), &depth_handler);
-        }
+        for target_id in &target_ids {
+            let wants_deltas = self.is_underlying_wanted_for_deltas(target_id);
+            let wants_depth10 = self.is_underlying_wanted_for_depth10(target_id);
 
-        if !has_deltas && !has_depth10 && !has_snapshots {
-            self.book_updaters.remove(instrument_id);
-            log::debug!("Removed BookUpdater for instrument ID {instrument_id}");
+            let Some(updater) = self.book_updaters.get(target_id).cloned() else {
+                continue;
+            };
+
+            let deltas_handler: TypedHandler<OrderBookDeltas> = TypedHandler::new(updater.clone());
+            let depth_handler: TypedHandler<OrderBookDepth10> = TypedHandler::new(updater);
+
+            if !wants_deltas {
+                let topic = switchboard::get_book_deltas_topic(*target_id);
+                msgbus::unsubscribe_book_deltas(topic.into(), &deltas_handler);
+            }
+
+            if !wants_depth10 {
+                let topic = switchboard::get_book_depth10_topic(*target_id);
+                msgbus::unsubscribe_book_depth10(topic.into(), &depth_handler);
+            }
+
+            if !wants_deltas && !wants_depth10 {
+                self.book_updaters.remove(target_id);
+                log::debug!("Removed BookUpdater for instrument ID {target_id}");
+            }
         }
     }
 
@@ -2061,60 +2117,109 @@ impl DataEngine {
         book_type: BookType,
         only_deltas: bool,
     ) -> anyhow::Result<()> {
-        let mut cache = self.cache.borrow_mut();
-
-        if instrument_id.symbol.is_composite() {
-            // Composite root expands to one book per underlying. The msgbus
-            // subscription below uses the literal composite topic, so
-            // per-underlying updates only reach these books once
-            // `get_book_*_topic` wildcards composites via `symbol.topic()`.
+        // One BookUpdater per cache book (keyed by per-underlying id), shared
+        // across overlapping subscriptions. Composite subs are expanded into
+        // their underlyings here; the expansion is memoized so unsubscribe
+        // mirrors the exact set even if the cache composition changes later.
+        let target_ids: Vec<InstrumentId> = if instrument_id.symbol.is_composite() {
             let venue = instrument_id.venue;
             let root = Ustr::from(instrument_id.symbol.root());
-            let underlying_ids: Vec<InstrumentId> = cache
+            self.cache
+                .borrow()
                 .instruments(&venue, Some(&root))
                 .iter()
                 .map(|i| i.id())
-                .collect();
+                .collect()
+        } else {
+            vec![*instrument_id]
+        };
 
-            for underlying_id in underlying_ids {
-                if !cache.has_order_book(&underlying_id) {
-                    let book = OrderBook::new(underlying_id, book_type);
+        if instrument_id.symbol.is_composite() {
+            self.book_deltas_composite_expansions
+                .insert(*instrument_id, target_ids.clone());
+
+            if !only_deltas {
+                self.book_depth10_composite_expansions
+                    .insert(*instrument_id, target_ids.clone());
+            }
+        }
+
+        {
+            let mut cache = self.cache.borrow_mut();
+            for target_id in &target_ids {
+                if !cache.has_order_book(target_id) {
+                    let book = OrderBook::new(*target_id, book_type);
                     log::debug!("Created {book}");
                     cache.add_order_book(book)?;
                 }
             }
-        } else if !cache.has_order_book(instrument_id) {
-            let book = OrderBook::new(*instrument_id, book_type);
-            log::debug!("Created {book}");
-            cache.add_order_book(book)?;
         }
 
-        // Reuse existing BookUpdater or create a new one
-        let updater = self
-            .book_updaters
-            .entry(*instrument_id)
-            .or_insert_with(|| {
-                Rc::new(BookUpdater::new(
-                    instrument_id,
-                    self.cache.clone(),
-                    self.config.emit_quotes_from_book,
-                ))
-            })
-            .clone();
+        for target_id in &target_ids {
+            let updater = self
+                .book_updaters
+                .entry(*target_id)
+                .or_insert_with(|| {
+                    Rc::new(BookUpdater::new(
+                        target_id,
+                        self.cache.clone(),
+                        self.config.emit_quotes_from_book,
+                    ))
+                })
+                .clone();
 
-        // Subscribe to deltas (typed router handles duplicates)
-        let topic = switchboard::get_book_deltas_topic(*instrument_id);
-        let deltas_handler = TypedHandler::new(updater.clone());
-        msgbus::subscribe_book_deltas(topic.into(), deltas_handler, Some(self.msgbus_priority));
+            // Subscribe handler to the literal per-underlying topic. The
+            // typed router dedups (pattern, handler_id) pairs, so overlapping
+            // composite + exact subscriptions register exactly one handler
+            // entry per book and a single delta apply per publish.
+            let deltas_topic = switchboard::get_book_deltas_topic(*target_id);
+            let deltas_handler = TypedHandler::new(updater.clone());
+            msgbus::subscribe_book_deltas(
+                deltas_topic.into(),
+                deltas_handler,
+                Some(self.msgbus_priority),
+            );
 
-        // Subscribe to depth10 if not only_deltas
-        if !only_deltas {
-            let topic = switchboard::get_book_depth10_topic(*instrument_id);
-            let depth_handler = TypedHandler::new(updater);
-            msgbus::subscribe_book_depth10(topic.into(), depth_handler, Some(self.msgbus_priority));
+            if !only_deltas {
+                let depth_topic = switchboard::get_book_depth10_topic(*target_id);
+                let depth_handler = TypedHandler::new(updater);
+                msgbus::subscribe_book_depth10(
+                    depth_topic.into(),
+                    depth_handler,
+                    Some(self.msgbus_priority),
+                );
+            }
         }
 
         Ok(())
+    }
+
+    fn is_underlying_wanted_for_deltas(&self, target_id: &InstrumentId) -> bool {
+        // Any of {deltas, depth10, snapshots} subs causes setup_book_updater to
+        // subscribe the deltas handler (depth10/snapshots use only_deltas=false),
+        // so all three keep the per-underlying deltas handler alive.
+        if self.book_deltas_subs.contains(target_id)
+            || self.book_depth10_subs.contains(target_id)
+            || self.has_book_snapshot_subscriptions(target_id)
+        {
+            return true;
+        }
+        self.book_deltas_composite_expansions
+            .values()
+            .any(|expansion| expansion.contains(target_id))
+    }
+
+    fn is_underlying_wanted_for_depth10(&self, target_id: &InstrumentId) -> bool {
+        // Snapshots use only_deltas=false, so they drive the depth10 handler
+        // as well as the deltas handler.
+        if self.book_depth10_subs.contains(target_id)
+            || self.has_book_snapshot_subscriptions(target_id)
+        {
+            return true;
+        }
+        self.book_depth10_composite_expansions
+            .values()
+            .any(|expansion| expansion.contains(target_id))
     }
 
     fn create_bar_aggregator(

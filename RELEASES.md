@@ -107,6 +107,8 @@ Released on TBD (UTC).
 - Fixed `DataEngine` to route subscribe/unsubscribe commands to the `BACKTEST` client when registered (Rust)
 - Fixed `DataEngine` to apply `validate_data_sequence` to bars emitted by internal aggregators (Rust)
 - Fixed `emit_quotes_from_book` and `emit_quotes_from_book_depths` config flags being silently ignored (Rust)
+- Fixed `DataEngine` composite book subscriptions not routing per-underlying deltas/depth to per-underlying books (Rust)
+- Fixed `DataEngine` composite + exact book subscription overlap double-applying to the shared cache book (Rust)
 - Fixed Binance Futures reduce-only orders not reconciling venue-side quantity reductions (Python and Rust) (#3983), thanks for reporting @KaizynX
 - Fixed Binance WebSocket pong unhandled `RuntimeError` blocking reconnect after server close (#4020), thanks for reporting @M-at-ti-a
 - Fixed Betfair Rust adapter dropped fills on reconnect by resyncing the fill tracker from cache

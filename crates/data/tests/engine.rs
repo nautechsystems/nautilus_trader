@@ -991,6 +991,706 @@ fn test_subscribe_book_deltas_composite_creates_books_per_underlying(
 }
 
 #[rstest]
+fn test_composite_book_deltas_route_to_per_underlying_book(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let esz1_id = esz1.id();
+    let esh2_id = esh2.id();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+    }
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        composite_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    )));
+    data_engine.execute(sub);
+
+    let delta = OrderBookDeltaTestBuilder::new(esz1_id).build();
+    data_engine.process_data(Data::Delta(delta));
+
+    let cache_view = cache.borrow();
+    let esz1_book = cache_view
+        .order_book(&esz1_id)
+        .expect("ESZ1 book should exist after composite subscribe");
+    assert_eq!(
+        esz1_book.update_count, 1,
+        "per-underlying delta must reach the ESZ1 book via the composite wildcard subscription",
+    );
+
+    let esh2_book = cache_view
+        .order_book(&esh2_id)
+        .expect("ESH2 book should exist after composite subscribe");
+    assert_eq!(
+        esh2_book.update_count, 0,
+        "ESH2 book must remain untouched when only ESZ1 deltas are processed",
+    );
+}
+
+#[rstest]
+fn test_composite_book_deltas_route_each_underlying_independently(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let esz1_id = esz1.id();
+    let esh2_id = esh2.id();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+    }
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        composite_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    )));
+    data_engine.execute(sub);
+
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esh2_id).build()));
+
+    let cache_view = cache.borrow();
+    assert_eq!(
+        cache_view.order_book(&esz1_id).unwrap().update_count,
+        1,
+        "ESZ1 book must reflect exactly its own delta",
+    );
+    assert_eq!(
+        cache_view.order_book(&esh2_id).unwrap().update_count,
+        1,
+        "ESH2 book must reflect exactly its own delta",
+    );
+}
+
+#[rstest]
+fn test_reset_unsubscribes_composite_book_deltas(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esz1_id = esz1.id();
+
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(esz1))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        composite_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    )));
+    data_engine.execute(sub);
+
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    let pre_reset_count = cache.borrow().order_book(&esz1_id).unwrap().update_count;
+    assert_eq!(pre_reset_count, 1);
+
+    data_engine.reset();
+
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    let post_reset_count = cache.borrow().order_book(&esz1_id).unwrap().update_count;
+    assert_eq!(
+        post_reset_count, pre_reset_count,
+        "composite BookUpdater must be unsubscribed on reset; new deltas must not mutate the book",
+    );
+}
+
+#[rstest]
+fn test_composite_and_exact_book_deltas_apply_once_per_publish(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let esz1_id = esz1.id();
+    let esh2_id = esh2.id();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+    }
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            composite_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            esz1_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+
+    let cache_view = cache.borrow();
+    assert_eq!(
+        cache_view.order_book(&esz1_id).unwrap().update_count,
+        1,
+        "ESZ1 must apply each delta exactly once even when both composite and exact subs are active",
+    );
+    assert_eq!(
+        cache_view.order_book(&esh2_id).unwrap().update_count,
+        0,
+        "ESH2 book stays untouched when only ESZ1 deltas are processed",
+    );
+}
+
+#[rstest]
+fn test_unsubscribe_composite_keeps_overlapping_exact_alive(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let esz1_id = esz1.id();
+    let esh2_id = esh2.id();
+
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+    }
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            composite_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            esz1_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(
+        UnsubscribeBookDeltas::new(
+            composite_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esh2_id).build()));
+
+    let cache_view = cache.borrow();
+    assert_eq!(
+        cache_view.order_book(&esz1_id).unwrap().update_count,
+        1,
+        "ESZ1 BookUpdater must remain alive (exact sub still active) after composite unsubscribe",
+    );
+    assert_eq!(
+        cache_view.order_book(&esh2_id).unwrap().update_count,
+        0,
+        "ESH2 BookUpdater must be torn down (no remaining sub) after composite unsubscribe",
+    );
+}
+
+#[rstest]
+fn test_unsubscribe_composite_deltas_keeps_composite_depth10_alive(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esz1_id = esz1.id();
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(esz1))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            composite_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDepth10(
+        SubscribeBookDepth10::new(
+            composite_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(
+        UnsubscribeBookDeltas::new(
+            composite_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    let mut depth = stub_depth10();
+    depth.instrument_id = esz1_id;
+    data_engine.process_data(Data::Depth10(Box::new(depth)));
+
+    let cache_view = cache.borrow();
+    let esz1_book = cache_view
+        .order_book(&esz1_id)
+        .expect("ESZ1 book must exist while composite depth10 sub is active");
+    assert!(
+        esz1_book.update_count >= 1,
+        "depth10 publish must reach the per-underlying book; \
+         composite depth10 sub kept alive after deltas unsubscribed",
+    );
+}
+
+#[rstest]
+fn test_unsubscribe_composite_deltas_keeps_exact_depth10_deltas_handler_alive(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esh2 = make_es_future("ESH2.XCME", "ESH2");
+    let esz1_id = esz1.id();
+    {
+        let mut cache_mut = cache.borrow_mut();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esz1))
+            .unwrap();
+        cache_mut
+            .add_instrument(InstrumentAny::FuturesContract(esh2))
+            .unwrap();
+    }
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDepth10(
+        SubscribeBookDepth10::new(
+            esz1_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            composite_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(
+        UnsubscribeBookDeltas::new(
+            composite_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+
+    let cache_view = cache.borrow();
+    assert_eq!(
+        cache_view.order_book(&esz1_id).unwrap().update_count,
+        1,
+        "exact depth10 sub keeps the per-underlying deltas handler alive after composite deltas unsubscribed",
+    );
+}
+
+#[rstest]
+fn test_snapshot_after_deltas_keeps_depth10_handler_alive(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let esz1 = make_es_future("ESZ1.XCME", "ESZ1");
+    let esz1_id = esz1.id();
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(esz1))
+        .unwrap();
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            esz1_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookSnapshots(
+        SubscribeBookSnapshots::new(
+            esz1_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            NonZeroUsize::new(1000).unwrap(),
+            None,
+            None,
+        ),
+    )));
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(
+        UnsubscribeBookDeltas::new(
+            esz1_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    let mut depth = stub_depth10();
+    depth.instrument_id = esz1_id;
+    data_engine.process_data(Data::Depth10(Box::new(depth)));
+
+    let cache_view = cache.borrow();
+    let book = cache_view
+        .order_book(&esz1_id)
+        .expect("ESZ1 book must exist while snapshot sub is active");
+    assert!(
+        book.update_count >= 1,
+        "depth10 publish must reach the per-underlying book; \
+         deltas-then-snapshots path now registers the depth10 handler",
+    );
+}
+
+#[rstest]
+fn test_subscribe_book_deltas_composite_with_no_underlyings_is_noop(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let venue = Venue::new("XCME");
+
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let test_clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+    register_mock_client(
+        test_clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let composite_id = InstrumentId::from("ES.FUT.XCME");
+    let sub = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        composite_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    )));
+    data_engine.execute(sub);
+
+    let cache_view = cache.borrow();
+    assert!(
+        cache_view.order_book(&composite_id).is_none(),
+        "no book should be created for the composite id itself",
+    );
+    assert!(
+        cache_view
+            .instruments(&venue, Some(&Ustr::from("ES")))
+            .is_empty(),
+        "no underlying instruments should exist for the composite root",
+    );
+}
+
+#[rstest]
 fn test_backtest_client_overrides_subscribe_routing(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
