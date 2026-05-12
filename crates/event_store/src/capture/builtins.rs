@@ -34,11 +34,20 @@
 use std::collections::HashSet;
 
 use bytes::Bytes;
-use nautilus_common::messages::execution::{
-    BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport, ModifyOrder, QueryAccount,
-    QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+use nautilus_common::messages::{
+    data::{
+        BarsResponse, BookResponse, CustomDataResponse, DataResponse, ForwardPricesResponse,
+        FundingRatesResponse, InstrumentResponse, InstrumentsResponse, QuotesResponse,
+        TradesResponse,
+    },
+    execution::{
+        BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport, ModifyOrder,
+        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+    },
 };
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
+    data::DataType,
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
         OrderEmulated, OrderEventAny, OrderExpired, OrderFilled, OrderInitialized,
@@ -46,6 +55,7 @@ use nautilus_model::{
         OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged,
         PositionClosed, PositionEvent, PositionOpened,
     },
+    identifiers::{ClientId, InstrumentId, Venue},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 use serde::Serialize;
@@ -130,6 +140,25 @@ pub const PAYLOAD_TYPE_POSITION_ADJUSTED: &str = "PositionAdjusted";
 /// The canonical `payload_type` tag for [`AccountState`].
 pub const PAYLOAD_TYPE_ACCOUNT_STATE: &str = "AccountState";
 
+/// The canonical `payload_type` tag for [`CustomDataResponse`].
+pub const PAYLOAD_TYPE_CUSTOM_DATA_RESPONSE: &str = "CustomDataResponse";
+/// The canonical `payload_type` tag for [`InstrumentResponse`].
+pub const PAYLOAD_TYPE_INSTRUMENT_RESPONSE: &str = "InstrumentResponse";
+/// The canonical `payload_type` tag for [`InstrumentsResponse`].
+pub const PAYLOAD_TYPE_INSTRUMENTS_RESPONSE: &str = "InstrumentsResponse";
+/// The canonical `payload_type` tag for [`BookResponse`].
+pub const PAYLOAD_TYPE_BOOK_RESPONSE: &str = "BookResponse";
+/// The canonical `payload_type` tag for [`QuotesResponse`].
+pub const PAYLOAD_TYPE_QUOTES_RESPONSE: &str = "QuotesResponse";
+/// The canonical `payload_type` tag for [`TradesResponse`].
+pub const PAYLOAD_TYPE_TRADES_RESPONSE: &str = "TradesResponse";
+/// The canonical `payload_type` tag for [`FundingRatesResponse`].
+pub const PAYLOAD_TYPE_FUNDING_RATES_RESPONSE: &str = "FundingRatesResponse";
+/// The canonical `payload_type` tag for [`ForwardPricesResponse`].
+pub const PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE: &str = "ForwardPricesResponse";
+/// The canonical `payload_type` tag for [`BarsResponse`].
+pub const PAYLOAD_TYPE_BARS_RESPONSE: &str = "BarsResponse";
+
 // Wrapper-level fallback tag reached only when a dispatcher returns an
 // `EncodedPayload` without an override. Every current variant stamps its own
 // inner tag, so this is a sentinel for a future variant that forgets the
@@ -141,6 +170,8 @@ const PAYLOAD_TYPE_ORDER_EVENT_ANY: &str = "OrderEventAny";
 const PAYLOAD_TYPE_EXECUTION_REPORT: &str = "ExecutionReport";
 
 const PAYLOAD_TYPE_POSITION_EVENT: &str = "PositionEvent";
+
+const PAYLOAD_TYPE_DATA_RESPONSE: &str = "DataResponse";
 
 /// Returns an [`EncoderRegistry`] preloaded with the default encoders.
 ///
@@ -159,10 +190,11 @@ pub fn default_registry() -> EncoderRegistry {
 /// type directly (the kernel's `RunStarted` path and a few internal tests). The envelope
 /// registrations are what production bus traffic actually hits: `send_trading_command`
 /// reaches the tap as [`TradingCommand`], `publish_order_event` reaches it as
-/// [`OrderEventAny`], `send_execution_report` reaches it as [`ExecutionReport`], and
-/// `publish_position_event` reaches it as [`PositionEvent`]. Without these wrapper-aware
-/// dispatchers the tap looks up the wrapper's [`std::any::TypeId`], finds no encoder,
-/// and silently drops the capture.
+/// [`OrderEventAny`], `send_execution_report` reaches it as [`ExecutionReport`],
+/// `publish_position_event` reaches it as [`PositionEvent`], and `send_data_response`
+/// reaches it as [`DataResponse`]. Without these wrapper-aware dispatchers the tap looks
+/// up the wrapper's [`std::any::TypeId`], finds no encoder, and silently drops the
+/// capture.
 ///
 /// [`AccountState`] is registered as a bare type: `publish_account_state` and
 /// `send_account_state` both reach the tap as the same `AccountState` `TypeId`, so a
@@ -195,6 +227,10 @@ pub fn register_default(registry: &mut EncoderRegistry) {
     registry.register::<AccountState, _>(
         payload_type(PAYLOAD_TYPE_ACCOUNT_STATE),
         encode_account_state,
+    );
+    registry.register::<DataResponse, _>(
+        payload_type(PAYLOAD_TYPE_DATA_RESPONSE),
+        encode_data_response,
     );
 }
 
@@ -861,19 +897,202 @@ pub fn encode_account_state(message: &AccountState) -> Result<EncodedPayload, En
     Ok(EncodedPayload::new(payload, Vec::new()))
 }
 
+/// Encodes a [`DataResponse`] envelope by dispatching on the variant.
+///
+/// `send_data_response` hands the bus tap a [`DataResponse`] wrapper, so the tap
+/// dispatches by the wrapper's [`std::any::TypeId`] and the inner variants never reach
+/// their bare-type encoders. The dispatcher unwraps each variant, encodes the inner
+/// struct, and stamps the inner-variant tag so forensics scans see entries identical
+/// to a bare-type capture path.
+///
+/// Each variant carries a `correlation_id` (UUID4) pairing the response with the
+/// originating `RequestCommand::request_id`. [`IndexKind`] has no matching variant
+/// today, so every variant emits zero sidecar indices, mirroring the
+/// [`PositionStatusReport`] and [`AccountState`] precedents.
+///
+/// The [`DataResponse::Data`] and [`DataResponse::Book`] variants carry payloads that
+/// are not directly serializable: [`CustomDataResponse`] holds an `Arc<dyn Any>` and
+/// [`BookResponse`] holds a [`nautilus_model::orderbook::OrderBook`] without serde
+/// derives. The dispatcher serializes the audit-relevant metadata for those two
+/// variants via local borrowed wrapper structs (the `encode_order_with_fills`
+/// precedent) and omits the opaque payload. `BookResponse` is state-affecting on
+/// the data engine path (`handle_book_response` clones the book into the cache); a
+/// follow-up that adds serde to `OrderBook`/`BookLadder` can replace the metadata
+/// wrapper with full payload capture without changing the dispatcher contract.
+///
+/// # Errors
+///
+/// Returns the inner encoder's [`EncodeError`] when MessagePack rejects the inner
+/// payload.
+pub fn encode_data_response(response: &DataResponse) -> Result<EncodedPayload, EncodeError> {
+    match response {
+        DataResponse::Data(resp) => encode_custom_data_response(resp),
+        DataResponse::Instrument(resp) => encode_instrument_response(resp),
+        DataResponse::Instruments(resp) => encode_instruments_response(resp),
+        DataResponse::Book(resp) => encode_book_response(resp),
+        DataResponse::Quotes(resp) => encode_quotes_response(resp),
+        DataResponse::Trades(resp) => encode_trades_response(resp),
+        DataResponse::FundingRates(resp) => encode_funding_rates_response(resp),
+        DataResponse::ForwardPrices(resp) => encode_forward_prices_response(resp),
+        DataResponse::Bars(resp) => encode_bars_response(resp),
+    }
+}
+
+fn encode_custom_data_response(
+    response: &CustomDataResponse,
+) -> Result<EncodedPayload, EncodeError> {
+    // `data: Arc<dyn Any + Send + Sync>` is type-erased at the dispatcher; the
+    // payload is captured via a metadata-only wrapper so the audit entry pairs
+    // with the originating request without depending on per-registration
+    // serializers for the inner Any payload.
+    #[derive(Serialize)]
+    struct CustomDataResponseRef<'a> {
+        correlation_id: &'a UUID4,
+        client_id: &'a ClientId,
+        venue: &'a Option<Venue>,
+        data_type: &'a DataType,
+        start: &'a Option<UnixNanos>,
+        end: &'a Option<UnixNanos>,
+        ts_init: &'a UnixNanos,
+        params: &'a Option<Params>,
+    }
+
+    let payload = encode_serde(&CustomDataResponseRef {
+        correlation_id: &response.correlation_id,
+        client_id: &response.client_id,
+        venue: &response.venue,
+        data_type: &response.data_type,
+        start: &response.start,
+        end: &response.end,
+        ts_init: &response.ts_init,
+        params: &response.params,
+    })?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_CUSTOM_DATA_RESPONSE),
+        payload,
+        Vec::new(),
+    ))
+}
+
+fn encode_instrument_response(
+    response: &InstrumentResponse,
+) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(response)?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_INSTRUMENT_RESPONSE),
+        payload,
+        Vec::new(),
+    ))
+}
+
+fn encode_instruments_response(
+    response: &InstrumentsResponse,
+) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(response)?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_INSTRUMENTS_RESPONSE),
+        payload,
+        Vec::new(),
+    ))
+}
+
+fn encode_book_response(response: &BookResponse) -> Result<EncodedPayload, EncodeError> {
+    // `data: OrderBook` is not serde-derived today (BookLadder/BookLevel chain), and
+    // the full book state is rarely the audit value at this level. Capture
+    // response-level metadata via a borrowed wrapper so the entry pairs with the
+    // originating request.
+    #[derive(Serialize)]
+    struct BookResponseRef<'a> {
+        correlation_id: &'a UUID4,
+        client_id: &'a ClientId,
+        instrument_id: &'a InstrumentId,
+        start: &'a Option<UnixNanos>,
+        end: &'a Option<UnixNanos>,
+        ts_init: &'a UnixNanos,
+        params: &'a Option<Params>,
+    }
+
+    let payload = encode_serde(&BookResponseRef {
+        correlation_id: &response.correlation_id,
+        client_id: &response.client_id,
+        instrument_id: &response.instrument_id,
+        start: &response.start,
+        end: &response.end,
+        ts_init: &response.ts_init,
+        params: &response.params,
+    })?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_BOOK_RESPONSE),
+        payload,
+        Vec::new(),
+    ))
+}
+
+fn encode_quotes_response(response: &QuotesResponse) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(response)?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_QUOTES_RESPONSE),
+        payload,
+        Vec::new(),
+    ))
+}
+
+fn encode_trades_response(response: &TradesResponse) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(response)?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_TRADES_RESPONSE),
+        payload,
+        Vec::new(),
+    ))
+}
+
+fn encode_funding_rates_response(
+    response: &FundingRatesResponse,
+) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(response)?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_FUNDING_RATES_RESPONSE),
+        payload,
+        Vec::new(),
+    ))
+}
+
+fn encode_forward_prices_response(
+    response: &ForwardPricesResponse,
+) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(response)?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE),
+        payload,
+        Vec::new(),
+    ))
+}
+
+fn encode_bars_response(response: &BarsResponse) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(response)?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_BARS_RESPONSE),
+        payload,
+        Vec::new(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
+        data::{Bar, BarType},
         enums::{
-            AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionAdjustmentType,
-            PositionSide, PositionSideSpecified, TimeInForce,
+            AccountType, BookType, LiquiditySide, OrderSide, OrderStatus, OrderType,
+            PositionAdjustmentType, PositionSide, PositionSideSpecified, TimeInForce,
         },
         events::{PositionAdjusted, PositionChanged, PositionClosed, PositionOpened},
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
             TradeId, TraderId, Venue, VenueOrderId,
         },
+        instruments::{InstrumentAny, stubs::currency_pair_ethusdt},
+        orderbook::OrderBook,
         orders::OrderList,
         reports::{ExecutionMassStatus, FillReport, PositionStatusReport},
         types::{AccountBalance, Currency, Money, Price, Quantity},
@@ -1044,7 +1263,7 @@ mod tests {
     fn default_registry_contains_bare_and_envelope_encoders() {
         let registry = default_registry();
 
-        assert_eq!(registry.len(), 8);
+        assert_eq!(registry.len(), 9);
         assert!(registry.contains::<SubmitOrder>());
         assert!(registry.contains::<OrderFilled>());
         assert!(registry.contains::<OrderStatusReport>());
@@ -1053,6 +1272,7 @@ mod tests {
         assert!(registry.contains::<ExecutionReport>());
         assert!(registry.contains::<PositionEvent>());
         assert!(registry.contains::<AccountState>());
+        assert!(registry.contains::<DataResponse>());
     }
 
     #[rstest]
@@ -2275,6 +2495,351 @@ mod tests {
             .expect("registered");
 
         assert_eq!(tag.as_str(), PAYLOAD_TYPE_ACCOUNT_STATE);
+        assert!(encoded.index_keys.is_empty());
+    }
+
+    fn client_id() -> ClientId {
+        ClientId::from("BINANCE")
+    }
+
+    fn venue() -> Venue {
+        Venue::from("BINANCE")
+    }
+
+    fn correlation_id() -> UUID4 {
+        UUID4::new()
+    }
+
+    fn bar_type() -> BarType {
+        BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL")
+    }
+
+    fn data_type() -> DataType {
+        DataType::new("Bar", None, None)
+    }
+
+    fn make_custom_data_response() -> CustomDataResponse {
+        CustomDataResponse::new(
+            correlation_id(),
+            client_id(),
+            Some(venue()),
+            data_type(),
+            (),
+            None,
+            None,
+            UnixNanos::from(200),
+            None,
+        )
+    }
+
+    fn make_instrument_response() -> InstrumentResponse {
+        InstrumentResponse::new(
+            correlation_id(),
+            client_id(),
+            instrument_id(),
+            InstrumentAny::CurrencyPair(currency_pair_ethusdt()),
+            None,
+            None,
+            UnixNanos::from(201),
+            None,
+        )
+    }
+
+    fn make_instruments_response() -> InstrumentsResponse {
+        InstrumentsResponse::new(
+            correlation_id(),
+            client_id(),
+            venue(),
+            vec![InstrumentAny::CurrencyPair(currency_pair_ethusdt())],
+            None,
+            None,
+            UnixNanos::from(202),
+            None,
+        )
+    }
+
+    fn make_book_response() -> BookResponse {
+        BookResponse::new(
+            correlation_id(),
+            client_id(),
+            instrument_id(),
+            OrderBook::new(instrument_id(), BookType::L2_MBP),
+            None,
+            None,
+            UnixNanos::from(203),
+            None,
+        )
+    }
+
+    fn make_quotes_response() -> QuotesResponse {
+        QuotesResponse::new(
+            correlation_id(),
+            client_id(),
+            instrument_id(),
+            Vec::new(),
+            None,
+            None,
+            UnixNanos::from(204),
+            None,
+        )
+    }
+
+    fn make_trades_response() -> TradesResponse {
+        TradesResponse::new(
+            correlation_id(),
+            client_id(),
+            instrument_id(),
+            Vec::new(),
+            None,
+            None,
+            UnixNanos::from(205),
+            None,
+        )
+    }
+
+    fn make_funding_rates_response() -> FundingRatesResponse {
+        FundingRatesResponse::new(
+            correlation_id(),
+            client_id(),
+            instrument_id(),
+            Vec::new(),
+            None,
+            None,
+            UnixNanos::from(206),
+            None,
+        )
+    }
+
+    fn make_forward_prices_response() -> ForwardPricesResponse {
+        ForwardPricesResponse::new(
+            correlation_id(),
+            client_id(),
+            venue(),
+            Vec::new(),
+            UnixNanos::from(207),
+            None,
+        )
+    }
+
+    fn make_bars_response() -> BarsResponse {
+        BarsResponse::new(
+            correlation_id(),
+            client_id(),
+            bar_type(),
+            Vec::<Bar>::new(),
+            None,
+            None,
+            UnixNanos::from(208),
+            None,
+        )
+    }
+
+    #[rstest]
+    fn data_response_custom_data_envelope_stamps_inner_tag_with_no_indices() {
+        // CustomDataResponse holds `data: Arc<dyn Any>`; the dispatcher captures
+        // metadata via a borrowed wrapper. Correlation_id has no matching IndexKind
+        // today, so the encoder emits no sidecar keys.
+        let response = make_custom_data_response();
+        let envelope = DataResponse::Data(response);
+        let encoded = encode_data_response(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_CUSTOM_DATA_RESPONSE,
+        );
+        assert!(encoded.index_keys.is_empty());
+        assert!(!encoded.payload.is_empty());
+    }
+
+    #[rstest]
+    fn data_response_custom_data_payload_round_trips_metadata() {
+        // The CustomDataResponseRef wrapper omits `data` (Arc<dyn Any>); the audit
+        // entry captures correlation_id, client_id, venue, data_type, timing, and
+        // params so forensics can pair the response with its request.
+        #[derive(serde::Deserialize)]
+        struct CustomDataResponseOwned {
+            correlation_id: UUID4,
+            client_id: ClientId,
+            venue: Option<Venue>,
+            ts_init: UnixNanos,
+        }
+
+        let response = make_custom_data_response();
+        let envelope = DataResponse::Data(response.clone());
+        let encoded = encode_data_response(&envelope).expect("encode");
+
+        let decoded: CustomDataResponseOwned =
+            rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded.correlation_id, response.correlation_id);
+        assert_eq!(decoded.client_id, response.client_id);
+        assert_eq!(decoded.venue, response.venue);
+        assert_eq!(decoded.ts_init, response.ts_init);
+    }
+
+    #[rstest]
+    fn data_response_book_envelope_stamps_inner_tag_with_no_indices() {
+        let response = make_book_response();
+        let envelope = DataResponse::Book(response);
+        let encoded = encode_data_response(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_BOOK_RESPONSE,
+        );
+        assert!(encoded.index_keys.is_empty());
+        assert!(!encoded.payload.is_empty());
+    }
+
+    #[rstest]
+    fn data_response_book_payload_round_trips_metadata() {
+        // BookResponseRef omits `data: OrderBook` (not serde-derived). The audit
+        // entry captures the correlation and addressing metadata.
+        #[derive(serde::Deserialize)]
+        struct BookResponseOwned {
+            correlation_id: UUID4,
+            instrument_id: InstrumentId,
+        }
+
+        let response = make_book_response();
+        let envelope = DataResponse::Book(response.clone());
+        let encoded = encode_data_response(&envelope).expect("encode");
+
+        let decoded: BookResponseOwned = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded.correlation_id, response.correlation_id);
+        assert_eq!(decoded.instrument_id, response.instrument_id);
+    }
+
+    #[rstest]
+    fn data_response_quotes_payload_round_trips() {
+        let response = make_quotes_response();
+        let envelope = DataResponse::Quotes(response.clone());
+        let encoded = encode_data_response(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_QUOTES_RESPONSE,
+        );
+        assert!(encoded.index_keys.is_empty());
+
+        let decoded: QuotesResponse = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded.correlation_id, response.correlation_id);
+        assert_eq!(decoded.instrument_id, response.instrument_id);
+        assert_eq!(decoded.data, response.data);
+    }
+
+    #[rstest]
+    fn data_response_trades_payload_round_trips() {
+        let response = make_trades_response();
+        let envelope = DataResponse::Trades(response.clone());
+        let encoded = encode_data_response(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_TRADES_RESPONSE,
+        );
+
+        let decoded: TradesResponse = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded.correlation_id, response.correlation_id);
+    }
+
+    #[rstest]
+    fn data_response_bars_payload_round_trips() {
+        let response = make_bars_response();
+        let envelope = DataResponse::Bars(response.clone());
+        let encoded = encode_data_response(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_BARS_RESPONSE,
+        );
+
+        let decoded: BarsResponse = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded.correlation_id, response.correlation_id);
+        assert_eq!(decoded.bar_type, response.bar_type);
+    }
+
+    #[rstest]
+    fn data_response_instrument_payload_round_trips() {
+        let response = make_instrument_response();
+        let envelope = DataResponse::Instrument(Box::new(response.clone()));
+        let encoded = encode_data_response(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
+        );
+
+        let decoded: InstrumentResponse = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded.correlation_id, response.correlation_id);
+        assert_eq!(decoded.instrument_id, response.instrument_id);
+    }
+
+    // Walks every DataResponse variant and asserts the dispatcher stamps the
+    // inner-variant tag and emits zero sidecar indices. Catches a swapped match
+    // arm or a forgotten `with_payload_type` override that would otherwise fall
+    // back to the wrapper sentinel tag.
+    #[rstest]
+    #[case::data(
+        DataResponse::Data(make_custom_data_response()),
+        PAYLOAD_TYPE_CUSTOM_DATA_RESPONSE
+    )]
+    #[case::instrument(
+        DataResponse::Instrument(Box::new(make_instrument_response())),
+        PAYLOAD_TYPE_INSTRUMENT_RESPONSE
+    )]
+    #[case::instruments(
+        DataResponse::Instruments(make_instruments_response()),
+        PAYLOAD_TYPE_INSTRUMENTS_RESPONSE
+    )]
+    #[case::book(DataResponse::Book(make_book_response()), PAYLOAD_TYPE_BOOK_RESPONSE)]
+    #[case::quotes(
+        DataResponse::Quotes(make_quotes_response()),
+        PAYLOAD_TYPE_QUOTES_RESPONSE
+    )]
+    #[case::trades(
+        DataResponse::Trades(make_trades_response()),
+        PAYLOAD_TYPE_TRADES_RESPONSE
+    )]
+    #[case::funding_rates(
+        DataResponse::FundingRates(make_funding_rates_response()),
+        PAYLOAD_TYPE_FUNDING_RATES_RESPONSE
+    )]
+    #[case::forward_prices(
+        DataResponse::ForwardPrices(make_forward_prices_response()),
+        PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE
+    )]
+    #[case::bars(DataResponse::Bars(make_bars_response()), PAYLOAD_TYPE_BARS_RESPONSE)]
+    fn data_response_envelope_stamps_inner_tag_for_every_variant(
+        #[case] response: DataResponse,
+        #[case] expected_tag: &str,
+    ) {
+        let encoded = encode_data_response(&response).expect("encode");
+        let tag = encoded.payload_type.expect("override").as_str().to_string();
+
+        assert_eq!(tag, expected_tag);
+        assert_ne!(
+            tag, PAYLOAD_TYPE_DATA_RESPONSE,
+            "wrapper fallback tag must never reach the writer",
+        );
+        assert!(
+            encoded.index_keys.is_empty(),
+            "DataResponse correlation_id has no matching IndexKind today",
+        );
+    }
+
+    #[rstest]
+    fn data_response_registered_under_canonical_payload_type() {
+        // The default registry must dispatch DataResponse through encode_data_response
+        // and stamp the inner-variant tag, so `send_data_response` captures under the
+        // same canonical tag as a bare-type capture path.
+        let registry = default_registry();
+        let envelope = DataResponse::Quotes(make_quotes_response());
+        let (tag, encoded) = registry
+            .encode(&envelope)
+            .expect("encode")
+            .expect("registered");
+
+        assert_eq!(tag.as_str(), PAYLOAD_TYPE_QUOTES_RESPONSE);
         assert!(encoded.index_keys.is_empty());
     }
 }
