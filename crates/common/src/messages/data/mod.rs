@@ -384,7 +384,7 @@ fn check_client_id_or_venue(client_id: &Option<ClientId>, venue: &Option<Venue>)
     );
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RequestCommand {
     Data(RequestCustomData),
     Instrument(RequestInstrument),

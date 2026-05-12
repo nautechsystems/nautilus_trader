@@ -21,11 +21,12 @@ use nautilus_model::{
     data::{BarType, DataType},
     identifiers::{ClientId, InstrumentId, Venue},
 };
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::check_client_id_or_venue;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestCustomData {
     pub client_id: ClientId,
     pub data_type: DataType,
@@ -63,7 +64,7 @@ impl RequestCustomData {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestInstrument {
     pub instrument_id: InstrumentId,
     pub start: Option<DateTime<Utc>>,
@@ -97,7 +98,7 @@ impl RequestInstrument {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestInstruments {
     pub start: Option<DateTime<Utc>>,
     pub end: Option<DateTime<Utc>>,
@@ -132,7 +133,7 @@ impl RequestInstruments {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestBookSnapshot {
     pub instrument_id: InstrumentId,
     pub depth: Option<NonZeroUsize>,
@@ -163,7 +164,7 @@ impl RequestBookSnapshot {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestQuotes {
     pub instrument_id: InstrumentId,
     pub start: Option<DateTime<Utc>>,
@@ -201,7 +202,7 @@ impl RequestQuotes {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestTrades {
     pub instrument_id: InstrumentId,
     pub start: Option<DateTime<Utc>>,
@@ -239,7 +240,7 @@ impl RequestTrades {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestFundingRates {
     pub instrument_id: InstrumentId,
     pub start: Option<DateTime<Utc>>,
@@ -277,7 +278,7 @@ impl RequestFundingRates {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestForwardPrices {
     pub venue: Venue,
     pub underlying: Ustr,
@@ -311,7 +312,7 @@ impl RequestForwardPrices {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestBookDepth {
     pub instrument_id: InstrumentId,
     pub start: Option<DateTime<Utc>>,
@@ -352,7 +353,7 @@ impl RequestBookDepth {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestBars {
     pub bar_type: BarType,
     pub start: Option<DateTime<Utc>>,

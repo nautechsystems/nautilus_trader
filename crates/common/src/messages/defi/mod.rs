@@ -22,6 +22,7 @@ use nautilus_model::{
     defi::Blockchain,
     identifiers::{ClientId, Venue},
 };
+use serde::{Deserialize, Serialize};
 
 pub mod request;
 pub mod subscribe;
@@ -38,7 +39,7 @@ pub use unsubscribe::{
     UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum DefiDataCommand {
     Request(DefiRequestCommand),
     Subscribe(DefiSubscribeCommand),
@@ -90,7 +91,7 @@ impl DefiDataCommand {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum DefiSubscribeCommand {
     Blocks(SubscribeBlocks),
     Pool(SubscribePool),
@@ -177,7 +178,7 @@ impl DefiSubscribeCommand {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum DefiUnsubscribeCommand {
     Blocks(UnsubscribeBlocks),
     Pool(UnsubscribePool),
@@ -264,7 +265,7 @@ impl DefiUnsubscribeCommand {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum DefiRequestCommand {
     PoolSnapshot(RequestPoolSnapshot),
 }

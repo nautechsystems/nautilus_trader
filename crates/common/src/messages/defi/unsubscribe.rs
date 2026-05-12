@@ -18,8 +18,9 @@ use nautilus_model::{
     defi::chain::Blockchain,
     identifiers::{ClientId, InstrumentId},
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnsubscribeBlocks {
     pub chain: Blockchain,
     pub client_id: Option<ClientId>,
@@ -49,7 +50,7 @@ impl UnsubscribeBlocks {
 }
 
 /// Represents a command to unsubscribe from definition updates for a specific AMM pool.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnsubscribePool {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -78,7 +79,7 @@ impl UnsubscribePool {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnsubscribePoolSwaps {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -108,7 +109,7 @@ impl UnsubscribePoolSwaps {
 }
 
 /// Represents a command to unsubscribe from liquidity updates for a specific AMM pool.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnsubscribePoolLiquidityUpdates {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -138,7 +139,7 @@ impl UnsubscribePoolLiquidityUpdates {
 }
 
 /// Represents a command to unsubscribe from fee-collect events for a specific AMM pool.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnsubscribePoolFeeCollects {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -168,7 +169,7 @@ impl UnsubscribePoolFeeCollects {
 }
 
 /// Represents a command to unsubscribe from flash-loan events for a specific AMM pool.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnsubscribePoolFlashEvents {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,

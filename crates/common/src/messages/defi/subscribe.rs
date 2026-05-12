@@ -18,8 +18,9 @@ use nautilus_model::{
     defi::chain::Blockchain,
     identifiers::{ClientId, InstrumentId},
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubscribeBlocks {
     pub chain: Blockchain,
     pub client_id: Option<ClientId>,
@@ -49,7 +50,7 @@ impl SubscribeBlocks {
 }
 
 /// Represents a command to subscribe to definition updates for a specific AMM pool.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubscribePool {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -78,7 +79,7 @@ impl SubscribePool {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubscribePoolSwaps {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -108,7 +109,7 @@ impl SubscribePoolSwaps {
 }
 
 /// Represents a command to subscribe to liquidity updates for a specific AMM pool.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubscribePoolLiquidityUpdates {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -138,7 +139,7 @@ impl SubscribePoolLiquidityUpdates {
 }
 
 /// Represents a command to subscribe to fee-collect events for a specific AMM pool.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubscribePoolFeeCollects {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -168,7 +169,7 @@ impl SubscribePoolFeeCollects {
 }
 
 /// Represents a command to subscribe to flash-loan events for a specific AMM pool.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubscribePoolFlashEvents {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
