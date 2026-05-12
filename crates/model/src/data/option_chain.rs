@@ -22,6 +22,7 @@ use std::{
 };
 
 use nautilus_core::UnixNanos;
+use serde::{Deserialize, Serialize};
 
 use super::HasTsInit;
 use crate::{
@@ -35,7 +36,7 @@ use crate::{
 };
 
 /// Defines which strikes to include in an option chain subscription.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum StrikeRange {
     /// Subscribe to a fixed set of strike prices.
     Fixed(Vec<Price>),

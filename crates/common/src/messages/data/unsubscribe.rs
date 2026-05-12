@@ -20,10 +20,11 @@ use nautilus_model::{
     data::{BarType, DataType},
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
 };
+use serde::{Deserialize, Serialize};
 
 use super::check_client_id_or_venue;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeCustomData {
     pub client_id: Option<ClientId>,
     pub venue: Option<Venue>,
@@ -58,7 +59,7 @@ impl UnsubscribeCustomData {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeInstrument {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -93,7 +94,7 @@ impl UnsubscribeInstrument {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeInstruments {
     pub client_id: Option<ClientId>,
     pub venue: Venue,
@@ -124,7 +125,7 @@ impl UnsubscribeInstruments {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeBookDeltas {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -159,7 +160,7 @@ impl UnsubscribeBookDeltas {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeBookDepth10 {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -194,7 +195,7 @@ impl UnsubscribeBookDepth10 {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeBookSnapshots {
     pub instrument_id: InstrumentId,
     pub interval_ms: NonZeroUsize,
@@ -233,7 +234,7 @@ impl UnsubscribeBookSnapshots {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeQuotes {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -268,7 +269,7 @@ impl UnsubscribeQuotes {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeTrades {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -303,7 +304,7 @@ impl UnsubscribeTrades {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeBars {
     pub bar_type: BarType,
     pub client_id: Option<ClientId>,
@@ -338,7 +339,7 @@ impl UnsubscribeBars {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeMarkPrices {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -373,7 +374,7 @@ impl UnsubscribeMarkPrices {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeIndexPrices {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -408,7 +409,7 @@ impl UnsubscribeIndexPrices {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeFundingRates {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -443,7 +444,7 @@ impl UnsubscribeFundingRates {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeInstrumentStatus {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -478,7 +479,7 @@ impl UnsubscribeInstrumentStatus {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeOptionGreeks {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -513,7 +514,7 @@ impl UnsubscribeOptionGreeks {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeInstrumentClose {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -548,7 +549,7 @@ impl UnsubscribeInstrumentClose {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsubscribeOptionChain {
     pub series_id: OptionSeriesId,
     pub command_id: UUID4,

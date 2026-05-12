@@ -22,6 +22,7 @@ use nautilus_model::{
     data::BarType,
     identifiers::{ClientId, Venue},
 };
+use serde::{Deserialize, Serialize};
 
 pub mod request;
 pub mod response;
@@ -75,7 +76,7 @@ impl DataCommand {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SubscribeCommand {
     Data(SubscribeCustomData),
     Instrument(SubscribeInstrument),
@@ -234,7 +235,7 @@ impl SubscribeCommand {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum UnsubscribeCommand {
     Data(UnsubscribeCustomData),
     Instrument(UnsubscribeInstrument),
