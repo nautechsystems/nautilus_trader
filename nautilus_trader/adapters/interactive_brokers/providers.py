@@ -843,6 +843,9 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         contract: IBContract,
         contract_details: IBContractDetails | None = None,
     ) -> str:
+        if contract.secType == "STK":
+            return self._resolve_stock_exchange_from_contract(contract)
+
         if (
             contract.exchange == "SMART"
             and contract.primaryExchange
@@ -853,14 +856,49 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         if contract.exchange != "SMART":
             return contract.exchange
 
-        valid_exchanges = self._resolve_valid_exchanges(contract, contract_details)
-        if valid_exchanges:
-            parts = [part.strip() for part in valid_exchanges.split(",") if part.strip()]
-            chosen = next((part for part in parts if part != "SMART"), parts[0] if parts else None)
-            if chosen:
-                return chosen
+        if contract.secType == "OPT":
+            valid_exchanges = self._resolve_valid_exchanges(contract, contract_details)
+            if valid_exchanges:
+                parts = [part.strip() for part in valid_exchanges.split(",") if part.strip()]
+                chosen = next(
+                    (part for part in parts if part != "SMART"),
+                    parts[0] if parts else None,
+                )
+
+                if chosen:
+                    return chosen
 
         return contract.exchange
+
+    def _resolve_stock_exchange_from_contract(self, contract: IBContract) -> str:
+        venue = self._resolve_cached_symbol_venue(contract)
+        if venue and self._is_compatible_cached_stock_venue(venue, contract.primaryExchange):
+            return venue
+
+        if contract.primaryExchange and contract.primaryExchange != "SMART":
+            return contract.primaryExchange
+
+        if contract.exchange == "SMART" and venue:
+            return venue
+
+        return contract.exchange
+
+    def _is_compatible_cached_stock_venue(self, venue: str, primary_exchange: str) -> bool:
+        if not primary_exchange or primary_exchange == "SMART":
+            return True
+
+        return venue in (primary_exchange, exchange_to_mic_venue(primary_exchange))
+
+    def _resolve_cached_symbol_venue(self, contract: IBContract) -> str | None:
+        for instrument in self.get_all().values():
+            if instrument.id.symbol.value == contract.symbol:
+                return instrument.id.venue.value
+
+        for instrument in self._client._cache.instruments():
+            if instrument.id.symbol.value == contract.symbol:
+                return instrument.id.venue.value
+
+        return None
 
     def _resolve_valid_exchanges(
         self,
