@@ -26,8 +26,9 @@ Released on TBD (UTC).
 - Added Coinbase CFM liquidation buffer warning when buffer drops below 20%
 - Added Deribit `auto_load_missing_instruments` config flag to lazy-load uncached instruments on subscribe
 - Added dYdX historical funding rate requests via the `request_funding_rates` HTTP method and PyO3 binding
-- Added Hyperliquid HIP-4 outcome trading and instrument modeling with `+E`/`#E` asset-id encoding
-- Added Hyperliquid HIP-4 outcome USDH settlement, spot balance reconciliation, and `outcomeMeta` settlement dispatch
+- Added Hyperliquid HIP-4 outcome instruments: `+E`/`#E` encoding, USDH settlement, and per-side BinaryOption modeling
+- Added Hyperliquid HIP-4 outcome reconciliation via spot balances; `outcomeMeta` settlement dispatch on the Rust client
+- Added Hyperliquid HIP-4 outcome order scaffolding; live placement awaits `splitOutcome` action wiring
 - Added Kraken Spot margin trading support (#3965), thanks @mcgrj
 - Added Kraken Spot WebSocket v2 order submission (#4007), thanks @mcgrj
 - Added OKX event contracts support

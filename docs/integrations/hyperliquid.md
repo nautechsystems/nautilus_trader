@@ -120,7 +120,7 @@ spot markets, and HIP-4 binary outcome markets.
 | Perpetual Futures | ✓         | ✓         | USDC‑settled linear perps (validator‑operated).       |
 | HIP‑3 Perpetuals  | ✓         | ✓         | Builder‑deployed perps. Excluded by default.          |
 | Spot              | ✓         | ✓         | Native spot markets.                                  |
-| HIP‑4 Outcomes    | ✓         | Partial   | Binary outcome side tokens. Excluded by default.      |
+| HIP‑4 Outcomes    | ✓         | Partial   | USDH‑settled binaries; order placement awaits `splitOutcome` wiring. See [HIP-4 outcome markets](#hip-4-outcome-markets). |
 
 :::note
 All perpetual futures on Hyperliquid are settled in USDC. Spot markets are standard
@@ -193,28 +193,35 @@ handled by the instrument provider.
 ### HIP-4 outcome side tokens
 
 Format: `+{encoding}` (token form) or `#{encoding}` (spot-coin form), where
-`encoding = 10 * outcome + side`.
+`encoding = 10 * outcome + side` and `side` is `0` for Yes, `1` for No.
 
 [HIP-4](https://hyperliquid.gitbook.io/hyperliquid-docs/hyperliquid-improvement-proposals-hips/hip-4-outcome-markets)
-side tokens are fully-collateralized binary contracts that settle in `[0, 1]` at the
-expiry stamped on the market. The Nautilus instrument symbol uses the token form
-(`+{encoding}.HYPERLIQUID`); the wire `raw_symbol` uses the coin form
-(`#{encoding}`) which is what `l2Book` and `allMids` accept.
+side tokens are binary contracts that settle in USDH at `0` (loser) or `1`
+(winner). Nautilus uses the token form (`+{encoding}.HYPERLIQUID`); the wire
+`raw_symbol` uses the coin form (`#{encoding}`), which is what `l2Book` and
+`allMids` accept.
 
 Examples:
 
-- `+50.HYPERLIQUID` - Yes side of outcome 5
-- `+51.HYPERLIQUID` - No side of outcome 5
-- `#50` is the equivalent wire symbol used by market-data subscriptions
+- `+250.HYPERLIQUID`: Yes side of outcome 25.
+- `+251.HYPERLIQUID`: No side of outcome 25.
+- `#250`: equivalent wire symbol for market-data subscriptions.
 
 To subscribe in your strategy:
 
 ```python
-InstrumentId.from_str("+50.HYPERLIQUID")
+InstrumentId.from_str("+250.HYPERLIQUID")
 ```
 
-See [HIP-4 outcome markets](#hip-4-outcome-markets) for the full opt-in flow,
-expiry handling, and trading restrictions.
+:::note
+The outcome universe cycles. Each settlement removes the resolved outcome
+from `outcomeMeta`, and the venue's next listing advances the index. Inspect
+the live universe with
+`curl -s -X POST https://api.hyperliquid.xyz/info -d '{"type":"outcomeMeta"}'`.
+:::
+
+See [HIP-4 outcome markets](#hip-4-outcome-markets) for the trading flow,
+settlement, and current limitations.
 
 ## HIP-3 builder-deployed perpetuals
 
@@ -326,80 +333,150 @@ through Nautilus until the venue rename resolves the collision.
 ## HIP-4 outcome markets
 
 [HIP-4](https://hyperliquid.gitbook.io/hyperliquid-docs/hyperliquid-improvement-proposals-hips/hip-4-outcome-markets)
-markets are fully-collateralized, expiry-dated binary contracts. Each market
-has two side tokens (`Yes` / `No`) that settle to `1` (winner) or `0` (loser)
-when the underlying condition resolves.
-
-The first live HIP-4 market is the recurring BTC daily binary, which settles
-each day at 06:00 UTC against the BTC mark price.
+markets are fully-collateralized binary contracts. Each market has two side
+tokens (Yes / No) that settle to `1 USDH` (winner) or `0 USDH` (loser) on the
+resolution date. The current live market is the recurring BTC daily binary,
+which settles at 06:00 UTC against the BTC mark price.
 
 ### Loading outcome instruments
 
-Outcome instruments are excluded from the standard provider load. To opt in,
-set `include_outcomes=True` (Python) or pass the equivalent flag through
-`load_instrument_definitions`:
+Include `HyperliquidProductType.OUTCOME` in `product_types` on both the data
+and exec client configs:
 
 ```python
-instruments = await provider.load_instrument_definitions(include_outcomes=True)
+from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
+from nautilus_trader.adapters.hyperliquid import HyperliquidProductType
+
+HyperliquidDataClientConfig(
+    product_types=(
+        HyperliquidProductType.SPOT,
+        HyperliquidProductType.PERP,
+        HyperliquidProductType.OUTCOME,
+    ),
+)
 ```
 
 The provider emits two `BinaryOption` instruments per outcome (one per side),
-priced in USDC. The instrument's `expiration_ns` is parsed from the venue's
-description field (`expiry:YYYYMMDD-HHMM`, UTC); standalone binary outcomes
-carry their own expiry while named-outcome / fallback markets inherit it from
-their parent question.
+denominated in USDH. `expiration_ns` is parsed from the venue description
+(`expiry:YYYYMMDD-HHMM`, UTC). Standalone binaries carry their own expiry;
+named and fallback outcomes inherit from their parent question. Defaults:
+`0.0001` per tick, `0.01` per lot.
 
-Default precision is `0.0001` per tick (4 decimals) and `0.01` per lot
-(2 decimals); these are conservative starting values that may be refined as
-the venue exposes per-market values.
+### Settlement currency
 
-### Trading restrictions
+Outcomes settle in USDH (token index 360, traded on the `USDH/USDC` spot pair
+`@230`). The adapter registers USDH at 8-decimal precision on first outcome
+instrument creation, so `BinaryOption.currency`, `quote_currency`, and the
+commission currency on zero-fee outcome fills all resolve to USDH.
+
+USDH spot balances merge with the perp clearinghouse view, so `AccountState`
+carries USDH alongside USDC and any other non-zero spot holdings.
+
+### Trading flow
+
+:::warning
+Order placement on outcome side tokens is not yet end-to-end working through
+the adapter. The venue requires a `splitOutcome` action to mint side-token
+pairs before orders can match; that action is not wired in this release.
+See [Current limitation](#current-limitation).
+:::
+
+The full HIP-4 trade path is:
+
+1. `splitOutcome { outcome, amount }`: debit `amount` quote tokens, credit
+   `amount` Yes + `amount` No side tokens. Action type `userOutcome`.
+2. `order`: sell the side you don't want, or hold both for hedging. Buy Yes
+   at `p` equals Sell No at `1 - p` on the merged book.
+3. `negateOutcome { question, outcome, amount }`: for multi-outcome questions,
+   swap No shares of one outcome into Yes shares of every other.
+
+#### Current limitation
+
+The adapter implements step 2 only. Buys on `+E.HYPERLIQUID` are rejected with
+`Insufficient spot balance asset=100000{encoding}` when the account holds no
+side tokens.
+
+To trade outcomes today, perform the split off-adapter (for example through
+the Hyperliquid web UI) and the existing order path will operate on the
+resulting balances. Position reconciliation and account state work for
+positions acquired this way; settlement dispatch additionally requires the
+Rust execution client (see [Settlement dispatch](#settlement-dispatch)).
+
+A follow-up will wire `userOutcome` / `splitOutcome` / `negateOutcome` and
+expose them through a strategy-level helper.
+
+### Order constraints
 
 Outcome side tokens behave like spot tokens (no margin, no funding, no
 liquidation). The execution client rejects features that don't apply:
 
-- `reduce_only` orders are rejected.
+- `reduce_only` orders.
 - Trigger order types (`StopMarket`, `StopLimit`, `MarketIfTouched`,
-  `LimitIfTouched`, trailing stops) are rejected.
+  `LimitIfTouched`, trailing stops).
 
 `Limit` and `Market` orders with `GTC`, `IOC`, or `ALO` time-in-force are
-supported.
+supported. The venue minimum is 10 USDH notional; size `order_qty` so that
+`order_qty * limit_price >= 10`.
 
-The venue enforces a minimum order notional of 10 USDC (the rejection
-string is `Order must have minimum value of 10 USDH`; "USDH" is the
-venue's display label for USDC on outcome markets). Pick an `order_qty`
-such that `order_qty * limit_price >= 10`.
+### Settlement dispatch
 
-### Settlement
+:::note
+Settlement polling is implemented in the Rust-native `HyperliquidExecutionClient`
+(used through `HyperliquidExecutionClientFactory`). The Python execution client
+in `nautilus_trader/adapters/hyperliquid/execution.py` does not start the poll
+and its config does not expose `outcome_settlement_poll_secs`. Strategies
+running through the standard `TradingNode` + `HyperliquidLiveExecClientFactory`
+path use the Python client and will not receive synthetic settlement fills.
+:::
 
-For multi-outcome `priceBucket` questions, the venue surfaces resolution
-via `outcomeMeta.questions[*].settledNamedOutcomes` (Rust:
-`settled_named_outcomes`). When that array is non-empty, the helper
-`derive_outcome_settlements` resolves every named outcome and the
-fallback for that question to a final side value (`1` for the winning
-named outcome, `0` for the losing named outcomes and the fallback).
+On connect, the Rust execution client starts a periodic `outcomeMeta` poll
+(`outcome_settlement_poll_secs`, default `60`; `0` disables). For each
+newly-resolved `(outcome_index, outcome_side)` pair held on the spot side it
+emits a synthetic position-closing `FillReport`:
 
-Coverage gaps the helper does not yet handle:
+- `order_side`: `SELL`.
+- `last_qty`: held spot balance, snapped to `size_precision = 2`.
+- `last_px`: `1.0` USDH (winner) or `0.0` USDH (loser), at `price_precision = 4`.
+- `commission`: zero USDH.
+- `venue_order_id` and `trade_id` are deterministic
+  (`HYPERLIQUID-SETTLE-{idx}-{side}` and `-{final}`).
 
-- **Standalone `priceBinary` outcomes** (those not referenced by any
-  question, such as the recurring BTC daily binary). They do not appear
-  in the question list, so their resolution needs a separate venue
-  signal (for example a `settledOutcome` request) which is not yet
-  implemented.
-- **Fallback-wins**: when no named outcome resolves and the fallback
-  branch wins. The helper currently only emits side values when a named
-  outcome wins; the fallback-wins wire signal has not been observed yet.
+An in-process tracker deduplicates pairs within a session.
 
-Settlement event emission against open positions is not yet wired up in
-either path.
+For multi-outcome `priceBucket` questions, resolution comes from
+`outcomeMeta.questions[*].settledNamedOutcomes`. When non-empty, the helper
+emits both sides per outcome: the winning named outcome resolves Yes -> `1` /
+No -> `0`; every losing named outcome and the fallback resolves
+Yes -> `0` / No -> `1`.
+
+Coverage gaps:
+
+- **Standalone `priceBinary` outcomes** (e.g. the recurring BTC daily): not
+  referenced by any question, so resolution needs a separate signal (such as
+  `settledOutcome`). Not yet implemented.
+- **Fallback-wins**: when no named outcome resolves and the fallback wins.
+  The helper currently emits only when a named outcome wins.
+- **Cross-restart dedup**: the tracker is in-process. A restart polling a
+  still-resolved outcome may re-emit; deterministic ids help consumers dedupe.
+
+### Position reconciliation
+
+HIP-4 side tokens arrive on `spotClearinghouseState` with `coin` set to the
+`+E` token form and no `token` field. The adapter:
+
+- Treats `SpotBalance.token` as optional during deserialization.
+- Resolves `+E` / `#E` coins to their `BinaryOption` instrument when
+  generating `PositionStatusReport`s.
+- Skips the perp clearinghouse fetch when the position-status filter is an
+  outcome instrument (outcomes never appear in `assetPositions`).
 
 ### Multi-outcome (priceBucket) markets
 
-The venue exposes multi-outcome markets via the top-level `questions`
-array in `outcomeMeta`. Each question references a fallback outcome plus
-a sequence of named outcomes whose individual descriptions point back at
-the question via `index:N`. The Rust model decodes this shape today; the
-adapter currently treats each side token as an independent binary.
+The venue exposes multi-outcome markets via the top-level `questions` array in
+`outcomeMeta`. Each question references a fallback outcome plus a sequence of
+named outcomes whose individual descriptions point back at the question via
+`index:N`. The Rust model decodes this shape today; the adapter currently
+treats each side token as an independent binary.
 
 ## Instrument provider
 
@@ -697,11 +774,16 @@ There is a limitation of one order book per instrument per trader instance.
 
 ## Account and position management
 
-The adapter reports account state with USDC balances and margin usage. Standard perps
-default to cross margin. HIP-3 perps typically require isolated margin. On connect,
-the execution client performs a full reconciliation of orders, fills, and positions
-against Hyperliquid's clearinghouse state. This keeps the local cache consistent
-even after restarts or disconnections.
+`AccountState` merges perp margin and spot balances. Perp margin and cross-margin
+usage come from `clearinghouseState`; non-zero spot tokens (USDC, USDH, HYPE,
+vault tokens, HIP-4 outcome side tokens, etc.) come from `spotClearinghouseState`.
+USDC is deduplicated when the perp summary is present.
+
+Standard perps default to cross margin; HIP-3 perps default to isolated. On
+connect, the execution client reconciles orders, fills, and positions against
+Hyperliquid's clearinghouse state. Spot positions are reconstructed from held
+balances (long-only); HIP-4 side tokens reconcile against their matching
+`BinaryOption` instruments.
 
 :::note
 Leverage is managed directly through the Hyperliquid web UI or API, not through the adapter.
@@ -855,6 +937,7 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 | `http_timeout_secs`         | `10`    | Timeout (seconds) applied to REST calls.                                                  |
 | `normalize_prices`          | `True`  | Normalize order prices to 5 significant figures before submission.                        |
 | `market_order_slippage_bps` | `50`    | Slippage buffer (bps) applied to MARKET and stop trigger derivations.                     |
+| `outcome_settlement_poll_secs` | `60` | HIP‑4 `outcomeMeta` settlement poll interval (seconds). Rust‑only; `0` disables polling. |
 | `proxy_url`                 | `None`  | Optional proxy URL for HTTP and WebSocket transports.                                     |
 
 ### Configuration example
