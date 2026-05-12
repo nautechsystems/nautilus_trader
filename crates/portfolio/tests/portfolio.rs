@@ -18,10 +18,11 @@ use std::{cell::RefCell, rc::Rc};
 use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
+    msgbus::{self, MessagingSwitchboard},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    accounts::AccountAny,
+    accounts::{Account, AccountAny},
     data::{Bar, BarType, QuoteTick},
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType, PositionSide},
     events::{
@@ -192,6 +193,16 @@ fn get_margin_account(accountid: Option<&str>) -> AccountState {
         0.into(),
         None,
     )
+}
+
+fn usd_balance_total(portfolio: &Portfolio, account_id: &AccountId) -> Money {
+    portfolio
+        .cache()
+        .borrow()
+        .account_owned(account_id)
+        .unwrap()
+        .balance_total(Some(Currency::USD()))
+        .unwrap()
 }
 
 fn get_quote_tick(
@@ -2049,6 +2060,281 @@ fn test_closing_position_updates_portfolio(
     assert!(!portfolio.is_net_short(&instrument_audusd.id())); // Not short
     assert!(portfolio.is_flat(&instrument_audusd.id())); // Flat position
     assert!(portfolio.is_completely_flat()); // Portfolio is completely flat
+}
+
+#[rstest]
+fn test_order_fill_endpoint_updates_account_balance_before_position_close(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("SIM-01234");
+    let account_state = AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::new(1_000_000.0, Currency::USD()),
+            Money::new(0.0, Currency::USD()),
+            Money::new(1_000_000.0, Currency::USD()),
+        )],
+        vec![],
+        true,
+        uuid4(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::USD()),
+    );
+
+    portfolio.update_account(&account_state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+
+    let order1 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100000"))
+        .build();
+    let order2 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("100000"))
+        .build();
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order1.clone(), None, None, true)
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order2.clone(), None, None, true)
+        .unwrap();
+
+    let fill1 = OrderFilled::new(
+        order1.trader_id(),
+        order1.strategy_id(),
+        order1.instrument_id(),
+        order1.client_order_id(),
+        VenueOrderId::new("123456"),
+        account_id,
+        TradeId::new("1"),
+        order1.order_side(),
+        order1.order_type(),
+        order1.quantity(),
+        Price::new(1.00000, 5),
+        Currency::USD(),
+        LiquiditySide::Taker,
+        uuid4(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(PositionId::new("P-123456")),
+        Some(Money::new(2.0, Currency::USD())),
+    );
+    let mut position = Position::new(&instrument_audusd, fill1);
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+
+    let quote_tick = get_quote_tick(&instrument_audusd, 1.00000, 1.00001, 1.0, 1.0);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_quote(quote_tick)
+        .unwrap();
+    portfolio.update_quote_tick(&quote_tick);
+
+    let fill2 = OrderFilled::new(
+        order2.trader_id(),
+        order2.strategy_id(),
+        order2.instrument_id(),
+        order2.client_order_id(),
+        VenueOrderId::new("789012"),
+        account_id,
+        TradeId::new("2"),
+        order2.order_side(),
+        order2.order_type(),
+        order2.quantity(),
+        Price::new(1.00010, 5),
+        Currency::USD(),
+        LiquiditySide::Taker,
+        uuid4(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(PositionId::new("P-123456")),
+        Some(Money::new(2.0, Currency::USD())),
+    );
+
+    msgbus::send_order_event(
+        MessagingSwitchboard::portfolio_update_order(),
+        OrderEventAny::Filled(fill2),
+    );
+
+    assert_eq!(
+        usd_balance_total(&portfolio, &account_id),
+        Money::new(1_000_008.0, Currency::USD())
+    );
+
+    position.apply(&fill2);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&position)
+        .unwrap();
+
+    portfolio.update_order(&OrderEventAny::Filled(fill2));
+
+    assert_eq!(
+        usd_balance_total(&portfolio, &account_id),
+        Money::new(1_000_008.0, Currency::USD())
+    );
+}
+
+#[rstest]
+fn test_order_fill_endpoint_updates_account_balance_before_position_reverse(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("SIM-01234");
+    let account_state = AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::new(1_000_000.0, Currency::USD()),
+            Money::new(0.0, Currency::USD()),
+            Money::new(1_000_000.0, Currency::USD()),
+        )],
+        vec![],
+        true,
+        uuid4(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::USD()),
+    );
+
+    portfolio.update_account(&account_state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+
+    let order1 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100000"))
+        .build();
+    let order2 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("150000"))
+        .build();
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order1.clone(), None, None, true)
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order2.clone(), None, None, true)
+        .unwrap();
+
+    let fill1 = OrderFilled::new(
+        order1.trader_id(),
+        order1.strategy_id(),
+        order1.instrument_id(),
+        order1.client_order_id(),
+        VenueOrderId::new("123456"),
+        account_id,
+        TradeId::new("1"),
+        order1.order_side(),
+        order1.order_type(),
+        order1.quantity(),
+        Price::new(1.00000, 5),
+        Currency::USD(),
+        LiquiditySide::Taker,
+        uuid4(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(PositionId::new("P-123456")),
+        Some(Money::new(2.0, Currency::USD())),
+    );
+    let mut position = Position::new(&instrument_audusd, fill1);
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+
+    let quote_tick = get_quote_tick(&instrument_audusd, 1.00000, 1.00001, 1.0, 1.0);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_quote(quote_tick)
+        .unwrap();
+    portfolio.update_quote_tick(&quote_tick);
+
+    let fill2 = OrderFilled::new(
+        order2.trader_id(),
+        order2.strategy_id(),
+        order2.instrument_id(),
+        order2.client_order_id(),
+        VenueOrderId::new("789012"),
+        account_id,
+        TradeId::new("2"),
+        order2.order_side(),
+        order2.order_type(),
+        order2.quantity(),
+        Price::new(1.00010, 5),
+        Currency::USD(),
+        LiquiditySide::Taker,
+        uuid4(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(PositionId::new("P-123456")),
+        Some(Money::new(3.0, Currency::USD())),
+    );
+
+    msgbus::send_order_event(
+        MessagingSwitchboard::portfolio_update_order(),
+        OrderEventAny::Filled(fill2),
+    );
+
+    assert_eq!(
+        usd_balance_total(&portfolio, &account_id),
+        Money::new(1_000_007.0, Currency::USD())
+    );
+
+    position.apply(&fill2);
+    assert_eq!(position.side, PositionSide::Short);
+    assert_eq!(position.quantity, Quantity::from("50000"));
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&position)
+        .unwrap();
+
+    portfolio.update_order(&OrderEventAny::Filled(fill2));
+
+    assert_eq!(
+        usd_balance_total(&portfolio, &account_id),
+        Money::new(1_000_007.0, Currency::USD())
+    );
 }
 
 #[rstest]

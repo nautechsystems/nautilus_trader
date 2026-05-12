@@ -1352,18 +1352,6 @@ cdef class ExecutionEngine(Component):
                 msg=pos_event,
             )
 
-    cdef bint _is_leg_fill(self, OrderFilled fill):
-        cdef str client_order_id_str = fill.client_order_id.value
-        cdef str venue_order_id_str = fill.venue_order_id.value if fill.venue_order_id else ""
-        if not ("-LEG-" in client_order_id_str or "-LEG-" in venue_order_id_str):
-            return False
-
-        cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
-        if instrument is None:
-            return False
-
-        return not instrument.is_spread()
-
     cpdef void _handle_leg_fill_without_order(self, OrderFilled fill):
         """
         Handle leg fills that don't have corresponding orders in the cache.
@@ -1406,16 +1394,9 @@ cdef class ExecutionEngine(Component):
 
         fill.position_id = position_id
 
-        # Also send to portfolio endpoint for leg fills (which don't have orders in cache)
-        # Regular fills go through topic subscription below, so we only send directly for leg fills
-        # We do this BEFORE position update so portfolio can see the open quantity for PnL calcs
         if self._is_leg_fill(fill):
-            self._msgbus.send(
-                endpoint="Portfolio.update_order",
-                msg=fill,
-            )
+            self._send_fill_to_portfolio_before_position_update(fill)
 
-        # Handle position update
         self._handle_position_update(instrument, fill, oms_type)
 
         # Pop position events which are pending publishing to prevent recursion issues
@@ -1434,6 +1415,25 @@ cdef class ExecutionEngine(Component):
                 topic=self._get_position_events_topic(pos_event.strategy_id),
                 msg=pos_event,
             )
+
+    cdef bint _is_leg_fill(self, OrderFilled fill):
+        cdef str client_order_id_str = fill.client_order_id.value
+        cdef str venue_order_id_str = fill.venue_order_id.value if fill.venue_order_id else ""
+        if not ("-LEG-" in client_order_id_str or "-LEG-" in venue_order_id_str):
+            return False
+
+        cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
+        if instrument is None:
+            return False
+
+        return not instrument.is_spread()
+
+    cdef void _send_fill_to_portfolio_before_position_update(self, OrderFilled fill):
+        # Account balance PnL needs the pre-fill cached position quantity.
+        self._msgbus.send(
+            endpoint="Portfolio.update_order",
+            msg=fill,
+        )
 
     cpdef OmsType _determine_oms_type(self, OrderFilled fill):
         cdef ExecutionClient client = self._routing_map.get(
@@ -1612,10 +1612,18 @@ cdef class ExecutionEngine(Component):
         if self.snapshot_orders:
             self._create_order_state_snapshot(order)
 
-        self._msgbus.send(
-            endpoint="Portfolio.update_order",
-            msg=event,
-        )
+        cdef bint send_to_portfolio = True
+        cdef Account account = None
+        if isinstance(event, OrderFilled):
+            account = self._cache.account(event.account_id)
+            send_to_portfolio = account is None or not account.is_margin_account
+
+        if send_to_portfolio:
+            self._msgbus.send(
+                endpoint="Portfolio.update_order",
+                msg=event,
+            )
+
         return True
 
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type):
@@ -1642,6 +1650,9 @@ cdef class ExecutionEngine(Component):
             ClientOrderId client_order_id
             Order contingent_order
         if not instrument.is_spread():
+            if account.is_margin_account:
+                self._send_fill_to_portfolio_before_position_update(fill)
+
             self._handle_position_update(instrument, fill, oms_type)
             position = self._cache.position(fill.position_id)
 

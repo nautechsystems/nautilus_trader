@@ -24,7 +24,7 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     enums::LogColor,
-    msgbus::{self, MessagingSwitchboard, TypedHandler},
+    msgbus::{self, MessagingSwitchboard, TypedHandler, TypedIntoHandler},
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{UUID4, WeakCell, datetime::NANOSECONDS_IN_MILLISECOND};
@@ -61,12 +61,19 @@ struct PortfolioState {
     venues_missing_price: AHashMap<Venue, AHashSet<InstrumentId>>,
     account_open_positions: AHashMap<AccountId, usize>,
     portfolio_snapshots: AHashMap<AccountId, VecDeque<PortfolioSnapshot>>,
+    pre_position_fill_events: AHashSet<UUID4>,
 }
 
 // Sized for post-run backtest analysis (e.g. ~11 days at 1s cadence, or years
 // at per-minute cadence), long-lived live deployments should consume snapshots
 // via the message bus instead of relying on this buffer.
 const SNAPSHOT_BUFFER_CAP: usize = 1_000_000;
+
+#[derive(Clone, Copy)]
+enum OrderUpdateSource {
+    Endpoint,
+    Topic,
+}
 
 impl PortfolioState {
     fn new(
@@ -96,6 +103,7 @@ impl PortfolioState {
             venues_missing_price: AHashMap::new(),
             account_open_positions: AHashMap::new(),
             portfolio_snapshots: AHashMap::new(),
+            pre_position_fill_events: AHashSet::new(),
         }
     }
 
@@ -114,6 +122,7 @@ impl PortfolioState {
         self.venues_missing_price.clear();
         self.account_open_positions.clear();
         self.portfolio_snapshots.clear();
+        self.pre_position_fill_events.clear();
         self.analyzer.reset();
         self.initialized = false;
         log::debug!("READY");
@@ -247,17 +256,47 @@ impl Portfolio {
         let update_order_handler = {
             let cache = cache.clone();
             let clock = clock.clone();
-            let inner = inner_weak;
+            let inner = inner_weak.clone();
             TypedHandler::from(move |event: &OrderEventAny| {
                 if let Some(inner_rc) = inner.upgrade() {
                     let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
-                    update_order(&cache, &clock, &inner_rc, config, event);
+                    update_order(
+                        &cache,
+                        &clock,
+                        &inner_rc,
+                        config,
+                        event,
+                        OrderUpdateSource::Topic,
+                    );
                 }
             })
         };
 
         let endpoint = MessagingSwitchboard::portfolio_update_account();
         msgbus::register_account_state_endpoint(endpoint, update_account_handler.clone());
+
+        let update_order_endpoint_handler = {
+            let cache = cache.clone();
+            let clock = clock.clone();
+            let inner = inner_weak;
+            TypedIntoHandler::from(move |event: OrderEventAny| {
+                if let Some(inner_rc) = inner.upgrade() {
+                    let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
+                    update_order(
+                        &cache,
+                        &clock,
+                        &inner_rc,
+                        config,
+                        &event,
+                        OrderUpdateSource::Endpoint,
+                    );
+                }
+            })
+        };
+        msgbus::register_order_event_endpoint(
+            MessagingSwitchboard::portfolio_update_order(),
+            update_order_endpoint_handler,
+        );
 
         msgbus::subscribe_quotes("data.quotes.*".into(), update_quote_handler, Some(10));
 
@@ -1392,7 +1431,14 @@ impl Portfolio {
     ///
     /// Handles balance updates for order fills and margin calculations for order changes.
     pub fn update_order(&mut self, event: &OrderEventAny) {
-        update_order(&self.cache, &self.clock, &self.inner, self.config, event);
+        update_order(
+            &self.cache,
+            &self.clock,
+            &self.inner,
+            self.config,
+            event,
+            OrderUpdateSource::Topic,
+        );
     }
 
     /// Updates portfolio calculations based on a position event.
@@ -2103,7 +2149,27 @@ fn update_order(
     inner: &Rc<RefCell<PortfolioState>>,
     config: PortfolioConfig,
     event: &OrderEventAny,
+    source: OrderUpdateSource,
 ) {
+    let mut mark_pre_position_fill_event = None;
+
+    if let OrderEventAny::Filled(order_filled) = event {
+        match source {
+            OrderUpdateSource::Endpoint => {
+                mark_pre_position_fill_event = Some(order_filled.event_id);
+            }
+            OrderUpdateSource::Topic => {
+                if inner
+                    .borrow_mut()
+                    .pre_position_fill_events
+                    .remove(&order_filled.event_id)
+                {
+                    return;
+                }
+            }
+        }
+    }
+
     let account_id = match event.account_id() {
         Some(account_id) => account_id,
         None => {
@@ -2248,6 +2314,10 @@ fn update_order(
             .unwrap();
     } else {
         cache.borrow_mut().cache_account_owned(working_account);
+    }
+
+    if let Some(event_id) = mark_pre_position_fill_event {
+        inner.borrow_mut().pre_position_fill_events.insert(event_id);
     }
 
     if let Some(account_state) = account_state {
