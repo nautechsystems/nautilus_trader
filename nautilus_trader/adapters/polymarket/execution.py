@@ -1504,9 +1504,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 continue
 
             if not self._cache.order_exists(order.client_order_id):
-                self._msgbus.publish_c(
+                self._msgbus.publish(
                     topic=f"events.order.{order.strategy_id}",
-                    msg=order.init_event(),
+                    msg=order.init_event,
                 )
                 self._cache.add_order(order, None, self.id)
 
