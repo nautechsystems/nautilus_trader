@@ -1,7 +1,6 @@
 ARG GIT_TAG=develop
 FROM ghcr.io/nautechsystems/nautilus_trader:$GIT_TAG
 
-COPY --from=ghcr.io/nautechsystems/nautilus_data:main /opt/pysetup/catalog /catalog
 COPY docs/tutorials /opt/pysetup/tutorials
 
 ENV PATH="/root/.local/bin:$PATH"
