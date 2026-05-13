@@ -94,6 +94,7 @@ Examples:
 
 - `itch_AAPL_2019-01-30_deltas.parquet`
 - `tardis_BTCUSDT_2020-09-01_depth10.parquet`
+- `histdata_EURUSD.SIM_2020-01_quotes.parquet`
 
 ## Curation workflow
 
@@ -323,10 +324,14 @@ These datasets predate this policy and use raw vendor formats (CSV/CSV.gz)
 without `metadata.json`. They remain valid for existing tests. New datasets
 should follow the Parquet standard above.
 
-| Dataset                  | Source | Format           | Location                  | Status  |
-|--------------------------|--------|------------------|---------------------------|---------|
-| Tardis Deribit L2 deltas | Tardis | Parquet (large)  | `tests/test_data/large/`  | Curated |
-| ITCH AAPL L3 deltas      | NASDAQ | Parquet (large)  | `tests/test_data/large/`  | Curated |
-| Tardis Deribit L2        | Tardis | CSV (checked in) | `tests/test_data/tardis/` | Legacy  |
-| Tardis Binance snapshots | Tardis | CSV.gz (large)   | `tests/test_data/large/`  | Legacy  |
-| Tardis Bitmex trades     | Tardis | CSV.gz (large)   | `tests/test_data/large/`  | Legacy  |
+| Dataset                       | Source   | Format           | Location                  | Status   |
+|-------------------------------|----------|------------------|---------------------------|----------|
+| Tardis Deribit L2 deltas      | Tardis   | Parquet (large)  | `tests/test_data/large/`  | Curated  |
+| ITCH AAPL L3 deltas           | NASDAQ   | Parquet (large)  | `tests/test_data/large/`  | Curated  |
+| HISTDATA EURUSD.SIM quotes    | HISTDATA | Parquet (large)  | `tests/test_data/large/`  | Migrated |
+| Tardis Deribit L2             | Tardis   | CSV (checked in) | `tests/test_data/tardis/` | Legacy   |
+| Tardis Binance snapshots      | Tardis   | CSV.gz (large)   | `tests/test_data/large/`  | Legacy   |
+| Tardis Bitmex trades          | Tardis   | CSV.gz (large)   | `tests/test_data/large/`  | Legacy   |
+
+The former `nautechsystems/nautilus_data` catalog maps to the HISTDATA EURUSD.SIM Parquet
+files above. Raw HISTDATA CSV files remain user-fetched.
