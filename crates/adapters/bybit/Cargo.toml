@@ -120,6 +120,13 @@ path = "bin/ws_data.rs"
 doc = false
 test = false
 
+# Run with `cargo run -p nautilus-bybit --bin bybit-flatten`.
+[[bin]]
+name = "bybit-flatten"
+path = "bin/flatten.rs"
+doc = false
+test = false
+
 # Run with `cargo run --example bybit-data-tester --package nautilus-bybit --features examples`.
 [[example]]
 name = "bybit-data-tester"

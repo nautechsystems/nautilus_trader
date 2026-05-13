@@ -75,7 +75,10 @@ use crate::{
     http::client::BybitHttpClient,
     websocket::{
         client::BybitWebSocketClient,
-        dispatch::{OrderIdentity, PendingOperation, WsDispatchState, dispatch_ws_message},
+        dispatch::{
+            OrderIdentity, OrderStateSnapshot, PendingOperation, WsDispatchState,
+            dispatch_ws_message,
+        },
         messages::{BybitWsAmendOrderParams, BybitWsCancelOrderParams, BybitWsPlaceOrderParams},
     },
 };
@@ -1156,6 +1159,16 @@ impl ExecutionClient for BybitExecutionClient {
             },
         );
 
+        // Seed for BBO reconciliation: venue may replace the submitted price
+        self.dispatch_state.order_snapshots.insert(
+            client_order_id,
+            OrderStateSnapshot {
+                quantity: order.quantity(),
+                price: order.price(),
+                trigger_price: order.trigger_price(),
+            },
+        );
+
         if self.config.environment == BybitEnvironment::Demo {
             let http_client = self.http_client.clone();
             let account_id = self.core.account_id;
@@ -1171,6 +1184,7 @@ impl ExecutionClient for BybitExecutionClient {
             let is_leverage = tp_sl.is_leverage;
             let bbo_side_type = tp_sl.bbo_side_type;
             let bbo_level = tp_sl.bbo_level;
+            let dispatch_state = Arc::clone(&self.dispatch_state);
 
             self.spawn_task("submit_order_http", async move {
                 let result = http_client
@@ -1196,6 +1210,8 @@ impl ExecutionClient for BybitExecutionClient {
                     .await;
 
                 if let Err(e) = result {
+                    dispatch_state.order_identities.remove(&client_order_id);
+                    dispatch_state.order_snapshots.remove(&client_order_id);
                     let ts_event = clock.get_time_ns();
                     emitter.emit_order_rejected_event(
                         strategy_id,
@@ -1231,6 +1247,7 @@ impl ExecutionClient for BybitExecutionClient {
                 }
                 Err(e) => {
                     dispatch_state.order_identities.remove(&client_order_id);
+                    dispatch_state.order_snapshots.remove(&client_order_id);
                     let ts_event = clock.get_time_ns();
                     emitter.emit_order_rejected_event(
                         strategy_id,
@@ -1361,6 +1378,14 @@ impl ExecutionClient for BybitExecutionClient {
                     venue_position_id,
                 },
             );
+            self.dispatch_state.order_snapshots.insert(
+                order.client_order_id(),
+                OrderStateSnapshot {
+                    quantity: order.quantity(),
+                    price: order.price(),
+                    trigger_price: order.trigger_price(),
+                },
+            );
         }
 
         let emitter = self.emitter.clone();
@@ -1373,6 +1398,7 @@ impl ExecutionClient for BybitExecutionClient {
             let is_leverage = tp_sl.is_leverage;
             let bbo_side_type = tp_sl.bbo_side_type;
             let bbo_level = tp_sl.bbo_level.clone();
+            let dispatch_state = Arc::clone(&self.dispatch_state);
 
             let order_data: Vec<_> = valid_orders
                 .iter()
@@ -1438,6 +1464,8 @@ impl ExecutionClient for BybitExecutionClient {
                         )
                         .await
                     {
+                        dispatch_state.order_identities.remove(&cid);
+                        dispatch_state.order_snapshots.remove(&cid);
                         let ts_event = clock.get_time_ns();
                         emitter.emit_order_rejected_event(
                             strategy_id,
@@ -1496,6 +1524,7 @@ impl ExecutionClient for BybitExecutionClient {
                 Err(e) => {
                     for cid in &client_order_ids {
                         dispatch_state.order_identities.remove(cid);
+                        dispatch_state.order_snapshots.remove(cid);
                     }
 
                     let ts_event = clock.get_time_ns();

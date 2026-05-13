@@ -22,6 +22,7 @@ Released on TBD (UTC).
 - Added Betfair Rust adapter `stream_gap_recovery_lookback_mins` config for the reconciliation lookback window
 - Added Bybit hedge-mode venue position IDs for order, position, and fill events
 - Added Bybit BBO order support for linear and inverse limit-style orders
+- Added Bybit `flatten` binary that cancels working orders and flattens Linear/Inverse positions
 - Added Coinbase liquidation/ADL warning on forced-close order events
 - Added Coinbase CFM liquidation buffer warning when buffer drops below 20%
 - Added Deribit `auto_load_missing_instruments` config flag to lazy-load uncached instruments on subscribe
@@ -118,6 +119,7 @@ Released on TBD (UTC).
 - Fixed `DataActor` composite book delta subscriptions not receiving per-underlying publishes (Rust)
 - Fixed Binance Futures reduce-only orders not reconciling venue-side quantity reductions (Python and Rust) (#3983), thanks for reporting @KaizynX
 - Fixed Binance WebSocket pong unhandled `RuntimeError` blocking reconnect after server close (#4020), thanks for reporting @M-at-ti-a
+- Fixed Bybit BBO orders not reconciling the venue-resolved price (Python emitted `OrderUpdated` without a preceding `OrderAccepted`; Rust emitted `OrderAccepted` but never reconciled the cached price)
 - Fixed Betfair Rust adapter dropped fills on reconnect by resyncing the fill tracker from cache
 - Fixed Betfair Rust adapter panic on blank `customerOrderRef`/`rfo` by normalizing empty strings to `None`
 - Fixed Betfair Rust adapter spurious `OrderRejected` after OCM already reported a terminal state

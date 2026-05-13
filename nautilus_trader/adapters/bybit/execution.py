@@ -1710,6 +1710,17 @@ class BybitExecutionClient(LiveExecutionClient):
                 ts_event=report.ts_last,
             )
         elif report.order_status == OrderStatus.ACCEPTED:
+            # Accepted before Updated: BBO orders' first report differs from
+            # the placeholder, which would otherwise skip OrderAccepted.
+            if order.status == OrderStatus.SUBMITTED:
+                self.generate_order_accepted(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    ts_event=report.ts_last,
+                )
+
             if report.is_order_updated(order):
                 self.generate_order_updated(
                     strategy_id=order.strategy_id,
@@ -1719,14 +1730,6 @@ class BybitExecutionClient(LiveExecutionClient):
                     quantity=report.quantity,
                     price=report.price,
                     trigger_price=report.trigger_price,
-                    ts_event=report.ts_last,
-                )
-            else:
-                self.generate_order_accepted(
-                    strategy_id=order.strategy_id,
-                    instrument_id=report.instrument_id,
-                    client_order_id=report.client_order_id,
-                    venue_order_id=report.venue_order_id,
                     ts_event=report.ts_last,
                 )
         elif report.order_status == OrderStatus.PENDING_CANCEL:

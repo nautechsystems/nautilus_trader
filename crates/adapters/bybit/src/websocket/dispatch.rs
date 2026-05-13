@@ -304,8 +304,16 @@ fn dispatch_order_update(
 
                 state.insert_accepted(client_order_id);
 
-                if let Some(snapshot) = snapshot {
-                    state.order_snapshots.insert(client_order_id, snapshot);
+                // BBO orders resolve their limit price venue-side: emit
+                // OrderUpdated after OrderAccepted when the seed diverges.
+                let venue_differs_from_submitted = snapshot
+                    .as_ref()
+                    .is_some_and(|s| is_snapshot_updated(s, &client_order_id, state));
+
+                if let Some(snapshot) = snapshot.as_ref() {
+                    state
+                        .order_snapshots
+                        .insert(client_order_id, snapshot.clone());
                 }
 
                 let accepted = OrderAccepted::new(
@@ -321,6 +329,27 @@ fn dispatch_order_update(
                     false,
                 );
                 emitter.send_order_event(OrderEventAny::Accepted(accepted));
+
+                if venue_differs_from_submitted && let Some(snapshot) = snapshot {
+                    let updated = OrderUpdated::new(
+                        emitter.trader_id(),
+                        identity.strategy_id,
+                        identity.instrument_id,
+                        client_order_id,
+                        snapshot.quantity,
+                        UUID4::new(),
+                        ts_init,
+                        ts_init,
+                        false,
+                        Some(venue_order_id),
+                        Some(account_id),
+                        snapshot.price,
+                        snapshot.trigger_price,
+                        None,
+                        false,
+                    );
+                    emitter.send_order_event(OrderEventAny::Updated(updated));
+                }
             }
             BybitOrderStatus::Triggered => {
                 if state.filled_orders.contains(&client_order_id) {
@@ -463,6 +492,32 @@ fn dispatch_order_update(
                     state,
                     ts_init,
                 );
+
+                // Reconcile seed against venue values before the fill (BBO
+                // orders may land directly on Filled).
+                if let Some(snapshot) = parse_order_snapshot(order, instrument)
+                    && is_snapshot_updated(&snapshot, &client_order_id, state)
+                {
+                    let updated = OrderUpdated::new(
+                        emitter.trader_id(),
+                        identity.strategy_id,
+                        identity.instrument_id,
+                        client_order_id,
+                        snapshot.quantity,
+                        UUID4::new(),
+                        ts_init,
+                        ts_init,
+                        false,
+                        Some(venue_order_id),
+                        Some(account_id),
+                        snapshot.price,
+                        snapshot.trigger_price,
+                        None,
+                        false,
+                    );
+                    state.order_snapshots.insert(client_order_id, snapshot);
+                    emitter.send_order_event(OrderEventAny::Updated(updated));
+                }
                 // Identity cleaned up in dispatch_execution_fill when leaves_qty
                 // reaches zero, since there is no guaranteed ordering between
                 // the order and execution topics.
@@ -812,6 +867,7 @@ fn emit_rejection_for_op(
     match pending_op {
         PendingOperation::Place => {
             state.order_identities.remove(&client_order_id);
+            state.order_snapshots.remove(&client_order_id);
             emitter.emit_order_rejected_event(
                 identity.strategy_id,
                 identity.instrument_id,
@@ -1509,6 +1565,133 @@ mod tests {
 
         let updated = ctx.recv_updated();
         assert_eq!(updated.price, Some(Price::from("32000.00")));
+    }
+
+    #[rstest]
+    fn test_dispatch_accepted_with_seeded_snapshot_emits_updated_for_bbo() {
+        let mut ctx = DispatchTestContext::new();
+        let value = new_order_value();
+        let cid = ClientOrderId::from("client-1");
+        ctx.state.order_identities.insert(cid, default_identity());
+        ctx.state.order_snapshots.insert(
+            cid,
+            OrderStateSnapshot {
+                quantity: Quantity::from("0.010"),
+                price: Some(Price::from("29000.00")),
+                trigger_price: None,
+            },
+        );
+
+        ctx.dispatch_value(&value);
+
+        let accepted = ctx.rx.try_recv().unwrap();
+        assert!(
+            matches!(accepted, ExecutionEvent::Order(OrderEventAny::Accepted(_))),
+            "Expected Accepted first, found {accepted:?}"
+        );
+
+        let updated = ctx.recv_updated();
+        assert_eq!(updated.client_order_id, cid);
+        assert_eq!(updated.price, Some(Price::from("30000.00")));
+        assert_eq!(updated.quantity, Quantity::from("0.010"));
+        assert!(updated.venue_order_id.is_some());
+    }
+
+    #[rstest]
+    fn test_emit_rejection_for_place_clears_snapshot() {
+        let ctx = DispatchTestContext::new();
+        let cid = ClientOrderId::from("client-1");
+        let identity = default_identity();
+        ctx.state.order_identities.insert(cid, identity.clone());
+        ctx.state.order_snapshots.insert(
+            cid,
+            OrderStateSnapshot {
+                quantity: Quantity::from("0.010"),
+                price: Some(Price::from("30000.00")),
+                trigger_price: None,
+            },
+        );
+
+        emit_rejection_for_op(
+            &PendingOperation::Place,
+            cid,
+            &identity,
+            None,
+            "rejected",
+            &ctx.emitter,
+            &ctx.state,
+            UnixNanos::from(1u64),
+        );
+
+        assert!(!ctx.state.order_identities.contains_key(&cid));
+        assert!(!ctx.state.order_snapshots.contains_key(&cid));
+    }
+
+    #[rstest]
+    fn test_dispatch_filled_with_seeded_snapshot_emits_updated_for_bbo() {
+        let mut ctx = DispatchTestContext::new();
+        let mut value = new_order_value();
+        value["data"][0]["orderStatus"] = serde_json::Value::String("Filled".to_string());
+        value["data"][0]["cumExecQty"] = serde_json::Value::String("0.010".to_string());
+        let cid = ClientOrderId::from("client-1");
+        ctx.state.order_identities.insert(cid, default_identity());
+        ctx.state.order_snapshots.insert(
+            cid,
+            OrderStateSnapshot {
+                quantity: Quantity::from("0.010"),
+                price: Some(Price::from("29000.00")),
+                trigger_price: None,
+            },
+        );
+
+        ctx.dispatch_value(&value);
+
+        let accepted_event = ctx.rx.try_recv().unwrap();
+        let accepted = match accepted_event {
+            ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) => accepted,
+            other => panic!("Expected Accepted first, found {other:?}"),
+        };
+        assert_eq!(accepted.client_order_id, cid);
+        assert!(!accepted.venue_order_id.to_string().is_empty());
+
+        let updated = ctx.recv_updated();
+        assert_eq!(updated.client_order_id, cid);
+        assert_eq!(updated.price, Some(Price::from("30000.00")));
+        assert_eq!(updated.quantity, Quantity::from("0.010"));
+        assert_eq!(updated.trigger_price, None);
+        assert_eq!(updated.venue_order_id, Some(accepted.venue_order_id));
+
+        let stored = ctx.state.order_snapshots.get(&cid).unwrap();
+        assert_eq!(stored.price, Some(Price::from("30000.00")));
+    }
+
+    #[rstest]
+    fn test_dispatch_accepted_with_matching_seeded_snapshot_no_updated() {
+        let mut ctx = DispatchTestContext::new();
+        let value = new_order_value();
+        let cid = ClientOrderId::from("client-1");
+        ctx.state.order_identities.insert(cid, default_identity());
+        ctx.state.order_snapshots.insert(
+            cid,
+            OrderStateSnapshot {
+                quantity: Quantity::from("0.010"),
+                price: Some(Price::from("30000.00")),
+                trigger_price: None,
+            },
+        );
+
+        ctx.dispatch_value(&value);
+
+        let accepted = ctx.rx.try_recv().unwrap();
+        assert!(matches!(
+            accepted,
+            ExecutionEvent::Order(OrderEventAny::Accepted(_))
+        ));
+
+        assert!(
+            ctx.rx.try_recv().is_err(),
+            "Expected no OrderUpdated when seed matches venue snapshot"
+        );
     }
 
     #[rstest]
