@@ -1,23 +1,70 @@
 name: security-audit
 
-# Supply chain security checks - runs nightly and on-demand for visibility.
+# Supply chain security checks.
 #
-# Separate from main build to avoid blocking PRs with unactionable advisories.
+# Triggers:
+#   - Nightly cron and manual dispatch: every audit job runs unconditionally.
+#   - Push to test-security: every audit job runs unconditionally (test ramp).
+#   - Pull requests and pushes to develop / master: a path-filtered gate job
+#     decides whether the audit jobs run. Pushes / PRs that don't touch lock
+#     files, manifests, audit config, or this workflow itself report the audit
+#     jobs as `Skipped`, which satisfies required status checks without
+#     surfacing transient advisory noise.
 
 permissions:
   contents: read
   actions: read
 
+env:
+  # Fork PRs lack repo/org vars, so audit instead of block.
+  EGRESS_POLICY: >-
+    ${{ github.event.pull_request.head.repo.fork && 'audit'
+    || vars.STEP_SECURITY_EGRESS_POLICY
+    || 'block' }}
+
 on:
+  pull_request:
   push:
-    branches: [test-security]
+    branches: [develop, master, test-security]
   schedule:
     - cron: '0 12 * * *' # Daily at 12:00 UTC (2hrs prior to nightly-merge)
   workflow_dispatch: # Allow manual trigger
 
 jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-22.04
+    outputs:
+      audit_needed: ${{ steps.filter.outputs.audit_needed }}
+    steps:
+      - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect audit-relevant changes
+        id: filter
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BRANCH: ${{ github.ref_name }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_AFTER_SHA: ${{ github.event.after }}
+        run: bash scripts/ci/security-audit-gate.sh
+
   cargo-audit:
     name: cargo-audit
+    needs: changes
+    if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
     environment:
       name: >-
@@ -30,7 +77,7 @@ jobs:
     steps:
       - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
@@ -50,6 +97,8 @@ jobs:
 
   cargo-deny:
     name: cargo-deny
+    needs: changes
+    if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
     environment:
       name: >-
@@ -62,7 +111,7 @@ jobs:
     steps:
       - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
@@ -82,6 +131,8 @@ jobs:
 
   cargo-vet:
     name: cargo-vet
+    needs: changes
+    if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
     environment:
       name: >-
@@ -94,7 +145,7 @@ jobs:
     steps:
       - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
@@ -114,6 +165,8 @@ jobs:
 
   pip-audit:
     name: pip-audit
+    needs: changes
+    if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
     environment:
       name: >-
@@ -126,7 +179,7 @@ jobs:
     steps:
       - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
@@ -157,6 +210,8 @@ jobs:
 
   osv-scanner:
     name: osv-scanner
+    needs: changes
+    if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
     environment:
       name: >-
@@ -169,7 +224,7 @@ jobs:
     steps:
       - uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
