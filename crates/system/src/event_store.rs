@@ -937,7 +937,10 @@ fn install_bus_tap(adapter: Arc<BusCaptureAdapter>, clock: &'static AtomicTime) 
 mod tests {
     use nautilus_common::{
         clock::TestClock,
-        messages::execution::{SubmitOrder, TradingCommand},
+        messages::{
+            data::{DataCommand, RequestCommand, RequestQuotes, SubscribeCommand, SubscribeQuotes},
+            execution::{SubmitOrder, TradingCommand},
+        },
     };
     use nautilus_core::time::get_atomic_clock_static;
     use nautilus_event_store::IndexKind;
@@ -945,7 +948,7 @@ mod tests {
         enums::{LiquiditySide, OrderSide, OrderType, TimeInForce},
         events::{OrderEventAny, OrderFilled, OrderInitialized},
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId,
+            AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
             VenueOrderId,
         },
         types::{Currency, Money, Price, Quantity},
@@ -1972,5 +1975,125 @@ mod tests {
         let decoded: OrderFilled =
             rmp_serde::from_slice(&captured.payload).expect("decode captured OrderFilled");
         assert_eq!(decoded, filled);
+    }
+
+    /// `send_data_command` reaches the bus tap with the [`DataCommand`] wrapper. The
+    /// envelope dispatcher must unwrap to the request/subscription category, stamp that
+    /// category as the `payload_type`, and write bytes that decode as the inner command
+    /// enum.
+    #[rstest]
+    fn bus_tap_captures_data_command_envelopes_with_category_payload_types() {
+        let tmp = TempDir::new().expect("tempdir");
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+
+        let mut store = KernelEventStore::boot(
+            Some(make_config(tmp.path().to_path_buf())),
+            instance_id,
+            clock_rc,
+        )
+        .expect("boot store");
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open run");
+        let run_id = store.run_id().expect("run open").to_string();
+
+        let request = RequestCommand::Quotes(RequestQuotes::new(
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            None,
+            None,
+            None,
+            Some(ClientId::from("BINANCE")),
+            UUID4::new(),
+            UnixNanos::from(20),
+            None,
+        ));
+        let subscribe = SubscribeCommand::Quotes(SubscribeQuotes::new(
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            Some(ClientId::from("BINANCE")),
+            Some(Venue::from("BINANCE")),
+            UUID4::new(),
+            UnixNanos::from(21),
+            Some(UUID4::new()),
+            None,
+        ));
+
+        let request_endpoint = MStr::<Endpoint>::from("test.data.engine.request");
+        msgbus::send_data_command(request_endpoint, DataCommand::Request(request.clone()));
+
+        let subscribe_endpoint = MStr::<Endpoint>::from("test.data.engine.subscribe");
+        msgbus::send_data_command(
+            subscribe_endpoint,
+            DataCommand::Subscribe(subscribe.clone()),
+        );
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+
+        loop {
+            let hwm = store
+                .session
+                .as_ref()
+                .map_or(0, EventStoreSession::high_watermark);
+
+            if hwm >= 3 {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "captured DataCommand entries did not commit within deadline (hwm={hwm})",
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
+
+        drop(store);
+
+        let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
+            .expect("open sealed");
+        let captured_request = sealed
+            .scan_seq(2)
+            .expect("scan request")
+            .expect("captured request present");
+        assert_eq!(captured_request.payload_type.as_str(), "RequestCommand");
+        assert_eq!(captured_request.topic.as_ref(), request_endpoint.as_str());
+
+        let decoded_request: RequestCommand =
+            rmp_serde::from_slice(&captured_request.payload).expect("decode RequestCommand");
+        match (decoded_request, request) {
+            (RequestCommand::Quotes(decoded), RequestCommand::Quotes(expected)) => {
+                assert_eq!(decoded.request_id, expected.request_id);
+                assert_eq!(decoded.instrument_id, expected.instrument_id);
+                assert_eq!(decoded.client_id, expected.client_id);
+                assert_eq!(decoded.ts_init, expected.ts_init);
+            }
+            other => panic!("expected RequestCommand::Quotes round trip, was {other:?}"),
+        }
+
+        let captured_subscribe = sealed
+            .scan_seq(3)
+            .expect("scan subscribe")
+            .expect("captured subscribe present");
+        assert_eq!(captured_subscribe.payload_type.as_str(), "SubscribeCommand");
+        assert_eq!(
+            captured_subscribe.topic.as_ref(),
+            subscribe_endpoint.as_str()
+        );
+
+        let decoded_subscribe: SubscribeCommand =
+            rmp_serde::from_slice(&captured_subscribe.payload).expect("decode SubscribeCommand");
+        match (decoded_subscribe, subscribe) {
+            (SubscribeCommand::Quotes(decoded), SubscribeCommand::Quotes(expected)) => {
+                assert_eq!(decoded.command_id, expected.command_id);
+                assert_eq!(decoded.instrument_id, expected.instrument_id);
+                assert_eq!(decoded.client_id, expected.client_id);
+                assert_eq!(decoded.venue, expected.venue);
+                assert_eq!(decoded.ts_init, expected.ts_init);
+                assert_eq!(decoded.correlation_id, expected.correlation_id);
+            }
+            other => panic!("expected SubscribeCommand::Quotes round trip, was {other:?}"),
+        }
     }
 }

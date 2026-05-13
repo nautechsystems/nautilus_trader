@@ -22,7 +22,12 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-defi = ["nautilus-common/defi", "nautilus-data/defi", "nautilus-model/defi"]
+defi = [
+  "nautilus-common/defi",
+  "nautilus-data/defi",
+  "nautilus-event-store?/defi",
+  "nautilus-model/defi",
+]
 event_store = [
   "dep:bincode",
   "dep:bytes",

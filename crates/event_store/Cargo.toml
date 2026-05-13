@@ -23,6 +23,7 @@ crate-type = ["rlib"]
 
 [features]
 default = []
+defi = ["nautilus-common/defi", "nautilus-model/defi"]
 
 [package.metadata.docs.rs]
 all-features = true

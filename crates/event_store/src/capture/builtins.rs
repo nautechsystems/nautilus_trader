@@ -20,11 +20,12 @@
 //! allow-list end-to-end. Phase 7 adds envelope-aware dispatchers for the
 //! wrapper enums production code actually pushes through `send_trading_command`,
 //! `publish_order_event`, `send_execution_report`, and `publish_position_event`
-//! ([`TradingCommand`], [`OrderEventAny`], [`ExecutionReport`], [`PositionEvent`]);
-//! these reach the bus tap as their wrapper [`std::any::TypeId`] and the bare-type
-//! registrations would miss them. Each dispatcher unwraps its variant, runs the
-//! inner-typed encode, and stamps the inner-variant's canonical `payload_type` tag so
-//! forensics scans see entries identical to the bare-type capture path.
+//! ([`TradingCommand`], [`OrderEventAny`], [`ExecutionReport`], [`PositionEvent`]).
+//! The same pattern covers `send_data_command` and `send_data_response` ([`DataCommand`],
+//! [`DataResponse`]). These reach the bus tap as their wrapper [`std::any::TypeId`] and
+//! the bare-type registrations would miss them. Each dispatcher unwraps its variant,
+//! runs the inner-typed encode, and stamps the inner-variant's canonical `payload_type`
+//! tag so forensics scans see entries identical to the bare-type capture path.
 //!
 //! The payload serialization format is MessagePack via `rmp-serde`. The on-disk envelope
 //! codec stays bincode (positional, non-self-describing); MessagePack inside the payload
@@ -36,9 +37,9 @@ use std::collections::HashSet;
 use bytes::Bytes;
 use nautilus_common::messages::{
     data::{
-        BarsResponse, BookResponse, CustomDataResponse, DataResponse, ForwardPricesResponse,
-        FundingRatesResponse, InstrumentResponse, InstrumentsResponse, QuotesResponse,
-        TradesResponse,
+        BarsResponse, BookResponse, CustomDataResponse, DataCommand, DataResponse,
+        ForwardPricesResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
+        QuotesResponse, TradesResponse,
     },
     execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport, ModifyOrder,
@@ -140,6 +141,22 @@ pub const PAYLOAD_TYPE_POSITION_ADJUSTED: &str = "PositionAdjusted";
 /// The canonical `payload_type` tag for [`AccountState`].
 pub const PAYLOAD_TYPE_ACCOUNT_STATE: &str = "AccountState";
 
+/// The canonical `payload_type` tag for `RequestCommand`.
+pub const PAYLOAD_TYPE_REQUEST_COMMAND: &str = "RequestCommand";
+/// The canonical `payload_type` tag for `SubscribeCommand`.
+pub const PAYLOAD_TYPE_SUBSCRIBE_COMMAND: &str = "SubscribeCommand";
+/// The canonical `payload_type` tag for `UnsubscribeCommand`.
+pub const PAYLOAD_TYPE_UNSUBSCRIBE_COMMAND: &str = "UnsubscribeCommand";
+#[cfg(feature = "defi")]
+/// The canonical `payload_type` tag for `DefiRequestCommand`.
+pub const PAYLOAD_TYPE_DEFI_REQUEST_COMMAND: &str = "DefiRequestCommand";
+#[cfg(feature = "defi")]
+/// The canonical `payload_type` tag for `DefiSubscribeCommand`.
+pub const PAYLOAD_TYPE_DEFI_SUBSCRIBE_COMMAND: &str = "DefiSubscribeCommand";
+#[cfg(feature = "defi")]
+/// The canonical `payload_type` tag for `DefiUnsubscribeCommand`.
+pub const PAYLOAD_TYPE_DEFI_UNSUBSCRIBE_COMMAND: &str = "DefiUnsubscribeCommand";
+
 /// The canonical `payload_type` tag for [`CustomDataResponse`].
 pub const PAYLOAD_TYPE_CUSTOM_DATA_RESPONSE: &str = "CustomDataResponse";
 /// The canonical `payload_type` tag for [`InstrumentResponse`].
@@ -170,6 +187,8 @@ const PAYLOAD_TYPE_ORDER_EVENT_ANY: &str = "OrderEventAny";
 const PAYLOAD_TYPE_EXECUTION_REPORT: &str = "ExecutionReport";
 
 const PAYLOAD_TYPE_POSITION_EVENT: &str = "PositionEvent";
+
+const PAYLOAD_TYPE_DATA_COMMAND: &str = "DataCommand";
 
 const PAYLOAD_TYPE_DATA_RESPONSE: &str = "DataResponse";
 
@@ -228,6 +247,8 @@ pub fn register_default(registry: &mut EncoderRegistry) {
         payload_type(PAYLOAD_TYPE_ACCOUNT_STATE),
         encode_account_state,
     );
+    registry
+        .register::<DataCommand, _>(payload_type(PAYLOAD_TYPE_DATA_COMMAND), encode_data_command);
     registry.register::<DataResponse, _>(
         payload_type(PAYLOAD_TYPE_DATA_RESPONSE),
         encode_data_response,
@@ -897,6 +918,63 @@ pub fn encode_account_state(message: &AccountState) -> Result<EncodedPayload, En
     Ok(EncodedPayload::new(payload, Vec::new()))
 }
 
+/// Encodes a [`DataCommand`] envelope by dispatching on its command category.
+///
+/// `send_data_command` hands the bus tap a [`DataCommand`] wrapper, so the tap
+/// dispatches by the wrapper's [`std::any::TypeId`] and the inner command category
+/// never reaches a bare-type encoder. The dispatcher unwraps the category, encodes the
+/// serializable inner enum (`RequestCommand`, `SubscribeCommand`, or
+/// `UnsubscribeCommand`), and stamps that category's canonical `payload_type` tag.
+///
+/// Request IDs, command IDs, and correlation IDs do not have a matching [`IndexKind`]
+/// today, so data commands emit no sidecar indices. Correlation is recovered from the
+/// captured payload and, once header propagation lands, propagated headers.
+///
+/// # Errors
+///
+/// Returns [`EncodeError::Serialize`] when MessagePack rejects the inner payload, or
+/// when a future non-exhaustive [`DataCommand`] variant has no encoder yet.
+pub fn encode_data_command(command: &DataCommand) -> Result<EncodedPayload, EncodeError> {
+    match command {
+        DataCommand::Request(cmd) => {
+            encode_data_command_category(cmd, PAYLOAD_TYPE_REQUEST_COMMAND)
+        }
+        DataCommand::Subscribe(cmd) => {
+            encode_data_command_category(cmd, PAYLOAD_TYPE_SUBSCRIBE_COMMAND)
+        }
+        DataCommand::Unsubscribe(cmd) => {
+            encode_data_command_category(cmd, PAYLOAD_TYPE_UNSUBSCRIBE_COMMAND)
+        }
+        #[cfg(feature = "defi")]
+        DataCommand::DefiRequest(cmd) => {
+            encode_data_command_category(cmd, PAYLOAD_TYPE_DEFI_REQUEST_COMMAND)
+        }
+        #[cfg(feature = "defi")]
+        DataCommand::DefiSubscribe(cmd) => {
+            encode_data_command_category(cmd, PAYLOAD_TYPE_DEFI_SUBSCRIBE_COMMAND)
+        }
+        #[cfg(feature = "defi")]
+        DataCommand::DefiUnsubscribe(cmd) => {
+            encode_data_command_category(cmd, PAYLOAD_TYPE_DEFI_UNSUBSCRIBE_COMMAND)
+        }
+        _ => Err(EncodeError::Serialize(
+            "unsupported DataCommand variant".to_string(),
+        )),
+    }
+}
+
+fn encode_data_command_category<T: Serialize>(
+    command: &T,
+    tag: &str,
+) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(command)?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(tag),
+        payload,
+        Vec::new(),
+    ))
+}
+
 /// Encodes a [`DataResponse`] envelope by dispatching on the variant.
 ///
 /// `send_data_response` hands the bus tap a [`DataResponse`] wrapper, so the tap
@@ -1079,7 +1157,18 @@ fn encode_bars_response(response: &BarsResponse) -> Result<EncodedPayload, Encod
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::messages::data::{
+        RequestCommand, RequestQuotes, SubscribeCommand, SubscribeQuotes, UnsubscribeCommand,
+        UnsubscribeQuotes,
+    };
+    #[cfg(feature = "defi")]
+    use nautilus_common::messages::defi::{
+        DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, RequestPoolSnapshot,
+        SubscribeBlocks, UnsubscribeBlocks,
+    };
     use nautilus_core::{UUID4, UnixNanos};
+    #[cfg(feature = "defi")]
+    use nautilus_model::defi::Blockchain;
     use nautilus_model::{
         data::{Bar, BarType},
         enums::{
@@ -1263,7 +1352,7 @@ mod tests {
     fn default_registry_contains_bare_and_envelope_encoders() {
         let registry = default_registry();
 
-        assert_eq!(registry.len(), 9);
+        assert_eq!(registry.len(), 10);
         assert!(registry.contains::<SubmitOrder>());
         assert!(registry.contains::<OrderFilled>());
         assert!(registry.contains::<OrderStatusReport>());
@@ -1272,6 +1361,7 @@ mod tests {
         assert!(registry.contains::<ExecutionReport>());
         assert!(registry.contains::<PositionEvent>());
         assert!(registry.contains::<AccountState>());
+        assert!(registry.contains::<DataCommand>());
         assert!(registry.contains::<DataResponse>());
     }
 
@@ -2498,6 +2588,171 @@ mod tests {
         assert!(encoded.index_keys.is_empty());
     }
 
+    #[rstest]
+    fn data_command_request_envelope_stamps_request_command_payload_type() {
+        // DataCommand reaches the bus tap as the wrapper TypeId. The dispatcher must
+        // unwrap one level, encode RequestCommand, and stamp the category tag so the
+        // reader pairs the bytes with the RequestCommand decoder.
+        let request = make_request_command();
+        let envelope = DataCommand::Request(request.clone());
+        let encoded = encode_data_command(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_REQUEST_COMMAND,
+        );
+        assert!(encoded.index_keys.is_empty());
+
+        let decoded: RequestCommand = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        match (decoded, request) {
+            (RequestCommand::Quotes(decoded), RequestCommand::Quotes(expected)) => {
+                assert_eq!(decoded.request_id, expected.request_id);
+                assert_eq!(decoded.instrument_id, expected.instrument_id);
+            }
+            other => panic!("expected RequestCommand::Quotes round trip, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn data_command_subscribe_envelope_stamps_subscribe_command_payload_type() {
+        let subscribe = make_subscribe_command();
+        let envelope = DataCommand::Subscribe(subscribe.clone());
+        let encoded = encode_data_command(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_SUBSCRIBE_COMMAND,
+        );
+        assert!(encoded.index_keys.is_empty());
+
+        let decoded: SubscribeCommand = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        match (decoded, subscribe) {
+            (SubscribeCommand::Quotes(decoded), SubscribeCommand::Quotes(expected)) => {
+                assert_eq!(decoded.command_id, expected.command_id);
+                assert_eq!(decoded.instrument_id, expected.instrument_id);
+            }
+            other => panic!("expected SubscribeCommand::Quotes round trip, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn data_command_unsubscribe_envelope_stamps_unsubscribe_command_payload_type() {
+        let unsubscribe = make_unsubscribe_command();
+        let envelope = DataCommand::Unsubscribe(unsubscribe.clone());
+        let encoded = encode_data_command(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_UNSUBSCRIBE_COMMAND,
+        );
+        assert!(encoded.index_keys.is_empty());
+
+        let decoded: UnsubscribeCommand = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        match (decoded, unsubscribe) {
+            (UnsubscribeCommand::Quotes(decoded), UnsubscribeCommand::Quotes(expected)) => {
+                assert_eq!(decoded.command_id, expected.command_id);
+                assert_eq!(decoded.instrument_id, expected.instrument_id);
+            }
+            other => panic!("expected UnsubscribeCommand::Quotes round trip, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn data_command_registered_under_category_payload_type() {
+        // The default registry must dispatch DataCommand through encode_data_command and
+        // stamp the inner category tag, not the wrapper sentinel tag.
+        let registry = default_registry();
+        let envelope = DataCommand::Subscribe(make_subscribe_command());
+        let (tag, encoded) = registry
+            .encode(&envelope)
+            .expect("encode")
+            .expect("registered");
+
+        assert_eq!(tag.as_str(), PAYLOAD_TYPE_SUBSCRIBE_COMMAND);
+        assert!(encoded.index_keys.is_empty());
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn data_command_defi_request_envelope_stamps_defi_request_command_payload_type() {
+        let request = make_defi_request_command();
+        let envelope = DataCommand::DefiRequest(request.clone());
+        let encoded = encode_data_command(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_DEFI_REQUEST_COMMAND,
+        );
+        assert!(encoded.index_keys.is_empty());
+
+        let decoded: DefiRequestCommand = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        match (decoded, request) {
+            (
+                DefiRequestCommand::PoolSnapshot(decoded),
+                DefiRequestCommand::PoolSnapshot(expected),
+            ) => {
+                assert_eq!(decoded.request_id, expected.request_id);
+                assert_eq!(decoded.instrument_id, expected.instrument_id);
+                assert_eq!(decoded.client_id, expected.client_id);
+                assert_eq!(decoded.ts_init, expected.ts_init);
+            }
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn data_command_defi_subscribe_envelope_stamps_defi_subscribe_command_payload_type() {
+        let subscribe = make_defi_subscribe_command();
+        let envelope = DataCommand::DefiSubscribe(subscribe.clone());
+        let encoded = encode_data_command(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_DEFI_SUBSCRIBE_COMMAND,
+        );
+        assert!(encoded.index_keys.is_empty());
+
+        let decoded: DefiSubscribeCommand =
+            rmp_serde::from_slice(&encoded.payload).expect("decode");
+
+        match (decoded, subscribe) {
+            (DefiSubscribeCommand::Blocks(decoded), DefiSubscribeCommand::Blocks(expected)) => {
+                assert_eq!(decoded.command_id, expected.command_id);
+                assert_eq!(decoded.chain, expected.chain);
+                assert_eq!(decoded.client_id, expected.client_id);
+                assert_eq!(decoded.ts_init, expected.ts_init);
+            }
+            other => panic!("expected DefiSubscribeCommand::Blocks round trip, was {other:?}"),
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn data_command_defi_unsubscribe_envelope_stamps_defi_unsubscribe_command_payload_type() {
+        let unsubscribe = make_defi_unsubscribe_command();
+        let envelope = DataCommand::DefiUnsubscribe(unsubscribe.clone());
+        let encoded = encode_data_command(&envelope).expect("encode");
+
+        assert_eq!(
+            encoded.payload_type.expect("override").as_str(),
+            PAYLOAD_TYPE_DEFI_UNSUBSCRIBE_COMMAND,
+        );
+        assert!(encoded.index_keys.is_empty());
+
+        let decoded: DefiUnsubscribeCommand =
+            rmp_serde::from_slice(&encoded.payload).expect("decode");
+
+        match (decoded, unsubscribe) {
+            (DefiUnsubscribeCommand::Blocks(decoded), DefiUnsubscribeCommand::Blocks(expected)) => {
+                assert_eq!(decoded.command_id, expected.command_id);
+                assert_eq!(decoded.chain, expected.chain);
+                assert_eq!(decoded.client_id, expected.client_id);
+                assert_eq!(decoded.ts_init, expected.ts_init);
+            }
+            other => panic!("expected DefiUnsubscribeCommand::Blocks round trip, was {other:?}"),
+        }
+    }
+
     fn client_id() -> ClientId {
         ClientId::from("BINANCE")
     }
@@ -2516,6 +2771,76 @@ mod tests {
 
     fn data_type() -> DataType {
         DataType::new("Bar", None, None)
+    }
+
+    fn make_request_command() -> RequestCommand {
+        RequestCommand::Quotes(RequestQuotes::new(
+            instrument_id(),
+            None,
+            None,
+            None,
+            Some(client_id()),
+            correlation_id(),
+            UnixNanos::from(197),
+            None,
+        ))
+    }
+
+    fn make_subscribe_command() -> SubscribeCommand {
+        SubscribeCommand::Quotes(SubscribeQuotes::new(
+            instrument_id(),
+            Some(client_id()),
+            Some(venue()),
+            correlation_id(),
+            UnixNanos::from(198),
+            Some(correlation_id()),
+            None,
+        ))
+    }
+
+    fn make_unsubscribe_command() -> UnsubscribeCommand {
+        UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
+            instrument_id(),
+            Some(client_id()),
+            Some(venue()),
+            correlation_id(),
+            UnixNanos::from(199),
+            Some(correlation_id()),
+            None,
+        ))
+    }
+
+    #[cfg(feature = "defi")]
+    fn make_defi_request_command() -> DefiRequestCommand {
+        DefiRequestCommand::PoolSnapshot(RequestPoolSnapshot::new(
+            instrument_id(),
+            Some(client_id()),
+            correlation_id(),
+            UnixNanos::from(196),
+            None,
+        ))
+    }
+
+    #[cfg(feature = "defi")]
+    fn make_defi_subscribe_command() -> DefiSubscribeCommand {
+        DefiSubscribeCommand::Blocks(SubscribeBlocks::new(
+            Blockchain::Ethereum,
+            Some(client_id()),
+            correlation_id(),
+            UnixNanos::from(195),
+            None,
+        ))
+    }
+
+    #[cfg(feature = "defi")]
+    fn make_defi_unsubscribe_command() -> DefiUnsubscribeCommand {
+        DefiUnsubscribeCommand::Blocks(UnsubscribeBlocks::new(
+            Blockchain::Ethereum,
+            Some(client_id()),
+            correlation_id(),
+            UnixNanos::from(194),
+            None,
+        ))
     }
 
     fn make_custom_data_response() -> CustomDataResponse {
