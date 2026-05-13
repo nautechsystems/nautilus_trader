@@ -41,6 +41,7 @@ pub const KRAKEN_WS_TOPIC_DELIMITER: char = '.';
 pub const KRAKEN_SPOT_HTTP_URL: &str = "https://api.kraken.com";
 pub const KRAKEN_SPOT_WS_PUBLIC_URL: &str = "wss://ws.kraken.com/v2";
 pub const KRAKEN_SPOT_WS_PRIVATE_URL: &str = "wss://ws-auth.kraken.com/v2";
+pub const KRAKEN_SPOT_WS_L3_URL: &str = "wss://ws-l3.kraken.com/v2";
 
 // Futures API URLs
 pub const KRAKEN_FUTURES_HTTP_URL: &str = "https://futures.kraken.com";

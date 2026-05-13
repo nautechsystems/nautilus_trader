@@ -198,6 +198,61 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 | `OrderBook` (snapshot) | ✓    | ✓       | Via HTTP depth endpoint.               |
 | `FundingRateUpdate`    | -    | ✓       | Client‑side start/end/limit filtering. |
 
+## L3 order book (market-by-order)
+
+Kraken exposes per-order book data via the WebSocket v2 `level3` channel at
+`wss://ws-l3.kraken.com/v2`. This gives real venue order IDs, per-order quantities,
+and true incremental events (`add`, `modify`, `delete`).
+
+### Prerequisites
+
+L3 subscriptions require API credentials (key and secret). Set them in
+`KrakenDataClientConfig`:
+
+```python
+from nautilus_trader.adapters.kraken.config import KrakenDataClientConfig
+
+config = KrakenDataClientConfig(
+    api_key="YOUR_KEY",
+    api_secret="YOUR_SECRET",
+)
+```
+
+Then subscribe with `book_type=BookType.L3_MBO`:
+
+```python
+from nautilus_trader.model.enums import BookType
+
+await client.subscribe_book_deltas(
+    instrument_id=instrument_id,
+    book_type=BookType.L3_MBO,
+    depth=1000,  # valid: 10, 100, 1000
+)
+```
+
+### CRC32 checksum validation
+
+By default, each update's CRC32 checksum is validated against Kraken's provided value.
+A mismatch is logged as a warning. To disable (e.g. for benchmarking):
+
+```python
+config = KrakenDataClientConfig(
+    api_key="...",
+    api_secret="...",
+    validate_l3_checksum=False,
+)
+```
+
+### Storage recommendations
+
+`OrderBookDelta` already carries `order_id: u64` in its Arrow schema, so L3 data
+is stored identically to L2 in the `ParquetDataCatalog`. L3 generates significantly
+more events per instrument than L2. Recommended settings:
+
+- Lower chunk size (e.g. `chunk_size=50_000`) for faster parallel reads.
+- Enable `zstd` compression in catalog config.
+- Use per-instrument path partitioning (enabled by default).
+
 ## Orders capability
 
 ### Order types

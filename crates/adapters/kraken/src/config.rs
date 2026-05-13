@@ -46,6 +46,11 @@ pub struct KrakenDataClientConfig {
     pub base_url: Option<String>,
     pub ws_public_url: Option<String>,
     pub ws_private_url: Option<String>,
+    /// Override for the L3 WebSocket URL. Defaults to `wss://ws-l3.kraken.com/v2`.
+    pub ws_l3_url: Option<String>,
+    /// Validate Kraken's CRC32 checksum on each L3 update.
+    #[builder(default = true)]
+    pub validate_l3_checksum: bool,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<String>,
     #[builder(default = 30)]
@@ -97,6 +102,13 @@ impl KrakenDataClientConfig {
         self.ws_private_url.clone().unwrap_or_else(|| {
             get_kraken_ws_private_url(self.product_type, self.environment).to_string()
         })
+    }
+
+    /// Returns the L3 WebSocket URL for the configured environment.
+    pub fn ws_l3_url(&self) -> String {
+        self.ws_l3_url
+            .clone()
+            .unwrap_or_else(|| crate::common::consts::KRAKEN_SPOT_WS_L3_URL.to_string())
     }
 }
 

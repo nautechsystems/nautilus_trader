@@ -13,17 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Kraken Spot WebSocket v2 API client implementation.
-//!
-//! Provides real-time market data streams including:
-//! - Ticker (quotes)
-//! - Trades
-//! - Order book (L2 and L3)
-//! - OHLC bars
+//! Kraken Spot WebSocket v2 `level3` channel wire types, CRC32, parser, and book-state runtime.
 
-pub mod client;
-pub mod enums;
-pub mod handler;
-pub mod level_3;
-pub mod messages;
-pub mod parse;
+pub(crate) mod book_id;
+pub(crate) mod checksum;
+pub(crate) mod messages;
+pub(crate) mod parse;
+pub(crate) mod resync;
+pub(crate) mod runtime;
+
+pub(crate) use book_id::BookOrderIdHasher;
+pub(crate) use messages::KrakenL3WsMessage;

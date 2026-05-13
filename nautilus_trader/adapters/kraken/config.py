@@ -56,6 +56,9 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws_futures : str, optional
         The base URL for Kraken Futures WebSocket API.
         If ``None`` then will use the default URL based on environment.
+    base_url_ws_l3_spot : str, optional
+        The base URL for Kraken Spot L3 WebSocket API.
+        If ``None`` then will use the default URL based on environment.
     proxy_url : str, optional
         Optional proxy URL for HTTP and WebSocket transports.
     update_instruments_interval_mins: PositiveInt or None, default 60
@@ -73,6 +76,9 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
     max_requests_per_second : PositiveInt, optional
         The maximum number of requests per second for rate limiting.
         If ``None`` then will use the default of 5 requests per second.
+    validate_l3_checksum : bool, default True
+        If True, CRC32 checksums on ``level3`` book updates are verified and
+        a clear delta is emitted downstream on mismatch.
 
     """
 
@@ -84,6 +90,7 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http_futures: str | None = None
     base_url_ws_spot: str | None = None
     base_url_ws_futures: str | None = None
+    base_url_ws_l3_spot: str | None = None
     proxy_url: str | None = None
     update_instruments_interval_mins: PositiveInt | None = 60
     max_retries: PositiveInt | None = None
@@ -92,6 +99,7 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
     http_timeout_secs: PositiveInt | None = None
     ws_heartbeat_secs: PositiveInt = 30
     max_requests_per_second: PositiveInt | None = None
+    validate_l3_checksum: bool = True
 
 
 class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):

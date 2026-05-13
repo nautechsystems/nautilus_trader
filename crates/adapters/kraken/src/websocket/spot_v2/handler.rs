@@ -27,7 +27,8 @@ use nautilus_network::{
     RECONNECTED,
     websocket::{SubscriptionState, WebSocketClient},
 };
-use serde_json::Value;
+use serde::Deserialize;
+use serde_json::{Value, value::RawValue};
 use tokio_tungstenite::tungstenite::Message;
 
 use super::{
@@ -38,6 +39,7 @@ use super::{
     },
     parse::parse_order_response,
 };
+use crate::websocket::spot_v2::level_3::messages::{KrakenL3Snapshot, KrakenL3UpdateData};
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -214,6 +216,12 @@ impl SpotFeedHandler {
             }
         }
 
+        if text.contains("\"level3\"")
+            && let Some(msg) = parse_level3_text(text)
+        {
+            return self.handle_l3_message(msg);
+        }
+
         let value: Value = match serde_json::from_str(text) {
             Ok(v) => v,
             Err(e) => {
@@ -299,6 +307,9 @@ impl SpotFeedHandler {
             KrakenWsChannel::Trade => self.handle_trade_message(msg),
             KrakenWsChannel::Ohlc => self.handle_ohlc_message(msg),
             KrakenWsChannel::Executions => self.handle_executions_message(msg),
+            KrakenWsChannel::Level3 => {
+                unreachable!("level3 messages routed via fast-path in parse_message",)
+            }
             _ => {
                 log::warn!("Unhandled channel: {:?}", msg.channel);
                 None
@@ -406,6 +417,56 @@ impl SpotFeedHandler {
         } else {
             Some(KrakenSpotWsMessage::Execution(executions))
         }
+    }
+}
+
+#[derive(Deserialize)]
+struct Level3RawMessage<'a> {
+    channel: &'a str,
+    #[serde(rename = "type")]
+    msg_type: &'a str,
+    #[serde(borrow)]
+    data: Vec<&'a RawValue>,
+}
+
+fn parse_level3_text(text: &str) -> Option<KrakenSpotWsMessage> {
+    let msg: Level3RawMessage<'_> = serde_json::from_str(text).ok()?;
+    if msg.channel != "level3" {
+        return None;
+    }
+    let first = msg.data.first()?.get();
+
+    match msg.msg_type {
+        "snapshot" => match serde_json::from_str::<KrakenL3Snapshot>(first) {
+            Ok(snap) => Some(KrakenSpotWsMessage::L3Snapshot(snap)),
+            Err(e) => {
+                log::warn!("Failed to deserialize L3 snapshot: {e}");
+                None
+            }
+        },
+        "update" => match serde_json::from_str::<KrakenL3UpdateData>(first) {
+            Ok(update) => Some(KrakenSpotWsMessage::L3Update(update)),
+            Err(e) => {
+                log::warn!("Failed to deserialize L3 update: {e}");
+                None
+            }
+        },
+        _ => None,
+    }
+}
+
+impl SpotFeedHandler {
+    fn handle_l3_message(&self, msg: KrakenSpotWsMessage) -> Option<KrakenSpotWsMessage> {
+        let symbol = match &msg {
+            KrakenSpotWsMessage::L3Snapshot(s) => &s.symbol,
+            KrakenSpotWsMessage::L3Update(u) => &u.symbol,
+            _ => return None,
+        };
+
+        if !self.is_subscribed(&format!("level3:{symbol}")) {
+            return None;
+        }
+        Some(msg)
     }
 }
 
@@ -701,5 +762,88 @@ mod tests {
             }
             other => panic!("expected OrderResponse, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn test_parse_level3_snapshot_with_subscription_passes() {
+        let handler = create_test_handler();
+        handler.subscriptions.mark_subscribe("level3:BTC/USD");
+        handler.subscriptions.confirm_subscribe("level3:BTC/USD");
+
+        let json = r#"{
+            "channel": "level3",
+            "type": "snapshot",
+            "data": [{
+                "symbol": "BTC/USD",
+                "bids": [],
+                "asks": [],
+                "checksum": 0,
+                "timestamp": "2024-01-01T00:00:00Z"
+            }]
+        }"#;
+
+        let result = handler.parse_message(json);
+        assert!(matches!(result, Some(KrakenSpotWsMessage::L3Snapshot(_))));
+    }
+
+    #[rstest]
+    fn test_parse_level3_update_without_subscription_filtered() {
+        let handler = create_test_handler();
+        let json = r#"{
+            "channel": "level3",
+            "type": "update",
+            "data": [{
+                "symbol": "BTC/USD",
+                "bids": [],
+                "asks": [],
+                "checksum": 0,
+                "timestamp": "2024-01-01T00:00:00Z"
+            }]
+        }"#;
+
+        let result = handler.parse_message(json);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_level3_snapshot_compact_json() {
+        let handler = create_test_handler();
+        handler.subscriptions.mark_subscribe("level3:BTC/USD");
+        handler.subscriptions.confirm_subscribe("level3:BTC/USD");
+        let json = r#"{"channel":"level3","type":"snapshot","data":[{"symbol":"BTC/USD","bids":[],"asks":[],"checksum":0,"timestamp":"2024-01-01T00:00:00Z"}]}"#;
+        assert!(matches!(
+            handler.parse_message(json),
+            Some(KrakenSpotWsMessage::L3Snapshot(_))
+        ));
+    }
+
+    #[rstest]
+    fn test_parse_level3_snapshot_preserves_raw_decimal() {
+        let handler = create_test_handler();
+        handler.subscriptions.mark_subscribe("level3:BTC/USD");
+        handler.subscriptions.confirm_subscribe("level3:BTC/USD");
+
+        let json = r#"{
+            "channel": "level3",
+            "type": "snapshot",
+            "data": [{
+                "symbol": "BTC/USD",
+                "bids": [{
+                    "order_id": "order-bid-1",
+                    "limit_price": 42000.50000,
+                    "order_qty": 0.01000000,
+                    "timestamp": "2024-01-01T00:00:00Z"
+                }],
+                "asks": [],
+                "checksum": 0,
+                "timestamp": "2024-01-01T00:00:00Z"
+            }]
+        }"#;
+
+        let Some(KrakenSpotWsMessage::L3Snapshot(snap)) = handler.parse_message(json) else {
+            panic!("expected L3 snapshot");
+        };
+        assert_eq!(snap.bids[0].limit_price.raw, "42000.50000");
+        assert_eq!(snap.bids[0].order_qty.raw, "0.01000000");
     }
 }

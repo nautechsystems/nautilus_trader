@@ -117,6 +117,9 @@ pub enum KrakenWsChannel {
     #[serde(rename = "balances")]
     #[strum(serialize = "balances")]
     Balances,
+    #[serde(rename = "level3")]
+    #[strum(serialize = "level3")]
+    Level3,
 }
 
 #[derive(
@@ -307,5 +310,13 @@ mod tests {
         assert_eq!(json, expected);
         let back: KrakenWsMethod = serde_json::from_str(&json).unwrap();
         assert_eq!(back, m);
+    }
+
+    #[rstest]
+    fn test_ws_channel_level3_serde() {
+        let json = serde_json::to_string(&KrakenWsChannel::Level3).unwrap();
+        assert_eq!(json, "\"level3\"");
+        let back: KrakenWsChannel = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, KrakenWsChannel::Level3);
     }
 }

@@ -24,8 +24,9 @@ use super::enums::{
     KrakenExecType, KrakenLiquidityInd, KrakenWsChannel, KrakenWsMessageType, KrakenWsMethod,
     KrakenWsOrderStatus,
 };
-use crate::common::enums::{
-    KrakenOrderSide, KrakenOrderType, KrakenSpotTrigger, KrakenTimeInForce,
+use crate::{
+    common::enums::{KrakenOrderSide, KrakenOrderType, KrakenSpotTrigger, KrakenTimeInForce},
+    websocket::spot_v2::level_3::messages::{KrakenL3Snapshot, KrakenL3UpdateData},
 };
 
 /// Output message types from the Kraken Spot v2 WebSocket handler.
@@ -40,6 +41,8 @@ pub enum KrakenSpotWsMessage {
     Ohlc(Vec<KrakenWsOhlcData>),
     Execution(Vec<KrakenWsExecutionData>),
     OrderResponse(KrakenWsOrderResponse),
+    L3Snapshot(KrakenL3Snapshot),
+    L3Update(KrakenL3UpdateData),
     Reconnected,
 }
 
