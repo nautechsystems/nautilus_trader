@@ -366,6 +366,18 @@ impl OptionChainManager {
     /// Also updates the ATM tracker from the forward price if `ForwardPrice` source is active,
     /// and triggers deferred bootstrap on the first arrival.
     pub fn handle_greeks(&mut self, greeks: &OptionGreeks) {
+        if self.aggregator.is_expired(greeks.ts_event) {
+            log::warn!(
+                "Dropping greeks for {}, series {} expired",
+                greeks.instrument_id,
+                self.aggregator.series_id(),
+            );
+            self.deferred_cmd_queue
+                .borrow_mut()
+                .push_back(DeferredCommand::ExpireInstrument(greeks.instrument_id));
+            return;
+        }
+
         // Update ATM tracker from forward price (ForwardPrice source only)
         self.aggregator
             .atm_tracker_mut()
@@ -425,6 +437,18 @@ impl OptionChainManager {
     /// This handles both option instrument quotes (aggregator) and ATM source quotes
     /// (the aggregator's ATM tracker handles filtering internally).
     pub fn handle_quote(&mut self, quote: &QuoteTick) {
+        if self.aggregator.is_expired(quote.ts_event) {
+            log::warn!(
+                "Dropping quote for {}, series {} expired",
+                quote.instrument_id,
+                self.aggregator.series_id(),
+            );
+            self.deferred_cmd_queue
+                .borrow_mut()
+                .push_back(DeferredCommand::ExpireInstrument(quote.instrument_id));
+            return;
+        }
+
         self.aggregator.update_quote(quote);
         self.maybe_bootstrap();
 

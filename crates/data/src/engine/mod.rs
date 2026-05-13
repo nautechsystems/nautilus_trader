@@ -1598,6 +1598,9 @@ impl DataEngine {
                             client.execute_unsubscribe(&unsub);
                         }
                     }
+                    DeferredCommand::ExpireInstrument(instrument_id) => {
+                        self.expire_option_chain_instrument(instrument_id);
+                    }
                     DeferredCommand::ExpireSeries(series_id) => {
                         self.expire_series(series_id);
                     }
@@ -2648,7 +2651,7 @@ impl DataEngine {
         if bar_type.is_composite() {
             let topic = switchboard::get_bars_topic(bar_type.composite());
             let handler = TypedHandler::new(BarBarHandler::new(&aggregator, bar_key));
-            msgbus::subscribe_bars(topic.into(), handler.clone(), Some(self.msgbus_priority));
+            msgbus::subscribe_bars(topic.into(), handler.clone(), None);
             subscriptions.push(BarAggregatorSubscription::Bar { topic, handler });
         } else if bar_type.spec().price_type == PriceType::Last {
             let topic = switchboard::get_trades_topic(bar_type.instrument_id());

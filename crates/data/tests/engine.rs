@@ -75,10 +75,14 @@ use nautilus_model::{
         Bar, BarType, BookOrder, DEPTH10_LEN, Data, DataType, FundingRateUpdate, IndexPriceUpdate,
         InstrumentStatus, MarkPriceUpdate, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10,
         QuoteTick, TradeTick,
+        greeks::OptionGreekValues,
         option_chain::{OptionGreeks, StrikeRange},
         stubs::{OrderBookDeltaTestBuilder, stub_delta, stub_deltas, stub_depth10},
     },
-    enums::{AggressorSide, AssetClass, BookType, MarketStatusAction, OptionKind, PriceType},
+    enums::{
+        AggressorSide, AssetClass, BookType, GreeksConvention, MarketStatusAction, OptionKind,
+        PriceType,
+    },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, TradeId, TraderId, Venue},
     instruments::{
         CurrencyPair, FuturesContract, Instrument, InstrumentAny, SyntheticInstrument,
@@ -2722,6 +2726,75 @@ fn test_bar_aggregator_trade_subscription_priority_is_between_4_and_6(
     data_engine.process_data(Data::Trade(trade));
 
     assert_eq!(*dispatch_order.borrow(), vec!["high", "bar", "low"]);
+}
+
+#[rstest]
+fn test_composite_bar_aggregator_source_bar_subscription_uses_default_priority(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim);
+    data_engine.process(&inst_any as &dyn Any);
+
+    let bar_type = BarType::from("AUD/USD.SIM-1-TICK-LAST-INTERNAL@1-TICK-EXTERNAL");
+    let source_bar_type = bar_type.composite();
+    let source_topic = switchboard::get_bars_topic(source_bar_type);
+    let target_topic = switchboard::get_bars_topic(bar_type);
+
+    let dispatch_order: Rc<RefCell<Vec<&'static str>>> = Rc::new(RefCell::new(Vec::new()));
+
+    let order_high = dispatch_order.clone();
+    let handler_high = TypedHandler::from_with_id("prio-1", move |_b: &Bar| {
+        order_high.borrow_mut().push("high");
+    });
+    msgbus::subscribe_bars(source_topic.into(), handler_high, Some(1));
+
+    let order_bar = dispatch_order.clone();
+    let handler_bar = TypedHandler::from_with_id("target-bar-observer", move |_b: &Bar| {
+        order_bar.borrow_mut().push("bar");
+    });
+    msgbus::subscribe_bars(target_topic.into(), handler_bar, None);
+
+    let sub = SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    let source_bar = Bar::new(
+        source_bar_type,
+        Price::from("1.0000"),
+        Price::from("1.0001"),
+        Price::from("0.9999"),
+        Price::from("1.0000"),
+        Quantity::from(1),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    data_engine.process_data(Data::Bar(source_bar));
+
+    assert_eq!(*dispatch_order.borrow(), vec!["high", "bar"]);
 }
 
 #[rstest]
@@ -7772,6 +7845,115 @@ fn test_process_instrument_status_expires_option_chain_instrument(
     );
     assert_eq!(quote_unsubs, expected_quote_unsubs);
     assert_eq!(greeks_unsubs, expected_greeks_unsubs);
+}
+
+#[rstest]
+#[case::quote("quote")]
+#[case::greeks("greeks")]
+fn test_option_chain_market_data_at_expiry_expires_instrument(
+    #[case] data_kind: &str,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+
+    let client_id = ClientId::new("DERIBIT");
+    let venue = Venue::new("DERIBIT");
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let call = make_btc_option("50000.000", OptionKind::Call);
+    let put = make_btc_option("50000.000", OptionKind::Put);
+    let call_id = call.id();
+    let _ = cache.borrow_mut().add_instrument(call);
+    let _ = cache.borrow_mut().add_instrument(put);
+
+    let series_id = make_series_id();
+    let cmd = make_subscribe_option_chain(
+        series_id,
+        vec![Price::from("50000.000")],
+        Some(client_id),
+        Some(venue),
+    );
+    data_engine.borrow_mut().execute(cmd);
+
+    recorder.borrow_mut().clear();
+
+    match data_kind {
+        "quote" => {
+            let quote = QuoteTick::new(
+                call_id,
+                Price::from("100.00"),
+                Price::from("101.00"),
+                Quantity::from("1.0"),
+                Quantity::from("1.0"),
+                series_id.expiration_ns,
+                series_id.expiration_ns,
+            );
+            data_engine.borrow_mut().process_data(Data::Quote(quote));
+        }
+        "greeks" => {
+            let greeks = OptionGreeks {
+                instrument_id: call_id,
+                convention: GreeksConvention::BlackScholes,
+                greeks: OptionGreekValues {
+                    delta: 0.55,
+                    gamma: 0.001,
+                    vega: 15.0,
+                    theta: -5.0,
+                    rho: 0.02,
+                },
+                mark_iv: Some(0.65),
+                bid_iv: Some(0.63),
+                ask_iv: Some(0.67),
+                underlying_price: Some(50000.0),
+                open_interest: Some(1000.0),
+                ts_event: series_id.expiration_ns,
+                ts_init: series_id.expiration_ns,
+            };
+            data_engine.borrow_mut().process(&greeks);
+        }
+        other => panic!("unknown data kind: {other}"),
+    }
+
+    let recorded = recorder.borrow();
+    let quote_unsubs = recorded
+        .iter()
+        .filter(|cmd| matches!(cmd, DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(_))))
+        .count();
+    let greeks_unsubs = recorded
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(_))
+            )
+        })
+        .count();
+    let status_unsubs = recorded
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                DataCommand::Unsubscribe(UnsubscribeCommand::InstrumentStatus(_))
+            )
+        })
+        .count();
+
+    assert!(data_engine.borrow().has_option_chain_manager(&series_id));
+    assert_eq!(quote_unsubs, 1);
+    assert_eq!(greeks_unsubs, 1);
+    assert_eq!(status_unsubs, 1);
 }
 
 #[rstest]
