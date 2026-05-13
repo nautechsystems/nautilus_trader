@@ -24,8 +24,8 @@ use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_event_store::{
     AppendEntry, EventStore, EventStoreEntry, EventStoreError, Headers, IndexKey, IndexKind,
-    MemoryBackend, RedbBackend, RegisteredComponents, RunManifest, RunStatus, ScanDirection, Topic,
-    compute_entry_hash,
+    MemoryBackend, RedbBackend, RegisteredComponents, RunManifest, RunStatus, ScanDirection,
+    SnapshotAnchor, Topic, compute_entry_hash,
 };
 use proptest::{prelude::*, test_runner::Config as ProptestConfig};
 use rstest::rstest;
@@ -124,6 +124,8 @@ fn manifest_errors_when_no_run_open() {
 #[case::scan_range("scan_range")]
 #[case::scan_seq("scan_seq")]
 #[case::lookup("lookup")]
+#[case::record_snapshot_anchor("record_snapshot_anchor")]
+#[case::latest_snapshot_anchor("latest_snapshot_anchor")]
 #[case::seal("seal")]
 fn methods_error_when_no_run_open(#[case] op: &str) {
     let (_tmp, mut backend) = fresh_backend();
@@ -134,6 +136,10 @@ fn methods_error_when_no_run_open(#[case] op: &str) {
             .unwrap_err(),
         "scan_seq" => backend.scan_seq(1).unwrap_err(),
         "lookup" => backend.lookup(IndexKind::IntentId, "k").unwrap_err(),
+        "record_snapshot_anchor" => backend
+            .record_snapshot_anchor(SnapshotAnchor::new(0, "blob", "hash"))
+            .unwrap_err(),
+        "latest_snapshot_anchor" => backend.latest_snapshot_anchor().unwrap_err(),
         "seal" => backend.seal(RunStatus::Ended).unwrap_err(),
         _ => unreachable!(),
     };
@@ -253,6 +259,151 @@ fn empty_batch_is_a_noop() {
 
     assert_eq!(hwm, 0);
     assert_eq!(backend.high_watermark().expect("hwm"), 0);
+}
+
+#[rstest]
+fn snapshot_anchor_is_none_until_recorded() {
+    let (_tmp, backend) = open_backend();
+
+    assert!(
+        backend
+            .latest_snapshot_anchor()
+            .expect("latest anchor")
+            .is_none()
+    );
+}
+
+#[rstest]
+fn snapshot_anchor_round_trips_and_persists_for_sealed_reader() {
+    let (tmp, mut backend) = open_backend();
+    backend
+        .append_batch(&[
+            append_with(1, 10, Vec::new()),
+            append_with(2, 11, Vec::new()),
+        ])
+        .expect("append");
+    let anchor = SnapshotAnchor::new(2, "cache://snapshots/run-1/2", "blake3:abc");
+
+    backend
+        .record_snapshot_anchor(anchor.clone())
+        .expect("record anchor");
+    assert_eq!(
+        backend.latest_snapshot_anchor().expect("latest anchor"),
+        Some(anchor.clone()),
+    );
+
+    backend.seal(RunStatus::Ended).expect("seal");
+    drop(backend);
+
+    let reader = RedbBackend::open_sealed(tmp.path(), INSTANCE_ID, "1700000000-aaaa1111")
+        .expect("open sealed");
+    assert_eq!(
+        reader.latest_snapshot_anchor().expect("latest anchor"),
+        Some(anchor),
+    );
+}
+
+#[rstest]
+fn snapshot_anchor_rejects_watermark_past_durable_hwm() {
+    let (_tmp, mut backend) = open_backend();
+
+    let err = backend
+        .record_snapshot_anchor(SnapshotAnchor::new(1, "blob", "hash"))
+        .expect_err("must reject");
+
+    match err {
+        EventStoreError::Backend(msg) => {
+            assert!(
+                msg.contains("exceeds durable high_watermark"),
+                "msg was: {msg}",
+            );
+        }
+        other => panic!("expected Backend, was {other:?}"),
+    }
+}
+
+#[rstest]
+fn snapshot_anchor_rejects_backward_move() {
+    let (_tmp, mut backend) = open_backend();
+    backend
+        .append_batch(&[
+            append_with(1, 10, Vec::new()),
+            append_with(2, 11, Vec::new()),
+        ])
+        .expect("append");
+    backend
+        .record_snapshot_anchor(SnapshotAnchor::new(2, "latest", "hash-latest"))
+        .expect("record latest");
+
+    let err = backend
+        .record_snapshot_anchor(SnapshotAnchor::new(1, "older", "hash-older"))
+        .expect_err("must reject");
+
+    match err {
+        EventStoreError::Backend(msg) => {
+            assert!(msg.contains("older than latest anchor"), "msg was: {msg}",);
+        }
+        other => panic!("expected Backend, was {other:?}"),
+    }
+}
+
+#[rstest]
+fn snapshot_anchor_after_seal_returns_closed() {
+    let (_tmp, mut backend) = open_backend();
+    backend
+        .append_batch(&[append_with(1, 10, Vec::new())])
+        .expect("append");
+    backend.seal(RunStatus::Ended).expect("seal");
+
+    let err = backend
+        .record_snapshot_anchor(SnapshotAnchor::new(1, "blob", "hash"))
+        .expect_err("must reject");
+
+    assert!(matches!(err, EventStoreError::Closed));
+}
+
+#[rstest]
+fn latest_snapshot_anchor_returns_corrupted_when_anchor_bytes_are_garbled() {
+    let run_id = "run-anchor-decode";
+    let tmp = TempDir::new().expect("tempdir");
+    let path = {
+        let mut backend = RedbBackend::new(tmp.path());
+        backend.open_run(manifest(run_id)).expect("open run");
+        backend
+            .append_batch(&[append_with(1, 10, Vec::new())])
+            .expect("append");
+        backend
+            .record_snapshot_anchor(SnapshotAnchor::new(1, "blob", "hash"))
+            .expect("record anchor");
+        backend.seal(RunStatus::Ended).expect("seal");
+        backend.current_path().expect("path").to_path_buf()
+    };
+
+    {
+        let snapshot_anchor: redb::TableDefinition<&str, &[u8]> =
+            redb::TableDefinition::new("snapshot_anchor");
+        let db = redb::Database::create(&path).expect("open redb");
+        let txn = db.begin_write().expect("begin write");
+        {
+            let mut table = txn.open_table(snapshot_anchor).expect("open table");
+            table
+                .insert("latest", b"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF".as_slice())
+                .expect("overwrite latest snapshot anchor");
+        }
+        txn.commit().expect("commit overwrite");
+    }
+
+    let reader = RedbBackend::open_sealed(tmp.path(), INSTANCE_ID, run_id).expect("open sealed");
+    let err = reader
+        .latest_snapshot_anchor()
+        .expect_err("must flag corruption");
+
+    match err {
+        EventStoreError::Corrupted(msg) => {
+            assert!(msg.contains("decode snapshot anchor"), "msg was: {msg}");
+        }
+        other => panic!("expected Corrupted, was {other:?}"),
+    }
 }
 
 #[rstest]

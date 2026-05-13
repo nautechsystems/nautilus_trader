@@ -24,6 +24,7 @@ use crate::{
     entry::EventStoreEntry,
     error::EventStoreError,
     manifest::{RunManifest, RunStatus},
+    snapshot::{SnapshotAnchor, validate_new_anchor},
 };
 
 /// In-memory implementation of [`EventStore`].
@@ -48,6 +49,7 @@ struct RunState {
     manifest: RunManifest,
     entries: Vec<EventStoreEntry>,
     indices: Indices,
+    snapshot_anchor: Option<SnapshotAnchor>,
     high_watermark: u64,
     max_ts_init: UnixNanos,
 }
@@ -113,6 +115,7 @@ impl EventStore for MemoryBackend {
             manifest,
             entries: Vec::new(),
             indices: Indices::default(),
+            snapshot_anchor: None,
             high_watermark: 0,
             max_ts_init: UnixNanos::default(),
         });
@@ -228,6 +231,26 @@ impl EventStore for MemoryBackend {
             .iter()
             .map(|(k, v)| (k.clone(), *v))
             .collect())
+    }
+
+    fn record_snapshot_anchor(&mut self, anchor: SnapshotAnchor) -> Result<(), EventStoreError> {
+        let state = self.state_mut()?;
+
+        if state.manifest.is_sealed() {
+            return Err(EventStoreError::Closed);
+        }
+
+        validate_new_anchor(
+            &anchor,
+            state.high_watermark,
+            state.snapshot_anchor.as_ref(),
+        )?;
+        state.snapshot_anchor = Some(anchor);
+        Ok(())
+    }
+
+    fn latest_snapshot_anchor(&self) -> Result<Option<SnapshotAnchor>, EventStoreError> {
+        Ok(self.state()?.snapshot_anchor.clone())
     }
 
     fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
@@ -364,6 +387,8 @@ mod tests {
     #[case::scan_range("scan_range")]
     #[case::scan_seq("scan_seq")]
     #[case::lookup("lookup")]
+    #[case::record_snapshot_anchor("record_snapshot_anchor")]
+    #[case::latest_snapshot_anchor("latest_snapshot_anchor")]
     #[case::seal("seal")]
     fn methods_error_when_no_run_open(#[case] op: &str) {
         let mut backend = MemoryBackend::new();
@@ -374,6 +399,10 @@ mod tests {
                 .unwrap_err(),
             "scan_seq" => backend.scan_seq(1).unwrap_err(),
             "lookup" => backend.lookup(IndexKind::IntentId, "k").unwrap_err(),
+            "record_snapshot_anchor" => backend
+                .record_snapshot_anchor(SnapshotAnchor::new(0, "blob", "hash"))
+                .unwrap_err(),
+            "latest_snapshot_anchor" => backend.latest_snapshot_anchor().unwrap_err(),
             "seal" => backend.seal(RunStatus::Ended).unwrap_err(),
             _ => unreachable!(),
         };
@@ -467,6 +496,91 @@ mod tests {
 
         assert_eq!(hwm, 0);
         assert_eq!(open_backend.high_watermark().expect("hwm"), 0);
+    }
+
+    #[rstest]
+    fn snapshot_anchor_is_none_until_recorded(open_backend: MemoryBackend) {
+        assert!(
+            open_backend
+                .latest_snapshot_anchor()
+                .expect("latest anchor")
+                .is_none()
+        );
+    }
+
+    #[rstest]
+    fn snapshot_anchor_round_trips(mut open_backend: MemoryBackend) {
+        open_backend
+            .append_batch(&[append_with(1, 10, Vec::new())])
+            .expect("append");
+        let anchor = SnapshotAnchor::new(1, "cache://snapshots/run-1/1", "blake3:abc");
+
+        open_backend
+            .record_snapshot_anchor(anchor.clone())
+            .expect("record anchor");
+
+        assert_eq!(
+            open_backend
+                .latest_snapshot_anchor()
+                .expect("latest anchor"),
+            Some(anchor),
+        );
+    }
+
+    #[rstest]
+    fn snapshot_anchor_rejects_watermark_past_durable_hwm(mut open_backend: MemoryBackend) {
+        let anchor = SnapshotAnchor::new(1, "cache://snapshots/run-1/1", "blake3:abc");
+        let err = open_backend
+            .record_snapshot_anchor(anchor)
+            .expect_err("must reject");
+
+        match err {
+            EventStoreError::Backend(msg) => {
+                assert!(
+                    msg.contains("exceeds durable high_watermark"),
+                    "msg was: {msg}",
+                );
+            }
+            other => panic!("expected Backend, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn snapshot_anchor_rejects_backward_move(mut open_backend: MemoryBackend) {
+        open_backend
+            .append_batch(&[
+                append_with(1, 10, Vec::new()),
+                append_with(2, 11, Vec::new()),
+            ])
+            .expect("append");
+        open_backend
+            .record_snapshot_anchor(SnapshotAnchor::new(2, "latest", "hash-latest"))
+            .expect("record latest");
+
+        let err = open_backend
+            .record_snapshot_anchor(SnapshotAnchor::new(1, "older", "hash-older"))
+            .expect_err("must reject older anchor");
+
+        match err {
+            EventStoreError::Backend(msg) => {
+                assert!(msg.contains("older than latest anchor"), "msg was: {msg}");
+            }
+            other => panic!("expected Backend, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn snapshot_anchor_after_seal_returns_closed(mut open_backend: MemoryBackend) {
+        open_backend
+            .append_batch(&[append_with(1, 10, Vec::new())])
+            .expect("append");
+        open_backend.seal(RunStatus::Ended).expect("seal");
+
+        let err = open_backend
+            .record_snapshot_anchor(SnapshotAnchor::new(1, "blob", "hash"))
+            .expect_err("must reject");
+
+        assert!(matches!(err, EventStoreError::Closed));
     }
 
     #[rstest]

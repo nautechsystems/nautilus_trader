@@ -37,6 +37,7 @@ use crate::{
     entry::EventStoreEntry,
     error::EventStoreError,
     manifest::{RunManifest, RunStatus},
+    snapshot::{SnapshotAnchor, validate_new_anchor},
 };
 
 const ENTRIES_TABLE: TableDefinition<u64, &[u8]> = TableDefinition::new("entries");
@@ -47,6 +48,7 @@ const VENUE_ORDER_INDEX: TableDefinition<&str, u64> = TableDefinition::new("venu
 const SNAPSHOT_ANCHOR_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("snapshot_anchor");
 
 const MANIFEST_KEY: &str = "current";
+const SNAPSHOT_ANCHOR_KEY: &str = "latest";
 
 const BINCODE_CONFIG: Configuration = standard();
 
@@ -304,6 +306,23 @@ impl RedbBackend {
             bincode::serde::decode_from_slice::<RunManifest, _>(bytes, BINCODE_CONFIG)
                 .map_err(|e| EventStoreError::Corrupted(format!("decode manifest: {e}")))?;
         Ok(Some(manifest))
+    }
+
+    fn read_snapshot_anchor(db: &Database) -> Result<Option<SnapshotAnchor>, EventStoreError> {
+        let txn = db.begin_read().map_err(map_transaction_err)?;
+        let table = match txn.open_table(SNAPSHOT_ANCHOR_TABLE) {
+            Ok(table) => table,
+            Err(TableError::TableDoesNotExist(_)) => return Ok(None),
+            Err(e) => return Err(map_table_err(e)),
+        };
+        let Some(value) = table.get(SNAPSHOT_ANCHOR_KEY).map_err(map_storage_err)? else {
+            return Ok(None);
+        };
+        let bytes = value.value();
+        let (anchor, _) =
+            bincode::serde::decode_from_slice::<SnapshotAnchor, _>(bytes, BINCODE_CONFIG)
+                .map_err(|e| EventStoreError::Corrupted(format!("decode snapshot anchor: {e}")))?;
+        Ok(Some(anchor))
     }
 
     fn compute_progress(db: &Database) -> Result<(u64, UnixNanos), EventStoreError> {
@@ -615,6 +634,37 @@ impl EventStore for RedbBackend {
             out.push((k.value().to_string(), v.value()));
         }
         Ok(out)
+    }
+
+    fn record_snapshot_anchor(&mut self, anchor: SnapshotAnchor) -> Result<(), EventStoreError> {
+        let state = self.state_mut()?;
+
+        if state.manifest.is_sealed() {
+            return Err(EventStoreError::Closed);
+        }
+
+        let latest = Self::read_snapshot_anchor(&state.db)?;
+        validate_new_anchor(&anchor, state.high_watermark, latest.as_ref())?;
+
+        let bytes = bincode::serde::encode_to_vec(&anchor, BINCODE_CONFIG)
+            .map_err(|e| EventStoreError::Backend(format!("encode snapshot anchor: {e}")))?;
+        let mut txn = state.db.begin_write().map_err(map_transaction_err)?;
+        txn.set_durability(Durability::Immediate)
+            .map_err(|e| EventStoreError::Backend(format!("set durability: {e}")))?;
+        {
+            let mut table = txn
+                .open_table(SNAPSHOT_ANCHOR_TABLE)
+                .map_err(map_table_err)?;
+            table
+                .insert(SNAPSHOT_ANCHOR_KEY, bytes.as_slice())
+                .map_err(map_storage_err)?;
+        }
+        txn.commit().map_err(map_commit_err)?;
+        Ok(())
+    }
+
+    fn latest_snapshot_anchor(&self) -> Result<Option<SnapshotAnchor>, EventStoreError> {
+        Self::read_snapshot_anchor(&self.state()?.db)
     }
 
     fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {

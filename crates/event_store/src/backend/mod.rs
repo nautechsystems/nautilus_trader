@@ -30,6 +30,7 @@ use crate::{
     entry::EventStoreEntry,
     error::EventStoreError,
     manifest::{RunManifest, RunStatus},
+    snapshot::SnapshotAnchor,
 };
 
 /// The kind of secondary index the reader can look up.
@@ -205,6 +206,38 @@ pub trait EventStore: Send {
     ///
     /// Returns [`EventStoreError::Backend`] for unclassified backend failures.
     fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError>;
+
+    /// Records the latest cache snapshot anchor for the open run.
+    ///
+    /// The anchor's high-watermark must be less than or equal to the durable
+    /// high-watermark and must not move backward relative to the latest recorded
+    /// anchor. Backends persist the anchor independently from the snapshot blob; the
+    /// cache owns the blob and content-hash calculation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EventStoreError::Backend`] when no run is open, when the backend does
+    /// not support snapshot anchors, or when the anchor is invalid for the current
+    /// high-watermark; returns [`EventStoreError::Closed`] when the run is sealed.
+    fn record_snapshot_anchor(&mut self, _anchor: SnapshotAnchor) -> Result<(), EventStoreError> {
+        Err(EventStoreError::Backend(
+            "snapshot anchors are not supported by this backend".to_string(),
+        ))
+    }
+
+    /// Returns the latest recorded snapshot anchor for the open run.
+    ///
+    /// Returns `Ok(None)` when no snapshot anchor has been recorded yet.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EventStoreError::Backend`] when no run is open or when the backend
+    /// does not support snapshot anchors.
+    fn latest_snapshot_anchor(&self) -> Result<Option<SnapshotAnchor>, EventStoreError> {
+        Err(EventStoreError::Backend(
+            "snapshot anchors are not supported by this backend".to_string(),
+        ))
+    }
 
     /// Seals the open run with the given final status and persists the manifest update.
     ///

@@ -48,6 +48,7 @@ pub mod hash;
 pub mod headers;
 pub mod manifest;
 pub mod reader;
+pub mod snapshot;
 pub mod verifier;
 pub mod writer;
 
@@ -68,6 +69,7 @@ pub use hash::{EntryHash, compute_entry_hash};
 pub use headers::Headers;
 pub use manifest::{RegisteredComponents, RunId, RunManifest, RunStatus};
 pub use reader::{DEFAULT_SCAN_CHUNK_SIZE, EventStoreReader, RangeScan};
+pub use snapshot::SnapshotAnchor;
 pub use verifier::{
     GapRange, IndexDrift, ManifestField, Verifier, VerifyError, VerifyFinding, VerifyReport,
 };

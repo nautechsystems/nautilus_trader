@@ -32,6 +32,7 @@ use crate::{
     entry::EventStoreEntry,
     error::EventStoreError,
     manifest::RunManifest,
+    snapshot::SnapshotAnchor,
 };
 
 /// Default number of entries materialized per chunked `scan_range` call.
@@ -97,6 +98,19 @@ impl<B: EventStore> EventStoreReader<B> {
     /// Returns [`EventStoreError::Backend`] for unclassified backend failures.
     pub fn lookup(&self, kind: IndexKind, key: &str) -> Result<Option<u64>, EventStoreError> {
         self.backend.lookup(kind, key)
+    }
+
+    /// Returns the latest snapshot anchor for the run.
+    ///
+    /// Returns `Ok(None)` when no snapshot anchor has been recorded yet.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EventStoreError::Backend`] when no run is open or the backend does not
+    /// support snapshot anchors, and [`EventStoreError::Corrupted`] when a stored anchor
+    /// cannot decode.
+    pub fn latest_snapshot_anchor(&self) -> Result<Option<SnapshotAnchor>, EventStoreError> {
+        self.backend.latest_snapshot_anchor()
     }
 
     /// Scans entries by `seq` over the inclusive range `[from, to]`.
@@ -401,6 +415,25 @@ mod tests {
     #[rstest]
     fn high_watermark_delegates_to_backend(reader_with_three: EventStoreReader<MemoryBackend>) {
         assert_eq!(reader_with_three.high_watermark().expect("hwm"), 3);
+    }
+
+    #[rstest]
+    fn latest_snapshot_anchor_delegates_to_backend() {
+        let mut backend = MemoryBackend::new();
+        backend.open_run(manifest("run-anchor")).expect("open run");
+        backend
+            .append_batch(&[append_with(1, 101, Vec::new())])
+            .expect("append");
+        let anchor = SnapshotAnchor::new(1, "cache://snapshots/run-anchor/1", "blake3:abc");
+        backend
+            .record_snapshot_anchor(anchor.clone())
+            .expect("record anchor");
+        let reader = EventStoreReader::new(backend);
+
+        assert_eq!(
+            reader.latest_snapshot_anchor().expect("latest anchor"),
+            Some(anchor),
+        );
     }
 
     #[rstest]
