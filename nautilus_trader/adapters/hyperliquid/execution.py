@@ -1414,7 +1414,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
-            self._processed_trade_ids.add(trade_id_str)
             self._log.error(
                 f"Cannot process fill report - instrument {order.instrument_id} not found",
             )
