@@ -81,7 +81,7 @@ use nautilus_model::{
     enums::{AggressorSide, AssetClass, BookType, MarketStatusAction, OptionKind, PriceType},
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, TradeId, TraderId, Venue},
     instruments::{
-        CurrencyPair, FuturesContract, Instrument, InstrumentAny,
+        CurrencyPair, FuturesContract, Instrument, InstrumentAny, SyntheticInstrument,
         stubs::{audusd_sim, gbpusd_sim},
     },
     orderbook::OrderBook,
@@ -3918,6 +3918,541 @@ fn test_process_trade_tick(
 }
 
 #[rstest]
+fn test_synthetic_quote_subscription_publishes_from_component_quotes(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, component_b) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let topic = switchboard::get_quotes_topic(synthetic_id);
+    msgbus::subscribe_quotes(topic.into(), handler, None);
+
+    let sub = SubscribeQuotes::new(
+        synthetic_id,
+        None,
+        Some(Venue::synthetic()),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
+
+    let quote_a = QuoteTick::new(
+        component_a,
+        Price::from("100.00"),
+        Price::from("102.00"),
+        Quantity::from(1),
+        Quantity::from(1),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    data_engine.process_data(Data::Quote(quote_a));
+    assert!(saver.get_messages().is_empty());
+
+    let quote_b = QuoteTick::new(
+        component_b,
+        Price::from("200.00"),
+        Price::from("204.00"),
+        Quantity::from(1),
+        Quantity::from(1),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    data_engine.process_data(Data::Quote(quote_b));
+
+    let messages = saver.get_messages();
+    assert_eq!(messages.len(), 1);
+    let synthetic_quote = messages[0];
+    assert_eq!(synthetic_quote.instrument_id, synthetic_id);
+    assert_eq!(synthetic_quote.bid_price, Price::from("150.00"));
+    assert_eq!(synthetic_quote.ask_price, Price::from("153.00"));
+    assert_eq!(synthetic_quote.bid_size, Quantity::from(1));
+    assert_eq!(synthetic_quote.ask_size, Quantity::from(1));
+    assert_eq!(synthetic_quote.ts_event, quote_b.ts_event);
+    assert!(
+        data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_id)
+    );
+    assert!(cache.borrow().quote(&synthetic_id).is_none());
+}
+
+#[rstest]
+fn test_synthetic_trade_subscription_publishes_from_component_trades(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, component_b) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) = get_typed_message_saving_handler::<TradeTick>(None);
+    let topic = switchboard::get_trades_topic(synthetic_id);
+    msgbus::subscribe_trades(topic.into(), handler, None);
+
+    let sub = SubscribeTrades::new(
+        synthetic_id,
+        None,
+        Some(Venue::synthetic()),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Trades(sub)));
+
+    let trade_a = TradeTick::new(
+        component_a,
+        Price::from("100.00"),
+        Quantity::from(1),
+        AggressorSide::Buyer,
+        TradeId::new("T-1"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    data_engine.process_data(Data::Trade(trade_a));
+    assert!(saver.get_messages().is_empty());
+
+    let trade_b = TradeTick::new(
+        component_b,
+        Price::from("200.00"),
+        Quantity::from(2),
+        AggressorSide::Seller,
+        TradeId::new("T-2"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    data_engine.process_data(Data::Trade(trade_b));
+
+    let messages = saver.get_messages();
+    assert_eq!(messages.len(), 1);
+    let synthetic_trade = messages[0];
+    assert_eq!(synthetic_trade.instrument_id, synthetic_id);
+    assert_eq!(synthetic_trade.price, Price::from("150.00"));
+    assert_eq!(synthetic_trade.size, Quantity::from(1));
+    assert_eq!(synthetic_trade.aggressor_side, trade_b.aggressor_side);
+    assert_eq!(synthetic_trade.trade_id, trade_b.trade_id);
+    assert_eq!(synthetic_trade.ts_event, trade_b.ts_event);
+    assert!(
+        data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_id)
+    );
+    assert!(cache.borrow().trade(&synthetic_id).is_none());
+}
+
+#[rstest]
+fn test_synthetic_quote_and_trade_commands_do_not_forward_to_client(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let engine_clock: Rc<RefCell<dyn Clock>> = clock.clone();
+    let mut data_engine = DataEngine::new(engine_clock, cache.clone(), None);
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let (synthetic, _, _) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(
+        SubscribeQuotes::new(
+            synthetic_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Trades(
+        SubscribeTrades::new(
+            synthetic_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+    let subscribed_quotes = data_engine.subscribed_synthetic_quotes();
+    let subscribed_trades = data_engine.subscribed_synthetic_trades();
+
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(
+        UnsubscribeQuotes::new(
+            synthetic_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Trades(
+        UnsubscribeTrades::new(
+            synthetic_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    assert!(subscribed_quotes.contains(&synthetic_id));
+    assert!(subscribed_trades.contains(&synthetic_id));
+    assert!(
+        !data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_id)
+    );
+    assert!(
+        !data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_id)
+    );
+    assert!(recorder.borrow().is_empty());
+}
+
+#[rstest]
+fn test_duplicate_synthetic_quote_subscription_publishes_once(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, component_b) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let topic = switchboard::get_quotes_topic(synthetic_id);
+    msgbus::subscribe_quotes(topic.into(), handler, None);
+
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+    data_engine.process_data(Data::Quote(quote_tick(component_a, "100.00", "102.00", 1)));
+    data_engine.process_data(Data::Quote(quote_tick(component_b, "200.00", "204.00", 2)));
+
+    let subscribed = data_engine.subscribed_synthetic_quotes();
+    let messages = saver.get_messages();
+    assert_eq!(
+        subscribed.iter().filter(|id| **id == synthetic_id).count(),
+        1
+    );
+    assert_eq!(messages.len(), 1);
+}
+
+#[rstest]
+fn test_duplicate_synthetic_trade_subscription_publishes_once(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, component_b) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) = get_typed_message_saving_handler::<TradeTick>(None);
+    let topic = switchboard::get_trades_topic(synthetic_id);
+    msgbus::subscribe_trades(topic.into(), handler, None);
+
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
+    data_engine.process_data(Data::Trade(trade_tick(component_a, "100.00", "T-1", 1)));
+    data_engine.process_data(Data::Trade(trade_tick(component_b, "200.00", "T-2", 2)));
+
+    let subscribed = data_engine.subscribed_synthetic_trades();
+    let messages = saver.get_messages();
+    assert_eq!(
+        subscribed.iter().filter(|id| **id == synthetic_id).count(),
+        1
+    );
+    assert_eq!(messages.len(), 1);
+}
+
+#[rstest]
+fn test_synthetic_quote_subscription_waits_for_all_component_quotes(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, _) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let topic = switchboard::get_quotes_topic(synthetic_id);
+    msgbus::subscribe_quotes(topic.into(), handler, None);
+
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+    data_engine.process_data(Data::Quote(quote_tick(component_a, "100.00", "102.00", 1)));
+
+    assert!(
+        data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_id)
+    );
+    assert!(saver.get_messages().is_empty());
+    assert!(cache.borrow().quote(&synthetic_id).is_none());
+}
+
+#[rstest]
+fn test_synthetic_trade_subscription_waits_for_all_component_trades(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, _) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (handler, saver) = get_typed_message_saving_handler::<TradeTick>(None);
+    let topic = switchboard::get_trades_topic(synthetic_id);
+    msgbus::subscribe_trades(topic.into(), handler, None);
+
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
+    data_engine.process_data(Data::Trade(trade_tick(component_a, "100.00", "T-1", 1)));
+
+    assert!(
+        data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_id)
+    );
+    assert!(saver.get_messages().is_empty());
+    assert!(cache.borrow().trade(&synthetic_id).is_none());
+}
+
+#[rstest]
+fn test_subscribe_missing_synthetic_does_not_register(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let synthetic_id = synthetic_instrument_id();
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
+
+    assert!(
+        !data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_id)
+    );
+    assert!(
+        !data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_id)
+    );
+}
+
+#[rstest]
+fn test_unsubscribe_synthetic_quote_keeps_shared_component_feed(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let component_common = InstrumentId::from("BTC-USD.SIM");
+    let component_a = InstrumentId::from("ETH-USD.SIM");
+    let component_b = InstrumentId::from("SOL-USD.SIM");
+    let synthetic_a =
+        synthetic_index_with_components("BTC-ETH-INDEX", component_common, component_a);
+    let synthetic_b =
+        synthetic_index_with_components("BTC-SOL-INDEX", component_common, component_b);
+    let synthetic_a_id = synthetic_a.id;
+    let synthetic_b_id = synthetic_b.id;
+    cache.borrow_mut().add_synthetic(synthetic_a).unwrap();
+    cache.borrow_mut().add_synthetic(synthetic_b).unwrap();
+
+    let (handler_a, saver_a) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let topic_a = switchboard::get_quotes_topic(synthetic_a_id);
+    msgbus::subscribe_quotes(topic_a.into(), handler_a, None);
+    let (handler_b, saver_b) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let topic_b = switchboard::get_quotes_topic(synthetic_b_id);
+    msgbus::subscribe_quotes(topic_b.into(), handler_b, None);
+
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_a_id));
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_b_id));
+    data_engine.process_data(Data::Quote(quote_tick(component_a, "100.00", "102.00", 1)));
+    data_engine.process_data(Data::Quote(quote_tick(component_b, "300.00", "304.00", 2)));
+    data_engine.process_data(Data::Quote(quote_tick(
+        component_common,
+        "200.00",
+        "202.00",
+        3,
+    )));
+    assert_eq!(saver_a.get_messages().len(), 1);
+    assert_eq!(saver_b.get_messages().len(), 1);
+
+    data_engine.execute(unsubscribe_synthetic_quotes_cmd(synthetic_a_id));
+    data_engine.process_data(Data::Quote(quote_tick(
+        component_common,
+        "220.00",
+        "222.00",
+        4,
+    )));
+
+    assert_eq!(saver_a.get_messages().len(), 1);
+    assert_eq!(saver_b.get_messages().len(), 2);
+    assert!(
+        !data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_a_id)
+    );
+    assert!(
+        data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_b_id)
+    );
+}
+
+#[rstest]
+fn test_unsubscribe_synthetic_trade_keeps_shared_component_feed(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let component_common = InstrumentId::from("BTC-USD.SIM");
+    let component_a = InstrumentId::from("ETH-USD.SIM");
+    let component_b = InstrumentId::from("SOL-USD.SIM");
+    let synthetic_a =
+        synthetic_index_with_components("BTC-ETH-INDEX", component_common, component_a);
+    let synthetic_b =
+        synthetic_index_with_components("BTC-SOL-INDEX", component_common, component_b);
+    let synthetic_a_id = synthetic_a.id;
+    let synthetic_b_id = synthetic_b.id;
+    cache.borrow_mut().add_synthetic(synthetic_a).unwrap();
+    cache.borrow_mut().add_synthetic(synthetic_b).unwrap();
+
+    let (handler_a, saver_a) = get_typed_message_saving_handler::<TradeTick>(None);
+    let topic_a = switchboard::get_trades_topic(synthetic_a_id);
+    msgbus::subscribe_trades(topic_a.into(), handler_a, None);
+    let (handler_b, saver_b) = get_typed_message_saving_handler::<TradeTick>(None);
+    let topic_b = switchboard::get_trades_topic(synthetic_b_id);
+    msgbus::subscribe_trades(topic_b.into(), handler_b, None);
+
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_a_id));
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_b_id));
+    data_engine.process_data(Data::Trade(trade_tick(component_a, "100.00", "T-1", 1)));
+    data_engine.process_data(Data::Trade(trade_tick(component_b, "300.00", "T-2", 2)));
+    data_engine.process_data(Data::Trade(trade_tick(
+        component_common,
+        "200.00",
+        "T-3",
+        3,
+    )));
+    assert_eq!(saver_a.get_messages().len(), 1);
+    assert_eq!(saver_b.get_messages().len(), 1);
+
+    data_engine.execute(unsubscribe_synthetic_trades_cmd(synthetic_a_id));
+    data_engine.process_data(Data::Trade(trade_tick(
+        component_common,
+        "220.00",
+        "T-4",
+        4,
+    )));
+
+    assert_eq!(saver_a.get_messages().len(), 1);
+    assert_eq!(saver_b.get_messages().len(), 2);
+    assert!(
+        !data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_a_id)
+    );
+    assert!(
+        data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_b_id)
+    );
+}
+
+#[rstest]
+fn test_reset_clears_synthetic_subscriptions(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let (synthetic, component_a, component_b) = synthetic_index();
+    let synthetic_id = synthetic.id;
+    cache.borrow_mut().add_synthetic(synthetic).unwrap();
+
+    let (quote_handler, quote_saver) = get_typed_message_saving_handler::<QuoteTick>(None);
+    let quote_topic = switchboard::get_quotes_topic(synthetic_id);
+    msgbus::subscribe_quotes(quote_topic.into(), quote_handler, None);
+    let (trade_handler, trade_saver) = get_typed_message_saving_handler::<TradeTick>(None);
+    let trade_topic = switchboard::get_trades_topic(synthetic_id);
+    msgbus::subscribe_trades(trade_topic.into(), trade_handler, None);
+
+    data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
+    data_engine.reset();
+
+    data_engine.process_data(Data::Quote(quote_tick(component_a, "100.00", "102.00", 1)));
+    data_engine.process_data(Data::Quote(quote_tick(component_b, "200.00", "204.00", 2)));
+    data_engine.process_data(Data::Trade(trade_tick(component_a, "100.00", "T-1", 1)));
+    data_engine.process_data(Data::Trade(trade_tick(component_b, "200.00", "T-2", 2)));
+
+    assert!(
+        !data_engine
+            .subscribed_synthetic_quotes()
+            .contains(&synthetic_id)
+    );
+    assert!(
+        !data_engine
+            .subscribed_synthetic_trades()
+            .contains(&synthetic_id)
+    );
+    assert!(quote_saver.get_messages().is_empty());
+    assert!(trade_saver.get_messages().is_empty());
+}
+
+#[rstest]
 fn test_process_mark_price(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
@@ -7378,8 +7913,103 @@ fn test_subscribe_option_chain_atm_relative_requests_forward_prices(
 }
 
 fn synthetic_instrument_id() -> InstrumentId {
-    use nautilus_model::identifiers::Symbol;
     InstrumentId::new(Symbol::new("BTC-ETH-INDEX"), Venue::synthetic())
+}
+
+fn synthetic_index() -> (SyntheticInstrument, InstrumentId, InstrumentId) {
+    let component_a = InstrumentId::from("BTC-USD.SIM");
+    let component_b = InstrumentId::from("ETH-USD.SIM");
+    let synthetic = synthetic_index_with_components("BTC-ETH-INDEX", component_a, component_b);
+
+    (synthetic, component_a, component_b)
+}
+
+fn synthetic_index_with_components(
+    symbol: &str,
+    component_a: InstrumentId,
+    component_b: InstrumentId,
+) -> SyntheticInstrument {
+    let formula = format!("({component_a} + {component_b}) / 2.0");
+    SyntheticInstrument::new(
+        Symbol::new(symbol),
+        2,
+        vec![component_a, component_b],
+        &formula,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+fn subscribe_synthetic_quotes_cmd(instrument_id: InstrumentId) -> DataCommand {
+    DataCommand::Subscribe(SubscribeCommand::Quotes(SubscribeQuotes::new(
+        instrument_id,
+        None,
+        Some(Venue::synthetic()),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )))
+}
+
+fn subscribe_synthetic_trades_cmd(instrument_id: InstrumentId) -> DataCommand {
+    DataCommand::Subscribe(SubscribeCommand::Trades(SubscribeTrades::new(
+        instrument_id,
+        None,
+        Some(Venue::synthetic()),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )))
+}
+
+fn unsubscribe_synthetic_quotes_cmd(instrument_id: InstrumentId) -> DataCommand {
+    DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
+        instrument_id,
+        None,
+        Some(Venue::synthetic()),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )))
+}
+
+fn unsubscribe_synthetic_trades_cmd(instrument_id: InstrumentId) -> DataCommand {
+    DataCommand::Unsubscribe(UnsubscribeCommand::Trades(UnsubscribeTrades::new(
+        instrument_id,
+        None,
+        Some(Venue::synthetic()),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )))
+}
+
+fn quote_tick(instrument_id: InstrumentId, bid: &str, ask: &str, ts: u64) -> QuoteTick {
+    QuoteTick::new(
+        instrument_id,
+        Price::from(bid),
+        Price::from(ask),
+        Quantity::from(1),
+        Quantity::from(1),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+fn trade_tick(instrument_id: InstrumentId, price: &str, trade_id: &str, ts: u64) -> TradeTick {
+    TradeTick::new(
+        instrument_id,
+        Price::from(price),
+        Quantity::from(1),
+        AggressorSide::Buyer,
+        TradeId::new(trade_id),
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
 }
 
 #[rstest]

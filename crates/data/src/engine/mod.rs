@@ -99,7 +99,7 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
-    types::Price,
+    types::{Price, Quantity},
 };
 #[cfg(feature = "streaming")]
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
@@ -149,8 +149,10 @@ pub struct DataEngine {
     option_chain_instrument_index: AHashMap<InstrumentId, OptionSeriesId>,
     deferred_cmd_queue: DeferredCommandQueue,
     pending_option_chain_requests: AHashMap<UUID4, SubscribeOptionChain>,
-    _synthetic_quote_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
-    _synthetic_trade_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
+    synthetic_quote_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
+    synthetic_trade_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
+    subscribed_synthetic_quotes: AHashSet<InstrumentId>,
+    subscribed_synthetic_trades: AHashSet<InstrumentId>,
     buffered_deltas_map: AHashMap<InstrumentId, OrderBookDeltas>,
     command_count: u64,
     data_count: u64,
@@ -208,8 +210,10 @@ impl DataEngine {
             option_chain_instrument_index: AHashMap::new(),
             deferred_cmd_queue: Rc::new(RefCell::new(VecDeque::new())),
             pending_option_chain_requests: AHashMap::new(),
-            _synthetic_quote_feeds: AHashMap::new(),
-            _synthetic_trade_feeds: AHashMap::new(),
+            synthetic_quote_feeds: AHashMap::new(),
+            synthetic_trade_feeds: AHashMap::new(),
+            subscribed_synthetic_quotes: AHashSet::new(),
+            subscribed_synthetic_trades: AHashSet::new(),
             buffered_deltas_map: AHashMap::new(),
             command_count: 0,
             data_count: 0,
@@ -516,7 +520,10 @@ impl DataEngine {
         self.book_snapshotters.clear();
         self.buffered_deltas_map.clear();
 
-        // synthetic_*_feeds are unused stubs and intentionally not cleared
+        self.synthetic_quote_feeds.clear();
+        self.synthetic_trade_feeds.clear();
+        self.subscribed_synthetic_quotes.clear();
+        self.subscribed_synthetic_trades.clear();
 
         self.deferred_cmd_queue.borrow_mut().clear();
 
@@ -755,10 +762,22 @@ impl DataEngine {
         self.collect_subscriptions(|client| &client.subscriptions_quotes)
     }
 
+    /// Returns all synthetic instrument IDs for which quote subscriptions exist.
+    #[must_use]
+    pub fn subscribed_synthetic_quotes(&self) -> Vec<InstrumentId> {
+        self.subscribed_synthetic_quotes.iter().copied().collect()
+    }
+
     /// Returns all instrument IDs for which trade subscriptions exist.
     #[must_use]
     pub fn subscribed_trades(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_trades)
+    }
+
+    /// Returns all synthetic instrument IDs for which trade subscriptions exist.
+    #[must_use]
+    pub fn subscribed_synthetic_trades(&self) -> Vec<InstrumentId> {
+        self.subscribed_synthetic_trades.iter().copied().collect()
     }
 
     /// Returns all bar types currently subscribed across all clients.
@@ -854,6 +873,14 @@ impl DataEngine {
                 self.subscribe_option_chain(cmd);
                 return Ok(());
             }
+            SubscribeCommand::Quotes(cmd) if cmd.instrument_id.is_synthetic() => {
+                self.subscribe_synthetic_quotes(cmd.instrument_id);
+                return Ok(());
+            }
+            SubscribeCommand::Trades(cmd) if cmd.instrument_id.is_synthetic() => {
+                self.subscribe_synthetic_trades(cmd.instrument_id);
+                return Ok(());
+            }
             SubscribeCommand::Instrument(cmd) if cmd.instrument_id.is_synthetic() => {
                 anyhow::bail!("Cannot subscribe for synthetic instrument `Instrument` data");
             }
@@ -912,6 +939,14 @@ impl DataEngine {
             UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd),
             UnsubscribeCommand::OptionChain(cmd) => {
                 self.unsubscribe_option_chain(cmd);
+                return Ok(());
+            }
+            UnsubscribeCommand::Quotes(cmd) if cmd.instrument_id.is_synthetic() => {
+                self.unsubscribe_synthetic_quotes(cmd.instrument_id);
+                return Ok(());
+            }
+            UnsubscribeCommand::Trades(cmd) if cmd.instrument_id.is_synthetic() => {
+                self.unsubscribe_synthetic_trades(cmd.instrument_id);
                 return Ok(());
             }
             UnsubscribeCommand::Instrument(cmd) if cmd.instrument_id.is_synthetic() => {
@@ -1267,7 +1302,10 @@ impl DataEngine {
             log_error_on_cache_insert(&e);
         }
 
-        // TODO: Handle synthetics
+        for synthetic_quote in self.synthetic_quotes_from_quote(quote) {
+            let topic = switchboard::get_quotes_topic(synthetic_quote.instrument_id);
+            msgbus::publish_quote(topic, &synthetic_quote);
+        }
 
         let topic = switchboard::get_quotes_topic(quote.instrument_id);
         msgbus::publish_quote(topic, &quote);
@@ -1278,10 +1316,146 @@ impl DataEngine {
             log_error_on_cache_insert(&e);
         }
 
-        // TODO: Handle synthetics
+        for synthetic_trade in self.synthetic_trades_from_trade(trade) {
+            let topic = switchboard::get_trades_topic(synthetic_trade.instrument_id);
+            msgbus::publish_trade(topic, &synthetic_trade);
+        }
 
         let topic = switchboard::get_trades_topic(trade.instrument_id);
         msgbus::publish_trade(topic, &trade);
+    }
+
+    fn synthetic_quotes_from_quote(&self, update: QuoteTick) -> Vec<QuoteTick> {
+        let Some(synthetics) = self.synthetic_quote_feeds.get(&update.instrument_id) else {
+            return Vec::new();
+        };
+
+        synthetics
+            .iter()
+            .filter_map(|synthetic| self.synthetic_quote_from_update(synthetic, update))
+            .collect()
+    }
+
+    fn synthetic_quote_from_update(
+        &self,
+        synthetic: &SyntheticInstrument,
+        update: QuoteTick,
+    ) -> Option<QuoteTick> {
+        let cache = self.cache.borrow();
+        let mut bid_inputs = Vec::with_capacity(synthetic.components.len());
+        let mut ask_inputs = Vec::with_capacity(synthetic.components.len());
+
+        for instrument_id in &synthetic.components {
+            let (bid_price, ask_price) = if *instrument_id == update.instrument_id {
+                (update.bid_price, update.ask_price)
+            } else {
+                let Some(component_quote) = cache.quote(instrument_id) else {
+                    log::warn!(
+                        "Cannot calculate synthetic instrument {} price, no quotes for {} yet",
+                        synthetic.id,
+                        instrument_id,
+                    );
+                    return None;
+                };
+                (component_quote.bid_price, component_quote.ask_price)
+            };
+
+            bid_inputs.push(bid_price.as_f64());
+            ask_inputs.push(ask_price.as_f64());
+        }
+        drop(cache);
+
+        let bid_price = match synthetic.calculate(&bid_inputs) {
+            Ok(price) => price,
+            Err(e) => {
+                log::error!(
+                    "Cannot calculate synthetic instrument {} bid price: {e}",
+                    synthetic.id
+                );
+                return None;
+            }
+        };
+        let ask_price = match synthetic.calculate(&ask_inputs) {
+            Ok(price) => price,
+            Err(e) => {
+                log::error!(
+                    "Cannot calculate synthetic instrument {} ask price: {e}",
+                    synthetic.id
+                );
+                return None;
+            }
+        };
+        let size_one = Quantity::from(1);
+
+        Some(QuoteTick::new(
+            synthetic.id,
+            bid_price,
+            ask_price,
+            size_one,
+            size_one,
+            update.ts_event,
+            self.clock.borrow().timestamp_ns(),
+        ))
+    }
+
+    fn synthetic_trades_from_trade(&self, update: TradeTick) -> Vec<TradeTick> {
+        let Some(synthetics) = self.synthetic_trade_feeds.get(&update.instrument_id) else {
+            return Vec::new();
+        };
+
+        synthetics
+            .iter()
+            .filter_map(|synthetic| self.synthetic_trade_from_update(synthetic, update))
+            .collect()
+    }
+
+    fn synthetic_trade_from_update(
+        &self,
+        synthetic: &SyntheticInstrument,
+        update: TradeTick,
+    ) -> Option<TradeTick> {
+        let cache = self.cache.borrow();
+        let mut inputs = Vec::with_capacity(synthetic.components.len());
+
+        for instrument_id in &synthetic.components {
+            let price = if *instrument_id == update.instrument_id {
+                update.price
+            } else {
+                let Some(component_trade) = cache.trade(instrument_id) else {
+                    log::warn!(
+                        "Cannot calculate synthetic instrument {} price, no trades for {} yet",
+                        synthetic.id,
+                        instrument_id,
+                    );
+                    return None;
+                };
+                component_trade.price
+            };
+
+            inputs.push(price.as_f64());
+        }
+        drop(cache);
+
+        let price = match synthetic.calculate(&inputs) {
+            Ok(price) => price,
+            Err(e) => {
+                log::error!(
+                    "Cannot calculate synthetic instrument {} trade price: {e}",
+                    synthetic.id
+                );
+                return None;
+            }
+        };
+
+        Some(TradeTick::new(
+            synthetic.id,
+            price,
+            Quantity::from(1),
+            update.aggressor_side,
+            update.trade_id,
+            update.ts_event,
+            self.clock.borrow().timestamp_ns(),
+        ))
     }
 
     fn handle_bar(&self, bar: Bar) {
@@ -1572,6 +1746,52 @@ impl DataEngine {
         Ok(())
     }
 
+    fn subscribe_synthetic_quotes(&mut self, instrument_id: InstrumentId) {
+        let Some(synthetic) = self.cache.borrow().synthetic(&instrument_id).cloned() else {
+            log::error!(
+                "Cannot subscribe to `QuoteTick` data for synthetic instrument {instrument_id}, not found",
+            );
+            return;
+        };
+
+        if !self.subscribed_synthetic_quotes.insert(instrument_id) {
+            return;
+        }
+
+        for component_id in &synthetic.components {
+            let synthetics = self.synthetic_quote_feeds.entry(*component_id).or_default();
+            if !synthetics
+                .iter()
+                .any(|registered| registered.id == synthetic.id)
+            {
+                synthetics.push(synthetic.clone());
+            }
+        }
+    }
+
+    fn subscribe_synthetic_trades(&mut self, instrument_id: InstrumentId) {
+        let Some(synthetic) = self.cache.borrow().synthetic(&instrument_id).cloned() else {
+            log::error!(
+                "Cannot subscribe to `TradeTick` data for synthetic instrument {instrument_id}, not found",
+            );
+            return;
+        };
+
+        if !self.subscribed_synthetic_trades.insert(instrument_id) {
+            return;
+        }
+
+        for component_id in &synthetic.components {
+            let synthetics = self.synthetic_trade_feeds.entry(*component_id).or_default();
+            if !synthetics
+                .iter()
+                .any(|registered| registered.id == synthetic.id)
+            {
+                synthetics.push(synthetic.clone());
+            }
+        }
+    }
+
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> bool {
         if !self.book_deltas_subs.contains(&cmd.instrument_id) {
             log::warn!("Cannot unsubscribe from `OrderBookDeltas` data: not subscribed");
@@ -1664,6 +1884,30 @@ impl DataEngine {
                 log::error!("Error stopping source bar aggregator for {source_type}: {e}");
             }
         }
+    }
+
+    fn unsubscribe_synthetic_quotes(&mut self, instrument_id: InstrumentId) {
+        if !self.subscribed_synthetic_quotes.remove(&instrument_id) {
+            log::warn!("Cannot unsubscribe from synthetic `QuoteTick` data: not subscribed");
+            return;
+        }
+
+        self.synthetic_quote_feeds.retain(|_, synthetics| {
+            synthetics.retain(|synthetic| synthetic.id != instrument_id);
+            !synthetics.is_empty()
+        });
+    }
+
+    fn unsubscribe_synthetic_trades(&mut self, instrument_id: InstrumentId) {
+        if !self.subscribed_synthetic_trades.remove(&instrument_id) {
+            log::warn!("Cannot unsubscribe from synthetic `TradeTick` data: not subscribed");
+            return;
+        }
+
+        self.synthetic_trade_feeds.retain(|_, synthetics| {
+            synthetics.retain(|synthetic| synthetic.id != instrument_id);
+            !synthetics.is_empty()
+        });
     }
 
     fn subscribe_option_chain(&mut self, cmd: &SubscribeOptionChain) {
