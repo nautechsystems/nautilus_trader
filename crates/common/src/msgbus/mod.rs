@@ -50,6 +50,7 @@ pub mod typed_router;
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
+use nautilus_core::UUID4;
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{Block, Pool, PoolFeeCollect, PoolFlash, PoolLiquidityUpdate, PoolSwap};
 use nautilus_model::{
@@ -167,18 +168,21 @@ pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
 
 /// Observes dispatched bus traffic for the durable event store.
 ///
-/// The bus invokes the registered tap (when present) before each publish or send
-/// fanout, so subscribers cannot observe a message that has not yet been handed to the
-/// tap. The tap callback runs on the engine thread and must be cheap; it must not
-/// re-enter the bus (the bus is single-threaded and the call site holds no live borrow
-/// of the bus, so any re-entrant publish would deadlock through downstream
-/// `RefCell::borrow_mut` calls inside the registered tap).
+/// The bus invokes the registered tap (when present) before each publish, send, or
+/// correlation response fanout, so subscribers cannot observe a message that has not
+/// yet been handed to the tap. The tap callback runs on the engine thread and must be
+/// cheap; it must not re-enter the bus (the bus is single-threaded and the call site
+/// holds no live borrow of the bus, so any re-entrant publish would deadlock through
+/// downstream `RefCell::borrow_mut` calls inside the registered tap).
 pub trait BusTap: 'static {
     /// Invoked before a publish fanout dispatches to subscribers on `topic`.
     fn on_publish(&self, topic: MStr<Topic>, message: &dyn Any);
 
     /// Invoked before a send dispatch reaches the endpoint handler.
     fn on_send(&self, endpoint: MStr<Endpoint>, message: &dyn Any);
+
+    /// Invoked before a correlation response dispatch reaches the response handler.
+    fn on_response(&self, _correlation_id: &UUID4, _message: &dyn Any) {}
 }
 
 thread_local! {
@@ -187,9 +191,9 @@ thread_local! {
 
 /// Registers `tap` as the thread-local bus tap, replacing any previously installed tap.
 ///
-/// The tap fires before each publish and send fanout. Callers are responsible for
-/// clearing the tap on shutdown via [`clear_bus_tap`] so a stale adapter does not
-/// outlive the writer it captures into.
+/// The tap fires before each publish, send, and correlation response fanout. Callers
+/// are responsible for clearing the tap on shutdown via [`clear_bus_tap`] so a stale
+/// adapter does not outlive the writer it captures into.
 pub fn set_bus_tap(tap: Rc<dyn BusTap>) {
     BUS_TAP.with(|slot| {
         *slot.borrow_mut() = Some(tap);
@@ -221,5 +225,13 @@ pub(super) fn dispatch_tap_send(endpoint: MStr<Endpoint>, message: &dyn Any) {
     let tap = BUS_TAP.with(|slot| slot.borrow().clone());
     if let Some(tap) = tap {
         tap.on_send(endpoint, message);
+    }
+}
+
+#[inline]
+pub(super) fn dispatch_tap_response(correlation_id: &UUID4, message: &dyn Any) {
+    let tap = BUS_TAP.with(|slot| slot.borrow().clone());
+    if let Some(tap) = tap {
+        tap.on_response(correlation_id, message);
     }
 }

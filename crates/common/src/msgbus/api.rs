@@ -51,7 +51,7 @@ use super::{
     ORDER_EVENT_HANDLERS, PORTFOLIO_SNAPSHOT_HANDLERS, POSITION_EVENT_HANDLERS, QUOTE_HANDLERS,
     TRADE_HANDLERS,
     core::{MessageBus, Subscription},
-    dispatch_tap_publish, dispatch_tap_send, get_message_bus,
+    dispatch_tap_publish, dispatch_tap_response, dispatch_tap_send, get_message_bus,
     matching::is_matching_backtracking,
     mstr::{Endpoint, MStr, Pattern, Topic},
     typed_handler::{ShareableMessageHandler, TypedHandler, TypedIntoHandler},
@@ -1249,6 +1249,8 @@ pub fn send_any_value<T: 'static>(endpoint: MStr<Endpoint>, message: &T) {
 
 /// Sends the [`DataResponse`] to the registered correlation ID handler.
 pub fn send_response(correlation_id: &UUID4, message: &DataResponse) {
+    dispatch_tap_response(correlation_id, message);
+
     let handler = {
         let bus = get_message_bus();
         let mut bus = bus.borrow_mut();
@@ -1493,7 +1495,10 @@ mod tests {
     use super::*;
     use crate::{
         messages::{
-            data::{DataCommand, RequestCommand, RequestQuotes, SubscribeCommand, SubscribeQuotes},
+            data::{
+                DataCommand, DataResponse, QuotesResponse, RequestCommand, RequestQuotes,
+                SubscribeCommand, SubscribeQuotes,
+            },
             execution::{CancelAllOrders, TradingCommand},
         },
         msgbus::{BusTap, clear_bus_tap, set_bus_tap},
@@ -2204,51 +2209,54 @@ mod tests {
     /// observed the exact dispatches it expected.
     #[derive(Default)]
     struct RecordingTap {
-        publishes: std::sync::Mutex<Vec<(String, std::any::TypeId)>>,
-        sends: std::sync::Mutex<Vec<(String, std::any::TypeId)>>,
+        publishes: RefCell<Vec<(String, std::any::TypeId)>>,
+        sends: RefCell<Vec<(String, std::any::TypeId)>>,
+        responses: RefCell<Vec<(UUID4, std::any::TypeId)>>,
     }
 
     impl RecordingTap {
         fn publish_topics(&self) -> Vec<String> {
             self.publishes
-                .lock()
-                .expect("publishes poisoned")
+                .borrow()
                 .iter()
                 .map(|(t, _)| t.clone())
                 .collect()
         }
 
         fn send_endpoints(&self) -> Vec<String> {
-            self.sends
-                .lock()
-                .expect("sends poisoned")
-                .iter()
-                .map(|(e, _)| e.clone())
-                .collect()
+            self.sends.borrow().iter().map(|(e, _)| e.clone()).collect()
+        }
+
+        fn response_correlation_ids(&self) -> Vec<UUID4> {
+            self.responses.borrow().iter().map(|(id, _)| *id).collect()
         }
     }
 
-    impl BusTap for std::sync::Arc<RecordingTap> {
+    impl BusTap for RecordingTap {
         fn on_publish(&self, topic: MStr<Topic>, message: &dyn std::any::Any) {
             self.publishes
-                .lock()
-                .expect("publishes poisoned")
+                .borrow_mut()
                 .push((topic.to_string(), message.type_id()));
         }
 
         fn on_send(&self, endpoint: MStr<Endpoint>, message: &dyn std::any::Any) {
             self.sends
-                .lock()
-                .expect("sends poisoned")
+                .borrow_mut()
                 .push((endpoint.to_string(), message.type_id()));
+        }
+
+        fn on_response(&self, correlation_id: &UUID4, message: &dyn std::any::Any) {
+            self.responses
+                .borrow_mut()
+                .push((*correlation_id, message.type_id()));
         }
     }
 
     #[rstest]
     fn set_bus_tap_then_publish_typed_invokes_tap() {
         let _msgbus = get_message_bus();
-        let tap = std::sync::Arc::new(RecordingTap::default());
-        set_bus_tap(Rc::new(std::sync::Arc::clone(&tap)));
+        let tap = Rc::new(RecordingTap::default());
+        set_bus_tap(tap.clone());
 
         let quote = QuoteTick::default();
         publish_quote("data.quotes.tap.test".into(), &quote);
@@ -2261,8 +2269,8 @@ mod tests {
     #[rstest]
     fn set_bus_tap_then_publish_any_invokes_tap() {
         let _msgbus = get_message_bus();
-        let tap = std::sync::Arc::new(RecordingTap::default());
-        set_bus_tap(Rc::new(std::sync::Arc::clone(&tap)));
+        let tap = Rc::new(RecordingTap::default());
+        set_bus_tap(tap.clone());
 
         let payload: u32 = 42;
         publish_any("data.any.tap.test".into(), &payload);
@@ -2275,8 +2283,8 @@ mod tests {
     #[rstest]
     fn set_bus_tap_then_send_any_value_invokes_tap() {
         let _msgbus = get_message_bus();
-        let tap = std::sync::Arc::new(RecordingTap::default());
-        set_bus_tap(Rc::new(std::sync::Arc::clone(&tap)));
+        let tap = Rc::new(RecordingTap::default());
+        set_bus_tap(tap.clone());
 
         let payload: u32 = 7;
         send_any_value("endpoint.send.any.value.test".into(), &payload);
@@ -2292,8 +2300,8 @@ mod tests {
         // through send_endpoint_owned_counted. Without this site instrumented, real
         // production order commands would bypass the audit log.
         let _msgbus = get_message_bus();
-        let tap = std::sync::Arc::new(RecordingTap::default());
-        set_bus_tap(Rc::new(std::sync::Arc::clone(&tap)));
+        let tap = Rc::new(RecordingTap::default());
+        set_bus_tap(tap.clone());
 
         let cancel_all = CancelAllOrders::new(
             TraderId::from("TRADER-001"),
@@ -2323,8 +2331,8 @@ mod tests {
         // send_quote (and the other typed-ref send helpers) reach the tap through
         // send_endpoint_ref. Mirrors the owned path coverage.
         let _msgbus = get_message_bus();
-        let tap = std::sync::Arc::new(RecordingTap::default());
-        set_bus_tap(Rc::new(std::sync::Arc::clone(&tap)));
+        let tap = Rc::new(RecordingTap::default());
+        set_bus_tap(tap.clone());
 
         let quote = QuoteTick::default();
         send_quote("endpoint.send.quote.test".into(), &quote);
@@ -2335,18 +2343,70 @@ mod tests {
     }
 
     #[rstest]
+    fn set_bus_tap_then_send_response_invokes_tap() {
+        let _msgbus = get_message_bus();
+        let tap = Rc::new(RecordingTap::default());
+        set_bus_tap(tap.clone());
+
+        let correlation_id = UUID4::new();
+        let handler_called = Rc::new(RefCell::new(false));
+        let handler_called_clone = handler_called.clone();
+        register_response_handler(
+            &correlation_id,
+            ShareableMessageHandler::from_typed(move |_resp: &QuotesResponse| {
+                *handler_called_clone.borrow_mut() = true;
+            }),
+        );
+
+        let response = DataResponse::Quotes(QuotesResponse {
+            correlation_id,
+            client_id: ClientId::new("SIM"),
+            instrument_id: InstrumentId::from("TEST.VENUE"),
+            data: vec![],
+            start: None,
+            end: None,
+            ts_init: 0.into(),
+            params: None,
+        });
+        send_response(&correlation_id, &response);
+
+        clear_bus_tap();
+
+        assert!(*handler_called.borrow());
+        assert_eq!(tap.response_correlation_ids(), vec![correlation_id]);
+    }
+
+    #[rstest]
     fn clear_bus_tap_prevents_subsequent_dispatches_from_invoking_tap() {
         let _msgbus = get_message_bus();
-        let tap = std::sync::Arc::new(RecordingTap::default());
-        set_bus_tap(Rc::new(std::sync::Arc::clone(&tap)));
+        let tap = Rc::new(RecordingTap::default());
+        set_bus_tap(tap.clone());
         clear_bus_tap();
 
         let quote = QuoteTick::default();
         publish_quote("data.quotes.after.clear".into(), &quote);
         send_quote("endpoint.send.after.clear".into(), &quote);
 
+        let correlation_id = UUID4::new();
+        register_response_handler(
+            &correlation_id,
+            ShareableMessageHandler::from_typed(|_resp: &QuotesResponse| {}),
+        );
+        let response = DataResponse::Quotes(QuotesResponse {
+            correlation_id,
+            client_id: ClientId::new("SIM"),
+            instrument_id: InstrumentId::from("TEST.VENUE"),
+            data: vec![],
+            start: None,
+            end: None,
+            ts_init: 0.into(),
+            params: None,
+        });
+        send_response(&correlation_id, &response);
+
         assert!(tap.publish_topics().is_empty());
         assert!(tap.send_endpoints().is_empty());
+        assert!(tap.response_correlation_ids().is_empty());
     }
 
     #[rstest]

@@ -41,7 +41,7 @@ use indexmap::IndexMap;
 use nautilus_common::{
     clock::Clock,
     enums::Environment,
-    msgbus::{self, BusTap, Endpoint, MStr},
+    msgbus::{self, BusTap, Endpoint, MStr, MessagingSwitchboard},
 };
 #[cfg(feature = "live")]
 use nautilus_core::time::get_atomic_clock_realtime;
@@ -903,6 +903,12 @@ impl BusTap for EventStoreBusTap {
         let topic = Topic::from(*endpoint);
         self.capture(topic, message, ts_init);
     }
+
+    fn on_response(&self, _correlation_id: &UUID4, message: &dyn Any) {
+        let ts_init = self.clock.get_time_ns();
+        let topic = MessagingSwitchboard::data_response_topic();
+        self.capture(topic, message, ts_init);
+    }
 }
 
 impl EventStoreBusTap {
@@ -938,7 +944,10 @@ mod tests {
     use nautilus_common::{
         clock::TestClock,
         messages::{
-            data::{DataCommand, RequestCommand, RequestQuotes, SubscribeCommand, SubscribeQuotes},
+            data::{
+                DataCommand, DataResponse, QuotesResponse, RequestCommand, RequestQuotes,
+                SubscribeCommand, SubscribeQuotes,
+            },
             execution::{SubmitOrder, TradingCommand},
         },
     };
@@ -2095,5 +2104,90 @@ mod tests {
             }
             other => panic!("expected SubscribeCommand::Quotes round trip, was {other:?}"),
         }
+    }
+
+    // `send_response` dispatches through a correlation handler rather than an endpoint
+    // or pub/sub topic. The bus tap must still capture the `DataResponse` envelope and
+    // stamp the inner response category as the payload type.
+    #[rstest]
+    fn bus_tap_captures_data_response_sent_through_correlation_handler() {
+        let tmp = TempDir::new().expect("tempdir");
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let instance_id = UUID4::new();
+
+        let mut store = KernelEventStore::boot(
+            Some(make_config(tmp.path().to_path_buf())),
+            instance_id,
+            clock_rc,
+        )
+        .expect("boot store");
+        store
+            .open(
+                instance_id,
+                &RegisteredComponents::default(),
+                Environment::Backtest,
+            )
+            .expect("open run");
+        let run_id = store.run_id().expect("run open").to_string();
+
+        let correlation_id = UUID4::new();
+        let handler_called = Rc::new(RefCell::new(false));
+        let handler_called_clone = handler_called.clone();
+        msgbus::register_response_handler(
+            &correlation_id,
+            msgbus::ShareableMessageHandler::from_typed(move |_resp: &QuotesResponse| {
+                *handler_called_clone.borrow_mut() = true;
+            }),
+        );
+
+        let response = QuotesResponse::new(
+            correlation_id,
+            ClientId::from("BINANCE"),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            vec![],
+            None,
+            None,
+            UnixNanos::from(30),
+            None,
+        );
+        msgbus::send_response(&correlation_id, &DataResponse::Quotes(response.clone()));
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+
+        loop {
+            let hwm = store
+                .session
+                .as_ref()
+                .map_or(0, EventStoreSession::high_watermark);
+
+            if hwm >= 2 {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "captured DataResponse did not commit within deadline (hwm={hwm})",
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
+
+        assert!(*handler_called.borrow());
+        drop(store);
+
+        let sealed = RedbBackend::open_sealed(tmp.path(), &instance_id.to_string(), &run_id)
+            .expect("open sealed");
+        let captured = sealed
+            .scan_seq(2)
+            .expect("scan")
+            .expect("captured response present");
+        assert_eq!(captured.payload_type.as_str(), "QuotesResponse");
+        assert_eq!(captured.topic, MessagingSwitchboard::data_response_topic());
+
+        let decoded: QuotesResponse =
+            rmp_serde::from_slice(&captured.payload).expect("decode QuotesResponse");
+        assert_eq!(decoded.correlation_id, response.correlation_id);
+        assert_eq!(decoded.client_id, response.client_id);
+        assert_eq!(decoded.instrument_id, response.instrument_id);
+        assert_eq!(decoded.ts_init, response.ts_init);
+        assert!(decoded.data.is_empty());
     }
 }
