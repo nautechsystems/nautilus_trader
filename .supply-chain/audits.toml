@@ -109,6 +109,18 @@ criteria = "safe-to-deploy"
 delta = "1.9.0 -> 1.9.1"
 notes = "Single atomic ordering fix: compare_exchange failure order changed from Acquire to SeqCst in debt repayment. No new unsafe patterns."
 
+[[audits.aws-lc-rs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.16.3 -> 1.17.0"
+notes = "Reviewed Rust wrapper delta: adds opt-in legacy-des APIs behind a feature this workspace does not enable, separate AEAD tag open helper, RSA public key conversion helpers, and tests/docs. No new build, process, network, or filesystem behavior."
+
+[[audits.aws-lc-sys]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.40.0 -> 0.41.0"
+notes = "Reviewed vendored AWS-LC 1.72.0 -> 1.73.0, build script delta, generated bindings, and Windows prebuilt NASM symbol-prefix updates. Changes cover Apple CoreServices jitter entropy probing, rand shutdown cleanup, Win7/MinGW build fixes, ML-DSA context/seed APIs, X509/OCSP/EVP fixes, and regenerated symbols. No new network fetch behavior."
+
 [[audits.base32]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"

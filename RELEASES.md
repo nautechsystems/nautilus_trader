@@ -152,6 +152,7 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers market data dispatch on fractional tick sizes (#4022), thanks @faysou
 - Fixed Interactive Brokers shutdown reader `RuntimeError` on stop and dispose (#4023), thanks @faysou
 - Fixed Interactive Brokers reconnect before server version handshake (#4027), thanks @faysou
+- Fixed Interactive Brokers SMART stock venue resolution (#4061), thanks @faysou
 - Fixed Kraken Spot margin wallet balances for multi-asset collateral (#3997), thanks @mcgrj
 - Fixed Kraken symbol normalization for WS v2 compatibility (#3961), thanks @mcgrj
 - Fixed Kraken Spot WebSocket dispatch dropping delta-only execution frames that omit `symbol` (#4052), thanks @mcgrj

@@ -133,7 +133,7 @@ arrow = { version = "58.3.0", default-features = false, features = [
 arrow-row = "58.3.0"
 async-stream = "0.3.6"
 async-trait = "0.1.89"
-aws-lc-rs = { version = "1.16.3", default-features = false, features = [
+aws-lc-rs = { version = "1.17.0", default-features = false, features = [
   "non-fips", # FIPS 140-3 mode blocked: aws-lc-fips-sys requires Go toolchain
 ] }
 base64 = "0.22.1"
@@ -388,7 +388,7 @@ cargo-audit = "0.22.1"
 cargo-deny = "0.19.6"
 cargo-edit = "0.13.10"
 cargo-fuzz = "0.13.1"
-cargo-llvm-cov = "0.8.6"
+cargo-llvm-cov = "0.8.7"
 cargo-machete = "0.9.2"
 cargo-nextest = "0.9.133"
 cargo-vet = "0.10.2"
